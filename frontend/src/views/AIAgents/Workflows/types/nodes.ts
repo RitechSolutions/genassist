@@ -20,6 +20,8 @@ export interface NodeHandler {
   position: "left" | "right" | "top" | "bottom";
   compatibility: NodeCompatibility;
   schema?: NodeSchema;
+  /** Optional human-readable name shown in the handle tooltip (e.g. a Switch case). */
+  label?: string;
 }
 
 // Base node data interface
@@ -112,6 +114,61 @@ export interface RouterNodeData extends BaseNodeData {
     | "not_ends_with"
     | "regex";
   second_value?: string;
+}
+
+// Switch node data — deterministic N-way routing on a single value. Each case
+// owns an `output_<case.id>` source handle; unmatched values take `output_default`.
+export type SwitchMatchMode =
+  | "equal"
+  | "contains"
+  | "starts_with"
+  | "ends_with"
+  | "regex";
+
+export interface SwitchCase {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface SwitchNodeData extends BaseNodeData {
+  /** When on, an LLM picks the case (from smartPrompt) instead of comparing switchValue. */
+  smartModeEnabled?: boolean | string;
+  providerId?: string;
+  smartPrompt?: string;
+  systemPrompt?: string;
+  switchValue?: string;
+  matchMode?: SwitchMatchMode;
+  caseSensitive?: boolean;
+  cases?: SwitchCase[];
+}
+
+// Filter node data — a gate with one output: the branch continues only while
+// `field <operator> value` holds. Operators mirror engine/conditions.py.
+export type FilterOperator =
+  | "equal"
+  | "not_equal"
+  | "contains"
+  | "not_contain"
+  | "starts_with"
+  | "not_starts_with"
+  | "ends_with"
+  | "not_ends_with"
+  | "regex"
+  | "greater_than"
+  | "greater_than_or_equal"
+  | "less_than"
+  | "less_than_or_equal"
+  | "is_empty"
+  | "is_not_empty";
+
+export interface FilterNodeData extends BaseNodeData {
+  field?: string;
+  operator?: FilterOperator;
+  value?: string;
+  caseSensitive?: boolean;
+  /** Chat reply used when the filter stops the conversation's main path. */
+  stopMessage?: string;
 }
 
 // NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
@@ -622,6 +679,8 @@ export type NodeData =
   | SlackOutputNodeData
   | WhatsappNodeData
   | RouterNodeData
+  | SwitchNodeData
+  | FilterNodeData
   | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData
@@ -665,6 +724,12 @@ export interface NodeTypeDefinition<T extends NodeData> {
     | "training" | "utils"
   icon: string;
   defaultData: T;
+  /**
+   * For nodes whose handles depend on their config (e.g. one output per Switch
+   * case): derives the handles from the node data. When set, hydration rebuilds
+   * handles from this instead of back-filling `defaultData.handlers`.
+   */
+  getHandlers?: (data: T) => NodeHandler[];
   component: ComponentType<NodeProps<NodeData>>; // React component for the node
   createNode: (id: string, position: { x: number; y: number }, data: T) => Node;
 }

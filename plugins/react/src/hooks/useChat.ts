@@ -65,6 +65,22 @@ export function mergeReadState(
   };
 }
 
+export const HEARTBEAT_INITIAL_INTERVAL_MS = 2000;
+export const HEARTBEAT_INTERVAL_STEP_MS = 5000;
+export const HEARTBEAT_MAX_INTERVAL_MS = 30000;
+
+/**
+ * Next heartbeat poll interval after a successful poll: ramps up by
+ * HEARTBEAT_INTERVAL_STEP_MS each time, capped at HEARTBEAT_MAX_INTERVAL_MS, so an
+ * idle open tab backs off instead of polling (and logging) at a flat cadence forever.
+ */
+export function getNextHeartbeatInterval(currentIntervalMs: number | undefined): number {
+  return Math.min(
+    (currentIntervalMs || HEARTBEAT_INITIAL_INTERVAL_MS) + HEARTBEAT_INTERVAL_STEP_MS,
+    HEARTBEAT_MAX_INTERVAL_MS,
+  );
+}
+
 export interface UseChatProps {
   baseUrl: string;
   websocketUrl?: string;
@@ -665,10 +681,6 @@ export const useChat = ({
   // - Starts with a short interval
   // - Increases the interval over time (every successful poll)
   // - Retries up to 5 times on errors, then stops
-  const HEARTBEAT_INITIAL_INTERVAL_MS = 2000;
-  const HEARTBEAT_INTERVAL_STEP_MS = 5000;
-  const HEARTBEAT_MAX_INTERVAL_MS = 30000;
-
   useEffect(() => {
     if (useWs || !conversationId || isFinalized) return;
     const svc = chatServiceRef.current;
@@ -792,12 +804,7 @@ export const useChat = ({
         }
 
         // Increase polling interval over time on success
-        // const nextInterval = Math.min(
-        //   (heartbeatIntervalRef.current || HEARTBEAT_INITIAL_INTERVAL_MS) +
-        //     HEARTBEAT_INTERVAL_STEP_MS,
-        //   HEARTBEAT_MAX_INTERVAL_MS,
-        // );
-        const nextInterval = HEARTBEAT_INTERVAL_STEP_MS;
+        const nextInterval = getNextHeartbeatInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = nextInterval;
         scheduleNext(nextInterval);
       } catch {
