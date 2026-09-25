@@ -12,6 +12,7 @@ from app.core.utils.indentifiers import get_customer_id
 from app.db.models.webhook import WebhookModel
 from app.modules.integration.slack import SlackConnector, verify_slack_request
 from app.repositories.webhook_repository import WebhookRepository
+from app.services.workflow_trigger import WorkflowTriggerService
 from app.schemas.conversation_transcript import (
     InProgConvTranscrUpdate,
     TranscriptSegmentInput,
@@ -42,8 +43,9 @@ logger = logging.getLogger(__name__)
 class WebhookService:
     """Service for managing webhooks."""
 
-    def __init__(self, repo: WebhookRepository):
+    def __init__(self, repo: WebhookRepository, trigger_service: WorkflowTriggerService):
         self.repo = repo
+        self.trigger_service = trigger_service
 
     async def create_webhook(
         self, data: WebhookCreate, webhook_url: str, webhook_id: Optional[UUID] = None
@@ -109,6 +111,7 @@ class WebhookService:
         hub_challenge: Optional[str] = None,
         x_slack_signature: Optional[str] = None,
         x_slack_request_timestamp: Optional[str] = None,
+        raw_body: Optional[bytes] = None,
     ):
         # Lookup webhook by ID
         webhook = await self.get_webhook_by_id_full(webhook_id)
@@ -121,7 +124,13 @@ class WebhookService:
         # Route to type-specific handler
         webhook_type = webhook.webhook_type or "generic"
 
-        if webhook_type == "slack":
+        if webhook_type == "workflow_trigger":
+            # Inbound endpoint of a Webhook Trigger node: queue a workflow run.
+            body = raw_body if raw_body is not None else payload.encode("utf-8")
+            return await self.trigger_service.handle_delivery(
+                webhook, request, body, tenant_id
+            )
+        elif webhook_type == "slack":
             return await self._handle_slack_webhook(
                 webhook,
                 request,

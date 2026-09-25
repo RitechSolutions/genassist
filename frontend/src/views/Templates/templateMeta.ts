@@ -80,6 +80,7 @@ const NODE_LABELS: Record<string, string> = {
   guardrailNliNode: "Guardrail",
   guardrailProvenanceNode: "Guardrail",
   workflowExecutorNode: "Sub-flow",
+  webhookTriggerNode: "Webhook",
 };
 
 export function nodeLabel(type: string): string {

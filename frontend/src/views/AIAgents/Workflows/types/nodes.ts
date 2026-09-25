@@ -52,6 +52,26 @@ export interface ChatInputNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
 }
 
+// Webhook Trigger node data — endpoint settings (method, auth, secret, rate
+// limit) live on the backend endpoint row, not here, so publishing a new
+// workflow version never rotates a secret. Paths are dotted and start at the
+// delivery envelope: body.*, headers.*, query.*
+export interface WebhookFieldMapping {
+  key: string;
+  path: string;
+  required?: boolean;
+  default?: string;
+}
+
+export interface WebhookTriggerNodeData extends BaseNodeData {
+  fieldMappings?: WebhookFieldMapping[];
+  messagePath?: string;
+  messageRequired?: boolean;
+  threadIdPath?: string;
+  idempotencyPath?: string;
+  samplePayload?: string;
+}
+
 // Human In The Loop node data — collects structured data from the user mid-flow
 export interface HumanInTheLoopFormField {
   name: string;
@@ -637,6 +657,7 @@ export interface STTNodeData extends BaseNodeData {
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
+  | WebhookTriggerNodeData
   | LLMModelNodeData
   | TemplateNodeData
   | ChatOutputNodeData

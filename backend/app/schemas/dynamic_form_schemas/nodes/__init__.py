@@ -38,6 +38,7 @@ from .web_scraper_schema import WEB_SCRAPER_NODE_DIALOG_SCHEMA
 from .web_search_schema import WEB_SEARCH_NODE_DIALOG_SCHEMA
 from .html_to_image_schema import HTML_TO_IMAGE_NODE_DIALOG_SCHEMA
 from .nlp_schema import NLP_NODE_DIALOG_SCHEMA
+from .webhook_trigger_schema import WEBHOOK_TRIGGER_NODE_DIALOG_SCHEMA
 
 NODE_TYPE_LABELS: Dict[str, str] = {
     "chatInputNode": "Chat Input",
@@ -78,6 +79,7 @@ NODE_TYPE_LABELS: Dict[str, str] = {
     "webSearchNode": "Web Search",
     "htmlToImageNode": "HTML to Image",
     "nlpNode": "Text Analysis",
+    "webhookTriggerNode": "Webhook Trigger",
 }
 
 NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
@@ -119,6 +121,7 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "webSearchNode": WEB_SEARCH_NODE_DIALOG_SCHEMA,
     "htmlToImageNode": HTML_TO_IMAGE_NODE_DIALOG_SCHEMA,
     "nlpNode": NLP_NODE_DIALOG_SCHEMA,
+    "webhookTriggerNode": WEBHOOK_TRIGGER_NODE_DIALOG_SCHEMA,
 }
 
 
@@ -218,6 +221,10 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
   ],
 
   "chatInputNode": [
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "webhookTriggerNode": [
     { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
   ],
 

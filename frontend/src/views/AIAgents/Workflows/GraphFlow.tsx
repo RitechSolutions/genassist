@@ -39,6 +39,7 @@ import { WorkflowProvider } from "./context/WorkflowContext";
 import { NodeActionsContext } from "./context/NodeActionsContext";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import { useHiddenNodeTypes } from "./hooks/useHiddenNodeTypes";
 import { usePermissions } from "@/context/PermissionContext";
 import {
   WorkflowExecutionProvider,
@@ -128,6 +129,7 @@ const GraphFlowContent: React.FC = () => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
 
   const showChatInput = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CHAT_INPUT);
+  const hiddenNodeTypes = useHiddenNodeTypes();
 
   // Sidebar state — when collapsed, a floating toggle button sits at the
   // top-left of the viewport; shift the tab switcher right to clear it.
@@ -1179,6 +1181,7 @@ const GraphFlowContent: React.FC = () => {
     }
 
     const matches = nodeRegistry.getAllNodeTypes().filter((def) => {
+      if (hiddenNodeTypes.has(def.type)) return false;
       const haystack = `${def.label} ${def.description} ${def.type}`.toLowerCase();
       return terms.every((term) => haystack.includes(term));
     });
@@ -1190,7 +1193,7 @@ const GraphFlowContent: React.FC = () => {
       icon: def.icon,
       category: def.category,
     }));
-  }, [nodeSearchOpen, nodeSearchModeType, nodeSearchQuery, nodeSearchCommandFilter]);
+  }, [nodeSearchOpen, nodeSearchModeType, nodeSearchQuery, nodeSearchCommandFilter, hiddenNodeTypes]);
 
   // Whether the /agent command is offered (respects the chat-input feature flag)
   const showAgentCommand =
