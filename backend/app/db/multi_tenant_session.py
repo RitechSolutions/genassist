@@ -45,10 +45,11 @@ class MultiTenantSessionManager:
         """Initialize the multi-tenant session manager"""
         if settings.read_replica_enabled:
             logger.info(
-                "Read replica routing enabled: %s (pool %s + %s overflow per tenant)",
+                "Read replica routing enabled: %s (pool %s + %s overflow per tenant, statement timeout %ss)",
                 settings.DB_READ_HOST.strip(),
                 settings.DB_READ_POOL_SIZE,
                 settings.DB_READ_MAX_OVERFLOW,
+                settings.read_statement_timeout,
             )
         else:
             logger.info("Read replica routing disabled: DB_READ_HOST is not set")
@@ -116,7 +117,7 @@ class MultiTenantSessionManager:
     def _interactive_connect_args(read_only: bool = False) -> dict:
         # asyncpg applies server_settings to every new connection as Postgres GUCs.
         server_settings: Dict[str, str] = {}
-        statement_timeout = settings.DB_READ_STATEMENT_TIMEOUT if read_only else settings.DB_STATEMENT_TIMEOUT
+        statement_timeout = settings.read_statement_timeout if read_only else settings.DB_STATEMENT_TIMEOUT
         if statement_timeout > 0:
             server_settings["statement_timeout"] = str(statement_timeout * 1000)
         if read_only:

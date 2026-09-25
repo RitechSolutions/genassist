@@ -1,10 +1,13 @@
 from typing import Optional, Tuple
 from urllib.parse import quote, unquote, urlparse
 
-from pydantic import ConfigDict, Field, computed_field
+from pydantic import ConfigDict, Field, computed_field, field_validator
 from pydantic_settings import BaseSettings
 
 from app.core.project_path import DATA_VOLUME
+
+# Ceiling for replica reads when DB_READ_STATEMENT_TIMEOUT is unset; the small read pool cannot afford the writer's default.
+DEFAULT_READ_STATEMENT_TIMEOUT = 600  # seconds
 
 
 class ProjectSettings(BaseSettings):
@@ -191,10 +194,8 @@ class ProjectSettings(BaseSettings):
     DB_READ_MAX_OVERFLOW: int = 20
     # Fail fast rather than tying a request up waiting for a read connection.
     DB_READ_POOL_TIMEOUT: int = 5  # seconds
-    # Lower than the writer's ceiling because the read pool is small and a few long
-    # queries would otherwise occupy all of it. Kept generous enough not to fail an
-    # export that works today; tune down once real query durations are known.
-    DB_READ_STATEMENT_TIMEOUT: int = 600  # seconds; 0 disables
+    # None uses the writer's ceiling capped at DEFAULT_READ_STATEMENT_TIMEOUT; 0 disables.
+    DB_READ_STATEMENT_TIMEOUT: Optional[int] = Field(default=None, ge=0)  # seconds
     # Seconds a client keeps reading from the writer after one of its own writes, so
     # replica lag never hides a change from the user who made it. 0 disables.
     DB_READ_PIN_AFTER_WRITE_SECONDS: int = 5
@@ -420,6 +421,22 @@ class ProjectSettings(BaseSettings):
     @property
     def read_replica_enabled(self) -> bool:
         return bool((self.DB_READ_HOST or "").strip())
+
+    @field_validator("DB_READ_STATEMENT_TIMEOUT", mode="before")
+    @classmethod
+    def _blank_read_timeout_means_inherit(cls, value: object) -> object:
+        # Blank, whitespace, "none" and "null" all mean unset.
+        is_unset_spelling = isinstance(value, str) and value.strip().lower() in ("", "none", "null")
+        return None if is_unset_spelling else value
+
+    @property
+    def read_statement_timeout(self) -> int:
+        if self.DB_READ_STATEMENT_TIMEOUT is not None:
+            return self.DB_READ_STATEMENT_TIMEOUT
+        writer_is_unbounded = self.DB_STATEMENT_TIMEOUT <= 0
+        if writer_is_unbounded:
+            return DEFAULT_READ_STATEMENT_TIMEOUT
+        return min(self.DB_STATEMENT_TIMEOUT, DEFAULT_READ_STATEMENT_TIMEOUT)
 
     def _tenant_async_database_url(self, host: str, tenant: str) -> str:
         tenant_db = self.get_tenant_database_name(tenant)
