@@ -11,8 +11,8 @@ import { transformTranscript } from "@/views/Transcripts/helpers/transformers";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ActiveConversationsModule } from "../components/ActiveConversationsModule";
-import { HOSTILITY_NEUTRAL_MAX, HOSTILITY_POSITIVE_MAX, isLiveConversationStatus } from "@/views/Transcripts/helpers/formatting";
-import { LiveConversationsDialog } from "../components/LiveConversationsDialog";
+import { HOSTILITY_NEUTRAL_MAX, HOSTILITY_POSITIVE_MAX } from "@/views/Transcripts/helpers/formatting";
+import { ActiveConversationDialog } from "../components/ActiveConversationDialog";
 import { useWebSocketDashboard } from "../hooks/useWebSocketDashboard";
 import { YourAgentsCard } from "../components/YourAgentsCard";
 import { IntegrationsCard } from "../components/IntegrationsCard";
@@ -211,10 +211,7 @@ export const ActiveConversations = () => {
     error: wsError,
     refetch: wsRefetch,
     resyncHint,
-    lastConversationUpdate,
   } = useWebSocketDashboard();
-  // The dashboard's sentiment counts can shift with any message, so it still resyncs per update.
-  const conversationUpdateSeq = lastConversationUpdate?.seq ?? 0;
 
   // Load conversations from dashboard API
   useEffect(() => {
@@ -280,8 +277,8 @@ export const ActiveConversations = () => {
         // ignore
       }
     };
-    if (resyncHint > 0 || conversationUpdateSeq > 0) sync();
-  }, [resyncHint, conversationUpdateSeq, sentimentFilter, categoryFilter]);
+    if (resyncHint > 0) sync();
+  }, [resyncHint, sentimentFilter, categoryFilter]);
 
   // Poll dashboard API for updates
   useEffect(() => {
@@ -470,37 +467,6 @@ export const ActiveConversations = () => {
 
   const filteredConversations = allConversations ?? [];
 
-  // The dialog's left column lists only conversations that are still running.
-  const liveConversations = useMemo(
-    () =>
-      (allConversations ?? [])
-        .filter((item) => isLiveConversationStatus(item.status as unknown as string))
-        .map(enrichConversationItem),
-    [allConversations]
-  );
-
-  const handleSelectFromDialog = (transcript: Transcript) => {
-    const item = allConversationsRef.current.find((c) => c.id === transcript.id);
-    if (item) void handleItemClick(item);
-  };
-
-  // The dialog only lists running conversations, so a finalized one leaves it entirely.
-  const handleConversationFinalized = () => {
-    handleDialogClose(false);
-  };
-
-  const handleClearDialogSelection = () => {
-    setSelectedTranscript(null);
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("conversation");
-        return next;
-      },
-      { replace: true }
-    );
-  };
-
   return (
     <>
       <ActiveConversationsModule
@@ -519,18 +485,12 @@ export const ActiveConversations = () => {
         <IntegrationsCard />
       </div>
 
-      <LiveConversationsDialog
-        conversations={liveConversations}
-        selectedTranscript={selectedTranscript}
-        isLoading={isLoading && liveConversations.length === 0}
-        error={error as Error}
+      <ActiveConversationDialog
+        transcript={selectedTranscript}
         isOpen={isDialogOpen}
         onOpenChange={handleDialogClose}
-        onSelect={handleSelectFromDialog}
-        onClearSelection={handleClearDialogSelection}
         onTakeOver={handleTakeOver}
         refetchConversations={wsRefetch}
-        onConversationFinalized={handleConversationFinalized}
       />
     </>
   );

@@ -83,7 +83,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             value={values.answer_field ?? "answer"}
             onChange={(e) => setField("answer_field", e.target.value)}
             placeholder="answer"
-            size="hint"
+            rows={2}
           />
         </div>
         <div className="space-y-2">
@@ -92,7 +92,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             value={values.context_field ?? "context"}
             onChange={(e) => setField("context_field", e.target.value)}
             placeholder="context"
-            size="hint"
+            rows={2}
           />
         </div>
         <div className="space-y-2">
@@ -143,7 +143,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
               value={values.fallback_answer ?? ""}
               onChange={(e) => setField("fallback_answer", e.target.value)}
               placeholder="e.g. I'm sorry, I cannot provide an answer based on the available information."
-              size="hint"
+              rows={3}
             />
           </div>
         )}

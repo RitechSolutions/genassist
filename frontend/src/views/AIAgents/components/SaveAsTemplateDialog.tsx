@@ -91,7 +91,6 @@ export function SaveAsTemplateDialog({
             <Label htmlFor="tmpl-desc">Description</Label>
             <Textarea
               id="tmpl-desc"
-              size="body"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What does this template do?"

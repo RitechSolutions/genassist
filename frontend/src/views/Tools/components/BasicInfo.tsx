@@ -60,7 +60,6 @@ export const BasicInfo: FC<BasicInfoProps> = ({
       <div className="flex flex-col gap-2">
         <label className="text-sm font-medium">Description</label>
         <Textarea
-          size="description"
           className="w-full"
           placeholder="Brief description of this tool"
           value={description}

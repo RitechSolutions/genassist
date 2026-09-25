@@ -81,8 +81,7 @@ export const HtmlToImageDialog: React.FC<
           value={values.html}
           onChange={(e) => setField("html", e.target.value)}
           placeholder="<html>...</html>"
-          size="document"
-          className="w-full font-mono text-sm"
+          className="w-full min-h-[160px] font-mono"
         />
         <div className="text-xs text-muted-foreground break-words">
           The HTML to render. Use {"{{field}}"} to define dynamic parameters. An

@@ -493,8 +493,8 @@ def build_node_indexes(catalog: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
                 tool.get("name"),
             )
     for router in catalog.get("routers", []):
-        # Routers and switches record different routes, so the type guards name matches.
-        add(REF_KIND_ROUTER, router.get("id"), router.get("label"), router.get("type"))
+        # Every router is a routerNode, so a type mismatch cannot arise here.
+        add(REF_KIND_ROUTER, router.get("id"), router.get("label"))
     for node in catalog.get("action_nodes", []):
         add(REF_KIND_ACTION, node.get("id"), node.get("label"), node.get("type"))
     return indexes

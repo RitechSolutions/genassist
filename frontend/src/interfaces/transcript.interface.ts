@@ -134,6 +134,4 @@ export interface Transcript {
   thumbs_up_count?: number;
   thumbs_down_count?: number;
   custom_attributes?: Record<string, string> | null;
-  /** UI-only: newest message text from a websocket update, ahead of `messages` until a refetch. */
-  last_message_preview?: string;
 }

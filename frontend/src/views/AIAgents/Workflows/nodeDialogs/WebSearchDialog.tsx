@@ -14,7 +14,6 @@ import { Save, ChevronDown, ChevronUp } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
 import { DraggableInput } from "../components/custom/DraggableInput";
-import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { useNodeDialogState } from "./useNodeDialogState";
 
 // open the advanced section when any advanced option differs from its default
@@ -164,13 +163,12 @@ export const WebSearchDialog: React.FC<
 
             <div className="space-y-2">
               <Label htmlFor="excludeDomains">Exclude Domains</Label>
-              <DraggableTextArea
+              <DraggableInput
                 id="excludeDomains"
-                size="hint"
                 value={values.excludeDomains}
                 onChange={(e) => setField("excludeDomains", e.target.value)}
                 placeholder="reddit.com, pinterest.com"
-                className="w-full text-sm"
+                className="break-all w-full"
               />
               <div className="text-xs text-muted-foreground break-words">
                 Comma-separated, up to 10 domains.
