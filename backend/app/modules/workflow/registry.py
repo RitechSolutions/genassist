@@ -28,7 +28,8 @@ class HttpClientWatch:
     """Notices an HTTP client leaving while its turn is queued. Non-HTTP callers are never gone.
 
     Starlette's ``Request.is_disconnected`` cannot see the disconnect behind BaseHTTPMiddleware,
-    so this listens on the request's receive channel once the body has been consumed.
+    so this listens on the request's receive channel once the body has been consumed. Routes
+    expose their request through ``expose_request_to_turn_gate`` in ``app.auth.dependencies``.
     """
 
     def __init__(self, request=None):
@@ -91,7 +92,7 @@ class RegistryItem:
 
         async def before_wait() -> None:
             client_watch.start()
-            await self._release_request_connection()
+            await self._release_idle_request_connection()
 
         try:
             async with chat_turn_gate.slot(context, before_wait=before_wait, caller_gone=client_watch.client_gone):
@@ -99,12 +100,12 @@ class RegistryItem:
         finally:
             client_watch.stop()
 
-    async def _release_request_connection(self) -> None:
-        """A turn that has to queue must not hold the request's pooled connection meanwhile."""
+    async def _release_idle_request_connection(self) -> None:
+        """Return the request's pooled connection while queued, unless its transaction has writes."""
         # Local import avoids a circular import via the dependency injector.
-        from app.core.utils.db_connection_utils import release_db_connection
+        from app.core.utils.db_connection_utils import release_idle_connection
 
-        await release_db_connection(context=f"agent {self.agent_id}")
+        await release_idle_connection(context=f"agent {self.agent_id}")
 
     async def _execute_workflow(
         self, session_message: str, metadata: dict, persist: bool = True, source: str = "chat"
