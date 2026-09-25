@@ -20,6 +20,7 @@ from app.core.tenant_scope import get_tenant_context
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.repositories.test_suite import TestRunRepository
 from app.repositories.workflow_schedule_run import WorkflowScheduleRunRepository
+from app.repositories.workflow_trigger_run import WorkflowTriggerRunRepository
 from app.tasks.base import run_async_in_celery, run_task_with_tenant_support
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 RUN_QUEUE = "ml"
 EVALUATION_RUN_TASK = "execute_test_suite_run"
 WORKFLOW_RUN_TASK = "execute_workflow_run"
+WORKFLOW_TRIGGER_RUN_TASK = "execute_webhook_trigger_run"
 RECONCILER_TIMEOUT_SECONDS = 240
 
 STUCK_TEST_RUN_ERROR = (
@@ -162,6 +164,19 @@ async def reconcile_stuck_workflow_runs_async() -> None:
     )
 
 
+async def reconcile_stuck_workflow_trigger_runs_async() -> None:
+    await _reconcile_runs(
+        RunReconciliation(
+            kind="workflow trigger run",
+            repository=WorkflowTriggerRunRepository,
+            task_name=WORKFLOW_TRIGGER_RUN_TASK,
+            waiting_max_age_seconds=settings.WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS,
+            running_max_age_seconds=settings.WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS,
+            error_message=STUCK_WORKFLOW_RUN_ERROR,
+        )
+    )
+
+
 @shared_task
 def reconcile_stuck_test_runs():
     """Celery beat task to fail evaluation runs orphaned by a worker/pod loss."""
@@ -183,4 +198,16 @@ def reconcile_stuck_workflow_runs():
         ),
         timeout=RECONCILER_TIMEOUT_SECONDS,
         task_name="reconcile_stuck_workflow_runs",
+    )
+
+
+@shared_task
+def reconcile_stuck_workflow_trigger_runs():
+    """Celery beat task to fail webhook-triggered runs orphaned by a worker/pod loss."""
+    run_async_in_celery(
+        run_task_with_tenant_support(
+            reconcile_stuck_workflow_trigger_runs_async, "reconcile stuck workflow trigger runs"
+        ),
+        timeout=RECONCILER_TIMEOUT_SECONDS,
+        task_name="reconcile_stuck_workflow_trigger_runs",
     )

@@ -19,6 +19,7 @@ from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.node_result import is_node_failure, node_failure
 from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
+from app.modules.workflow.engine.entry_nodes import is_entry_node_type
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,16 @@ class BaseNode(ABC):
         """Get the session context (session data) from workflow state."""
         return self.state.get_session()
 
+    def _is_unused_entry_source(self, source_id: str) -> bool:
+        """True for an entry node (Chat Input / Webhook Trigger) that did not
+        start this run. It never executes, so waiting on it would hang the
+        downstream node and reading it would yield nothing."""
+        entry_node_id = getattr(self.state, "entry_node_id", None)
+        if not entry_node_id or source_id == entry_node_id:
+            return False
+        _, node_type = self.get_node_config(source_id)
+        return is_entry_node_type(node_type)
+
     def get_source_nodes(self) -> List[str]:
         """Get all source nodes connected to this next node."""
         target_edges = self.state.target_edges
@@ -188,6 +199,8 @@ class BaseNode(ABC):
             if source_id:
                 _, node_type = self.get_node_config(source_id)
                 if "toolBuilderNode" in node_type or "mcpNode" in node_type or "subAgentNode" in node_type:
+                    continue
+                if self._is_unused_entry_source(source_id):
                     continue
                 source_nodes.append(source_id)
 
@@ -499,7 +512,11 @@ class BaseNode(ABC):
         """
         all_target_edges = self.get_state().target_edges
         target_edges = all_target_edges.get(self.node_id, [])
-        input_edges = [edge for edge in target_edges if edge.get("targetHandle", "") == "input"]
+        input_edges = [
+            edge
+            for edge in target_edges
+            if edge.get("targetHandle", "") == "input" and not self._is_unused_entry_source(edge["source"])
+        ]
         if not input_edges:
             logger.debug("No target edges found for node %s", self.node_id)
             return None

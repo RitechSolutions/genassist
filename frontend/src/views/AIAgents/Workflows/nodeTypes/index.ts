@@ -1,5 +1,7 @@
 import nodeRegistry from "../registry/nodeRegistry";
 import ChatInputNode from "./chat/chatInputNode";
+import WebhookTriggerNode from "./triggers/webhookTriggerNode";
+import { WEBHOOK_TRIGGER_NODE_DEFINITION } from "./triggers/definitions";
 import LLMModelNode from "./llm/modelNode";
 import APIToolNode from "./tools/apiToolNode";
 import WebScraperNode from "./tools/webScraperNode";
@@ -125,6 +127,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(WHATSAPP_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(CHAT_INPUT_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(WEBHOOK_TRIGGER_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(SLACK_OUTPUT_NODE_DEFINITION);
 
@@ -187,6 +190,7 @@ export const registerAllNodeTypes = () => {
 export const getNodeTypes = () => {
   return {
     chatInputNode: ChatInputNode,
+    webhookTriggerNode: WebhookTriggerNode,
     llmModelNode: LLMModelNode,
     templateNode: TemplateNode,
     chatOutputNode: ChatOutputNode,

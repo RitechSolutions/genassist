@@ -12,6 +12,7 @@ describe("NEW_NODE_TYPES", () => {
         "htmlToImageNode",
         "salesforceCaseNode",
         "subAgentNode",
+        "webhookTriggerNode",
       ])
     );
   });

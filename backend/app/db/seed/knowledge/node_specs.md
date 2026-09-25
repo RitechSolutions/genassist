@@ -219,6 +219,7 @@ These rules are **non-negotiable**. Violating any of them produces a broken work
 
 ### Node Config Rules
 - Every chat workflow MUST start with `chatInputNode` and end with `chatOutputNode`.
+- A workflow started by an external HTTP event uses `webhookTriggerNode` as its entry point instead of (or in addition to) `chatInputNode`.
 - Agent and LLM nodes MUST have `"userPrompt": "{{session.message}}"`. NEVER set it to null, empty, or literal text.
 - Use `{{session.message}}` for tool/KB query fields.
 - Write real, specific `systemPrompt` values. Never use generic placeholders like "You are a helpful assistant."
@@ -283,6 +284,29 @@ Sub-agent delegation — single edge from child to parent:
 | input | target | left | any |
 
 **Config:** None (auto-configured).
+
+---
+
+### webhookTriggerNode — Webhook Trigger
+**Category:** I/O
+**Purpose:** Entry point for workflows started by an external system through an inbound HTTP request. Each node gets its own authenticated endpoint (bearer token or HMAC signature). The delivery reaches downstream nodes as `webhook` (`{method, headers, query, body}`), plus any mapped fields; `message` is set only when a message path is configured. A workflow may contain both a `chatInputNode` and a `webhookTriggerNode`; each run starts from exactly one of them.
+**Use cases:** Order created in an e-commerce platform, CRM ticket/account changes, monitoring alerts, form submissions, any system without a dedicated connector.
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| output | source | right | any |
+
+**Optional config:**
+| Field | Type | Default | Description |
+|---|---|---|---|
+| name | text | — | Display name |
+| messagePath | text | — | Dotted path (e.g. `body.message`) whose value becomes the workflow `message` |
+| threadIdPath | text | — | Path whose value groups deliveries into one conversation thread |
+| idempotencyPath | text | — | Path to a unique delivery id; an `Idempotency-Key` header is always honoured |
+| samplePayload | textarea | — | JSON used by the Test button and mapping preview |
+
+Downstream prompts reference the delivery with `{{session.webhook.body.<field>}}` (or `{{session.message}}` when a message path is set). Endpoint settings (URL, secret, method, auth mode, rate limit) are managed in the node's dialog and are not part of the workflow JSON.
 
 ---
 
