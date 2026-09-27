@@ -1,9 +1,15 @@
 import json
 import io
+import faulthandler
+import functools
+import math
 import multiprocessing
 import os
+import pickle
 import re
+import sys
 from contextlib import redirect_stdout, redirect_stderr
+from multiprocessing.connection import Connection, wait as wait_readable
 from typing import Callable, Dict, Any, List, Union
 import logging
 import asyncio
@@ -18,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 # Maximum wall-clock seconds for user-supplied Python code execution.
 _EXEC_TIMEOUT_SECONDS = 120
+_EXIT_GRACE_SECONDS = 5
+_MAX_RESULT_BYTES = 32 * 1024 * 1024
+# Imported once by the fork server so script children start with them loaded
+_FORKSERVER_PRELOAD = ["__main__", "numpy", "pandas", "app.modules.workflow.utils"]
 
 
 def add_executable_function(code: str) -> str:
@@ -43,11 +53,46 @@ def add_executable_function(code: str) -> str:
     return code + "\n" + "\n".join(template_lines)
 
 
+def _error_dict(message: str) -> Dict[str, Any]:
+    return {"error": message, "traceback": "", "output": "", "errors": ""}
+
+
+def _encode_result(payload: Dict[str, Any], limit: int = _MAX_RESULT_BYTES) -> bytes:
+    try:
+        data = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception as exc:
+        return pickle.dumps(_error_dict(f"Result could not be serialized: {exc}"))
+    if len(data) > limit:
+        mib = 1024 * 1024
+        return pickle.dumps(
+            _error_dict(f"Result too large: {math.ceil(len(data) / mib)} MiB exceeds the {limit // mib} MiB limit")
+        )
+    return data
+
+
+def _unpicklable_keys(params: Dict[str, Any]) -> List[str]:
+    keys = []
+    for key, value in params.items():
+        try:
+            pickle.dumps(value)
+        except Exception:
+            keys.append(str(key))
+    return keys
+
+
+@functools.lru_cache(maxsize=1)
+def _script_context() -> multiprocessing.context.BaseContext:
+    """Children fork from a single-threaded server"""
+    ctx = multiprocessing.get_context("forkserver")
+    ctx.set_forkserver_preload(_FORKSERVER_PRELOAD)
+    return ctx
+
+
 def _subprocess_worker(
     code: str,
     params: Dict[str, Any],
     wrap_code: bool,
-    result_queue: "multiprocessing.Queue[Dict[str, Any]]",
+    conn: Connection,
 ) -> None:
     """Worker that runs inside an isolated subprocess.
 
@@ -72,14 +117,22 @@ def _subprocess_worker(
 
     stdout_buffer = io.StringIO()
     stderr_buffer = io.StringIO()
+    payload = None
 
     try:
         executable = add_executable_function(code) if wrap_code else code
         validate_code_ast(executable)
         namespace = make_sandboxed_namespace(params, logging.getLogger(__name__))
 
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
-            exec(executable, namespace)  # noqa: S102
+        try:
+            faulthandler.dump_traceback_later(_EXEC_TIMEOUT_SECONDS - 5, file=sys.__stderr__)
+        except Exception:
+            pass  # diagnostics only
+        try:
+            with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer):
+                exec(executable, namespace)  # noqa: S102
+        finally:
+            faulthandler.cancel_dump_traceback_later()
 
         result = namespace.get("result")
         global_errors = namespace.get("errors")
@@ -87,29 +140,33 @@ def _subprocess_worker(
         errors = stderr_buffer.getvalue()
         if global_errors:
             errors = errors + "\nGlobal errors: " + str(global_errors)
-        result_queue.put({"result": result, "output": output, "errors": errors})
+        payload = {"result": result, "output": output, "errors": errors}
 
     except SandboxViolation as sv:
-        result_queue.put({
+        payload = {
             "error": f"Sandbox violation: {sv}",
             "traceback": "",
             "output": stdout_buffer.getvalue(),
             "errors": stderr_buffer.getvalue(),
-        })
+        }
     except SyntaxError as se:
-        result_queue.put({
+        payload = {
             "error": f"Syntax error: {se}",
             "traceback": "",
             "output": stdout_buffer.getvalue(),
             "errors": stderr_buffer.getvalue(),
-        })
+        }
     except Exception as e:
-        result_queue.put({
+        payload = {
             "error": str(e),
             "traceback": "",
             "output": stdout_buffer.getvalue(),
             "errors": stderr_buffer.getvalue(),
-        })
+        }
+    finally:
+        if payload is not None:
+            conn.send_bytes(_encode_result(payload))
+        conn.close()
 
 
 def _execute_python_code_sync(
@@ -121,43 +178,54 @@ def _execute_python_code_sync(
     running the AST/builtins sandbox. Kills the process if it exceeds
     _EXEC_TIMEOUT_SECONDS.
     """
-    # fork (not spawn) so the child inherits already-loaded modules.
-    # spawn re-imports everything from scratch, causing 2-5s overhead on macOS
-    # and unnecessary work on Linux. fork is the Linux default; making it
-    # explicit also fixes the slowness on macOS (Python ≥3.12 defaults to spawn).
-    ctx = multiprocessing.get_context("fork")
-    result_queue = ctx.Queue()
+    ctx = _script_context()
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
     process = ctx.Process(
         target=_subprocess_worker,
-        args=(code, params, wrap_code, result_queue),
+        args=(code, params, wrap_code, child_conn),
         daemon=True,
     )
-    process.start()
-    process.join(timeout=_EXEC_TIMEOUT_SECONDS)
-
-    if process.is_alive():
-        process.kill()
-        process.join()
-        logger.warning(
-            "User code execution timed out after %ds — subprocess killed",
-            _EXEC_TIMEOUT_SECONDS,
-        )
-        return {
-            "error": f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds",
-            "traceback": "",
-            "output": "",
-            "errors": "",
-        }
-
+    started = False
     try:
-        return result_queue.get_nowait()
-    except Exception:
-        return {
-            "error": "Subprocess exited without returning a result",
-            "traceback": "",
-            "output": "",
-            "errors": "",
-        }
+        try:
+            process.start()
+            started = True
+        except (TypeError, pickle.PicklingError, AttributeError) as exc:
+            keys = _unpicklable_keys(params)
+            logger.warning("Script params cannot be sent to the sandbox: %s (%s)", keys, exc)
+            return _error_dict(f"Script params cannot be sent to the sandbox: {', '.join(keys) or exc}")
+        child_conn.close()  # only the child may hold the write end, or EOF never arrives
+
+        ready = wait_readable([parent_conn, process.sentinel], timeout=_EXEC_TIMEOUT_SECONDS)
+        if not ready:
+            process.kill()
+            logger.warning(
+                "User code execution timed out after %ds — subprocess killed",
+                _EXEC_TIMEOUT_SECONDS,
+            )
+            return _error_dict(f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds")
+
+        if parent_conn in ready:
+            try:
+                return pickle.loads(parent_conn.recv_bytes(maxlength=_MAX_RESULT_BYTES))
+            except (EOFError, OSError):
+                pass  # exited without sending, killed mid-send, or over the size cap
+            except Exception as exc:
+                logger.warning("Script result could not be decoded: %s", type(exc).__name__)
+                return _error_dict(f"Script result could not be decoded: {type(exc).__name__}")
+        else:
+            process.kill()  # only the sentinel fired: the fork server died while the child still runs
+        process.join(timeout=_EXIT_GRACE_SECONDS)
+        logger.warning("User code subprocess exited with code %s without returning a result", process.exitcode)
+        return _error_dict("Subprocess exited without returning a result")
+    finally:
+        parent_conn.close()
+        child_conn.close()
+        if started:
+            process.join(timeout=_EXIT_GRACE_SECONDS)
+            if process.is_alive():
+                process.kill()
+                process.join()
 
 
 def sanitize_python_code(code: str) -> str:
@@ -189,20 +257,12 @@ async def execute_python_code(
     """Execute user Python code asynchronously. Subprocess isolation handles timeout."""
     try:
         code = sanitize_python_code(code)
-        loop = asyncio.get_event_loop()
         # _execute_python_code_sync blocks for at most _EXEC_TIMEOUT_SECONDS
-        # (subprocess is killed if it exceeds that), so run_in_executor won't hang.
-        return await loop.run_in_executor(
-            None, _execute_python_code_sync, code, params, wrap_code
-        )
+        # (subprocess is killed if it exceeds that), so to_thread won't hang.
+        return await asyncio.to_thread(_execute_python_code_sync, code, params, wrap_code)
     except Exception as e:
         logger.error("Error in async Python code execution: %s", type(e).__name__)
-        return {
-            "error": str(e),
-            "traceback": "",
-            "output": "",
-            "errors": "",
-        }
+        return _error_dict(str(e))
 
 
 def generate_python_function_template(parameters_schema: Dict[str, Any]) -> str:
