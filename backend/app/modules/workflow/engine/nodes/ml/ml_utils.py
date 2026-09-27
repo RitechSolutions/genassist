@@ -512,7 +512,7 @@ async def execute_and_process_preprocessing_code(
     response = await execute_python_code(python_code, params, wrap_code=True)
 
     # Check for errors in response
-    errors = response.get("errors", None)
+    errors = response.get("error") or response.get("errors")
     if errors and errors != "":
         if raise_on_error:
             raise AppException(

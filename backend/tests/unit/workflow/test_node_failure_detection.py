@@ -14,6 +14,8 @@ Covers:
 
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import (
     NODE_FAILURE_MARKER,
@@ -142,6 +144,37 @@ async def test_execute_on_raise_marks_failed_and_returns_detectable_envelope():
     assert "kaboom" in st.node_execution_status["n1"]["error"]
     # A caller using this node as a tool must be able to detect the failure.
     assert is_node_failure(returned) is not None
+
+
+@pytest.mark.asyncio
+async def test_execute_on_app_exception_appends_redacted_detail():
+    st = _bare_state()
+
+    def _boom():
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail="Error during model prediction: password=hunter2 Unicode-4 is not supported",
+        )
+
+    await _FakeNode("n1", st, _boom).execute()
+
+    error = st.node_execution_status["n1"]["error"]
+    assert error.startswith("Error executing node n1: error_500 - ")
+    assert "Unicode-4 is not supported" in error
+    assert "password=[REDACTED]" in error
+    assert "hunter2" not in error
+
+
+@pytest.mark.asyncio
+async def test_execute_on_app_exception_without_detail_is_unchanged():
+    st = _bare_state()
+
+    def _boom():
+        raise AppException(error_key=ErrorKey.INTERNAL_ERROR)
+
+    await _FakeNode("n1", st, _boom).execute()
+
+    assert st.node_execution_status["n1"]["error"] == "Error executing node n1: error_500"
 
 
 @pytest.mark.asyncio

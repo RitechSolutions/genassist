@@ -25,6 +25,7 @@ ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
 
 _BOOL_TRUE = frozenset({"true"})
 _BOOL_FALSE = frozenset({"false"})
+_MAX_REPORTED_FEATURES = 5
 
 
 def convert_value(val: Any) -> Any:
@@ -110,6 +111,37 @@ def _normalize_inference_inputs(inference_inputs: Dict[str, Any]) -> Dict[str, L
             continue
         normalized[key] = value if isinstance(value, list) else [value]
     return normalized
+
+
+def _is_unusable_value(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().lower() == "null"
+
+
+def _validate_inference_values(
+    normalized_inputs: Dict[str, List[Any]],
+    feature_names: Sequence[str],
+    error: Exception,
+) -> None:
+    """After a failed prediction, names the model features that received no upstream value"""
+    if not normalized_inputs:
+        detail = "No inference inputs were provided, map at least one feature value"
+    else:
+        offending = [
+            (name, next(v for v in normalized_inputs[name] if _is_unusable_value(v)))
+            for name in feature_names
+            if name in normalized_inputs and any(_is_unusable_value(v) for v in normalized_inputs[name])
+        ]
+        if not offending:
+            return
+        shown = ", ".join(f"{name}={value!r}" for name, value in offending[:_MAX_REPORTED_FEATURES])
+        detail = f"Unusable inference input for {len(offending)} feature(s): {shown}"
+        if len(offending) > _MAX_REPORTED_FEATURES:
+            detail += f" (+{len(offending) - _MAX_REPORTED_FEATURES} more)"
+        detail += ". A value of 'null' means the upstream node did not produce that field"
+    raise AppException(
+        error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+        error_detail=f"{detail}. Error during model prediction: {error}",
+    ) from error
 
 
 def _infer_batch_size(normalized_inputs: Dict[str, List[Any]]) -> int:
@@ -362,6 +394,7 @@ class MLModelInferenceNode(BaseNode):
             except AppException:
                 raise
             except Exception as e:
+                _validate_inference_values(normalized_inputs, feature_names, e)
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Error during model prediction: {e}"
                 ) from e

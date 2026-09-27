@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Literal, Optional
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
+from app.core.exceptions.exception_classes import AppException
 from app.core.observability.otel import (
     is_otel_runtime_enabled,
     record_workflow_node_duration,
@@ -455,10 +456,13 @@ class BaseNode(ABC):
                     return result
 
                 except Exception as e:
+                    detail = ""
+                    if isinstance(e, AppException) and e.error_detail:
+                        detail = " - " + truncate_for_log(redact_sensitive_substrings(str(e.error_detail)), 500)
                     if span is not None and span.is_recording():
                         span.record_exception(e)
-                        span.set_status(Status(StatusCode.ERROR, str(e)))
-                    error_msg = f"Error executing node {self.node_id}: {str(e)}"
+                        span.set_status(Status(StatusCode.ERROR, str(e) + detail))
+                    error_msg = f"Error executing node {self.node_id}: {str(e)}{detail}"
                     logger.error(error_msg, exc_info=True)
                     self.complete_execution(error=error_msg)
                     # Return a detectable failure envelope (not None) so a caller using

@@ -39,6 +39,12 @@ class DataMapperNode(BaseNode):
         try:
             # Execute the Python script with resolved params from code_params
             response = await execute_python_code(python_script, params=self.code_params or {})
+            if "error" in response:
+                return node_failure(
+                    f"Data mapper script failed: {response['error']}",
+                    details={"input": python_script},
+                    output=response,
+                )
 
             return response
 
