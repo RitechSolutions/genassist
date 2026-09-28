@@ -338,8 +338,8 @@ class LLMProvider:
         # so a top-level import here would be circular (see
         # genassist-outage-report-2026-09-03.md and the release-point-#3 fix
         # for the same class of bug).
-        from app.core.utils.db_connection_utils import release_db_connection
-        await release_db_connection(
+        from app.core.utils.db_connection_utils import release_idle_connection
+        await release_idle_connection(
             context=f"llm provider {getattr(llm_provider, 'id', None)}"
         )
 
