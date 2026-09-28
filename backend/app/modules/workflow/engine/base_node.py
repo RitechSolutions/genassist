@@ -53,6 +53,7 @@ class BaseNode(ABC):
         self.execution_start_time: Optional[float] = None
         self.execution_end_time: Optional[float] = None
         self.code_params: Dict[str, Any] = {}
+        self.direct_input: Any = None
 
         # Validate configuration
         self._validate_config()
@@ -63,6 +64,38 @@ class BaseNode(ABC):
             raise ValueError("Node ID is required")
         if not self.node_config:
             logger.warning(f"Node {self.node_id} has no configuration")
+
+    def _unresolved_config_fields(self) -> set[str]:
+        """Return config fields a subclass must resolve during processing."""
+        return set()
+
+    def _resolve_config_data(
+        self,
+        source_output: Any,
+        direct_input: Any,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Resolve config variables while preserving subclass-owned fields."""
+        config_data = self.node_config.get("data", {})
+        unresolved_fields = self._unresolved_config_fields()
+        config_to_resolve = {
+            key: value
+            for key, value in config_data.items()
+            if key not in unresolved_fields
+        }
+        resolved_config_data, replacements = replace_config_vars(
+            config=config_to_resolve,
+            state=self.state,
+            source_output=source_output,
+            direct_input=direct_input,
+        )
+        resolved_config_data.update(
+            {
+                key: config_data[key]
+                for key in unresolved_fields
+                if key in config_data
+            }
+        )
+        return resolved_config_data, replacements
 
     def get_name(self) -> str:
         """Get the node name from configuration."""
@@ -358,16 +391,14 @@ class BaseNode(ABC):
                 try:
                     # Start execution tracking
                     self.start_execution()
+                    self.direct_input = direct_input
                     # self.set_node_input(input_data)
 
                     # Resolve configuration template variables
                     source_output = self.get_input_from_source()
-                    config_data = self.node_config.get("data", {})
-                    resolved_config_data, replacements = replace_config_vars(
-                        config=config_data,
-                        state=self.state,
-                        source_output=source_output,
-                        direct_input=direct_input,
+                    resolved_config_data, replacements = self._resolve_config_data(
+                        source_output,
+                        direct_input,
                     )
 
                     # Log replacements for debugging

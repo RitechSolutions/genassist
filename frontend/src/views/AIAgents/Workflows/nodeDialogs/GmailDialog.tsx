@@ -206,11 +206,11 @@ export const GmailDialog: React.FC<GmailDialogProps> = (props) => {
               <Label htmlFor="body">Body</Label>
               <DraggableTextArea
                 id="body"
-                rows={6}
+                size="body"
                 value={values.body}
                 onChange={(e) => setField("body", e.target.value)}
                 placeholder="Enter message content"
-                className="w-full resize-none"
+                className="w-full"
               />
             </div>
           </div>

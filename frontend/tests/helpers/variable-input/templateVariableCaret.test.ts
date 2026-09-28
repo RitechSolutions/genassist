@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   snapCaretOutOfVariable,
   snapToVariableBoundary,
+  getVariableStepTarget,
   removeVariableAtCursor,
   deleteSelectionWithVariables,
   findVariableAtPosition,
@@ -53,6 +54,53 @@ describe("snapToVariableBoundary", () => {
   it("leaves a position outside any variable unchanged", () => {
     expect(snapToVariableBoundary(VALUE, 0, true)).toBe(0);
     expect(snapToVariableBoundary(VALUE, 8, false)).toBe(8);
+  });
+});
+
+describe("getVariableStepTarget", () => {
+  it("jumps to the front of the variable when stepping left off its trailing edge", () => {
+    expect(getVariableStepTarget(VALUE, 7, "backward")).toBe(2);
+  });
+
+  it("jumps past the variable when stepping right off its leading edge", () => {
+    expect(getVariableStepTarget(VALUE, 2, "forward")).toBe(7);
+  });
+
+  it("frees a caret stranded inside a variable in either direction", () => {
+    expect(getVariableStepTarget(VALUE, 4, "backward")).toBe(2);
+    expect(getVariableStepTarget(VALUE, 4, "forward")).toBe(7);
+  });
+
+  it("returns null when no variable is crossed, so the browser steps natively", () => {
+    expect(getVariableStepTarget(VALUE, 2, "backward")).toBeNull();
+    expect(getVariableStepTarget(VALUE, 7, "forward")).toBeNull();
+    expect(getVariableStepTarget(VALUE, 0, "backward")).toBeNull();
+    expect(getVariableStepTarget(VALUE, 1, "forward")).toBeNull();
+    expect(getVariableStepTarget(VALUE, 8, "backward")).toBeNull();
+    expect(getVariableStepTarget("plain", 2, "backward")).toBeNull();
+    expect(getVariableStepTarget("plain", 2, "forward")).toBeNull();
+  });
+
+  it("keeps the shared boundary between adjacent variables reachable", () => {
+    // "{{a}}{{b}}": ranges [0,5] and [5,10].
+    const value = "{{a}}{{b}}";
+    expect(getVariableStepTarget(value, 5, "backward")).toBe(0);
+    expect(getVariableStepTarget(value, 5, "forward")).toBe(10);
+    expect(getVariableStepTarget(value, 10, "backward")).toBe(5);
+  });
+
+  it("walks out of the field one block at a time without ever landing inside", () => {
+    const stops = [];
+    let pos = VALUE.length;
+    while (pos > 0) {
+      const target = getVariableStepTarget(VALUE, pos, "backward");
+      pos = target !== null ? target : pos - 1;
+      stops.push(pos);
+    }
+    expect(stops).toEqual([8, 7, 2, 1, 0]);
+    for (const stop of stops) {
+      expect(findVariableAtPosition(VALUE, stop)).toBeUndefined();
+    }
   });
 });
 

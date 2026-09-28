@@ -108,6 +108,17 @@ def test_route_observations_read_the_branch_each_router_took():
     ]
 
 
+def test_route_observations_include_switch_nodes():
+    trace = {"nodes_by_type": {
+        "routerNode": [{"id": "router-1", "label": "Escalation Router", "output": {"route": "true"}}],
+        "switchNode": [{"id": "switch-1", "label": "Intent Switch", "output": {"route": "case_2"}}],
+    }}
+    assert route_observations(trace) == [
+        {"id": "router-1", "label": "Escalation Router", "route": "true"},
+        {"id": "switch-1", "label": "Intent Switch", "route": "case_2"},
+    ]
+
+
 def test_action_observations_keep_status_and_error():
     trace = {"nodes": {"n1": {"id": "n1", "label": "Create Ticket", "type": "httpNode",
                              "status": "failed", "error": "boom", "output": {"big": "payload"}}}}

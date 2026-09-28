@@ -40,6 +40,9 @@ from app.services.rule_scopes import (
 )
 
 ROUTER_NODE_TYPE = "routerNode"
+SWITCH_NODE_TYPE = "switchNode"
+# Node types whose output records the branch they took as ``route``.
+ROUTING_NODE_TYPES = (ROUTER_NODE_TYPE, SWITCH_NODE_TYPE)
 
 
 # ---- schema ----------------------------------------------------------------
@@ -161,8 +164,9 @@ def _rule_dicts(
 
 
 def route_observations(trace: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """The router nodes one turn executed, with the branch each one took."""
-    routers = ((trace or {}).get("nodes_by_type") or {}).get(ROUTER_NODE_TYPE) or []
+    """The routing nodes (routers and switches) one turn executed, with the branch each took."""
+    nodes_by_type = (trace or {}).get("nodes_by_type") or {}
+    routers = [router for node_type in ROUTING_NODE_TYPES for router in nodes_by_type.get(node_type) or []]
     observations = []
     for router in routers:
         output = router.get("output")

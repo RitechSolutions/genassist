@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { TrainModelNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
+import { RichTextarea } from "@/components/richTextarea";
 import { Label } from "@/components/label";
 import {
   Select,
@@ -391,13 +392,14 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                   </Button>
                 </div>
                 <div className="space-y-2">
-                  <RichInput
+                  <RichTextarea
+                    size="hint"
                     value={values.featureColumns.join(", ")}
                     onChange={(e) =>
                       handleCommaSeparatedInputChange(e.target.value)
                     }
                     placeholder="Enter column names separated by commas (e.g., col1, col2, col3)"
-                    className="w-full"
+                    className="w-full font-mono text-sm"
                   />
                   {values.featureColumns.length > 0 && (
                     <>

@@ -7,6 +7,7 @@ import { getHandlerPosition } from "../../utils/helpers";
 interface HandleTooltipProps extends HandleProps {
   nodeId: string;
   compatibility?: NodeCompatibility;
+  label?: string;
   style?: React.CSSProperties;
 }
 
@@ -30,8 +31,10 @@ const getCompatibilityColor = (compatibility?: string) => {
 const getCompatibilityDescription = (
   compatibility?: string,
   type?: string,
-  nodeId?: string
+  nodeId?: string,
+  label?: string
 ) => {
+  if (label) return `${type === "source" ? "Output" : "Input"} ${label}`;
   try {
     return (
       (type === "source" ? "Output" : "Input") +
@@ -66,6 +69,7 @@ const HandlersRendererComponent: React.FC<{
           id={handler.id}
           nodeId={id}
           compatibility={handler.compatibility}
+          label={handler.label}
           style={{ top: getHandlerPosition(index, rightHandler.length) }}
         />
       ))}
@@ -77,6 +81,7 @@ const HandlersRendererComponent: React.FC<{
           position={handler.position as Position}
           nodeId={id}
           compatibility={handler.compatibility}
+          label={handler.label}
           style={{ top: getHandlerPosition(index, leftHandler.length) }}
         />
       ))}
@@ -88,6 +93,7 @@ const HandlersRendererComponent: React.FC<{
           id={handler.id}
           nodeId={id}
           compatibility={handler.compatibility}
+          label={handler.label}
           style={{ left: getHandlerPosition(index, topHandler.length) }}
         />
       ))}
@@ -99,6 +105,7 @@ const HandlersRendererComponent: React.FC<{
           id={handler.id}
           nodeId={id}
           compatibility={handler.compatibility}
+          label={handler.label}
           style={{ left: getHandlerPosition(index, bottomHandler.length) }}
         />
       ))}
@@ -110,6 +117,7 @@ export const HandlersRenderer = React.memo(HandlersRendererComponent);
 
 const HandleTooltipComponent: React.FC<HandleTooltipProps> = ({
   compatibility,
+  label,
   nodeId,
   style,
   type,
@@ -154,7 +162,7 @@ const HandleTooltipComponent: React.FC<HandleTooltipProps> = ({
           <Badge style={{ background: getCompatibilityColor(compatibility) }}>
             {compatibility}
           </Badge>
-          {getCompatibilityDescription(compatibility, type, handleProps.id)}
+          {getCompatibilityDescription(compatibility, type, handleProps.id, label)}
         </div>
       )}
     </>

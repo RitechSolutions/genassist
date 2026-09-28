@@ -157,6 +157,18 @@ class _DynamicFormState extends State<DynamicForm> {
           onSaved: (value) => _values[field.name] = value ?? '',
         );
 
+      case FormFieldType.textarea:
+        return TextFormField(
+          decoration: _inputDecoration(label, field.placeholder),
+          style: _textStyle(),
+          minLines: 3,
+          maxLines: 6,
+          keyboardType: TextInputType.multiline,
+          textInputAction: TextInputAction.newline,
+          validator: field.required ? _requiredValidator(label) : null,
+          onSaved: (value) => _values[field.name] = value ?? '',
+        );
+
       case FormFieldType.number:
         return TextFormField(
           decoration: _inputDecoration(label, field.placeholder),

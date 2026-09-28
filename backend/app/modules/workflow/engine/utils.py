@@ -16,6 +16,23 @@ logger = logging.getLogger(__name__)
 # JSON fields whose values are treated as executable code (Python, etc.)
 CODE_FIELD_NAMES = ["code", "pythonScript", "pythonCode"]
 
+PARAM_STYLE_NAMED = "named"
+PARAM_STYLE_PYFORMAT = "pyformat"
+_SUPPORTED_PARAM_STYLES = {PARAM_STYLE_NAMED, PARAM_STYLE_PYFORMAT}
+_VARIABLE_RE = re.compile(r"{{([^\s{}]+)}}")
+
+
+class QueryVariableError(ValueError):
+    """A workflow variable appears in an unsupported SQL context."""
+
+
+class BoundParameters(dict[str, Any]):
+    """Parameter values plus their user-facing workflow variable names."""
+
+    def __init__(self):
+        super().__init__()
+        self.variable_names: dict[str, str] = {}
+
 
 def flatten_dict(data: dict, prefix: str = "", separator: str = ".") -> dict:
     """Flatten a nested dictionary using dot notation
@@ -55,6 +72,215 @@ def has_volatile_template_vars(template: Any) -> bool:
     if not isinstance(template, str) or not template:
         return False
     return bool(find_all_vars(template))
+
+
+def _unique_vars(template: str) -> list[str]:
+    """Return unique workflow variable tokens while preserving their order."""
+    return list(dict.fromkeys(find_all_vars(template)))
+
+
+def bind_config_vars(
+    template: str,
+    state: WorkflowState,
+    source_output: Any,
+    direct_input: Optional[dict] = None,
+    param_style: str = PARAM_STYLE_NAMED,
+    db_type: str = "",
+) -> tuple[str, BoundParameters]:
+    """Replace workflow variables with driver bind parameters.
+
+    Returns a statement and parameter dictionary that can be passed separately
+    to a database driver. A variable wrapped in a single pair of SQL quotes is
+    replaced together with those quotes so the resulting token remains a bind
+    parameter rather than becoming a string literal.
+    """
+    parameters = BoundParameters()
+    if not template:
+        return template, parameters
+    if param_style not in _SUPPORTED_PARAM_STYLES:
+        raise ValueError(f"Unsupported SQL parameter style: {param_style}")
+
+    direct_input = direct_input or {}
+    normalized_db_type = str(db_type).strip().lower()
+    mysql_mapping = normalized_db_type in {"mysql", "sql"}
+    parts: list[tuple[str, bool]] = []
+    bind_names: dict[str, str] = {}
+
+    def add_literal(value: str) -> None:
+        parts.append((value, False))
+
+    def add_variable(var_name: str, following_index: int) -> None:
+        bind_name = bind_names.get(var_name)
+        if bind_name is None:
+            bind_suffix = re.sub(r"[^0-9a-zA-Z_]", "_", var_name)
+            bind_name = f"wf_{len(bind_names)}_{bind_suffix}"
+            bind_names[var_name] = bind_name
+            value, _ = _resolve_variable_value(
+                var_name,
+                state,
+                source_output,
+                direct_input,
+            )
+            if value is None:
+                logger.warning(
+                    "Workflow variable %s did not resolve; bound as NULL",
+                    var_name,
+                )
+            parameters[bind_name] = value
+            parameters.variable_names[bind_name] = var_name
+
+        placeholder = f":{bind_name}" if param_style == PARAM_STYLE_NAMED else f"%({bind_name})s"
+        if template[following_index : following_index + 2] == "::":
+            placeholder = f"({placeholder})"
+        parts.append((placeholder, True))
+
+    i = 0
+    while i < len(template):
+        if template.startswith("--", i) and (
+            not mysql_mapping
+            or i + 2 >= len(template)
+            or template[i + 2].isspace()
+        ):
+            end = _sql_line_end(template, i + 2)
+            add_literal(template[i:end])
+            i = end
+            continue
+        if mysql_mapping and template[i] == "#":
+            end = _sql_line_end(template, i + 1)
+            add_literal(template[i:end])
+            i = end
+            continue
+        if template.startswith("/*", i):
+            closing = template.find("*/", i + 2)
+            end = len(template) if closing == -1 else closing + 2
+            add_literal(template[i:end])
+            i = end
+            continue
+
+        dollar_tag = _postgres_dollar_quote_at(template, i)
+        if dollar_tag:
+            closing = template.find(dollar_tag, i + len(dollar_tag))
+            end = len(template) if closing == -1 else closing + len(dollar_tag)
+            span = template[i:end]
+            if _VARIABLE_RE.search(span):
+                raise QueryVariableError(_embedded_variable_message(normalized_db_type))
+            add_literal(span)
+            i = end
+            continue
+
+        ch = template[i]
+        if ch in {"'", '"', "`"}:
+            end, closed = _sql_quoted_end(
+                template,
+                i,
+                ch,
+                backslash_escapes=mysql_mapping,
+            )
+            span = template[i:end]
+            content = span[1:-1] if closed else span[1:]
+            matches = list(_VARIABLE_RE.finditer(content))
+            if not matches:
+                add_literal(span)
+            else:
+                exact = _VARIABLE_RE.fullmatch(content)
+                if ch == "'" and exact:
+                    add_variable(exact.group(1), end)
+                elif ch == '"' and exact and normalized_db_type in {"mysql", "sql"}:
+                    add_variable(exact.group(1), end)
+                elif ch in {'"', "`"}:
+                    raise QueryVariableError(
+                        "Workflow variables can only supply values, not table or "
+                        "column names. Put the name directly in the query."
+                    )
+                else:
+                    raise QueryVariableError(_embedded_variable_message(normalized_db_type))
+            i = end
+            continue
+
+        if ch == "[" and normalized_db_type == "mssql":
+            end = _sql_bracket_identifier_end(template, i)
+            span = template[i:end]
+            if _VARIABLE_RE.search(span):
+                raise QueryVariableError(
+                    "Workflow variables can only supply values, not table or "
+                    "column names. Put the name directly in the query."
+                )
+            add_literal(span)
+            i = end
+            continue
+
+        match = _VARIABLE_RE.match(template, i)
+        if match:
+            add_variable(match.group(1), match.end())
+            i = match.end()
+            continue
+
+        add_literal(ch)
+        i += 1
+
+    if param_style == PARAM_STYLE_PYFORMAT and parameters:
+        statement = "".join(value if is_bind else value.replace("%", "%%") for value, is_bind in parts)
+    else:
+        statement = "".join(value for value, _ in parts)
+    return statement, parameters
+
+
+def _sql_line_end(template: str, start: int) -> int:
+    newline_positions = [
+        position for position in (template.find("\n", start), template.find("\r", start)) if position != -1
+    ]
+    return min(newline_positions) if newline_positions else len(template)
+
+
+def _sql_quoted_end(
+    template: str,
+    start: int,
+    quote: str,
+    *,
+    backslash_escapes: bool,
+) -> tuple[int, bool]:
+    i = start + 1
+    while i < len(template):
+        if backslash_escapes and template[i] == "\\" and i + 1 < len(template):
+            i += 2
+            continue
+        if template[i] == quote:
+            if i + 1 < len(template) and template[i + 1] == quote:
+                i += 2
+                continue
+            return i + 1, True
+        i += 1
+    return len(template), False
+
+
+def _sql_bracket_identifier_end(template: str, start: int) -> int:
+    i = start + 1
+    while i < len(template):
+        if template[i] == "]":
+            if i + 1 < len(template) and template[i + 1] == "]":
+                i += 2
+                continue
+            return i + 1
+        i += 1
+    return len(template)
+
+
+def _postgres_dollar_quote_at(template: str, start: int) -> str | None:
+    if template[start] != "$":
+        return None
+    match = re.match(r"\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$", template[start:])
+    return match.group(0) if match else None
+
+
+def _embedded_variable_message(db_type: str) -> str:
+    if db_type in {"mysql", "sql", "mssql"}:
+        example = "LIKE CONCAT('%', {{search}}, '%')"
+    else:
+        example = "LIKE '%' || {{search}} || '%'"
+    return (
+        "Workflow variables must be complete SQL values, not part of a quoted "
+        f"literal. Use database concatenation instead, for example: {example}."
+    )
 
 
 def find_code_param_vars(code_string: str) -> list:
@@ -540,13 +766,7 @@ def replace_config_vars(
     if not variables:
         return config, {}
 
-    # Deduplicate variable patterns while preserving order
-    seen: set[str] = set()
-    unique_vars: list[str] = []
-    for vp in variables:
-        if vp not in seen:
-            seen.add(vp)
-            unique_vars.append(vp)
+    unique_vars = _unique_vars(string_config)
 
     # Phase 1: resolve all variables and compute their encoded replacements.
     # Context detection uses the *original* string so earlier replacements

@@ -190,7 +190,7 @@ export const JsonInput: React.FC<JsonInputProps> = ({
   onChange,
   onValidChange,
   placeholder = '{\n  "key": "value"\n}',
-  rows = 5,
+  rows = 8,
   className,
   disabled = false,
   allowEmpty = false,
@@ -340,7 +340,7 @@ export const JsonInput: React.FC<JsonInputProps> = ({
         {/* Line numbers + Editor area */}
         <div className="flex">
           {/* Line numbers gutter */}
-          {rows > 3 && (
+          {rows >= 3 && (
             <div
               className="flex-shrink-0 bg-gray-100 border-r border-gray-200 text-right select-none px-2 py-3"
               style={{ minWidth: "2.5rem" }}
@@ -390,7 +390,7 @@ export const JsonInput: React.FC<JsonInputProps> = ({
               disabled={disabled}
               spellCheck={false}
               className={cn(
-                "w-full bg-gray-50/80 p-3 text-sm font-mono leading-5 resize-none outline-none",
+                "w-full bg-gray-50/80 p-3 text-sm font-mono leading-5 resize-y outline-none",
                 "text-transparent caret-gray-800 selection:bg-blue-200 selection:text-transparent",
                 disabled && "bg-gray-100 cursor-not-allowed"
               )}

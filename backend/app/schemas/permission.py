@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+from app.core.permissions.constants import is_admin_only_permission
 
 
 class PermissionBase(BaseModel):
@@ -37,6 +39,12 @@ class PermissionRead(PermissionBase):
     is_active: Optional[int] = None
     updated_at: Optional[datetime] = None
     description: Optional[str] = None
+
+    @computed_field
+    @property
+    def is_admin_only(self) -> bool:
+        """True for permissions only the built-in admin role may hold."""
+        return is_admin_only_permission(self.name)
 
     model_config = ConfigDict(
         from_attributes = True

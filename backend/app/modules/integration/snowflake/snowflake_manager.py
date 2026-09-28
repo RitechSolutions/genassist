@@ -1,10 +1,12 @@
 # Standard library imports
 import base64
 import logging
+from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, Tuple
 
 # Local application imports
 from app.core.utils.encryption_utils import decrypt_key
+from app.core.utils.sensitive_data_utils import redact_bound_values
 from cryptography.hazmat.primitives import serialization
 
 # Third-party imports
@@ -180,7 +182,7 @@ class SnowflakeManager:
                 self.connection = None
 
     async def execute_query(
-        self, query: str, parameters: Optional[Dict[str, Any]] = None
+        self, query: str, parameters: Optional[Mapping[str, Any]] = None
     ) -> Tuple[List[Dict], Optional[str]]:
         """
         Execute a SQL query with a one-time reconnect on token-expiry (390114).
@@ -217,10 +219,12 @@ class SnowflakeManager:
                     rows = _run_once()
                     return rows, None
                 except Exception as e2:
-                    logger.error(f"Retry after token expiry failed: {e2}")
-                    return [], str(e2)
-            logger.error(f"Error executing Snowflake query: {e}")
-            return [], str(e)
+                    safe_error = redact_bound_values(e2, parameters)
+                    logger.error(f"Retry after token expiry failed: {safe_error}")
+                    return [], safe_error
+            safe_error = redact_bound_values(e, parameters)
+            logger.error(f"Error executing Snowflake query: {safe_error}")
+            return [], safe_error
 
     async def _get_schema(
         self,

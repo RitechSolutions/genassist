@@ -3,6 +3,8 @@ from ..base import FieldSchema
 from .chat_input_schema import CHAT_INPUT_NODE_DIALOG_SCHEMA
 from .chat_output_schema import CHAT_OUTPUT_NODE_DIALOG_SCHEMA
 from .router_schema import ROUTER_NODE_DIALOG_SCHEMA
+from .switch_schema import SWITCH_NODE_DIALOG_SCHEMA
+from .filter_schema import FILTER_NODE_DIALOG_SCHEMA
 from .agent_schema import AGENT_NODE_DIALOG_SCHEMA
 from .api_tool_schema import API_TOOL_NODE_DIALOG_SCHEMA
 from .open_api_schema import OPEN_API_NODE_DIALOG_SCHEMA
@@ -42,6 +44,8 @@ NODE_TYPE_LABELS: Dict[str, str] = {
     "chatInputNode": "Chat Input",
     "chatOutputNode": "Chat Output",
     "routerNode": "Router",
+    "switchNode": "Switch",
+    "filterNode": "Filter",
     "agentNode": "Agent",
     "apiToolNode": "API Tool",
     "openApiNode": "Open API",
@@ -82,6 +86,8 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "chatInputNode": CHAT_INPUT_NODE_DIALOG_SCHEMA,
     "chatOutputNode": CHAT_OUTPUT_NODE_DIALOG_SCHEMA,
     "routerNode": ROUTER_NODE_DIALOG_SCHEMA,
+    "switchNode": SWITCH_NODE_DIALOG_SCHEMA,
+    "filterNode": FILTER_NODE_DIALOG_SCHEMA,
     "agentNode": AGENT_NODE_DIALOG_SCHEMA,
     "apiToolNode": API_TOOL_NODE_DIALOG_SCHEMA,
     "openApiNode": OPEN_API_NODE_DIALOG_SCHEMA,
@@ -226,6 +232,18 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
     { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
     { "id": "output_true", "type": "source", "position": "right", "compatibility": "any" },
     { "id": "output_false", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  # Plus one `output_<case id>` source handle per configured case (derived from data.cases).
+  "switchNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output_default", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  # A single output, followed only while the filter's condition holds.
+  "filterNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
   ],
 
   "aggregatorNode": [

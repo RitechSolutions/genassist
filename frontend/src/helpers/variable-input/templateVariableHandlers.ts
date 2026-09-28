@@ -3,12 +3,13 @@ import * as React from "react"
 import {
   deleteSelectionWithVariables,
   findVariableAtPosition,
+  getVariableStepTarget,
   removeVariableAtCursor,
   snapCaretOutOfVariable,
   snapToVariableBoundary,
 } from "./templateVariableCaret"
 
-export interface VariableHandlersOptions<TEl extends HTMLInputElement | HTMLTextAreaElement> {
+interface VariableHandlersOptions<TEl extends HTMLInputElement | HTMLTextAreaElement> {
   /** Whether variable overlay/logic is active for this value */
   useOverlay: boolean
   /** Current value of the field */
@@ -19,6 +20,10 @@ export interface VariableHandlersOptions<TEl extends HTMLInputElement | HTMLText
   onFocus?: React.FocusEventHandler<TEl>
   /** Forwarded user handler */
   onMouseUp?: React.MouseEventHandler<TEl>
+  /** Forwarded user handler */
+  onKeyDown?: React.KeyboardEventHandler<TEl>
+  /** Forwarded user handler */
+  onKeyUp?: React.KeyboardEventHandler<TEl>
   /** Cursor restore after programmatic deletion */
   pendingCursorRef: React.MutableRefObject<number | null>
 }
@@ -35,65 +40,98 @@ export function createVariableFocusHandler<TEl extends HTMLInputElement | HTMLTe
 }
 
 export function createVariableKeyDownHandler<TEl extends HTMLInputElement | HTMLTextAreaElement>(
-  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value" | "onChange" | "pendingCursorRef">
+  opts: Pick<
+    VariableHandlersOptions<TEl>,
+    "useOverlay" | "value" | "onChange" | "pendingCursorRef" | "onKeyDown"
+  >
 ): React.KeyboardEventHandler<TEl> {
   return (e) => {
-    if (!opts.useOverlay || typeof opts.value !== "string") return
-    const el = e.currentTarget
-    const start = el.selectionStart ?? 0
-    const end = el.selectionEnd ?? 0
+    handleVariableKeyDown(e, opts)
+    opts.onKeyDown?.(e)
+  }
+}
 
-    if (e.key === "Backspace" || e.key === "Delete") {
-      if (start !== end) {
-        const { newValue, newCursor } = deleteSelectionWithVariables(opts.value, start, end)
-        e.preventDefault()
-        opts.pendingCursorRef.current = newCursor
-        opts.onChange?.({ target: { value: newValue } } as React.ChangeEvent<TEl>)
-        return
-      }
-      const result =
-        e.key === "Backspace"
-          ? removeVariableAtCursor(opts.value, start, true)
-          : removeVariableAtCursor(opts.value, start, false)
-      if (result) {
-        e.preventDefault()
-        opts.pendingCursorRef.current = result.newCursor
-        opts.onChange?.({ target: { value: result.newValue } } as React.ChangeEvent<TEl>)
-        return
-      }
+function handleVariableKeyDown<TEl extends HTMLInputElement | HTMLTextAreaElement>(
+  e: React.KeyboardEvent<TEl>,
+  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value" | "onChange" | "pendingCursorRef">
+): void {
+  if (!opts.useOverlay || typeof opts.value !== "string") return
+  const el = e.currentTarget
+  const start = el.selectionStart ?? 0
+  const end = el.selectionEnd ?? 0
+
+  // A variable is one atomic character: step over the whole block, never into it.
+  const stepDirection =
+    e.key === "ArrowLeft" ? "backward" : e.key === "ArrowRight" ? "forward" : null
+  const isPlainStep = !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
+  if (stepDirection && start === end && isPlainStep) {
+    const target = getVariableStepTarget(opts.value, start, stepDirection)
+    if (target !== null) {
+      e.preventDefault()
+      el.setSelectionRange(target, target)
+    }
+    return
+  }
+
+  if (e.key === "Backspace" || e.key === "Delete") {
+    if (start !== end) {
+      const { newValue, newCursor } = deleteSelectionWithVariables(opts.value, start, end)
+      e.preventDefault()
+      opts.pendingCursorRef.current = newCursor
+      opts.onChange?.({ target: { value: newValue } } as React.ChangeEvent<TEl>)
+      return
     }
 
-    if (start === end) {
-      const insideVariable = findVariableAtPosition(opts.value, start)
-      if (
-        insideVariable &&
-        e.key.length === 1 &&
-        !e.ctrlKey &&
-        !e.metaKey &&
-        !e.altKey
-      ) {
-        // Allow manual creation of {{...}} by typing braces
-        if (e.key === "{" || e.key === "}") return
-        e.preventDefault()
-        opts.pendingCursorRef.current = insideVariable.end
-        el.setSelectionRange(insideVariable.end, insideVariable.end)
-      }
+    const result =
+      e.key === "Backspace"
+        ? removeVariableAtCursor(opts.value, start, true)
+        : removeVariableAtCursor(opts.value, start, false)
+    if (result) {
+      e.preventDefault()
+      opts.pendingCursorRef.current = result.newCursor
+      opts.onChange?.({ target: { value: result.newValue } } as React.ChangeEvent<TEl>)
+      return
+    }
+  }
+
+  if (start === end) {
+    const insideVariable = findVariableAtPosition(opts.value, start)
+    if (
+      insideVariable &&
+      e.key.length === 1 &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey
+    ) {
+      // Allow manual creation of {{...}} by typing braces
+      if (e.key === "{" || e.key === "}") return
+      e.preventDefault()
+      opts.pendingCursorRef.current = insideVariable.end
+      el.setSelectionRange(insideVariable.end, insideVariable.end)
     }
   }
 }
 
 export function createVariableKeyUpHandler<TEl extends HTMLInputElement | HTMLTextAreaElement>(
-  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value">
+  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value" | "onKeyUp">
 ): React.KeyboardEventHandler<TEl> {
   return (e) => {
-    if (!opts.useOverlay || typeof opts.value !== "string") return
-    const el = e.currentTarget
-    if (el.selectionStart !== el.selectionEnd) return
-    const pos = el.selectionStart ?? 0
-    const snapped = snapCaretOutOfVariable(opts.value, pos)
-    if (snapped !== pos) {
-      el.setSelectionRange(snapped, snapped)
-    }
+    handleVariableKeyUp(e, opts)
+    opts.onKeyUp?.(e)
+  }
+}
+
+function handleVariableKeyUp<TEl extends HTMLInputElement | HTMLTextAreaElement>(
+  e: React.KeyboardEvent<TEl>,
+  opts: Pick<VariableHandlersOptions<TEl>, "useOverlay" | "value">
+): void {
+  if (!opts.useOverlay || typeof opts.value !== "string") return
+  const el = e.currentTarget
+  if (el.selectionStart !== el.selectionEnd) return
+  const pos = el.selectionStart ?? 0
+  const snapped = snapCaretOutOfVariable(opts.value, pos)
+  if (snapped !== pos) {
+    el.setSelectionRange(snapped, snapped)
   }
 }
 
@@ -102,24 +140,31 @@ export function createVariableMouseUpHandler<TEl extends HTMLInputElement | HTML
 ): React.MouseEventHandler<TEl> {
   return (e) => {
     const el = e.currentTarget
-    if (!opts.useOverlay || typeof opts.value !== "string") return
-    const start = el.selectionStart ?? 0
-    const end = el.selectionEnd ?? 0
-    if (start === end) {
-      const inside = findVariableAtPosition(opts.value, start)
-      if (inside) {
-        el.setSelectionRange(inside.start, inside.end)
+    // Captured as a const: TS drops the narrowing inside the deferred callback.
+    const value = opts.value
+    if (!opts.useOverlay || typeof value !== "string") return
+    // Clicking inside an existing selection defers the native collapse to mouseup's
+    // default action, which runs after this handler — so snap on the next frame.
+    requestAnimationFrame(() => {
+      if (el.value !== value) return
+      const start = el.selectionStart ?? 0
+      const end = el.selectionEnd ?? 0
+      if (start === end) {
+        const inside = findVariableAtPosition(value, start)
+        if (inside) {
+          el.setSelectionRange(inside.start, inside.end)
+        } else {
+          const snapped = snapCaretOutOfVariable(value, start)
+          if (snapped !== start) el.setSelectionRange(snapped, snapped)
+        }
       } else {
-        const snapped = snapCaretOutOfVariable(opts.value, start)
-        if (snapped !== start) el.setSelectionRange(snapped, snapped)
+        const snappedStart = snapToVariableBoundary(value, start, false)
+        const snappedEnd = snapToVariableBoundary(value, end, true)
+        if (snappedStart !== start || snappedEnd !== end) {
+          el.setSelectionRange(snappedStart, snappedEnd)
+        }
       }
-    } else {
-      const snappedStart = snapToVariableBoundary(opts.value, start, false)
-      const snappedEnd = snapToVariableBoundary(opts.value, end, true)
-      if (snappedStart !== start || snappedEnd !== end) {
-        el.setSelectionRange(snappedStart, snappedEnd)
-      }
-    }
+    })
     opts.onMouseUp?.(e)
   }
 }

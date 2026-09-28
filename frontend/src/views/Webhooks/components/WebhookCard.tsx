@@ -2,6 +2,12 @@ import { Column } from "@/components/ui/data-table";
 import { EntityTableCard } from "@/components/EntityTableCard";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 import { Webhook } from "@/interfaces/webhook.interface";
 import { getAllWebhooks, deleteWebhook } from "@/services/webhook";
 import { formatDate } from "@/helpers/utils";
@@ -32,8 +38,22 @@ export function WebhookCard({
     {
       header: "URL",
       key: "url",
-      cell: (w) => w.url,
-      className: "font-mono truncate",
+      headerClassName: "w-[320px]",
+      className: "font-mono max-w-[320px]",
+      cell: (w) => (
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="block truncate">{w.url}</span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[min(28rem,var(--radix-tooltip-content-available-width,28rem))] p-0">
+              <div className="max-h-[var(--radix-tooltip-content-available-height,24rem)] overflow-y-auto break-all px-3 py-1.5">
+                {w.url}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ),
     },
     {
       header: "Method",

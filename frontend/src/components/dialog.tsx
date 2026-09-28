@@ -29,10 +29,19 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    /**
+     * Classes for the scrim. A dialog opened from inside another one has to
+     * raise both layers past the outer DialogContent (z-[1300]) or its scrim
+     * lands underneath it, e.g. overlayClassName="z-[1310]" with z-[1320] on
+     * className. Stay below AlertDialogOverlay (z-[1350]) so confirms still
+     * stack on top.
+     */
+    overlayClassName?: string;
+  }
+>(({ className, overlayClassName, children, ...props }, ref) => (
   <DialogPortal>
-    <DialogOverlay />
+    <DialogOverlay className={overlayClassName} />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(

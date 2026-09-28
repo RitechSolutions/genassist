@@ -680,27 +680,27 @@ const KnowledgeBaseForm: React.FC = () => {
                         </div>
 
                         <div className="md:col-span-2 space-y-6">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <div className="mb-1">Name</div>
-                              <Input
-                                id="name"
-                                name="name"
-                                value={formData.name}
-                                onChange={handleInputChange}
-                                placeholder="Name for this knowledge base item"
-                              />
-                            </div>
-                            <div>
-                              <div className="mb-1">Description</div>
-                              <Input
-                                id="description"
-                                name="description"
-                                value={formData.description}
-                                onChange={handleInputChange}
-                                placeholder="Brief description of this knowledge base item"
-                              />
-                            </div>
+                          <div>
+                            <div className="mb-1">Name</div>
+                            <Input
+                              id="name"
+                              name="name"
+                              value={formData.name}
+                              onChange={handleInputChange}
+                              placeholder="Name for this knowledge base item"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="mb-1">Description</div>
+                            <Textarea
+                              id="description"
+                              name="description"
+                              size="description"
+                              value={formData.description}
+                              onChange={handleInputChange}
+                              placeholder="Brief description of this knowledge base item"
+                            />
                           </div>
 
                           <div>
@@ -742,8 +742,7 @@ const KnowledgeBaseForm: React.FC = () => {
                                 value={formData.content}
                                 onChange={handleInputChange}
                                 placeholder="The knowledge content"
-                                rows={4}
-                                className="min-h-32"
+                                size="prompt"
                               />
                             </div>
                           ) : formData.type === 'url' ? (

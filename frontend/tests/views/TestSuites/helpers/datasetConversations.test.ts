@@ -27,35 +27,7 @@ describe("groupCasesByConversation", () => {
     expect(groups[0].cases.map((c) => c.id)).toEqual(["c1", "c2"]);
   });
 
-  it("takes the preview from the first turn's message after sorting", () => {
-    const groups = groupCasesByConversation([
-      tc({
-        id: "c2",
-        source_conversation_id: "conv-1",
-        turn_index: 1,
-        input_data: { message: "second" },
-      }),
-      tc({
-        id: "c1",
-        source_conversation_id: "conv-1",
-        turn_index: 0,
-        input_data: { message: "first" },
-      }),
-    ]);
-    expect(groups[0].preview).toBe("first");
-  });
 
-  it("falls back to JSON of input_data when the first turn has no string message", () => {
-    const groups = groupCasesByConversation([
-      tc({
-        id: "c1",
-        source_conversation_id: "conv-1",
-        turn_index: 0,
-        input_data: { foo: "bar" },
-      }),
-    ]);
-    expect(groups[0].preview).toBe(JSON.stringify({ foo: "bar" }));
-  });
 
   it("treats records without a source conversation as independent, keyed by id", () => {
     const groups = groupCasesByConversation([
@@ -64,7 +36,6 @@ describe("groupCasesByConversation", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].conversationId).toBeNull();
     expect(groups[0].key).toBe("independent:x");
-    expect(groups[0].preview).toBe("hi");
   });
 
   it("keeps separate independent records in their own groups", () => {
@@ -79,12 +50,94 @@ describe("groupCasesByConversation", () => {
     ]);
   });
 
-  it("orders imported conversations before independent records", () => {
+  it("orders conversations by when they joined the dataset, not by source", () => {
     const groups = groupCasesByConversation([
-      tc({ id: "i1", input_data: { message: "independent" } }),
-      tc({ id: "c0", source_conversation_id: "conv-1", turn_index: 0 }),
+      tc({
+        id: "c0",
+        source_conversation_id: "conv-1",
+        turn_index: 0,
+        tags: ["imported"],
+        created_at: "2026-09-02T10:00:00Z",
+      }),
+      tc({
+        id: "m0",
+        source_conversation_id: "thread-1",
+        turn_index: 0,
+        created_at: "2026-09-01T10:00:00Z",
+      }),
     ]);
-    expect(groups.map((g) => g.conversationId)).toEqual(["conv-1", null]);
+    // The hand-authored thread was added first, so it stays first.
+    expect(groups.map((g) => g.conversationId)).toEqual(["thread-1", "conv-1"]);
+  });
+
+  it("uses a conversation's earliest turn, so a later turn does not move it", () => {
+    const groups = groupCasesByConversation([
+      tc({
+        id: "b0",
+        source_conversation_id: "thread-2",
+        turn_index: 0,
+        created_at: "2026-09-02T10:00:00Z",
+      }),
+      tc({
+        id: "a0",
+        source_conversation_id: "thread-1",
+        turn_index: 0,
+        created_at: "2026-09-01T10:00:00Z",
+      }),
+      // Appended to thread-1 long after thread-2 was created.
+      tc({
+        id: "a1",
+        source_conversation_id: "thread-1",
+        turn_index: 1,
+        created_at: "2026-09-03T10:00:00Z",
+      }),
+    ]);
+    expect(groups.map((g) => g.conversationId)).toEqual(["thread-1", "thread-2"]);
+  });
+
+  it("marks a group imported only when its cases carry the imported tag", () => {
+    const groups = groupCasesByConversation([
+      tc({
+        id: "c0",
+        source_conversation_id: "conv-1",
+        turn_index: 0,
+        tags: ["imported"],
+      }),
+      // A hand-authored thread also has a conversation id — that is what makes
+      // its turns replay together — so only the tag tells the two apart.
+      tc({ id: "m0", source_conversation_id: "thread-1", turn_index: 0 }),
+    ]);
+    expect(groups.map((g) => g.isImported)).toEqual([true, false]);
+  });
+
+  it("does not hoist imported conversations above hand-authored ones", () => {
+    const groups = groupCasesByConversation([
+      tc({ id: "m0", source_conversation_id: "thread-1", turn_index: 0 }),
+      tc({
+        id: "c0",
+        source_conversation_id: "conv-1",
+        turn_index: 0,
+        tags: ["imported"],
+      }),
+      tc({ id: "m1", source_conversation_id: "thread-2", turn_index: 0 }),
+    ]);
+    // No timestamps, so insertion order holds for all three.
+    expect(groups.map((g) => g.conversationId)).toEqual([
+      "thread-1",
+      "conv-1",
+      "thread-2",
+    ]);
+    expect(groups.map((g) => g.isImported)).toEqual([false, true, false]);
+  });
+
+  it("keeps a hand-authored thread's turns in one group, ordered by turn", () => {
+    const groups = groupCasesByConversation([
+      tc({ id: "m1", source_conversation_id: "thread-1", turn_index: 1 }),
+      tc({ id: "m0", source_conversation_id: "thread-1", turn_index: 0 }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].isImported).toBe(false);
+    expect(groups[0].cases.map((c) => c.id)).toEqual(["m0", "m1"]);
   });
 
   it("defaults a missing turn_index to 0 for ordering", () => {

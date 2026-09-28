@@ -12,6 +12,24 @@ export function snapCaretOutOfVariable(value: string, pos: number): number {
   return r ? r.end : pos
 }
 
+// Caret target for one horizontal step that treats a variable as one character.
+// null means no variable is crossed, so the browser default should run.
+export function getVariableStepTarget(
+  value: string,
+  pos: number,
+  direction: "backward" | "forward"
+): number | null {
+  const ranges = getVariableRanges(value)
+  if (direction === "backward") {
+    // At the trailing edge or stranded inside: jump to before the first "{".
+    const r = ranges.find((r) => pos > r.start && pos <= r.end)
+    return r ? r.start : null
+  }
+  // At the leading edge or stranded inside: jump to after the final "}".
+  const r = ranges.find((r) => pos >= r.start && pos < r.end)
+  return r ? r.end : null
+}
+
 export function snapToVariableBoundary(value: string, pos: number, toEnd: boolean): number {
   const ranges = getVariableRanges(value)
   const r = ranges.find((r) => pos > r.start && pos < r.end)

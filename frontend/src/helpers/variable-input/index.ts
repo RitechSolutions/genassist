@@ -1,17 +1,15 @@
-export { hasVariableSyntax, TEMPLATE_VARIABLE_REGEX } from "./templateVariableConstants"
-export { getVariableRanges, mergeRanges, type VariableRange } from "./templateVariableRanges"
-export {
-  snapCaretOutOfVariable,
-  snapToVariableBoundary,
-  removeVariableAtCursor,
-  deleteSelectionWithVariables,
-  findVariableAtPosition,
-} from "./templateVariableCaret"
+/**
+ * The surface RichInput and RichTextarea consume. Everything else in this
+ * folder is imported from its own module directly, so it is deliberately not
+ * re-exported here.
+ */
+
+export { hasVariableSyntax } from "./templateVariableConstants"
+export { parseValueToSegments } from "./templateVariableHighlight"
+export { VariableOverlayContent } from "./VariableOverlayContent"
 export {
   createVariableFocusHandler,
   createVariableKeyDownHandler,
   createVariableKeyUpHandler,
   createVariableMouseUpHandler,
 } from "./templateVariableHandlers"
-export { parseValueToSegments, type HighlightSegment } from "./templateVariableHighlight"
-export { VariableOverlayContent } from "./VariableOverlayContent"
