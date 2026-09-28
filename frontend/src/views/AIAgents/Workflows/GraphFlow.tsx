@@ -55,7 +55,7 @@ import { Button } from "@/components/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useSidebar } from "@/components/sidebar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { History, ChevronLeft, X, Plus, Workflow as WorkflowIcon, Play, ClipboardCheck } from "lucide-react";
+import { History, X, Plus, Workflow as WorkflowIcon, Play, ClipboardCheck } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
