@@ -26,12 +26,19 @@ from app.services.auth import AuthService
 logger = logging.getLogger(__name__)
 
 
+def expose_request_to_turn_gate(request: Request) -> None:
+    """Lets the chat turn gate notice when this request's client leaves while queued."""
+    context["http_request"] = request
+
+
 async def get_current_user(
     request: Request,
     token: Optional[str] = Depends(oauth2),
     api_key: Optional[str] = Depends(api_key_header),
     auth_service: AuthService = Injected(AuthService),
 ):
+    expose_request_to_turn_gate(request)
+
     if token is None:
         if api_key is None:
             return None

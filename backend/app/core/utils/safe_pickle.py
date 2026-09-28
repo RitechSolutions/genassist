@@ -15,10 +15,9 @@ Usage::
 
 from __future__ import annotations
 
-import io
 import logging
 import pickle
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -140,14 +139,29 @@ _BLOCKED_MODULES: frozenset[str] = frozenset({
     "__builtin__", "builtins.__import__",
 })
 
+# Plain-data allowlist for caches that only hold builtins; no wildcards
+BUILTINS_ONLY_ALLOWED_MODULES: dict[str, set[str] | str] = {
+    "builtins": {"dict", "list", "tuple", "set", "frozenset", "int", "float", "bool", "str", "bytes", "bytearray"},
+}
+
 
 class RestrictedUnpickler(pickle.Unpickler):
-    """An unpickler that only allows classes from the ML-framework allowlist.
+    """An unpickler that only resolves globals from an allowlist (default: the ML-framework list).
 
     Any attempt to instantiate a class from a module not in the allowlist
     raises ``pickle.UnpicklingError``, preventing ``__reduce__``-based
     code execution from crafted pickle files.
     """
+
+    def __init__(
+        self,
+        file: BinaryIO,
+        *,
+        allowed_modules: Mapping[str, set[str] | str] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(file, **kwargs)
+        self._allowed_modules = _ALLOWED_MODULES if allowed_modules is None else allowed_modules
 
     def find_class(self, module: str, name: str) -> Any:
         # Explicit block check first
@@ -159,19 +173,18 @@ class RestrictedUnpickler(pickle.Unpickler):
             )
 
         # Check if the module is in the allowlist
-        allowed = _ALLOWED_MODULES.get(module)
+        allowed = self._allowed_modules.get(module)
         if allowed is None:
             # Try matching the top-level package with wildcard submodules
             # e.g., "sklearn.ensemble._forest" matches if "sklearn" has "*"
-            for allowed_mod, allowed_classes in _ALLOWED_MODULES.items():
+            for allowed_mod, allowed_classes in self._allowed_modules.items():
                 if allowed_classes == "*" and module.startswith(allowed_mod + "."):
                     return super().find_class(module, name)
                 if allowed_classes == "*" and module == allowed_mod:
                     return super().find_class(module, name)
 
             raise pickle.UnpicklingError(
-                f"Blocked: {module}.{name} — module '{module}' is not in the "
-                f"allowed list for ML model loading"
+                f"Blocked: {module}.{name} — module '{module}' is not in the allowed list"
             )
 
         # Module is in the allowlist — check class-level restriction
@@ -187,12 +200,18 @@ class RestrictedUnpickler(pickle.Unpickler):
         return super().find_class(module, name)
 
 
-def safe_pickle_load(f: BinaryIO, *, encoding: str = "ASCII") -> Any:
+def safe_pickle_load(
+    f: BinaryIO,
+    *,
+    encoding: str = "ASCII",
+    allowed_modules: Mapping[str, set[str] | str] | None = None,
+) -> Any:
     """Drop-in replacement for ``pickle.load`` that uses the restricted unpickler.
 
     Args:
         f: A binary file-like object positioned at the start of a pickle stream.
         encoding: Encoding for unpickling Python 2 pickles (default ``"ASCII"``).
+        allowed_modules: Allowlist to enforce; ``None`` selects the ML-framework allowlist.
 
     Returns:
         The deserialized object.
@@ -200,4 +219,4 @@ def safe_pickle_load(f: BinaryIO, *, encoding: str = "ASCII") -> Any:
     Raises:
         pickle.UnpicklingError: If the pickle references a disallowed module/class.
     """
-    return RestrictedUnpickler(f, encoding=encoding).load()
+    return RestrictedUnpickler(f, encoding=encoding, allowed_modules=allowed_modules).load()

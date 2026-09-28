@@ -4,6 +4,10 @@ import {
   mergeRanges,
 } from "@/helpers/variable-input/templateVariableRanges";
 import { hasVariableSyntax } from "@/helpers/variable-input/templateVariableConstants";
+import {
+  findVariableAtPosition,
+  snapCaretOutOfVariable,
+} from "@/helpers/variable-input/templateVariableCaret";
 
 describe("getVariableRanges", () => {
   it("finds the character ranges of {{variable}} spans", () => {
@@ -87,5 +91,44 @@ describe("hasVariableSyntax", () => {
     expect(hasVariableSyntax(123)).toBe(false);
     expect(hasVariableSyntax(null)).toBe(false);
     expect(hasVariableSyntax(undefined)).toBe(false);
+  });
+});
+
+// Typing "{{" mid-field used to produce a range reaching all the way to the
+// closing braces of the next variable, which highlighted the text between them
+// as one variable and snapped the caret past it.
+describe("half-typed {{ in a field that already has variables", () => {
+  const VALUE =
+    "Description: {{node.description}}\n" +
+    "{{\n" +
+    "Conversation history:\n" +
+    "{{node.history}}";
+
+  it("does not let the unclosed braces swallow the next variable", () => {
+    const first = VALUE.indexOf("{{node.description}}");
+    const second = VALUE.indexOf("{{node.history}}");
+
+    expect(getVariableRanges(VALUE)).toEqual([
+      { start: first, end: first + "{{node.description}}".length },
+      { start: second, end: second + "{{node.history}}".length },
+    ]);
+  });
+
+  it("leaves the caret just after the typed braces alone", () => {
+    const caret = VALUE.indexOf("{{\n") + 2;
+    expect(findVariableAtPosition(VALUE, caret)).toBeUndefined();
+    expect(snapCaretOutOfVariable(VALUE, caret)).toBe(caret);
+  });
+
+  it("still reports the closed variables as variable syntax", () => {
+    expect(hasVariableSyntax(VALUE)).toBe(true);
+  });
+
+  it("does not treat braces spanning a newline as a variable", () => {
+    expect(getVariableRanges("{{\nnode.value}}")).toEqual([]);
+  });
+
+  it("does not treat nested opening braces as a variable", () => {
+    expect(getVariableRanges("{{a{{b}}")).toEqual([{ start: 3, end: 8 }]);
   });
 });

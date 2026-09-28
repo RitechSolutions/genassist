@@ -71,6 +71,7 @@ class ErrorKey(Enum):
     CONVERSATION_TAKEN_OVER = "CONVERSATION_TAKEN_OVER"
     CONVERSATION_TAKEN_OVER_OTHER = "CONVERSATION_TAKEN_OVER_OTHER"
     DATASOURCE_NOT_FOUND = "DATASOURCE_NOT_FOUND"
+    READ_ONLY_SQL_BLOCKED = "READ_ONLY_SQL_BLOCKED"
     WEBHOOK_NOT_FOUND = "WEBHOOK_NOT_FOUND"
     LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND"
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
@@ -182,6 +183,8 @@ class ErrorKey(Enum):
     LLM_CATALOG_MODEL_ALREADY_EXISTS = "LLM_CATALOG_MODEL_ALREADY_EXISTS"
     LLM_CATALOG_UNKNOWN_PROVIDER = "LLM_CATALOG_UNKNOWN_PROVIDER"
     LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD = "LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD"
+    CHAT_TURN_CAPACITY_EXCEEDED = "CHAT_TURN_CAPACITY_EXCEEDED"
+    CHAT_TURN_CLIENT_DISCONNECTED = "CHAT_TURN_CLIENT_DISCONNECTED"
 
 
 ERROR_MESSAGES = {
@@ -250,6 +253,7 @@ ERROR_MESSAGES = {
         ErrorKey.CONVERSATION_TAKEN_OVER: "Conversation already taken over.",
         ErrorKey.CONVERSATION_TAKEN_OVER_OTHER: "Conversation already taken over by another user.",
         ErrorKey.DATASOURCE_NOT_FOUND: "Datasource not found.",
+        ErrorKey.READ_ONLY_SQL_BLOCKED: "This SQL was rejected because it is not read-only.",
         ErrorKey.LLM_PROVIDER_NOT_FOUND: "LLM Provider not found.",
         ErrorKey.LLM_ANALYST_NOT_FOUND: "LLM Analyst not found.",
         ErrorKey.LLM_ANALYST_INACTIVE: "LLM Analyst is inactive.",
@@ -364,14 +368,19 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
+        ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "The assistant is busy right now. Please try again in a moment.",
+        ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED: "The request was abandoned before the assistant could answer.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
+        ErrorKey.READ_ONLY_SQL_BLOCKED: "Ce SQL a été rejeté car il n'est pas en lecture seule.",
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "Les connexions de sous-agents de ce workflow sont invalides : {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "Un sous-agent de ce workflow est mal configuré : {0}",
+        ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "L'assistant est occupé pour le moment. Veuillez réessayer dans un instant.",
+        ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED: "La demande a été abandonnée avant que l'assistant puisse répondre.",
     },
 }
 
