@@ -603,8 +603,8 @@ class ConversationService:
             # (injector -> dependency_injection -> services.audio -> here), and
             # db_connection_utils imports app.dependencies.injector itself, so a
             # top-level import here is circular.
-            from app.core.utils.db_connection_utils import release_db_connection
-            await release_db_connection(context=f"conversation {conversation.id}")
+            from app.core.utils.db_connection_utils import release_idle_connection
+            await release_idle_connection(context=f"conversation {conversation.id}")
 
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
