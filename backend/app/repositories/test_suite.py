@@ -44,7 +44,7 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         await self.db.execute(
             delete(TestCaseModel).where(TestCaseModel.suite_id == str(suite_id))
         )
-        await self.db.commit()
+        await self.db.flush()
 
     async def soft_delete_all_for_suite(
         self, suite_id: UUID, commit: bool = True
@@ -57,7 +57,7 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
             .execution_options(synchronize_session="fetch")
         )
         if commit:
-            await self.db.commit()
+            await self.db.flush()
 
     async def soft_delete_for_conversation(
         self, suite_id: UUID, conversation_id: UUID, commit: bool = True
@@ -74,12 +74,12 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
             .execution_options(synchronize_session="fetch")
         )
         if commit:
-            await self.db.commit()
+            await self.db.flush()
 
     async def create_many(self, cases: List[TestCaseModel]) -> List[TestCaseModel]:
         """Insert cases in a single transaction so a partial import cannot persist."""
         self.db.add_all(cases)
-        await self.db.commit()
+        await self.db.flush()
         for case in cases:
             await self.db.refresh(case)
         return cases
@@ -111,38 +111,43 @@ class TestRunRepository(DbRepository[TestRunModel]):
             .values(is_deleted=1)
             .execution_options(synchronize_session="fetch")
         )
-        await self.db.commit()
+        await self.db.flush()
 
-    async def mark_stuck_as_failed(
+    async def get_waiting_ids_older_than(self, before: datetime) -> List[str]:
+        """Ids of queued runs last updated before ``before``."""
+        stmt = select(TestRunModel.id).where(
+            TestRunModel.is_deleted == 0,
+            TestRunModel.status == "queued",
+            TestRunModel.updated_at < before,
+        )
+        result = await self.db.execute(stmt)
+        return [str(run_id) for run_id in result.scalars().all()]
+
+    async def mark_orphaned_as_failed(
         self,
-        queued_before: datetime,
+        waiting_ids: List[str],
         running_before: datetime,
         error_message: str,
     ) -> int:
-        """Fail runs orphaned by a worker/pod crash in one atomic UPDATE:
-        queued runs never picked up, and running runs past the max execution age.
-        Returns the number of rows transitioned to failed.
-        """
+        """Fail queued runs whose job left the broker and runs past the max run age."""
+        conditions = [
+            and_(
+                TestRunModel.status == "running",
+                TestRunModel.updated_at < running_before,
+            )
+        ]
+        if waiting_ids:
+            conditions.append(
+                and_(TestRunModel.status == "queued", TestRunModel.id.in_(waiting_ids))
+            )
         stmt = (
             update(TestRunModel)
-            .where(
-                TestRunModel.is_deleted == 0,
-                or_(
-                    and_(
-                        TestRunModel.status == "queued",
-                        TestRunModel.updated_at < queued_before,
-                    ),
-                    and_(
-                        TestRunModel.status == "running",
-                        TestRunModel.updated_at < running_before,
-                    ),
-                ),
-            )
+            .where(TestRunModel.is_deleted == 0, or_(*conditions))
             .values(status="failed", summary_metrics={"error": error_message})
             .execution_options(synchronize_session=False)
         )
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         return result.rowcount or 0
 
 
@@ -176,7 +181,7 @@ class TestToolRuleResultRepository(DbRepository[TestToolRuleResultModel]):
         if not results:
             return []
         self.db.add_all(results)
-        await self.db.commit()
+        await self.db.flush()
         return results
 
     async def get_all_for_run(self, run_id: UUID) -> List[TestToolRuleResultModel]:

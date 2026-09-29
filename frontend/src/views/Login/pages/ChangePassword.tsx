@@ -1,10 +1,14 @@
-import { Button } from "@/components/button";
-import { Card } from "@/components/card";
-import { Input } from "@/components/ui/input";
-import { PasswordInput } from "@/components/PasswordInput";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { toast } from "react-hot-toast";
+import { ArrowLeft, Check, ShieldAlert } from "lucide-react";
+
+import { Button } from "@/components/button";
+import { Label } from "@/components/label";
+import { Skeleton } from "@/components/skeleton";
+import { PasswordInput } from "@/components/PasswordInput";
+import { GenAssistLogo } from "@/components/GenAssistLogo";
+import { cn } from "@/helpers/utils";
 import { apiRequest } from "@/config/api";
 import {
   isPasswordUpdateRequired,
@@ -13,11 +17,42 @@ import {
   getAuthMe,
 } from "@/services/auth";
 
+type FieldName = "currentPassword" | "newPassword" | "confirmPassword";
+type FieldErrors = Partial<Record<FieldName, string>>;
+
+const STRENGTH_LEVELS = [
+  { label: "Weak", bar: "bg-destructive", text: "text-destructive" },
+  { label: "Fair", bar: "bg-amber-500", text: "text-amber-600 dark:text-amber-500" },
+  { label: "Good", bar: "bg-blue-500", text: "text-blue-600 dark:text-blue-400" },
+  { label: "Strong", bar: "bg-green-500", text: "text-green-600 dark:text-green-500" },
+];
+
+/**
+ * Advisory strength hint only — the API enforces no password policy, so this
+ * never blocks submission. One point each for length, extra length, mixed
+ * case, digits and symbols, collapsed onto the four levels above.
+ */
+const getStrengthLevel = (password: string) => {
+  let score = 0;
+  if (password.length >= 8) score += 1;
+  if (password.length >= 12) score += 1;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
+  if (/\d/.test(password)) score += 1;
+  if (/[^A-Za-z0-9]/.test(password)) score += 1;
+
+  if (score <= 1) return 0;
+  if (score === 2) return 1;
+  if (score === 3) return 2;
+  return 3;
+};
+
 export default function ChangePassword() {
   const [username, setUsername] = useState("");
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isForced, setIsForced] = useState(false);
   const navigate = useNavigate();
@@ -45,34 +80,49 @@ export default function ChangePassword() {
         }
       } catch (error) {
         // ignore
+      } finally {
+        setIsLoadingUser(false);
       }
     };
 
     if (token) {
       fetchUser();
+    } else {
+      setIsLoadingUser(false);
     }
   }, [navigate]);
+
+  const clearError = (field: FieldName) =>
+    setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+
+  const handleSignOut = () => {
+    logout();
+    navigate("/login");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    const nextErrors: FieldErrors = {};
+
     if (!currentPassword) {
-      toast.error("Current password is required.");
-      return;
+      nextErrors.currentPassword = "Current password is required.";
     }
 
     if (!newPassword) {
-      toast.error("New password is required.");
-      return;
+      nextErrors.newPassword = "New password is required.";
+    } else if (newPassword === currentPassword) {
+      nextErrors.newPassword =
+        "The new password must be different from the current one.";
     }
 
     if (newPassword !== confirmPassword) {
-      toast.error("Passwords do not match.");
-      return;
+      nextErrors.confirmPassword = "Passwords do not match.";
     }
 
-    if (newPassword === currentPassword) {
-      toast.error("The new password must be different from the current one.");
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
       return;
     }
 
@@ -125,7 +175,7 @@ export default function ChangePassword() {
         };
 
         if (axiosError.response?.status === 401) {
-          toast.error("Current password is incorrect.");
+          setErrors({ currentPassword: "Current password is incorrect." });
         } else if (axiosError.response?.data?.detail) {
           toast.error(axiosError.response.data.detail);
         } else if (axiosError.response?.data?.message) {
@@ -141,88 +191,193 @@ export default function ChangePassword() {
     }
   };
 
+  const strength = getStrengthLevel(newPassword);
+  const strengthLevel = STRENGTH_LEVELS[strength];
+  const passwordsMatch =
+    confirmPassword.length > 0 && newPassword === confirmPassword;
+
   return (
-    <div className="min-h-screen bg-muted/90 flex flex-col">
-      <div className="flex-1 space-y-4 p-8 pt-6">
-        <div className="flex items-center justify-between space-y-2">
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight">
-              {isForced ? "Password Update Required" : "Change Password"}
-            </h2>
-            {isForced && (
-              <p className="text-sm text-muted-foreground mt-2">
-                Your password needs to be updated before you can continue using
-                the application.
+    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-10">
+      <div className="w-full max-w-md space-y-6">
+        <div className="space-y-2">
+          <GenAssistLogo
+            width={200}
+            height={52}
+            className="text-zinc-900 dark:text-zinc-100"
+          />
+
+          <h1 className="text-3xl font-bold tracking-tight">
+            {isForced ? "Update your password" : "Change password"}
+          </h1>
+          <p className="text-muted-foreground">
+            {isForced
+              ? "Your password needs to be updated before you can continue."
+              : "Choose a new password for your account. You'll be asked to sign in again once it's updated."}
+          </p>
+        </div>
+
+        {isForced && (
+          <div
+            role="alert"
+            className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4"
+          >
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                Password update required
+              </p>
+              <p className="text-sm text-amber-900/80 dark:text-amber-200/80">
+                For security reasons your current password has expired. Set a
+                new one to regain access.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 rounded-full border border-border bg-muted/40 px-3 py-2">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold uppercase text-primary">
+            {username.charAt(0) || "?"}
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">Signed in as</p>
+            {isLoadingUser ? (
+              <Skeleton className="mt-1 h-4 w-32" />
+            ) : (
+              <p className="truncate text-sm font-medium">
+                {username || "Unknown account"}
               </p>
             )}
           </div>
         </div>
-        <Card className="max-w-md mx-auto mt-8">
-          <form onSubmit={handleSubmit} className="space-y-4 p-6">
-            <div className="space-y-2">
-              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                Username
-              </label>
-              <Input
-                type="text"
-                value={username}
-                disabled
-                placeholder="Loading username..."
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                Current Password
-              </label>
-              <PasswordInput
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                placeholder="Enter your current password"
-                required
-                disabled={isSubmitting}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                New Password
-              </label>
-              <PasswordInput
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Enter your new password"
-                required
-                disabled={isSubmitting}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                Confirm New Password
-              </label>
-              <PasswordInput
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm your new password"
-                required
-                disabled={isSubmitting}
-              />
-            </div>
-            <div className="flex justify-end space-x-2 mt-6">
-              {!isForced && (
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => navigate(-1)}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </Button>
-              )}
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Updating..." : "Update Password"}
-              </Button>
-            </div>
-          </form>
-        </Card>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="current-password">Current password</Label>
+            <PasswordInput
+              id="current-password"
+              value={currentPassword}
+              onChange={(e) => {
+                setCurrentPassword(e.target.value);
+                clearError("currentPassword");
+              }}
+              placeholder="Enter your current password"
+              autoComplete="current-password"
+              aria-invalid={Boolean(errors.currentPassword)}
+              disabled={isSubmitting}
+            />
+            {errors.currentPassword && (
+              <p className="text-xs text-destructive">
+                {errors.currentPassword}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-password">New password</Label>
+            <PasswordInput
+              id="new-password"
+              value={newPassword}
+              onChange={(e) => {
+                setNewPassword(e.target.value);
+                clearError("newPassword");
+              }}
+              placeholder="Enter your new password"
+              autoComplete="new-password"
+              aria-invalid={Boolean(errors.newPassword)}
+              disabled={isSubmitting}
+            />
+            {newPassword && (
+              <div className="flex items-center gap-2">
+                <div className="flex flex-1 gap-1">
+                  {STRENGTH_LEVELS.map((level, index) => (
+                    <span
+                      key={level.label}
+                      className={cn(
+                        "h-1 flex-1 rounded-full transition-colors",
+                        index <= strength ? strengthLevel.bar : "bg-muted"
+                      )}
+                    />
+                  ))}
+                </div>
+                <span className={cn("text-xs font-medium", strengthLevel.text)}>
+                  {strengthLevel.label}
+                </span>
+              </div>
+            )}
+            {errors.newPassword && (
+              <p className="text-xs text-destructive">{errors.newPassword}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="confirm-password">Confirm new password</Label>
+            <PasswordInput
+              id="confirm-password"
+              value={confirmPassword}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                clearError("confirmPassword");
+              }}
+              placeholder="Re-enter your new password"
+              autoComplete="new-password"
+              aria-invalid={Boolean(errors.confirmPassword)}
+              disabled={isSubmitting}
+            />
+            {errors.confirmPassword ? (
+              <p className="text-xs text-destructive">
+                {errors.confirmPassword}
+              </p>
+            ) : (
+              passwordsMatch && (
+                <p className="flex items-center gap-1 text-xs text-green-600 dark:text-green-500">
+                  <Check className="h-3.5 w-3.5" />
+                  Passwords match
+                </p>
+              )
+            )}
+          </div>
+
+          <Button
+            type="submit"
+            className="w-full"
+            loading={isSubmitting}
+            disabled={
+              isSubmitting ||
+              !currentPassword ||
+              !newPassword ||
+              !confirmPassword
+            }
+          >
+            {isSubmitting ? "Updating..." : "Update password"}
+          </Button>
+
+          {!isForced && (
+            <Button
+              variant="ghost"
+              type="button"
+              className="w-full"
+              icon={<ArrowLeft className="h-4 w-4" />}
+              onClick={() => navigate(-1)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+          )}
+        </form>
+
+        {isForced && (
+          <div className="text-center text-sm">
+            <span className="text-muted-foreground">Not your account? </span>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isSubmitting}
+              className="font-medium text-foreground hover:underline disabled:opacity-50"
+            >
+              Sign in as someone else
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

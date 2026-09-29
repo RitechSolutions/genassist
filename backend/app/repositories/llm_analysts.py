@@ -16,19 +16,21 @@ class LlmAnalystRepository(DbRepository[LlmAnalystModel]):
     async def create(self, data: LlmAnalystCreate) -> LlmAnalystModel:
         obj = LlmAnalystModel(**data.model_dump())
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
 
-    async def get_by_id(self, llm_analyst_id: UUID):
+    async def get_by_id(self, llm_analyst_id: UUID, include_inactive: bool = False):
         query = (
             select(LlmAnalystModel)
             .options(
                     joinedload(LlmAnalystModel.llm_provider)
                     )
-            .where(LlmAnalystModel.id == llm_analyst_id, LlmAnalystModel.is_active == 1)
+            .where(LlmAnalystModel.id == llm_analyst_id)
         )
+        if not include_inactive:
+            query = query.where(LlmAnalystModel.is_active == 1)
         result = await self.db.execute(query)
         return result.scalars().first()
 
@@ -36,7 +38,7 @@ class LlmAnalystRepository(DbRepository[LlmAnalystModel]):
     async def update(self, obj: LlmAnalystModel):
         obj.updated_by = context["user_id"]
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 

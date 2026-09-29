@@ -19,6 +19,7 @@ from app.repositories.db_repository import DbRepository
 # Includes attribution so a re-run restamps rows backfilled before the agent fix.
 _FORCE_UPDATE_COLUMNS = (
     "input_tokens",
+    "prompt_tokens",
     "output_tokens",
     "total_tokens",
     "cost_usd",
@@ -108,7 +109,7 @@ class LlmUsageBackfillRepository(DbRepository[LlmUsageEventModel]):
         else:
             stmt = stmt.on_conflict_do_nothing(constraint="uq_llm_usage_events_execution_call")
         result = await self.db.execute(stmt)
-        await self.db.commit()
+        await self.db.flush()
         return result.rowcount or 0
 
     async def legacy_event_aggregates(self) -> tuple[int, int, int, int, Decimal]:

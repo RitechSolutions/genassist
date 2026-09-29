@@ -562,14 +562,27 @@ class WorkflowEngine:
                         next_node_id, state, visited_set
                     )
 
+                from app.core.utils.db_connection_utils import (
+                    commit_scope_session,
+                    rollback_scope_session,
+                )
+
                 request_scope_factory = injector.get(RequestScopeFactory)
                 async with request_scope_factory.create_scope():
                     # Preserve tenant context in the new scope
                     set_tenant_context(tenant)
                     try:
-                        return await self._execute_from_node_recursive(
+                        result = await self._execute_from_node_recursive(
                             next_node_id, state, visited_set
                         )
+                    except Exception:
+                        # Repos only flush; roll back this isolated scope's writes on error.
+                        await rollback_scope_session(context="workflow_node")
+                        raise
+                    else:
+                        # Commit this isolated scope's unit of work (no-op if nothing written).
+                        await commit_scope_session(context="workflow_node")
+                        return result
                     finally:
                         # Ensure any DI-created session is closed for this scope.
                         # (AsyncSession usually doesn't open a connection until first use, so this

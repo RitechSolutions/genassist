@@ -1,6 +1,88 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, Plus, Trash2, Pencil, X, Sparkles } from 'lucide-react';
 
+/**
+ * Tracks the host platform's dark mode by watching the `dark` class on <html>
+ * (Genassist uses next-themes with the class strategy). The config panel is only
+ * embedded in the Genassist platform, so its colors follow the platform theme with
+ * a fixed palette — they are not user-customizable (unlike the chat widget's theme).
+ */
+function useIsDarkMode(): boolean {
+  const getIsDark = () =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+  const [isDark, setIsDark] = useState<boolean>(getIsDark);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    const update = () => setIsDark(root.classList.contains('dark'));
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+  return isDark;
+}
+
+interface PanelPalette {
+  panelBg: string;
+  sectionBg: string;
+  actionBarBg: string;
+  border: string;
+  inputBg: string;
+  text: string;
+  textStrong: string;
+  textMuted: string;
+  saveBg: string;
+  saveText: string;
+  saveBorder: string;
+  cancelBg: string;
+  metaValueBg: string;
+  metaValueBorder: string;
+  modalOverlay: string;
+  shadow: string;
+}
+
+function getPanelPalette(isDark: boolean): PanelPalette {
+  if (isDark) {
+    return {
+      panelBg: '#1e1e20',
+      sectionBg: '#26262a',
+      actionBarBg: '#1a1a1c',
+      border: '#3f3f46',
+      inputBg: '#2a2a2e',
+      text: '#d4d4d8',
+      textStrong: '#fafafa',
+      textMuted: '#a1a1aa',
+      saveBg: '#fafafa',
+      saveText: '#18181b',
+      saveBorder: '#fafafa',
+      cancelBg: '#2a2a2e',
+      metaValueBg: '#2a2a2e',
+      metaValueBorder: '#3f3f46',
+      modalOverlay: 'rgba(0,0,0,0.6)',
+      shadow: '0 2px 10px rgba(0,0,0,0.5)',
+    };
+  }
+  return {
+    panelBg: '#ffffff',
+    sectionBg: '#f9f9f9',
+    actionBarBg: '#fafafa',
+    border: '#e0e0e0',
+    inputBg: '#ffffff',
+    text: '#333',
+    textStrong: '#111',
+    textMuted: '#666',
+    saveBg: '#111827',
+    saveText: '#fff',
+    saveBorder: '#0b1220',
+    cancelBg: '#fff',
+    metaValueBg: '#fafafa',
+    metaValueBorder: '#e6e6e6',
+    modalOverlay: 'rgba(0,0,0,0.25)',
+    shadow: '0 2px 10px rgba(0,0,0,0.1)',
+  };
+}
+
 export interface ChatTheme {
   primaryColor: string;
   secondaryColor: string;
@@ -8,6 +90,14 @@ export interface ChatTheme {
   textColor: string;
   fontFamily: string;
   fontSize: string;
+  /** Background of the visitor's (customer) message bubble. */
+  userBubbleColor: string;
+  /** Background of the input field / docked bar. */
+  inputBackgroundColor: string;
+  /** Border color across the container, inputs, menus and dialogs. */
+  borderColor: string;
+  /** Secondary/muted text (timestamps, descriptions, disclaimers). */
+  mutedTextColor: string;
 }
 
 export interface ChatSettingsConfig {
@@ -24,6 +114,7 @@ export interface FeatureFlags {
   useWs?: boolean;
   usePoll?: boolean;
   quickInput?: boolean;
+  readReceipts?: boolean;
 }
 
 type ParamType = 'string' | 'number' | 'boolean';
@@ -65,6 +156,10 @@ const defaultTheme: ChatTheme = {
   textColor: '#000000',
   fontFamily: 'Inter, sans-serif',
   fontSize: '15px',
+  userBubbleColor: '#E4E4E7',
+  inputBackgroundColor: '#ffffff',
+  borderColor: '#e5e7eb',
+  mutedTextColor: '#6b7280',
 };
 
 const defaultSettings: ChatSettingsConfig = {
@@ -257,12 +352,16 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
     onMetadataChange?.(paramsToObject(next));
   };
 
+  // Fixed palette that follows the platform's light/dark theme (not user-customizable).
+  const isDark = useIsDarkMode();
+  const ui = getPanelPalette(isDark);
+
   const containerStyle: React.CSSProperties = {
     flex: '1',
     maxWidth: 300,
-    backgroundColor: '#ffffff',
+    backgroundColor: ui.panelBg,
     borderRadius: 8,
-    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+    boxShadow: ui.shadow,
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column',
@@ -271,19 +370,20 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
 
   const sectionHeaderStyle: React.CSSProperties = {
     padding: 16,
-    borderBottom: '1px solid #e0e0e0',
+    borderBottom: `1px solid ${ui.border}`,
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     cursor: 'pointer',
-    backgroundColor: '#f9f9f9',
+    backgroundColor: ui.sectionBg,
+    color: ui.textStrong,
   };
 
   const sectionTitleStyle: React.CSSProperties = {
     margin: 0,
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#666',
+    color: ui.textMuted,
     letterSpacing: 1,
   } as React.CSSProperties;
 
@@ -296,24 +396,26 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
     borderBottom: 'none',
   };
 
-  const labelStyle: React.CSSProperties = { fontSize: 14, color: '#333' };
+  const labelStyle: React.CSSProperties = { fontSize: 14, color: ui.text };
   const colorPickerStyle: React.CSSProperties = {
     appearance: 'none',
     width: 120,
     height: 32,
     padding: 0,
-    border: '1px solid #e0e0e0',
+    border: `1px solid ${ui.border}`,
     borderRadius: 4,
     cursor: 'pointer',
+    backgroundColor: ui.inputBg,
   } as React.CSSProperties;
 
   const selectStyle: React.CSSProperties = {
     width: 140,
     height: 32,
     padding: '0 8px',
-    border: '1px solid #e0e0e0',
+    border: `1px solid ${ui.border}`,
     borderRadius: 4,
-    backgroundColor: '#fff',
+    backgroundColor: ui.inputBg,
+    color: ui.text,
     fontSize: 14,
   } as React.CSSProperties;
 
@@ -321,8 +423,10 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
     width: '100%',
     height: 32,
     padding: '0 8px',
-    border: '1px solid #e0e0e0',
+    border: `1px solid ${ui.border}`,
     borderRadius: 4,
+    backgroundColor: ui.inputBg,
+    color: ui.text,
     fontSize: 14,
   };
 
@@ -331,22 +435,23 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
     display: 'flex',
     justifyContent: 'flex-end',
     gap: 8,
-    borderTop: '1px solid #e0e0e0',
-    backgroundColor: '#fafafa',
+    borderTop: `1px solid ${ui.border}`,
+    backgroundColor: ui.actionBarBg,
   };
 
   const cancelButtonStyle: React.CSSProperties = {
     padding: '8px 12px',
-    backgroundColor: '#fff',
-    border: '1px solid #e0e0e0',
+    backgroundColor: ui.cancelBg,
+    color: ui.text,
+    border: `1px solid ${ui.border}`,
     borderRadius: 6,
     cursor: 'pointer',
   };
   const saveButtonStyle: React.CSSProperties = {
     padding: '8px 12px',
-    backgroundColor: '#111827',
-    color: '#fff',
-    border: '1px solid #0b1220',
+    backgroundColor: ui.saveBg,
+    color: ui.saveText,
+    border: `1px solid ${ui.saveBorder}`,
     borderRadius: 6,
     cursor: 'pointer',
   };
@@ -357,23 +462,24 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
     gap: 8,
     width: '100%',
     padding: '10px 12px',
-    border: '1px solid #e0e0e0',
+    border: `1px solid ${ui.border}`,
     borderRadius: 8,
-    backgroundColor: '#fff',
+    backgroundColor: ui.inputBg,
     cursor: 'pointer',
     fontSize: 14,
-    color: '#111',
+    color: ui.textStrong,
   };
 
   const smallIconButton: React.CSSProperties = {
-    border: '1px solid #e0e0e0',
+    border: `1px solid ${ui.border}`,
     borderRadius: 8,
     width: 28,
     height: 28,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: ui.inputBg,
+    color: ui.text,
     cursor: 'pointer',
   };
 
@@ -386,7 +492,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   };
   const metaNameStyle: React.CSSProperties = {
     fontSize: 13,
-    color: '#222',
+    color: ui.textStrong,
     fontWeight: 500,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -398,11 +504,11 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
     fontSize: 13,
-    color: '#111',
-    border: '1px solid #e6e6e6',
+    color: ui.textStrong,
+    border: `1px solid ${ui.metaValueBorder}`,
     borderRadius: 12,
     padding: '6px 10px',
-    backgroundColor: '#fafafa',
+    backgroundColor: ui.metaValueBg,
   };
 
   const handleSave = () => {
@@ -452,6 +558,42 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                 type="color"
                 value={theme.textColor}
                 onChange={(e) => handleThemeChange('textColor', e.target.value)}
+                style={colorPickerStyle}
+              />
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>User Bubble Color</label>
+              <input
+                type="color"
+                value={theme.userBubbleColor ?? defaultTheme.userBubbleColor}
+                onChange={(e) => handleThemeChange('userBubbleColor', e.target.value)}
+                style={colorPickerStyle}
+              />
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Input Background</label>
+              <input
+                type="color"
+                value={theme.inputBackgroundColor ?? defaultTheme.inputBackgroundColor}
+                onChange={(e) => handleThemeChange('inputBackgroundColor', e.target.value)}
+                style={colorPickerStyle}
+              />
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Border Color</label>
+              <input
+                type="color"
+                value={theme.borderColor ?? defaultTheme.borderColor}
+                onChange={(e) => handleThemeChange('borderColor', e.target.value)}
+                style={colorPickerStyle}
+              />
+            </div>
+            <div style={formGroupStyle}>
+              <label style={labelStyle}>Muted Text Color</label>
+              <input
+                type="color"
+                value={theme.mutedTextColor ?? defaultTheme.mutedTextColor}
+                onChange={(e) => handleThemeChange('mutedTextColor', e.target.value)}
                 style={colorPickerStyle}
               />
             </div>
@@ -549,12 +691,12 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                 onChange={(e) => handleSettingChange('brandLogoUrl', e.target.value)}
                 placeholder="https://example.com/full-logo.png"
               />
-              <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: ui.textMuted, marginTop: 6 }}>
                 When set, replaces the small logo + name with this full logo.
               </div>
             </div>
             <div style={{ padding: '16px', borderTop: '1px solid #e0e0e0', marginTop: 8 }}>
-              <div style={{ fontSize: 13, color: '#555', marginBottom: 12, fontWeight: 500 }}>
+              <div style={{ fontSize: 13, color: ui.textMuted, marginBottom: 12, fontWeight: 500 }}>
                 Features
               </div>
               <div style={formGroupStyle}>
@@ -616,10 +758,10 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
         {showMetadata && (
           <>
             <div style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: 13, color: '#555', marginBottom: 10 }}>
+              <div style={{ fontSize: 13, color: ui.textMuted, marginBottom: 10 }}>
                 Define key/value parameters sent as chat metadata.
                 {Object.keys(agentChatInputMetadata || {}).length > 0 && (
-                  <span style={{ display: 'block', marginTop: 4, color: '#666' }}>
+                  <span style={{ display: 'block', marginTop: 4, color: ui.textMuted }}>
                     Parameters from the workflow&apos;s Chat Input node are shown below.
                   </span>
                 )}
@@ -676,12 +818,12 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
 
       {/* Simple Parameter Modals */}
       {showAddParam && (
-        <div style={modalOverlayStyle}>
-          <div style={modalStyle}>
-            <div style={modalHeaderStyle}>Add Parameter</div>
+        <div style={getModalOverlayStyle(ui)}>
+          <div style={getModalStyle(ui)}>
+            <div style={getModalHeaderStyle(ui)}>Add Parameter</div>
             <div style={modalBodyStyle}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 12, color: '#777' }}>Parameter Name</label>
+                <label style={{ fontSize: 12, color: ui.textMuted }}>Parameter Name</label>
                 <input
                   type="text"
                   style={inputStyle}
@@ -693,7 +835,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
 
               <div style={{ display: 'flex', gap: 12 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-                  <label style={{ fontSize: 12, color: '#777' }}>Type</label>
+                  <label style={{ fontSize: 12, color: ui.textMuted }}>Type</label>
                   <select
                     style={selectStyle}
                     value={draftParam.type}
@@ -712,7 +854,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-                  <label style={{ fontSize: 12, color: '#777' }}>Required</label>
+                  <label style={{ fontSize: 12, color: ui.textMuted }}>Required</label>
                   <select
                     style={selectStyle}
                     value={draftParam.required ? 'yes' : 'no'}
@@ -725,7 +867,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 12, color: '#777' }}>Default / Value</label>
+                <label style={{ fontSize: 12, color: ui.textMuted }}>Default / Value</label>
                 {draftParam.type === 'boolean' ? (
                   <select
                     style={selectStyle}
@@ -751,7 +893,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
               </div>
             </div>
 
-            <div style={modalFooterStyle}>
+            <div style={getModalFooterStyle(ui)}>
               <button style={cancelButtonStyle} onClick={() => setShowAddParam(false)}>
                 Cancel
               </button>
@@ -764,12 +906,12 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
       )}
 
       {showEditParam && (
-        <div style={modalOverlayStyle}>
-          <div style={modalStyle}>
-            <div style={modalHeaderStyle}>Edit Parameter</div>
+        <div style={getModalOverlayStyle(ui)}>
+          <div style={getModalStyle(ui)}>
+            <div style={getModalHeaderStyle(ui)}>Edit Parameter</div>
             <div style={modalBodyStyle}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 12, color: '#777' }}>Parameter Name</label>
+                <label style={{ fontSize: 12, color: ui.textMuted }}>Parameter Name</label>
                 <input
                   type="text"
                   style={inputStyle}
@@ -780,7 +922,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
 
               <div style={{ display: 'flex', gap: 12 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-                  <label style={{ fontSize: 12, color: '#777' }}>Type</label>
+                  <label style={{ fontSize: 12, color: ui.textMuted }}>Type</label>
                   <select
                     style={selectStyle}
                     value={editDraft.type}
@@ -806,7 +948,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-                  <label style={{ fontSize: 12, color: '#777' }}>Required</label>
+                  <label style={{ fontSize: 12, color: ui.textMuted }}>Required</label>
                   <select
                     style={selectStyle}
                     value={editDraft.required ? 'yes' : 'no'}
@@ -819,7 +961,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                <label style={{ fontSize: 12, color: '#777' }}>Value</label>
+                <label style={{ fontSize: 12, color: ui.textMuted }}>Value</label>
                 {editDraft.type === 'boolean' ? (
                   <select
                     style={selectStyle}
@@ -845,7 +987,7 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
               </div>
             </div>
 
-            <div style={modalFooterStyle}>
+            <div style={getModalFooterStyle(ui)}>
               <button style={cancelButtonStyle} onClick={() => setShowEditParam(false)}>
                 Cancel
               </button>
@@ -860,31 +1002,34 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
   );
 };
 
-// Modal styles (shared)
-const modalOverlayStyle: React.CSSProperties = {
+// Modal styles (shared) — take the palette so the modals follow the platform theme.
+const getModalOverlayStyle = (ui: PanelPalette): React.CSSProperties => ({
   position: 'fixed',
   inset: 0,
-  backgroundColor: 'rgba(0,0,0,0.25)',
+  backgroundColor: ui.modalOverlay,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   zIndex: 1005,
-};
+});
 
-const modalStyle: React.CSSProperties = {
+const getModalStyle = (ui: PanelPalette): React.CSSProperties => ({
   width: 420,
   maxWidth: '92vw',
-  backgroundColor: '#fff',
+  backgroundColor: ui.panelBg,
+  color: ui.text,
   borderRadius: 12,
+  border: `1px solid ${ui.border}`,
   boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
   overflow: 'hidden',
-};
+});
 
-const modalHeaderStyle: React.CSSProperties = {
+const getModalHeaderStyle = (ui: PanelPalette): React.CSSProperties => ({
   padding: '12px 16px',
   fontWeight: 600,
-  borderBottom: '1px solid #eee',
-};
+  color: ui.textStrong,
+  borderBottom: `1px solid ${ui.border}`,
+});
 
 const modalBodyStyle: React.CSSProperties = {
   padding: 16,
@@ -893,11 +1038,11 @@ const modalBodyStyle: React.CSSProperties = {
   gap: 12,
 };
 
-const modalFooterStyle: React.CSSProperties = {
+const getModalFooterStyle = (ui: PanelPalette): React.CSSProperties => ({
   padding: 12,
   display: 'flex',
   justifyContent: 'flex-end',
   gap: 8,
-  borderTop: '1px solid #eee',
-  backgroundColor: '#fafafa',
-};
+  borderTop: `1px solid ${ui.border}`,
+  backgroundColor: ui.actionBarBg,
+});

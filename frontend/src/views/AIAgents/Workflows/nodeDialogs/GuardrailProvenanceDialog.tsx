@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
@@ -13,14 +13,12 @@ import { useQuery } from "@tanstack/react-query";
 import { getAllLLMProviders } from "@/services/llmProviders";
 import { LLMProvider } from "@/interfaces/llmProvider.interface";
 import { BaseNodeDialogProps } from "./base";
-import {
-  GuardrailProvenanceNodeData,
-  NodeData,
-} from "../types/nodes";
+import { GuardrailProvenanceNodeData } from "../types/nodes";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { useWorkflow } from "../context/WorkflowContext";
 import { PromptEditorButton } from "../components/PromptEditor/PromptEditorButton";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type Props = BaseNodeDialogProps<
   GuardrailProvenanceNodeData,
@@ -28,9 +26,11 @@ type Props = BaseNodeDialogProps<
 >;
 
 export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
-  const [localData, setLocalData] = useState<GuardrailProvenanceNodeData>(data);
+  const { isOpen, onClose, data } = props;
   const { workflow } = useWorkflow();
+
+  const { values, setValues, setField, merged, handleSave } =
+    useNodeDialogState(props, () => data);
 
   const { data: providers = [] } = useQuery({
     queryKey: ["llmProviders"],
@@ -38,39 +38,25 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
     select: (rows: LLMProvider[]) => rows.filter((p) => p.is_active === 1),
   });
 
-  useEffect(() => {
-    if (isOpen) {
-      setLocalData(data);
-    }
-  }, [isOpen, data]);
-
   // When switching to LLM mode and no provider is set, default to first active provider
   useEffect(() => {
     if (
       isOpen &&
-      (localData.provenance_mode === "llm" || localData.use_llm_judge) &&
-      !localData.llm_provider_id &&
+      (values.provenance_mode === "llm" || values.use_llm_judge) &&
+      !values.llm_provider_id &&
       providers.length > 0
     ) {
-      setLocalData((prev) => ({
+      setValues((prev) => ({
         ...prev,
         llm_provider_id: providers[0].id,
       }));
     }
-  }, [isOpen, localData.provenance_mode, localData.use_llm_judge, localData.llm_provider_id, providers]);
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      ...localData,
-    } as GuardrailProvenanceNodeData & NodeData);
-    onClose();
-  };
+  }, [isOpen, values.provenance_mode, values.use_llm_judge, values.llm_provider_id, providers, setValues]);
 
   return (
     <NodeConfigPanel
       {...props}
-      data={localData as unknown as NodeData}
+      data={merged}
       footer={
         <div className="flex justify-end gap-2">
           <button
@@ -94,13 +80,8 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
         <div className="space-y-2">
           <Label>Answer field key</Label>
           <DraggableTextArea
-            value={localData.answer_field ?? "answer"}
-            onChange={(e) =>
-              setLocalData((prev) => ({
-                ...prev,
-                answer_field: e.target.value,
-              }))
-            }
+            value={values.answer_field ?? "answer"}
+            onChange={(e) => setField("answer_field", e.target.value)}
             placeholder="answer"
             rows={2}
           />
@@ -108,13 +89,8 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
         <div className="space-y-2">
           <Label>Context field key</Label>
           <DraggableTextArea
-            value={localData.context_field ?? "context"}
-            onChange={(e) =>
-              setLocalData((prev) => ({
-                ...prev,
-                context_field: e.target.value,
-              }))
-            }
+            value={values.context_field ?? "context"}
+            onChange={(e) => setField("context_field", e.target.value)}
             placeholder="context"
             rows={2}
           />
@@ -126,13 +102,8 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             step="0.01"
             min={0}
             max={1}
-            value={localData.min_score ?? 0.5}
-            onChange={(e) =>
-              setLocalData((prev) => ({
-                ...prev,
-                min_score: Number(e.target.value),
-              }))
-            }
+            value={values.min_score ?? 0.5}
+            onChange={(e) => setField("min_score", Number(e.target.value))}
           />
         </div>
         {false && (
@@ -144,12 +115,9 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
               </p>
             </div>
             <Switch
-              checked={localData.fail_on_violation ?? false}
+              checked={values.fail_on_violation ?? false}
               onCheckedChange={(checked) =>
-                setLocalData((prev) => ({
-                  ...prev,
-                  fail_on_violation: checked,
-                }))
+                setField("fail_on_violation", checked)
               }
             />
           </div>
@@ -162,26 +130,18 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             </p>
           </div>
           <Switch
-            checked={localData.fallback_answer_enabled ?? false}
+            checked={values.fallback_answer_enabled ?? false}
             onCheckedChange={(checked) =>
-              setLocalData((prev) => ({
-                ...prev,
-                fallback_answer_enabled: checked,
-              }))
+              setField("fallback_answer_enabled", checked)
             }
           />
         </div>
-        {localData.fallback_answer_enabled && (
+        {values.fallback_answer_enabled && (
           <div className="space-y-2">
             <Label>Fallback answer text</Label>
             <DraggableTextArea
-              value={localData.fallback_answer ?? ""}
-              onChange={(e) =>
-                setLocalData((prev) => ({
-                  ...prev,
-                  fallback_answer: e.target.value,
-                }))
-              }
+              value={values.fallback_answer ?? ""}
+              onChange={(e) => setField("fallback_answer", e.target.value)}
               placeholder="e.g. I'm sorry, I cannot provide an answer based on the available information."
               rows={3}
             />
@@ -191,9 +151,9 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
         <div className="space-y-2 pt-2 border-t border-border">
           <Label>Provenance mode</Label>
           <Select
-            value={localData.provenance_mode || "embeddings"}
+            value={values.provenance_mode || "embeddings"}
             onValueChange={(value: "embeddings" | "llm") =>
-              setLocalData((prev) => ({
+              setValues((prev) => ({
                 ...prev,
                 provenance_mode: value,
                 use_llm_judge: value === "llm",
@@ -212,20 +172,15 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
           </Select>
         </div>
 
-        {localData.provenance_mode === "embeddings" && (
+        {values.provenance_mode === "embeddings" && (
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Embedding provider</Label>
               <Select
-                value={localData.embedding_type || "huggingface"}
+                value={values.embedding_type || "huggingface"}
                 onValueChange={(
                   value: "openai" | "huggingface" | "bedrock",
-                ) =>
-                  setLocalData((prev) => ({
-                    ...prev,
-                    embedding_type: value,
-                  }))
-                }
+                ) => setField("embedding_type", value)}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select provider" />
@@ -240,12 +195,9 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             <div className="space-y-2">
               <Label>Embedding model name</Label>
               <RichInput
-                value={localData.embedding_model_name ?? ""}
+                value={values.embedding_model_name ?? ""}
                 onChange={(e) =>
-                  setLocalData((prev) => ({
-                    ...prev,
-                    embedding_model_name: e.target.value,
-                  }))
+                  setField("embedding_model_name", e.target.value)
                 }
                 placeholder="e.g. all-MiniLM-L6-v2"
               />
@@ -253,7 +205,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
           </div>
         )}
 
-        {localData.provenance_mode === "llm" && (
+        {values.provenance_mode === "llm" && (
           <div className="space-y-4">
             <div className="space-y-1">
               <Label>LLM as judge</Label>
@@ -265,13 +217,8 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             <div className="space-y-2">
               <Label>LLM Provider</Label>
               <Select
-                value={localData.llm_provider_id || ""}
-                onValueChange={(val) =>
-                  setLocalData((prev) => ({
-                    ...prev,
-                    llm_provider_id: val,
-                  }))
-                }
+                value={values.llm_provider_id || ""}
+                onValueChange={(val) => setField("llm_provider_id", val)}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select provider" />
@@ -294,14 +241,11 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
                     workflowId={workflow.id}
                     nodeId={props.nodeId}
                     promptField="llm_judge_system_prompt_suffix"
-                    currentValue={localData.llm_judge_system_prompt_suffix ?? ""}
+                    currentValue={values.llm_judge_system_prompt_suffix ?? ""}
                     onPromptChange={(val) =>
-                      setLocalData((prev) => ({
-                        ...prev,
-                        llm_judge_system_prompt_suffix: val,
-                      }))
+                      setField("llm_judge_system_prompt_suffix", val)
                     }
-                    defaultProviderId={localData.llm_provider_id}
+                    defaultProviderId={values.llm_provider_id}
                   />
                 )}
               </div>
@@ -310,12 +254,9 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
                 E.g. <em>"When no Context is available, treat the answer as supported."</em>
               </p>
               <DraggableTextArea
-                value={localData.llm_judge_system_prompt_suffix ?? ""}
+                value={values.llm_judge_system_prompt_suffix ?? ""}
                 onChange={(e) =>
-                  setLocalData((prev) => ({
-                    ...prev,
-                    llm_judge_system_prompt_suffix: e.target.value,
-                  }))
+                  setField("llm_judge_system_prompt_suffix", e.target.value)
                 }
                 placeholder="Optional extra instructions for the judge..."
                 rows={4}

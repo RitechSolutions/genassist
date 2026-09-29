@@ -25,6 +25,8 @@ export interface AuditLogCardProps {
   onViewDetails: (logId: string) => void;
   loading?: boolean;
   isRefreshing?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export interface JsonViewerProps {

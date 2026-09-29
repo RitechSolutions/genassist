@@ -152,7 +152,12 @@ def before_flush(session, flush_context, instances):
         setattr(instance, "updated_by", get_current_user_id())
 
         changes = {}
+        column_keys = {c.key for c in inspect(instance).mapper.column_attrs}
         for key in state.attrs:
+            if key.key not in column_keys:
+                # Skip relationship/association attrs: get_history() on an
+                # unloaded relationship triggers a lazy load during flush.
+                continue
             history = attributes.get_history(instance, key.key)
             if history.has_changes():
                 old_value = stringify_value(

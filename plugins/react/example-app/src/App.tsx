@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { FeatureFlags, GenAgentChat, GENASSIST_AGENT_METADATA_UPDATED } from "../../src";
 import {
   ChevronDown,
@@ -6,7 +6,40 @@ import {
   Plus,
   Trash2,
   Pencil,
+  Moon,
+  Sun,
 } from "lucide-react";
+
+type ColorMode = "light" | "dark";
+
+// Chat theme presets. Toggling the demo's Light/Dark switch swaps the whole chat
+// theme so the new dark-mode-oriented tokens (userBubbleColor, inputBackgroundColor,
+// borderColor, mutedTextColor) are exercised without hand-tuning each picker.
+const LIGHT_THEME = {
+  primaryColor: "#173DED",
+  secondaryColor: "#f5f5f5",
+  backgroundColor: "#ffffff",
+  textColor: "#000000",
+  fontFamily: "Inter, sans-serif",
+  fontSize: "15px",
+  userBubbleColor: "#E4E4E7",
+  inputBackgroundColor: "#ffffff",
+  borderColor: "#e5e7eb",
+  mutedTextColor: "#6b7280",
+};
+
+const DARK_THEME = {
+  primaryColor: "#6366F1",
+  secondaryColor: "#1f2023",
+  backgroundColor: "#141517",
+  textColor: "#f4f4f5",
+  fontFamily: "Inter, sans-serif",
+  fontSize: "15px",
+  userBubbleColor: "#3f3f46",
+  inputBackgroundColor: "#26272b",
+  borderColor: "#3f3f46",
+  mutedTextColor: "#a1a1aa",
+};
 
 interface FileState {
   useCustom: boolean;
@@ -24,14 +57,35 @@ function App() {
     value?: string | number | boolean;
   }
 
-  const [theme, setTheme] = useState({
-    primaryColor: "#173DED",
-    secondaryColor: "#f5f5f5",
-    backgroundColor: "#ffffff",
-    textColor: "#000000",
-    fontFamily: "Inter, sans-serif",
-    fontSize: "15px",
+  // Light/Dark demo mode, mirroring the Genassist platform: next-themes toggles the
+  // `dark` class on <html> (attribute="class", storageKey="theme"). We reproduce that
+  // here without the dependency so the config-panel dark logic (which watches that
+  // class) and the chat theme presets can both be tested from one switch.
+  const [mode, setMode] = useState<ColorMode>(() => {
+    const stored = typeof window !== "undefined" ? localStorage.getItem("theme") : null;
+    return stored === "dark" ? "dark" : "light";
   });
+
+  const [theme, setTheme] = useState(mode === "dark" ? DARK_THEME : LIGHT_THEME);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", mode === "dark");
+    // Native form controls (inputs, selects, checkboxes) follow this, so the demo's
+    // own controls panel renders dark without hand-styling every field.
+    root.style.colorScheme = mode;
+    try {
+      localStorage.setItem("theme", mode);
+    } catch {
+      // ignore
+    }
+  }, [mode]);
+
+  const toggleMode = () => {
+    const next: ColorMode = mode === "dark" ? "light" : "dark";
+    setMode(next);
+    setTheme(next === "dark" ? DARK_THEME : LIGHT_THEME);
+  };
 
   const [chatSettings, setChatSettings] = useState({
     name: "Genassist Support",
@@ -52,6 +106,7 @@ function App() {
     useWs: false,
     usePoll: false,
     quickInput: true,
+    readReceipts: true,
   });
 
   // Which presentation of the chat to render (see GenAgentChat `mode`).
@@ -257,6 +312,27 @@ function App() {
   // Memoize callbacks to prevent unnecessary re-renders of GenAgentChat
   const handleError = useCallback(() => {}, []);
 
+  // Demo chrome palette (the controls panel + page), light/dark. This is the demo's
+  // own dev UI — separate from the chat theme and from the plugin's config panel.
+  const isDark = mode === "dark";
+  const ui = isDark
+    ? {
+        pageBg: "#0b0b0d",
+        panelBg: "#1a1a1c",
+        sectionBg: "#232326",
+        border: "#3f3f46",
+        text: "#d4d4d8",
+        textMuted: "#a1a1aa",
+      }
+    : {
+        pageBg: "#f3f4f6",
+        panelBg: "#ffffff",
+        sectionBg: "#f9f9f9",
+        border: "#e0e0e0",
+        text: "#333",
+        textMuted: "#666",
+      };
+
   const containerStyle: React.CSSProperties = {
     display: "flex",
     padding: "20px",
@@ -265,14 +341,17 @@ function App() {
     boxSizing: "border-box",
     fontFamily: "Inter, sans-serif",
     position: "relative",
+    background: ui.pageBg,
+    color: ui.text,
   };
 
   const controlsPanelStyle: React.CSSProperties = {
     flex: "1",
     maxWidth: "300px",
-    backgroundColor: "#ffffff",
+    backgroundColor: ui.panelBg,
+    color: ui.text,
     borderRadius: "8px",
-    boxShadow: "0 2px 10px rgba(0, 0, 0, 0.1)",
+    boxShadow: isDark ? "0 2px 10px rgba(0, 0, 0, 0.5)" : "0 2px 10px rgba(0, 0, 0, 0.1)",
     overflow: "hidden",
     display: "flex",
     flexDirection: "column",
@@ -283,19 +362,19 @@ function App() {
 
   const sectionHeaderStyle: React.CSSProperties = {
     padding: "16px",
-    borderBottom: "1px solid #e0e0e0",
+    borderBottom: `1px solid ${ui.border}`,
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
     cursor: "pointer",
-    backgroundColor: "#f9f9f9",
+    backgroundColor: ui.sectionBg,
   };
 
   const sectionTitleStyle: React.CSSProperties = {
     margin: 0,
     fontSize: "12px",
     fontWeight: "bold",
-    color: "#666",
+    color: ui.textMuted,
     letterSpacing: "1px",
   };
 
@@ -310,7 +389,7 @@ function App() {
 
   const labelStyle: React.CSSProperties = {
     fontSize: "14px",
-    color: "#333",
+    color: ui.text,
   };
 
   const colorPickerStyle: React.CSSProperties = {
@@ -318,18 +397,20 @@ function App() {
     width: "120px",
     height: "32px",
     padding: 0,
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${ui.border}`,
     borderRadius: "4px",
     cursor: "pointer",
+    backgroundColor: ui.panelBg,
   };
 
   const selectStyle: React.CSSProperties = {
     width: "120px",
     height: "32px",
     padding: "0 8px",
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${ui.border}`,
     borderRadius: "4px",
-    backgroundColor: "#fff",
+    backgroundColor: ui.panelBg,
+    color: ui.text,
     fontSize: "14px",
   };
 
@@ -337,8 +418,10 @@ function App() {
     width: "100%",
     height: "32px",
     padding: "0 8px",
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${ui.border}`,
     borderRadius: "4px",
+    backgroundColor: ui.panelBg,
+    color: ui.text,
     fontSize: "14px",
   };
 
@@ -373,8 +456,9 @@ function App() {
 
   const buttonStyle: React.CSSProperties = {
     padding: "4px 8px",
-    backgroundColor: "#f5f5f5",
-    border: "1px solid #e0e0e0",
+    backgroundColor: ui.sectionBg,
+    color: ui.text,
+    border: `1px solid ${ui.border}`,
     borderRadius: "4px",
     fontSize: "12px",
     cursor: "pointer",
@@ -385,14 +469,15 @@ function App() {
     justifyContent: "flex-end",
     gap: "8px",
     padding: "16px",
-    borderTop: "1px solid #e0e0e0",
+    borderTop: `1px solid ${ui.border}`,
     marginTop: "auto",
   };
 
   const cancelButtonStyle: React.CSSProperties = {
     padding: "8px 16px",
-    backgroundColor: "#fff",
-    border: "1px solid #e0e0e0",
+    backgroundColor: ui.panelBg,
+    color: ui.text,
+    border: `1px solid ${ui.border}`,
     borderRadius: "4px",
     fontSize: "14px",
     cursor: "pointer",
@@ -400,8 +485,8 @@ function App() {
 
   const saveButtonStyle: React.CSSProperties = {
     padding: "8px 16px",
-    backgroundColor: "#000",
-    color: "#fff",
+    backgroundColor: isDark ? "#f4f4f5" : "#000",
+    color: isDark ? "#18181b" : "#fff",
     border: "none",
     borderRadius: "4px",
     fontSize: "14px",
@@ -425,7 +510,9 @@ function App() {
   const modalStyle: React.CSSProperties = {
     width: "520px",
     maxWidth: "90vw",
-    backgroundColor: "#fff",
+    backgroundColor: ui.panelBg,
+    color: ui.text,
+    border: `1px solid ${ui.border}`,
     borderRadius: "12px",
     boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
     overflow: "hidden",
@@ -433,7 +520,7 @@ function App() {
 
   const modalHeaderStyle: React.CSSProperties = {
     padding: "16px 20px",
-    borderBottom: "1px solid #eee",
+    borderBottom: `1px solid ${ui.border}`,
     fontWeight: 600,
   };
 
@@ -449,7 +536,7 @@ function App() {
     justifyContent: "flex-end",
     gap: "8px",
     padding: "12px 20px 16px",
-    borderTop: "1px solid #eee",
+    borderTop: `1px solid ${ui.border}`,
   };
 
   const pillButtonStyle: React.CSSProperties = {
@@ -457,9 +544,10 @@ function App() {
     alignItems: "center",
     gap: 6,
     padding: "6px 10px",
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${ui.border}`,
     borderRadius: 6,
-    backgroundColor: "#fff",
+    backgroundColor: ui.panelBg,
+    color: ui.text,
     cursor: "pointer",
     fontSize: 12,
   };
@@ -471,23 +559,24 @@ function App() {
     gap: 8,
     width: "100%",
     padding: "10px 12px",
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${ui.border}`,
     borderRadius: 8,
-    backgroundColor: "#fff",
+    backgroundColor: ui.panelBg,
     cursor: "pointer",
     fontSize: 14,
-    color: "#111",
+    color: ui.text,
   };
 
   const smallIconButton: React.CSSProperties = {
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${ui.border}`,
     borderRadius: 8,
     width: 28,
     height: 28,
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#fff",
+    backgroundColor: ui.panelBg,
+    color: ui.text,
     cursor: "pointer",
   };
 
@@ -501,7 +590,7 @@ function App() {
   };
   const metaNameStyle: React.CSSProperties = {
     fontSize: 13,
-    color: "#222",
+    color: ui.text,
     fontWeight: 500,
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -514,18 +603,19 @@ function App() {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
     fontSize: 13,
-    color: "#111",
-    border: "1px solid #e6e6e6",
+    color: ui.text,
+    border: `1px solid ${ui.border}`,
     borderRadius: 12,
     padding: "6px 10px",
-    backgroundColor: "#fafafa",
+    backgroundColor: ui.sectionBg,
   };
   const metaInputStyle: React.CSSProperties = {
     height: 32,
     padding: "0 8px",
-    border: "1px solid #e0e0e0",
+    border: `1px solid ${ui.border}`,
     borderRadius: 8,
-    backgroundColor: "#fff",
+    backgroundColor: ui.panelBg,
+    color: ui.text,
     fontSize: 13,
     maxWidth: 200,
   };
@@ -634,9 +724,38 @@ function App() {
 
   return (
     <div style={containerStyle}>
+      {/* Light/Dark toggle — mirrors the Genassist platform (toggles the `dark` class
+          on <html>) and swaps the chat theme preset so the widget's dark mode is visible. */}
+      <button
+        type="button"
+        onClick={toggleMode}
+        aria-label={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        style={{
+          position: "fixed",
+          top: 20,
+          right: 20,
+          zIndex: 3000,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 14px",
+          borderRadius: 999,
+          border: `1px solid ${ui.border}`,
+          backgroundColor: ui.panelBg,
+          color: ui.text,
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: "pointer",
+          boxShadow: isDark ? "0 2px 10px rgba(0,0,0,0.5)" : "0 2px 10px rgba(0,0,0,0.12)",
+        }}
+      >
+        {mode === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+        <span>{mode === "dark" ? "Light" : "Dark"}</span>
+      </button>
+
       <div style={controlsPanelStyle}>
         {/* Appearance Section */}
-        <div style={{ borderBottom: "1px solid #e0e0e0" }}>
+        <div style={{ borderBottom: `1px solid ${ui.border}` }}>
           <div
             style={sectionHeaderStyle}
             onClick={() => setShowAppearance(!showAppearance)}
@@ -694,6 +813,54 @@ function App() {
                   value={theme.textColor}
                   onChange={(e) =>
                     handleColorChange("textColor", e.target.value)
+                  }
+                  style={colorPickerStyle}
+                />
+              </div>
+
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>User Bubble Color</label>
+                <input
+                  type="color"
+                  value={theme.userBubbleColor}
+                  onChange={(e) =>
+                    handleColorChange("userBubbleColor", e.target.value)
+                  }
+                  style={colorPickerStyle}
+                />
+              </div>
+
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Input Background</label>
+                <input
+                  type="color"
+                  value={theme.inputBackgroundColor}
+                  onChange={(e) =>
+                    handleColorChange("inputBackgroundColor", e.target.value)
+                  }
+                  style={colorPickerStyle}
+                />
+              </div>
+
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Border Color</label>
+                <input
+                  type="color"
+                  value={theme.borderColor}
+                  onChange={(e) =>
+                    handleColorChange("borderColor", e.target.value)
+                  }
+                  style={colorPickerStyle}
+                />
+              </div>
+
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Muted Text Color</label>
+                <input
+                  type="color"
+                  value={theme.mutedTextColor}
+                  onChange={(e) =>
+                    handleColorChange("mutedTextColor", e.target.value)
                   }
                   style={colorPickerStyle}
                 />
@@ -989,7 +1156,7 @@ function App() {
                   When set, replaces the small logo + name with this full logo.
                 </div>
               </div>
-              <div style={{ padding: "16px", borderTop: "1px solid #e0e0e0", marginTop: 8 }}>
+              <div style={{ padding: "16px", borderTop: `1px solid ${ui.border}`, marginTop: 8 }}>
                 <div style={{ fontSize: 13, color: "#555", marginBottom: 12, fontWeight: 500 }}>
                   Features
                 </div>
@@ -1026,6 +1193,15 @@ function App() {
                     type="checkbox"
                     checked={featureFlags.usePoll}
                     onChange={(e) => handleFeatureFlagChange("usePoll", e.target.checked)}
+                    style={{ width: 20, height: 20, cursor: "pointer" }}
+                  />
+                </div>
+                <div style={formGroupStyle}>
+                  <label style={labelStyle}>Read Receipts</label>
+                  <input
+                    type="checkbox"
+                    checked={!!featureFlags.readReceipts}
+                    onChange={(e) => handleFeatureFlagChange("readReceipts", e.target.checked)}
                     style={{ width: 20, height: 20, cursor: "pointer" }}
                   />
                 </div>
@@ -1140,6 +1316,7 @@ function App() {
             useWs={featureFlags.useWs}
             usePoll={featureFlags.usePoll}
             quickInput={featureFlags.quickInput}
+            readReceipts={featureFlags.readReceipts}
             serverUnavailableMessage="Support is currently offline. Please try again later or contact us."
             serverUnavailableContactUrl="https://www.ritech.co/"
             serverUnavailableContactLabel="Contact Support"
@@ -1166,24 +1343,8 @@ function App() {
           />
         );
 
-        // The input-bar variant renders inline where it is placed — dock it to the
-        // bottom-center of the viewport for the demo. Embedded gets a sized box.
-        if (chatMode === "inputbar") {
-          return (
-            <div
-              style={{
-                position: "fixed",
-                left: "50%",
-                transform: "translateX(-50%)",
-                bottom: 28,
-                width: "min(680px, calc(100vw - 40px))",
-                zIndex: 1000,
-              }}
-            >
-              {chatWidget}
-            </div>
-          );
-        }
+        // The input-bar variant docks itself to the bottom-center of the viewport
+        // (fixed positioning) — no wrapper needed. Embedded gets a sized box.
         if (chatMode === "embedded") {
           return (
             <div style={{ position: "fixed", right: 24, bottom: 24, width: 384, height: 620, zIndex: 1000 }}>

@@ -1,13 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { DataTable, Column } from "@/components/ui/data-table";
-import { LIST_PAGE_SIZE } from "@/constants/pagination";
-import { ListEmptyState } from "@/components/ListEmptyState";
+import { Column } from "@/components/ui/data-table";
+import { EntityTableCard } from "@/components/EntityTableCard";
 import { Button } from "@/components/button";
-import { Pencil, Trash2, Languages, Plus } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { Languages, Plus } from "lucide-react";
 import { deleteTranslation, getTranslations } from "@/services/translations";
 import { Translation } from "@/interfaces/translation.interface";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface TranslationsCardProps {
   searchQuery: string;
@@ -25,113 +21,6 @@ export function TranslationsCard({
   onEditTranslation,
   onAddTranslation,
 }: TranslationsCardProps) {
-  const [translations, setTranslations] = useState<Translation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [translationToDelete, setTranslationToDelete] =
-    useState<Translation | null>(null);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    const fetchTranslations = async () => {
-      try {
-        setLoading(true);
-        const data = await getTranslations();
-        setTranslations(data);
-        setError(null);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to fetch translations"
-        );
-        toast.error("Failed to fetch translations.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTranslations();
-  }, [refreshKey]);
-
-  const handleDeleteClick = (row: Translation) => {
-    if (!row.key) return;
-    setTranslationToDelete(row);
-    setIsDeleteDialogOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!translationToDelete?.key) return;
-
-    try {
-      setIsDeleting(true);
-      await deleteTranslation(translationToDelete.key);
-      toast.success("Translation deleted.");
-
-      setTranslations((prev) =>
-        prev.filter((t) => t.key !== translationToDelete.key)
-      );
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to delete translation."
-      );
-    } finally {
-      setIsDeleting(false);
-      setIsDeleteDialogOpen(false);
-      setTranslationToDelete(null);
-    }
-  };
-
-  const filteredTranslations = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return translations;
-
-    return translations.filter((t) => {
-      const values = [
-        t.key,
-        t.default,
-        ...Object.values(t.translations),
-      ]
-        .filter(Boolean)
-        .map((v) => String(v).toLowerCase());
-
-      return values.some((v) => v.includes(q));
-    });
-  }, [translations, searchQuery]);
-
-  const isSearchActive = searchQuery.trim().length > 0;
-
-  const emptyState = useMemo(
-    () => (
-      <ListEmptyState
-        icon={<Languages className="h-12 w-12 text-muted-foreground" />}
-        title={
-          isSearchActive
-            ? "No matching translations"
-            : "No translations yet"
-        }
-        description={
-          isSearchActive
-            ? "Try adjusting your search query."
-            : "Add translation keys and locale strings so the app can display copy for each language."
-        }
-        action={
-          !isSearchActive ? (
-            <Button
-              onClick={onAddTranslation}
-              className="rounded-full flex items-center gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              Add Translation
-            </Button>
-          ) : undefined
-        }
-      />
-    ),
-    [isSearchActive, onAddTranslation]
-  );
-
   const cellClass =
     "max-w-[200px] truncate whitespace-nowrap overflow-hidden text-ellipsis align-middle";
   const longCellClass =
@@ -177,55 +66,57 @@ export function TranslationsCard({
         );
       },
     },
-    {
-      header: "Actions",
-      key: "actions",
-      headerClassName: "w-28",
-      cell: (row) => (
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onEditTranslation(row, "edit")}
-            title="Edit translation"
-          >
-            <Pencil className="w-4 h-4 text-foreground" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => handleDeleteClick(row)}
-            title="Delete translation"
-          >
-            <Trash2 className="w-4 h-4 text-destructive" />
-          </Button>
-        </div>
-      ),
-    },
   ];
 
   return (
-    <>
-      <DataTable
-        data={filteredTranslations}
-        columns={columns}
-        loading={loading}
-        error={error}
-        searchQuery={searchQuery}
-        pageSize={LIST_PAGE_SIZE}
-        emptyMessage="No translations found"
-        notFoundMessage="No translations found matching your search"
-        emptyState={emptyState}
-      />
-
-      <ConfirmDialog
-        isOpen={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
-        onConfirm={handleDeleteConfirm}
-        isInProgress={isDeleting}
-        itemName={translationToDelete?.key || ""}
-        description={`This action cannot be undone. This will permanently delete the translation "${translationToDelete?.key}".`}
-      />
-    </>
+    <EntityTableCard<Translation>
+      entityName="translation"
+      searchQuery={searchQuery}
+      filterFn={(t, query) => {
+        const q = query.trim().toLowerCase();
+        const values = [t.key, t.default, ...Object.values(t.translations)]
+          .filter(Boolean)
+          .map((v) => String(v).toLowerCase());
+        return values.some((v) => v.includes(q));
+      }}
+      refreshKey={refreshKey}
+      fetchFn={getTranslations}
+      getItemId={(t) => t.key}
+      deleteFn={(t) => deleteTranslation(t.key)}
+      getItemName={(t) => t.key}
+      deleteDescription={(t) =>
+        `This action cannot be undone. This will permanently delete the translation "${t.key}".`
+      }
+      fetchErrorMessage="Failed to fetch translations."
+      deleteSuccessMessage="Translation deleted."
+      deleteErrorMessage="Failed to delete translation."
+      emptyMessage="No translations found"
+      notFoundMessage="No translations found matching your search"
+      emptyState={{
+        icon: <Languages className="h-12 w-12 text-muted-foreground" />,
+        title: "No translations yet",
+        searchTitle: "No matching translations",
+        description:
+          "Add translation keys and locale strings so the app can display copy for each language.",
+        searchDescription: "Try adjusting your search query.",
+        action: (
+          <Button
+            onClick={onAddTranslation}
+            className="rounded-full flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            Add Translation
+          </Button>
+        ),
+      }}
+      columns={columns}
+      rowActions={{
+        onEdit: (t) => onEditTranslation(t, "edit"),
+        editTitle: "Edit translation",
+        deleteTitle: "Delete translation",
+        canDelete: (t) => !!t.key,
+        headerClassName: "w-28",
+      }}
+    />
   );
 }

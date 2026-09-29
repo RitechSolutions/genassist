@@ -51,11 +51,27 @@ def get_current_user_id() -> UUID:
 def get_current_operator_id() -> UUID:
     return context.get("operator_id") if context.exists() else None
 
+def get_current_auth_mode() -> Optional[str]:
+    """The auth mode the auth chain selected for this request:
+    'token' (a logged-in staff JWT), 'api_key', or 'guest_token' (an embedded
+    widget visitor). None when no auth context is set."""
+    return context.get("auth_mode") if context.exists() else None
+
 def current_user_is_supervisor() -> bool:
      roles = context.get("user_roles") if context.exists() else None
      if roles:
          return "supervisor" in [role.name for role in roles]
      return False
+
+
+def authorized_supervised_group_ids(user) -> list[UUID]:
+    """Supervised-group assignments only count while the user still holds the supervisor role."""
+    if user is None:
+        return []
+    role_names = {role.name for role in (getattr(user, "roles", None) or [])}
+    if "supervisor" not in role_names:
+        return []
+    return list(getattr(user, "supervised_group_ids", None) or [])
 
 
 def current_user_is_admin() -> bool:

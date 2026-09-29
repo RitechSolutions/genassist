@@ -11,9 +11,17 @@ interface BubbleDockProps {
   placeholder: string;
   fontFamily: string;
   fontSize: string;
+  /** Quick-input pill background. Defaults to #ffffff. */
+  inputBackgroundColor?: string;
+  /** Quick-input pill border. Defaults to #e5e7eb. */
+  borderColor?: string;
+  /** Quick-input text. Defaults to #111111. */
+  textColor?: string;
   chatBubbleIcon?: 'message' | 'sparkles' | 'x';
   /** When false, only the launcher bubble is rendered (quick input hidden/dismissed). */
   showQuickInput: boolean;
+  /** Count of unseen agent/supervisor messages, shown as a badge on the launcher. */
+  unreadCount?: number;
   onOpen: () => void;
   onSend: (text: string) => void;
   onDismissQuickInput: () => void;
@@ -33,8 +41,12 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
   placeholder,
   fontFamily,
   fontSize,
+  inputBackgroundColor = '#ffffff',
+  borderColor = '#e5e7eb',
+  textColor = '#111111',
   chatBubbleIcon,
   showQuickInput,
+  unreadCount = 0,
   onOpen,
   onSend,
   onDismissQuickInput,
@@ -94,8 +106,8 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
     display: 'flex',
     alignItems: 'center',
     boxSizing: 'border-box',
-    background: '#ffffff',
-    border: focused ? '1.5px solid #111111' : '1px solid #e5e7eb',
+    background: inputBackgroundColor,
+    border: focused ? `1.5px solid ${textColor}` : `1px solid ${borderColor}`,
     borderRadius: 999,
     padding: '0 6px',
     boxShadow: focused ? '0 8px 24px rgba(0, 0, 0, 0.16)' : '0 2px 10px rgba(0, 0, 0, 0.10)',
@@ -145,6 +157,7 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
         primaryColor={primaryColor}
         style={bubbleStyle}
         chatBubbleIcon={chatBubbleIcon}
+        unreadCount={unreadCount}
       />
 
       {showQuickInput && (
@@ -185,7 +198,7 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
               background: 'transparent',
               fontSize,
               fontFamily,
-              color: '#111111',
+              color: textColor,
               padding: '0 6px 0 12px',
             }}
           />

@@ -5,9 +5,21 @@ import { Attachment } from '../../types';
 interface UploadFilePreviewProps {
   file?: Attachment;
   index?: number;
+  /** Chip background. Defaults to #f0f0f0. */
+  backgroundColor?: string;
+  /** File name text. Defaults to inherit. */
+  textColor?: string;
+  /** File size text. Defaults to #666. */
+  mutedTextColor?: string;
 }
 
-export const UploadFilePreview: React.FC<UploadFilePreviewProps> = ({ file, index }) => {
+export const UploadFilePreview: React.FC<UploadFilePreviewProps> = ({
+  file,
+  index,
+  backgroundColor = '#f0f0f0',
+  textColor,
+  mutedTextColor = '#666',
+}) => {
 
   let fileType = file?.type;
 
@@ -24,10 +36,11 @@ export const UploadFilePreview: React.FC<UploadFilePreviewProps> = ({ file, inde
     display: 'flex',
     alignItems: 'center',
     padding: '8px',
-    backgroundColor: '#f0f0f0',
+    backgroundColor,
     borderRadius: '8px',
     position: 'relative',
     maxWidth: '250px',
+    ...(textColor ? { color: textColor } : {}),
   };
 
   const imageStyle: React.CSSProperties = {
@@ -50,7 +63,7 @@ export const UploadFilePreview: React.FC<UploadFilePreviewProps> = ({ file, inde
 
   const fileSizeStyle: React.CSSProperties = {
     fontSize: '12px',
-    color: '#666',
+    color: mutedTextColor,
   };
 
   const fileIconStyle: React.CSSProperties = {

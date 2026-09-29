@@ -686,8 +686,11 @@ class DatabaseManager:
                             continue
                         table_info = {"name": table, "columns": []}
 
-                        # Get column details
-                        result = await conn.execute(text(f"DESCRIBE `{table}`"))
+                        # Get column details. `table` is already restricted to the
+                        # allowlist above; quote via the dialect preparer as defense
+                        # in depth instead of raw backtick interpolation.
+                        quoted_table = self.engine.dialect.identifier_preparer.quote(table)
+                        result = await conn.execute(text(f"DESCRIBE {quoted_table}"))
                         columns = result.fetchall()
 
                         for column in columns:

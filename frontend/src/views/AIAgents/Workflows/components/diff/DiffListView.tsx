@@ -90,7 +90,10 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
               />
               <div className="flex min-w-0 flex-col leading-tight">
                 <span
-                  className={cn('text-lg font-semibold tabular-nums', active ? 'text-foreground' : 'text-muted-foreground')}
+                  className={cn(
+                    'text-lg font-semibold tabular-nums',
+                    active ? 'text-foreground' : 'text-muted-foreground'
+                  )}
                 >
                   {value}
                 </span>
@@ -114,7 +117,7 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
           </p>
         </div>
       ) : (
-        <ScrollArea className="mt-4 flex-1 pr-3">
+        <ScrollArea className="mt-4 flex-1 pr-3" viewportProps={{ className: '[&>div]:!block' }}>
           <Accordion type="multiple" defaultValue={defaultOpen} className="w-full space-y-3">
             {modified.length > 0 && (
               <AccordionItem value="modified" className="border-none">
@@ -192,7 +195,9 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
               <AccordionItem value="connections" className="border-none">
                 <AccordionTrigger className="py-1 hover:no-underline">
                   <span className="flex items-center gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Connections</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Connections
+                    </span>
                     <span className="flex items-center gap-1.5 text-[11px] font-medium tabular-nums">
                       <span className="text-emerald-600 dark:text-emerald-400">+{addedEdges.length}</span>
                       <span className="text-slate-300">/</span>

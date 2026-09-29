@@ -13,7 +13,7 @@ class LlmProviderRepository(DbRepository[LlmProvidersModel]):
     async def create(self, data):
         obj = LlmProvidersModel(**data.model_dump())
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 
@@ -22,7 +22,7 @@ class LlmProviderRepository(DbRepository[LlmProvidersModel]):
 
     async def update(self, obj: LlmProvidersModel):
         self.db.add(obj)
-        await self.db.commit()
+        await self.db.flush()
         await self.db.refresh(obj)
         return obj
 

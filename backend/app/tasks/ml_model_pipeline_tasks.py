@@ -18,13 +18,18 @@ from app.repositories.ml_model_pipeline import (
 )
 from app.core.utils.uuid_utils import coerce_uuid
 from app.db.models.ml_model_pipeline import PipelineRunStatus, ArtifactType
-from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.repositories.workflow import WorkflowRepository
 from app.repositories.ml_models import MLModelsRepository
 from app.core.project_path import DATA_VOLUME
 from app.schemas.ml_model_pipeline import MLModelPipelineArtifactCreate
-from app.tasks.base import run_task_for_all_tenants, run_async_in_celery
+from app.tasks.base import (
+    ABANDONED_RUN_ERROR,
+    run_async_in_celery,
+    run_task_for_all_tenants,
+    should_execute_run,
+    was_abandoned_by_worker,
+)
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
 from app.dependencies.injector import injector
@@ -86,6 +91,32 @@ def scan_for_artifacts(output_dir: str, run_id: UUID) -> list[Dict[str, Any]]:
     return artifacts
 
 
+def _notify_run_failed(tenant_id: str, run_id: UUID) -> None:
+    emit_notification(
+        socket_connection_manager=injector.get(SocketConnectionManager),
+        tenant_id=tenant_id,
+        payload=notification_payload(
+            notification_id=f"workflow_failed:pipeline:{run_id}",
+            title="Workflow Run Failed",
+            description=f"Pipeline run {str(run_id)[:8]}... failed.",
+            level="error",
+            action_url="/ml-models",
+            entity_kind="pipeline_run",
+            entity_id=run_id,
+            event_key=f"workflow_failed:pipeline:{run_id}",
+        ),
+    )
+
+
+async def _fail_abandoned_run(run_repository, session, run_id: UUID, tenant_id: str) -> None:
+    """Fail a run whose worker was lost instead of running it a second time."""
+    await run_repository.update_status(
+        run_id, PipelineRunStatus.FAILED, error_message=ABANDONED_RUN_ERROR
+    )
+    await session.commit()
+    _notify_run_failed(tenant_id, run_id)
+
+
 async def execute_pipeline_run_async(run_id: UUID):
     """
     Async function to execute a pipeline run.
@@ -115,9 +146,16 @@ async def execute_pipeline_run_async(run_id: UUID):
                         )
                         return None  # Skip this tenant - run doesn't belong to it
                     raise
+                if not should_execute_run("Pipeline run", run_id, run.status):
+                    if was_abandoned_by_worker(run.status):
+                        await _fail_abandoned_run(run_repository, session, run_id, tenant_id)
+                    return None
 
                 # Update status to running
                 await run_repository.update_status(run_id, PipelineRunStatus.RUNNING)
+                # Commit the RUNNING marker so it is visible during the long run
+                # below (repos only flush now; this session owns its commit).
+                await session.commit()
 
                 # Get workflow
                 workflow = await workflow_repository.get_by_id(run.workflow_id)
@@ -134,7 +172,9 @@ async def execute_pipeline_run_async(run_id: UUID):
                     "edges": workflow.edges or [],
                 }
 
-                # Build workflow engine with configuration
+                # Imported lazily so the worker master never loads ML libs before forking
+                from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+
                 workflow_engine = WorkflowEngine(workflow_config)
 
                 # Prepare input data with model context
@@ -181,6 +221,8 @@ async def execute_pipeline_run_async(run_id: UUID):
                     execution_output=execution_output,
                     execution_id=UUID(state.execution_id) if state.execution_id else None,
                 )
+                # Persist artifacts + completed status for this run.
+                await session.commit()
 
                 logger.info(f"Pipeline run {run_id} completed successfully")
 
@@ -192,24 +234,13 @@ async def execute_pipeline_run_async(run_id: UUID):
                 # Update run status to failed
                 # Skip if run doesn't exist in this tenant's database
                 try:
+                    # Clear any failed-transaction state before writing FAILED.
+                    await session.rollback()
                     await run_repository.update_status(
                         run_id, PipelineRunStatus.FAILED, error_message=str(e)
                     )
-                    socket_connection_manager = injector.get(SocketConnectionManager)
-                    emit_notification(
-                        socket_connection_manager=socket_connection_manager,
-                        tenant_id=tenant_id,
-                        payload=notification_payload(
-                            notification_id=f"workflow_failed:pipeline:{run_id}",
-                            title="Workflow Run Failed",
-                            description=f"Pipeline run {str(run_id)[:8]}... failed.",
-                            level="error",
-                            action_url="/ml-models",
-                            entity_kind="pipeline_run",
-                            entity_id=run_id,
-                            event_key=f"workflow_failed:pipeline:{run_id}",
-                        ),
-                    )
+                    await session.commit()
+                    _notify_run_failed(tenant_id, run_id)
                 except AppException as update_error:
                     if update_error.error_key == ErrorKey.NOT_FOUND:
                         logger.debug(
@@ -362,6 +393,9 @@ async def check_and_execute_scheduled_pipelines_async():
                             )
 
                             run = await run_repository.create(run_data)
+                            # Commit the run before dispatch so the executing worker
+                            # (a separate session) can find it (repos only flush now).
+                            await session.commit()
 
                             # Queue async execution (import here to avoid circular imports)
                             from app.tasks.ml_model_pipeline_tasks import (

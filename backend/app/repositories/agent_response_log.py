@@ -50,7 +50,8 @@ class AgentResponseLogRepository(DbRepository[AgentResponseLogModel]):
         async with self.db.begin_nested():
             self.db.add(entry)
             await self.db.flush()
-        await self.db.commit()
+        # The request/task transaction boundary owns the commit; the savepoint above
+        # has already flushed the row (and isolates the partial-unique-index conflict).
         await self.db.refresh(entry)
         return entry
 

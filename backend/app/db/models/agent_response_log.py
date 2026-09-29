@@ -19,14 +19,19 @@ class AgentResponseLogModel(Base):
 
     __tablename__ = "agent_response_logs"
 
-    # Declared here so Alembic autogenerate knows this
-    # partial unique index belongs to the model and does not try to drop it
+    # Declared here so Alembic autogenerate knows these
+    # partial indexes belong to the model and does not try to drop them
     __table_args__ = (
         Index(
             "uq_agent_response_logs_workflow_execution_id",
             "workflow_execution_id",
             unique=True,
             postgresql_where="workflow_execution_id IS NOT NULL",
+        ),
+        Index(
+            "ix_agent_response_logs_logged_at",
+            "logged_at",
+            postgresql_where="is_deleted = 0",
         ),
     )
 

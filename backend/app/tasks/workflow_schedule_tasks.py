@@ -9,12 +9,11 @@ task resolves the agent's *current* workflow version and runs it.
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from uuid import UUID
 
 from celery import shared_task
 
-from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.tenant_scope import get_tenant_context
@@ -26,13 +25,17 @@ from app.core.utils.uuid_utils import coerce_uuid
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.repositories.agent import AgentRepository
 from app.repositories.workflow_schedule import WorkflowScheduleRepository
 from app.repositories.workflow_schedule_run import WorkflowScheduleRunRepository
 from app.services.realtime_notifications import emit_notification, notification_payload
-from app.tasks.base import run_async_in_celery
+from app.tasks.base import (
+    ABANDONED_RUN_ERROR,
+    run_async_in_celery,
+    should_execute_run,
+    was_abandoned_by_worker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +75,32 @@ def _redact_structure(value):
 
 # ==================== Execution ====================
 
+def _notify_run_failed(tenant_id: str, run_id: UUID) -> None:
+    emit_notification(
+        socket_connection_manager=injector.get(SocketConnectionManager),
+        tenant_id=tenant_id,
+        payload=notification_payload(
+            notification_id=f"workflow_failed:schedule:{run_id}",
+            title="Scheduled Workflow Run Failed",
+            description=f"Scheduled run {str(run_id)[:8]}... failed.",
+            level="error",
+            action_url="/ai-agents",
+            entity_kind="workflow_schedule_run",
+            entity_id=run_id,
+            event_key=f"workflow_failed:schedule:{run_id}",
+        ),
+    )
+
+
+async def _fail_abandoned_run(run_repository, session, run_id: UUID, tenant_id: str) -> None:
+    """Fail a run whose worker was lost instead of running it a second time."""
+    await run_repository.update_status(
+        run_id, WorkflowScheduleRunStatus.FAILED, error_message=ABANDONED_RUN_ERROR
+    )
+    await session.commit()
+    _notify_run_failed(tenant_id, run_id)
+
+
 async def execute_workflow_run_async(run_id: UUID):
     """Execute a single workflow schedule run for the current tenant."""
     tenant_id = get_tenant_context()
@@ -96,10 +125,17 @@ async def execute_workflow_run_async(run_id: UUID):
                         )
                         return None
                     raise
+                if not should_execute_run("Workflow schedule run", run_id, run.status):
+                    if was_abandoned_by_worker(run.status):
+                        await _fail_abandoned_run(run_repository, session, run_id, tenant_id)
+                    return None
 
                 await run_repository.update_status(
                     run_id, WorkflowScheduleRunStatus.RUNNING
                 )
+                # Commit the RUNNING marker so reconcilers/other workers see it
+                # during the long execution below (repos only flush now).
+                await session.commit()
 
                 schedule = await schedule_repository.get_by_id(run.schedule_id)
 
@@ -121,6 +157,7 @@ async def execute_workflow_run_async(run_id: UUID):
                         await schedule_repository.set_fixed_thread_id(
                             schedule.id, thread_id
                         )
+                        await session.commit()
                 else:
                     thread_id = str(uuid.uuid4())
 
@@ -134,6 +171,9 @@ async def execute_workflow_run_async(run_id: UUID):
                     "nodes": workflow.nodes or [],
                     "edges": workflow.edges or [],
                 }
+                # Imported lazily so the worker master never loads ML libs before forking
+                from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+
                 workflow_engine = WorkflowEngine(workflow_config)
 
                 state = await workflow_engine.execute_from_node(
@@ -161,6 +201,7 @@ async def execute_workflow_run_async(run_id: UUID):
                     workflow_id=workflow.id,
                     thread_id=thread_id,
                 )
+                await session.commit()
                 logger.info(f"Workflow schedule run {run_id} completed successfully")
 
             except Exception as e:
@@ -169,26 +210,16 @@ async def execute_workflow_run_async(run_id: UUID):
                     exc_info=True,
                 )
                 try:
+                    # Clear any failed-transaction state from the execution error
+                    # before writing the FAILED status (repos only flush now).
+                    await session.rollback()
                     await run_repository.update_status(
                         run_id,
                         WorkflowScheduleRunStatus.FAILED,
                         error_message=str(e),
                     )
-                    socket_connection_manager = injector.get(SocketConnectionManager)
-                    emit_notification(
-                        socket_connection_manager=socket_connection_manager,
-                        tenant_id=tenant_id,
-                        payload=notification_payload(
-                            notification_id=f"workflow_failed:schedule:{run_id}",
-                            title="Scheduled Workflow Run Failed",
-                            description=f"Scheduled run {str(run_id)[:8]}... failed.",
-                            level="error",
-                            action_url="/ai-agents",
-                            entity_kind="workflow_schedule_run",
-                            entity_id=run_id,
-                            event_key=f"workflow_failed:schedule:{run_id}",
-                        ),
-                    )
+                    await session.commit()
+                    _notify_run_failed(tenant_id, run_id)
                 except AppException as update_error:
                     if update_error.error_key == ErrorKey.NOT_FOUND:
                         logger.debug(
@@ -281,6 +312,9 @@ async def check_and_execute_scheduled_workflows_async():
                         schedule_id=schedule.id,
                         agent_id=schedule.agent_id,
                     )
+                    # Commit the run before dispatch so the executing worker (a
+                    # separate session) can find it (repos only flush now).
+                    await session.commit()
 
                     # Dispatch first so a metadata-write hiccup can never block
                     # the actual execution.
@@ -295,7 +329,9 @@ async def check_and_execute_scheduled_workflows_async():
                         await schedule_repository.set_last_run_at(
                             schedule.id, current_time
                         )
+                        await session.commit()
                     except Exception as e:
+                        await session.rollback()
                         logger.exception(
                             f"Failed to set last_run_at for schedule {schedule.id}: {str(e)}"
                         )
@@ -337,80 +373,5 @@ def check_scheduled_workflow_runs():
     except Exception as e:
         logger.error(
             f"Error in scheduled workflow check task: {str(e)}", exc_info=True
-        )
-        raise
-
-
-# ==================== Reconciliation (crash recovery) ====================
-#
-# Runs are dispatched with Celery's default early-ack, so a run whose worker/pod
-# dies mid-execution is never redelivered and would otherwise sit in
-# PENDING/RUNNING forever. This sweep marks such runs FAILED once they exceed
-# safe age thresholds so the run history stays truthful. It deliberately does
-# NOT re-dispatch them, to avoid duplicating side effects (a partially-run
-# workflow may already have created tickets, sent messages, etc.). Re-run via
-# "Run now" if needed.
-
-_STUCK_RUN_ERROR = (
-    "Run did not complete — the worker/pod was lost or restarted "
-    "mid-execution and the task was not resumed."
-)
-
-
-async def reconcile_stuck_workflow_runs_async():
-    """Fail runs left stuck by a crashed worker for the current tenant."""
-    tenant_id = get_tenant_context()
-    session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
-
-    async with session_factory() as session:
-        try:
-            run_repository = WorkflowScheduleRunRepository(session)
-            now = datetime.now(timezone.utc)
-            pending_before = now - timedelta(
-                seconds=settings.WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS
-            )
-            running_before = now - timedelta(
-                seconds=settings.WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS
-            )
-            failed = await run_repository.mark_stuck_as_failed(
-                pending_before=pending_before,
-                running_before=running_before,
-                error_message=_STUCK_RUN_ERROR,
-            )
-            if failed:
-                logger.warning(
-                    f"Reconciled {failed} stuck workflow schedule run(s) as FAILED "
-                    f"for tenant {tenant_id}"
-                )
-        except Exception as e:
-            logger.error(
-                f"Error reconciling stuck workflow runs: {str(e)}", exc_info=True
-            )
-        finally:
-            await session.close()
-
-
-async def reconcile_stuck_workflow_runs_async_with_scope():
-    """Run the stuck-run reconciliation for all tenants."""
-    from app.tasks.base import run_task_with_tenant_support
-
-    return await run_task_with_tenant_support(
-        reconcile_stuck_workflow_runs_async,
-        "reconcile stuck workflow runs",
-    )
-
-
-@shared_task
-def reconcile_stuck_workflow_runs():
-    """Celery beat task to fail runs orphaned by a worker/pod crash."""
-    try:
-        run_async_in_celery(
-            reconcile_stuck_workflow_runs_async_with_scope(),
-            timeout=50,
-            task_name="reconcile_stuck_workflow_runs",
-        )
-    except Exception as e:
-        logger.error(
-            f"Error in stuck-run reconciliation task: {str(e)}", exc_info=True
         )
         raise

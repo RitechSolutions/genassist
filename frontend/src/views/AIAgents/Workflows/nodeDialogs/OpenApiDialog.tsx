@@ -20,24 +20,23 @@ import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
 import { LLMProviderDialog } from "@/views/LlmProviders/components/LLMProviderDialog";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { FileUploader } from "@/components/FileUploader";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type OpenApiDialogProps = BaseNodeDialogProps<OpenApiNodeData, OpenApiNodeData>;
 
 export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [providerId, setProviderId] = useState(data.providerId || "");
-  const [query, setQuery] = useState(data.query || "");
-  const [originalFileName, setOriginalFileName] = useState(
-    data.originalFileName || "",
-  );
-  const [serverFilePath, setServerFilePath] = useState<string | undefined>(
-    data.serverFilePath,
-  );
-  const [serverFileUrl, setServerFileUrl] = useState<string | undefined>(
-    data.serverFileUrl,
-  );
+  const { values, setField, setValues, merged, handleSave } =
+    useNodeDialogState(props, () => ({
+      name: data.name || "",
+      providerId: data.providerId || "",
+      query: data.query || "",
+      originalFileName: data.originalFileName || "",
+      serverFilePath: (data.serverFilePath || "") as string | undefined,
+      serverFileUrl: (data.serverFileUrl || "") as string | undefined,
+    }));
+
   const [availableProviders, setAvailableProviders] = useState<LLMProvider[]>(
     [],
   );
@@ -46,13 +45,6 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
 
   useEffect(() => {
     if (isOpen) {
-      setName(data.name || "");
-      setProviderId(data.providerId || "");
-      setQuery(data.query || "");
-      setOriginalFileName(data.originalFileName || "");
-      setServerFilePath(data.serverFilePath || "");
-      setServerFileUrl(data.serverFileUrl || "");
-
       loadProviders();
     }
   }, [isOpen, data, toast]);
@@ -68,19 +60,6 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
         variant: "destructive",
       });
     }
-  };
-
-  const handleSave = async () => {
-    onUpdate({
-      ...data,
-      name,
-      providerId,
-      query,
-      originalFileName,
-      serverFilePath,
-      serverFileUrl,
-    });
-    onClose();
   };
 
   return (
@@ -100,7 +79,7 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
           </>
         }
         {...props}
-        data={{ ...data }}
+        data={merged}
       >
         <div className="space-y-4">
           {/* Node Name */}
@@ -108,8 +87,8 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
             <Label htmlFor="name">Node Name</Label>
             <RichInput
               id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={values.name}
+              onChange={(e) => setField("name", e.target.value)}
               placeholder="Enter the name of this node"
               className="w-full"
             />
@@ -119,13 +98,13 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
           <div className="space-y-2">
             <Label htmlFor="provider">LLM Provider</Label>
             <Select
-              value={providerId || ""}
+              value={values.providerId || ""}
               onValueChange={(value) => {
                 if (value === "__create__") {
                   setIsCreateProviderOpen(true);
                   return;
                 }
-                setProviderId(value);
+                setField("providerId", value);
               }}
             >
               <SelectTrigger className="w-full">
@@ -146,18 +125,24 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
           <FileUploader
             label="Specification File"
             acceptedFileTypes={[".json", ".yaml", ".yml"]}
-            initialServerFilePath={serverFilePath}
-            initialServerFileUrl={serverFileUrl}
-            initialOriginalFileName={originalFileName}
+            initialServerFilePath={values.serverFilePath}
+            initialServerFileUrl={values.serverFileUrl}
+            initialOriginalFileName={values.originalFileName}
             onUploadComplete={(result) => {
-              setOriginalFileName(result.original_filename);
-              setServerFilePath(result.file_path);
-              setServerFileUrl(result.file_url);
+              setValues((v) => ({
+                ...v,
+                originalFileName: result.original_filename,
+                serverFilePath: result.file_path,
+                serverFileUrl: result.file_url,
+              }));
             }}
             onRemove={() => {
-              setOriginalFileName("");
-              setServerFilePath(undefined);
-              setServerFileUrl(undefined);
+              setValues((v) => ({
+                ...v,
+                originalFileName: "",
+                serverFilePath: undefined,
+                serverFileUrl: undefined,
+              }));
             }}
             placeholder="Select a JSON or YAML file to upload"
           />
@@ -167,8 +152,8 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
             <Label htmlFor="query">Query</Label>
             <DraggableTextArea
               id="query"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={values.query}
+              onChange={(e) => setField("query", e.target.value)}
               placeholder="Ask a question about the specification file..."
               className="w-full h-24 text-sm resize-none"
             />
@@ -182,7 +167,7 @@ export const OpenApiDialog: React.FC<OpenApiDialogProps> = (props) => {
         onProviderSaved={async (provider) => {
           await loadProviders();
           if (provider?.id) {
-            setProviderId(provider.id);
+            setField("providerId", provider.id);
           }
         }}
         mode="create"

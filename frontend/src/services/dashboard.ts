@@ -27,21 +27,35 @@ export const fetchDashboard = async (
   }
 };
 
+/** The mutually exclusive range modes accepted by /dashboard/summary */
+export type DashboardSummaryRange =
+  | { days: number }
+  | { from_datetime: string; to_datetime: string }
+  | { all_time: true };
+
+function summaryQueryString(range: DashboardSummaryRange): string {
+  const params = new URLSearchParams();
+  if ("days" in range) {
+    params.set("days", String(range.days));
+  } else if ("all_time" in range) {
+    params.set("all_time", "true");
+  } else {
+    params.set("from_datetime", range.from_datetime);
+    params.set("to_datetime", range.to_datetime);
+  }
+  return params.toString();
+}
+
 /**
  * Fetch dashboard summary statistics
  */
 export const fetchDashboardSummary = async (
-  days: number = 30
+  range: DashboardSummaryRange = { days: 30 }
 ): Promise<DashboardSummaryStats | null> => {
-  try {
-    return await apiRequest<DashboardSummaryStats>(
-      "get",
-      `/dashboard/summary?days=${days}`
-    );
-  } catch (error) {
-    console.error("Error fetching dashboard summary:", error);
-    return null;
-  }
+  return await apiRequest<DashboardSummaryStats>(
+    "get",
+    `/dashboard/summary?${summaryQueryString(range)}`
+  );
 };
 
 /**

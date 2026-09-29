@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { ThreadRAGNodeData } from "../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/select";
 import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 type ThreadRAGDialogProps = BaseNodeDialogProps<
   ThreadRAGNodeData,
@@ -22,56 +23,43 @@ type ThreadRAGDialogProps = BaseNodeDialogProps<
 >;
 
 export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [action, setAction] = useState<"retrieve" | "add">(
-    data.action || "retrieve"
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      action: (data.action || "retrieve") as "retrieve" | "add",
+      // Retrieve action fields
+      query: data.query || "",
+      top_k: data.top_k || 5,
+      // Add action fields
+      message: data.message || "",
+      // Vector store config
+      ragVectorConfig: (data.ragVectorConfig ?? {}) as Record<string, unknown>,
+    }),
+    (v) => {
+      const updatedData: Partial<ThreadRAGNodeData> = {
+        name: v.name,
+        action: v.action,
+        ragVectorConfig: v.ragVectorConfig,
+      };
+
+      if (v.action === "retrieve") {
+        updatedData.query = v.query;
+        updatedData.top_k = v.top_k;
+        // Clear add action fields
+        updatedData.message = undefined;
+      } else {
+        updatedData.message = v.message;
+        // Clear retrieve action fields
+        updatedData.query = undefined;
+        updatedData.top_k = undefined;
+      }
+
+      return updatedData;
+    },
   );
-  // Retrieve action fields
-  const [query, setQuery] = useState(data.query || "");
-  const [topK, setTopK] = useState(data.top_k || 5);
-  // Add action fields
-  const [message, setMessage] = useState(data.message || "");
-  // Vector store config
-  const [ragVectorConfig, setRagVectorConfig] = useState<Record<string, unknown>>(
-    data.ragVectorConfig ?? {}
-  );
-
-  useEffect(() => {
-    if (isOpen) {
-      setName(data.name || "");
-      setAction(data.action || "retrieve");
-      setQuery(data.query || "");
-      setTopK(data.top_k || 5);
-      setMessage(data.message || "");
-      setRagVectorConfig(data.ragVectorConfig ?? {});
-    }
-  }, [isOpen, data]);
-
-  const handleSave = () => {
-    const updatedData: ThreadRAGNodeData = {
-      ...data,
-      name,
-      action,
-      ragVectorConfig,
-    };
-
-    if (action === "retrieve") {
-      updatedData.query = query;
-      updatedData.top_k = topK;
-      // Clear add action fields
-      updatedData.message = undefined;
-    } else {
-      updatedData.message = message;
-      // Clear retrieve action fields
-      updatedData.query = undefined;
-      updatedData.top_k = undefined;
-    }
-
-    onUpdate(updatedData);
-    onClose();
-  };
 
   return (
     <NodeConfigPanel
@@ -89,21 +77,14 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        action,
-        query,
-        top_k: topK,
-        message,
-      }}
+      data={merged}
     >
       <div className="space-y-2">
         <Label htmlFor="name">Node Name</Label>
         <RichInput
           id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
           placeholder="Enter the name of this node"
           className="w-full"
         />
@@ -112,8 +93,10 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
       <div className="space-y-2">
         <Label htmlFor="action">Action</Label>
         <Select
-          value={action}
-          onValueChange={(value: "retrieve" | "add") => setAction(value)}
+          value={values.action}
+          onValueChange={(value: "retrieve" | "add") =>
+            setField("action", value)
+          }
         >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Select action" />
@@ -125,14 +108,14 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
         </Select>
       </div>
 
-      {action === "retrieve" ? (
+      {values.action === "retrieve" ? (
         <>
           <div className="space-y-2">
             <Label htmlFor="query">Query</Label>
             <DraggableTextArea
               id="query"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              value={values.query}
+              onChange={(e) => setField("query", e.target.value)}
               placeholder="e.g., {{query}}"
               className="w-full"
               rows={3}
@@ -144,8 +127,8 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
             <RichInput
               id="top_k"
               type="number"
-              value={topK}
-              onChange={(e) => setTopK(parseInt(e.target.value))}
+              value={values.top_k}
+              onChange={(e) => setField("top_k", parseInt(e.target.value))}
               placeholder="5"
               min="1"
               className="w-full"
@@ -161,8 +144,8 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
             <Label htmlFor="message">Message</Label>
             <DraggableTextArea
               id="message"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              value={values.message}
+              onChange={(e) => setField("message", e.target.value)}
               placeholder="e.g., {{message}}"
               className="w-full"
               rows={4}
@@ -178,8 +161,8 @@ export const ThreadRAGDialog: React.FC<ThreadRAGDialogProps> = (props) => {
           are applied on the first operation for this chat thread.
         </p>
         <RagVectorConfigSection
-          config={ragVectorConfig}
-          onChange={setRagVectorConfig}
+          config={values.ragVectorConfig}
+          onChange={(config) => setField("ragVectorConfig", config)}
         />
       </div>
     </NodeConfigPanel>

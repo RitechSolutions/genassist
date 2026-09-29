@@ -34,6 +34,10 @@ if __name__ == "__main__":
     port = int(os.environ.get("FASTAPI_RUN_PORT", 8000))
     debug_mode = os.environ.get("RELOAD", "False").lower() == "true"
 
+    # Keep this below the pod's termination grace period so the lifespan shutdown still
+    # runs. 0 keeps Uvicorn's default of waiting indefinitely for in-flight requests.
+    graceful_shutdown_timeout = int(os.environ.get("GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS", 45))
+
     workers = int(os.environ.get("WORKERS", 1))
     # The app imports transformers/sentence-transformers via legra; each worker loads
     # that stack. Too many workers can cause OOM or child process crashes. Prefer
@@ -70,6 +74,7 @@ if __name__ == "__main__":
                 log_level=os.environ.get("LOG_LEVEL", "debug").lower(),
                 log_config=None,  # Use default logging configuration
                 workers=workers,
+                timeout_graceful_shutdown=graceful_shutdown_timeout or None,
                 access_log=os.environ.get(
                     "ACCESS_LOG", "False").lower() == "true",
                 use_colors=os.environ.get(

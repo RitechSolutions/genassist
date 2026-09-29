@@ -48,11 +48,14 @@ from app.db.models.message_model import TranscriptMessageModel
 from app.db.seed.seed_data_config import seed_test_data
 from app.db.utils.sql_alchemy_utils import null_unloaded_attributes
 from app.repositories.conversations import ConversationRepository
+from app.repositories.conversations_read import ConversationReadRepository
 from app.repositories.audit_logs import AuditLogRepository
+from app.repositories.conversation_read_receipt import ConversationReadReceiptRepository
 from app.repositories.recordings import RecordingsRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
 from app.schemas.conversation import (
     ConversationCreate,
+    ConversationReadReceiptState,
     ConversationWithOperatorAgentRead,
     InProgressPollResponse,
 )
@@ -81,15 +84,19 @@ conversation_id_key_builder_full = make_key_builder("conversation_id")
 @inject
 class ConversationService:
     def __init__(self, operator_statistics_service: OperatorStatisticsService,
-            conversation_repo: ConversationRepository, transcript_message_repo: TranscriptMessageRepository,
+            conversation_repo: ConversationRepository,
+            conversation_read_repo: ConversationReadRepository,
+            transcript_message_repo: TranscriptMessageRepository,
             audit_log_repo: AuditLogRepository,
             recordings_repo: RecordingsRepository,
+            conversation_read_receipt_repo: ConversationReadReceiptRepository,
             thread_rag: ThreadScopedRAG,
             file_manager_service: FileManagerService = Injected(FileManagerService),
             gpt_kpi_analyzer_service: GptKpiAnalyzer = Depends(),
             conversation_analysis_service: ConversationAnalysisService = Depends(),
             llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService), ):
         self.conversation_repo = conversation_repo
+        self.conversation_read_repo = conversation_read_repo
         self.gpt_kpi_analyzer_service = gpt_kpi_analyzer_service
         self.conversation_analysis_service = conversation_analysis_service
         self.operator_statistics_service = operator_statistics_service
@@ -97,6 +104,7 @@ class ConversationService:
         self.transcript_message_repo = transcript_message_repo
         self.audit_log_repo = audit_log_repo
         self.recordings_repo = recordings_repo
+        self.conversation_read_receipt_repo = conversation_read_receipt_repo
         self.thread_rag = thread_rag
         self.file_manager_service = file_manager_service
 
@@ -226,7 +234,56 @@ class ConversationService:
         # filter out messages with speaker 'customer'
         messages = [m for m in messages_raw if m.speaker != 'customer']
 
-        return InProgressPollResponse(status=conversation.status or "in_progress", messages=messages, )
+        read_state = await self.get_conversation_read_state(conversation_id)
+
+        return InProgressPollResponse(
+            status=conversation.status or "in_progress",
+            messages=messages,
+            read_state=read_state,
+        )
+
+    async def get_conversation_read_state(
+        self, conversation_id: UUID
+    ) -> ConversationReadReceiptState:
+        """Aggregate the per-role read markers for a conversation into one object."""
+        receipts = await self.conversation_read_receipt_repo.get_by_conversation(
+            conversation_id
+        )
+        return ConversationReadReceiptState.from_receipts(receipts)
+
+    async def mark_conversation_read(
+        self,
+        conversation_id: UUID,
+        reader_role: str,
+        reader_user_id: Optional[UUID],
+        last_read_sequence: int,
+    ) -> ConversationReadReceiptState:
+        """Advance a reader's high-water mark, clamped to the newest message.
+
+        The requested sequence is clamped to the conversation's latest
+        ``sequence_number`` so a client can never mark past the end of the
+        transcript, and the marker only ever moves forward (enforced in the
+        repository). Returns the fresh aggregate read state so the caller can
+        broadcast it to the other party.
+        """
+        conversation = await self.conversation_repo.fetch_conversation_by_id(
+            conversation_id
+        )
+        if not conversation:
+            raise AppException(ErrorKey.CONVERSATION_NOT_FOUND, status_code=404)
+
+        latest_sequence = await self.transcript_message_repo.get_latest_sequence_number(
+            conversation_id
+        )
+        effective_sequence = min(int(last_read_sequence), int(latest_sequence))
+        if effective_sequence >= 0:
+            await self.conversation_read_receipt_repo.advance_read_marker(
+                conversation_id=conversation_id,
+                reader_role=reader_role,
+                reader_user_id=reader_user_id,
+                last_read_sequence=effective_sequence,
+            )
+        return await self.get_conversation_read_state(conversation_id)
 
 
     async def get_conversation_by_id_full(self, conversation_id: UUID, conversation_filter: ConversationFilter):
@@ -546,8 +603,8 @@ class ConversationService:
             # (injector -> dependency_injection -> services.audio -> here), and
             # db_connection_utils imports app.dependencies.injector itself, so a
             # top-level import here is circular.
-            from app.core.utils.db_connection_utils import release_db_connection
-            await release_db_connection(context=f"conversation {conversation.id}")
+            from app.core.utils.db_connection_utils import release_idle_connection
+            await release_idle_connection(context=f"conversation {conversation.id}")
 
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
@@ -601,14 +658,14 @@ class ConversationService:
                 return []
             conversation_filter.operator_id = get_current_operator_id()
 
-        models = await self.conversation_repo.fetch_conversations_with_relations(conversation_filter,
+        models = await self.conversation_read_repo.fetch_conversations_with_relations(conversation_filter,
                 include_messages=conversation_filter.include_messages)
         null_unloaded_attributes(models)
         return models
 
 
     async def count_conversations(self, conversation_filter: ConversationFilter) -> int:
-        models = await self.conversation_repo.count_conversations(conversation_filter)
+        models = await self.conversation_read_repo.count_conversations(conversation_filter)
         return models
 
 

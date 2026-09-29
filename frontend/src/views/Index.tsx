@@ -1,5 +1,5 @@
 import { DateRangePicker } from "@/components/date-range-picker";
-import { subDays, differenceInCalendarDays } from "date-fns";
+import { subDays } from "date-fns";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { KPISection } from "./Analytics";
 import { ActiveConversations } from "./ActiveConversations/pages/ActiveConversations";
@@ -9,12 +9,6 @@ const Index = () => {
     from: subDays(new Date(), 30),
     to: new Date(),
   });
-
-  const selectedDays = (() => {
-    if (!dateRange?.from) return 30;
-    const toDate = dateRange.to ?? new Date();
-    return Math.max(1, differenceInCalendarDays(toDate, dateRange.from) + 1);
-  })();
 
   return (
     <>
@@ -36,7 +30,7 @@ const Index = () => {
                 </p>
               </header>
 
-              <KPISection days={selectedDays} />
+              <KPISection dateRange={dateRange} />
               <ActiveConversations />
             </div>
           </div>

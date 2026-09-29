@@ -158,14 +158,15 @@ async def test_groupless_user_sees_only_their_own_agents():
 
 
 @pytest.mark.asyncio
-async def test_supervisor_sees_every_supervised_group():
+async def test_supervisor_sees_every_supervised_group_and_their_own():
     db = CapturingDb()
+    own_group = uuid4()
     supervised = [uuid4(), uuid4()]
-    with caller(user_id=uuid4(), group_id=uuid4(), supervised=supervised):
+    with caller(user_id=uuid4(), group_id=own_group, supervised=supervised):
         await resolve_authorized_agent_ids(db)
         sql = _sql(db.statements[0])
         assert "users.group_id IN" in sql
-        for gid in supervised:
+        for gid in [own_group, *supervised]:
             assert f"'{gid}'" in sql
 
 

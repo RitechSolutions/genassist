@@ -17,6 +17,7 @@ import {
 import { Save, ChevronDown, ChevronUp } from "lucide-react";
 import { NodeConfigPanel } from "../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "./base";
+import { useNodeDialogState } from "./useNodeDialogState";
 
 // open the advanced section when any advanced option is set away from its default
 const hasAdvancedOptions = (data: HtmlToImageNodeData): boolean =>
@@ -25,44 +26,26 @@ const hasAdvancedOptions = (data: HtmlToImageNodeData): boolean =>
 export const HtmlToImageDialog: React.FC<
   BaseNodeDialogProps<HtmlToImageNodeData, HtmlToImageNodeData>
 > = (props) => {
-  const { isOpen, onClose, data, onUpdate } = props;
+  const { isOpen, onClose, data } = props;
 
-  const [name, setName] = useState(data.name || "");
-  const [html, setHtml] = useState(data.html || "");
-  const [captureMode, setCaptureMode] = useState<HtmlToImageCaptureMode>(
-    data.captureMode || "fullPage"
+  const { values, setField, merged, handleSave } = useNodeDialogState(
+    props,
+    () => ({
+      name: data.name || "",
+      html: data.html || "",
+      captureMode: data.captureMode || "fullPage",
+      viewportWidth: data.viewportWidth ?? 1280,
+      viewportHeight: data.viewportHeight ?? 720,
+      waitFor: data.waitFor ?? 0,
+    })
   );
-  const [viewportWidth, setViewportWidth] = useState<number>(
-    data.viewportWidth ?? 1280
-  );
-  const [viewportHeight, setViewportHeight] = useState<number>(
-    data.viewportHeight ?? 720
-  );
-  const [waitFor, setWaitFor] = useState<number>(data.waitFor ?? 0);
+
   const [showAdvanced, setShowAdvanced] = useState(hasAdvancedOptions(data));
-
   useEffect(() => {
-    setName(data.name || "");
-    setHtml(data.html || "");
-    setCaptureMode(data.captureMode || "fullPage");
-    setViewportWidth(data.viewportWidth ?? 1280);
-    setViewportHeight(data.viewportHeight ?? 720);
-    setWaitFor(data.waitFor ?? 0);
-    setShowAdvanced(hasAdvancedOptions(data));
-  }, [isOpen]);
-
-  const handleSave = () => {
-    onUpdate({
-      ...data,
-      name,
-      html,
-      captureMode,
-      viewportWidth,
-      viewportHeight,
-      waitFor,
-    });
-    onClose();
-  };
+    if (isOpen) {
+      setShowAdvanced(hasAdvancedOptions(data));
+    }
+  }, [isOpen, data]);
 
   return (
     <NodeConfigPanel
@@ -78,22 +61,14 @@ export const HtmlToImageDialog: React.FC<
         </>
       }
       {...props}
-      data={{
-        ...data,
-        name,
-        html,
-        captureMode,
-        viewportWidth,
-        viewportHeight,
-        waitFor,
-      }}
+      data={merged}
     >
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <RichInput
           id="name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
+          value={values.name}
+          onChange={(e) => setField("name", e.target.value)}
           placeholder="HTML to Image"
           className="break-all w-full"
         />
@@ -103,8 +78,8 @@ export const HtmlToImageDialog: React.FC<
         <Label htmlFor="html">HTML</Label>
         <RichTextarea
           id="html"
-          value={html}
-          onChange={(e) => setHtml(e.target.value)}
+          value={values.html}
+          onChange={(e) => setField("html", e.target.value)}
           placeholder="<html>...</html>"
           className="w-full min-h-[160px] font-mono"
         />
@@ -117,9 +92,9 @@ export const HtmlToImageDialog: React.FC<
       <div className="space-y-2">
         <Label htmlFor="captureMode">Capture Mode</Label>
         <Select
-          value={captureMode}
+          value={values.captureMode}
           onValueChange={(value) =>
-            setCaptureMode(value as HtmlToImageCaptureMode)
+            setField("captureMode", value as HtmlToImageCaptureMode)
           }
         >
           <SelectTrigger>
@@ -141,24 +116,27 @@ export const HtmlToImageDialog: React.FC<
         <RichInput
           id="viewportWidth"
           type="number"
-          value={String(viewportWidth)}
+          value={String(values.viewportWidth)}
           onChange={(e) =>
-            setViewportWidth(Math.max(1, parseInt(e.target.value) || 0))
+            setField("viewportWidth", Math.max(1, parseInt(e.target.value) || 0))
           }
           placeholder="1280"
           className="w-full"
         />
       </div>
 
-      {captureMode === "viewport" && (
+      {values.captureMode === "viewport" && (
         <div className="space-y-2">
           <Label htmlFor="viewportHeight">Viewport Height (px)</Label>
           <RichInput
             id="viewportHeight"
             type="number"
-            value={String(viewportHeight)}
+            value={String(values.viewportHeight)}
             onChange={(e) =>
-              setViewportHeight(Math.max(1, parseInt(e.target.value) || 0))
+              setField(
+                "viewportHeight",
+                Math.max(1, parseInt(e.target.value) || 0)
+              )
             }
             placeholder="720"
             className="w-full"
@@ -187,9 +165,9 @@ export const HtmlToImageDialog: React.FC<
               <RichInput
                 id="waitFor"
                 type="number"
-                value={String(waitFor)}
+                value={String(values.waitFor)}
                 onChange={(e) =>
-                  setWaitFor(Math.max(0, parseInt(e.target.value) || 0))
+                  setField("waitFor", Math.max(0, parseInt(e.target.value) || 0))
                 }
                 placeholder="0"
                 className="w-full"

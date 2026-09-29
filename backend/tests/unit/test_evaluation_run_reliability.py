@@ -317,7 +317,7 @@ class TestCoverageAggregation:
 class TestRunPathLabelResolution:
     @pytest.mark.asyncio
     async def test_run_loop_passes_workflow_so_comments_use_node_labels(self):
-        """The run loop must hand the workflow graph to the evaluators — without
+        """The run loop must resolve node labels from the workflow graph — without
         it, route/action comments degrade to 'unknown node' for real runs."""
         service = _service()
         now = datetime(2026, 1, 1)
@@ -364,11 +364,133 @@ class TestRunPathLabelResolution:
                 },
             )
 
-        persisted = service.result_repo.create.call_args[0][0]
-        comment = persisted.metrics["route_taken"]["comment"]
+        rows = service.tool_rule_result_repo.create_many.call_args[0][0]
+        comment = rows[0].details["comment"]
+        assert rows[0].technique == "route_taken"
         assert "Escalation Router" in comment
         assert router_id not in comment
         assert "unknown node" not in comment
+
+
+class TestConversationScopedRules:
+    """Conversation-scoped route/action rules are graded once per conversation."""
+
+    @staticmethod
+    def _case(*, suite_id, conversation_id, turn_index):
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        return SimpleNamespace(
+            id=uuid4(),
+            suite_id=suite_id,
+            source_conversation_id=conversation_id,
+            turn_index=turn_index,
+            input_data={"message": f"turn {turn_index}"},
+            expected_output={"value": "answer"},
+            tags=["imported"],
+            weight=None,
+            created_at=now,
+            updated_at=now,
+        )
+
+    @staticmethod
+    def _state(nodes):
+        return SimpleNamespace(
+            output="answer",
+            status="completed",
+            format_state_as_response=lambda: {
+                "output": "answer",
+                "state": {"errors": [], "nodeExecutionStatus": nodes},
+            },
+        )
+
+    async def _run(self, *, scope, ticket_node_id, turn_states, techniques=("action_taken",)):
+        service = _service()
+        suite_id = uuid4()
+        conversation_id = uuid4()
+        cases = [
+            self._case(suite_id=suite_id, conversation_id=conversation_id, turn_index=index)
+            for index in range(len(turn_states))
+        ]
+        service.case_repo.get_all_for_suite.return_value = cases
+
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(
+            side_effect=[self._state(nodes) for nodes in turn_states]
+        )
+        suite = SimpleNamespace(id=suite_id, default_input_metadata=None)
+        workflow = SimpleNamespace(
+            id=uuid4(),
+            nodes=[{"id": ticket_node_id, "type": "httpNode", "data": {"name": "Create Ticket"}}],
+            edges=[],
+        )
+        run = SimpleNamespace(
+            id=uuid4(), techniques=list(techniques), status="queued", summary_metrics=None
+        )
+
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine):
+            await service._execute_run(
+                suite,
+                workflow,
+                run,
+                technique_configs={
+                    "action_taken": {
+                        "rules": [{"id": "ticket", "node": ticket_node_id, "scope": scope}]
+                    }
+                },
+            )
+        return service, run
+
+    @pytest.mark.asyncio
+    async def test_ticket_created_on_one_turn_passes_the_conversation(self):
+        ticket = str(uuid4())
+        service, run = await self._run(
+            scope="conversation",
+            ticket_node_id=ticket,
+            turn_states=[
+                {},
+                {ticket: {"type": "httpNode", "name": "Create Ticket", "status": "success"}},
+                {},
+            ],
+        )
+
+        rows = service.tool_rule_result_repo.create_many.call_args[0][0]
+        assert len(rows) == 1
+        assert rows[0].technique == "action_taken"
+        assert rows[0].scope == "conversation"
+        assert rows[0].status == "passed"
+        assert rows[0].case_id is None
+        assert "1 of 3 turns" in rows[0].details["comment"]
+        assert run.summary_metrics["action_taken"]["accuracy"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_same_run_fails_every_turn_scope(self):
+        """The identical run graded per turn fails the two turns without a ticket."""
+        ticket = str(uuid4())
+        service, run = await self._run(
+            scope="every_turn",
+            ticket_node_id=ticket,
+            turn_states=[
+                {},
+                {ticket: {"type": "httpNode", "name": "Create Ticket", "status": "success"}},
+                {},
+            ],
+        )
+
+        rows = service.tool_rule_result_repo.create_many.call_args[0][0]
+        assert [row.status for row in rows] == ["failed", "passed", "failed"]
+        assert all(row.case_id is not None for row in rows)
+        assert run.summary_metrics["action_taken"]["accuracy"] == pytest.approx(1 / 3)
+
+    @pytest.mark.asyncio
+    async def test_action_results_are_not_also_scored_per_case(self):
+        ticket = str(uuid4())
+        service, _ = await self._run(
+            scope="conversation",
+            ticket_node_id=ticket,
+            turn_states=[{ticket: {"type": "httpNode", "name": "Create Ticket", "status": "success"}}],
+        )
+
+        persisted = service.result_repo.create.call_args[0][0]
+        assert "action_taken" not in (persisted.metrics or {})
 
 
 class TestPausedConversationExecution:
@@ -497,53 +619,154 @@ class TestPausedConversationExecution:
         assert run.summary_metrics["_totals"]["skipped"] == 1
 
 
-class TestWatchdogRepo:
+class TestRunPickupGuard:
+    """A redelivered message must not re-run a finished run, and must fail a lost one."""
+
+    @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
+    def test_terminal_runs_are_skipped(self, status):
+        from app.tasks.base import should_execute_run
+
+        assert should_execute_run("TestRun", uuid4(), status) is False
+
+    @pytest.mark.parametrize("status", ["queued", "pending"])
+    def test_unstarted_runs_execute(self, status):
+        from app.tasks.base import should_execute_run
+
+        assert should_execute_run("TestRun", uuid4(), status) is True
+
+    def test_a_run_left_running_by_a_lost_worker_is_not_re_executed(self):
+        from app.tasks.base import should_execute_run
+
+        assert should_execute_run("TestRun", uuid4(), "running") is False
+
+    def test_enum_statuses_are_understood(self):
+        from app.core.utils.enums.workflow_schedule_enum import WorkflowScheduleRunStatus
+        from app.tasks.base import should_execute_run
+
+        assert should_execute_run("Run", uuid4(), WorkflowScheduleRunStatus.COMPLETED) is False
+        assert should_execute_run("Run", uuid4(), WorkflowScheduleRunStatus.RUNNING) is False
+        assert should_execute_run("Run", uuid4(), WorkflowScheduleRunStatus.PENDING) is True
+
     @pytest.mark.asyncio
-    async def test_mark_stuck_as_failed_commits_and_returns_rowcount(self):
+    async def test_redelivered_running_evaluation_is_failed_not_re_executed(self):
+        from app.tasks.base import ABANDONED_RUN_ERROR
+        from app.tasks.test_suite_tasks import _execute_test_suite_run_async
+
+        run = _run(status="running")
+        service = MagicMock()
+        service.run_repo.get_by_id = AsyncMock(return_value=run)
+        service.suite_repo.get_by_id = AsyncMock()
+        service._fail_run = AsyncMock()
+        service._execute_run = AsyncMock()
+
+        with patch("app.dependencies.injector.injector") as injector:
+            injector.get.return_value = service
+            await _execute_test_suite_run_async(uuid4(), None, None)
+
+        service._fail_run.assert_awaited_once_with(run, ABANDONED_RUN_ERROR)
+        service.suite_repo.get_by_id.assert_not_awaited()
+        service._execute_run.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_redelivered_completed_evaluation_is_not_re_executed(self):
+        from app.tasks.test_suite_tasks import _execute_test_suite_run_async
+
+        service = MagicMock()
+        service.run_repo.get_by_id = AsyncMock(return_value=_run(status="completed"))
+        service.suite_repo.get_by_id = AsyncMock()
+        service._execute_run = AsyncMock()
+
+        with patch("app.dependencies.injector.injector") as injector:
+            injector.get.return_value = service
+            await _execute_test_suite_run_async(uuid4(), None, None)
+
+        service.suite_repo.get_by_id.assert_not_awaited()
+        service._execute_run.assert_not_awaited()
+
+
+class TestOrphanRepo:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("waiting_ids", [[], [str(uuid4())]])
+    async def test_mark_orphaned_as_failed_flushes_and_returns_rowcount(self, waiting_ids):
         from app.repositories.test_suite import TestRunRepository
 
         db = MagicMock()
         db.execute = AsyncMock(return_value=SimpleNamespace(rowcount=3))
-        db.commit = AsyncMock()
+        # Repos flush; the reconcile task/boundary owns the commit.
+        db.flush = AsyncMock()
         repo = TestRunRepository(db)
 
-        now = datetime.now(timezone.utc)
-        failed = await repo.mark_stuck_as_failed(
-            queued_before=now, running_before=now, error_message="stuck"
+        failed = await repo.mark_orphaned_as_failed(
+            waiting_ids=waiting_ids,
+            running_before=datetime.now(timezone.utc),
+            error_message="stuck",
         )
 
         assert failed == 3
         db.execute.assert_awaited_once()
-        db.commit.assert_awaited_once()
+        db.flush.assert_awaited_once()
 
 
-class TestWatchdogTask:
+def _failing_service(run, failure):
+    service = MagicMock()
+    service.run_repo.db = AsyncMock()
+    service.run_repo.get_by_id = AsyncMock(return_value=run)
+    service.run_repo.update = AsyncMock()
+    service.suite_repo.get_by_id = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
+    service.workflow_service.get_by_id = AsyncMock(return_value=MagicMock())
+    service._execute_run = AsyncMock(side_effect=failure)
+    service._fail_run = AsyncMock()
+    return service
+
+
+class TestFailureIsPersisted:
     @pytest.mark.asyncio
-    async def test_reconcile_calls_repo_with_thresholds(self):
-        from app.tasks import test_suite_tasks
+    async def test_failed_status_is_committed_when_the_run_raises(self):
+        """The task wrapper rolls back on raise, so the failed status needs its own commit."""
+        from app.tasks.test_suite_tasks import _execute_test_suite_run_async
 
-        repo = MagicMock()
-        repo.mark_stuck_as_failed = AsyncMock(return_value=2)
+        run = SimpleNamespace(
+            id=uuid4(), status="queued", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
+        )
+        service = _failing_service(run, RuntimeError("kaboom"))
 
-        session = AsyncMock()
-        session_cm = MagicMock()
-        session_cm.__aenter__ = AsyncMock(return_value=session)
-        session_cm.__aexit__ = AsyncMock(return_value=False)
-        factory = MagicMock(return_value=session_cm)
+        with patch("app.dependencies.injector.injector") as injector:
+            injector.get.return_value = service
+            with pytest.raises(RuntimeError):
+                await _execute_test_suite_run_async(uuid4(), None, None)
 
-        with patch.object(
-            test_suite_tasks.multi_tenant_manager,
-            "get_tenant_session_factory",
-            return_value=factory,
-        ), patch.object(
-            test_suite_tasks, "TestRunRepository", return_value=repo
-        ), patch.object(
-            test_suite_tasks, "get_tenant_context", return_value="tenant_a"
-        ):
-            await test_suite_tasks.reconcile_stuck_test_runs_async()
+        service.run_repo.db.rollback.assert_awaited_once()
+        service.run_repo.db.refresh.assert_awaited_once_with(run)
+        service._fail_run.assert_awaited_once_with(run, "Run failed unexpectedly: kaboom")
+        service.run_repo.db.commit.assert_awaited_once()
 
-        repo.mark_stuck_as_failed.assert_awaited_once()
-        kwargs = repo.mark_stuck_as_failed.await_args.kwargs
-        # 15-min queued cutoff is more recent than the 2h10m running cutoff.
-        assert kwargs["queued_before"] > kwargs["running_before"]
-        assert kwargs["error_message"]
+    @pytest.mark.asyncio
+    async def test_a_run_the_service_already_failed_is_written_without_a_second_notification(self):
+        from app.tasks.test_suite_tasks import _execute_test_suite_run_async
+
+        run = SimpleNamespace(
+            id=uuid4(), status="queued", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
+        )
+
+        async def service_fails_the_run(*_args, **_kwargs):
+            run.status = "failed"
+            run.summary_metrics = {"error": "Run failed unexpectedly: judge down"}
+            raise RuntimeError("judge down")
+
+        service = _failing_service(run, service_fails_the_run)
+
+        async def refresh(instance):
+            instance.status = "running"
+
+        service.run_repo.db.refresh = AsyncMock(side_effect=refresh)
+
+        with patch("app.dependencies.injector.injector") as injector:
+            injector.get.return_value = service
+            with pytest.raises(RuntimeError):
+                await _execute_test_suite_run_async(uuid4(), None, None)
+
+        service._fail_run.assert_not_awaited()
+        service.run_repo.update.assert_awaited_once_with(run)
+        assert run.status == "failed"
+        assert run.summary_metrics == {"error": "Run failed unexpectedly: judge down"}
+        service.run_repo.db.commit.assert_awaited_once()

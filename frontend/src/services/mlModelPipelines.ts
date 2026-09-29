@@ -1,9 +1,11 @@
-import { apiRequest } from "@/config/api";
+import { apiRequest, api, getApiUrl } from "@/config/api";
+import { downloadBlob } from "@/helpers/utils";
 import {
   TrainingPipelineConfig,
   PipelineRun,
   PipelineArtifact,
   PipelineRunCreatePayload,
+  PipelineRunPromoteResult,
   TrainingPipelineConfigCreatePayload,
   TrainingPipelineConfigUpdatePayload,
 } from "@/interfaces/ml-model-pipeline.interface";
@@ -116,9 +118,15 @@ export const createPipelineRun = async (
   }
 };
 
-export const promotePipelineRun = async (modelId: string, runId: string): Promise<void> => {
+export const promotePipelineRun = async (
+  modelId: string,
+  runId: string
+): Promise<PipelineRunPromoteResult | null> => {
   try {
-    await apiRequest("POST", `${BASE}/${modelId}/pipeline-runs/${runId}/promote`);
+    return await apiRequest<PipelineRunPromoteResult>(
+      "POST",
+      `${BASE}/${modelId}/pipeline-runs/${runId}/promote`
+    );
   } catch (error) {
     console.error("Error promoting pipeline run:", error);
     throw error;
@@ -136,3 +144,22 @@ export const getPipelineRunArtifacts = async (modelId: string, runId: string): P
   }
 };
 
+/**
+ * Streams an artifact from the pipeline-run download endpoint and hands it to
+ * the browser. Goes through the authenticated axios client (a bare <a download>
+ * link would hit the endpoint without the auth/tenant headers).
+ */
+export const downloadPipelineArtifact = async (
+  modelId: string,
+  runId: string,
+  artifactId: string,
+  filename: string
+): Promise<void> => {
+  const baseURL = await getApiUrl();
+  const response = await api.request<Blob>({
+    method: "GET",
+    url: `${baseURL}${BASE}/${modelId}/pipeline-runs/${runId}/artifacts/${artifactId}/download`,
+    responseType: "blob",
+  });
+  downloadBlob(response.data, filename);
+};

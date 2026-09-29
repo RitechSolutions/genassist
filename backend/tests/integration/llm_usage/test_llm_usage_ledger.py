@@ -39,6 +39,7 @@ def _event_row(**overrides) -> dict:
         "source_type": "workflow",
         "source": "chat",
         "input_tokens": 10,
+        "prompt_tokens": 10,
         "output_tokens": 5,
         "total_tokens": 15,
         "pricing_status": "fallback",
@@ -202,6 +203,14 @@ async def test_total_ge_parts_check(db):
     db.add(
         LlmUsageEventModel(**_event_row(input_tokens=10, output_tokens=10, total_tokens=5))
     )
+    with pytest.raises(IntegrityError):
+        await db.flush()
+    await db.rollback()
+
+
+@pytest.mark.asyncio
+async def test_prompt_tokens_below_input_rejected(db):
+    db.add(LlmUsageEventModel(**_event_row(input_tokens=10, prompt_tokens=9)))
     with pytest.raises(IntegrityError):
         await db.flush()
     await db.rollback()

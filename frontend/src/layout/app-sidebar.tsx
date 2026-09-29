@@ -85,7 +85,7 @@ const navGroups: NavGroup[] = [
         title: "Agent Studio",
         icon: UserRoundCog,
         url: "/ai-agents",
-        permissionsRequired: ["read:llm_analyst"],
+        permissionsRequired: ["read:workflow", "read:llm_analyst"],
       },
       {
         title: "Templates",
@@ -237,11 +237,13 @@ const navGroups: NavGroup[] = [
             title: "Fallback Chains",
             url: "/fallback-chains",
             permissionsRequired: ["read:llm_provider"],
+            feature_flag: FeatureFlags.LLM_SETTINGS.SHOW_FALLBACK_CHAINS,
           },
           {
             title: "Audio Providers",
             url: "/audio-providers",
             permissionsRequired: ["read:llm_provider"],
+            feature_flag: FeatureFlags.LLM_SETTINGS.SHOW_AUDIO_PROVIDERS,
           },
           {
             title: "LLM Analyst",

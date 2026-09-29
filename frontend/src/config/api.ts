@@ -37,6 +37,10 @@ const ensureTrailingSlash = (url: string): string =>
 /** Default HTTP client timeout for JSON/API calls (not used for large file uploads — see uploadConstants). */
 export const API_DEFAULT_TIMEOUT_MS = 120000;
 
+/** Timeout for CSV analysis / data profiling calls, which can run arbitrary
+ *  pandas code (or ydata-profiling, for the profile-csv endpoint) server-side. */
+export const API_PREPROCESSING_TIMEOUT_MS = 630000;
+
 const api = axios.create({
   headers: {
     "Content-Type": "application/json",
@@ -305,9 +309,6 @@ export const probeApiHealth = async (): Promise<boolean> => {
 export const isPollEnabled =
   (import.meta.env.VITE_USE_POLL ?? "true").toString().toLowerCase() === "true" && !isWsEnabled;
 
-/** Whether the notifications feed may poll the API (VITE_NOTIFICATION_POLLING_ENABLED=true).
- *  Opt-in and independent of VITE_USE_POLL: defaults to false (notifications rely on WS only) when
- *  the var is unset or not exactly "true". Enable only for clients that need polling and can absorb
- *  the request volume. */
+/** Whether notification polling is enabled (VITE_NOTIFICATION_POLLING_ENABLED=true/false). Defaults to false when unset. */
 export const isNotificationPollingEnabled =
   (import.meta.env.VITE_NOTIFICATION_POLLING_ENABLED ?? "false").toString().toLowerCase() === "true";

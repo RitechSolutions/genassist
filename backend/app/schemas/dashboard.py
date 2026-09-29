@@ -3,17 +3,25 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 
 class DashboardSummaryStats(BaseModel):
     """Summary statistics for the dashboard header."""
     active_agents: int
-    workflow_runs: int
+    conversations: int
     avg_response_time_ms: int
     total_cost_usd: float
 
     model_config = ConfigDict(from_attributes=True)
+
+    @computed_field(
+        description="Deprecated alias of conversations.",
+        json_schema_extra={"deprecated": True},
+    )
+    @property
+    def workflow_runs(self) -> int:
+        return self.conversations
 
 
 class ActiveConversationItem(BaseModel):

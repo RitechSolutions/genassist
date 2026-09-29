@@ -1,7 +1,7 @@
 import React from 'react';
 import { WelcomeCard } from './WelcomeCard';
-import { ChatMessage, ScheduleItem, Translations } from '../types';
-import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown, Mic } from 'lucide-react';
+import { ChatMessage, MessageReceiptStatus, ScheduleItem, Translations } from '../types';
+import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown, Mic, Check, CheckCheck } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { formatTimestamp } from '../utils/time';
 import { InteractiveContent } from './InteractiveContent';
@@ -18,6 +18,10 @@ interface ChatMessageProps {
     fontSize?: string;
     backgroundColor?: string;
     textColor?: string;
+    userBubbleColor?: string;
+    inputBackgroundColor?: string;
+    borderColor?: string;
+    mutedTextColor?: string;
   };
   onPlayAudio?: (text: string) => Promise<void>;
   isPlayingAudio?: boolean;
@@ -40,6 +44,9 @@ interface ChatMessageProps {
   audioUrlBuilder?: (messageId: string) => string;
   audioHeaders?: Record<string, string>;
   autoPlayAudioMessageId?: string | null;
+  /** Read-receipt status to show under this (visitor's) message. Only the latest
+   *  visitor message receives one; undefined hides the indicator entirely. */
+  receiptStatus?: MessageReceiptStatus;
 }
 
 export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
@@ -63,6 +70,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   audioUrlBuilder,
   audioHeaders,
   autoPlayAudioMessageId,
+  receiptStatus,
 }) => {
   // Merge translations with defaults
   const translations = React.useMemo(
@@ -128,9 +136,15 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   // }, [message.text, enableTypewriter, isUser, isSpecial]);
 
   // Updated design colors
-  const userBubbleBgColor = '#E4E4E7'; // grey for user
-  const userTextColor = '#000000';
-  const agentTextColor = theme?.textColor || '#000000';
+  const themeTextColor = theme?.textColor || '#000000';
+  const mutedTextColor = theme?.mutedTextColor || '#6b7280';
+  const borderColor = theme?.borderColor || '#e5e7eb';
+  const secondaryColor = theme?.secondaryColor || '#f5f5f5';
+  const userBubbleBgColor = theme?.userBubbleColor || '#E4E4E7'; // grey for user
+  // The visitor's bubble text follows the theme's text color so it stays legible on
+  // whatever userBubbleColor is set to (light grey by default, dark in a dark theme).
+  const userTextColor = themeTextColor;
+  const agentTextColor = themeTextColor;
   const primaryColor = theme?.primaryColor || '#4f46e5';
   const fontFamily = theme?.fontFamily || 'Roboto, Arial, sans-serif';
   const fontSize = theme?.fontSize || '15px';
@@ -157,14 +171,14 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
 
   const messageLabelStyle: React.CSSProperties = {
     fontSize: '14px',
-    color: '#000000',
+    color: themeTextColor,
     lineHeight: 1,
     fontWeight: 600,
   };
 
   const topTimestampStyle: React.CSSProperties = {
     fontSize: '13px',
-    color: '#6b7280',
+    color: mutedTextColor,
     lineHeight: 1,
   };
 
@@ -234,7 +248,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
     border: 'none',
     padding: 0,
     cursor: 'pointer',
-    color: '#9ca3af',
+    color: mutedTextColor,
     display: thumbsShouldShow ? 'flex' : 'none',
     alignItems: 'center',
   };
@@ -242,12 +256,12 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   const separatorStyle: React.CSSProperties = {
     width: 1,
     height: 14,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: borderColor,
     display: thumbsShouldShow ? 'block' : 'none',
   };
 
   const singleIconStyle: React.CSSProperties = {
-    color: '#000000',
+    color: themeTextColor,
     display: feedbackValue ? 'flex' : 'none',
     alignItems: 'center',
   };
@@ -384,7 +398,13 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
       {message.attachments && message.attachments.length > 0 && (
         <div style={{ ...attachmentsContainerStyle, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
           {message.attachments.map((attachment, index) => (
-            <UploadFilePreview key={index} file={attachment} />
+            <UploadFilePreview
+              key={index}
+              file={attachment}
+              backgroundColor={secondaryColor}
+              textColor={themeTextColor}
+              mutedTextColor={mutedTextColor}
+            />
           ))}
         </div>
       )}
@@ -392,9 +412,9 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
       {message.type === 'audio' && isUser && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignSelf: 'flex-end' }}>
           {message.audioObjectUrl ? (
-            <AudioPlayer blobUrl={message.audioObjectUrl} primaryColor={primaryColor} />
+            <AudioPlayer blobUrl={message.audioObjectUrl} primaryColor={primaryColor} backgroundColor={secondaryColor} mutedTextColor={mutedTextColor} trackColor={borderColor} />
           ) : audioUrlBuilder && message.message_id && audioHeaders ? (
-            <AudioPlayer audioUrl={audioUrlBuilder(message.message_id)} headers={audioHeaders} primaryColor={primaryColor} />
+            <AudioPlayer audioUrl={audioUrlBuilder(message.message_id)} headers={audioHeaders} primaryColor={primaryColor} backgroundColor={secondaryColor} mutedTextColor={mutedTextColor} trackColor={borderColor} />
           ) : (
             <div style={{ ...bubbleStyle, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Mic size={16} />
@@ -411,6 +431,9 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
               audioUrl={audioUrlBuilder(message.message_id)}
               headers={audioHeaders}
               primaryColor={primaryColor}
+              backgroundColor={secondaryColor}
+              mutedTextColor={mutedTextColor}
+              trackColor={borderColor}
               autoPlay={autoPlayAudioMessageId === message.message_id}
             />
           ) : (
@@ -430,6 +453,9 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
                 blocks={contentBlocks}
                 primaryColor={primaryColor}
                 textColor={bubbleTextColor}
+                cardBackgroundColor={secondaryColor}
+                borderColor={borderColor}
+                mutedTextColor={mutedTextColor}
                 isActionable={!isUser && isLastMessage && !isAgentTyping}
                 onQuickAction={onQuickAction}
                 onScheduleConfirm={onScheduleConfirm}
@@ -487,6 +513,36 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {/* Read receipt under the visitor's latest message (Sent / Delivered / Seen). */}
+      {isUser && receiptStatus && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '3px',
+            marginTop: '4px',
+            alignSelf: 'flex-end',
+          }}
+        >
+          {receiptStatus === 'seen' ? (
+            <CheckCheck size={13} style={{ color: primaryColor }} />
+          ) : receiptStatus === 'delivered' ? (
+            <CheckCheck size={13} style={{ color: mutedTextColor }} />
+          ) : (
+            <Check size={13} style={{ color: mutedTextColor }} />
+          )}
+          <span
+            style={{
+              fontSize: '11px',
+              lineHeight: 1,
+              color: receiptStatus === 'seen' ? primaryColor : mutedTextColor,
+            }}
+          >
+            {t(`receipts.${receiptStatus}`, receiptStatus.charAt(0).toUpperCase() + receiptStatus.slice(1))}
+          </span>
         </div>
       )}
     </div>

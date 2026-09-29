@@ -1,19 +1,18 @@
 import { Button } from "@/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
+import { FormField } from "@/components/ui/form-field";
+import { CRUDDialog } from "@/components/ui/crud-dialog";
 import { Eye, EyeOff, Copy } from "lucide-react";
-import { ApiKeyDialogLogic } from "./ApiKeyDialogLogic";
+import {
+  useApiKeyDialogState,
+  inferPresetFromApiKey,
+} from "./ApiKeyDialogLogic";
 import { ApiKey } from "@/interfaces/api-key.interface";
 import { ApiRoleSelection } from "./ApiRoleSelection";
 import { Switch } from "@/components/switch";
 import { maskInput } from "@/helpers/utils";
+import { createApiKey, updateApiKey } from "@/services/apiKeys";
 import {
   Select,
   SelectContent,
@@ -21,7 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
-import { API_KEY_EXPIRY_PRESET_VALUES } from "@/components/api-keys/apiKeyExpiryPresets";
+import {
+  API_KEY_EXPIRY_PRESET_VALUES,
+  presetToExpiresInDays,
+} from "@/components/api-keys/apiKeyExpiryPresets";
 
 interface ApiKeyDialogProps {
   isOpen: boolean;
@@ -31,6 +33,13 @@ interface ApiKeyDialogProps {
   mode?: "create" | "edit";
   apiKeyToEdit?: ApiKey | null;
 }
+
+type ApiKeyFormValues = {
+  name: string;
+  is_active: boolean;
+  role_ids: string[];
+  expiry_preset: string;
+};
 
 export function ApiKeyDialog({
   isOpen,
@@ -62,32 +71,22 @@ export function ApiKeyDialog({
   };
 
   const {
-    name,
-    setName,
-    selectedRoles,
-    setSelectedRoles,
-    isActive,
-    setIsActive,
+    userId,
     availableRoles,
     loading,
     generatedKey,
+    setGeneratedKey,
     isKeyVisible,
     toggleKeyVisibility,
     hasGeneratedKey,
-    toggleRole,
-    handleSubmit,
+    setHasGeneratedKey,
     copyToClipboard,
-    dialogMode,
-    expiryPreset,
-    setExpiryPreset,
-  } = ApiKeyDialogLogic({
-    isOpen,
-    mode,
-    apiKeyToEdit,
-    onApiKeyCreated,
-    onApiKeyUpdated,
-    onOpenChange,
-  });
+  } = useApiKeyDialogState({ isOpen, mode, apiKeyToEdit });
+
+  // Mirrors the original `dialogMode`: treated as an edit only when there is an
+  // entity to edit; otherwise the dialog behaves as a create.
+  const dialogMode: "create" | "edit" =
+    mode === "edit" && apiKeyToEdit ? "edit" : "create";
 
   const expiresInLabel =
     dialogMode === "edit"
@@ -95,49 +94,160 @@ export function ApiKeyDialog({
       : null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
-        <form
-          onSubmit={handleSubmit}
-          className="max-h-[90vh] overflow-y-auto overflow-x-hidden flex flex-col"
-        >
-          <DialogHeader className="p-6 pb-4">
-            <DialogTitle>
-              {mode === "create" ? "Generate New API Key" : "Edit API Key"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 px-6 pb-6">
-            <div className="flex justify-between items-center">
-              <Label htmlFor="name">Name</Label>
-            </div>
-            <Input
-              id="name"
-              placeholder="API Key Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={loading}
-            />
+    <CRUDDialog<ApiKeyFormValues>
+      open={isOpen}
+      onOpenChange={onOpenChange}
+      mode={dialogMode}
+      maxWidth="500px"
+      resetKey={apiKeyToEdit?.id ?? null}
+      initialValues={{
+        name: "",
+        is_active: true,
+        role_ids: [],
+        expiry_preset: "never",
+      }}
+      editValues={
+        apiKeyToEdit
+          ? {
+              name: apiKeyToEdit.name || "",
+              is_active: apiKeyToEdit.is_active === 1,
+              role_ids:
+                apiKeyToEdit.roles?.map((r) => r.id) ||
+                apiKeyToEdit.role_ids ||
+                [],
+              expiry_preset: inferPresetFromApiKey(apiKeyToEdit),
+            }
+          : null
+      }
+      title={{ create: "Generate New API Key", edit: "Edit API Key" }}
+      // The generated-key reveal screen stays open after a successful create so
+      // the secret can be copied; edits close on success.
+      closeOnSuccess={dialogMode === "edit"}
+      successMessage={{
+        create: "API key created successfully.",
+        edit: "API key updated successfully.",
+      }}
+      errorMessage={(err, m) => {
+        const data = (
+          err as { response?: { data?: Record<string, unknown> } }
+        )?.response?.data;
+        let detailMsg = "";
+        if (data?.error) {
+          detailMsg = String(data.error);
+        } else if (data?.detail && typeof data.detail === "object") {
+          const d0 = (data.detail as Record<string, { msg?: string }>)["0"];
+          detailMsg = d0?.msg ?? "";
+        }
+        return `Failed to ${m} API key${detailMsg ? `: ${detailMsg}` : "."}`;
+      }}
+      validate={(values) =>
+        !values.name.trim() ? { name: "Name is required." } : null
+      }
+      onSubmit={async (values, { mode: m }) => {
+        if (m === "create") {
+          if (!userId) {
+            throw new Error("User information is not available.");
+          }
+          const expiresInDays = presetToExpiresInDays(values.expiry_preset);
+          const result = await createApiKey({
+            name: values.name,
+            user_id: userId,
+            role_ids: values.role_ids,
+            is_active: values.is_active ? 1 : 0,
+            ...(expiresInDays !== undefined
+              ? { expires_in_days: expiresInDays }
+              : {}),
+          });
+          setGeneratedKey(result.key_val ?? null);
+          setHasGeneratedKey(true);
+          onApiKeyCreated?.();
+        } else {
+          if (!apiKeyToEdit || !userId) {
+            throw new Error("User information is not available.");
+          }
+          const expiresInDays = presetToExpiresInDays(values.expiry_preset);
+          const updateData: Partial<ApiKey> & { role_ids?: string[] } = {
+            name: values.name,
+            user_id: userId,
+            is_active: values.is_active ? 1 : 0,
+            role_ids: values.role_ids,
+            // undefined ("never") => backend expects 0 to clear/store Never.
+            expires_in_days: expiresInDays ?? 0,
+          };
+          const updatedFromApi = await updateApiKey(apiKeyToEdit.id, updateData);
+          onApiKeyUpdated?.(updatedFromApi);
+        }
+      }}
+      footer={({ isSubmitting }) => {
+        const busy = loading || isSubmitting;
+        return (
+          <div className="flex justify-end gap-3 w-full">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            {dialogMode === "create" && (
+              <Button type="submit" disabled={busy || hasGeneratedKey}>
+                {busy ? "Generating..." : "Generate Key"}
+              </Button>
+            )}
+            {dialogMode === "edit" && (
+              <Button type="submit" disabled={busy || !hasGeneratedKey}>
+                {busy ? "Updating..." : "Update Key"}
+              </Button>
+            )}
+          </div>
+        );
+      }}
+    >
+      {({ values, setField, setValues, errors, isSubmitting }) => {
+        const busy = loading || isSubmitting;
+        const handleToggleRole = (roleId: string) =>
+          setValues((prev) => ({
+            ...prev,
+            role_ids: prev.role_ids.includes(roleId)
+              ? prev.role_ids.filter((id) => id !== roleId)
+              : [...prev.role_ids, roleId],
+          }));
+
+        return (
+          <>
+            <FormField id="name" label="Name" error={errors.name}>
+              <Input
+                id="name"
+                placeholder="API Key Name"
+                value={values.name}
+                onChange={(e) => setField("name", e.target.value)}
+                disabled={busy}
+              />
+            </FormField>
 
             <ApiRoleSelection
               availableRoles={availableRoles}
-              selectedRoles={selectedRoles}
-              toggleRole={toggleRole}
-              isLoading={loading}
+              selectedRoles={values.role_ids}
+              toggleRole={handleToggleRole}
+              isLoading={busy}
             />
 
             <div className="flex items-center gap-2">
               <Label htmlFor="is_active">Active</Label>
               <Switch
                 id="is_active"
-                checked={isActive}
-                onCheckedChange={setIsActive}
+                checked={values.is_active}
+                onCheckedChange={(checked) => setField("is_active", checked)}
               />
             </div>
 
             {dialogMode === "edit" ? (
               <div className="space-y-2">
                 <Label>Credential expires</Label>
-                <Select value={expiryPreset} onValueChange={setExpiryPreset}>
+                <Select
+                  value={values.expiry_preset}
+                  onValueChange={(v) => setField("expiry_preset", v)}
+                >
                   <SelectTrigger id="credential-expiry-edit">
                     <SelectValue placeholder="Expiry" />
                   </SelectTrigger>
@@ -168,7 +278,8 @@ export function ApiKeyDialog({
                 )}
 
                 <p className="text-xs text-muted-foreground">
-                  On rotate, expiration will be recalculated from now based on this setting (unless set to Never).
+                  On rotate, expiration will be recalculated from now based on
+                  this setting (unless set to Never).
                 </p>
               </div>
             ) : null}
@@ -176,7 +287,10 @@ export function ApiKeyDialog({
             {dialogMode === "create" && !hasGeneratedKey ? (
               <div className="space-y-2">
                 <Label htmlFor="credential-expiry">Credential expires</Label>
-                <Select value={expiryPreset} onValueChange={setExpiryPreset}>
+                <Select
+                  value={values.expiry_preset}
+                  onValueChange={(v) => setField("expiry_preset", v)}
+                >
                   <SelectTrigger id="credential-expiry">
                     <SelectValue placeholder="Expiry" />
                   </SelectTrigger>
@@ -201,9 +315,7 @@ export function ApiKeyDialog({
                   <Input
                     id="generated_key"
                     value={
-                      isKeyVisible
-                        ? generatedKey
-                        : maskInput(generatedKey || "")
+                      isKeyVisible ? generatedKey : maskInput(generatedKey || "")
                     }
                     readOnly
                     className="w-full z-10 pr-20"
@@ -239,32 +351,9 @@ export function ApiKeyDialog({
                 </p>
               </div>
             )}
-          </div>
-
-          <DialogFooter className="px-6 py-4 border-t">
-            <div className="flex justify-end gap-3 w-full">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              {dialogMode === "create" && (
-                <Button type="submit" disabled={loading || hasGeneratedKey}>
-                  {loading ? "Generating..." : "Generate Key"}
-                </Button>
-              )}
-
-              {dialogMode === "edit" && (
-                <Button type="submit" disabled={loading || !hasGeneratedKey}>
-                  {loading ? "Updating..." : "Update Key"}
-                </Button>
-              )}
-            </div>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          </>
+        );
+      }}
+    </CRUDDialog>
   );
 }

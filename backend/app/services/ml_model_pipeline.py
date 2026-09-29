@@ -280,7 +280,6 @@ class MLModelPipelineRunService:
 
         if promote_data.update_metrics and execution_output:
             # Update model metadata with metrics if needed
-            # This could be extended to update inference_params or other fields
             pass
 
         return result

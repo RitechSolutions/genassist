@@ -101,6 +101,8 @@ export interface AnalyticsFilterParams {
   from_date?: string;
   to_date?: string;
   node_type?: string;
+  activity_from_datetime?: string;
+  activity_to_datetime?: string;
 }
 
 export interface GroupAgentItem {

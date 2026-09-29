@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   GenAgentChat,
@@ -13,6 +13,7 @@ import { getApiUrl, getWsUrl, isWsEnabled, isPollEnabled } from "@/config/api";
 import { Button } from "@/components/button";
 import { ArrowLeft } from "lucide-react";
 import IntegrationCodePanel from "@/views/AIAgents/components/Customer/IntegrationCodePanel";
+import { chatThemeForMode, useColorMode } from "@/hooks/useChatTheme";
 
 export default function ChatAsCustomer() {
   const { agentId } = useParams<{ agentId: string }>();
@@ -23,14 +24,12 @@ export default function ChatAsCustomer() {
   const [websocketUrl, setWebsocketUrl] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [theme, setTheme] = useState<ChatTheme>({
-    primaryColor: "#4F46E5",
-    secondaryColor: "#f5f5f5",
-    backgroundColor: "#ffffff",
-    textColor: "#000000",
-    fontFamily: "Inter, sans-serif",
-    fontSize: "15px",
-  });
+  // This page is a live theme editor, so the palette is editable state rather
+  // than a value derived from the app theme. It is seeded from whichever mode
+  // the app is in, and re-seeded when that mode flips (see below) — otherwise
+  // switching the app to dark would leave a hardcoded white chat behind.
+  const colorMode = useColorMode();
+  const [theme, setTheme] = useState<ChatTheme>(() => chatThemeForMode(colorMode));
   const [chatSettings, setChatSettings] = useState<ChatSettingsConfig>({
     name: "Genassist",
     description: "Support",
@@ -44,6 +43,15 @@ export default function ChatAsCustomer() {
     useWs: isWsEnabled,
     usePoll: isPollEnabled,
   });
+
+  // Re-seed the editor palette when the app's color mode changes. Edits made
+  // within a mode survive; flipping the mode snaps to that mode's palette.
+  const lastColorMode = useRef(colorMode);
+  useEffect(() => {
+    if (lastColorMode.current === colorMode) return;
+    lastColorMode.current = colorMode;
+    setTheme(chatThemeForMode(colorMode));
+  }, [colorMode]);
 
   // Restore persisted metadata on mount
   useEffect(() => {

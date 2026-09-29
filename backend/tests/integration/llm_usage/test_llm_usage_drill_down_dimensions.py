@@ -62,6 +62,7 @@ def _event(agent_id, source_type, purpose, provider, model, cost) -> LlmUsageEve
         provider_key=provider,
         model_key=model,
         input_tokens=10,
+        prompt_tokens=10,
         output_tokens=5,
         total_tokens=15,
         cost_usd=None if cost is None else Decimal(cost),

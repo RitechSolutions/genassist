@@ -20,10 +20,12 @@ class LlmCostRateRepository(DbRepository[LlmCostRateModel]):
         super().__init__(LlmCostRateModel, db)
 
     async def create(self, obj: LlmCostRateModel) -> LlmCostRateModel:
+        # SAVEPOINT so a duplicate only rolls back this insert, not the whole
+        # request/task transaction (repos no longer own the commit boundary).
         try:
-            return await super().create(obj)
+            async with self.db.begin_nested():
+                return await super().create(obj)
         except IntegrityError as e:
-            await self.db.rollback()
             logger.warning("Duplicate active LLM cost rate rejected by the database: %s", e)
             raise AppException(error_key=ErrorKey.LLM_COST_RATE_ALREADY_EXISTS, status_code=409) from e
 
@@ -71,5 +73,5 @@ class LlmCostRateRepository(DbRepository[LlmCostRateModel]):
         if not row:
             return False
         row.is_deleted = 1
-        await self.db.commit()
+        await self.db.flush()
         return True
