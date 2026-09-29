@@ -1,10 +1,13 @@
 from typing import Optional, Tuple
 from urllib.parse import quote, unquote, urlparse
 
-from pydantic import ConfigDict, Field, computed_field
+from pydantic import ConfigDict, Field, computed_field, field_validator
 from pydantic_settings import BaseSettings
 
 from app.core.project_path import DATA_VOLUME
+
+# Ceiling for replica reads when DB_READ_STATEMENT_TIMEOUT is unset; the small read pool cannot afford the writer's default.
+DEFAULT_READ_STATEMENT_TIMEOUT = 600  # seconds
 
 
 class ProjectSettings(BaseSettings):
@@ -125,6 +128,13 @@ class ProjectSettings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     HUGGINGFACE_TOKEN: Optional[str] = None
 
+    # === Model call concurrency ===
+    # API process only: threads in the event loop's default pool, where synchronous model clients run; 0 keeps Python's default.
+    LLM_EXECUTOR_THREADS: int = 32
+    # Agent turns one process runs at once; a turn waiting longer than the timeout gets 503. 0 disables the cap.
+    CHAT_TURN_MAX_INFLIGHT: int = 24
+    CHAT_TURN_QUEUE_TIMEOUT_SECONDS: float = 10.0
+
     # === Whisper Model Defaults ===
     DEFAULT_WHISPER_MODEL: str = "base.en"
     SUPPORTED_AUDIO_FORMATS: Tuple[str, ...] = (
@@ -196,10 +206,8 @@ class ProjectSettings(BaseSettings):
     DB_READ_MAX_OVERFLOW: int = 20
     # Fail fast rather than tying a request up waiting for a read connection.
     DB_READ_POOL_TIMEOUT: int = 5  # seconds
-    # Lower than the writer's ceiling because the read pool is small and a few long
-    # queries would otherwise occupy all of it. Kept generous enough not to fail an
-    # export that works today; tune down once real query durations are known.
-    DB_READ_STATEMENT_TIMEOUT: int = 600  # seconds; 0 disables
+    # None uses the writer's ceiling capped at DEFAULT_READ_STATEMENT_TIMEOUT; 0 disables.
+    DB_READ_STATEMENT_TIMEOUT: Optional[int] = Field(default=None, ge=0)  # seconds
     # Seconds a client keeps reading from the writer after one of its own writes, so
     # replica lag never hides a change from the user who made it. 0 disables.
     DB_READ_PIN_AFTER_WRITE_SECONDS: int = 5
@@ -372,6 +380,16 @@ class ProjectSettings(BaseSettings):
     # search counts; duplicate in-flight requests reuse that result and are not charged.
     WEB_SEARCH_TENANT_PER_MINUTE: int = 30
 
+    # === Analytics Aggregation ===
+    # Rollout flag: off restores the legacy discovery strategy. Not a full revert,
+    # the shared UTC date alignment stays active either way.
+    ANALYTICS_AGG_V2: bool = True
+    ANALYTICS_AGG_PREVIEW_ENABLED: bool = False
+    # First-cutover seed window below the MAX(last_aggregated_at).
+    ANALYTICS_AGG_HEAL_LOOKBACK_HOURS: int = 12
+    # Discovery overlap absorbing in-flight commits; recompute is idempotent.
+    ANALYTICS_AGG_SCAN_OVERLAP_MINUTES: int = 15
+
     @property
     def _zendesk_base(self) -> str:
         return f"https://{self.ZENDESK_SUBDOMAIN}.zendesk.com/api/v2"
@@ -425,6 +443,22 @@ class ProjectSettings(BaseSettings):
     @property
     def read_replica_enabled(self) -> bool:
         return bool((self.DB_READ_HOST or "").strip())
+
+    @field_validator("DB_READ_STATEMENT_TIMEOUT", mode="before")
+    @classmethod
+    def _blank_read_timeout_means_inherit(cls, value: object) -> object:
+        # Blank, whitespace, "none" and "null" all mean unset.
+        is_unset_spelling = isinstance(value, str) and value.strip().lower() in ("", "none", "null")
+        return None if is_unset_spelling else value
+
+    @property
+    def read_statement_timeout(self) -> int:
+        if self.DB_READ_STATEMENT_TIMEOUT is not None:
+            return self.DB_READ_STATEMENT_TIMEOUT
+        writer_is_unbounded = self.DB_STATEMENT_TIMEOUT <= 0
+        if writer_is_unbounded:
+            return DEFAULT_READ_STATEMENT_TIMEOUT
+        return min(self.DB_STATEMENT_TIMEOUT, DEFAULT_READ_STATEMENT_TIMEOUT)
 
     def _tenant_async_database_url(self, host: str, tenant: str) -> str:
         tenant_db = self.get_tenant_database_name(tenant)

@@ -32,6 +32,7 @@ from app.modules.workflow.engine.nodes import (
     DataMapperNode,
     ExternalAgentNode,
     FileReaderNode,
+    FilterNode,
     FinalizeConversationNode,
     GmailToolNode,
     GuardrailNliNode,
@@ -74,6 +75,17 @@ from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import process_path_based_input_data
 
 logger = logging.getLogger(__name__)
+
+
+# Node types that exist only in the editor and never execute. A "groupNode" is a visual container
+# that frames related nodes on the canvas (see frontend utils/nodeGroups.ts); it has no edges or
+# handles. Dropped on load so it can't become an inferred starting node or count towards steps.
+EDITOR_ONLY_NODE_TYPES = frozenset({"groupNode"})
+
+
+def executable_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The workflow's nodes minus editor-only ones (visual groups)."""
+    return [node for node in nodes if node.get("type") not in EDITOR_ONLY_NODE_TYPES]
 
 
 class MemoryPersistenceError(Exception):
@@ -135,6 +147,7 @@ class WorkflowEngine:
         cls._node_registry["chatOutputNode"] = ChatOutputNode
         cls._node_registry["routerNode"] = RouterNode
         cls._node_registry["switchNode"] = SwitchNode
+        cls._node_registry["filterNode"] = FilterNode
         cls._node_registry["agentNode"] = AgentNode
         cls._node_registry["externalAgentNode"] = ExternalAgentNode
         cls._node_registry["apiToolNode"] = ApiToolNode
@@ -200,6 +213,7 @@ class WorkflowEngine:
             "templateNode",
             "routerNode",
             "switchNode",
+            "filterNode",
             "chatInputNode",
             "chatOutputNode",
             "pythonCodeNode",
@@ -241,7 +255,7 @@ class WorkflowEngine:
         # Build and store workflow configuration
         self.workflow = {
             "config": workflow_config,
-            "nodes": workflow_config["nodes"],
+            "nodes": executable_nodes(workflow_config["nodes"]),
             "edges": workflow_config.get("edges", []),
             "metadata": {
                 "name": workflow_config.get("name", "Unnamed Workflow"),
