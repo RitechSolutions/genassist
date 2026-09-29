@@ -15,6 +15,10 @@ interface RenameNodeDialogProps {
   onClose: () => void;
   currentName: string;
   onRename: (name: string) => void;
+  /** Copy overrides so the dialog can name other canvas items (e.g. node groups). */
+  title?: string;
+  label?: string;
+  placeholder?: string;
 }
 
 const RenameNodeDialog: React.FC<RenameNodeDialogProps> = ({
@@ -22,6 +26,9 @@ const RenameNodeDialog: React.FC<RenameNodeDialogProps> = ({
   onClose,
   currentName,
   onRename,
+  title = "Rename node",
+  label = "Node Name",
+  placeholder = "Enter the name of this node",
 }) => {
   const [name, setName] = useState(currentName);
 
@@ -41,15 +48,15 @@ const RenameNodeDialog: React.FC<RenameNodeDialogProps> = ({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md" style={{ zIndex: 2000 }}>
         <DialogHeader>
-          <DialogTitle>Rename node</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="space-y-2 py-2">
-          <Label htmlFor="rename-node-name">Node Name</Label>
+          <Label htmlFor="rename-node-name">{label}</Label>
           <RichInput
             id="rename-node-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Enter the name of this node"
+            placeholder={placeholder}
             className="w-full"
             autoFocus
             onKeyDown={(e) => {

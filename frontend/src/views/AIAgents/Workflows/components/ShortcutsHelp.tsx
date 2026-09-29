@@ -18,6 +18,8 @@ const SHORTCUTS: ShortcutItem[] = [
   { label: "Ask AI to edit workflow", keys: ["/agent"] },
   { label: "Toggle Available Nodes", keys: [MOD, "I"] },
   { label: "Auto-arrange nodes", keys: [MOD, "M"] },
+  { label: "Group selected nodes", keys: [MOD, "G"] },
+  { label: "Ungroup", keys: ["⇧", MOD, "G"] },
 ];
 
 /** A single keycap chip. */

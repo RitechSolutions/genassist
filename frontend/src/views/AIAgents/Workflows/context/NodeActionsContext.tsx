@@ -19,6 +19,16 @@ export interface NodeActionsContextValue {
    * point, so testing "directly" from it runs the full graph.
    */
   testWorkflow: () => void;
+  /** Open the name dialog for a visual group (see utils/nodeGroups). */
+  renameGroup: (groupId: string) => void;
+  /** Remove a group container, keeping its nodes where they are on screen. */
+  ungroup: (groupId: string) => void;
+  /** Set a group's palette colour (a key from nodeTypes/group/groupColors). */
+  setGroupColor: (groupId: string, color: string) => void;
+  /** Resize a group to hug its nodes. */
+  fitGroup: (groupId: string) => void;
+  /** Ask how to delete a group (container only, or with its nodes). */
+  requestDeleteGroup: (groupId: string) => void;
 }
 
 export const NodeActionsContext = createContext<NodeActionsContextValue | null>(

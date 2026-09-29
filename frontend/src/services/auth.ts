@@ -141,13 +141,6 @@ export const hasPermission = (permission: string): boolean => {
   return permissions.includes('*') || permissions.includes(permission);
 };
 
-export const hasAllPermissions = (requiredPermissions: string[]): boolean => {
-  if (!requiredPermissions || requiredPermissions.length === 0) return true;
-
-  const userPermissions = getPermissions();
-  return requiredPermissions.every((perm) => userPermissions.includes(perm));
-};
-
 export const hasAnyPermission = (requiredPermissions: string[]): boolean => {
   if (!requiredPermissions || requiredPermissions.length === 0) return true;
 
@@ -283,10 +276,6 @@ export const isPasswordUpdateRequired = (): boolean => {
   } catch (error) {
     return false;
   }
-};
-
-export const getForceUpdatePassDate = (): string | null => {
-  return localStorage.getItem("force_upd_pass_date");
 };
 
 export async function getAuthMe(): Promise<User> {

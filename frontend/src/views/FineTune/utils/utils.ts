@@ -1,4 +1,3 @@
-import type { FineTuneJob } from "@/interfaces/fineTune.interface";
 import type { AccuracyPoint } from "@/views/FineTune/types";
 
 export const inProgressStatuses = new Set([

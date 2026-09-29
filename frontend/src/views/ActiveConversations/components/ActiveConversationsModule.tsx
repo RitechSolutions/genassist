@@ -16,9 +16,6 @@ import type {
   SentimentFilter,
 } from "../helpers/activeConversations.types";
 
-const isHighHostility = (score: number): boolean =>
-  getSentimentFromHostility(score) === "negative";
-
 const parseTimestampMs = (value: string | undefined): number => {
   if (!value) return 0;
   const ms = new Date(value).getTime();

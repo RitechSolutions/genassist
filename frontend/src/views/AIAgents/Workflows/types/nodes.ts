@@ -1,4 +1,4 @@
-import { Edge, Node, NodeProps } from "reactflow";
+import { Node, NodeProps } from "reactflow";
 import { ComponentType } from "react";
 import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
@@ -749,20 +749,5 @@ export const createNode = <T extends NodeData>(
     type,
     position,
     data: data,
-  };
-};
-
-export const createEdge = (
-  source: string,
-  target: string,
-  data: Record<string, unknown>,
-): Edge => {
-  return {
-    id: `${source}-${target}`,
-    sourceHandle: source,
-    targetHandle: target,
-    source,
-    target,
-    data,
   };
 };

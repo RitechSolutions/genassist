@@ -12,6 +12,7 @@ import {
 } from '@/interfaces/workflow-diff.interface';
 import nodeRegistry from '../registry/nodeRegistry';
 import { stripTransientGraphFields } from './graphNormalization';
+import { flattenGroups } from './nodeGroups';
 
 /**
  * Pure diff engine for the Workflow Version Diff Checker (feature 005).
@@ -118,7 +119,11 @@ const dropReferencePair = (base: unknown, target: unknown): [unknown, unknown] =
  */
 export const normalizeForDiff = (workflow: Workflow): NormalizedWorkflow => {
   const clone = JSON.parse(JSON.stringify(workflow ?? {})) as Workflow;
-  const { nodes: baseNodes, edges } = stripTransientGraphFields(clone.nodes ?? [], clone.edges ?? []);
+  // Visual groups (and a node's group membership) are cosmetic, like position.
+  const { nodes: baseNodes, edges } = stripTransientGraphFields(
+    flattenGroups(clone.nodes ?? []),
+    clone.edges ?? []
+  );
 
   // Diff also treats a node move (position) and the injected updateNodeData as non-meaningful
   const nodes: Node[] = baseNodes.map((node) => {

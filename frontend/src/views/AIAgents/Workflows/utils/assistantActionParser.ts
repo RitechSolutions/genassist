@@ -1,6 +1,7 @@
 import { Node, Edge, MarkerType } from "reactflow";
 import { v4 as uuidv4 } from "uuid";
 import nodeRegistry from "../registry/nodeRegistry";
+import { isGroupNode } from "./nodeGroups";
 import {
   SUB_AGENT_SOURCE_HANDLE,
   SUB_AGENT_TARGET_HANDLE,
@@ -61,7 +62,8 @@ export interface AssistantMessage {
 // ── Canvas Context Serializer ──
 
 export function serializeCanvasContext(nodes: Node[], edges: Edge[]): string {
-  const nodeLines = nodes.map((n) => {
+  // Visual groups aren't workflow nodes; keep them out of the assistant's view of the graph.
+  const nodeLines = nodes.filter((n) => !isGroupNode(n)).map((n) => {
     const label = (n.data?.name as string) || (n.data?.label as string) || n.type || "unknown";
     return `- ${n.type}(id="${n.id}", label="${label}")`;
   });

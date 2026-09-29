@@ -1,5 +1,5 @@
 import { TranscriptEntry } from "./transcript.interface";
-import { ActiveConversation, ActiveConversationsResponse } from "./liveConversation.interface";
+import { ActiveConversation } from "./liveConversation.interface";
 
 export interface UseWebSocketTranscriptOptions {
     conversationId: string;

@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
-import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
 import AppLayout from "@/layout/AppLayout";
 import { Register } from "@/views/Register";

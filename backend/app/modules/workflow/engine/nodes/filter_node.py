@@ -64,6 +64,18 @@ class FilterNode(BaseNode):
             "next_nodes": [],
         }
 
+    def set_node_output(self, output: Any) -> None:
+        """Store a stop as its message alone.
+
+        The engine reads ``next_nodes`` from the returned result, but the chat
+        reply is the last node's stored output, which reaches the user and
+        conversation memory as-is. Storing the whole decision would send it as
+        the reply.
+        """
+        if isinstance(output, dict) and output.get("passed") is False and output.get("next_nodes") == []:
+            output = output.get("message", "")
+        super().set_node_output(output)
+
     def _condition_holds(self, field: str, operator: str, expected: str, case_sensitive: bool) -> bool:
         """Evaluate the condition, failing closed: a broken condition stops the branch."""
         if operator not in PRESENCE_OPERATORS and not field.strip():

@@ -13,7 +13,6 @@ import { toast } from "react-hot-toast";
 import AgentList from "./AgentList";
 import ManageApiKeysModal from "./Keys/ManageApiKeysModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 
 const DEFAULT_PAGE_SIZE = 20;
 

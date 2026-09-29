@@ -19,6 +19,7 @@ import { ExecutionViewModel } from '@/interfaces/workflow-execution.interface';
 import { Workflow } from '@/interfaces/workflow.interface';
 import { formatDuration } from '../../utils/executionView';
 import { computeLayeredLayout } from '../../utils/executionLayout';
+import { flattenGroups } from '../../utils/nodeGroups';
 import { STATUS_STYLES } from './statusStyles';
 import ExecutionStatusNode, { ExecutionStatusNodeData } from './ExecutionStatusNode';
 
@@ -159,7 +160,8 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
 
   // Which nodes/edges to render: the executed subgraph, or the full workflow.
   const { sourceNodes, sourceEdges } = useMemo(() => {
-    const allNodes = workflow?.nodes ?? [];
+    // Visual groups aren't executed; show their nodes at canvas-level positions.
+    const allNodes = flattenGroups(workflow?.nodes ?? []);
     const allEdges = workflow?.edges ?? [];
     if (graphView === 'full') return { sourceNodes: allNodes, sourceEdges: allEdges };
     return {

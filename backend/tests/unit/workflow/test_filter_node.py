@@ -136,7 +136,7 @@ async def test_engine_stops_the_branch_and_replies_with_the_stop_message():
     state = await _run(workflow, "blocked")
     assert "next" not in state.node_outputs and "out" not in state.node_outputs
     response = state.format_state_as_response()
-    assert response["output"]["message"] == "Only active accounts."
+    assert response["output"] == "Only active accounts."
 
 
 @pytest.mark.asyncio

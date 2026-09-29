@@ -277,6 +277,22 @@ input[type="checkbox"]:hover {
   animation: node-search-pulse 1.6s ease-in-out infinite;
 }
 
+/* Visual node group highlighted as the drop target while a node is dragged over it */
+.react-flow__node.group-drop-target .wf-group {
+  /* !important: a coloured group sets its border/fill inline */
+  border-style: solid !important;
+  border-color: hsl(var(--brand-600) / 0.8) !important;
+  background-color: hsl(var(--brand-600) / 0.08) !important;
+}
+
+/* Search match on a visual group — pulse the frame without raising its z-index
+   (node-search-match's z-index bump would lift the group above its own nodes) */
+.react-flow__node.group-search-match .wf-group {
+  border-style: solid;
+  border-color: hsl(var(--brand-600) / 0.9) !important;
+  animation: node-search-pulse 1.6s ease-in-out infinite;
+}
+
 @keyframes node-search-pulse {
   0%,
   100% {
