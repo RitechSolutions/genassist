@@ -2,9 +2,10 @@ import { describe, it, expect } from "vitest";
 import { NEW_NODE_TYPES, isNewNode } from "@/views/AIAgents/Workflows/utils/newNodes";
 
 describe("NEW_NODE_TYPES", () => {
-  it("contains exactly the six flagged node types", () => {
+  it("contains exactly the seven flagged node types", () => {
     expect(NEW_NODE_TYPES).toEqual(
       new Set([
+        "filterNode",
         "switchNode",
         "nlpNode",
         "webScraperNode",
