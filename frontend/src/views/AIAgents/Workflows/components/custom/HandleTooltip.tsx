@@ -1,5 +1,6 @@
 import { Badge } from "@/components/badge";
 import React, { useState, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Handle, HandleProps, Position } from "reactflow";
 import { NodeCompatibility, NodeData } from "../../types/nodes";
 import { getHandlerPosition } from "../../utils/helpers";
@@ -123,16 +124,18 @@ const HandleTooltipComponent: React.FC<HandleTooltipProps> = ({
   type,
   ...handleProps
 }) => {
-  const [showTooltip, setShowTooltip] = useState(false);
+  // Screen position of the tooltip while the handle is hovered (null = hidden).
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number } | null>(null);
   const handleRef = useRef<HTMLDivElement>(null);
 
   return (
     <>
       <div
         onMouseEnter={() => {
-          setShowTooltip(true);
+          const rect = handleRef.current?.getBoundingClientRect();
+          if (rect) setTooltipPos({ left: rect.right + 8, top: rect.bottom + 8 });
         }}
-        onMouseLeave={() => setShowTooltip(false)}
+        onMouseLeave={() => setTooltipPos(null)}
       >
         <Handle
           ref={handleRef}
@@ -147,24 +150,22 @@ const HandleTooltipComponent: React.FC<HandleTooltipProps> = ({
         />
       </div>
 
-      {showTooltip && (
-        <div
-          className="fixed flex flex-col gap-2 z-50 bg-gray-900 text-white text-xs p-2 rounded shadow-lg font-mono whitespace-pre"
-          style={{
-            left: handleRef.current?.offsetLeft + 20,
-            top: handleRef.current?.offsetTop + 20,
-            // transform:
-            //   handleProps.position === Position.Left
-            //     ? "translateX(-100%)"
-            //     : "none",
-          }}
-        >
-          <Badge style={{ background: getCompatibilityColor(compatibility) }}>
-            {compatibility}
-          </Badge>
-          {getCompatibilityDescription(compatibility, type, handleProps.id, label)}
-        </div>
-      )}
+      {/* Portalled to <body>: rendered inside the node, the tooltip was trapped in that node's
+          stacking context (React Flow gives each node a transform + z-index), so neighbouring
+          nodes painted over it. */}
+      {tooltipPos &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-50 flex flex-col gap-2 rounded bg-gray-900 p-2 font-mono text-xs text-white shadow-lg whitespace-pre"
+            style={tooltipPos}
+          >
+            <Badge style={{ background: getCompatibilityColor(compatibility) }}>
+              {compatibility}
+            </Badge>
+            {getCompatibilityDescription(compatibility, type, handleProps.id, label)}
+          </div>,
+          document.body
+        )}
     </>
   );
 };

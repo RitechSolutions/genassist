@@ -87,10 +87,12 @@ import {
   ROUTER_NODE_DEFINITION,
   AGGREGATOR_NODE_DEFINITION,
   SWITCH_NODE_DEFINITION,
+  FILTER_NODE_DEFINITION,
 } from "./router/definitions";
 import RouterNode from "./router/routerNode";
 import AggregatorNode from "./router/aggregatorNode";
 import SwitchNode from "./router/switchNode";
+import FilterNode from "./router/filterNode";
 import CalendarEventNode from "./integrations/calendarEventNode";
 import {
   TRAIN_DATA_SOURCE_NODE_DEFINITION,
@@ -109,6 +111,8 @@ import {
   TTS_NODE_DEFINITION,
   STT_NODE_DEFINITION,
 } from "./audio/definitions";
+import GroupNode from "./group/groupNode";
+import { GROUP_NODE_TYPE } from "../utils/nodeGroups";
 
 // A function to re-register if needed
 export const registerAllNodeTypes = () => {
@@ -158,6 +162,7 @@ export const registerAllNodeTypes = () => {
 
   nodeRegistry.registerNodeType(ROUTER_NODE_DEFINITION);
   nodeRegistry.registerNodeType(SWITCH_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(FILTER_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(AGGREGATOR_NODE_DEFINITION);
 
@@ -217,6 +222,7 @@ export const getNodeTypes = () => {
     toolBuilderNode: ToolBuilderNode,
     routerNode: RouterNode,
     switchNode: SwitchNode,
+    filterNode: FilterNode,
     aggregatorNode: AggregatorNode,
     nlpNode: NlpNode,
     dataMapperNode: DataMapperNode,
@@ -234,5 +240,7 @@ export const getNodeTypes = () => {
     fileReaderNode: FileReaderNode,
     ttsNode: TTSNode,
     sttNode: STTNode,
+    // Visual-only container (not in the node registry — never executable, see utils/nodeGroups)
+    [GROUP_NODE_TYPE]: GroupNode,
   };
 };

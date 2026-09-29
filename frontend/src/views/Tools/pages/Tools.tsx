@@ -62,13 +62,6 @@ export default function Tools() {
     }
   };
 
-  const onSaved = () => setRefreshKey((v) => v + 1);
-  const openCreate = () => {
-    setDialogMode("create");
-    setToolToEdit(null);
-    setIsDialogOpen(true);
-  };
-
   const filteredTools = useMemo(() => {
     return tools.filter((tool) => {
       const matchesText = tool.name

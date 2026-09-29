@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -209,6 +210,18 @@ async def _cleanup_websocket_services():
 # --------------------------------------------------------------------------- #
 # Lifespan handler                                                            #
 # --------------------------------------------------------------------------- #
+def _configure_model_call_executor() -> None:
+    """Size the default executor so synchronous model calls are not capped by the node's CPU count."""
+    from app.core.concurrency import configure_default_executor
+
+    configure_default_executor(asyncio.get_running_loop(), settings.LLM_EXECUTOR_THREADS)
+    logger.info(
+        "Default executor threads: %s (0 keeps Python's default; node cpu_count=%s)",
+        settings.LLM_EXECUTOR_THREADS,
+        os.cpu_count(),
+    )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """
@@ -220,10 +233,13 @@ async def _lifespan(app: FastAPI):
     - Database services (multi-tenant sessions)
     - Application services (permissions, tenants)
     """
+    from app.db.effective_settings import log_effective_statement_timeout
     from app.db.multi_tenant_session import multi_tenant_manager
     from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
 
     logger.debug("Running lifespan startup tasks...")
+
+    _configure_model_call_executor()
 
     # Generate OpenAPI schema
     await output_open_api(app)
@@ -234,6 +250,7 @@ async def _lifespan(app: FastAPI):
 
     # Initialize database and application services
     await multi_tenant_manager.initialize()
+    await log_effective_statement_timeout(multi_tenant_manager.get_tenant_engine())
     await pre_wormup_tenant_singleton()
 
     from app.core.permissions import sync_permissions_on_startup

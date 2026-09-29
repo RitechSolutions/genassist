@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -18,6 +18,7 @@ import { computeLayeredLayout } from '../../utils/executionLayout';
 import { getNodeLabel } from '../../utils/versionDiff';
 import { NodeHandler } from '../../types/nodes';
 import { DIFF_STATUS_STYLES } from './diffStatusStyles';
+import { flattenGroups } from '../../utils/nodeGroups';
 import DiffStatusNode, { DiffStatusNodeData } from './DiffStatusNode';
 import FieldChangeRow from './FieldChangeRow';
 
@@ -57,7 +58,8 @@ const DiffGraphPane: React.FC<DiffGraphPaneProps> = ({
   selectedNodeId,
   onSelectNode,
 }) => {
-  const sourceNodes = useMemo(() => workflow.nodes ?? [], [workflow.nodes]);
+  // Visual groups aren't part of the executable graph being diffed.
+  const sourceNodes = useMemo(() => flattenGroups(workflow.nodes ?? []), [workflow.nodes]);
   const sourceEdges = useMemo(() => workflow.edges ?? [], [workflow.edges]);
 
   const positions = useMemo(

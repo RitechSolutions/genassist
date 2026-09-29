@@ -1,4 +1,4 @@
-import { Edge, Node, NodeProps } from "reactflow";
+import { Node, NodeProps } from "reactflow";
 import { ComponentType } from "react";
 import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
@@ -161,6 +161,34 @@ export interface SwitchNodeData extends BaseNodeData {
   matchMode?: SwitchMatchMode;
   caseSensitive?: boolean;
   cases?: SwitchCase[];
+}
+
+// Filter node data — a gate with one output: the branch continues only while
+// `field <operator> value` holds. Operators mirror engine/conditions.py.
+export type FilterOperator =
+  | "equal"
+  | "not_equal"
+  | "contains"
+  | "not_contain"
+  | "starts_with"
+  | "not_starts_with"
+  | "ends_with"
+  | "not_ends_with"
+  | "regex"
+  | "greater_than"
+  | "greater_than_or_equal"
+  | "less_than"
+  | "less_than_or_equal"
+  | "is_empty"
+  | "is_not_empty";
+
+export interface FilterNodeData extends BaseNodeData {
+  field?: string;
+  operator?: FilterOperator;
+  value?: string;
+  caseSensitive?: boolean;
+  /** Chat reply used when the filter stops the conversation's main path. */
+  stopMessage?: string;
 }
 
 // NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
@@ -673,6 +701,7 @@ export type NodeData =
   | WhatsappNodeData
   | RouterNodeData
   | SwitchNodeData
+  | FilterNodeData
   | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData
@@ -738,20 +767,5 @@ export const createNode = <T extends NodeData>(
     type,
     position,
     data: data,
-  };
-};
-
-export const createEdge = (
-  source: string,
-  target: string,
-  data: Record<string, unknown>,
-): Edge => {
-  return {
-    id: `${source}-${target}`,
-    sourceHandle: source,
-    targetHandle: target,
-    source,
-    target,
-    data,
   };
 };

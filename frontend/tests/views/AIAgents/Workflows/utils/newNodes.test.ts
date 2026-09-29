@@ -5,6 +5,7 @@ describe("NEW_NODE_TYPES", () => {
   it("contains exactly the seven flagged node types", () => {
     expect(NEW_NODE_TYPES).toEqual(
       new Set([
+        "filterNode",
         "switchNode",
         "nlpNode",
         "webScraperNode",

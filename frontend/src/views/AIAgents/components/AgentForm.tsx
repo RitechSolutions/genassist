@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
 import { AxiosError } from "axios";
 import {
   createAgentConfig,
-  getAgentConfig,
   updateAgentConfig,
   uploadWelcomeImage,
   getWelcomeImage,
@@ -16,7 +15,6 @@ import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import {
-  ChevronLeft,
   CheckCircle2,
   Trash2,
   Plus,
@@ -1255,82 +1253,6 @@ const AgentForm: React.FC<AgentFormProps> = ({
       </form>
     </>
   );
-};
-
-export const AgentFormPage: React.FC = () => {
-  const { agentId } = useParams<{ agentId: string }>();
-  const id = agentId;
-  const navigate = useNavigate();
-  const isEditMode = !!id;
-
-  const [formData, setFormData] = useState<AgentFormData>({
-    id: isEditMode ? id : undefined,
-    name: "",
-    description: "",
-    welcome_message: undefined,
-    welcome_title: undefined,
-    thinking_phrase_delay: undefined,
-    possible_queries: [],
-    thinking_phrases: [],
-  });
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<boolean>(false);
-
-  React.useEffect(() => {
-    if (isEditMode) {
-      const fetchAgentConfig = async () => {
-        try {
-          setLoading(true);
-          const config = await getAgentConfig(id);
-          const cleanedQueries = config.possible_queries?.filter(
-            (q) => q.trim() !== "",
-          );
-          const cleanedThinkingPhrases = Array.isArray(config.thinking_phrases)
-            ? config.thinking_phrases.filter((p) => p.trim() !== "")
-            : [];
-
-          setFormData({
-            ...config,
-            possible_queries: cleanedQueries.length > 0 ? cleanedQueries : [],
-            thinking_phrases:
-              cleanedThinkingPhrases.length > 0 ? cleanedThinkingPhrases : [],
-          });
-
-          setError(null);
-        } catch (err) {
-          setError("Failed to load agent configuration");
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      fetchAgentConfig();
-    }
-  }, [id, isEditMode]);
-
-  if (!agentId) {
-    return (
-      <div className="dashboard max-w-7xl mx-auto space-y-6 pt-8">
-        <div className="space-y-8">
-          <div className="flex items-center">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/ai-agents")}
-              className="mr-2"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-            <h2 className="text-2xl font-bold tracking-tight">
-              {isEditMode ? "Edit Workflow" : "Create New Workflow"}
-            </h2>
-          </div>
-          <AgentForm data={formData} />
-        </div>
-      </div>
-    );
-  }
 };
 
 interface AgentDialogProps {
