@@ -109,6 +109,8 @@ import {
   TTS_NODE_DEFINITION,
   STT_NODE_DEFINITION,
 } from "./audio/definitions";
+import GroupNode from "./group/groupNode";
+import { GROUP_NODE_TYPE } from "../utils/nodeGroups";
 
 // A function to re-register if needed
 export const registerAllNodeTypes = () => {
@@ -234,5 +236,7 @@ export const getNodeTypes = () => {
     fileReaderNode: FileReaderNode,
     ttsNode: TTSNode,
     sttNode: STTNode,
+    // Visual-only container (not in the node registry — never executable, see utils/nodeGroups)
+    [GROUP_NODE_TYPE]: GroupNode,
   };
 };

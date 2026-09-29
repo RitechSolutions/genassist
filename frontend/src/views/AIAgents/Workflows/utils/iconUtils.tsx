@@ -36,6 +36,7 @@ import {
   TextSearch,
   ScanText,
   Image,
+  Group,
   BotMessageSquare,
   Signpost,
   Filter,
@@ -109,6 +110,7 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   TextSearch: { type: "lucide", source: TextSearch },
   ScanText: { type: "lucide", source: ScanText },
   Image: { type: "lucide", source: Image },
+  Group: { type: "lucide", source: Group },
 
   // Custom asset icons
   Slack: { type: "asset", source: SlackLogo },
