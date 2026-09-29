@@ -32,6 +32,7 @@ from app.modules.workflow.engine.nodes import (
     DataMapperNode,
     ExternalAgentNode,
     FileReaderNode,
+    FilterNode,
     FinalizeConversationNode,
     GmailToolNode,
     GuardrailNliNode,
@@ -135,6 +136,7 @@ class WorkflowEngine:
         cls._node_registry["chatOutputNode"] = ChatOutputNode
         cls._node_registry["routerNode"] = RouterNode
         cls._node_registry["switchNode"] = SwitchNode
+        cls._node_registry["filterNode"] = FilterNode
         cls._node_registry["agentNode"] = AgentNode
         cls._node_registry["externalAgentNode"] = ExternalAgentNode
         cls._node_registry["apiToolNode"] = ApiToolNode
@@ -200,6 +202,7 @@ class WorkflowEngine:
             "templateNode",
             "routerNode",
             "switchNode",
+            "filterNode",
             "chatInputNode",
             "chatOutputNode",
             "pythonCodeNode",

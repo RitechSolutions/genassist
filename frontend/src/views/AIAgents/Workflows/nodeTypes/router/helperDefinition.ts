@@ -89,6 +89,41 @@ export const SWITCH_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const FILTER_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Filter node lets a branch continue only while a condition is true. When the condition is false, the branch stops. It answers a simpler question than the routers: not \"which way?\" but \"should this continue at all?\"",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Filter node when you need to:",
+      bullets: [
+        "Process only relevant records, e.g. continue only when the status is active",
+        "Run eligibility checks before a user, request or object moves on",
+        "Stop when required information is missing or invalid (Is empty / Is not empty)",
+        "Continue only if a score, amount, confidence or urgency meets a threshold",
+        "Skip unnecessary agent or API calls once an earlier result makes them pointless",
+      ],
+    },
+    {
+      title: "How it behaves",
+      body: "When the condition is true, the Filter is transparent: the next node receives exactly what the Filter received, so variables like {{source.status}} keep working. When it is false, nothing after the Filter runs. If that ends the conversation's main path, the optional \"Message when stopped\" is sent as the reply. A variable that resolved to nothing counts as empty, and number operators are false when either side is not a number.",
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "The Configure Filter dialog will open.",
+        "Enter the Node Name.",
+        "Set the Field to check, usually a variable from an upstream node.",
+        "Choose an Operator: text, number or presence (Is empty / Is not empty).",
+        "Enter the Value to compare with, unless the operator is a presence check.",
+        "Optionally add a Message when stopped.",
+        "Save the node configuration.",
+      ],
+    },
+  ],
+};
+
 export const RESULT_MERGER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The Result Merger node combines outputs from multiple workflow branches into a single result. It is useful for collecting parallel outputs and preparing them for later steps.",

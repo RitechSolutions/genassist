@@ -4,6 +4,7 @@ import typing
 from contextlib import contextmanager
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +28,7 @@ SETTINGS_UNDER_TEST = (
     "DB_READ_MAX_OVERFLOW",
     "DB_READ_POOL_TIMEOUT",
     "DB_READ_STATEMENT_TIMEOUT",
+    "DB_STATEMENT_TIMEOUT",
 )
 
 
@@ -62,6 +64,7 @@ def restore_settings():
     settings.DB_READ_MAX_OVERFLOW = 20
     settings.DB_READ_POOL_TIMEOUT = 5
     settings.DB_READ_STATEMENT_TIMEOUT = 120
+    settings.DB_STATEMENT_TIMEOUT = 1800
     try:
         yield
     finally:
@@ -136,7 +139,50 @@ def test_read_pool_is_smaller_and_more_impatient_than_the_writer_pool():
     assert fields["DB_READ_POOL_SIZE"].default < fields["DB_POOL_SIZE"].default
     assert fields["DB_READ_MAX_OVERFLOW"].default < fields["DB_MAX_OVERFLOW"].default
     assert fields["DB_READ_POOL_TIMEOUT"].default < fields["DB_POOL_TIMEOUT"].default
-    assert fields["DB_READ_STATEMENT_TIMEOUT"].default < fields["DB_STATEMENT_TIMEOUT"].default
+
+
+def test_read_statement_timeout_inherits_the_writer_ceiling_unless_set(monkeypatch):
+    """Unset follows a per-environment writer override, so reads are never looser than writes."""
+    monkeypatch.setattr(settings, "DB_STATEMENT_TIMEOUT", 60)
+
+    monkeypatch.setattr(settings, "DB_READ_STATEMENT_TIMEOUT", None)
+    assert settings.read_statement_timeout == 60
+
+    monkeypatch.setattr(settings, "DB_READ_STATEMENT_TIMEOUT", 30)
+    assert settings.read_statement_timeout == 30
+
+    monkeypatch.setattr(settings, "DB_READ_STATEMENT_TIMEOUT", 0)
+    assert settings.read_statement_timeout == 0
+
+
+@pytest.mark.parametrize("writer_timeout", [1800, 0], ids=["writer-default", "writer-unbounded"])
+def test_unset_read_statement_timeout_never_exceeds_the_read_pool_cap(monkeypatch, writer_timeout):
+    """A generous or disabled writer ceiling must not let slow reads occupy the small read pool."""
+    monkeypatch.setattr(settings, "DB_STATEMENT_TIMEOUT", writer_timeout)
+    monkeypatch.setattr(settings, "DB_READ_STATEMENT_TIMEOUT", None)
+    assert settings.read_statement_timeout == 600
+
+
+@pytest.mark.parametrize("raw", ["", "  ", "none", "NULL"])
+def test_unset_looking_read_statement_timeout_values_mean_inherit(raw):
+    assert type(settings)._blank_read_timeout_means_inherit(raw) is None
+
+
+@pytest.mark.parametrize("raw", ["60", 60, "0", 0])
+def test_real_read_statement_timeout_values_pass_through(raw):
+    assert type(settings)._blank_read_timeout_means_inherit(raw) == raw
+
+
+@pytest.mark.parametrize("raw", ["-5", -5])
+def test_a_negative_read_statement_timeout_is_rejected(raw):
+    with pytest.raises(ValidationError):
+        type(settings)(DB_READ_STATEMENT_TIMEOUT=raw)
+
+
+def test_a_blank_read_statement_timeout_builds_settings_that_inherit():
+    built = type(settings)(DB_READ_STATEMENT_TIMEOUT="")
+    assert built.DB_READ_STATEMENT_TIMEOUT is None
+    assert built.read_statement_timeout == min(built.DB_STATEMENT_TIMEOUT, 600)
 
 
 # ───────────── engines and session factories ─────────────
@@ -178,7 +224,7 @@ def test_read_engine_is_a_separate_read_only_engine_when_replica_enabled(created
 
 
 def test_read_connections_use_their_own_timeouts(created_engines, restore_manager_caches):
-    """A small pool plus the writer's 30 minute ceiling would let a few slow queries occupy all of it."""
+    """Each engine gets its own statement timeout; the fixture keeps the values apart so a shared one cannot pass."""
     manager = restore_manager_caches
     settings.DB_READ_HOST = "reader.internal"
 
@@ -190,9 +236,22 @@ def test_read_connections_use_their_own_timeouts(created_engines, restore_manage
 
     read_timeout = read_engine.kwargs["connect_args"]["server_settings"]["statement_timeout"]
     write_timeout = write_engine.kwargs["connect_args"]["server_settings"]["statement_timeout"]
-    assert read_timeout == str(settings.DB_READ_STATEMENT_TIMEOUT * 1000)
+    assert read_timeout == str(settings.read_statement_timeout * 1000)
     assert write_timeout == str(settings.DB_STATEMENT_TIMEOUT * 1000)
-    assert int(read_timeout) < int(write_timeout)
+    assert read_timeout != write_timeout
+
+
+def test_read_engine_inherits_the_writer_timeout_when_unset(created_engines, restore_manager_caches):
+    """Guards the engine wiring: reading the raw field here would be a TypeError on the default."""
+    manager = restore_manager_caches
+    settings.DB_READ_HOST = "reader.internal"
+    settings.DB_READ_STATEMENT_TIMEOUT = None
+
+    read_engine = manager.get_tenant_read_engine(TENANT)
+
+    read_timeout = read_engine.kwargs["connect_args"]["server_settings"]["statement_timeout"]
+    assert read_timeout == str(settings.read_statement_timeout * 1000)
+    assert read_timeout == "600000"
 
 
 def test_background_tasks_keep_reading_from_the_writer(created_engines, restore_manager_caches):

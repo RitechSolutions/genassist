@@ -33,6 +33,7 @@ Defaults: `sourceHandle = "output"`, `targetHandle = "input"`. Override for spec
 - Router true: `sourceHandle: "output_true"`
 - Router false: `sourceHandle: "output_false"`
 - Switch case: `sourceHandle: "output_<case id>"` (e.g. `"output_case_1"`); Switch no-match: `sourceHandle: "output_default"`
+- Filter: the default `sourceHandle: "output"` (its only output; followed only when the condition holds)
 
 ---
 
@@ -117,6 +118,21 @@ Edges:
   4→6, 5→7
 ```
 
+### Gating a Branch (Filter)
+Use `filterNode` when a branch should only continue under a condition, with nothing to do otherwise. It has ONE output; when the condition is false the branch simply stops. When it passes, the next node receives the Filter's input unchanged.
+```
+chatInputNode(1) → llmModelNode(2) → filterNode(3) → agentNode(4) → chatOutputNode(5)
+
+filterNode(3) config:
+  field: "{{source.message}}"
+  operator: "equal"
+  value: "on_topic"
+  stopMessage: "Sorry, I can only help with PayByPhone questions."
+
+Edges: 1→2, 2→3, 3→4, 4→5
+```
+If the Filter can stop the conversation's main path, set `stopMessage`: it becomes the chat reply when the branch stops.
+
 ### Multi-Way Routing (Switch)
 Use `switchNode` instead of chaining routers when ONE value picks between 3+ branches. Classify first, then switch on the label. Every case edge and the default edge need their own branch.
 ```
@@ -178,6 +194,7 @@ These rules are **non-negotiable**. Violating any of them produces a broken work
 - If the user's use case involves "if X is found, do Y", put the search as a **TOOL** of the agent and let the agent decide via its reasoning + systemPrompt instructions. Do NOT use a routerNode for this.
 - routerNode config has ONLY these fields: `first_value`, `compare_condition`, `second_value`. Do NOT invent fields like `condition`, `trueLabel`, `falseLabel`.
 - When one value selects between 3 or more branches, use a single `switchNode` rather than a chain of routerNodes. The same rules apply: it compares strings, so classify first.
+- When a branch should only continue if a condition holds (and there is no "else" path), use a `filterNode` instead of a routerNode with an unconnected output. Use its number operators for thresholds (scores, amounts, confidence) and `is_empty` / `is_not_empty` for missing data.
 
 ### Tool Connection Rules
 - Integration and data nodes (`knowledgeBaseNode`, `zendeskTicketNode`, `slackMessageNode`, `gmailNode`, `jiraNode`, `apiToolNode`, `sqlNode`, `calendarEventNode`, `readMailsNode`, `whatsappToolNode`, etc.) **MUST** be connected as **TOOLS** of an `agentNode` via a `toolBuilderNode`. They must **NEVER** be placed as standalone nodes in the main chain.
@@ -542,6 +559,34 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 | name | text | No | Node name |
 
 **Output:** `route` (the matched case id, or `default`), `label` (the matched case label, or `Default`), `value` (the compared value).
+
+---
+
+### filterNode — Filter
+**Category:** Control Flow
+**Purpose:** Gate. Continues the branch only when `field <operator> value` holds; otherwise the branch stops. When it passes, it forwards its input unchanged, so the next node reads `{{source...}}` as if the Filter were not there. Text comparisons ignore case unless `caseSensitive` is true; a variable that resolved to nothing counts as empty.
+**Use cases:** Continue only for active records, stop when a required field is missing, only escalate when a score is above a threshold, skip agent/API calls that are not needed.
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
+
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| field | text | Yes | The value to check. Supports `{{source.field}}` |
+| operator | select | No | Default `equal`. See below |
+| value | text | For all operators except `is_empty` / `is_not_empty` | What the field is compared with |
+| caseSensitive | boolean | No | Default `false` |
+| stopMessage | text | No | Chat reply used when the filter stops the main path |
+| name | text | No | Node name |
+
+**Available operators:**
+- Text: `equal`, `not_equal`, `contains`, `not_contain`, `starts_with`, `not_starts_with`, `ends_with`, `not_ends_with`, `regex`
+- Numbers: `greater_than`, `greater_than_or_equal`, `less_than`, `less_than_or_equal` (false when either side is not a number)
+- Presence: `is_empty`, `is_not_empty` (no value needed)
 
 ---
 
