@@ -19,7 +19,7 @@ on some development databases. Those are adopted or cleaned up rather than
 failing the migration.
 
 Revision ID: 3c9d1e7a5b2f
-Revises: 8f3c2a91b7d4
+Revises: cdb1de95f099
 Create Date: 2026-09-24 12:00:00.000000
 
 """
