@@ -1,4 +1,4 @@
-import { Edge, Node, NodeProps } from "reactflow";
+import { Node, NodeProps } from "reactflow";
 import { ComponentType } from "react";
 import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
@@ -50,6 +50,26 @@ export interface ToolBaseNodeData extends BaseNodeData {
 // Chat input node data
 export interface ChatInputNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
+}
+
+// Webhook Trigger node data — endpoint settings (method, auth, secret, rate
+// limit) live on the backend endpoint row, not here, so publishing a new
+// workflow version never rotates a secret. Paths are dotted and start at the
+// delivery envelope: body.*, headers.*, query.*
+export interface WebhookFieldMapping {
+  key: string;
+  path: string;
+  required?: boolean;
+  default?: string;
+}
+
+export interface WebhookTriggerNodeData extends BaseNodeData {
+  fieldMappings?: WebhookFieldMapping[];
+  messagePath?: string;
+  messageRequired?: boolean;
+  threadIdPath?: string;
+  idempotencyPath?: string;
+  samplePayload?: string;
 }
 
 // Human In The Loop node data — collects structured data from the user mid-flow
@@ -665,6 +685,7 @@ export interface STTNodeData extends BaseNodeData {
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
+  | WebhookTriggerNodeData
   | LLMModelNodeData
   | TemplateNodeData
   | ChatOutputNodeData
@@ -746,20 +767,5 @@ export const createNode = <T extends NodeData>(
     type,
     position,
     data: data,
-  };
-};
-
-export const createEdge = (
-  source: string,
-  target: string,
-  data: Record<string, unknown>,
-): Edge => {
-  return {
-    id: `${source}-${target}`,
-    sourceHandle: source,
-    targetHandle: target,
-    source,
-    target,
-    data,
   };
 };

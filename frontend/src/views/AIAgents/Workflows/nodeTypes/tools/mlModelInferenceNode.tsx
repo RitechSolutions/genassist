@@ -4,7 +4,6 @@ import { MLModelInferenceNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
 import { MLModelInferenceDialog } from "../../nodeDialogs/MLModelInferenceDialog";
 import BaseNodeContainer from "../BaseNodeContainer";
-import { extractDynamicVariablesAsRecord } from "../../utils/helpers";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { NodeContentRow } from "../nodeContent";
 
@@ -30,9 +29,6 @@ const MLModelInferenceNode: React.FC<NodeProps<MLModelInferenceNodeData>> = ({
       data.updateNodeData(id, dataToUpdate);
     }
   };
-
-  // Count only inference values as draggable inputs
-  const totalInputs = Object.keys(data.inferenceInputs || {}).length;
 
   const nodeContent: NodeContentRow[] = [
     {

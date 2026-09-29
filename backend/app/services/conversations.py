@@ -603,8 +603,8 @@ class ConversationService:
             # (injector -> dependency_injection -> services.audio -> here), and
             # db_connection_utils imports app.dependencies.injector itself, so a
             # top-level import here is circular.
-            from app.core.utils.db_connection_utils import release_db_connection
-            await release_db_connection(context=f"conversation {conversation.id}")
+            from app.core.utils.db_connection_utils import release_idle_connection
+            await release_idle_connection(context=f"conversation {conversation.id}")
 
             analysis_result = (
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
@@ -704,7 +704,8 @@ class ConversationService:
           existing internal ``delete_conversation`` path, which cascades to
           ``transcript_messages`` and ``conversation_analysis``. Supporting
           stores (Redis memory, RAG, recordings, audit snapshots) are purged as
-          before. Already-aggregated daily analytics counts are unaffected.
+          before. Daily analytics are rebuilt from the remaining logs; see
+          ``GdprDeleteMode.HARD``.
 
         Always emits a structured log line ``gdpr.conversation_deleted`` so the
         action is traceable without introducing a dedicated audit table.

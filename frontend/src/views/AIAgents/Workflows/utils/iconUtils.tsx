@@ -19,6 +19,7 @@ import {
   Merge,
   Send,
   ArrowRightFromLine,
+  Webhook,
   ArrowRightToLine,
   Bot,
   CircleAlert,
@@ -36,6 +37,7 @@ import {
   TextSearch,
   ScanText,
   Image,
+  Group,
   BotMessageSquare,
   Signpost,
   Filter,
@@ -92,6 +94,7 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   Filter: { type: "lucide", source: Filter },
   Send: { type: "lucide", source: Send },
   ArrowRightFromLine: { type: "lucide", source: ArrowRightFromLine },
+  Webhook: { type: "lucide", source: Webhook },
   ArrowRightToLine: { type: "lucide", source: ArrowRightToLine },
   Bot: { type: "lucide", source: Bot },
   AudioLines: { type: "lucide", source: AudioLines },
@@ -109,6 +112,7 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   TextSearch: { type: "lucide", source: TextSearch },
   ScanText: { type: "lucide", source: ScanText },
   Image: { type: "lucide", source: Image },
+  Group: { type: "lucide", source: Group },
 
   // Custom asset icons
   Slack: { type: "asset", source: SlackLogo },
@@ -152,10 +156,6 @@ export const renderIcon = (
     // Asset image
     const imageSrc = iconConfig.source as string;
 
-    // Determine if this is for a panel (sidebar) based on className
-    const isPanelIcon =
-      className.includes("text-") && !className.includes("text-white");
-
     // For panel icons, we want to use colored images, for node headers we want white
     const imageStyle: React.CSSProperties = {
       objectFit: "contain",
@@ -180,20 +180,3 @@ export const renderIcon = (
 
 // Get available icon names for type checking
 export type UnifiedIconName = keyof typeof ICON_MAPPING;
-
-// Check if an icon exists in the mapping
-export const hasIcon = (iconName: string): iconName is UnifiedIconName => {
-  return iconName in ICON_MAPPING;
-};
-
-// Helper function to get icon name from node definition
-export const getNodeIcon = (
-  nodeRegistry: {
-    getNodeType: (type: string) => { icon?: string } | undefined;
-  },
-  nodeType: string,
-  fallbackIcon: string = "MessageCircle"
-): string => {
-  const nodeDefinition = nodeRegistry.getNodeType(nodeType);
-  return nodeDefinition?.icon || fallbackIcon;
-};

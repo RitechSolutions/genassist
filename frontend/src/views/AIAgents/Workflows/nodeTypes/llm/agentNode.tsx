@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { NodeProps, useNodes, useEdges } from "reactflow";
 import { AgentNodeData } from "../../types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
@@ -71,11 +71,6 @@ const AgentNode: React.FC<NodeProps<AgentNodeData>> = ({
 
     setAvailableTools(tools);
   }, [nodes, edges, id]);
-
-  // Get available tools from connected nodes
-  const getAvailableTools = useCallback(() => {
-    return availableTools;
-  }, [availableTools]);
 
   const subAgentCount = useMemo(() => countSubAgentEdges(id, edges), [edges, id]);
 

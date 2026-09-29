@@ -1,5 +1,6 @@
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.agent_response_log import AgentResponseLogModel
+from app.db.models.analytics_aggregation_state import AnalyticsAggregationStateModel
 
 # from app.db.models.api_key_permission import ApiKeyPermissionModel
 from app.db.models.api_key import ApiKeyModel
@@ -74,10 +75,12 @@ from .user_supervised_group import UserSupervisedGroupModel
 from .webhook import WebhookModel
 from .workflow import WorkflowModel
 from .workflow_schedule import WorkflowScheduleModel, WorkflowScheduleRunModel
+from .workflow_trigger_run import WorkflowTriggerRunModel
 
 __all__ = [
     "WorkflowScheduleModel",
     "WorkflowScheduleRunModel",
+    "WorkflowTriggerRunModel",
     # Primary model class names
     "OperatorModel",
     "OperatorStatisticsModel",
@@ -110,6 +113,7 @@ __all__ = [
     "ConversationReadReceiptModel",
     "AgentResponseLogModel",
     "AgentExecutionDailyStatsModel",
+    "AnalyticsAggregationStateModel",
     "NodeExecutionDailyStatsModel",
     "CustomerModel",
     "DataSourceModel",
@@ -159,6 +163,7 @@ models = [
     ConversationReadReceiptModel,
     AgentResponseLogModel,
     AgentExecutionDailyStatsModel,
+    AnalyticsAggregationStateModel,
     NodeExecutionDailyStatsModel,
     UserModel,
     NotificationRecipientModel,

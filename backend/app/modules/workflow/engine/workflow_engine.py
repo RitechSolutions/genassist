@@ -21,6 +21,7 @@ from app.core.utils.background_tasks import spawn
 from app.core.utils.date_time_utils import utc_now
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.entry_nodes import ENTRY_NODE_TYPES, is_entry_node_type
 from app.modules.workflow.engine.nodes import (
     AgentNode,
     AggregatorNode,
@@ -66,6 +67,7 @@ from app.modules.workflow.engine.nodes import (
     VoiceAgentNode,
     WebScraperNode,
     WebSearchNode,
+    WebhookTriggerNode,
     WhatsAppToolNode,
     WorkflowExecutorNode,
     ZendeskToolNode,
@@ -75,6 +77,17 @@ from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import process_path_based_input_data
 
 logger = logging.getLogger(__name__)
+
+
+# Node types that exist only in the editor and never execute. A "groupNode" is a visual container
+# that frames related nodes on the canvas (see frontend utils/nodeGroups.ts); it has no edges or
+# handles. Dropped on load so it can't become an inferred starting node or count towards steps.
+EDITOR_ONLY_NODE_TYPES = frozenset({"groupNode"})
+
+
+def executable_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The workflow's nodes minus editor-only ones (visual groups)."""
+    return [node for node in nodes if node.get("type") not in EDITOR_ONLY_NODE_TYPES]
 
 
 class MemoryPersistenceError(Exception):
@@ -179,6 +192,7 @@ class WorkflowEngine:
         cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
         cls._node_registry["nlpNode"] = NLPNode
         cls._node_registry["subAgentNode"] = SubAgentNode
+        cls._node_registry["webhookTriggerNode"] = WebhookTriggerNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -214,6 +228,7 @@ class WorkflowEngine:
             "setStateNode",
             "nlpNode",
             "webSearchNode",
+            "webhookTriggerNode",
         }
 
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)
@@ -244,7 +259,7 @@ class WorkflowEngine:
         # Build and store workflow configuration
         self.workflow = {
             "config": workflow_config,
-            "nodes": workflow_config["nodes"],
+            "nodes": executable_nodes(workflow_config["nodes"]),
             "edges": workflow_config.get("edges", []),
             "metadata": {
                 "name": workflow_config.get("name", "Unnamed Workflow"),
@@ -360,6 +375,10 @@ class WorkflowEngine:
                 initial_values=initial_values,
                 registry_managed=registry_managed,
             )
+            # A run that starts at an entry node (Chat Input / Webhook Trigger)
+            # must not wait on, or read from, the workflow's *other* entry nodes.
+            _, start_node_type = self.get_node_config(start_node_id)
+            state.entry_node_id = start_node_id if is_entry_node_type(start_node_type) else None
 
             try:
                 try:
@@ -476,6 +495,12 @@ class WorkflowEngine:
 
         if input_node:
             return [input_node["id"]]
+
+        # No Chat Input: a lone trigger node (e.g. Webhook Trigger) is the entry
+        # point even when tool nodes also have no incoming edges.
+        entry_nodes = [n["id"] for n in self.workflow["nodes"] if n.get("type") in ENTRY_NODE_TYPES]
+        if len(entry_nodes) == 1:
+            return entry_nodes
 
         starting_nodes = []
         for node in self.workflow["nodes"]:
