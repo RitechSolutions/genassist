@@ -18,7 +18,7 @@ import { Badge } from "@/components/badge";
 import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";
 import { DraggableInput } from "../../components/custom/DraggableInput";
-import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
+import { analyzeCSV } from "@/services/mlModels";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
@@ -204,12 +204,6 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
 
   const addFeatureColumn = () => {
     setField("featureColumns", [...values.featureColumns, ""]);
-  };
-
-  const updateFeatureColumn = (index: number, value: string) => {
-    const newColumns = [...values.featureColumns];
-    newColumns[index] = value;
-    setField("featureColumns", newColumns);
   };
 
   const removeFeatureColumn = (index: number) => {

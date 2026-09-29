@@ -7,7 +7,6 @@ import { TrainDataSourceDialog } from "../../nodeDialogs/training/TrainDataSourc
 import { DataSource } from "@/interfaces/dataSource.interface";
 import { getAllDataSources } from "@/services/dataSources";
 import nodeRegistry from "../../registry/nodeRegistry";
-import { get } from "http";
 import { NodeContentRow } from "../nodeContent";
 
 export const TRAIN_DATA_SOURCE_NODE_TYPE = "trainDataSourceNode";
@@ -61,13 +60,6 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
     (ds) => ds.id === data.dataSourceId
   );
 
-  const getSourceTypeLabel = () => {
-    if (data.sourceType === "csv") {
-      return "File upload";
-    }
-    return "Data source";
-  };
-
   const getDataSourceInfo = () => {
     if (data.sourceType === "csv") {
       return data.csvFileName || (data.csvFilePath ? "Uploaded file" : "");
@@ -76,15 +68,6 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
       ? `${selectedDataSource.name} (${selectedDataSource.source_type})`
       : "";
   };
-
-  const queryPreview =
-    data.query && data.sourceType === "datasource"
-      ? data.query.length > 50
-        ? `${data.query.substring(0, 50)}...`
-        : data.query
-      : data.sourceType === "datasource"
-      ? "No query set"
-      : "N/A";
 
   const nodeContent: NodeContentRow[] = [
     { label: "Source Type", value: data.sourceType, isSelection: true },
