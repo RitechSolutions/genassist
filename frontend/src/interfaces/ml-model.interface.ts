@@ -17,8 +17,7 @@ export interface MLModel {
     | 'logistic_regression'
     | 'svm'
     | 'knn'
-    | 'neural_network'
-    | 'other';
+    | 'neural_network';
   pkl_file?: string | null;
   pkl_file_id?: string | null;
   features: string[];

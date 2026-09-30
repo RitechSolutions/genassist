@@ -26,7 +26,6 @@ export const MODEL_TYPE_OPTIONS: ReadonlyArray<{
   { value: "svm", label: "Support Vector Machine" },
   { value: "knn", label: "K-Nearest Neighbors" },
   { value: "neural_network", label: "Neural Network" },
-  { value: "other", label: "Other" },
 ];
 
 const LABEL_BY_VALUE = new Map<string, string>(
