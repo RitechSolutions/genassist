@@ -246,6 +246,8 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
                   <PromptEditorButton
                     workflowId={workflow.id}
                     nodeId={props.nodeId}
+                    nodeType={props.nodeType}
+                    nodeLabel={values.name}
                     promptField="systemPrompt"
                     currentValue={values.systemPrompt}
                     onPromptChange={(val) => setField("systemPrompt", val)}
@@ -270,6 +272,8 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
                   <PromptEditorButton
                     workflowId={workflow.id}
                     nodeId={props.nodeId}
+                    nodeType={props.nodeType}
+                    nodeLabel={values.name}
                     promptField="smartPrompt"
                     currentValue={values.smartPrompt}
                     onPromptChange={(val) => setField("smartPrompt", val)}
