@@ -229,6 +229,11 @@ services:
     image: genassist-app-image
     container_name: genassist-celery-worker-ml-dev
     command: python /src/run_celery.py worker -l DEBUG --pool=solo -Q ml
+    volumes:
+      # Shares uploads/model artifacts with the host-run API server (backend/run.py),
+      # which writes to this same path on the host. Without this, ML training nodes
+      # can't see files the API just uploaded (and vice versa for saved .pkl models).
+      - ./backend/datavolume:/src/datavolume
     env_file:
       - ./backend/.env
     environment:

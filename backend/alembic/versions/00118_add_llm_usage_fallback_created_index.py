@@ -6,7 +6,7 @@ Cost Explorer uses to decide whether a dismissed fallback-rates notice should
 return, so the lookup stays a first-row read however the rows are distributed.
 
 Revision ID: 8b64f74cbf09
-Revises: 3c9d1e7a5b2f
+Revises: 3ef08a6d2676
 Create Date: 2026-09-23 20:19:20.567981
 
 """
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "8b64f74cbf09"
-down_revision: Union[str, None] = "3c9d1e7a5b2f"
+down_revision: Union[str, None] = "3ef08a6d2676"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
