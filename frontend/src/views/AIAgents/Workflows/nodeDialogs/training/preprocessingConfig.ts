@@ -60,9 +60,13 @@ export interface DropHighNullColumnsStepConfig {
 // Change Column Data Type Step
 export type ChangeDtypeTarget = "int" | "float" | "string" | "bool" | "datetime";
 
-export interface ChangeDtypeStepConfig {
+export interface ChangeDtypeItem {
   columnName: string;
   dtype: ChangeDtypeTarget;
+}
+
+export interface ChangeDtypeStepConfig {
+  conversions: ChangeDtypeItem[];
 }
 
 const DTYPE_TO_PANDAS: Record<Exclude<ChangeDtypeTarget, "datetime">, string> = {
@@ -319,15 +323,17 @@ function generateChangeDtypeCode(
   config: ChangeDtypeStepConfig,
   lines: string[]
 ): void {
-  const column = (config.columnName || "").trim();
-  if (!column) return;
+  for (const item of config.conversions || []) {
+    const column = (item.columnName || "").trim();
+    if (!column) continue;
 
-  lines.push(`    # Change data type of column "${column}"`);
-  if (config.dtype === "datetime") {
-    lines.push(`    df["${column}"] = pd.to_datetime(df["${column}"], errors="coerce")`);
-  } else {
-    const pandasDtype = DTYPE_TO_PANDAS[config.dtype];
-    lines.push(`    df["${column}"] = df["${column}"].astype("${pandasDtype}")`);
+    lines.push(`    # Change data type of column "${column}"`);
+    if (item.dtype === "datetime") {
+      lines.push(`    df["${column}"] = pd.to_datetime(df["${column}"], errors="coerce")`);
+    } else {
+      const pandasDtype = DTYPE_TO_PANDAS[item.dtype];
+      lines.push(`    df["${column}"] = df["${column}"].astype("${pandasDtype}")`);
+    }
   }
 }
 
@@ -488,19 +494,29 @@ function parseDropHighNullColumnsStep(code: string): DropHighNullColumnsStepConf
 }
 
 function parseChangeDtypeStep(code: string): ChangeDtypeStepConfig | null {
-  const datetimeMatch = code.match(/df\["([^"]+)"\]\s*=\s*pd\.to_datetime\(df\["\1"\]/);
-  if (datetimeMatch) {
-    return { columnName: datetimeMatch[1], dtype: "datetime" };
+  const conversions: ChangeDtypeItem[] = [];
+
+  // Scan line by line (rather than one regex with a global flag) so multiple
+  // conversions in a single step are collected in the order they were
+  // generated in.
+  for (const line of code.split("\n")) {
+    const datetimeMatch = line.match(/df\["([^"]+)"\]\s*=\s*pd\.to_datetime\(df\["\1"\]/);
+    if (datetimeMatch) {
+      conversions.push({ columnName: datetimeMatch[1], dtype: "datetime" });
+      continue;
+    }
+
+    const astypeMatch = line.match(/df\["([^"]+)"\]\s*=\s*df\["\1"\]\.astype\("([^"]+)"\)/);
+    if (astypeMatch) {
+      conversions.push({
+        columnName: astypeMatch[1],
+        dtype: PANDAS_TO_DTYPE[astypeMatch[2]] || "string",
+      });
+    }
   }
 
-  const astypeMatch = code.match(/df\["([^"]+)"\]\s*=\s*df\["\1"\]\.astype\("([^"]+)"\)/);
-  if (astypeMatch) {
-    const columnName = astypeMatch[1];
-    const pandasDtype = astypeMatch[2];
-    return { columnName, dtype: PANDAS_TO_DTYPE[pandasDtype] || "string" };
-  }
-
-  return null;
+  if (conversions.length === 0) return null;
+  return { conversions };
 }
 
 /**
@@ -539,7 +555,7 @@ function createDefaultStepConfig(type: PreprocessingStepType): StepConfig {
     case "drop_high_null_columns":
       return { thresholdPercent: 80 };
     case "change_dtype":
-      return { columnName: "", dtype: "string" };
+      return { conversions: [] };
     case "column_filter":
     default:
       return { columns: [] };

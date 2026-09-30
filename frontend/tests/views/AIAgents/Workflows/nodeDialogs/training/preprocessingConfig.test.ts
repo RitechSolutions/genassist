@@ -136,7 +136,9 @@ describe("preprocessingConfig - new operations", () => {
           id: "step_1",
           type: "change_dtype",
           enabled: true,
-          config: { columnName: "age", dtype: "int" } as ChangeDtypeStepConfig,
+          config: {
+            conversions: [{ columnName: "age", dtype: "int" }],
+          } as ChangeDtypeStepConfig,
         },
       ],
     };
@@ -145,7 +147,9 @@ describe("preprocessingConfig - new operations", () => {
     expect(code).toContain('df["age"] = df["age"].astype("int64")');
 
     const parsed = parsePythonCodeToConfig(code);
-    expect(parsed.steps[0].config).toEqual({ columnName: "age", dtype: "int" });
+    expect(parsed.steps[0].config).toEqual({
+      conversions: [{ columnName: "age", dtype: "int" }],
+    });
   });
 
   it("change_dtype: datetime uses pd.to_datetime and round-trips", () => {
@@ -155,7 +159,9 @@ describe("preprocessingConfig - new operations", () => {
           id: "step_1",
           type: "change_dtype",
           enabled: true,
-          config: { columnName: "created_at", dtype: "datetime" } as ChangeDtypeStepConfig,
+          config: {
+            conversions: [{ columnName: "created_at", dtype: "datetime" }],
+          } as ChangeDtypeStepConfig,
         },
       ],
     };
@@ -167,8 +173,42 @@ describe("preprocessingConfig - new operations", () => {
 
     const parsed = parsePythonCodeToConfig(code);
     expect(parsed.steps[0].config).toEqual({
-      columnName: "created_at",
-      dtype: "datetime",
+      conversions: [{ columnName: "created_at", dtype: "datetime" }],
+    });
+  });
+
+  it("change_dtype: multiple columns in one step generate and round-trip in order", () => {
+    const config: PreprocessingConfig = {
+      steps: [
+        {
+          id: "step_1",
+          type: "change_dtype",
+          enabled: true,
+          config: {
+            conversions: [
+              { columnName: "lag_336", dtype: "float" },
+              { columnName: "created_at", dtype: "datetime" },
+              { columnName: "is_active", dtype: "bool" },
+            ],
+          } as ChangeDtypeStepConfig,
+        },
+      ],
+    };
+
+    const code = generatePythonCodeFromConfig(config, BASE_PYTHON_TEMPLATE);
+    expect(code).toContain('df["lag_336"] = df["lag_336"].astype("float64")');
+    expect(code).toContain(
+      'df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")'
+    );
+    expect(code).toContain('df["is_active"] = df["is_active"].astype("bool")');
+
+    const parsed = parsePythonCodeToConfig(code);
+    expect(parsed.steps[0].config).toEqual({
+      conversions: [
+        { columnName: "lag_336", dtype: "float" },
+        { columnName: "created_at", dtype: "datetime" },
+        { columnName: "is_active", dtype: "bool" },
+      ],
     });
   });
 
@@ -186,8 +226,7 @@ describe("preprocessingConfig - new operations", () => {
       thresholdPercent: 80,
     });
     expect(createPreprocessingStep("change_dtype").config).toEqual({
-      columnName: "",
-      dtype: "string",
+      conversions: [],
     });
   });
 
@@ -219,7 +258,9 @@ describe("preprocessingConfig - new operations", () => {
           id: "step_3",
           type: "change_dtype",
           enabled: true,
-          config: { columnName: "score", dtype: "float" } as ChangeDtypeStepConfig,
+          config: {
+            conversions: [{ columnName: "score", dtype: "float" }],
+          } as ChangeDtypeStepConfig,
         },
       ],
     };
@@ -233,6 +274,8 @@ describe("preprocessingConfig - new operations", () => {
       "change_dtype",
     ]);
     expect(parsed.steps[1].config).toEqual({ thresholdPercent: 50 });
-    expect(parsed.steps[2].config).toEqual({ columnName: "score", dtype: "float" });
+    expect(parsed.steps[2].config).toEqual({
+      conversions: [{ columnName: "score", dtype: "float" }],
+    });
   });
 });

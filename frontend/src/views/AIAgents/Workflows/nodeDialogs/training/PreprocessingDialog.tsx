@@ -447,9 +447,17 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   const getAnalysisResultForStep = (
     stepIndex: number
   ): CSVAnalysisResult | null => {
+    // Column names don't change from filling in a column's config (only from
+    // running the step), so this step's own "Run" result is an acceptable
+    // fallback when the file was never separately analyzed with the top
+    // "Analyze" button - without it, a step added first with no prior
+    // Analyze click would never show a column dropdown at all.
+    const ownStep = config.steps[stepIndex];
+    const ownResult = ownStep ? analysisResults[ownStep.id] : undefined;
+
     if (stepIndex === 0) {
       // First step uses initial analysis result
-      return analysisResults.initial || null;
+      return analysisResults.initial || ownResult || null;
     }
 
     // Get result from previous step
@@ -458,8 +466,9 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       return analysisResults[previousStep.id];
     }
 
-    // Fallback to initial if previous step hasn't been run
-    return analysisResults.initial || null;
+    // Fallback to initial, then to this step's own result, if the previous
+    // step hasn't been run
+    return analysisResults.initial || ownResult || null;
   };
 
   // Render step configuration component
