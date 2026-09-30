@@ -4,7 +4,12 @@
  * Each step is tracked with clear markers in the generated Python code
  */
 
-export type PreprocessingStepType = "column_filter";
+export type PreprocessingStepType =
+  | "column_filter"
+  | "remove_duplicates"
+  | "drop_column_or_row"
+  | "drop_high_null_columns"
+  | "change_dtype";
 
 export interface PreprocessingStep {
   id: string; // Unique identifier for this step
@@ -13,7 +18,12 @@ export interface PreprocessingStep {
   config: StepConfig;
 }
 
-export type StepConfig = ColumnFilterStepConfig;
+export type StepConfig =
+  | ColumnFilterStepConfig
+  | RemoveDuplicatesStepConfig
+  | DropColumnOrRowStepConfig
+  | DropHighNullColumnsStepConfig
+  | ChangeDtypeStepConfig;
 
 export interface PreprocessingConfig {
   steps: PreprocessingStep[]; // Ordered list of preprocessing steps
@@ -28,6 +38,46 @@ export interface ColumnFilterItem {
   name: string;
   selected: boolean;
 }
+
+// Remove Duplicate Rows Step
+export interface RemoveDuplicatesStepConfig {
+  subsetColumns: string[]; // empty = compare all columns
+  keep: "first" | "last";
+}
+
+// Remove Column/Row Step
+export interface DropColumnOrRowStepConfig {
+  target: "column" | "row";
+  columns: string[]; // used when target === "column"
+  rowIndices: number[]; // used when target === "row"
+}
+
+// Remove High-Null Columns Step
+export interface DropHighNullColumnsStepConfig {
+  thresholdPercent: number; // default 80 - columns with a higher missing % are dropped
+}
+
+// Change Column Data Type Step
+export type ChangeDtypeTarget = "int" | "float" | "string" | "bool" | "datetime";
+
+export interface ChangeDtypeStepConfig {
+  columnName: string;
+  dtype: ChangeDtypeTarget;
+}
+
+const DTYPE_TO_PANDAS: Record<Exclude<ChangeDtypeTarget, "datetime">, string> = {
+  int: "int64",
+  float: "float64",
+  string: "str",
+  bool: "bool",
+};
+
+const PANDAS_TO_DTYPE: Record<string, Exclude<ChangeDtypeTarget, "datetime">> = {
+  int64: "int",
+  float64: "float",
+  str: "string",
+  bool: "bool",
+};
 
 /**
  * Base template for Python preprocessing code
@@ -119,6 +169,18 @@ export function generatePythonCodeFromConfig(
       case "column_filter":
         generateColumnFilterCode(step.config as ColumnFilterStepConfig, autogenBodyLines);
         break;
+      case "remove_duplicates":
+        generateRemoveDuplicatesCode(step.config as RemoveDuplicatesStepConfig, autogenBodyLines);
+        break;
+      case "drop_column_or_row":
+        generateDropColumnOrRowCode(step.config as DropColumnOrRowStepConfig, autogenBodyLines);
+        break;
+      case "drop_high_null_columns":
+        generateDropHighNullColumnsCode(step.config as DropHighNullColumnsStepConfig, autogenBodyLines);
+        break;
+      case "change_dtype":
+        generateChangeDtypeCode(step.config as ChangeDtypeStepConfig, autogenBodyLines);
+        break;
     }
     
     autogenBodyLines.push(`    # STEP_END:${step.id}:${step.type}`);
@@ -201,6 +263,74 @@ function generateColumnFilterCode(
   }
 }
 
+function generateRemoveDuplicatesCode(
+  config: RemoveDuplicatesStepConfig,
+  lines: string[]
+): void {
+  const subset = (config.subsetColumns || [])
+    .filter((col) => col.trim().length > 0)
+    .map((col) => `"${col.trim()}"`)
+    .join(", ");
+  const keep = config.keep === "last" ? "last" : "first";
+
+  lines.push("    # Remove duplicate rows");
+  if (subset) {
+    lines.push(`    df = df.drop_duplicates(subset=[${subset}], keep="${keep}")`);
+  } else {
+    lines.push(`    df = df.drop_duplicates(keep="${keep}")`);
+  }
+  lines.push("    df = df.reset_index(drop=True)");
+}
+
+function generateDropColumnOrRowCode(
+  config: DropColumnOrRowStepConfig,
+  lines: string[]
+): void {
+  if (config.target === "row") {
+    const indices = (config.rowIndices || []).join(", ");
+    if (config.rowIndices && config.rowIndices.length > 0) {
+      lines.push("    # Remove row(s) by index");
+      lines.push(`    df = df.drop(index=[${indices}], errors="ignore")`);
+      lines.push("    df = df.reset_index(drop=True)");
+    }
+    return;
+  }
+
+  const columns = (config.columns || [])
+    .filter((col) => col.trim().length > 0)
+    .map((col) => `"${col.trim()}"`)
+    .join(", ");
+  if (columns) {
+    lines.push("    # Remove column(s)");
+    lines.push(`    df = df.drop(columns=[${columns}], errors="ignore")`);
+  }
+}
+
+function generateDropHighNullColumnsCode(
+  config: DropHighNullColumnsStepConfig,
+  lines: string[]
+): void {
+  const threshold = config.thresholdPercent ?? 80;
+  lines.push(`    # Remove columns with more than ${threshold}% missing values`);
+  lines.push(`    df = df.loc[:, df.isnull().mean() * 100 <= ${threshold}]`);
+}
+
+function generateChangeDtypeCode(
+  config: ChangeDtypeStepConfig,
+  lines: string[]
+): void {
+  const column = (config.columnName || "").trim();
+  if (!column) return;
+
+  lines.push(`    # Change data type of column "${column}"`);
+  if (config.dtype === "datetime") {
+    lines.push(`    df["${column}"] = pd.to_datetime(df["${column}"], errors="coerce")`);
+  } else {
+    const pandasDtype = DTYPE_TO_PANDAS[config.dtype];
+    lines.push(`    df["${column}"] = df["${column}"].astype("${pandasDtype}")`);
+  }
+}
+
 /**
  * Parse Python code to extract preprocessing configuration
  * Uses step markers to identify and parse each step
@@ -232,6 +362,18 @@ export function parsePythonCodeToConfig(code: string): PreprocessingConfig {
     switch (stepType) {
       case "column_filter":
         parsedFromCode = parseColumnFilterStep(stepCode);
+        break;
+      case "remove_duplicates":
+        parsedFromCode = parseRemoveDuplicatesStep(stepCode);
+        break;
+      case "drop_column_or_row":
+        parsedFromCode = parseDropColumnOrRowStep(stepCode);
+        break;
+      case "drop_high_null_columns":
+        parsedFromCode = parseDropHighNullColumnsStep(stepCode);
+        break;
+      case "change_dtype":
+        parsedFromCode = parseChangeDtypeStep(stepCode);
         break;
     }
 
@@ -294,6 +436,72 @@ function parseColumnFilterStep(code: string): ColumnFilterStepConfig | null {
   };
 }
 
+function parseRemoveDuplicatesStep(code: string): RemoveDuplicatesStepConfig | null {
+  const match = code.match(/df\s*=\s*df\.drop_duplicates\(([^)]*)\)/);
+  if (!match) return null;
+
+  const args = match[1];
+  const subsetMatch = args.match(/subset\s*=\s*\[([^\]]*)\]/);
+  const keepMatch = args.match(/keep\s*=\s*["'](first|last)["']/);
+
+  const subsetColumns = subsetMatch
+    ? subsetMatch[1]
+        .split(",")
+        .map((col) => col.trim().replace(/^["']|["']$/g, ""))
+        .filter((col) => col.length > 0)
+    : [];
+
+  return {
+    subsetColumns,
+    keep: keepMatch ? (keepMatch[1] as "first" | "last") : "first",
+  };
+}
+
+function parseDropColumnOrRowStep(code: string): DropColumnOrRowStepConfig | null {
+  const columnMatch = code.match(/df\s*=\s*df\.drop\(columns\s*=\s*\[([^\]]*)\]/);
+  if (columnMatch) {
+    const columns = columnMatch[1]
+      .split(",")
+      .map((col) => col.trim().replace(/^["']|["']$/g, ""))
+      .filter((col) => col.length > 0);
+    if (columns.length === 0) return null;
+    return { target: "column", columns, rowIndices: [] };
+  }
+
+  const rowMatch = code.match(/df\s*=\s*df\.drop\(index\s*=\s*\[([^\]]*)\]/);
+  if (rowMatch) {
+    const rowIndices = rowMatch[1]
+      .split(",")
+      .map((v) => parseInt(v.trim(), 10))
+      .filter((n) => !isNaN(n));
+    if (rowIndices.length === 0) return null;
+    return { target: "row", columns: [], rowIndices };
+  }
+
+  return null;
+}
+
+function parseDropHighNullColumnsStep(code: string): DropHighNullColumnsStepConfig | null {
+  const match = code.match(/df\.isnull\(\)\.mean\(\)\s*\*\s*100\s*<=\s*([\d.]+)/);
+  if (!match) return null;
+  return { thresholdPercent: parseFloat(match[1]) };
+}
+
+function parseChangeDtypeStep(code: string): ChangeDtypeStepConfig | null {
+  const datetimeMatch = code.match(/df\["([^"]+)"\]\s*=\s*pd\.to_datetime\(df\["\1"\]/);
+  if (datetimeMatch) {
+    return { columnName: datetimeMatch[1], dtype: "datetime" };
+  }
+
+  const astypeMatch = code.match(/df\["([^"]+)"\]\s*=\s*df\["\1"\]\.astype\("([^"]+)"\)/);
+  if (astypeMatch) {
+    const columnName = astypeMatch[1];
+    const pandasDtype = astypeMatch[2];
+    return { columnName, dtype: PANDAS_TO_DTYPE[pandasDtype] || "string" };
+  }
+
+  return null;
+}
 
 /**
  * Legacy parsing for backward compatibility
@@ -313,15 +521,29 @@ export function createPreprocessingStep(
   id?: string
 ): PreprocessingStep {
   const stepId = id || `step_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
-  const config: StepConfig = { columns: [] };
 
   return {
     id: stepId,
     type,
     enabled: true,
-    config,
+    config: createDefaultStepConfig(type),
   };
+}
+
+function createDefaultStepConfig(type: PreprocessingStepType): StepConfig {
+  switch (type) {
+    case "remove_duplicates":
+      return { subsetColumns: [], keep: "first" };
+    case "drop_column_or_row":
+      return { target: "column", columns: [], rowIndices: [] };
+    case "drop_high_null_columns":
+      return { thresholdPercent: 80 };
+    case "change_dtype":
+      return { columnName: "", dtype: "string" };
+    case "column_filter":
+    default:
+      return { columns: [] };
+  }
 }
 
 /**
@@ -330,6 +552,10 @@ export function createPreprocessingStep(
 export function getStepTypeDisplayName(type: PreprocessingStepType): string {
   const names: Record<PreprocessingStepType, string> = {
     column_filter: "Column Filter",
+    remove_duplicates: "Remove Duplicate Rows",
+    drop_column_or_row: "Remove Column/Row",
+    drop_high_null_columns: "Remove High-Null Columns",
+    change_dtype: "Change Column Data Type",
   };
   return names[type] || type;
 }

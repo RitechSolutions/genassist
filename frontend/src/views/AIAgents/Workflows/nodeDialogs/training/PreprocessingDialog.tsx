@@ -49,8 +49,16 @@ import {
   getStepTypeDisplayName,
   StepConfig,
   ColumnFilterStepConfig,
+  RemoveDuplicatesStepConfig,
+  DropColumnOrRowStepConfig,
+  DropHighNullColumnsStepConfig,
+  ChangeDtypeStepConfig,
 } from "./preprocessingConfig";
 import { ColumnFilter } from "./components/ColumnFilter";
+import { RemoveDuplicatesStep } from "./components/RemoveDuplicatesStep";
+import { DropColumnOrRowStep } from "./components/DropColumnOrRowStep";
+import { DropHighNullColumnsStep } from "./components/DropHighNullColumnsStep";
+import { ChangeDtypeStep } from "./components/ChangeDtypeStep";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
@@ -475,12 +483,50 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
             }}
           />
         );
+      case "remove_duplicates":
+        return (
+          <RemoveDuplicatesStep
+            config={step.config as RemoveDuplicatesStepConfig}
+            availableColumns={stepAnalysisResult?.column_names || []}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
+          />
+        );
+      case "drop_column_or_row":
+        return (
+          <DropColumnOrRowStep
+            config={step.config as DropColumnOrRowStepConfig}
+            availableColumns={stepAnalysisResult?.column_names || []}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
+          />
+        );
+      case "drop_high_null_columns":
+        return (
+          <DropHighNullColumnsStep
+            config={step.config as DropHighNullColumnsStepConfig}
+            analysisResult={stepAnalysisResult}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
+          />
+        );
+      case "change_dtype":
+        return (
+          <ChangeDtypeStep
+            config={step.config as ChangeDtypeStepConfig}
+            availableColumns={stepAnalysisResult?.column_names || []}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
+          />
+        );
       default:
         return null;
     }
   };
 
-  const stepTypes: PreprocessingStepType[] = ["column_filter"];
+  const stepTypes: PreprocessingStepType[] = [
+    "column_filter",
+    "remove_duplicates",
+    "drop_column_or_row",
+    "drop_high_null_columns",
+    "change_dtype",
+  ];
 
   return (
     <>
