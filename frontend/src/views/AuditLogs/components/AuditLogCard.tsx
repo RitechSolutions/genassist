@@ -4,6 +4,7 @@ import { EntityTableCard } from "@/components/EntityTableCard";
 import { formatDate, getTimeFromDatetime } from "@/helpers/utils";
 import { AuditLog, AuditLogCardProps } from "@/interfaces/audit-log.interface";
 import { usePermissions } from "@/context/PermissionContext";
+import { AuditActionBadge } from "./AuditActionBadge";
 
 const matchesSearch = (log: AuditLog, query: string) => {
   const q = query.trim().toLowerCase();
@@ -31,16 +32,10 @@ export function AuditLogCard({
 
   const columns: Column<AuditLog>[] = [
     {
-      header: "Log Id",
+      header: "Log ID",
       key: "id",
       cell: (log) => log.id,
       className: "break-all",
-    },
-    {
-      header: "Date",
-      key: "modified_at",
-      cell: (log) => `${formatDate(log.modified_at)} at ${getTimeFromDatetime(log.modified_at)}`,
-      className: "whitespace-nowrap",
     },
     {
       header: "Table Name",
@@ -50,12 +45,18 @@ export function AuditLogCard({
     {
       header: "Action",
       key: "action_name",
-      cell: (log) => log.action_name,
+      cell: (log) => <AuditActionBadge action={log.action_name} />,
     },
     {
       header: "User",
       key: "modified_by",
       cell: (log) => getUsername(log.modified_by),
+    },
+    {
+      header: "Date",
+      key: "modified_at",
+      cell: (log) => `${formatDate(log.modified_at)} at ${getTimeFromDatetime(log.modified_at)}`,
+      className: "whitespace-nowrap",
     },
   ];
 

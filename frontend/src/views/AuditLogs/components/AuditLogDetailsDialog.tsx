@@ -8,14 +8,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
 import { Skeleton } from "@/components/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/tabs";
 import { ListErrorState } from "@/components/ListErrorState";
-import { cn, formatDate, getTimeFromDatetime } from "@/helpers/utils";
+import { formatDate, getTimeFromDatetime } from "@/helpers/utils";
 import { AuditLog, AuditLogDetailsDialogProps } from "@/interfaces/audit-log.interface";
 import { fetchAuditLogDetails } from "@/services/auditLogs";
+import { AuditActionBadge } from "./AuditActionBadge";
 import JsonViewer, { type JsonValue } from "@/components/JsonViewer";
 
 type ChangeRow = { field: string; before: unknown; after: unknown };
@@ -28,12 +28,6 @@ type ParsedChanges =
   | { kind: "generic"; rows: ValueRow[] };
 
 const REDACTED = "[REDACTED]";
-
-const ACTION_BADGE_CLASS: Record<string, string> = {
-  Insert: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-  Update: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  Delete: "bg-red-500/15 text-red-700 dark:text-red-400",
-};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -349,12 +343,7 @@ export function AuditLogDetailsDialog({
             <DialogHeader className="space-y-1.5 pr-6">
               <div className="flex flex-wrap items-center gap-2">
                 <DialogTitle className="font-mono text-lg">{log.table_name}</DialogTitle>
-                <Badge
-                  variant="outline"
-                  className={cn("border-transparent", ACTION_BADGE_CLASS[log.action_name] ?? "bg-muted text-foreground")}
-                >
-                  {log.action_name}
-                </Badge>
+                <AuditActionBadge action={log.action_name} />
               </div>
               <DialogDescription>
                 {changes.kind === "update"
