@@ -45,6 +45,8 @@ export const FeatureFlags = {
     WORKFLOW: {
       CHAT_INPUT: 'workflow.chatInput',
       CONVERSATIONAL_TAB: 'workflow.conversationalTab',
+      // Webhook Trigger node: hidden from the palette until an admin enables it.
+      WEBHOOK_TRIGGER: 'workflow.webhookTrigger',
     },
 
     // Specific UI components within features
