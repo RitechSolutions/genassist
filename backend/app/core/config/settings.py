@@ -111,6 +111,12 @@ class ProjectSettings(BaseSettings):
 
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
+    # Backfill gives up on a conversation after 3 runs, each run makes up to 3 LLM calls
+    CONVERSATION_ANALYSIS_BACKFILL_MAX_ATTEMPTS: int = 3
+    # Only conversations created within 30 days are backfilled, 0 disables the window
+    CONVERSATION_ANALYSIS_BACKFILL_MAX_AGE_DAYS: int = 30
+    # Minimum 60 minutes wait between runs for one conversation
+    CONVERSATION_ANALYSIS_BACKFILL_RETRY_DELAY_MINUTES: int = 60
 
     # === GDPR Right-to-Erasure ===
     # Default mode used by the admin GDPR delete endpoint when the caller does
@@ -120,8 +126,8 @@ class ProjectSettings(BaseSettings):
     # row in place for a manual hard purge later.
     GDPR_DEFAULT_DELETE_MODE: str = "soft"
 
-    # Number of latest messages used for in-progress hostility scoring.
-    # If the conversation has fewer messages than this, all messages are used.
+    # Number of latest message/audio rows used for in-progress hostility scoring.
+    # If the conversation has fewer, or this is 0 or less, all of them are used.
     HOSTILITY_SCORE_MESSAGE_COUNT: int = 20
 
     FERNET_KEY: Optional[str]

@@ -40,8 +40,10 @@ from app.core.utils.file_manager_url_utils import (
     collect_gdpr_file_manager_ids_from_transcription_field,
 )
 from app.core.utils.transcript_utils import (
+    CONVERSATIONAL_MESSAGE_TYPES,
+    has_scorable_customer_turn,
     schema_to_transcript_message,
-    transcript_messages_to_json,
+    transcript_messages_to_lines,
 )
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.message_model import TranscriptMessageModel
@@ -355,20 +357,13 @@ class ConversationService:
         incremental_duration = calculate_duration_from_transcript(new_segment_inputs)
         conversation.duration = conversation.duration + incremental_duration
 
-        # Get all messages for transcript JSON (if needed for tone analysis)
-        all_messages = (await self.transcript_message_repo.get_messages_by_conversation_id(conversation_id, ))
-        hostility_limit = settings.HOSTILITY_SCORE_MESSAGE_COUNT
-        tone_messages = all_messages[-hostility_limit:]
-        transcript_json = transcript_messages_to_json(tone_messages,
-                exclude_fields={"feedback", "type", "sequence_number"})
-
         # Update conversation
         conversation.updated_by = get_current_user_id()
         conversation = await self.conversation_repo.update_conversation(conversation)
 
-        # Perform partial tone check
-        conversation = await self._analyze_in_progress_tone_and_mark(conversation, transcript_json,
-                llm_analyst_id=in_progress_conv_update.llm_analyst_id, )
+        if has_scorable_customer_turn(new_messages):
+            conversation = await self._analyze_in_progress_tone_and_mark(conversation,
+                    llm_analyst_id=in_progress_conv_update.llm_analyst_id, )
 
         full_conversation = await self.conversation_repo.fetch_conversation_by_id(conversation.id,
                 include_messages=True)
@@ -493,10 +488,9 @@ class ConversationService:
 
         # Convert to format needed for analysis
 
-        message_type_segments = transcript_messages_to_json(messages,
-                exclude_fields={"feedback", "type", "sequence_number"})
+        message_type_segments = transcript_messages_to_lines(messages, include_offset=True)
 
-        if message_type_segments == "[]":
+        if not message_type_segments:
             raise AppException(ErrorKey.EMPTY_MESSAGES_FOR_CONVERSATION)
 
         # Run GPT analysis
@@ -581,7 +575,7 @@ class ConversationService:
                 await self.conversation_repo.update_conversation(saved_conversation)
 
 
-    async def _analyze_in_progress_tone_and_mark(self, conversation: ConversationModel, transcript: str,
+    async def _analyze_in_progress_tone_and_mark(self, conversation: ConversationModel,
             llm_analyst_id: Optional[UUID] = None, ) -> ConversationModel:
 
         #  Run GPT analysis
@@ -589,32 +583,35 @@ class ConversationService:
             llm_analyst_id = seed_test_data.llm_analyst_in_progress_hostility_id
 
         llm_analyst = await self.llm_analyst_service.get_by_id(llm_analyst_id, throw_not_found=False)
+        if not llm_analyst or not llm_analyst.is_active:
+            return conversation
 
-        if llm_analyst and llm_analyst.is_active:
-            # Load the agent id for cost tracking
-            conv_with_agent = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
-                conversation.id)
-            agent_id = conv_with_agent.agent_id if conv_with_agent else None
+        messages = await self.transcript_message_repo.get_latest_messages_by_types(conversation.id,
+                CONVERSATIONAL_MESSAGE_TYPES, settings.HOSTILITY_SCORE_MESSAGE_COUNT)
+        transcript = transcript_messages_to_lines(messages)
+        if not transcript:
+            return conversation
 
-            # Release the pooled connection before the tone-analysis GPT call so it
-            # isn't held idle-in-transaction for the duration of the call (see
-            # genassist-outage-report-2026-09-03.md, release point #3).
-            # Import kept local: conversations.py loads early in app bootstrap
-            # (injector -> dependency_injection -> services.audio -> here), and
-            # db_connection_utils imports app.dependencies.injector itself, so a
-            # top-level import here is circular.
-            from app.core.utils.db_connection_utils import release_idle_connection
-            await release_idle_connection(context=f"conversation {conversation.id}")
+        # Load the agent id for cost tracking
+        conv_with_agent = await self.conversation_repo.fetch_conversation_by_id_with_operator_agent(
+            conversation.id)
+        agent_id = conv_with_agent.agent_id if conv_with_agent else None
 
-            analysis_result = (
-                await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
-                        conversation_id=conversation.id, agent_id=agent_id))
-        else:
-            # TODO remove after fixing seed
-            # Temporary solution to avoid seed missing llm_analyst
-            analysis_result = {
-                "hostile_score": 0, "topic": "Other", "negative_reason": "OTHER",
-                }
+        # Release the pooled connection before the tone-analysis GPT call so it
+        # isn't held idle-in-transaction for the duration of the call (see
+        # genassist-outage-report-2026-09-03.md, release point #3).
+        # Import kept local: conversations.py loads early in app bootstrap
+        # (injector -> dependency_injection -> services.audio -> here), and
+        # db_connection_utils imports app.dependencies.injector itself, so a
+        # top-level import here is circular.
+        from app.core.utils.db_connection_utils import release_idle_connection
+        await release_idle_connection(context=f"conversation {conversation.id}")
+
+        analysis_result = (
+            await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
+                    conversation_id=conversation.id, agent_id=agent_id))
+        if analysis_result is None:
+            return conversation
 
         conversation.in_progress_hostility_score = analysis_result["hostile_score"]
         conversation.topic = analysis_result["topic"]
@@ -825,6 +822,11 @@ class ConversationService:
                 except Exception as e:
                     logger.error(f"Failed to finalize conversation {conversation.id}: {str(e)}")
                     failed_count += 1
+                    try:
+                        await self.conversation_repo.mark_analysis_attempt(
+                            conversation.id, error=f"{type(e).__name__}: {e}")
+                    except Exception:
+                        logger.debug("Could not record the failed analysis attempt", exc_info=True)
 
             await invalidate_conversation_cache(conversation.id)
 

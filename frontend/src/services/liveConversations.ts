@@ -179,7 +179,7 @@ export const conversationService = {
 
   updateConversation: async (
     id: string,
-    data: { messages: TranscriptEntry[]; llm_analyst_id: string }
+    data: { messages: TranscriptEntry[]; llm_analyst_id?: string }
   ): Promise<void> => {
     await apiRequest("patch", `/conversations/in-progress/update/${id}`, data);
   },
