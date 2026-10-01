@@ -165,11 +165,15 @@ def _validate_categorical_inputs(
 def _build_input_array(
     normalized_inputs: Dict[str, List[Any]],
     feature_names: Sequence[str],
+    fills: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
-    """Build a 2-D numpy array aligned to feature_names, filling missing features with 0.
+    """Build a 2-D numpy array aligned to feature_names, filling missing features with
+    the value persisted at training time (see TrainModelNode's missing_value_fills
+    metadata), or 0 if the feature has no persisted fill (legacy model, or the
+    feature was never actually missing during training).
 
     Batch size is the maximum length among provided feature columns. Single-value
-    columns are broadcast to that batch size. Missing features default to 0.
+    columns are broadcast to that batch size.
 
     When feature_names is empty (model metadata doesn't specify column order),
     falls back to using all input columns in their dict-insertion order.
@@ -181,6 +185,7 @@ def _build_input_array(
     if len(feature_names) == 0:
         feature_names = list(normalized_inputs.keys())
 
+    fills = fills or {}
     batch_size = _infer_batch_size(normalized_inputs)
     input_cols = set(normalized_inputs)
     columns = []
@@ -188,7 +193,7 @@ def _build_input_array(
         if feat in input_cols:
             columns.append(_broadcast_column(normalized_inputs[feat], batch_size, feat))
         else:
-            columns.append([0] * batch_size)
+            columns.append([fills.get(feat, 0)] * batch_size)
     return np.column_stack(columns) if columns else np.empty((batch_size, 0))
 
 
@@ -377,10 +382,14 @@ class MLModelInferenceNode(BaseNode):
             if len(feature_names) == 0:
                 feature_names = list(normalized_inputs.keys())
             try:
+                # Reapply the same missing-value fills computed at training time
+                # (if any) instead of defaulting an unset feature to 0.
+                missing_value_fills: Dict[str, Any] = metadata.get("missing_value_fills") or {}
+
                 # Raw values as supplied by the caller, aligned to feature_names -
                 # used below to build the model-ready matrix and for the
                 # human-readable "input_data" echoed back in the response.
-                raw_input_data = _build_input_array(normalized_inputs, feature_names)
+                raw_input_data = _build_input_array(normalized_inputs, feature_names, missing_value_fills)
                 batch_size = raw_input_data.shape[0]
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
@@ -407,7 +416,7 @@ class MLModelInferenceNode(BaseNode):
                 if encoded_feature_columns:
                     numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
                     numeric_data = (
-                        _build_input_array(normalized_inputs, numeric_order).astype(float)
+                        _build_input_array(normalized_inputs, numeric_order, missing_value_fills).astype(float)
                         if numeric_order else np.empty((batch_size, 0))
                     )
 

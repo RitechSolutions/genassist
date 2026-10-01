@@ -569,9 +569,15 @@ class TrainModelNode(BaseNode):
             # Apply per-column missing-value overrides (drop_column/drop_rows/
             # impute_*). Fill values are computed from the training split
             # only, then applied to validation - see _handle_missing_values.
+            # Captured into missing_value_fills so inference can reproduce the
+            # exact same fill for any feature it doesn't receive a value for
+            # (see the "missing_value_fills" metadata key saved below).
+            missing_value_fills: Dict[str, Any] = {}
             if missing_value_handling:
-                X_train, y_train, X_val, y_val, baseline_train, baseline_val = self._handle_missing_values(
-                    X_train, y_train, X_val, y_val, missing_value_handling, baseline_train, baseline_val
+                X_train, y_train, X_val, y_val, baseline_train, baseline_val, missing_value_fills = (
+                    self._handle_missing_values(
+                        X_train, y_train, X_val, y_val, missing_value_handling, baseline_train, baseline_val
+                    )
                 )
 
             # Fall through to a default fill for whatever missing values are
@@ -588,6 +594,10 @@ class TrainModelNode(BaseNode):
             if has_missing:
                 logger.warning("Found missing values in features. Filling with median for numeric and mode for categorical.")
                 for col in X_train.columns:
+                    # Already has a persisted fill from an explicit per-column
+                    # override above - don't recompute/overwrite it here.
+                    if col in missing_value_fills:
+                        continue
                     if X_train[col].dtype in ['int64', 'float64']:
                         fill_value = X_train[col].median()
                     else:
@@ -596,6 +606,7 @@ class TrainModelNode(BaseNode):
                     X_train[col].fillna(fill_value, inplace=True)
                     if X_val is not None:
                         X_val[col].fillna(fill_value, inplace=True)
+                    missing_value_fills[col] = fill_value
 
             # Apply the ratio target transform, if configured. Rows where the
             # baseline is zero or missing are dropped first - the ratio would
@@ -792,6 +803,7 @@ class TrainModelNode(BaseNode):
                     ),
                     **({"label_encodings": label_encodings} if label_encodings else {}),
                     **({"ordinal_encodings": ordinal_encodings} if ordinal_encodings else {}),
+                    **({"missing_value_fills": missing_value_fills} if missing_value_fills else {}),
                     **({"target_transform": target_transform} if target_transform is not None else {}),
                 },
             )
@@ -1004,6 +1016,7 @@ class TrainModelNode(BaseNode):
         ratio target - kept row-aligned with X_train/X_val through any
         drop_rows row drops, same as y_train/y_val.
         """
+        fills: Dict[str, Any] = {}
         for item in missing_value_handling:
             column = item.get("columnName")
             strategy = item.get("strategy", "no_action")
@@ -1035,6 +1048,7 @@ class TrainModelNode(BaseNode):
                 X_train[column] = X_train[column].fillna(fill_value)
                 if X_val is not None:
                     X_val[column] = X_val[column].fillna(fill_value)
+                fills[column] = fill_value
             elif strategy in ("impute_mean", "impute_median", "impute_mode"):
                 if strategy == "impute_mean":
                     fill_value = X_train[column].mean()
@@ -1046,8 +1060,9 @@ class TrainModelNode(BaseNode):
                 X_train[column] = X_train[column].fillna(fill_value)
                 if X_val is not None:
                     X_val[column] = X_val[column].fillna(fill_value)
+                fills[column] = fill_value
 
-        return X_train, y_train, X_val, y_val, baseline_train, baseline_val
+        return X_train, y_train, X_val, y_val, baseline_train, baseline_val, fills
 
     def _engineer_features(self, X_train, X_val, feature_engineering):
         """

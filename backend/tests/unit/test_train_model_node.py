@@ -498,27 +498,29 @@ class TestHandleMissingValues:
     def test_no_action_leaves_column_untouched(self, node):
         X_train = pd.DataFrame({"a": [1.0, None, 3.0]})
         y_train = pd.Series([0, 1, 0])
-        X_train_out, y_train_out, X_val_out, y_val_out, _, _ = node._handle_missing_values(
+        X_train_out, y_train_out, X_val_out, y_val_out, _, _, fills = node._handle_missing_values(
             X_train, y_train, None, None, [{"columnName": "a", "strategy": "no_action"}]
         )
         assert X_train_out["a"].isna().sum() == 1
+        assert fills == {}
 
     def test_drop_column_removes_column_from_both_splits(self, node):
         X_train = pd.DataFrame({"a": [1.0, None], "b": [1, 2]})
         X_val = pd.DataFrame({"a": [None], "b": [3]})
-        X_train_out, _, X_val_out, _, _, _ = node._handle_missing_values(
+        X_train_out, _, X_val_out, _, _, _, fills = node._handle_missing_values(
             X_train, pd.Series([0, 1]), X_val, pd.Series([0]),
             [{"columnName": "a", "strategy": "drop_column"}],
         )
         assert "a" not in X_train_out.columns
         assert "a" not in X_val_out.columns
+        assert fills == {}
 
     def test_drop_rows_removes_rows_with_missing_value_from_both_splits(self, node):
         X_train = pd.DataFrame({"a": [1.0, None, 3.0]})
         y_train = pd.Series([10, 20, 30])
         X_val = pd.DataFrame({"a": [None, 5.0]})
         y_val = pd.Series([40, 50])
-        X_train_out, y_train_out, X_val_out, y_val_out, _, _ = node._handle_missing_values(
+        X_train_out, y_train_out, X_val_out, y_val_out, _, _, fills = node._handle_missing_values(
             X_train, y_train, X_val, y_val,
             [{"columnName": "a", "strategy": "drop_rows"}],
         )
@@ -526,26 +528,29 @@ class TestHandleMissingValues:
         assert y_train_out.tolist() == [10, 30]
         assert X_val_out["a"].tolist() == [5.0]
         assert y_val_out.tolist() == [50]
+        assert fills == {}
 
     def test_impute_constant_uses_given_value(self, node):
         X_train = pd.DataFrame({"a": [1.0, None]})
         X_val = pd.DataFrame({"a": [None]})
-        X_train_out, _, X_val_out, _, _, _ = node._handle_missing_values(
+        X_train_out, _, X_val_out, _, _, _, fills = node._handle_missing_values(
             X_train, pd.Series([0, 1]), X_val, pd.Series([0]),
             [{"columnName": "a", "strategy": "impute_constant", "imputeValue": -1}],
         )
         assert X_train_out["a"].tolist() == [1.0, -1]
         assert X_val_out["a"].tolist() == [-1]
+        assert fills == {"a": -1}
 
     def test_impute_mean_fits_on_train_only(self, node):
         X_train = pd.DataFrame({"a": [1.0, 3.0, None]})  # mean of [1, 3] = 2.0
         X_val = pd.DataFrame({"a": [None, 100.0]})  # 100 must not affect train's fill value
-        X_train_out, _, X_val_out, _, _, _ = node._handle_missing_values(
+        X_train_out, _, X_val_out, _, _, _, fills = node._handle_missing_values(
             X_train, pd.Series([0, 1, 2]), X_val, pd.Series([0, 1]),
             [{"columnName": "a", "strategy": "impute_mean"}],
         )
         assert X_train_out["a"].tolist() == [1.0, 3.0, 2.0]
         assert X_val_out["a"].tolist() == [2.0, 100.0]
+        assert fills == {"a": 2.0}
 
 
 class TestEngineerFeatures:
