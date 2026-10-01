@@ -558,7 +558,7 @@ export const RoutesProvider = () => {
             {
               path: "tests/ml-model-evaluations",
               element: (
-                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                <ProtectedRoute requiredPermissions={["*", "read:ml_model"]}>
                   <MLModelEvaluationsPage />
                 </ProtectedRoute>
               ),

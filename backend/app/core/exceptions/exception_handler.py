@@ -33,6 +33,11 @@ _CLIENT_SAFE_DETAIL_KEYS = frozenset(
         # Platform-generated Train Data Source limit messages only
         # contain configured ceilings and user guidance.
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
+        # Names the technique, the stale cases or the unusable reply, so the user
+        # knows what to change. The 502/504 details stay internal.
+        ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED,
+        ErrorKey.PROMPT_CASE_SELECTION_INVALID,
+        ErrorKey.PROMPT_OPTIMIZE_UNUSABLE,
         # Policy-generated read-only SQL rejection; not driver/database text.
         ErrorKey.READ_ONLY_SQL_BLOCKED,
     }

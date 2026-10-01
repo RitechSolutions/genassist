@@ -305,7 +305,7 @@ class TrainDataSourceNode(BaseNode):
         self,
         config: Dict[str, Any],
         limits: ExtractionLimits,
-        chunk_rows: int,
+        chunk_rows: int | None = None,
     ) -> Dict[str, Any]:
         """
         Process CSV data source.
@@ -316,6 +316,9 @@ class TrainDataSourceNode(BaseNode):
         Returns:
             Dictionary with CSV data and metadata
         """
+        if chunk_rows is None:
+            chunk_rows = settings.ML_EXTRACT_CHUNK_ROWS
+
         csv_file_path = config.get("csvFilePath")
         csv_file_id = config.get("csvFileId")
         csv_file_name = config.get("csvFileName")
@@ -329,10 +332,16 @@ class TrainDataSourceNode(BaseNode):
         logger.info(f"Processing training file: {csv_file_path or csv_file_id}")
 
         try:
-            # csvFilePath may be a stale path from another environment (e.g. saved by a
-            # host process while this node runs in a container with a separate filesystem),
-            # so fall back to downloading by csvFileId whenever the path isn't usable.
-            if (not csv_file_path or not Path(csv_file_path).exists()) and csv_file_id:
+            # Prefer re-downloading by ID over trusting a stored csvFilePath.
+            # csvFilePath is an absolute path captured wherever the file was
+            # originally uploaded from (e.g. DATA_VOLUME on the API server at
+            # upload time) - it can point somewhere that doesn't exist in
+            # whatever process/container actually executes this node (a
+            # scheduled pipeline run, a different host, etc.), while the file
+            # manager download always resolves correctly relative to this
+            # process's own DATA_VOLUME. Only fall back to the raw
+            # csvFilePath when there's no ID to re-download by.
+            if csv_file_id:
                 from app.dependencies.injector import injector
                 from app.services.file_manager import FileManagerService
 

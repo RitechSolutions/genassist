@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { toast } from "react-hot-toast";
 import { BarChart3, Loader2, Scale, Trash2 } from "lucide-react";
 
 import { PageLayout } from "@/components/PageLayout";
@@ -230,6 +231,8 @@ const MLModelEvaluationsPage: React.FC = () => {
       setRankings((prev) => prev.filter((r) => r.model.id !== modelPendingDelete.id));
       if (result?.model.id === modelPendingDelete.id) setResult(null);
       setModelPendingDelete(null);
+    } catch {
+      toast.error("Failed to delete ML model.");
     } finally {
       setIsDeleting(false);
     }
