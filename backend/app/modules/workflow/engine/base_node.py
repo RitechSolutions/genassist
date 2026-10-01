@@ -18,7 +18,7 @@ from app.core.observability.otel import (
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.node_result import is_node_failure, node_failure
-from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
+from app.modules.workflow.engine.utils import describe_exception, extract_code_params, replace_config_vars
 from app.modules.workflow.engine.entry_nodes import is_entry_node_type
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -471,7 +471,7 @@ class BaseNode(ABC):
                     if span is not None and span.is_recording():
                         span.record_exception(e)
                         span.set_status(Status(StatusCode.ERROR, str(e)))
-                    error_msg = f"Error executing node {self.node_id}: {str(e)}"
+                    error_msg = f"Error executing node {self.node_id}: {describe_exception(e)}"
                     logger.error(error_msg, exc_info=True)
                     self.complete_execution(error=error_msg)
                     # Return a detectable failure envelope (not None) so a caller using

@@ -3,6 +3,7 @@ import io
 import multiprocessing
 import os
 import re
+import tokenize
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Callable, Dict, Any, List, Union
 import logging
@@ -162,27 +163,60 @@ def _execute_python_code_sync(
         }
 
 
+_JSON_KEYWORD_TO_PYTHON = {"null": "None", "true": "True", "false": "False"}
+
+
 def sanitize_python_code(code: str) -> str:
     """
     Sanitizes a Python code string before execution:
-    - Converts JSON keywords (null, true, false) → Python equivalents
+    - Converts bareword JSON keywords (null, true, false) - invalid Python on
+      their own, a common mistake in AI-generated templates - into their
+      Python equivalents (None, True, False). Only rewrites NAME tokens, so a
+      genuine string value "null"/"true"/"false" the user actually wrote is
+      left exactly as written, never corrupted into None/True/False.
     - Removes trailing commas before ] or }
     - Keeps formatting and indentation intact
     """
     if not isinstance(code, str):
         raise ValueError("sanitize_python_code expects a string")
 
-    clean = code
-
-    # Replace JSON literals with Python ones
-    clean = re.sub(r"\bnull\b", "None", clean)
-    clean = re.sub(r"\btrue\b", "True", clean)
-    clean = re.sub(r"\bfalse\b", "False", clean)
+    clean = _rewrite_bareword_json_keywords(code)
 
     # Remove trailing commas before ] or }
     clean = re.sub(r",(\s*[}\]])", r"\1", clean)
 
     return clean
+
+
+def _rewrite_bareword_json_keywords(code: str) -> str:
+    """Rewrite bareword null/true/false NAME tokens to None/True/False,
+    leaving string literals (and everything else) untouched.
+
+    A plain regex can't tell "null" the bareword from "null" inside a string
+    literal - both match \\bnull\\b. Tokenizing first and only rewriting NAME
+    tokens is what lets this tell them apart.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(code).readline))
+    except (tokenize.TokenError, SyntaxError, IndentationError):
+        # Code that doesn't even tokenize cleanly is left as-is - the real
+        # syntax error will surface clearly from exec() instead of being
+        # masked by a half-applied rewrite here.
+        return code
+
+    rewritten = [
+        tok._replace(string=_JSON_KEYWORD_TO_PYTHON[tok.string])
+        if tok.type == tokenize.NAME and tok.string in _JSON_KEYWORD_TO_PYTHON
+        else tok
+        for tok in tokens
+    ]
+
+    try:
+        return tokenize.untokenize(rewritten)
+    except Exception:
+        # Any untokenize edge case falls back to the original code rather
+        # than risking a differently-mangled result.
+        return code
 
 
 async def execute_python_code(
