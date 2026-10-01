@@ -8,7 +8,7 @@ from app.modules.workflow.engine.nodes.data_mapper_node import DataMapperNode
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
-RUNNER_ERROR = {"error": "Execution timed out after 120 seconds", "traceback": "", "output": "", "errors": ""}
+RUNNER_ERROR = {"error": "Execution timed out after 600 seconds", "traceback": "", "output": "", "errors": ""}
 
 
 async def _runner_error(*_args, **_kwargs):
@@ -29,7 +29,7 @@ async def test_data_mapper_runner_error_is_recorded_but_flows_unchanged(monkeypa
 
     assert state.node_execution_status["m1"]["status"] == "failed"
     assert (
-        state.node_execution_status["m1"]["error"] == "Data mapper script failed: Execution timed out after 120 seconds"
+        state.node_execution_status["m1"]["error"] == "Data mapper script failed: Execution timed out after 600 seconds"
     )
     assert state.get_node_output("m1") == RUNNER_ERROR
     assert is_node_failure(returned) is not None
@@ -42,7 +42,7 @@ async def test_preprocessing_runner_error_raises_when_raise_on_error(monkeypatch
     with pytest.raises(AppException) as exc:
         await ml_utils.execute_and_process_preprocessing_code("result = df", None, None, "", raise_on_error=True)
 
-    assert exc.value.error_detail == "Error executing preprocessing code: Execution timed out after 120 seconds"
+    assert exc.value.error_detail == "Error executing preprocessing code: Execution timed out after 600 seconds"
 
 
 @pytest.mark.asyncio
@@ -54,5 +54,5 @@ async def test_preprocessing_runner_error_returned_when_not_raising(monkeypatch)
     )
 
     assert df is None
-    assert errors == "Execution timed out after 120 seconds"
+    assert errors == "Execution timed out after 600 seconds"
     assert response == RUNNER_ERROR

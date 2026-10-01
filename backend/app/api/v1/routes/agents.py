@@ -12,7 +12,7 @@ from app.auth.utils import api_key_header
 from app.cache.redis_cache import invalidate_agent_cache
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.db_connection_utils import release_db_connection
+from app.core.utils.db_connection_utils import release_idle_connection
 from app.modules.workflow.registry import RegistryItem
 from app.schemas.agent import QueryRequest
 from app.services.agent_config import AgentConfigService
@@ -93,7 +93,7 @@ async def run_query_agent_logic(
     # Release the pooled connection before the workflow/LLM run so it isn't held
     # idle-in-transaction for the duration of the call (see
     # genassist-outage-report-2026-09-03.md, release point #2).
-    await release_db_connection(context=f"agent {agent_id}")
+    await release_idle_connection(context=f"agent {agent_id}")
 
     agent = RegistryItem(agent)
 

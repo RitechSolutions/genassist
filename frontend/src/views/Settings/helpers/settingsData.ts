@@ -1,4 +1,4 @@
-import { Bell, Lock, User, Globe } from 'lucide-react';
+import { User } from 'lucide-react';
 import { SettingSectionType } from '../../../interfaces/settings.interface';
 
 export const settingSections: SettingSectionType[] = [

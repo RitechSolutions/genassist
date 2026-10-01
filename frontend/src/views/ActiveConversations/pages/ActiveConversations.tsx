@@ -11,7 +11,7 @@ import { transformTranscript } from "@/views/Transcripts/helpers/transformers";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ActiveConversationsModule } from "../components/ActiveConversationsModule";
-import { HOSTILITY_NEUTRAL_MAX, HOSTILITY_POSITIVE_MAX, isLiveConversationStatus } from "@/views/Transcripts/helpers/formatting";
+import { isLiveConversationStatus } from "@/views/Transcripts/helpers/formatting";
 import { LiveConversationsDialog } from "../components/LiveConversationsDialog";
 import { useWebSocketDashboard } from "../hooks/useWebSocketDashboard";
 import { YourAgentsCard } from "../components/YourAgentsCard";

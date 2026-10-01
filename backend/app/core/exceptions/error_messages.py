@@ -184,6 +184,11 @@ class ErrorKey(Enum):
     LLM_CATALOG_MODEL_ALREADY_EXISTS = "LLM_CATALOG_MODEL_ALREADY_EXISTS"
     LLM_CATALOG_UNKNOWN_PROVIDER = "LLM_CATALOG_UNKNOWN_PROVIDER"
     LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD = "LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD"
+    PROMPT_CONTEXT_INVALID = "PROMPT_CONTEXT_INVALID"
+    PROMPT_FIELD_NOT_SUPPORTED = "PROMPT_FIELD_NOT_SUPPORTED"
+    PROMPT_VERSION_CONFLICT = "PROMPT_VERSION_CONFLICT"
+    CHAT_TURN_CAPACITY_EXCEEDED = "CHAT_TURN_CAPACITY_EXCEEDED"
+    CHAT_TURN_CLIENT_DISCONNECTED = "CHAT_TURN_CLIENT_DISCONNECTED"
 
 
 ERROR_MESSAGES = {
@@ -368,6 +373,11 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
+        ErrorKey.PROMPT_CONTEXT_INVALID: "The prompt context is not valid for this workflow.",
+        ErrorKey.PROMPT_FIELD_NOT_SUPPORTED: "This node has no editable prompt field with that name.",
+        ErrorKey.PROMPT_VERSION_CONFLICT: "Another save completed first. Try again.",
+        ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "The assistant is busy right now. Please try again in a moment.",
+        ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED: "The request was abandoned before the assistant could answer.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
@@ -377,6 +387,8 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "Les connexions de sous-agents de ce workflow sont invalides : {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "Un sous-agent de ce workflow est mal configuré : {0}",
+        ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "L'assistant est occupé pour le moment. Veuillez réessayer dans un instant.",
+        ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED: "La demande a été abandonnée avant que l'assistant puisse répondre.",
     },
 }
 

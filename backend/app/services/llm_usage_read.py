@@ -156,6 +156,7 @@ class LlmUsageReadService:
         total_calls = int(row["total_calls"])
         total_tokens = int(row["total_tokens"])
         unpriced_calls = int(row["unpriced_calls"])
+        fallback_calls = int(row["fallback_calls"])
         distinct_conversations = row["distinct_conversations"]
         return LlmUsageSummaryResponse(
             from_date=params.from_date,
@@ -173,13 +174,14 @@ class LlmUsageReadService:
             total_cache_creation_tokens=int(row["cache_creation_tokens"]),
             total_calls=total_calls,
             configured_calls=int(row["configured_calls"]),
-            fallback_calls=int(row["fallback_calls"]),
+            fallback_calls=fallback_calls,
             legacy_estimate_calls=int(row["legacy_estimate_calls"]),
             unpriced_calls=unpriced_calls,
             priced_token_coverage_pct=_coverage_pct(
                 total_calls, total_tokens, int(row["priced_tokens"]), unpriced_calls
             ),
             last_unpriced_at=(await self.repo.last_unpriced_at() if unpriced_calls else None),
+            last_fallback_at=(await self.repo.last_fallback_at() if fallback_calls else None),
         )
 
     async def _breakdown(self, params, scope, dimension: str) -> LlmUsageBreakdownResponse:

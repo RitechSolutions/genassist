@@ -1,7 +1,8 @@
-import { Edge, Node, NodeProps } from "reactflow";
+import { Node, NodeProps } from "reactflow";
 import { ComponentType } from "react";
 import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
+import { MLModelTypeValue } from "@/constants/mlModelTypes";
 
 // Define compatibility types
 export type NodeCompatibility =
@@ -50,6 +51,26 @@ export interface ToolBaseNodeData extends BaseNodeData {
 // Chat input node data
 export interface ChatInputNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
+}
+
+// Webhook Trigger node data — endpoint settings (method, auth, secret, rate
+// limit) live on the backend endpoint row, not here, so publishing a new
+// workflow version never rotates a secret. Paths are dotted and start at the
+// delivery envelope: body.*, headers.*, query.*
+export interface WebhookFieldMapping {
+  key: string;
+  path: string;
+  required?: boolean;
+  default?: string;
+}
+
+export interface WebhookTriggerNodeData extends BaseNodeData {
+  fieldMappings?: WebhookFieldMapping[];
+  messagePath?: string;
+  messageRequired?: boolean;
+  threadIdPath?: string;
+  idempotencyPath?: string;
+  samplePayload?: string;
 }
 
 // Human In The Loop node data — collects structured data from the user mid-flow
@@ -506,22 +527,34 @@ export interface PreprocessingNodeData extends BaseNodeData {
 // Train Model Node Data
 export type SplitMethod = "random" | "time_based";
 
+// Keep in sync with backend/app/modules/workflow/engine/nodes/ml/hyperparameter_optimization.py::VALID_METHODS
+export type HyperparameterOptimizationMethod =
+  | "none"
+  | "random_search"
+  | "grid_search"
+  | "bayesian_optimization";
+
+export interface OptimizationConfig {
+  scoring?: string; // sklearn scoring name; defaults to accuracy/r2 based on task
+  cvFolds?: number; // cross-validation folds used during the search (default: 3)
+  nIter?: number; // random_search: number of parameter combinations to sample
+  nTrials?: number; // bayesian_optimization: number of Optuna trials
+  timeoutSeconds?: number; // bayesian_optimization: optional wall-clock cap
+  gridPoints?: number; // grid_search: discretization points per numeric parameter
+}
+
 export interface TrainModelNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the CSV file for training
   analysisResult?: CSVAnalysisResult; // CSV analysis result
-  modelType:
-    | "xgboost"
-    | "random_forest"
-    | "linear_regression"
-    | "logistic_regression"
-    | "neural_network"
-    | "other";
+  modelType: MLModelTypeValue;
   targetColumn: string; // Target variable column name
   featureColumns: string[]; // Feature column names
-  modelParameters: Record<string, any>; // Model-specific parameters
+  modelParameters: Record<string, any>; // Model-specific parameters (fixed; excluded from search)
   validationSplit: number; // Train/validation split ratio
   splitMethod?: SplitMethod; // How to split train/validation data (default: "random")
   dateColumn?: string; // Date/timestamp column to sort by when splitMethod is "time_based"
+  hyperparameterOptimization?: HyperparameterOptimizationMethod; // Search method (default: "none")
+  optimizationConfig?: OptimizationConfig; // Overrides for the selected search method
 }
 
 // Per Chat RAG Node Data
@@ -665,6 +698,7 @@ export interface STTNodeData extends BaseNodeData {
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
+  | WebhookTriggerNodeData
   | LLMModelNodeData
   | TemplateNodeData
   | ChatOutputNodeData
@@ -746,20 +780,5 @@ export const createNode = <T extends NodeData>(
     type,
     position,
     data: data,
-  };
-};
-
-export const createEdge = (
-  source: string,
-  target: string,
-  data: Record<string, unknown>,
-): Edge => {
-  return {
-    id: `${source}-${target}`,
-    sourceHandle: source,
-    targetHandle: target,
-    source,
-    target,
-    data,
   };
 };
