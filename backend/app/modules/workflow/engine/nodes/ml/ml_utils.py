@@ -511,16 +511,30 @@ async def execute_and_process_preprocessing_code(
     # Execute the preprocessing Python code
     response = await execute_python_code(python_code, params, wrap_code=True)
 
-    # Check for errors in response
-    errors = response.get("errors", None)
-    if errors and errors != "":
+    # A hard failure (syntax error, blocked import, timeout, uncaught
+    # exception) is reported under "error" (singular) - see
+    # _subprocess_worker/_execute_python_code_sync. This is the authoritative,
+    # specific message for why execution didn't produce a result, so surface
+    # it directly instead of falling through to a generic "Got: NoneType"
+    # guess based on whatever ended up in "result".
+    hard_error = response.get("error")
+    if hard_error:
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {errors}",
+                error_detail=f"Error executing preprocessing code: {hard_error}",
             )
         else:
-            return None, errors, response
+            return None, hard_error, response
+
+    # "errors" (plural) is just captured stderr output - this includes
+    # Python's own warning noise (e.g. a pandas FutureWarning is printed to
+    # stderr by default), which is not a failure on its own. Logged for
+    # visibility; whether execution actually succeeded is determined by the
+    # shape of "result" below, not by whether anything was printed to stderr.
+    stderr_output = response.get("errors")
+    if stderr_output:
+        logger.warning("Preprocessing code produced warnings/stderr output: %s", stderr_output)
 
     # Extract result from response
     result = response.get("result")

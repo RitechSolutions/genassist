@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Any, Optional
 
+from app.core.exceptions.error_messages import get_error_message
+from app.core.exceptions.exception_classes import AppException
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -20,6 +22,21 @@ PARAM_STYLE_NAMED = "named"
 PARAM_STYLE_PYFORMAT = "pyformat"
 _SUPPORTED_PARAM_STYLES = {PARAM_STYLE_NAMED, PARAM_STYLE_PYFORMAT}
 _VARIABLE_RE = re.compile(r"{{([^\s{}]+)}}")
+
+
+def describe_exception(e: Exception) -> str:
+    """Human-readable message for an exception caught during node execution.
+
+    `AppException.__str__` (inherited from `Exception.__init__(error_key.value)`)
+    only ever returns the bare error key (e.g. "file_not_found", "error_500") -
+    `error_detail`, the specific reason a node builds and raises it with, is a
+    separate attribute `str()` never sees. Using plain `str(e)` here is what
+    made every node failure collapse to its generic error key instead of the
+    actual cause.
+    """
+    if isinstance(e, AppException):
+        return e.error_detail.strip() if e.error_detail and e.error_detail.strip() else get_error_message(e.error_key)
+    return str(e)
 
 
 class QueryVariableError(ValueError):

@@ -70,6 +70,7 @@ from app.modules.workflow.engine.nodes import (
     WorkflowExecutorNode,
     ZendeskToolNode,
 )
+from app.modules.workflow.engine.utils import describe_exception
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import process_path_based_input_data
@@ -684,8 +685,9 @@ class WorkflowEngine:
         except WorkflowPausedException:
             raise  # Propagate pause signal to top-level execute_from_node
         except Exception as e:
-            logger.error(f"Error executing node {node_id}: {e}")
-            state.fail_execution(f"Node {node_id} failed: {str(e)}")
+            message = describe_exception(e)
+            logger.error(f"Error executing node {node_id}: {message}")
+            state.fail_execution(f"Node {node_id} failed: {message}")
             raise
 
     def get_workflow_status(self) -> Dict[str, Any]:

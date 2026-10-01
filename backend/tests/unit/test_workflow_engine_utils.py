@@ -1,14 +1,46 @@
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.utils import (
     PARAM_STYLE_PYFORMAT,
     QueryVariableError,
     bind_config_vars,
+    describe_exception,
     get_nested_value,
     has_volatile_template_vars,
     replace_config_vars,
 )
 from app.modules.workflow.engine.workflow_state import WorkflowState
+
+
+class TestDescribeException:
+    """describe_exception is what node execution (base_node.py,
+    workflow_engine.py) uses to build the user-facing failure message. Plain
+    str(e) on an AppException only ever returns its bare error_key - e.g.
+    "file_not_found" - because AppException.__init__ passes just the key to
+    Exception.__init__, discarding error_detail. That collapsed every node
+    failure to a generic key instead of the specific reason."""
+
+    def test_app_exception_with_detail_returns_the_detail(self):
+        error = AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail="Error executing preprocessing code: Import of 'os' is not allowed",
+        )
+        assert describe_exception(error) == "Error executing preprocessing code: Import of 'os' is not allowed"
+
+    def test_app_exception_without_detail_falls_back_to_default_message(self):
+        error = AppException(error_key=ErrorKey.FILE_NOT_FOUND)
+        message = describe_exception(error)
+        assert message == "File not found."
+        assert message != ErrorKey.FILE_NOT_FOUND.value
+
+    def test_app_exception_with_blank_detail_falls_back_to_default_message(self):
+        error = AppException(error_key=ErrorKey.FILE_NOT_FOUND, error_detail="   ")
+        assert describe_exception(error) == "File not found."
+
+    def test_non_app_exception_uses_str(self):
+        assert describe_exception(ValueError("boom")) == "boom"
 
 
 class TestGetNestedValue:
