@@ -5,7 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.core.utils.transcript_utils import is_scorable_customer_message, transcript_messages_to_lines
+from app.core.utils.transcript_utils import (
+    count_scorable_customer_messages,
+    is_scorable_customer_message,
+    transcript_messages_to_lines,
+)
 
 START = datetime(2026, 9, 1, 10, 0, 0, tzinfo=timezone.utc)
 
@@ -35,6 +39,18 @@ def _msg(speaker, text, create_time=None, type="message"):
 )
 def test_only_non_agent_conversational_text_is_scorable(speaker, text, type, expected):
     assert is_scorable_customer_message(_msg(speaker, text, type=type)) is expected
+
+
+def test_scorable_customer_messages_are_counted_per_update():
+    messages = [
+        _msg("customer", "hi"),
+        _msg("agent", "hello"),
+        _msg("user", '{"url": "https://x/f.pdf"}', type="file"),
+        _msg("customer", "[Voice message]", type="audio"),
+        _msg("caller", "still here"),
+    ]
+    assert count_scorable_customer_messages(messages) == 2
+    assert count_scorable_customer_messages([]) == 0
 
 
 def test_lines_normalise_speakers_collapse_whitespace_and_skip_empty_rows():

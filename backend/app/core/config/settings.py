@@ -129,6 +129,8 @@ class ProjectSettings(BaseSettings):
     # Number of latest message/audio rows used for in-progress hostility scoring.
     # If the conversation has fewer, or this is 0 or less, all of them are used.
     HOSTILITY_SCORE_MESSAGE_COUNT: int = 20
+    # Scored on every Nth customer message (1 scores each)
+    HOSTILITY_SCORE_EVERY_N_MESSAGES: int = Field(default=1, ge=1)
 
     FERNET_KEY: Optional[str]
 

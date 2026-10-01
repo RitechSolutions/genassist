@@ -72,6 +72,21 @@ async def test_bookkeeping_updates_leave_updated_at_untouched_and_truncate_error
     assert "analysis_attempts" not in _sql(cleared) and "analysis_last_attempt_at" not in _sql(cleared)
 
 
+@pytest.mark.asyncio
+async def test_topic_fill_only_writes_a_missing_topic_and_leaves_updated_at_untouched():
+    db = CapturingDb()
+    conversation_id = uuid4()
+
+    await ConversationRepository(db).fill_topic_if_missing(conversation_id, "Billing Questions")
+
+    [stmt] = db.statements
+    sql = _sql(stmt)
+    assert "conversations.topic IS NULL" in sql
+    assert "updated_at=conversations.updated_at" in sql
+    assert stmt.compile().params["topic"] == "Billing Questions"
+    assert "analysis_attempts" not in sql
+
+
 def _cleanup_service(repo):
     return ConversationService(
         operator_statistics_service=MagicMock(),

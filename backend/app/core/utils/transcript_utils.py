@@ -140,8 +140,8 @@ def is_scorable_customer_message(message: TranscriptMessageModel) -> bool:
     )
 
 
-def has_scorable_customer_turn(messages: List[TranscriptMessageModel]) -> bool:
-    return any(is_scorable_customer_message(message) for message in messages)
+def count_scorable_customer_messages(messages: List[TranscriptMessageModel]) -> int:
+    return sum(1 for message in messages if is_scorable_customer_message(message))
 
 
 def _speaker_label(speaker: Optional[str]) -> str:

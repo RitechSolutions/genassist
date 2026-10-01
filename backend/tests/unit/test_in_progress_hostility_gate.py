@@ -22,9 +22,11 @@ def harness(monkeypatch):
     monkeypatch.setattr(conversations_module, "get_current_user_id", lambda: None)
     monkeypatch.setattr(conversations_module, "null_unloaded_attributes", lambda obj: None)
     monkeypatch.setattr("app.core.utils.db_connection_utils.release_idle_connection", AsyncMock())
+    monkeypatch.setattr(settings, "HOSTILITY_SCORE_EVERY_N_MESSAGES", 1)
 
     conversation = SimpleNamespace(id=uuid4(), status="in_progress", word_count=0, agent_ratio=0,
-                                   customer_ratio=0, duration=0, updated_by=None, **STORED)
+                                   customer_ratio=0, duration=0, updated_by=None,
+                                   hostility_messages_since_check=0, **STORED)
     conversation_repo = AsyncMock()
     conversation_repo.fetch_conversation_by_id.return_value = conversation
     conversation_repo.update_conversation.side_effect = lambda conv: conv
@@ -100,6 +102,7 @@ async def test_a_scored_turn_sends_the_window_as_lines_and_stores_the_result(har
     assert harness.analyze.await_args.args[0] == "customer: hi\nagent: hello"
     assert _stored(harness.conversation) == {
         "in_progress_hostility_score": 72, "topic": "Complaints", "negative_reason": "Bad Communication"}
+    assert harness.conversation.hostility_messages_since_check == 0
 
 
 @pytest.mark.asyncio
@@ -133,6 +136,69 @@ async def test_an_empty_window_skips_the_call(harness):
 
     harness.analyze.assert_not_awaited()
     assert _stored(harness.conversation) == STORED
+
+
+@pytest.mark.asyncio
+async def test_every_nth_customer_message_is_scored_and_the_counter_survives_between_turns(harness, monkeypatch):
+    monkeypatch.setattr(settings, "HOSTILITY_SCORE_EVERY_N_MESSAGES", 3)
+
+    for expected_counter in (1, 2):
+        await _send(harness, ("customer", "hi", "message"), ("agent", "hello", "message"))
+        assert harness.conversation.hostility_messages_since_check == expected_counter
+        harness.analyze.assert_not_awaited()
+        assert _stored(harness.conversation) == STORED
+
+    await _send(harness, ("customer", "still waiting", "message"))
+
+    harness.analyze.assert_awaited_once()
+    assert harness.conversation.hostility_messages_since_check == 0
+    assert _stored(harness.conversation)["in_progress_hostility_score"] == 72
+    assert harness.conversation_repo.update_conversation.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_customer_messages_in_one_update_each_count(harness, monkeypatch):
+    monkeypatch.setattr(settings, "HOSTILITY_SCORE_EVERY_N_MESSAGES", 2)
+
+    await _send(harness, ("customer", "hello?", "message"), ("customer", "anyone there?", "message"),
+                ("agent", "yes", "message"))
+
+    harness.analyze.assert_awaited_once()
+    assert harness.conversation.hostility_messages_since_check == 0
+
+
+@pytest.mark.asyncio
+async def test_a_failed_analysis_still_resets_the_counter(harness, monkeypatch):
+    monkeypatch.setattr(settings, "HOSTILITY_SCORE_EVERY_N_MESSAGES", 2)
+    harness.conversation.hostility_messages_since_check = 1
+    harness.analyze.return_value = None
+
+    await _send(harness, ("customer", "hi", "message"))
+
+    harness.analyze.assert_awaited_once()
+    assert harness.conversation.hostility_messages_since_check == 0
+    assert _stored(harness.conversation) == STORED
+    harness.conversation_repo.update_conversation.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "segments",
+    [
+        [("agent", "Hi! How can I help?", "message")],
+        [("user", '{"url": "https://x/f.pdf"}', "file")],
+        [("customer", "[Voice message]", "audio")],
+    ],
+    ids=["agent-only", "upload", "voice-placeholder"],
+)
+async def test_updates_without_customer_text_never_score_even_when_the_counter_is_due(harness, monkeypatch, segments):
+    monkeypatch.setattr(settings, "HOSTILITY_SCORE_EVERY_N_MESSAGES", 2)
+    harness.conversation.hostility_messages_since_check = 3
+
+    await _send(harness, *segments)
+
+    harness.analyze.assert_not_awaited()
+    assert harness.conversation.hostility_messages_since_check == 3
 
 
 def _sql(stmt) -> str:

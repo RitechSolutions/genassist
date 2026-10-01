@@ -358,10 +358,13 @@ class ConversationRepository(DbRepository[ConversationModel]):
             conversation_id, analysis_last_error=error[:2000] if error is not None else None
         )
 
-    async def _update_analysis_bookkeeping(self, conversation_id: UUID, **values) -> None:
+    async def fill_topic_if_missing(self, conversation_id: UUID, topic: str) -> None:
+        await self._update_analysis_bookkeeping(conversation_id, ConversationModel.topic.is_(None), topic=topic)
+
+    async def _update_analysis_bookkeeping(self, conversation_id: UUID, *conditions, **values) -> None:
         stmt = (
             update(ConversationModel)
-            .where(ConversationModel.id == conversation_id)
+            .where(ConversationModel.id == conversation_id, *conditions)
             .values(updated_at=ConversationModel.updated_at, **values)
         )
         await self.db.execute(stmt)

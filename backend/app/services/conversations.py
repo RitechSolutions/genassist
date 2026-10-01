@@ -41,7 +41,7 @@ from app.core.utils.file_manager_url_utils import (
 )
 from app.core.utils.transcript_utils import (
     CONVERSATIONAL_MESSAGE_TYPES,
-    has_scorable_customer_turn,
+    count_scorable_customer_messages,
     schema_to_transcript_message,
     transcript_messages_to_lines,
 )
@@ -357,11 +357,16 @@ class ConversationService:
         incremental_duration = calculate_duration_from_transcript(new_segment_inputs)
         conversation.duration = conversation.duration + incremental_duration
 
+        customer_messages = count_scorable_customer_messages(new_messages)
+        pending = conversation.hostility_messages_since_check + customer_messages
+        score_now = customer_messages > 0 and pending >= settings.HOSTILITY_SCORE_EVERY_N_MESSAGES
+        conversation.hostility_messages_since_check = 0 if score_now else pending
+
         # Update conversation
         conversation.updated_by = get_current_user_id()
         conversation = await self.conversation_repo.update_conversation(conversation)
 
-        if has_scorable_customer_turn(new_messages):
+        if score_now:
             conversation = await self._analyze_in_progress_tone_and_mark(conversation,
                     llm_analyst_id=in_progress_conv_update.llm_analyst_id, )
 
@@ -424,6 +429,7 @@ class ConversationService:
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(gpt_analysis, resolved_analyst_id,
                     saved_conversation.id))
+        await self._fill_topic_from_analysis(saved_conversation.id, conversation_analysis)
 
         # Update operator statistics
         await self.operator_statistics_service.update_from_analysis(conversation_analysis, conversation.operator_id,
@@ -523,8 +529,15 @@ class ConversationService:
         conversation_analysis = (
             await self.conversation_analysis_service.create_conversation_analysis(gpt_analysis, llm_analyst_id,
                     conversation_id))
+        await self._fill_topic_from_analysis(conversation_id, conversation_analysis)
         await self.operator_statistics_service.update_from_analysis(conversation_analysis, conversation.operator_id,
                 conversation.duration, previous_analysis=previous_analysis)
+
+
+    async def _fill_topic_from_analysis(self, conversation_id: UUID,
+            conversation_analysis: ConversationAnalysisModel) -> None:
+        if conversation_analysis.topic:
+            await self.conversation_repo.fill_topic_if_missing(conversation_id, conversation_analysis.topic)
 
 
     async def store_zendesk_analysis(self, saved_conversation: ConversationModel,

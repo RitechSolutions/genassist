@@ -114,6 +114,7 @@ class ConversationModel(Base, GroupScopedMixin):
     in_progress_hostility_score: Mapped[int] = mapped_column(
         Integer, server_default=text("0")
     )
+    hostility_messages_since_check: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     conversation_type: Mapped[str] = mapped_column(String(50), nullable=False)
     thumbs_down_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     thumbs_up_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
