@@ -557,48 +557,61 @@ class TestEngineerFeatures:
     def test_custom_expression_applies_to_both_splits(self, node):
         X_train = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
         X_val = pd.DataFrame({"a": [5], "b": [6]})
-        X_train_out, X_val_out = node._engineer_features(
+        X_train_out, X_val_out, steps = node._engineer_features(
             X_train, X_val,
             [{"newColumnName": "sum", "strategy": "custom_expression", "expression": "a + b"}],
         )
         assert X_train_out["sum"].tolist() == [4, 6]
         assert X_val_out["sum"].tolist() == [11]
+        assert steps == [{"strategy": "custom_expression", "new_col": "sum", "expression": "a + b"}]
 
     def test_bin_numeric_fits_edges_on_train_and_clips_val(self, node):
         X_train = pd.DataFrame({"a": [0.0, 10.0]})
         X_val = pd.DataFrame({"a": [999.0]})  # far outside train's range
-        X_train_out, X_val_out = node._engineer_features(
+        X_train_out, X_val_out, steps = node._engineer_features(
             X_train, X_val,
             [{"newColumnName": "a_bin", "strategy": "bin_numeric", "binColumn": "a", "numBins": 2}],
         )
         assert X_train_out["a_bin"].notna().all()
         # Clipped into train's range instead of becoming NaN.
         assert X_val_out["a_bin"].notna().all()
+        assert len(steps) == 1
+        assert steps[0]["strategy"] == "bin_numeric"
+        assert steps[0]["new_col"] == "a_bin"
+        assert steps[0]["bin_column"] == "a"
+        assert steps[0]["bin_edges"][0] <= 0.0 and steps[0]["bin_edges"][-1] >= 10.0
 
     def test_normalize_fits_min_max_on_train_only(self, node):
         X_train = pd.DataFrame({"a": [0.0, 10.0]})  # min=0, max=10
         X_val = pd.DataFrame({"a": [100.0]})
-        X_train_out, X_val_out = node._engineer_features(
+        X_train_out, X_val_out, steps = node._engineer_features(
             X_train, X_val,
             [{"newColumnName": "a_norm", "strategy": "normalize", "sourceColumns": ["a"]}],
         )
         assert X_train_out["a_norm"].tolist() == [0.0, 1.0]
         # (100 - 0) / (10 - 0) = 10.0 - proves min/max came from train, not val.
         assert X_val_out["a_norm"].tolist() == [10.0]
+        assert steps == [{
+            "strategy": "normalize",
+            "new_col": "a_norm",
+            "column_stats": {"a": {"out_col": "a_norm", "min": 0.0, "max": 10.0}},
+        }]
 
     def test_standardize_fits_mean_std_on_train_only(self, node):
         X_train = pd.DataFrame({"a": [1.0, 3.0]})  # mean=2, std=sqrt(2)
         X_val = pd.DataFrame({"a": [2.0]})
-        X_train_out, X_val_out = node._engineer_features(
+        X_train_out, X_val_out, steps = node._engineer_features(
             X_train, X_val,
             [{"newColumnName": "a_std", "strategy": "standardize", "sourceColumns": ["a"]}],
         )
         assert X_val_out["a_std"].iloc[0] == pytest.approx(0.0)
+        assert steps[0]["strategy"] == "standardize"
+        assert steps[0]["column_stats"]["a"]["mean"] == pytest.approx(2.0)
 
     def test_polynomial_adds_degree_features_to_both_splits(self, node):
         X_train = pd.DataFrame({"a": [1.0, 2.0]})
         X_val = pd.DataFrame({"a": [3.0]})
-        X_train_out, X_val_out = node._engineer_features(
+        X_train_out, X_val_out, steps = node._engineer_features(
             X_train, X_val,
             [{
                 "newColumnName": "a_poly",
@@ -608,6 +621,10 @@ class TestEngineerFeatures:
             }],
         )
         assert "a_poly_a^2" in X_train_out.columns
+        assert steps[0]["strategy"] == "polynomial"
+        assert steps[0]["poly_columns"] == ["a"]
+        assert steps[0]["new_names"] == ["a_poly_a^2"]
+        assert hasattr(steps[0]["poly"], "transform")
         assert X_train_out["a_poly_a^2"].tolist() == [1.0, 4.0]
         assert X_val_out["a_poly_a^2"].tolist() == [9.0]
 

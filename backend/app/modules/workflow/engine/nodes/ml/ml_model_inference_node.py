@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from uuid import UUID
 
 import numpy as np
+import pandas as pd
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -253,6 +254,97 @@ def _json_safe_scalar(value: Any) -> Any:
     except (TypeError, ValueError):
         return str(value)
     return value
+def _replay_feature_engineering(
+    normalized_inputs: Dict[str, List[Any]],
+    steps: List[Dict[str, Any]],
+    batch_size: int,
+) -> Dict[str, np.ndarray]:
+    """Recompute engineered feature columns from raw caller-supplied inputs,
+    using the exact fitted parameters (bin edges, mean/std, fitted
+    PolynomialFeatures transformer) captured at training time - see
+    TrainModelNode._engineer_features, which returns these same steps.
+
+    Steps run in the same order they were trained in. A later step can
+    reference an earlier step's new column (e.g. a polynomial feature built
+    from a normalized one), same as at training time, so each computed
+    column is folded into `available` for subsequent steps to read.
+    """
+    computed: Dict[str, np.ndarray] = {}
+    available: Dict[str, List[Any]] = dict(normalized_inputs)
+
+    for step in steps:
+        strategy = step.get("strategy")
+        new_col = step.get("new_col")
+
+        try:
+            if strategy == "custom_expression":
+                expression = step.get("expression")
+                df = pd.DataFrame({
+                    col: _build_input_array(available, [col])[:, 0]
+                    for col in available
+                })
+                result = np.asarray(df.eval(expression))
+                computed[new_col] = result
+                available[new_col] = result.tolist()
+
+            elif strategy == "bin_numeric":
+                bin_column = step.get("bin_column")
+                bin_edges = step.get("bin_edges") or []
+                if bin_column not in available or len(bin_edges) < 2:
+                    continue
+                raw = _build_input_array(available, [bin_column], None).astype(float)[:, 0]
+                clipped = np.clip(raw, bin_edges[0], bin_edges[-1])
+                binned = pd.cut(
+                    pd.Series(clipped), bins=bin_edges, labels=False, include_lowest=True
+                ).to_numpy()
+                computed[new_col] = binned
+                available[new_col] = binned.tolist()
+
+            elif strategy in ("normalize", "standardize"):
+                for col, stats in (step.get("column_stats") or {}).items():
+                    if col not in available:
+                        continue
+                    raw = _build_input_array(available, [col], None).astype(float)[:, 0]
+                    out_col = stats["out_col"]
+                    if strategy == "normalize":
+                        result = (raw - stats["min"]) / (stats["max"] - stats["min"])
+                    else:
+                        result = (raw - stats["mean"]) / stats["std"]
+                    computed[out_col] = result
+                    available[out_col] = result.tolist()
+
+            elif strategy == "polynomial":
+                poly_columns = step.get("poly_columns") or []
+                poly = step.get("poly")
+                new_names = step.get("new_names") or []
+                if not poly_columns or poly is None or any(c not in available for c in poly_columns):
+                    continue
+                raw = _build_input_array(available, poly_columns, None).astype(float)
+                poly_out = poly.transform(raw)
+                new_values = poly_out[:, len(poly_columns):]
+                for i, name in enumerate(new_names):
+                    computed[name] = new_values[:, i]
+                    available[name] = new_values[:, i].tolist()
+        except Exception as e:
+            logger.warning(
+                "Failed to replay feature-engineering step '%s' (%s) at inference: %s",
+                new_col, strategy, e,
+            )
+
+    return computed
+
+
+def _label_for_prediction(value: Any) -> str:
+    """Map a model prediction to an availability label."""
+    if value is None:
+        return "Not Available"
+    if isinstance(value, (bool, np.bool_)):
+        return "Available" if value else "Not Available"
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return "Available" if float(value) != 0 else "Not Available"
+    if isinstance(value, str):
+        return "Available" if value.strip() else "Not Available"
+    return "Available" if value else "Not Available"
 
 
 def _build_prediction_outputs(
@@ -413,44 +505,94 @@ class MLModelInferenceNode(BaseNode):
                 encoded_feature_columns = (
                     categorical_columns + categorical_columns_no_drop + label_columns + ordinal_columns
                 )
+
+                # Build every output column by name first, then assemble the
+                # final matrix in the exact order the model was actually fit
+                # on (persisted as model_input_columns - see TrainModelNode).
+                # A fixed "all numeric, then all label, then all ordinal,
+                # then one-hot" grouping silently moves label/ordinal columns
+                # away from wherever they actually sat in the training column
+                # order whenever any numeric column came after them in the
+                # original feature list - this builds by name and lets the
+                # persisted order (not a hardcoded grouping) decide position.
+                column_arrays: Dict[str, np.ndarray] = {}
+
                 if encoded_feature_columns:
                     numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
                     numeric_data = (
                         _build_input_array(normalized_inputs, numeric_order, missing_value_fills).astype(float)
                         if numeric_order else np.empty((batch_size, 0))
                     )
+                    for i, col in enumerate(numeric_order):
+                        column_arrays[col] = numeric_data[:, i]
 
-                    blocks = [numeric_data]
-                    model_feature_names = list(numeric_order)
+                    legacy_order = list(numeric_order)
 
                     if label_columns:
-                        blocks.append(
-                            _mapped_transform(normalized_inputs, label_columns, label_encodings, batch_size, unseen_value=-1)
+                        label_data = _mapped_transform(
+                            normalized_inputs, label_columns, label_encodings, batch_size, unseen_value=-1
                         )
-                        model_feature_names += label_columns
+                        for i, col in enumerate(label_columns):
+                            column_arrays[col] = label_data[:, i]
+                        legacy_order += label_columns
 
                     if ordinal_columns:
-                        blocks.append(
-                            _mapped_transform(normalized_inputs, ordinal_columns, ordinal_encodings, batch_size, unseen_value=np.nan)
+                        ordinal_data = _mapped_transform(
+                            normalized_inputs, ordinal_columns, ordinal_encodings, batch_size, unseen_value=np.nan
                         )
-                        model_feature_names += ordinal_columns
+                        for i, col in enumerate(ordinal_columns):
+                            column_arrays[col] = ordinal_data[:, i]
+                        legacy_order += ordinal_columns
 
                     if encoder is not None and categorical_columns:
                         encoded, encoded_columns = _one_hot_transform(normalized_inputs, categorical_columns, encoder)
-                        blocks.append(encoded)
-                        model_feature_names += encoded_columns
+                        for i, col in enumerate(encoded_columns):
+                            column_arrays[col] = encoded[:, i]
+                        legacy_order += encoded_columns
 
                     if encoder_no_drop is not None and categorical_columns_no_drop:
                         encoded_nd, encoded_nd_columns = _one_hot_transform(
                             normalized_inputs, categorical_columns_no_drop, encoder_no_drop
                         )
-                        blocks.append(encoded_nd)
-                        model_feature_names += encoded_nd_columns
-
-                    input_data = np.column_stack(blocks)
+                        for i, col in enumerate(encoded_nd_columns):
+                            column_arrays[col] = encoded_nd[:, i]
+                        legacy_order += encoded_nd_columns
                 else:
-                    input_data = raw_input_data
-                    model_feature_names = list(feature_names)
+                    for i, col in enumerate(feature_names):
+                        column_arrays[col] = raw_input_data[:, i]
+                    legacy_order = list(feature_names)
+
+                # Recompute any engineered features (bin_numeric, normalize,
+                # standardize, polynomial, custom_expression) from the raw
+                # inputs, using the exact fitted parameters captured at
+                # training time (TrainModelNode._engineer_features). No-op
+                # for models with no feature engineering or legacy models
+                # that predate this metadata.
+                feature_engineering_steps = metadata.get("feature_engineering_steps") or []
+                if feature_engineering_steps:
+                    engineered = _replay_feature_engineering(
+                        normalized_inputs, feature_engineering_steps, batch_size
+                    )
+                    column_arrays.update(engineered)
+                    legacy_order += [c for c in engineered if c not in legacy_order]
+
+                # The real training-time column order, when available, always
+                # wins over the grouped fallback above.
+                model_input_columns = metadata.get("model_input_columns")
+                model_feature_names = list(model_input_columns) if model_input_columns else legacy_order
+
+                missing_columns = [c for c in model_feature_names if c not in column_arrays]
+                if missing_columns:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            f"Could not reconstruct column(s) {missing_columns} that the model "
+                            "was trained on - the saved model metadata may be incomplete or from "
+                            "an incompatible older version."
+                        ),
+                    )
+
+                input_data = np.column_stack([column_arrays[c] for c in model_feature_names])
 
                 # Reapply the scaler fitted at training time (if any) so scaled
                 # features match what the model was trained on. No-op for
@@ -494,6 +636,30 @@ class MLModelInferenceNode(BaseNode):
                         predictions = model.predict(input_data)
                 else:
                     predictions = model.predict(input_data)
+
+                # Reconstruct real-unit predictions for a model trained on a
+                # ratio target (target / baselineColumn - see TrainModelNode's
+                # targetTransform). Without this, predictions come back as the
+                # raw ratio (e.g. 0.73) instead of the real-unit value the
+                # caller expects (e.g. 54750). No-op for models with no
+                # targetTransform or legacy models that predate this metadata.
+                target_transform = metadata.get("target_transform")
+                if target_transform is not None:
+                    baseline_column = target_transform.get("baselineColumn")
+                    if baseline_column not in normalized_inputs:
+                        raise AppException(
+                            error_key=ErrorKey.MISSING_PARAMETER,
+                            error_detail=(
+                                f"This model was trained on a ratio target "
+                                f"('{ml_model.target_variable}' / '{baseline_column}'); "
+                                f"'{baseline_column}' must be supplied as an inference input so "
+                                "predictions can be converted back to real units."
+                            ),
+                        )
+                    baseline_values = _build_input_array(
+                        normalized_inputs, [baseline_column]
+                    ).astype(float)[:, 0]
+                    predictions = predictions * baseline_values
 
                 # Build response (always batch format)
                 # Convert the raw (pre-encoding) input to a column-wise dictionary

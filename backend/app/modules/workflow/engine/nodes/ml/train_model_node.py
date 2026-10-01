@@ -7,7 +7,7 @@ This node trains ML models on CSV data and saves them as .pkl files.
 import logging
 import os
 import pickle
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 import pandas as pd
@@ -608,6 +608,15 @@ class TrainModelNode(BaseNode):
                         X_val[col].fillna(fill_value, inplace=True)
                     missing_value_fills[col] = fill_value
 
+            # A "drop_column" missing-value strategy above removes the column
+            # from X_train entirely, but feature_columns (saved to metadata
+            # and used by inference to know what raw inputs to collect) was
+            # captured up front from config and never reflected that. Without
+            # this, inference asks for - and tries to feed the model - a
+            # column it was never actually trained on, so every prediction
+            # fails on a column-count mismatch.
+            feature_columns = [c for c in feature_columns if c in X_train.columns]
+
             # Apply the ratio target transform, if configured. Rows where the
             # baseline is zero or missing are dropped first - the ratio would
             # be undefined (division by zero) or NaN, neither usable as a
@@ -649,8 +658,9 @@ class TrainModelNode(BaseNode):
             # statistics are fit on the training split only, then applied to
             # validation - see _engineer_features. Runs before the numeric
             # column capture below so new numeric features get scaled too.
+            feature_engineering_steps: List[Dict[str, Any]] = []
             if feature_engineering:
-                X_train, X_val = self._engineer_features(
+                X_train, X_val, feature_engineering_steps = self._engineer_features(
                     X_train, X_val, feature_engineering
                 )
 
@@ -719,6 +729,16 @@ class TrainModelNode(BaseNode):
                     if X_val is not None:
                         X_val[numeric_feature_columns] = scaler.transform(X_val[numeric_feature_columns])
             logger.info(f"Scaling method: requested='{scaling_method}', resolved='{resolved_scaling_method}'")
+
+            # The exact column order the model is actually fit on. label/ordinal
+            # encoding above modifies a column's values in place (its position
+            # in X_train never changes), but one-hot encoding drops its source
+            # columns and appends the new dummy columns at the end - so the
+            # final order can differ substantially from feature_columns (the
+            # original, pre-encoding order). Persisting the real order lets
+            # inference rebuild the exact column layout the model expects,
+            # instead of re-deriving a (possibly different) order on its own.
+            model_input_columns = list(X_train.columns)
 
             # Train the model — either a plain single fit with fixed params, or a
             # hyperparameter search over the curated space for this model type.
@@ -789,6 +809,11 @@ class TrainModelNode(BaseNode):
                     "model_parameters": model_parameters,
                     "hyperparameter_optimization": search_metadata,
                     "scaling_method": resolved_scaling_method,
+                    "model_input_columns": model_input_columns,
+                    **(
+                        {"feature_engineering_steps": feature_engineering_steps}
+                        if feature_engineering_steps else {}
+                    ),
                     **(
                         {"scaler": scaler, "scaled_columns": numeric_feature_columns}
                         if scaler is not None else {}
@@ -843,6 +868,7 @@ class TrainModelNode(BaseNode):
                 "metrics": metrics,
                 "ml_model_id": ml_model_id,
                 "model_parameters": model_parameters,
+                **({"target_transform": target_transform} if target_transform is not None else {}),
             }
             if search_metadata:
                 result["hyperparameter_optimization"] = search_metadata
@@ -1015,6 +1041,10 @@ class TrainModelNode(BaseNode):
         baseline_train/baseline_val (if given) back an optional targetTransform
         ratio target - kept row-aligned with X_train/X_val through any
         drop_rows row drops, same as y_train/y_val.
+
+        Returns the (possibly mutated) splits plus a per-column fill dict
+        (constant/mean/median/mode value actually used), for model metadata -
+        inference reapplies the same fill instead of defaulting to 0.
         """
         fills: Dict[str, Any] = {}
         for item in missing_value_handling:
@@ -1074,7 +1104,15 @@ class TrainModelNode(BaseNode):
         the data (a deterministic per-row formula and a fixed-degree feature
         map, respectively), so leakage isn't a concern for those, but they
         live here too so all feature configuration lives in one place.
+
+        Also returns a list of replay steps - everything inference needs to
+        recompute these same derived columns from a raw input row (the fitted
+        bin edges / mean+std / PolynomialFeatures transformer, not just the
+        config), since without it inference has no way to reconstruct columns
+        the model was actually trained on.
         """
+        steps: List[Dict[str, Any]] = []
+
         for item in feature_engineering:
             strategy = item.get("strategy")
             new_col = item.get("newColumnName")
@@ -1088,6 +1126,11 @@ class TrainModelNode(BaseNode):
                     X_train[new_col] = X_train.eval(expression)
                     if X_val is not None:
                         X_val[new_col] = X_val.eval(expression)
+                    steps.append({
+                        "strategy": "custom_expression",
+                        "new_col": new_col,
+                        "expression": expression,
+                    })
                 except Exception as e:
                     logger.warning(f"Skipping custom_expression for '{new_col}': {e}")
 
@@ -1106,12 +1149,19 @@ class TrainModelNode(BaseNode):
                     # outside it still gets binned instead of becoming NaN.
                     clipped = X_val[bin_column].clip(lower=bin_edges[0], upper=bin_edges[-1])
                     X_val[new_col] = pd.cut(clipped, bins=bin_edges, labels=False, include_lowest=True)
+                steps.append({
+                    "strategy": "bin_numeric",
+                    "new_col": new_col,
+                    "bin_column": bin_column,
+                    "bin_edges": list(bin_edges),
+                })
 
             elif strategy in ("normalize", "standardize"):
                 source_columns = [
                     c for c in (item.get("sourceColumns") or [])
                     if c in X_train.columns and pd.api.types.is_numeric_dtype(X_train[c])
                 ]
+                column_stats: Dict[str, Dict[str, float]] = {}
                 for col in source_columns:
                     out_col = new_col if len(source_columns) == 1 else f"{new_col}_{col}"
                     if strategy == "normalize":
@@ -1121,6 +1171,7 @@ class TrainModelNode(BaseNode):
                         X_train[out_col] = (X_train[col] - min_val) / (max_val - min_val)
                         if X_val is not None:
                             X_val[out_col] = (X_val[col] - min_val) / (max_val - min_val)
+                        column_stats[col] = {"out_col": out_col, "min": float(min_val), "max": float(max_val)}
                     else:
                         mean_val, std_val = X_train[col].mean(), X_train[col].std()
                         if std_val == 0:
@@ -1128,6 +1179,13 @@ class TrainModelNode(BaseNode):
                         X_train[out_col] = (X_train[col] - mean_val) / std_val
                         if X_val is not None:
                             X_val[out_col] = (X_val[col] - mean_val) / std_val
+                        column_stats[col] = {"out_col": out_col, "mean": float(mean_val), "std": float(std_val)}
+                if column_stats:
+                    steps.append({
+                        "strategy": strategy,
+                        "new_col": new_col,
+                        "column_stats": column_stats,
+                    })
 
             elif strategy == "polynomial":
                 poly_columns = [
@@ -1155,8 +1213,15 @@ class TrainModelNode(BaseNode):
                         val_poly[:, len(poly_columns):], columns=new_names, index=X_val.index
                     )
                     X_val = pd.concat([X_val, new_val_cols], axis=1)
+                steps.append({
+                    "strategy": "polynomial",
+                    "new_col": new_col,
+                    "poly_columns": poly_columns,
+                    "poly": poly,
+                    "new_names": new_names,
+                })
 
-        return X_train, X_val
+        return X_train, X_val, steps
 
     def _is_classification_task(self, y: pd.Series, model_type: str, task_type: str = "auto") -> bool:
         """

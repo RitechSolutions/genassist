@@ -31,6 +31,16 @@ class MLModelBase(BaseModel):
     pkl_file_id: Optional[str] = Field(None, max_length=500, description="File manager ID for the uploaded .pkl file")
     features: Optional[list[str]] = Field(None, description="List of feature names used by the model")
     target_variable: Optional[str] = Field(None, max_length=255, description="The prediction target variable")
+    inference_params: Optional[dict] = Field(
+        None,
+        description=(
+            "Extra inputs an inference caller must supply beyond `features` - e.g. "
+            "{'ratioBaselineColumn': '<name>'} when the model was trained on a ratio "
+            "target, since reconstructing the real-unit prediction needs that column's "
+            "raw value at inference time even though it was never one of the model's "
+            "actual training features."
+        ),
+    )
 
 
 class MLModelCreate(MLModelBase):
