@@ -1,11 +1,11 @@
 from datetime import date, datetime
-from typing import List, Optional
+from typing import Iterable, List, Optional
 from uuid import UUID
 from injector import inject
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
@@ -165,6 +165,28 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
 
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+
+    async def get_latest_messages_by_types(
+            self,
+            conversation_id: UUID,
+            message_types: Iterable[str],
+            limit: int
+            ) -> List[TranscriptMessageModel]:
+        query = (
+                select(TranscriptMessageModel)
+                .where(
+                        TranscriptMessageModel.conversation_id == conversation_id,
+                        TranscriptMessageModel.type.in_(list(message_types))
+                        )
+                .options(defer(TranscriptMessageModel.audio_data))
+                .order_by(TranscriptMessageModel.sequence_number.desc())
+                )
+        if limit > 0:
+            query = query.limit(limit)
+
+        result = await self.db.execute(query)
+        return list(reversed(result.scalars().all()))
 
 
     async def get_message_count(self, conversation_id: UUID) -> int:

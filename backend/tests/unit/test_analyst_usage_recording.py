@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from langchain_core.messages import AIMessage
 
+from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.services.gpt_kpi_analyzer import GptKpiAnalyzer
 
@@ -37,9 +38,9 @@ def recorder_calls():
         yield rec.record_analyst_call
 
 
-def _patch_injector(provider):
+def _patch_injector(provider, enrichment_context=""):
     logs = MagicMock()
-    logs.build_enrichment_context = AsyncMock(return_value="")
+    logs.build_enrichment_context = AsyncMock(return_value=enrichment_context)
 
     def _get(cls):
         name = getattr(cls, "__name__", "")
@@ -66,7 +67,8 @@ class TestHostilityRecording:
         with _patch_injector(provider), patch.object(
             GptKpiAnalyzer, "_resolve_analyst_provider_model", AsyncMock(return_value=("openai", "gpt-4o"))
         ), patch.object(GptKpiAnalyzer, "_get_topics_csv", return_value="Billing,Other"):
-            result = await svc.partial_hostility_analysis("[]", llm_analyst=analyst, conversation_id=cid, agent_id=aid)
+            result = await svc.partial_hostility_analysis("customer: hi", llm_analyst=analyst, conversation_id=cid,
+                                                          agent_id=aid)
 
         assert result["hostile_score"] == 5
         recorder_calls.assert_awaited_once()
@@ -78,7 +80,7 @@ class TestHostilityRecording:
         assert kwargs["usage"]["input_tokens"] == 40 and kwargs["usage"]["output_tokens"] == 6
 
     @pytest.mark.asyncio
-    async def test_bad_json_still_records_and_returns_safe_default(self, recorder_calls):
+    async def test_bad_json_still_records_and_returns_none(self, recorder_calls):
         provider = _llm_returning("not json", {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12})
         analyst = _analyst()
         svc = GptKpiAnalyzer()
@@ -86,11 +88,49 @@ class TestHostilityRecording:
         with _patch_injector(provider), patch.object(
             GptKpiAnalyzer, "_resolve_analyst_provider_model", AsyncMock(return_value=("openai", "gpt-4o"))
         ), patch.object(GptKpiAnalyzer, "_get_topics_csv", return_value="Other"):
-            result = await svc.partial_hostility_analysis("[]", llm_analyst=analyst)
+            result = await svc.partial_hostility_analysis("customer: hi", llm_analyst=analyst)
 
-        assert result == {"topic": "Other", "hostile_score": 0, "negative_reason": "Other"}
+        assert result is None
         recorder_calls.assert_awaited_once()
         assert recorder_calls.await_args.kwargs["usage"]["input_tokens"] == 10
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("failing", ["get_model", "ainvoke"])
+    async def test_provider_failure_returns_none_without_recording(self, recorder_calls, failing):
+        provider = _llm_returning("{}")
+        if failing == "get_model":
+            provider.get_model.side_effect = RuntimeError("provider gone")
+        else:
+            provider.get_model.return_value.ainvoke.side_effect = RuntimeError("401 invalid api key")
+
+        with _patch_injector(provider), patch.object(
+            GptKpiAnalyzer, "_resolve_analyst_provider_model", AsyncMock(return_value=("openai", "gpt-4o"))
+        ):
+            assert await GptKpiAnalyzer().partial_hostility_analysis("customer: hi", llm_analyst=_analyst()) is None
+
+        recorder_calls.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_prompt_layout_sends_braces_in_the_transcript_verbatim(self, recorder_calls):
+        provider = _llm_returning('{"topic": "Other", "hostile_score": 5, "negative_reason": "Other"}')
+        analyst = _analyst()
+        transcript = 'customer: my order {id} is "}{" broken\nagent: sorry'
+
+        with _patch_injector(provider, enrichment_context="Order {42} shipped"), patch.object(
+            GptKpiAnalyzer, "_resolve_analyst_provider_model", AsyncMock(return_value=("openai", "gpt-4o"))
+        ), patch.object(GptKpiAnalyzer, "_get_topics_csv", return_value="Billing Questions, Other"):
+            result = await GptKpiAnalyzer().partial_hostility_analysis(transcript, llm_analyst=analyst)
+
+        assert result["hostile_score"] == 5
+        system_msg, user_msg = provider.get_model.return_value.ainvoke.await_args.args[0]
+        assert system_msg.content == analyst.prompt
+        prompt = user_msg.content
+        assert prompt.startswith("Additional Context:\nOrder {42} shipped\n\nYou are an impartial conversation analyst.")
+        assert prompt.endswith(f"\n\nTranscript:\n{transcript}")
+        assert "from this specific list: Billing Questions, Other based on" in prompt
+        assert "{topics_csv}" not in prompt and "{reasons_csv}" not in prompt
+        assert '{\n    "topic": "Billing Questions",' in prompt
+        assert "\n        " not in prompt
 
 
 class TestAnalyzeTranscriptRecording:
@@ -133,6 +173,24 @@ class TestAnalyzeTranscriptRecording:
 
         assert provider.get_model.return_value.ainvoke.await_count == 3
         assert [c.kwargs["call_index"] for c in recorder_calls.await_args_list] == [0, 1, 2]
+
+    @pytest.mark.asyncio
+    async def test_unparseable_replies_retry_naming_the_missing_sections(self, recorder_calls):
+        provider = _llm_returning("Sorry, I cannot help with that.")
+        svc = GptKpiAnalyzer()
+
+        with _patch_injector(provider), patch.object(
+            GptKpiAnalyzer, "_resolve_analyst_provider_model", AsyncMock(return_value=("openai", "gpt-4o"))
+        ):
+            with pytest.raises(AppException) as exc:
+                await svc.analyze_transcript("customer: hi", llm_analyst=_analyst())
+
+        llm = provider.get_model.return_value
+        assert exc.value.error_key == ErrorKey.GPT_FAILED_JSON_PARSING
+        assert llm.ainvoke.await_count == 3
+        retry_prompt = llm.ainvoke.await_args_list[1].args[0][1].content
+        assert "attempt #2" in retry_prompt
+        assert "Missing or unreadable sections: A) Title, B) Summary, C) KPI Metrics." in retry_prompt
 
     @pytest.mark.asyncio
     async def test_recorder_failure_does_not_consume_an_llm_retry(self, recorder_calls):

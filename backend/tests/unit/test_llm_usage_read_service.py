@@ -455,6 +455,24 @@ async def test_breakdown_evaluation_method_falls_back_to_the_raw_purpose():
 
 
 @pytest.mark.asyncio
+async def test_breakdown_analyst_purpose_labels_the_two_analyst_calls():
+    rows = [
+        ("hostility_analysis", Decimal("0.12"), 0, 900, 30),
+        ("conversation_analysis", Decimal("0.08"), 0, 600, 3),
+        ("some_future_purpose", Decimal("0.01"), 0, 20, 1),
+        (None, Decimal("0"), 0, 0, 1),
+    ]
+    service, *_ = _service(breakdown_rows=rows)
+    resp = await service.get_breakdown(_params(), "analyst_purpose")
+    assert {i.key: i.label for i in resp.items} == {
+        "hostility_analysis": "Hostility Check",
+        "conversation_analysis": "KPI Scoring",
+        "some_future_purpose": "some_future_purpose",
+        "unknown": "Unknown",
+    }
+
+
+@pytest.mark.asyncio
 async def test_llm_dimension_groups_the_provider_model_pair():
     rows = [("openai · gpt-4o", Decimal("0.30"), 0, 500, 3)]
     service, repo = _service(breakdown_rows=rows)
@@ -467,7 +485,12 @@ async def test_llm_dimension_groups_the_provider_model_pair():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "dimension,source_type",
-    [("llm", "workflow"), ("evaluation_method", "evaluation"), ("node", "workflow")],
+    [
+        ("llm", "workflow"),
+        ("evaluation_method", "evaluation"),
+        ("analyst_purpose", "llm_analyst"),
+        ("node", "workflow"),
+    ],
 )
 async def test_drill_down_dimensions_carry_their_source_type_filter(dimension, source_type):
     service, repo = _service(breakdown_rows=[])
@@ -627,7 +650,9 @@ async def test_breakdown_node_passes_the_drill_down_filter_to_the_pairs_query():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("dimension", ["provider", "model", "agent", "source", "llm", "evaluation_method"])
+@pytest.mark.parametrize(
+    "dimension", ["provider", "model", "agent", "source", "llm", "evaluation_method", "analyst_purpose"]
+)
 async def test_removed_stays_null_on_every_other_dimension(dimension):
     service, _ = _service(breakdown_rows=[("openai", Decimal("0.10"), 0, 100, 1)])
     resp = await service.get_breakdown(_params(), dimension)

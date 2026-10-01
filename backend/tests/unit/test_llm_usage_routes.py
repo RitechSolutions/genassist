@@ -60,13 +60,13 @@ def test_export_rejects_the_drill_down_dimensions(app):
     enum = _dimension_enum(app, f"{PREFIX}/export")
     assert enum == list(EXPORT_DIMENSIONS)
     assert "llm" not in enum and "evaluation_method" not in enum
-    assert "node" not in enum
+    assert "analyst_purpose" not in enum and "node" not in enum
 
 
 def test_breakdown_summary_covers_the_widened_dimension_set(app):
     summary = app.openapi()["paths"][f"{PREFIX}/breakdown"]["get"]["summary"]
     assert "LLM" in summary and "evaluation method" in summary
-    assert "node" in summary
+    assert "analyst purpose" in summary and "node" in summary
 
 
 class FakeBreakdownService:

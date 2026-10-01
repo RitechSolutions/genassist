@@ -5,9 +5,11 @@ import type { LlmUsageBreakdownItem } from "@/interfaces/llmUsage.interface";
 
 import { LlmUsageCostShare } from "./LlmUsageCostShare";
 
-interface LlmUsageEvaluationMethodsProps {
+interface LlmUsageSourceSubRowsProps {
   items: LlmUsageBreakdownItem[];
   totalCostUsd: number;
+  emptyText: string;
+  errorText: string;
   loading?: boolean;
   error?: boolean;
 }
@@ -16,13 +18,20 @@ interface LlmUsageEvaluationMethodsProps {
 const PARENT_COLUMNS = 6;
 const ROW_CLASS = "bg-muted/20 hover:bg-muted/20";
 
-/** Splits the Evaluations row into its methods as subordinate rows of the same table */
-export function LlmUsageEvaluationMethods({ items, totalCostUsd, loading, error }: LlmUsageEvaluationMethodsProps) {
+/** Splits a Usage type row into subordinate rows of the same table */
+export function LlmUsageSourceSubRows({
+  items,
+  totalCostUsd,
+  emptyText,
+  errorText,
+  loading,
+  error,
+}: LlmUsageSourceSubRowsProps) {
   if (error) {
     return (
       <TableRow className={ROW_CLASS}>
         <TableCell colSpan={PARENT_COLUMNS} className="py-2 pl-10 text-xs text-destructive">
-          Failed to load evaluation breakdown.
+          {errorText}
         </TableCell>
       </TableRow>
     );
@@ -42,7 +51,7 @@ export function LlmUsageEvaluationMethods({ items, totalCostUsd, loading, error 
     return (
       <TableRow className={ROW_CLASS}>
         <TableCell colSpan={PARENT_COLUMNS} className="py-2 pl-10 text-xs text-muted-foreground">
-          No evaluation LLM spend in this period.
+          {emptyText}
         </TableCell>
       </TableRow>
     );
