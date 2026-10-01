@@ -227,11 +227,15 @@ def build_middlewares() -> list[Middleware]:
 # -------------------------------------------------------------------------------- #
 
 
+_API_KEY_SHAPE = re.compile(r"[A-Za-z0-9_-]{54}")
+
+
 def _path_without_api_key(path: str, api_key: str | None) -> str:
     """Masks API key."""
-    if not api_key:
-        return path
-    return "/".join(TOKEN_REDACTION_LABEL if segment == api_key else segment for segment in path.split("/"))
+    return "/".join(
+        TOKEN_REDACTION_LABEL if (api_key and segment == api_key) or _API_KEY_SHAPE.fullmatch(segment) else segment
+        for segment in path.split("/")
+    )
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):

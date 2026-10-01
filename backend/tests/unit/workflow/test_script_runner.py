@@ -28,6 +28,14 @@ def test_large_result_is_returned_promptly(monkeypatch):
     assert time.monotonic() - start < 10
 
 
+def test_result_cap_is_per_call():
+    response = _execute_python_code_sync(
+        "result = 'x' * (3 * 1024 * 1024)", {}, wrap_code=False, max_result_bytes=2 * 1024 * 1024
+    )
+
+    assert response["error"].startswith("Result too large")
+
+
 def test_timeout_kills_the_child(monkeypatch, caplog):
     monkeypatch.setattr(utils, "_EXEC_TIMEOUT_SECONDS", 2)
     monkeypatch.setattr(utils, "_EXIT_GRACE_SECONDS", 30)

@@ -1,6 +1,8 @@
+import pandas as pd
 import pytest
 
 import app.modules.workflow.utils as workflow_utils
+from app.core.config.settings import settings
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.node_result import is_node_failure
 from app.modules.workflow.engine.nodes import data_mapper_node
@@ -9,23 +11,36 @@ from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 RUNNER_ERROR = {"error": "Execution timed out after 600 seconds", "traceback": "", "output": "", "errors": ""}
+SCRIPT_ERROR = {"result": None, "output": "", "errors": "\nGlobal errors: Error processing parameters: KeyError: 'x'"}
+STDERR_ONLY = {
+    "result": {"year": 2026},
+    "output": "",
+    "errors": "FutureWarning: Series.__getitem__ treating keys as positions",
+}
+MAPPER = {"id": "m1", "type": "dataMapperNode", "data": {"name": "Mapper", "pythonScript": "result = 1"}}
 
 
 async def _runner_error(*_args, **_kwargs):
     return dict(RUNNER_ERROR)
 
 
-@pytest.mark.asyncio
-async def test_data_mapper_runner_error_is_recorded_but_flows_unchanged(monkeypatch):
-    monkeypatch.setattr(data_mapper_node, "execute_python_code", _runner_error)
-    node_config = {"id": "m1", "type": "dataMapperNode", "data": {"name": "Mapper", "pythonScript": "result = 1"}}
+async def _run_data_mapper(monkeypatch, response):
+    async def runner(*_args, **_kwargs):
+        return dict(response)
+
+    monkeypatch.setattr(data_mapper_node, "execute_python_code", runner)
     state = WorkflowState(
-        workflow={"nodes": [node_config], "source_edges": {}, "target_edges": {}},
+        workflow={"nodes": [MAPPER], "source_edges": {}, "target_edges": {}},
         initial_values={},
         thread_id="thread-1",
     )
+    returned = await DataMapperNode("m1", MAPPER, state).execute()
+    return state, returned
 
-    returned = await DataMapperNode("m1", node_config, state).execute()
+
+@pytest.mark.asyncio
+async def test_data_mapper_runner_error_is_recorded_but_flows_unchanged(monkeypatch):
+    state, returned = await _run_data_mapper(monkeypatch, RUNNER_ERROR)
 
     assert state.node_execution_status["m1"]["status"] == "failed"
     assert (
@@ -33,6 +48,61 @@ async def test_data_mapper_runner_error_is_recorded_but_flows_unchanged(monkeypa
     )
     assert state.get_node_output("m1") == RUNNER_ERROR
     assert is_node_failure(returned) is not None
+
+
+@pytest.mark.asyncio
+async def test_data_mapper_script_exception_is_recorded(monkeypatch):
+    state, returned = await _run_data_mapper(monkeypatch, SCRIPT_ERROR)
+
+    assert state.node_execution_status["m1"]["status"] == "failed"
+    assert "KeyError: 'x'" in state.node_execution_status["m1"]["error"]
+    assert state.get_node_output("m1") == SCRIPT_ERROR
+    assert is_node_failure(returned) is not None
+
+
+@pytest.mark.asyncio
+async def test_data_mapper_stderr_with_a_result_stays_success(monkeypatch):
+    state, returned = await _run_data_mapper(monkeypatch, STDERR_ONLY)
+
+    assert state.node_execution_status["m1"]["status"] == "success"
+    assert returned == STDERR_ONLY
+
+
+@pytest.mark.asyncio
+async def test_preprocessing_sends_df_only_with_the_ml_cap(monkeypatch):
+    calls = []
+
+    async def runner(code, params, wrap_code=True, **kwargs):
+        calls.append((params, kwargs))
+        return {"result": params["df"], "output": "", "errors": ""}
+
+    monkeypatch.setattr(workflow_utils, "execute_python_code", runner)
+    df = pd.DataFrame({"a": [1]})
+
+    processed, errors, _ = await ml_utils.execute_and_process_preprocessing_code("", df.to_dict("records"), df, "")
+
+    params, kwargs = calls[0]
+    assert params["data"] is None and params["df"] is df
+    assert kwargs["max_result_bytes"] == settings.ML_EXTRACT_MAX_BYTES
+    assert "to_dict" in kwargs["prelude"]
+    assert errors is None and processed is df
+
+
+@pytest.mark.asyncio
+async def test_preprocessing_rebuilds_data_from_df_in_the_sandbox():
+    df = pd.DataFrame({"a": [1, 2], "b": [3.5, 4.5]})
+    code = (
+        "def executable_function(params):\n"
+        "    assert params['data'] == params['df'].to_dict('records')\n"
+        "    return params['df']\n"
+    )
+
+    processed, errors, _ = await ml_utils.execute_and_process_preprocessing_code(
+        code, df.to_dict("records"), df, "", raise_on_error=False
+    )
+
+    assert errors is None
+    pd.testing.assert_frame_equal(processed, df)
 
 
 @pytest.mark.asyncio

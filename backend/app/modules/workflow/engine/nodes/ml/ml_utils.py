@@ -13,6 +13,7 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
@@ -607,6 +608,13 @@ def load_csv_file(
         ) from e
 
 
+# Runs in the sandbox before the preprocessing script, so params["data"] stays available
+_DATA_FROM_DF = """
+if params.get("data") is None and params.get("df") is not None:
+    params["data"] = params["df"].to_dict("records")
+"""
+
+
 async def execute_and_process_preprocessing_code(
     python_code: str,
     data: Optional[List[Dict[str, Any]]],
@@ -635,13 +643,19 @@ async def execute_and_process_preprocessing_code(
 
     # Prepare parameters for Python code execution
     params = {
-        "data": data,
+        "data": data if df is None else None,
         "df": df,
         "fileUrl": file_url,
     }
 
     # Execute the preprocessing Python code
-    response = await execute_python_code(python_code, params, wrap_code=True)
+    response = await execute_python_code(
+        python_code,
+        params,
+        wrap_code=True,
+        max_result_bytes=settings.ML_EXTRACT_MAX_BYTES,
+        prelude=_DATA_FROM_DF,
+    )
 
     # "error" signals an execution failure (timeout, sandbox violation, syntax
     # error, uncaught exception); "errors" carries captured stderr from an

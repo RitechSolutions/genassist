@@ -59,6 +59,14 @@ def _error_dict(message: str) -> Dict[str, Any]:
     return {"error": message, "traceback": "", "output": "", "errors": ""}
 
 
+def script_error(response: Dict[str, Any]) -> str:
+    if response.get("error"):
+        return str(response["error"])
+    if response.get("result") is None and response.get("errors"):
+        return str(response["errors"])
+    return ""
+
+
 def _encode_result(payload: Dict[str, Any], limit: int = _MAX_RESULT_BYTES) -> bytes:
     try:
         data = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
@@ -95,6 +103,8 @@ def _subprocess_worker(
     params: Dict[str, Any],
     wrap_code: bool,
     conn: Connection,
+    max_result_bytes: int = _MAX_RESULT_BYTES,
+    prelude: str = "",
 ) -> None:
     """Worker that runs inside an isolated subprocess.
 
@@ -125,6 +135,8 @@ def _subprocess_worker(
         executable = add_executable_function(code) if wrap_code else code
         validate_code_ast(executable)
         namespace = make_sandboxed_namespace(params, logging.getLogger(__name__))
+        if prelude:
+            exec(prelude, namespace)  # noqa: S102
 
         try:
             faulthandler.dump_traceback_later(_EXEC_TIMEOUT_SECONDS - 5, file=sys.__stderr__)
@@ -167,12 +179,16 @@ def _subprocess_worker(
         }
     finally:
         if payload is not None:
-            conn.send_bytes(_encode_result(payload))
+            conn.send_bytes(_encode_result(payload, max_result_bytes))
         conn.close()
 
 
 def _execute_python_code_sync(
-    code: str, params: Dict[str, Any], wrap_code: bool = True
+    code: str,
+    params: Dict[str, Any],
+    wrap_code: bool = True,
+    max_result_bytes: int = _MAX_RESULT_BYTES,
+    prelude: str = "",
 ) -> Dict[str, Any]:
     """Spawn an isolated subprocess to execute user-supplied Python code.
 
@@ -184,7 +200,7 @@ def _execute_python_code_sync(
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     process = ctx.Process(
         target=_subprocess_worker,
-        args=(code, params, wrap_code, child_conn),
+        args=(code, params, wrap_code, child_conn, max_result_bytes, prelude),
         daemon=True,
     )
     started = False
@@ -209,7 +225,7 @@ def _execute_python_code_sync(
 
         if parent_conn in ready:
             try:
-                return pickle.loads(parent_conn.recv_bytes(maxlength=_MAX_RESULT_BYTES))
+                return pickle.loads(parent_conn.recv_bytes(maxlength=max_result_bytes))
             except (EOFError, OSError):
                 pass  # exited without sending, killed mid-send, or over the size cap
             except Exception as exc:
@@ -254,14 +270,18 @@ def sanitize_python_code(code: str) -> str:
 
 
 async def execute_python_code(
-    code: str, params: Dict[str, Any], wrap_code: bool = True
+    code: str,
+    params: Dict[str, Any],
+    wrap_code: bool = True,
+    max_result_bytes: int = _MAX_RESULT_BYTES,
+    prelude: str = "",
 ) -> Dict[str, Any]:
     """Execute user Python code asynchronously. Subprocess isolation handles timeout."""
     try:
         code = sanitize_python_code(code)
         # _execute_python_code_sync blocks for at most _EXEC_TIMEOUT_SECONDS
         # (subprocess is killed if it exceeds that), so to_thread won't hang.
-        return await asyncio.to_thread(_execute_python_code_sync, code, params, wrap_code)
+        return await asyncio.to_thread(_execute_python_code_sync, code, params, wrap_code, max_result_bytes, prelude)
     except Exception as e:
         logger.error("Error in async Python code execution: %s", type(e).__name__)
         return _error_dict(str(e))

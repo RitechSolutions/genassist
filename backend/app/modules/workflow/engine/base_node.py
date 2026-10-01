@@ -12,6 +12,7 @@ from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
 from app.core.exceptions.exception_classes import AppException
+from app.core.exceptions.exception_handler import _response_error_detail
 from app.core.observability.otel import (
     is_otel_runtime_enabled,
     record_workflow_node_duration,
@@ -475,8 +476,11 @@ class BaseNode(ABC):
                     if span is not None and span.is_recording():
                         span.record_exception(e)
                         span.set_status(Status(StatusCode.ERROR, str(e) + detail))
-                    error_msg = f"Error executing node {self.node_id}: {str(e)}{detail}"
-                    logger.error(error_msg, exc_info=True)
+                    logger.error("Error executing node %s: %s%s", self.node_id, e, detail, exc_info=True)
+                    client_detail = _response_error_detail(e) if isinstance(e, AppException) else None
+                    error_msg = f"Error executing node {self.node_id}: {str(e)}"
+                    if client_detail:
+                        error_msg += f" - {client_detail}"
                     self.complete_execution(error=error_msg)
                     # Return a detectable failure envelope (not None) so a caller using
                     # this node as a tool learns it failed. Downstream engine flow is

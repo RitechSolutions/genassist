@@ -12,6 +12,8 @@ Covers:
   a bare None/error dict, so an agent cannot silently treat it as success.
 """
 
+import logging
+
 import pytest
 
 from app.core.exceptions.error_messages import ErrorKey
@@ -147,22 +149,36 @@ async def test_execute_on_raise_marks_failed_and_returns_detectable_envelope():
 
 
 @pytest.mark.asyncio
-async def test_execute_on_app_exception_appends_redacted_detail():
+async def test_execute_keeps_internal_detail_out_of_the_node_error(monkeypatch, caplog):
+    monkeypatch.setenv("ENV", "prod")
     st = _bare_state()
 
     def _boom():
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail="Error during model prediction: password=hunter2 Unicode-4 is not supported",
+            error_detail="Could not load model: /src/datavolume/ml_models/x.pkl password=hunter2",
         )
+
+    with caplog.at_level(logging.ERROR):
+        await _FakeNode("n1", st, _boom).execute()
+
+    assert st.node_execution_status["n1"]["error"] == "Error executing node n1: error_500"
+    assert "/src/datavolume/ml_models/x.pkl" in caplog.text
+    assert "hunter2" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_execute_appends_client_safe_detail(monkeypatch):
+    monkeypatch.setenv("ENV", "prod")
+    st = _bare_state()
+    detail = "Unusable inference input for 1 feature(s): lag_24='null'"
+
+    def _boom():
+        raise AppException(error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID, error_detail=detail)
 
     await _FakeNode("n1", st, _boom).execute()
 
-    error = st.node_execution_status["n1"]["error"]
-    assert error.startswith("Error executing node n1: error_500 - ")
-    assert "Unicode-4 is not supported" in error
-    assert "password=[REDACTED]" in error
-    assert "hunter2" not in error
+    assert st.node_execution_status["n1"]["error"] == f"Error executing node n1: ML_INFERENCE_INPUT_INVALID - {detail}"
 
 
 @pytest.mark.asyncio
