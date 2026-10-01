@@ -851,6 +851,7 @@ class TrainModelNode(BaseNode):
                 target_column=target_column,
                 local_pkl_path=model_artifact["model_file_path"],
                 target_model_id=target_model_id,
+                target_transform=target_transform,
             )
 
             # Prepare response
@@ -1791,6 +1792,7 @@ class TrainModelNode(BaseNode):
         target_column: str,
         local_pkl_path: str,
         target_model_id: Optional[str] = None,
+        target_transform: Optional[dict] = None,
     ) -> tuple[Optional[str], Optional[str]]:
         """
         Upload the trained .pkl through the file manager and create/update the
@@ -1856,12 +1858,24 @@ class TrainModelNode(BaseNode):
                 f"Trained by workflow Train Model node (thread {self.state.thread_id}) "
                 f"{node_marker}"
             )
+            # A ratio-target model needs the baseline column's raw value at
+            # inference time to reconstruct a real-unit prediction, even
+            # though it was never one of the model's actual training
+            # features (see MLModelInferenceNode's reconstruction of it).
+            # Recorded here so the inference UI knows to ask for it alongside
+            # the regular feature inputs.
+            inference_params = (
+                {"ratioBaselineColumn": target_transform.get("baselineColumn")}
+                if target_transform else None
+            )
+
             model_fields = {
                 "description": description,
                 "model_type": model_type,
                 "features": feature_columns,
                 "target_variable": target_column,
                 "pkl_file_id": resolved_pkl_file_id,
+                "inference_params": inference_params,
                 # The uploaded file is now the source of truth; a stale local
                 # path from a previous run shouldn't be preferred over it.
                 "pkl_file": None,
