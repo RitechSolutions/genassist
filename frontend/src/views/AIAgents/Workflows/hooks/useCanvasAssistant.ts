@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useChatService } from "@/hooks/useChatService";
 import nodeRegistry from "../registry/nodeRegistry";
 import { edgesOnRemovedHandles } from "../utils/handleEdges";
+import { flattenGroups } from "../utils/nodeGroups";
 import {
   serializeCanvasContext,
   parseAgentActions,
@@ -81,9 +82,11 @@ export function useCanvasAssistant({
         executedActionsRef.current.add(key);
 
         if (action.type === "add_node") {
+          // New nodes are placed at the canvas root, so position them against root-level
+          // coordinates (grouped nodes store group-relative positions).
           const { nodes: newNodes, edges: newEdges } = createNodeFromAction(
             action as AddNodeAction,
-            batchNodes,
+            flattenGroups(batchNodes),
             batchEdges,
           );
           if (newNodes.length > 0) {

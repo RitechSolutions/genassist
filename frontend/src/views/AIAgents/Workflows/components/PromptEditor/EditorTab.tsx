@@ -1,26 +1,112 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, CheckCircle2, Loader2, Play, Sparkles, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, Play, Sparkles } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/accordion';
 import { Button } from '@/components/button';
 import { Label } from '@/components/label';
 import { RichTextarea } from '@/components/richTextarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/select';
-import { Badge } from '@/components/badge';
 import { Switch } from '@/components/switch';
 import { getAllLLMProviders } from '@/services/llmProviders';
-import { createPromptVersion, evaluatePrompt, getPromptConfig, optimizePrompt } from '@/services/promptEditor';
+import { createPromptVersion, evaluatePrompt, optimizePrompt } from '@/services/promptEditor';
 import { listTestCases } from '@/services/testSuites';
+import { extractErrorMessage } from '@/helpers/apiError';
+import { methodLabel } from '@/views/TestSuites/helpers/methodLabels';
 import type { LLMProvider } from '@/interfaces/llmProvider.interface';
-import type { PromptEvalResponse, PromptOptimizeResponse } from '@/interfaces/promptEditor.interface';
 import type { TestCase } from '@/interfaces/testSuite.interface';
+import type {
+  PromptEvalResponse,
+  PromptOptimizeResponse,
+  PromptTechniqueConfigs,
+} from '@/interfaces/promptEditor.interface';
+import type { PromptEditorCapabilities } from '../../utils/promptEditorCapabilities';
+import {
+  acceptGate,
+  evaluateGate,
+  optimizeGate,
+  promptLength,
+  SUGGESTION_STALE_REASON,
+} from '../../utils/promptEditorGates';
+import type { CasesState, EvalInputs, HistoryState, RunInputs } from '../../utils/promptEditorGates';
+import { draftUnchangedSince } from '../../utils/promptEditorHistory';
+import { DEFAULT_HOLDOUT_SHARE, splitCasesByConversation } from '../../utils/caseSplit';
+import { summaryLine } from '../../utils/promptEditorResults';
+import {
+  CASES_TO_CHECK_OPTIONS,
+  DEFAULT_CASES_TO_CHECK,
+  MAX_CHECK_CASES,
+  PROMPT_CHECK_TECHNIQUES,
+  phrasesProblem,
+  splitForbiddenPhrases,
+} from '../../utils/promptEditorTechniques';
+import {
+  canonicalJson,
+  evalKeyOf,
+  failedCaseCount,
+  failedCasesOf,
+  failuresKeyOf,
+  isOptimizeCurrent,
+  optimizeKeyOf,
+  staleOf,
+  type CaseRow,
+  type EvalRequest,
+  type OptimizeRequest,
+} from '../../utils/promptEditorRuns';
+import {
+  DIAGNOSTIC_MESSAGES,
+  bindingChangeNote,
+  comparePromptBindings,
+  directPredecessorIds,
+  fanInNote,
+  readPromptBindings,
+  scanBraceCandidates,
+  unknownBindings,
+  unknownDataNote,
+} from '../../utils/templateVariableDiagnostics';
+import { useWorkflowExecution } from '../../context/WorkflowExecutionContext';
+import { useWorkflowVariables } from '../../context/WorkflowVariablesContext';
+import { GateTooltip } from './GateTooltip';
+import { PromptEvalResults } from './PromptEvalResults';
+import { promptHistoryKey } from './usePromptHistory';
+
+type PairedHalf = { key: string; results: PromptEvalResponse } | null;
+
+/**
+ * Both requests built before sending, so config changes mid-flight don't affect
+ * the second. Baseline carries `next`, the chained request
+ */
+type HoldoutVars =
+  | { half: 'baseline'; request: EvalRequest; next: EvalRequest; token: number }
+  | { half: 'suggestion'; request: EvalRequest; token: number };
+
+interface HoldoutRun {
+  caseIds: string[];
+  baseline: PairedHalf;
+  suggestion: PairedHalf;
+  pending: 'baseline' | 'suggestion' | null;
+  /** Keeps the variables, because TanStack clears them when the mutation resets */
+  error: { half: 'baseline' | 'suggestion'; message: string; vars: HoldoutVars } | null;
+}
+
+/** A 500 and the duplicate-version 400 carry no key, so a missing one is normal */
+const errorKeyOf = (err: unknown): string | null => {
+  const data = (err as { response?: { data?: { error_key?: unknown } } })?.response?.data;
+  return typeof data?.error_key === 'string' ? data.error_key : null;
+};
 
 interface EditorTabProps {
   workflowId: string;
   nodeId: string;
   promptField: string;
   value: string;
-  onChange: (newValue: string) => void;
+  /** Clear preview undo snapshot on typing */
+  onDraftEdit: (newValue: string) => void;
+  /** Accepted optimization that was saved as a version */
+  onAccepted: (newValue: string) => void;
+  latestDraftRef: React.MutableRefObject<string>;
+  fieldLabel: string;
+  historyState: HistoryState;
+  caps: PromptEditorCapabilities;
   defaultProviderId?: string;
 }
 
@@ -29,152 +115,446 @@ export const EditorTab: React.FC<EditorTabProps> = ({
   nodeId,
   promptField,
   value,
-  onChange,
+  onDraftEdit,
+  onAccepted,
+  latestDraftRef,
+  fieldLabel,
+  historyState,
+  caps,
   defaultProviderId,
 }) => {
   const queryClient = useQueryClient();
+  // Both providers wrap every node dialog that can open this editor
+  const { tree } = useWorkflowVariables();
+  const { edges: workflowEdges } = useWorkflowExecution();
 
   const [error, setError] = useState<string | null>(null);
-  const [warningMessage, setWarningMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [selectedProviderId, setSelectedProviderId] = useState(defaultProviderId || '');
   const [selectedTechniques, setSelectedTechniques] = useState<string[]>(['contains']);
-  const [evalResults, setEvalResults] = useState<PromptEvalResponse | null>(null);
-  const [optimizeResult, setOptimizeResult] = useState<PromptOptimizeResponse | null>(null);
-  const [optimizedEvalResults, setOptimizedEvalResults] = useState<PromptEvalResponse | null>(null);
+  const [phrasesText, setPhrasesText] = useState('');
+  const [casesToCheck, setCasesToCheck] = useState<number>(DEFAULT_CASES_TO_CHECK);
+  const [splitEnabled, setSplitEnabled] = useState(false);
+  // Each run keeps the inputs it was produced from, so changing any of them makes it stale
+  const [evalRun, setEvalRun] = useState<{ key: string; results: PromptEvalResponse } | null>(null);
+  const [optimizeRun, setOptimizeRun] = useState<{
+    request: OptimizeRequest;
+    result: PromptOptimizeResponse;
+  } | null>(null);
+  const [suggestedEvalRun, setSuggestedEvalRun] = useState<{
+    key: string;
+    caseIds: string[] | null;
+    results: PromptEvalResponse;
+  } | null>(null);
+  const [holdoutRun, setHoldoutRun] = useState<HoldoutRun | null>(null);
   const [optimizeInstructions, setOptimizeInstructions] = useState('');
+  // Bumped on Accept/Dismiss/new suggestions to prevent stale applies
+  const acceptTokenRef = useRef(0);
 
-  const TECHNIQUES = [
-    { key: 'exact_match', label: 'Exact Match' },
-    { key: 'contains', label: 'Contains' },
-    { key: 'nli_eval', label: 'NLI Semantic Match' },
-  ];
-
-  const { data: providers = [] } = useQuery({
+  const providersQuery = useQuery({
     queryKey: ['llmProviders'],
     queryFn: getAllLLMProviders,
     select: (data: LLMProvider[]) => data.filter((p) => p.is_active === 1),
   });
+  const providers = providersQuery.data ?? [];
+  // A default pointing at a deactivated provider must never reach a request
+  const activeProviderId = providers.some((p) => p.id === selectedProviderId) ? selectedProviderId : '';
+  const activeProvider = providers.find((p) => p.id === activeProviderId);
+  const providerStatus: RunInputs['providerStatus'] = providersQuery.isPending
+    ? 'pending'
+    : providersQuery.isError
+      ? 'error'
+      : providers.length === 0
+        ? 'empty'
+        : 'ready';
 
-  const { data: promptConfig } = useQuery({
-    queryKey: ['promptConfig', workflowId, nodeId, promptField],
-    queryFn: () => getPromptConfig(workflowId, nodeId, promptField),
-  });
+  // Advisory only: the engine decides what resolves, so none of this gates a run
+  const draftBindings = useMemo(() => readPromptBindings(value), [value]);
+  const braceScan = useMemo(() => scanBraceCandidates(value), [value]);
+  const availabilityNote = useMemo(
+    () => unknownDataNote(unknownBindings(draftBindings, tree)),
+    [draftBindings, tree],
+  );
+  const fanIn = useMemo(
+    () => fanInNote(draftBindings, directPredecessorIds(nodeId, workflowEdges)),
+    [draftBindings, nodeId, workflowEdges],
+  );
+  const hasDiagnostics =
+    braceScan.findings.length > 0 || availabilityNote !== null || fanIn !== null;
 
-  const goldSuiteId = promptConfig?.gold_suite_id;
+  const goldSuiteId = historyState.goldSuiteId;
 
-  const { data: goldCases = [] } = useQuery({
+  const goldCasesQuery = useQuery({
     queryKey: ['goldCases', goldSuiteId],
     queryFn: () => listTestCases(goldSuiteId!),
-    enabled: !!goldSuiteId,
-    select: (data) => (data ?? []) as TestCase[],
+    enabled: !!goldSuiteId && caps.canReadCases,
   });
+
+  // Gate distinguishes forbidden/failed reads from empty datasets
+  const casesState: CasesState = {
+    status:
+      !goldSuiteId || !caps.canReadCases
+        ? 'idle'
+        : goldCasesQuery.isPending
+          ? 'pending'
+          : goldCasesQuery.isError
+            ? 'error'
+            : goldCasesQuery.data === null
+              ? 'forbidden'
+              : 'success',
+    count: goldCasesQuery.data?.length ?? 0,
+  };
+
+  // Null is a forbidden or unloaded dataset, which is distinct key material from
+  // a loaded but empty one. A case without an id cannot be selected or compared
+  const caseRows: CaseRow[] | null = useMemo(() => {
+    const data = goldCasesQuery.data;
+    if (!Array.isArray(data)) return null;
+    return data
+      .filter((c): c is TestCase & { id: string } => !!c.id)
+      .map((c) => ({
+        id: c.id,
+        input_data: c.input_data,
+        expected_output: c.expected_output ?? null,
+        source_conversation_id: c.source_conversation_id ?? null,
+        turn_index: c.turn_index ?? null,
+      }))
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }, [goldCasesQuery.data]);
+
+  // Memoised so a keystroke re-keys only the small run object, not the whole dataset
+  const caseRowsKey = useMemo(
+    () => (caseRows === null ? null : canonicalJson(caseRows)),
+    [caseRows],
+  );
+
+  // Sent, keyed and gated trimmed, blank means no instructions
+  const instructions = optimizeInstructions.trim();
+
+  const phrases = useMemo(() => splitForbiddenPhrases(phrasesText), [phrasesText]);
+  const notContainsSelected = selectedTechniques.includes('not_contains');
+  const phrasesIssue = notContainsSelected ? phrasesProblem(phrases) : null;
+  const techniqueConfigs = useMemo<PromptTechniqueConfigs>(
+    () => (notContainsSelected ? { not_contains: { phrases } } : {}),
+    [notContainsSelected, phrases],
+  );
+
+  const split = useMemo(() => splitCasesByConversation(caseRows ?? []), [caseRows]);
+  const splitActive = splitEnabled && split.feasible;
+  const evalCaseIds = useMemo(
+    () => (splitActive ? split.dev.slice(0, MAX_CHECK_CASES).map((c) => c.id) : null),
+    [splitActive, split],
+  );
+  const holdoutCaseIds = useMemo(
+    () => split.holdout.slice(0, MAX_CHECK_CASES).map((c) => c.id),
+    [split],
+  );
+
+  const buildEvalRequest = useCallback(
+    (prompt: string, caseIds: string[] | null): EvalRequest => ({
+      key: evalKeyOf({
+        prompt,
+        providerId: activeProviderId,
+        techniques: selectedTechniques,
+        techniqueConfigs,
+        caseIds,
+        maxCases: casesToCheck,
+        caseRowsKey,
+      }),
+      prompt,
+      providerId: activeProviderId,
+      techniques: selectedTechniques,
+      techniqueConfigs,
+      caseIds,
+      maxCases: casesToCheck,
+    }),
+    [activeProviderId, selectedTechniques, techniqueConfigs, casesToCheck, caseRowsKey],
+  );
 
   const toggleTechnique = (key: string) => {
     setSelectedTechniques((prev) => (prev.includes(key) ? prev.filter((t) => t !== key) : [...prev, key]));
   };
 
   const showError = (action: string, err: unknown) => {
-    const message = err instanceof Error ? err.message : 'Request failed';
-    setError(`Failed to ${action}: ${message}`);
-    setWarningMessage(null);
+    setError(`Failed to ${action}: ${extractErrorMessage(err, 'Request failed')}`);
     setSuccessMessage(null);
+    if (errorKeyOf(err) === 'PROMPT_CASE_SELECTION_INVALID') {
+      queryClient.invalidateQueries({ queryKey: ['goldCases', goldSuiteId] });
+      setHoldoutRun(null);
+    }
+  };
+
+  const currentEvalKey = buildEvalRequest(value, evalCaseIds).key;
+  const evalStale = evalRun !== null && staleOf(evalRun.key, currentEvalKey);
+  const failedCases = evalRun && !evalStale ? failedCasesOf(evalRun.results.results) : [];
+  const failedTotal = evalRun && !evalStale ? failedCaseCount(evalRun.results.results) : 0;
+  const failuresKey = failuresKeyOf(failedCases);
+
+  const currentOptimizeKey = optimizeKeyOf({
+    prompt: value,
+    providerId: activeProviderId,
+    instructions,
+    caseSplit: splitActive ? { holdoutShare: DEFAULT_HOLDOUT_SHARE, holdoutIds: holdoutCaseIds } : null,
+    caseRowsKey,
+    techniques: selectedTechniques,
+  });
+  const optimizeResult = optimizeRun?.result ?? null;
+  const optimizeStale =
+    optimizeRun !== null &&
+    !isOptimizeCurrent(optimizeRun.request, { key: currentOptimizeKey, failuresKey });
+  const suggestion = optimizeResult?.suggested_prompt ?? '';
+
+  // Compared against the prompt the optimizer was given, not the live draft: a
+  // changed draft is stale and Accept is already blocked
+  const placeholderNote = useMemo(
+    () =>
+      optimizeRun
+        ? bindingChangeNote(comparePromptBindings(optimizeRun.request.prompt, suggestion))
+        : null,
+    [optimizeRun, suggestion],
+  );
+
+  // Off a split the suggestion reuses the current run's cases, so both sides match
+  const suggestedCaseIds = splitActive
+    ? evalCaseIds
+    : evalRun && !evalStale
+      ? evalRun.results.provenance.evaluated_case_ids
+      : null;
+  const suggestedRunKey = useMemo(
+    () =>
+      suggestedEvalRun === null || suggestion === ''
+        ? null
+        : buildEvalRequest(suggestion, suggestedEvalRun.caseIds).key,
+    [buildEvalRequest, suggestion, suggestedEvalRun],
+  );
+  const suggestedStale =
+    suggestedEvalRun !== null &&
+    (optimizeStale || suggestedRunKey === null || staleOf(suggestedEvalRun.key, suggestedRunKey));
+
+  const runEvaluation = async (vars: EvalRequest) => {
+    setError(null);
+    const result = await evaluatePrompt(workflowId, nodeId, promptField, {
+      prompt_content: vars.prompt,
+      techniques: vars.techniques,
+      provider_id: vars.providerId,
+      technique_configs: vars.techniqueConfigs,
+      ...(vars.caseIds ? { case_ids: vars.caseIds } : { max_cases: vars.maxCases }),
+    });
+    if (!result) throw new Error('Server returned empty response — check permissions.');
+    return result;
   };
 
   const evalMutation = useMutation({
-    mutationFn: async () => {
-      setError(null);
-      const result = await evaluatePrompt(workflowId, nodeId, promptField, {
-        prompt_content: value,
-        techniques: selectedTechniques,
-        provider_id: selectedProviderId,
-      });
-      if (!result) throw new Error('Server returned empty response — check permissions.');
-      return result;
-    },
-    onSuccess: (data) => {
-      setEvalResults(data);
-    },
+    mutationFn: runEvaluation,
+    onSuccess: (data, vars) => setEvalRun({ key: vars.key, results: data }),
     onError: (err) => showError('evaluate prompt', err),
   });
 
   const optimizeMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (vars: OptimizeRequest) => {
       setError(null);
       const result = await optimizePrompt(workflowId, nodeId, promptField, {
-        provider_id: selectedProviderId,
-        current_prompt: value,
-        instructions: optimizeInstructions || undefined,
-        failed_cases: evalResults?.results
-          .filter((r) => !r.passed)
-          .map((r) => ({
-            input: r.input,
-            expected: r.expected,
-            actual: r.actual,
-          })),
+        provider_id: vars.providerId,
+        current_prompt: vars.prompt,
+        instructions: vars.instructions || undefined,
+        failed_cases: vars.failedCases?.map((c) => ({
+          case_id: c.caseId,
+          actual: c.actual,
+          failed_metrics: c.failedMetrics,
+        })),
+        case_split: vars.caseSplit
+          ? { holdout_case_ids: [...vars.caseSplit.holdoutIds] }
+          : undefined,
+        techniques: vars.techniques,
       });
       if (!result) throw new Error('Server returned empty response — check permissions.');
       return result;
     },
-    onSuccess: (data) => {
-      setOptimizeResult(data);
-      setOptimizedEvalResults(null);
+    onSuccess: (data, vars) => {
+      acceptTokenRef.current += 1;
+      setOptimizeRun({ request: vars, result: data });
+      // A new suggestion invalidates the old one's scores; the baseline is keyed to
+      // the current prompt and stays valid
+      setSuggestedEvalRun(null);
+      setHoldoutRun((prev) => (prev ? { ...prev, suggestion: null, error: null } : prev));
     },
     onError: (err) => showError('optimize prompt', err),
   });
 
   const evalOptimizedMutation = useMutation({
-    mutationFn: async () => {
-      if (!optimizeResult) return;
-      setError(null);
-      const result = await evaluatePrompt(workflowId, nodeId, promptField, {
-        prompt_content: optimizeResult.suggested_prompt,
-        techniques: selectedTechniques,
-        provider_id: selectedProviderId,
-      });
-      if (!result) throw new Error('Server returned empty response — check permissions.');
-      return result;
-    },
-    onSuccess: (data) => {
-      if (data) setOptimizedEvalResults(data);
+    mutationFn: (vars: EvalRequest & { token: number }) => runEvaluation(vars),
+    onSuccess: (data, vars) => {
+      if (vars.token !== acceptTokenRef.current) return;
+      setSuggestedEvalRun({ key: vars.key, caseIds: vars.caseIds, results: data });
     },
     onError: (err) => showError('evaluate suggested prompt', err),
   });
 
+  const holdoutMutation = useMutation({
+    mutationFn: (vars: HoldoutVars) => runEvaluation(vars.request),
+    onSuccess: (data, vars) => {
+      const half: PairedHalf = { key: vars.request.key, results: data };
+      const superseded = vars.token !== acceptTokenRef.current;
+
+      if (vars.half === 'suggestion') {
+        setHoldoutRun((prev) =>
+          prev ? { ...prev, suggestion: superseded ? prev.suggestion : half, pending: null } : prev,
+        );
+        return;
+      }
+      setHoldoutRun((prev) =>
+        prev ? { ...prev, baseline: half, pending: superseded ? null : 'suggestion' } : prev,
+      );
+      if (superseded) return;
+      holdoutMutation.mutate({ half: 'suggestion', request: vars.next, token: vars.token });
+    },
+    onError: (err, vars) => {
+      setHoldoutRun((prev) =>
+        prev
+          ? {
+              ...prev,
+              pending: null,
+              error: {
+                half: vars.half,
+                message: extractErrorMessage(err, 'Request failed'),
+                vars,
+              },
+            }
+          : prev,
+      );
+      showError(`evaluate the ${vars.half === 'baseline' ? 'current' : 'suggested'} prompt`, err);
+    },
+  });
+
   const acceptOptimizedMutation = useMutation({
-    mutationFn: async () => {
-      if (!optimizeResult) return;
-      onChange(optimizeResult.suggested_prompt);
-      await createPromptVersion(workflowId, nodeId, promptField, {
-        content: optimizeResult.suggested_prompt,
+    mutationFn: async (vars: { content: string; draftAtSubmit: string; token: number }) => {
+      setError(null);
+      const created = await createPromptVersion(workflowId, nodeId, promptField, {
+        content: vars.content,
         label: 'Optimized prompt',
       });
+      if (!created) throw new Error('Not allowed to save a version');
+      return created;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['promptVersions', workflowId, nodeId, promptField],
-      });
-      setOptimizeResult(null);
-      setOptimizedEvalResults(null);
-      setSuccessMessage('Optimized prompt accepted and saved as new version');
+      queryClient.invalidateQueries({ queryKey: promptHistoryKey(workflowId, nodeId, promptField) });
     },
     onError: (err) => showError('accept optimized prompt', err),
   });
 
+  const runInputs: EvalInputs = {
+    content: value,
+    contentNoun: 'prompt',
+    providerStatus,
+    providerId: activeProviderId,
+    techniqueCount: selectedTechniques.length,
+    phrasesProblem: phrasesIssue,
+  };
+
+  const evaluate = evaluateGate(historyState, casesState, caps, runInputs);
+  const optimize = optimizeGate(historyState, caps, {
+    ...runInputs,
+    instructions,
+  });
+  const evaluateSuggested = evaluateGate(historyState, casesState, caps, {
+    ...runInputs,
+    content: suggestion,
+    contentNoun: 'suggested prompt',
+    stale: optimizeStale,
+  });
+  const accept = acceptGate(historyState, caps, suggestion, {
+    pending: acceptOptimizedMutation.isPending,
+    stale: optimizeStale,
+  });
+
+  const suggestedPending = evalOptimizedMutation.isPending || holdoutMutation.isPending;
+  const hasRuns =
+    evalRun !== null || optimizeRun !== null || suggestedEvalRun !== null || holdoutRun !== null;
+  const pairedRun = holdoutRun?.baseline && holdoutRun.suggestion ? holdoutRun : null;
+  const pairedRunKey = useMemo(
+    () => (pairedRun ? buildEvalRequest(suggestion, pairedRun.caseIds).key : ''),
+    [buildEvalRequest, suggestion, pairedRun],
+  );
+
+  /** Runs the hold-out under the current prompt, then under the suggestion */
+  const startPairedRun = () => {
+    const token = acceptTokenRef.current;
+    const baseline = buildEvalRequest(value, holdoutCaseIds);
+    const suggested = buildEvalRequest(suggestion, holdoutCaseIds);
+    const reuseBaseline = holdoutRun?.baseline?.key === baseline.key;
+    setHoldoutRun((prev) => ({
+      caseIds: holdoutCaseIds,
+      baseline: reuseBaseline && prev ? prev.baseline : null,
+      suggestion: null,
+      pending: reuseBaseline ? 'suggestion' : 'baseline',
+      error: null,
+    }));
+    holdoutMutation.mutate(
+      reuseBaseline
+        ? { half: 'suggestion', request: suggested, token }
+        : { half: 'baseline', request: baseline, next: suggested, token },
+    );
+  };
+
+  const handleEvaluateSuggested = () => {
+    if (!evaluateSuggested.enabled) return;
+    if (splitActive) {
+      startPairedRun();
+      return;
+    }
+    evalOptimizedMutation.mutate({
+      ...buildEvalRequest(suggestion, suggestedCaseIds),
+      token: acceptTokenRef.current,
+    });
+  };
+
+  // Save, then apply (only if draft/suggestion haven't changed)
+  // Callbacks drop on unmount, so closing mid-save is safe
+  const handleAcceptOptimized = () => {
+    if (!optimizeResult || !accept.enabled) return;
+    const token = ++acceptTokenRef.current;
+    acceptOptimizedMutation.mutate(
+      { content: optimizeResult.suggested_prompt, draftAtSubmit: value, token },
+      {
+        onSuccess: (created, vars) => {
+          const stillCurrent = vars.token === acceptTokenRef.current;
+          if (stillCurrent && draftUnchangedSince(vars.draftAtSubmit, latestDraftRef.current)) {
+            onAccepted(created.content);
+            setSuccessMessage(`Saved as v${created.version_number} and applied to the draft`);
+          } else {
+            setSuccessMessage(`Saved as v${created.version_number}; the draft was left as it is`);
+          }
+          if (stillCurrent) {
+            setOptimizeRun(null);
+            setSuggestedEvalRun(null);
+            setHoldoutRun(null);
+          }
+        },
+      },
+    );
+  };
+
+  const providerFallback = activeProvider
+    ? {
+        name: activeProvider.name,
+        llm_model_provider: activeProvider.llm_model_provider,
+        llm_model: activeProvider.llm_model,
+      }
+    : undefined;
+
+  const runMarkers = (results: PromptEvalResponse, stale: boolean) =>
+    `${results.provenance.deadline_hit ? ' · cut by the time budget' : ''}${
+      stale ? ' · inputs changed' : ''
+    }`;
+
   return (
     <div className="space-y-4 pt-4 px-2">
-      {(error || warningMessage || successMessage) && (
+      {(error || successMessage) && (
         <div className="space-y-2">
           {error && (
             <div className="flex items-center gap-2 text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
               <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{error}</span>
-            </div>
-          )}
-          {warningMessage && (
-            <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{warningMessage}</span>
             </div>
           )}
           {successMessage && (
@@ -188,9 +568,15 @@ export const EditorTab: React.FC<EditorTabProps> = ({
 
       <div className="space-y-2">
         <Label>LLM Provider</Label>
-        <Select value={selectedProviderId} onValueChange={setSelectedProviderId}>
+        <Select value={activeProviderId} onValueChange={setSelectedProviderId}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Select provider for evaluation/optimization" />
+            <SelectValue
+              placeholder={
+                providerStatus === 'empty'
+                  ? 'No active LLM providers are available'
+                  : 'Select provider for evaluation/optimization'
+              }
+            />
           </SelectTrigger>
           <SelectContent>
             {providers.map((provider) => (
@@ -203,264 +589,360 @@ export const EditorTab: React.FC<EditorTabProps> = ({
       </div>
 
       <div className="space-y-2">
-        <Label>Prompt Content</Label>
+        <Label>{fieldLabel}</Label>
         <RichTextarea
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onDraftEdit(e.target.value)}
           placeholder="Enter your prompt..."
           rows={10}
           className="w-full font-mono text-sm"
         />
-        <div className="text-xs text-muted-foreground text-right">{value.length} characters</div>
+        <div className="text-xs text-muted-foreground text-right">{promptLength(value)} characters</div>
+
+        {hasDiagnostics && (
+          <div className="space-y-1 text-xs">
+            {braceScan.findings.map((finding) => (
+              <p
+                key={`${finding.index}-${finding.kind}`}
+                className="text-amber-700 dark:text-amber-400"
+              >
+                <code className="font-mono">{finding.text}</code>{' '}
+                {DIAGNOSTIC_MESSAGES[finding.kind]}
+              </p>
+            ))}
+            {braceScan.truncated && (
+              <p className="text-amber-700 dark:text-amber-400">…and more.</p>
+            )}
+            {availabilityNote && <p className="text-muted-foreground">{availabilityNote}</p>}
+            {fanIn && <p className="text-muted-foreground">{fanIn}</p>}
+          </div>
+        )}
       </div>
 
       <Accordion type="multiple" className="border rounded-lg px-4">
-        <AccordionItem value="optimize">
-          <AccordionTrigger className="hover:no-underline">
-            <div className="flex items-center justify-between w-full pr-2">
-              <span>Optimize Prompt</span>
-              {optimizeResult && <span className="text-xs text-muted-foreground">Suggestion ready</span>}
-            </div>
-          </AccordionTrigger>
-          <AccordionContent>
-            <div className="space-y-4 flex flex-col gap-2">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">
-                    Add optional guidance, then generate an improved prompt suggestion.
-                  </p>
+        {caps.canOptimize && (
+          <AccordionItem value="optimize">
+            <AccordionTrigger className="hover:no-underline">
+              <div className="flex items-center justify-between w-full pr-2">
+                <span>Optimize Prompt</span>
+                {optimizeResult && (
+                  <span className="text-xs text-muted-foreground">
+                    Suggestion ready{optimizeStale ? ' · inputs changed' : ''}
+                  </span>
+                )}
+              </div>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="space-y-4 flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">
+                      Add optional guidance, then generate an improved prompt suggestion.
+                    </p>
+                    {failedTotal > failedCases.length && (
+                      <p className="text-xs text-muted-foreground">
+                        {failedCases.length} of {failedTotal} failures included.
+                      </p>
+                    )}
+                    {evalStale && (
+                      <p className="text-xs text-muted-foreground">
+                        Inputs changed since the last run, so its failures were left out.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2 px-2">
+                  <Label className="text-sm">Additional Instructions (optional)</Label>
+                  <RichTextarea
+                    value={optimizeInstructions}
+                    onChange={(e) => setOptimizeInstructions(e.target.value)}
+                    placeholder="e.g., Make it more concise, add examples, enforce JSON output..."
+                    size="description"
+                    className="text-sm"
+                  />
+                </div>
+
+                {optimizeResult && (
+                  <div className="space-y-3 border-t pt-4">
+                    {optimizeStale && (
+                      <div className="text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
+                        {SUGGESTION_STALE_REASON}
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium">Suggested Prompt</Label>
+                      <div className="border rounded p-3 bg-muted text-sm font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
+                        {optimizeResult.suggested_prompt}
+                      </div>
+                    </div>
+                    {optimizeResult.explanation && (
+                      <div className="space-y-1">
+                        <Label className="text-sm font-medium">Explanation</Label>
+                        <p className="text-sm text-muted-foreground">{optimizeResult.explanation}</p>
+                      </div>
+                    )}
+
+                    {placeholderNote && (
+                      <div className="text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
+                        {placeholderNote} Check it before accepting.
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                      {caps.canEvaluate && (
+                        <GateTooltip reason={evaluateSuggested.reason}>
+                        <Button
+                          size="sm"
+                          onClick={handleEvaluateSuggested}
+                          disabled={!evaluateSuggested.enabled || suggestedPending}
+                          variant="outline"
+                        >
+                          {suggestedPending ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Play className="h-4 w-4 mr-2" />
+                          )}
+                          {suggestedPending ? 'Evaluating...' : 'Evaluate Suggested'}
+                        </Button>
+                        </GateTooltip>
+                      )}
+                      {caps.canEditPrompt && (
+                        <GateTooltip reason={accept.reason}>
+                        <Button
+                          size="sm"
+                          onClick={handleAcceptOptimized}
+                          disabled={!accept.enabled}
+                        >
+                          {acceptOptimizedMutation.isPending ? 'Accepting...' : 'Accept & Save as Version'}
+                        </Button>
+                        </GateTooltip>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          acceptTokenRef.current += 1;
+                          setOptimizeRun(null);
+                          setSuggestedEvalRun(null);
+                          setHoldoutRun(null);
+                        }}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
+
+                    {holdoutRun?.error && (
+                      <div className="flex items-center justify-between gap-2 text-destructive text-sm bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+                        <span>
+                          The {holdoutRun.error.half === 'baseline' ? 'current' : 'suggested'} prompt
+                          could not be evaluated: {holdoutRun.error.message}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const retry = holdoutRun.error!;
+                            setHoldoutRun((prev) =>
+                              prev ? { ...prev, pending: retry.half, error: null } : prev,
+                            );
+                            holdoutMutation.mutate({
+                              ...retry.vars,
+                              token: acceptTokenRef.current,
+                            });
+                          }}
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    )}
+
+                    {pairedRun && (
+                      <div className="border-t pt-3">
+                        <PromptEvalResults
+                          results={pairedRun.suggestion!.results}
+                          title="Hold-out comparison"
+                          stale={staleOf(pairedRun.suggestion!.key, pairedRunKey)}
+                          providerFallback={providerFallback}
+                          comparison={{ baseline: pairedRun.baseline!.results }}
+                        />
+                      </div>
+                    )}
+
+                    {!pairedRun && suggestedEvalRun && (
+                      <div className="border-t pt-3">
+                        <PromptEvalResults
+                          results={suggestedEvalRun.results}
+                          title="Suggested Prompt Evaluation"
+                          stale={suggestedStale}
+                          providerFallback={providerFallback}
+                          leaky
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <GateTooltip reason={optimize.reason}>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (!optimize.enabled) return;
+                        const caseSplit = splitActive
+                          ? { holdoutShare: DEFAULT_HOLDOUT_SHARE, holdoutIds: holdoutCaseIds }
+                          : null;
+                        optimizeMutation.mutate({
+                          key: currentOptimizeKey,
+                          prompt: value,
+                          providerId: activeProviderId,
+                          instructions,
+                          failedCases: failedCases.length > 0 ? failedCases : undefined,
+                          sourceFailuresKey: failuresKey,
+                          caseSplit,
+                          techniques: selectedTechniques,
+                        });
+                      }}
+                      disabled={!optimize.enabled || optimizeMutation.isPending}
+                    >
+                      {optimizeMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4 mr-2" />
+                      )}
+                      {optimizeMutation.isPending ? 'Optimizing...' : 'Optimize'}
+                    </Button>
+                  </GateTooltip>
                 </div>
               </div>
+            </AccordionContent>
+          </AccordionItem>
+        )}
 
-              <div className="space-y-2 px-2">
-                <Label className="text-sm">Additional Instructions (optional)</Label>
-                <RichTextarea
-                  value={optimizeInstructions}
-                  onChange={(e) => setOptimizeInstructions(e.target.value)}
-                  placeholder="e.g., Make it more concise, add examples, enforce JSON output..."
-                  size="description"
-                  className="text-sm"
-                />
+        {caps.canEvaluate && (
+          <AccordionItem value="evaluate">
+            <AccordionTrigger className="hover:no-underline">
+              <div className="flex items-center justify-between w-full pr-2">
+                <span>Evaluate Prompt</span>
+                {evalRun && (
+                  <span className="text-xs text-muted-foreground">
+                    {summaryLine(evalRun.results.summary)}
+                    {runMarkers(evalRun.results, evalStale)}
+                  </span>
+                )}
               </div>
-
-              {optimizeResult && (
-                <div className="space-y-3 border-t pt-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Suggested Prompt</Label>
-                    <div className="border rounded p-3 bg-muted text-sm font-mono whitespace-pre-wrap max-h-48 overflow-y-auto">
-                      {optimizeResult.suggested_prompt}
-                    </div>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="space-y-4">
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap gap-4">
+                    {PROMPT_CHECK_TECHNIQUES.map((technique) => (
+                      <div key={technique} className="flex items-center gap-2">
+                        <Switch
+                          checked={selectedTechniques.includes(technique)}
+                          onCheckedChange={() => toggleTechnique(technique)}
+                        />
+                        <Label className="text-sm cursor-pointer">{methodLabel(technique)}</Label>
+                      </div>
+                    ))}
                   </div>
-                  {optimizeResult.explanation && (
-                    <div className="space-y-1">
-                      <Label className="text-sm font-medium">Explanation</Label>
-                      <p className="text-sm text-muted-foreground">{optimizeResult.explanation}</p>
+
+                  {notContainsSelected && (
+                    <div className="space-y-2 px-2">
+                      <Label className="text-sm">Forbidden phrases (one per line)</Label>
+                      <RichTextarea
+                        value={phrasesText}
+                        onChange={(e) => setPhrasesText(e.target.value)}
+                        placeholder={'discount\nguarantee'}
+                        size="description"
+                        className="text-sm"
+                      />
+                      {phrasesIssue && <p className="text-xs text-destructive">{phrasesIssue}</p>}
                     </div>
                   )}
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm">Cases to check</Label>
+                      <Select
+                        value={String(casesToCheck)}
+                        onValueChange={(v) => setCasesToCheck(Number(v))}
+                        disabled={splitActive}
+                      >
+                        <SelectTrigger className="w-20">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CASES_TO_CHECK_OPTIONS.map((option) => (
+                            <SelectItem key={option} value={String(option)}>
+                              {option}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <GateTooltip reason={split.feasible ? null : split.reason}>
+                      <span className="flex items-center gap-2">
+                        <Switch
+                          checked={splitActive}
+                          disabled={!split.feasible}
+                          onCheckedChange={setSplitEnabled}
+                        />
+                        <Label className="text-sm cursor-pointer">
+                          Hold out cases
+                          {split.feasible && (
+                            <span className="text-muted-foreground">
+                              {' '}
+                              ({split.dev.length} development · {split.holdout.length} hold-out)
+                            </span>
+                          )}
+                        </Label>
+                      </span>
+                    </GateTooltip>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <GateTooltip reason={evaluate.reason}>
                     <Button
                       size="sm"
-                      onClick={() => evalOptimizedMutation.mutate()}
-                      disabled={
-                        !selectedProviderId || selectedTechniques.length === 0 || evalOptimizedMutation.isPending
-                      }
-                      variant="outline"
+                      variant="default"
+                      onClick={() => {
+                        if (!evaluate.enabled) return;
+                        evalMutation.mutate(buildEvalRequest(value, evalCaseIds));
+                      }}
+                      disabled={!evaluate.enabled || evalMutation.isPending}
                     >
-                      {evalOptimizedMutation.isPending ? (
+                      {evalMutation.isPending ? (
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       ) : (
                         <Play className="h-4 w-4 mr-2" />
                       )}
-                      {evalOptimizedMutation.isPending ? 'Evaluating...' : 'Evaluate Suggested'}
+                      {evalMutation.isPending ? 'Evaluating...' : 'Run Evaluation'}
                     </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => acceptOptimizedMutation.mutate()}
-                      disabled={acceptOptimizedMutation.isPending}
-                    >
-                      {acceptOptimizedMutation.isPending ? 'Accepting...' : 'Accept & Save as Version'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setOptimizeResult(null);
-                        setOptimizedEvalResults(null);
-                      }}
-                    >
-                      Dismiss
-                    </Button>
+                    </GateTooltip>
                   </div>
-
-                  {optimizedEvalResults && (
-                    <div className="space-y-3 border-t pt-3">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <p className="text-sm font-medium">Suggested Prompt Evaluation</p>
-                        <Badge variant="secondary">
-                          {optimizedEvalResults.summary.passed}/{optimizedEvalResults.summary.total} passed
-                        </Badge>
-                        <Badge variant="secondary">
-                          Avg Score: {(optimizedEvalResults.summary.avg_score * 100).toFixed(1)}%
-                        </Badge>
-                      </div>
-                      <div className="space-y-2 max-h-60 overflow-y-auto">
-                        {optimizedEvalResults.results.map((r, i) => (
-                          <div
-                            key={r.case_id || i}
-                            className={`border rounded p-3 text-sm ${
-                              r.passed ? 'border-green-200 bg-green-50 dark:border-green-500/30 dark:bg-green-500/15' : 'border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/15'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 mb-2">
-                              {r.passed ? (
-                                <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-                              ) : (
-                                <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                              )}
-                              <span className="font-medium">{r.passed ? 'Passed' : 'Failed'}</span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 text-xs">
-                              <div>
-                                <p className="font-medium text-muted-foreground">Input</p>
-                                <p className="line-clamp-3">{r.input}</p>
-                              </div>
-                              <div>
-                                <p className="font-medium text-muted-foreground">Expected</p>
-                                <p className="line-clamp-3">{r.expected}</p>
-                              </div>
-                              <div>
-                                <p className="font-medium text-muted-foreground">Actual</p>
-                                <p className="line-clamp-3">{r.actual}</p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
-              )}
 
-              <div className="flex justify-end">
-                <Button
-                  size="sm"
-                  onClick={() => optimizeMutation.mutate()}
-                  disabled={!selectedProviderId || !value.trim() || optimizeMutation.isPending}
-                >
-                  {optimizeMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-4 w-4 mr-2" />
-                  )}
-                  {optimizeMutation.isPending ? 'Optimizing...' : 'Optimize'}
-                </Button>
+                {evalRun && (
+                  <PromptEvalResults
+                    results={evalRun.results}
+                    stale={evalStale}
+                    providerFallback={providerFallback}
+                    leaky={splitActive}
+                  />
+                )}
               </div>
-            </div>
-          </AccordionContent>
-        </AccordionItem>
-
-        <AccordionItem value="evaluate">
-          <AccordionTrigger className="hover:no-underline">
-            <div className="flex items-center justify-between w-full pr-2">
-              <span>Evaluate Prompt</span>
-              {evalResults && (
-                <span className="text-xs text-muted-foreground">
-                  {evalResults.summary.passed}/{evalResults.summary.total} passed
-                </span>
-              )}
-            </div>
-          </AccordionTrigger>
-          <AccordionContent>
-            <div className="space-y-4">
-              <div className="flex flex-col gap-2">
-                <div className="flex flex-wrap gap-2">
-                  {TECHNIQUES.map((t) => (
-                    <div key={t.key} className="flex items-center gap-2">
-                      <Switch
-                        checked={selectedTechniques.includes(t.key)}
-                        onCheckedChange={() => toggleTechnique(t.key)}
-                      />
-                      <Label className="text-sm cursor-pointer">{t.label}</Label>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={() => {
-                      setWarningMessage(null);
-                      if (!goldSuiteId || goldCases.length === 0) {
-                        setWarningMessage(
-                          'Missing Gold Dataset. Create a Gold Dataset and add at least one test case before running evaluation.',
-                        );
-                        return;
-                      }
-                      evalMutation.mutate();
-                    }}
-                    disabled={
-                      !selectedProviderId || selectedTechniques.length === 0 || !value.trim() || evalMutation.isPending
-                    }
-                  >
-                    {evalMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Play className="h-4 w-4 mr-2" />
-                    )}
-                    {evalMutation.isPending ? 'Evaluating...' : 'Run Evaluation'}
-                  </Button>
-                </div>
-              </div>
-
-              {evalResults && (
-                <div className="space-y-3">
-                  <div className="flex gap-3">
-                    <Badge variant="secondary">
-                      {evalResults.summary.passed}/{evalResults.summary.total} passed
-                    </Badge>
-                    <Badge variant="secondary">Avg Score: {(evalResults.summary.avg_score * 100).toFixed(1)}%</Badge>
-                  </div>
-
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {evalResults.results.map((r, i) => (
-                      <div
-                        key={r.case_id || i}
-                        className={`border rounded p-3 text-sm ${
-                          r.passed ? 'border-green-200 bg-green-50 dark:border-green-500/30 dark:bg-green-500/15' : 'border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/15'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          {r.passed ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
-                          ) : (
-                            <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
-                          )}
-                          <span className="font-medium">{r.passed ? 'Passed' : 'Failed'}</span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2 text-xs">
-                          <div>
-                            <p className="font-medium text-muted-foreground">Input</p>
-                            <p className="line-clamp-3">{r.input}</p>
-                          </div>
-                          <div>
-                            <p className="font-medium text-muted-foreground">Expected</p>
-                            <p className="line-clamp-3">{r.expected}</p>
-                          </div>
-                          <div>
-                            <p className="font-medium text-muted-foreground">Actual</p>
-                            <p className="line-clamp-3">{r.actual}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </AccordionContent>
-        </AccordionItem>
+            </AccordionContent>
+          </AccordionItem>
+        )}
       </Accordion>
+
+      {hasRuns && (
+        <p className="text-xs text-muted-foreground">
+          Results are kept while this editor is open.
+        </p>
+      )}
     </div>
   );
 };

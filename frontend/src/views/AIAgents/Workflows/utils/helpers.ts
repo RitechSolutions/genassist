@@ -203,7 +203,7 @@ export const handleNodeDoubleClick = (
 
   const dimensions = getNodeDimensions(fullNode);
 
-  const center = getNodeCenter(fullNode.position, dimensions);
+  const center = getNodeCenter(fullNode.positionAbsolute ?? fullNode.position, dimensions);
 
   reactFlowInstance.setCenter(center.x, center.y, {
     zoom: 1.5,
