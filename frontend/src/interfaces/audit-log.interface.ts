@@ -21,15 +21,9 @@ export interface AuditLogCardProps {
   searchQuery: string;
   auditLogs: AuditLog[];
   users: User[];
-  selectedUser: string | null;
   onViewDetails: (logId: string) => void;
   loading?: boolean;
   isRefreshing?: boolean;
   error?: string | null;
   onRetry?: () => void;
-}
-
-export interface JsonViewerProps {
-  jsonData: object | null;
-  className?: string;
 }

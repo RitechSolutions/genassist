@@ -20,6 +20,7 @@ export interface LlmUsageSummaryResponse {
   unpriced_calls: number;
   priced_token_coverage_pct: number;
   last_unpriced_at?: string | null;
+  last_fallback_at?: string | null;
 }
 
 export interface LlmUsageBreakdownItem {
