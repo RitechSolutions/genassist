@@ -254,8 +254,6 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
-    volumes:
-      - ./backend/datavolume:/src/datavolume
     networks:
       - genassist-network-dev
     restart: unless-stopped
