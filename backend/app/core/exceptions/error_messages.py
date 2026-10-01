@@ -123,6 +123,7 @@ class ErrorKey(Enum):
     ERROR_INSIDE_WHISPER_SERVICE = "ERROR_INSIDE_WHISPER_SERVICE"
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
     ERROR_EXTRACTING_FROM_FILE = "ERROR_EXTRACTING_FROM_FILE"
+    ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
     INVALID_PKL_FILE = "INVALID_PKL_FILE"
@@ -304,6 +305,7 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_INSIDE_WHISPER_SERVICE: "An error occurred in transcription service.",
         ErrorKey.MESSAGE_NOT_FOUND: "Message not found.",
         ErrorKey.ERROR_EXTRACTING_FROM_FILE: "Failed to extract text from file.",
+        ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",

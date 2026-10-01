@@ -30,6 +30,9 @@ _CLIENT_SAFE_DETAIL_KEYS = frozenset(
         ErrorKey.PROMPT_CONTEXT_INVALID,
         ErrorKey.PROMPT_FIELD_NOT_SUPPORTED,
         ErrorKey.PROMPT_VERSION_CONFLICT,
+        # Platform-generated Train Data Source limit messages only
+        # contain configured ceilings and user guidance.
+        ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
         # Policy-generated read-only SQL rejection; not driver/database text.
         ErrorKey.READ_ONLY_SQL_BLOCKED,
     }
@@ -168,4 +171,3 @@ async def send_socket_error(websocket: WebSocket, error_key: ErrorKey, lang: str
         "error": get_error_message(error_key, lang=lang),
         "error_key": error_key.value,
         }))
-
