@@ -58,6 +58,9 @@ export const HISTORY_FORBIDDEN_REASON =
 export const SUGGESTION_STALE_REASON =
   "Inputs changed since this suggestion. Run Optimize again.";
 
+export const HOLDOUT_STALE_REASON =
+  "Inputs changed since this comparison. Start a new hold-out run.";
+
 const NODE_MISSING_REASON =
   "This node isn't in the saved workflow. Save the workflow first.";
 
@@ -202,3 +205,47 @@ export const acceptGate = (
   if (state.stale) return blocked(SUGGESTION_STALE_REASON);
   return bodyGate(suggestion, "suggested prompt") ?? OPEN;
 };
+
+export interface HoldoutRequestKeys {
+  baselineKey: string;
+  suggestionKey: string;
+}
+
+/**
+ * Compares two prompts against current inputs. Valid only if both match;
+ * missing key invalidates (single version ≠ comparison)
+ */
+export const pairedKeysMatch = (
+  stored: {
+    baselineKey: string | null | undefined;
+    suggestionKey: string | null | undefined;
+  },
+  current: HoldoutRequestKeys | null,
+): boolean =>
+  current !== null &&
+  stored.baselineKey === current.baselineKey &&
+  stored.suggestionKey === current.suggestionKey;
+
+export interface HoldoutRetryInputs {
+  half: "baseline" | "suggestion";
+  requestKey: string;
+  nextKey?: string;
+  storedBaselineKey: string | null;
+}
+
+/** Replaying one half is only honest while the pair it belongs to is still current */
+export const retryGate = (
+  stored: HoldoutRetryInputs,
+  current: HoldoutRequestKeys | null,
+): Gate =>
+  pairedKeysMatch(
+    stored.half === "baseline"
+      ? { baselineKey: stored.requestKey, suggestionKey: stored.nextKey }
+      : {
+          baselineKey: stored.storedBaselineKey,
+          suggestionKey: stored.requestKey,
+        },
+    current,
+  )
+    ? OPEN
+    : blocked(HOLDOUT_STALE_REASON);

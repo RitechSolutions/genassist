@@ -4,6 +4,7 @@ import type {
   PromptEvalMetric,
 } from "@/interfaces/promptEditor.interface";
 import {
+  acceptPayloadOf,
   canonicalJson,
   evalKeyOf,
   failedCaseCount,
@@ -258,5 +259,15 @@ describe("isOptimizeCurrent", () => {
 
     expect(isOptimizeCurrent(withoutFailures, current({ failuresKey: null }))).toBe(true);
     expect(isOptimizeCurrent(withoutFailures, current())).toBe(true);
+  });
+});
+
+describe("acceptPayloadOf", () => {
+  it("saves the suggestion on screen, not the text the optimizer returned", () => {
+    expect(acceptPayloadOf("edited suggestion", "draft", 3)).toEqual({
+      content: "edited suggestion",
+      draftAtSubmit: "draft",
+      token: 3,
+    });
   });
 });
