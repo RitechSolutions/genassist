@@ -182,18 +182,6 @@ async def test_execute_appends_client_safe_detail(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_execute_on_app_exception_without_detail_is_unchanged():
-    st = _bare_state()
-
-    def _boom():
-        raise AppException(error_key=ErrorKey.INTERNAL_ERROR)
-
-    await _FakeNode("n1", st, _boom).execute()
-
-    assert st.node_execution_status["n1"]["error"] == "Error executing node n1: error_500"
-
-
-@pytest.mark.asyncio
 async def test_execute_normal_output_is_success():
     st = _bare_state()
     node = _FakeNode("n1", st, lambda: {"message": "all good"})

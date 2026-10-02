@@ -451,7 +451,8 @@ class BaseNode(ABC):
                     failure = is_node_failure(result)
                     if failure is not None:
                         if span is not None and span.is_recording():
-                            span.set_status(Status(StatusCode.ERROR, str(failure.get("error"))))
+                            reason = truncate_for_log(redact_sensitive_substrings(str(failure.get("error"))), 500)
+                            span.set_status(Status(StatusCode.ERROR, reason))
                         flow_output = failure.get("output")
                         if flow_output is not None:
                             self.set_node_output(flow_output)

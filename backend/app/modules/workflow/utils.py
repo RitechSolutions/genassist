@@ -7,6 +7,7 @@ import multiprocessing
 import os
 import pickle
 import re
+import signal
 import sys
 from contextlib import redirect_stdout, redirect_stderr
 from multiprocessing.connection import Connection, wait as wait_readable
@@ -28,7 +29,9 @@ logger = logging.getLogger(__name__)
 _EXEC_TIMEOUT_SECONDS = 600
 _EXIT_GRACE_SECONDS = 5
 _MAX_RESULT_BYTES = 32 * 1024 * 1024
-# Imported once by the fork server so script children start with them loaded
+# Captured stdout/stderr keep this much, half head and half tail, so prints never trip the result cap
+_MAX_STREAM_CHARS = 1024 * 1024
+# Preloaded by the fork server; 3.12 ignores "__main__", so children re-run the entry script as __mp_main__
 _FORKSERVER_PRELOAD = ["__main__", "numpy", "pandas", "app.modules.workflow.utils"]
 
 
@@ -54,6 +57,7 @@ def add_executable_function(code: str) -> str:
     template_lines.append("")
     return code + "\n" + "\n".join(template_lines)
 
+_SCRIPT_ERROR_PREFIX = "Error processing parameters: "
 
 def _error_dict(message: str) -> Dict[str, Any]:
     return {"error": message, "traceback": "", "output": "", "errors": ""}
@@ -62,12 +66,17 @@ def _error_dict(message: str) -> Dict[str, Any]:
 def script_error(response: Dict[str, Any]) -> str:
     if response.get("error"):
         return str(response["error"])
-    if response.get("result") is None and response.get("errors"):
+    if response.get("script_failed") and response.get("result") is None:
         return str(response["errors"])
     return ""
 
 
 def _encode_result(payload: Dict[str, Any], limit: int = _MAX_RESULT_BYTES) -> bytes:
+    for stream in ("output", "errors"):
+        text = payload.get(stream)
+        if isinstance(text, str) and len(text) > _MAX_STREAM_CHARS:
+            half = _MAX_STREAM_CHARS // 2
+            payload[stream] = f"{text[:half]}\n... ({len(text) - 2 * half} chars cut) ...\n{text[-half:]}"
     try:
         data = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
     except Exception as exc:
@@ -81,13 +90,22 @@ def _encode_result(payload: Dict[str, Any], limit: int = _MAX_RESULT_BYTES) -> b
 
 
 def _unpicklable_keys(params: Dict[str, Any]) -> List[str]:
+    """Keys whose values fail a pickle round trip"""
     keys = []
     for key, value in params.items():
         try:
-            pickle.dumps(value)
+            pickle.loads(pickle.dumps(value))
         except Exception:
             keys.append(str(key))
     return keys
+
+
+def _kill(process: multiprocessing.process.BaseProcess) -> None:
+    """SIGKILL by pid; Process.kill() is a no-op once a dead fork server marked the child as exited"""
+    try:
+        os.kill(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
 
 
 @functools.lru_cache(maxsize=1)
@@ -155,6 +173,8 @@ def _subprocess_worker(
         if global_errors:
             errors = errors + "\nGlobal errors: " + str(global_errors)
         payload = {"result": result, "output": output, "errors": errors}
+        if str(global_errors or "").startswith(_SCRIPT_ERROR_PREFIX) and callable(namespace.get("executable_function")):
+            payload["script_failed"] = True
 
     except SandboxViolation as sv:
         payload = {
@@ -172,7 +192,7 @@ def _subprocess_worker(
         }
     except Exception as e:
         payload = {
-            "error": str(e),
+            "error": str(e) or type(e).__name__,
             "traceback": "",
             "output": stdout_buffer.getvalue(),
             "errors": stderr_buffer.getvalue(),
@@ -214,26 +234,27 @@ def _execute_python_code_sync(
             return _error_dict(f"Script params cannot be sent to the sandbox: {', '.join(keys) or exc}")
         child_conn.close()  # only the child may hold the write end, or EOF never arrives
 
-        ready = wait_readable([parent_conn, process.sentinel], timeout=_EXEC_TIMEOUT_SECONDS)
-        if not ready:
-            process.kill()
+        if not wait_readable([parent_conn], timeout=_EXEC_TIMEOUT_SECONDS):
+            _kill(process)
             logger.warning(
                 "User code execution timed out after %ds — subprocess killed",
                 _EXEC_TIMEOUT_SECONDS,
             )
             return _error_dict(f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds")
 
-        if parent_conn in ready:
-            try:
-                return pickle.loads(parent_conn.recv_bytes(maxlength=max_result_bytes))
-            except (EOFError, OSError):
-                pass  # exited without sending, killed mid-send, or over the size cap
-            except Exception as exc:
-                logger.warning("Script result could not be decoded: %s", type(exc).__name__)
-                return _error_dict(f"Script result could not be decoded: {type(exc).__name__}")
-        else:
-            process.kill()  # only the sentinel fired: the fork server died while the child still runs
+        try:
+            return pickle.loads(parent_conn.recv_bytes(maxlength=max_result_bytes))
+        except (EOFError, OSError):
+            pass  # exited without sending, killed mid-send, or over the size cap
+        except Exception as exc:
+            logger.warning("Script result could not be decoded: %s", type(exc).__name__)
+            return _error_dict(f"Script result could not be decoded: {type(exc).__name__}")
         process.join(timeout=_EXIT_GRACE_SECONDS)
+        # Exit code 1 is a child that could not load its arguments; the round trip copies them, so skip it after a kill
+        keys = _unpicklable_keys(params) if process.exitcode == 1 else []
+        if keys:
+            logger.warning("Script params cannot be sent to the sandbox: %s (exit code %s)", keys, process.exitcode)
+            return _error_dict(f"Script params cannot be sent to the sandbox: {', '.join(keys)}")
         logger.warning("User code subprocess exited with code %s without returning a result", process.exitcode)
         return _error_dict("Subprocess exited without returning a result")
     finally:
@@ -284,7 +305,7 @@ async def execute_python_code(
         return await asyncio.to_thread(_execute_python_code_sync, code, params, wrap_code, max_result_bytes, prelude)
     except Exception as e:
         logger.error("Error in async Python code execution: %s", type(e).__name__)
-        return _error_dict(str(e))
+        return _error_dict(str(e) or type(e).__name__)
 
 
 def generate_python_function_template(parameters_schema: Dict[str, Any]) -> str:

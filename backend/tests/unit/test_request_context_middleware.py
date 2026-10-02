@@ -28,8 +28,9 @@ def test_api_key_path_segment_is_masked_in_both_request_log_lines():
         client.post("/agents/a1/query/thread-1", headers={API_KEY_HEADER_NAME: key})
         client.post(f"/agents/a1/query/{key}")
         client.post("/agents/a1/query/thread-1", headers={API_KEY_HEADER_NAME: ""})
+        client.post("/agents/a1/query/agent123", headers={API_KEY_HEADER_NAME: "agent123"})
     finally:
         logger.remove(handler_id)
 
     masked, plain = "/agents/a1/query/[TOKEN]", "/agents/a1/query/thread-1"
-    assert [p.strip() for p in paths] == [masked] * 2 + [plain] * 2 + [masked] * 2 + [plain] * 2
+    assert [p.strip() for p in paths] == [masked] * 2 + [plain] * 2 + [masked] * 2 + [plain] * 2 + [masked] * 2

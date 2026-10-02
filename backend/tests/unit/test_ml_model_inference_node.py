@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
+from sklearn.preprocessing import StandardScaler
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -163,7 +164,7 @@ class _StubModel:
         return np.zeros(len(X), dtype=int)
 
 
-async def _predict(monkeypatch, model, inputs):
+async def _predict(monkeypatch, model, inputs, **metadata):
     ml_model = SimpleNamespace(
         name="forecast",
         model_type="xgboost",
@@ -176,7 +177,11 @@ async def _predict(monkeypatch, model, inputs):
     service = MagicMock(get_by_id=AsyncMock(return_value=ml_model))
     manager = MagicMock(
         get_model=AsyncMock(
-            return_value={"version": "v2.0", "model": model, "metadata": {"feature_columns": list(inputs)}}
+            return_value={
+                "version": "v2.0",
+                "model": model,
+                "metadata": {"feature_columns": list(inputs), **metadata},
+            }
         )
     )
     monkeypatch.setattr(inference_module, "injector", MagicMock(get=MagicMock(return_value=service)))
@@ -219,3 +224,29 @@ class TestValidateInferenceValues:
         assert detail.startswith("Unusable inference input for 1 feature(s): lag_24='null'")
         assert "upstream" in detail
         assert "could not convert string to float" in detail
+
+    @pytest.mark.asyncio
+    async def test_failed_preparation_names_the_unusable_feature(self, monkeypatch):
+        scaler = StandardScaler().fit([[0.0], [1.0]])
+        inputs = {"lag_24": "null", "hour": 3}
+        with pytest.raises(AppException) as exc:
+            await _predict(monkeypatch, _StubModel(), inputs, scaler=scaler, scaled_columns=["lag_24"])
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert exc.value.error_detail.startswith("Unusable inference input for 1 feature(s): lag_24='null'")
+        assert "Data preparation failed: could not convert string to float" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_failed_feature_replay_names_the_unusable_feature(self, monkeypatch):
+        inputs = {"lag_24": "null", "hour": 3}
+        steps = [{"strategy": "normalize", "column_stats": {"lag_24": {"out_col": "lag_24_norm", "min": 0, "max": 1}}}]
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                inputs,
+                feature_engineering_steps=steps,
+                model_input_columns=["lag_24_norm", "hour"],
+            )
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert exc.value.error_detail.startswith("Unusable inference input for 1 feature(s): lag_24='null'")
+        assert "Could not reconstruct column(s) ['lag_24_norm']" in exc.value.error_detail

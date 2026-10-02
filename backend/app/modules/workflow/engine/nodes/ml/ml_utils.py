@@ -6,6 +6,7 @@ This module contains shared functionality used across ML-related nodes.
 
 from typing import Dict, Any, List, Optional, Tuple
 import logging
+import ast
 import csv
 import math
 import os
@@ -13,7 +14,6 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 
-from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
@@ -571,9 +571,7 @@ def resolve_csv_file_path(
         ) from e
 
 
-def load_csv_file(
-    file_url: str, thread_id: Optional[str] = None
-) -> Tuple[List[Dict[str, Any]], pd.DataFrame]:
+def load_csv_file(file_url: str, thread_id: Optional[str] = None) -> pd.DataFrame:
     """
     Load data from a CSV file URL/path.
 
@@ -582,7 +580,7 @@ def load_csv_file(
         thread_id: Optional thread ID for relative path resolution
 
     Returns:
-        Tuple of (data as list of dicts, DataFrame)
+        DataFrame
 
     Raises:
         AppException: If file cannot be loaded
@@ -592,11 +590,10 @@ def load_csv_file(
 
         # Load CSV file using pandas
         df = pd.read_csv(file_path, encoding="utf-8")
-        data = df.to_dict("records")
 
-        logger.info(f"Loaded {len(data)} rows from {file_path}")
+        logger.info(f"Loaded {len(df)} rows from {file_path}")
 
-        return data, df
+        return df
 
     except AppException:
         raise
@@ -608,16 +605,25 @@ def load_csv_file(
         ) from e
 
 
-# Runs in the sandbox before the preprocessing script, so params["data"] stays available
+_PREPROCESS_MAX_RESULT_BYTES = 128 * 1024 * 1024
+
+# Runs in the sandbox before a preprocessing script that names params["data"], rebuilding it from df
 _DATA_FROM_DF = """
-if params.get("data") is None and params.get("df") is not None:
+if params.get("df") is not None:
     params["data"] = params["df"].to_dict("records")
 """
 
 
+def _names_data(python_code: str) -> bool:
+    try:
+        tree = ast.parse(python_code)
+    except SyntaxError:
+        return False
+    return any(isinstance(node, ast.Constant) and node.value == "data" for node in ast.walk(tree))
+
+
 async def execute_and_process_preprocessing_code(
     python_code: str,
-    data: Optional[List[Dict[str, Any]]],
     df: Optional[pd.DataFrame],
     file_url: str,
     raise_on_error: bool = True,
@@ -627,7 +633,6 @@ async def execute_and_process_preprocessing_code(
 
     Args:
         python_code: Python code for data preprocessing
-        data: Optional list of dictionaries representing the data rows
         df: Optional pandas DataFrame
         file_url: URL or path to the file
         raise_on_error: If True, raise AppException on errors. If False, return error info.
@@ -643,7 +648,7 @@ async def execute_and_process_preprocessing_code(
 
     # Prepare parameters for Python code execution
     params = {
-        "data": data if df is None else None,
+        "data": None,
         "df": df,
         "fileUrl": file_url,
     }
@@ -653,8 +658,8 @@ async def execute_and_process_preprocessing_code(
         python_code,
         params,
         wrap_code=True,
-        max_result_bytes=settings.ML_EXTRACT_MAX_BYTES,
-        prelude=_DATA_FROM_DF,
+        max_result_bytes=_PREPROCESS_MAX_RESULT_BYTES,
+        prelude=_DATA_FROM_DF if _names_data(python_code) else "",
     )
 
     # "error" signals an execution failure (timeout, sandbox violation, syntax

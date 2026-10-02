@@ -122,8 +122,9 @@ def _validate_inference_values(
     normalized_inputs: Dict[str, List[Any]],
     feature_names: Sequence[str],
     error: Exception,
+    stage: str = "Error during model prediction",
 ) -> None:
-    """After a failed prediction, names the model features that received no upstream value"""
+    """After a failed preparation or prediction, names the model features that received no upstream value"""
     if not normalized_inputs:
         detail = "No inference inputs were provided, map at least one feature value"
     else:
@@ -141,7 +142,7 @@ def _validate_inference_values(
         detail += ". A value of 'null' means the upstream node did not produce that field"
     raise AppException(
         error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-        error_detail=f"{detail}. Error during model prediction: {error}",
+        error_detail=f"{detail}. {stage}: {error}",
     ) from error
 
 
@@ -615,14 +616,13 @@ class MLModelInferenceNode(BaseNode):
 
                 missing_columns = [c for c in model_feature_names if c not in column_arrays]
                 if missing_columns:
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=(
-                            f"Could not reconstruct column(s) {missing_columns} that the model "
-                            "was trained on - the saved model metadata may be incomplete or from "
-                            "an incompatible older version."
-                        ),
+                    error = ValueError(
+                        f"Could not reconstruct column(s) {missing_columns} that the model "
+                        "was trained on - the saved model metadata may be incomplete or from "
+                        "an incompatible older version."
                     )
+                    _validate_inference_values(normalized_inputs, feature_names, error, stage="Data preparation failed")
+                    raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(error))
 
                 input_data = np.column_stack([column_arrays[c] for c in model_feature_names])
 
@@ -643,6 +643,7 @@ class MLModelInferenceNode(BaseNode):
                 raise
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
+                _validate_inference_values(normalized_inputs, feature_names, e, stage="Data preparation failed")
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Data preparation failed: {e}"
                 ) from e
