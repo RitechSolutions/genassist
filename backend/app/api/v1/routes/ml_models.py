@@ -499,7 +499,7 @@ async def _resolve_profile_csv(
         except Exception as exc:
             temp_path.unlink(missing_ok=True)
             raise HTTPException(
-                status_code=502,
+                status_code=400,
                 detail="Could not fetch the CSV file from File Manager.",
             ) from exc
         return temp_path, temp_path
@@ -516,7 +516,7 @@ async def _resolve_profile_csv(
             )
             if not downloaded:
                 raise HTTPException(
-                    status_code=502,
+                    status_code=400,
                     detail="Could not fetch the CSV file.",
                 )
         except HTTPException:
@@ -525,7 +525,7 @@ async def _resolve_profile_csv(
         except Exception as exc:
             temp_path.unlink(missing_ok=True)
             raise HTTPException(
-                status_code=502,
+                status_code=400,
                 detail="Could not fetch the CSV file.",
             ) from exc
         return temp_path, temp_path

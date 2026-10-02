@@ -372,7 +372,35 @@ async def test_profile_data_rejects_failed_url_download(monkeypatch, tmp_path):
             file_manager,
         )
 
-    assert exc_info.value.status_code == 502
+    assert exc_info.value.status_code == 400
+    assert created_paths and not created_paths[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_profile_data_rejects_failed_file_manager_download(monkeypatch, tmp_path):
+    created_paths: list[Path] = []
+
+    def temporary_path():
+        path = tmp_path / "profile.csv"
+        path.touch()
+        created_paths.append(path)
+        return path
+
+    file_manager = _file_manager()
+    file_manager.download_file_to_path.side_effect = RuntimeError("storage unavailable")
+    monkeypatch.setattr(ml_models, "_temporary_csv_path", temporary_path)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.profile_data(
+            ml_models.ProfileDataRequest(file_id=uuid4()),
+            _request(),
+            file_manager,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == (
+        "Could not fetch the CSV file from File Manager."
+    )
     assert created_paths and not created_paths[0].exists()
 
 
