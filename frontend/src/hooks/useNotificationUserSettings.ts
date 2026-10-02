@@ -8,12 +8,6 @@ import {
   type NotificationUserSettingsUpdate,
 } from "@/services/notificationSettings"
 
-export const CONVERSATION_STARTED_SETTING_KEY = "conversationStarted"
-export const CONVERSATION_HOSTILITY_SETTING_KEY = "conversationHostility"
-export const CONVERSATION_FINALIZED_HOSTILITY_SETTING_KEY =
-  "conversationFinalizedHostility"
-export const WORKFLOW_FAILED_SETTING_KEY = "workflowFailed"
-
 export const DEFAULT_NOTIFICATION_USER_SETTINGS: NotificationUserSettings = {
   conversationStarted: true,
   conversationHostility: true,
@@ -25,24 +19,6 @@ export const DEFAULT_NOTIFICATION_USER_SETTINGS: NotificationUserSettings = {
 export const NOTIFICATION_USER_SETTINGS_QUERY_KEY = [
   "notification-user-settings",
 ] as const
-
-export function isConversationStartedNotification(notificationId: string): boolean {
-  return notificationId.startsWith("conversation_started:")
-}
-
-export function isConversationHostilityNotification(notificationId: string): boolean {
-  return notificationId.startsWith("conversation_hostility:")
-}
-
-export function isConversationFinalizedHostilityNotification(
-  notificationId: string
-): boolean {
-  return notificationId.startsWith("conversation_finalized_hostility:")
-}
-
-export function isWorkflowFailedNotification(notificationId: string): boolean {
-  return notificationId.startsWith("workflow_failed:")
-}
 
 export function useNotificationUserSettings() {
   const queryClient = useQueryClient()

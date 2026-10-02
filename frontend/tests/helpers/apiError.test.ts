@@ -22,6 +22,24 @@ describe("extractErrorMessage", () => {
     ).toBe("D");
   });
 
+  it("prefers error_detail, the AppException's case-specific text", () => {
+    expect(
+      extractErrorMessage(
+        { response: { data: { error_detail: "Another save completed first.", error: "E" } } },
+        FALLBACK
+      )
+    ).toBe("Another save completed first.");
+  });
+
+  it("falls through to error when error_detail is null", () => {
+    expect(
+      extractErrorMessage(
+        { response: { data: { error_detail: null, error: "E" } } },
+        FALLBACK
+      )
+    ).toBe("E");
+  });
+
   it("honors precedence when several fields are present", () => {
     expect(
       extractErrorMessage(
@@ -56,6 +74,38 @@ describe("extractErrorMessage", () => {
         FALLBACK
       )
     ).toBe("bad value");
+  });
+
+  it("names the field a validation error is about, in either detail shape", () => {
+    const loc = ["body", "technique_configs", "not_contains"];
+
+    expect(
+      extractErrorMessage(
+        { response: { data: { detail: [{ loc, msg: "Extra inputs are not permitted" }] } } },
+        FALLBACK
+      )
+    ).toBe("technique_configs.not_contains: Extra inputs are not permitted");
+    expect(
+      extractErrorMessage(
+        { response: { data: { detail: { "0": { loc, msg: "Extra inputs are not permitted" } } } } },
+        FALLBACK
+      )
+    ).toBe("technique_configs.not_contains: Extra inputs are not permitted");
+  });
+
+  it("keeps list positions in the path and drops only the leading request part", () => {
+    expect(
+      extractErrorMessage(
+        { response: { data: { detail: [{ loc: ["body", "case_ids", 0], msg: "bad uuid" }] } } },
+        FALLBACK
+      )
+    ).toBe("case_ids.0: bad uuid");
+    expect(
+      extractErrorMessage(
+        { response: { data: { detail: [{ loc: ["query", "limit"], msg: "too large" }] } } },
+        FALLBACK
+      )
+    ).toBe("limit: too large");
   });
 
   it("falls back to a plain Error message", () => {

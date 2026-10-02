@@ -158,6 +158,8 @@ services:
       DB_HOST: genassist-db-ci
       CHROMA_HOST: genassist-chroma-ci
       CHROMA_PORT: 8000
+    volumes:
+      - app_data_volume_ci:/src/datavolume
     depends_on:
       app:
         condition: service_started

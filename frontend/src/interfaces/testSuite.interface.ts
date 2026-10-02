@@ -1,4 +1,3 @@
-import type { Workflow } from "@/interfaces/workflow.interface";
 
 export interface TestSuite {
   id?: string;

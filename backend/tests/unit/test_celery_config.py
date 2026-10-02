@@ -17,8 +17,14 @@ ML_TASK_MODULES = (
     "app.tasks.ml_model_pipeline_tasks",
     "app.tasks.test_suite_tasks",
     "app.tasks.workflow_schedule_tasks",
+    "app.tasks.workflow_trigger_tasks",
 )
-RUN_TASKS = ("execute_test_suite_run", "execute_workflow_run", "execute_pipeline_run")
+RUN_TASKS = (
+    "execute_test_suite_run",
+    "execute_workflow_run",
+    "execute_pipeline_run",
+    "execute_webhook_trigger_run",
+)
 
 
 @pytest.fixture(scope="module")
@@ -101,6 +107,7 @@ def test_reconcilers_run_on_the_default_queue(celery_conf):
     ]
     assert reconcile_tasks == [
         "app.tasks.run_reconciliation_tasks.reconcile_stuck_workflow_runs",
+        "app.tasks.run_reconciliation_tasks.reconcile_stuck_workflow_trigger_runs",
         "app.tasks.run_reconciliation_tasks.reconcile_stuck_test_runs",
     ]
 
@@ -139,6 +146,7 @@ def test_frequent_scheduled_ticks_expire_before_the_next_one(celery_conf):
         "check-scheduled-pipeline-runs",
         "check-scheduled-workflow-runs",
         "reconcile-stuck-workflow-runs",
+        "reconcile-stuck-workflow-trigger-runs",
         "reconcile-stuck-test-runs",
     ):
         entry = beat[name]

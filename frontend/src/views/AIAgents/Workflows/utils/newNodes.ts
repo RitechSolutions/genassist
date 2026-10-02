@@ -12,6 +12,7 @@ export const NEW_NODE_TYPES = new Set<string>([
   "htmlToImageNode", // HTML to Image
   "salesforceCaseNode", // Salesforce Case Creator
   "subAgentNode", // Sub-Agent
+  "webhookTriggerNode", // Webhook Trigger
 ]);
 
 /** Whether a node type should show the "NEW" badge in the palette. */
