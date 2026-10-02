@@ -30,6 +30,9 @@ _CLIENT_SAFE_DETAIL_KEYS = frozenset(
         ErrorKey.PROMPT_CONTEXT_INVALID,
         ErrorKey.PROMPT_FIELD_NOT_SUPPORTED,
         ErrorKey.PROMPT_VERSION_CONFLICT,
+        # Platform-generated Train Data Source limit messages only
+        # contain configured ceilings and user guidance.
+        ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
         # Names the technique, the stale cases or the unusable reply, so the user
         # knows what to change. The 502/504 details stay internal.
         ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED,

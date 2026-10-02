@@ -1,8 +1,9 @@
 import json
 import io
+import keyword
 import multiprocessing
 import os
-import re
+import tokenize
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Callable, Dict, Any, List, Union
 import logging
@@ -162,27 +163,107 @@ def _execute_python_code_sync(
         }
 
 
+_JSON_KEYWORD_TO_PYTHON = {"null": "None", "true": "True", "false": "False"}
+
+# Tokens that never carry code meaning between a trailing comma and its
+# closing bracket (line breaks inside brackets, comments).
+_INSIGNIFICANT_TOKENS = {tokenize.NL, tokenize.NEWLINE, tokenize.COMMENT}
+
+
 def sanitize_python_code(code: str) -> str:
     """
     Sanitizes a Python code string before execution:
-    - Converts JSON keywords (null, true, false) → Python equivalents
-    - Removes trailing commas before ] or }
+    - Converts bareword JSON keywords (null, true, false) - invalid Python on
+      their own, a common mistake in AI-generated templates - into their
+      Python equivalents (None, True, False).
+    - Removes trailing commas before ] (list displays only) or }
     - Keeps formatting and indentation intact
+
+    Both rewrites work on tokens, never on raw text, so string literals and
+    comments the user wrote are left exactly as written - e.g. "null" stays
+    "null" and "a,]" stays "a,]". Edits are spliced into the original source
+    by position, so everything that isn't rewritten is byte-for-byte unchanged.
     """
     if not isinstance(code, str):
         raise ValueError("sanitize_python_code expects a string")
 
-    clean = code
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(code).readline))
+    except (tokenize.TokenError, SyntaxError, IndentationError):
+        # Code that doesn't even tokenize cleanly is left as-is - the real
+        # syntax error will surface clearly from exec() instead of being
+        # masked by a half-applied rewrite here.
+        return code
 
-    # Replace JSON literals with Python ones
-    clean = re.sub(r"\bnull\b", "None", clean)
-    clean = re.sub(r"\btrue\b", "True", clean)
-    clean = re.sub(r"\bfalse\b", "False", clean)
+    edits = _find_bareword_json_keyword_edits(tokens) + _find_trailing_comma_edits(tokens)
+    return _apply_token_edits(code, edits)
 
-    # Remove trailing commas before ] or }
-    clean = re.sub(r",(\s*[}\]])", r"\1", clean)
 
-    return clean
+def _find_bareword_json_keyword_edits(tokens: List[tokenize.TokenInfo]) -> List[tuple]:
+    """Bareword null/true/false NAME tokens -> None/True/False.
+
+    A NAME token is never part of a string literal, which is what lets this
+    tell `null` the bareword from "null" the string. An attribute (`obj.true`)
+    is skipped, since `obj.True` would be a syntax error.
+    """
+    edits = []
+    previous = None
+    for tok in tokens:
+        if (
+            tok.type == tokenize.NAME
+            and tok.string in _JSON_KEYWORD_TO_PYTHON
+            and not (previous is not None and previous.type == tokenize.OP and previous.string == ".")
+        ):
+            edits.append((tok.start, tok.end, _JSON_KEYWORD_TO_PYTHON[tok.string]))
+        if tok.type not in _INSIGNIFICANT_TOKENS:
+            previous = tok
+    return edits
+
+
+def _find_trailing_comma_edits(tokens: List[tokenize.TokenInfo]) -> List[tuple]:
+    """Comma OP tokens directly before a closing } or a list display's ].
+
+    A subscript's trailing comma is kept: `d[1,]` indexes with the tuple
+    (1,), so dropping it would change which key is looked up.
+    """
+    edits = []
+    # Stack of (opening bracket, is_subscript) for the brackets we're inside.
+    brackets: List[tuple] = []
+    previous = None
+    pending_comma = None
+    for tok in tokens:
+        if tok.type in _INSIGNIFICANT_TOKENS:
+            continue
+        if tok.type == tokenize.OP and tok.string in "([{":
+            is_subscript = tok.string == "[" and previous is not None and (
+                (previous.type == tokenize.NAME and not keyword.iskeyword(previous.string))
+                or previous.type == tokenize.STRING
+                or (previous.type == tokenize.OP and previous.string in ")]}")
+            )
+            brackets.append((tok.string, is_subscript))
+        elif tok.type == tokenize.OP and tok.string in ")]}":
+            opener = brackets.pop() if brackets else None
+            if pending_comma is not None and opener is not None:
+                if tok.string == "}" or (tok.string == "]" and not opener[1]):
+                    edits.append((pending_comma.start, pending_comma.end, ""))
+        pending_comma = tok if tok.type == tokenize.OP and tok.string == "," else None
+        previous = tok
+    return edits
+
+
+def _apply_token_edits(code: str, edits: List[tuple]) -> str:
+    """Splice (start, end, replacement) token edits into the source text."""
+    if not edits:
+        return code
+    # Split exactly the way tokenize read the source (on "\n" only), so
+    # token rows line up - str.splitlines also splits on \x0c, \u2028, etc.
+    lines = io.StringIO(code).readlines()
+    # Apply from the end so earlier (row, col) positions stay valid.
+    for (start_row, start_col), (end_row, end_col), replacement in sorted(edits, reverse=True):
+        # Tokens rewritten here (NAME and ",") never span lines.
+        line = lines[start_row - 1]
+        lines[start_row - 1] = line[:start_col] + replacement + line[end_col:]
+    return "".join(lines)
 
 
 async def execute_python_code(

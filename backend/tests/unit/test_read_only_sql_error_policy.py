@@ -18,6 +18,7 @@ from app.modules.integration.database.read_only_sql import (
 
 def test_read_only_sql_blocked_is_client_safe_key():
     assert ErrorKey.READ_ONLY_SQL_BLOCKED in _CLIENT_SAFE_DETAIL_KEYS
+    assert ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED in _CLIENT_SAFE_DETAIL_KEYS
     assert ErrorKey.INTERNAL_ERROR not in _CLIENT_SAFE_DETAIL_KEYS
     assert _READ_ONLY_SQL_BLOCKED_DETAIL_PREFIX == READ_ONLY_SQL_BLOCKED_PREFIX
 
@@ -34,6 +35,19 @@ def test_policy_reason_is_returned_outside_dev(monkeypatch):
     assert _response_error_detail(error) == detail
     assert "Delete" in _response_error_detail(error)
     assert client_safe_error_detail(error) == detail
+
+
+def test_extract_limit_detail_is_returned_outside_dev(monkeypatch):
+    monkeypatch.setenv("ENV", "prod")
+    detail = (
+        "The database query returned more than 2,000,000 rows, which exceeds "
+        "the limit of 2,000,000. Add a filter or LIMIT, or raise ML_EXTRACT_MAX_ROWS."
+    )
+    error = AppException(
+        error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
+        error_detail=detail,
+    )
+    assert _response_error_detail(error) == detail
 
 
 def test_internal_driver_failure_with_password_is_not_public(monkeypatch):

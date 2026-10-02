@@ -143,15 +143,28 @@ export const analyzeCSV = async (
   }
 };
 
-/** Runs data profiling on a CSV file and downloads the resulting HTML report. */
-export const profileCSV = async (
-  fileUrl: string,
+export type ProfileDataRequest =
+  | {
+      source_type: "csv";
+      file_id?: string;
+      file_url?: string;
+      file_name?: string;
+    }
+  | {
+      source_type: "datasource";
+      data_source_id: string;
+      query: string;
+    };
+
+/** Profiles an uploaded CSV or SQL query result and downloads the HTML report. */
+export const profileData = async (
+  request: ProfileDataRequest,
   downloadFilename: string,
 ): Promise<void> => {
   const blob = await apiRequest<Blob>(
     "POST",
-    `${BASE}/profile-csv`,
-    { file_url: fileUrl },
+    `${BASE}/profile-data`,
+    request,
     { timeout: API_PREPROCESSING_TIMEOUT_MS, responseType: "blob" },
   );
   if (!blob) throw new Error("Failed to generate data profile");

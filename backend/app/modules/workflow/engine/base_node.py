@@ -22,7 +22,7 @@ from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.entry_nodes import is_entry_node_type
 from app.modules.workflow.engine.node_result import is_node_failure, node_failure
-from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
+from app.modules.workflow.engine.utils import describe_exception, extract_code_params, replace_config_vars
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -474,7 +474,6 @@ class BaseNode(ABC):
                     if span is not None and span.is_recording():
                         span.record_exception(e)
                         span.set_status(Status(StatusCode.ERROR, str(e)))
-                    error_reason = str(e)
                     if self.get_type() == "trainDataSourceNode":
                         if isinstance(e, AppException):
                             error_reason = client_safe_error_detail(e) or get_error_message(
@@ -483,12 +482,16 @@ class BaseNode(ABC):
                             )
                         else:
                             error_reason = get_error_message(ErrorKey.INTERNAL_ERROR)
+                        log_reason = str(e)
+                    else:
+                        error_reason = describe_exception(e)
+                        log_reason = error_reason
 
                     error_msg = f"Error executing node {self.node_id}: {error_reason}"
                     logger.error(
                         "Error executing node %s: %s",
                         self.node_id,
-                        str(e),
+                        log_reason,
                         exc_info=True,
                     )
                     self.complete_execution(error=error_msg)
