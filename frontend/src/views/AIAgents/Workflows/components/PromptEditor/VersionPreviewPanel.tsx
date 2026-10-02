@@ -17,7 +17,7 @@ import {
   type DiffEndpoint,
   type HistoryEntry,
 } from "../../utils/promptEditorHistory";
-import { PROMPT_MIN_SIMILARITY } from "./promptDiff";
+import { PROMPT_DIFF_TIMEOUT_MS, PROMPT_MIN_SIMILARITY } from "./promptDiff";
 
 // Sentinels for non-version choices (Radix Select has no empty-string value)
 const DRAFT_TARGET = "__draft__";
@@ -240,6 +240,7 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
                 after: comparison.after.content,
               }}
               minSimilarity={PROMPT_MIN_SIMILARITY}
+              diffTimeoutMs={PROMPT_DIFF_TIMEOUT_MS}
             />
           )
         ) : (
