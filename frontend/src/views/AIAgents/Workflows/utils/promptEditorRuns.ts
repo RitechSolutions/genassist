@@ -1,9 +1,13 @@
 import type {
   PromptEvalCaseResult,
   PromptEvalMetric,
+  PromptEvalResponse,
   PromptTechniqueConfigs,
 } from "@/interfaces/promptEditor.interface";
-import { metricOutcomeOf } from "@/views/AIAgents/Workflows/utils/promptEditorResults";
+import {
+  metricOutcomeOf,
+  type ProviderFallback,
+} from "@/views/AIAgents/Workflows/utils/promptEditorResults";
 
 /** The gold-dataset fields a run depends on, so editing a case makes the run stale */
 export interface CaseRow {
@@ -103,6 +107,20 @@ export interface EvalRequest {
   maxCases: number;
 }
 
+/** Metadata about completed run production. Read when rendering; not in live form state */
+export interface RunSnapshot {
+  leaky: boolean;
+  providerFallback: ProviderFallback | undefined;
+}
+
+export type EvalRunState = {
+  key: string;
+  results: PromptEvalResponse;
+} & RunSnapshot;
+
+/** Test cases used to score suggestion. Tracked for staleness re-keying */
+export type SuggestedRunState = EvalRunState & { caseIds: string[] | null };
+
 export interface CaseSplitRef {
   holdoutShare: number;
   holdoutIds: readonly string[];
@@ -155,3 +173,17 @@ export const isOptimizeCurrent = (
   !staleOf(request.key, current.key) &&
   (request.sourceFailuresKey === null ||
     request.sourceFailuresKey === current.failuresKey);
+
+/** Version-create variables for an accepted suggestion */
+export interface AcceptPayload {
+  content: string;
+  draftAtSubmit: string;
+  token: number;
+}
+
+/** Saves the suggestion */
+export const acceptPayloadOf = (
+  suggestion: string,
+  draft: string,
+  token: number,
+): AcceptPayload => ({ content: suggestion, draftAtSubmit: draft, token });
