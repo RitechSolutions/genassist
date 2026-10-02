@@ -59,6 +59,28 @@ def _sanitize_public_error_detail(text: str, max_len: int = 450) -> str:
     return t[:max_len]
 
 
+def client_safe_error_detail(error: AppException) -> str | None:
+    """Return an explicitly approved detail that is safe to send to clients.
+
+    Unlike ``_response_error_detail``, this helper never exposes arbitrary
+    details in development. Workflow execution responses use it because their
+    failure data is part of a successful response and bypasses the normal
+    exception handler.
+    """
+    raw = (error.error_detail or "").strip()
+    if not raw:
+        return None
+    sanitized = _sanitize_public_error_detail(raw)
+    if not sanitized:
+        return None
+    if error.error_key in _CLIENT_SAFE_DETAIL_KEYS:
+        if error.error_key == ErrorKey.READ_ONLY_SQL_BLOCKED:
+            if not sanitized.startswith(_READ_ONLY_SQL_BLOCKED_DETAIL_PREFIX):
+                return None
+        return sanitized
+    return None
+
+
 def _response_error_detail(error: AppException) -> str | None:
     raw = (error.error_detail or "").strip()
     if not raw:
@@ -68,12 +90,7 @@ def _response_error_detail(error: AppException) -> str | None:
         return None
     if os.getenv("ENV") == "dev":
         return sanitized
-    if error.error_key in _CLIENT_SAFE_DETAIL_KEYS:
-        if error.error_key == ErrorKey.READ_ONLY_SQL_BLOCKED:
-            if not sanitized.startswith(_READ_ONLY_SQL_BLOCKED_DETAIL_PREFIX):
-                return None
-        return sanitized
-    return None
+    return client_safe_error_detail(error)
 
 
 def init_error_handlers(app):
@@ -173,4 +190,3 @@ async def send_socket_error(websocket: WebSocket, error_key: ErrorKey, lang: str
         "error": get_error_message(error_key, lang=lang),
         "error_key": error_key.value,
         }))
-

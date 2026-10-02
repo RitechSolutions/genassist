@@ -7,6 +7,7 @@ from app.core.exceptions.exception_handler import (
     _READ_ONLY_SQL_BLOCKED_DETAIL_PREFIX,
     _response_error_detail,
     _sanitize_public_error_detail,
+    client_safe_error_detail,
 )
 from app.modules.integration.database.read_only_sql import (
     READ_ONLY_SQL_BLOCKED_PREFIX,
@@ -32,6 +33,7 @@ def test_policy_reason_is_returned_outside_dev(monkeypatch):
     )
     assert _response_error_detail(error) == detail
     assert "Delete" in _response_error_detail(error)
+    assert client_safe_error_detail(error) == detail
 
 
 def test_internal_driver_failure_with_password_is_not_public(monkeypatch):
@@ -42,7 +44,24 @@ def test_internal_driver_failure_with_password_is_not_public(monkeypatch):
         error_detail="could not connect password=secret host=db.internal",
     )
     assert _response_error_detail(error) is None
+    assert client_safe_error_detail(error) is None
     assert "secret" not in (get_error_message(ErrorKey.INTERNAL_ERROR) or "")
+
+
+def test_workflow_detail_policy_stays_strict_in_development(monkeypatch):
+    monkeypatch.setenv("ENV", "dev")
+    error = AppException(
+        error_key=ErrorKey.INTERNAL_ERROR,
+        status_code=500,
+        error_detail="could not connect password=secret host=db.internal",
+    )
+
+    # The normal dev exception envelope may contain a sanitized diagnostic, but
+    # workflow state is a successful response and must never publish it.
+    assert _response_error_detail(error) == (
+        "could not connect password=*** host=db.internal"
+    )
+    assert client_safe_error_detail(error) is None
 
 
 def test_read_only_key_does_not_publish_unrelated_detail(monkeypatch):
