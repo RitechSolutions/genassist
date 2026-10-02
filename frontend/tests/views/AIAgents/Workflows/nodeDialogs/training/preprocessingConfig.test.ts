@@ -144,7 +144,7 @@ describe("preprocessingConfig - new operations", () => {
     };
 
     const code = generatePythonCodeFromConfig(config, BASE_PYTHON_TEMPLATE);
-    expect(code).toContain('df["age"] = df["age"].astype("int64")');
+    expect(code).toContain('df["age"] = df["age"].astype("Int64")');
 
     const parsed = parsePythonCodeToConfig(code);
     expect(parsed.steps[0].config).toEqual({
@@ -200,7 +200,8 @@ describe("preprocessingConfig - new operations", () => {
     expect(code).toContain(
       'df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")'
     );
-    expect(code).toContain('df["is_active"] = df["is_active"].astype("bool")');
+    expect(code).toContain('df["is_active"] = df["is_active"].map(');
+    expect(code).toContain('.astype("boolean")');
 
     const parsed = parsePythonCodeToConfig(code);
     expect(parsed.steps[0].config).toEqual({
@@ -277,5 +278,174 @@ describe("preprocessingConfig - new operations", () => {
     expect(parsed.steps[2].config).toEqual({
       conversions: [{ columnName: "score", dtype: "float" }],
     });
+  });
+
+  it("change_dtype: code saved before the Int64/boolean change still parses", () => {
+    const code = BASE_PYTHON_TEMPLATE.replace(
+      "    # STEP_MARKER_START: Preprocessing steps will be inserted here\n    # STEP_MARKER_END\n",
+      [
+        "    # STEP_START:step_1:change_dtype",
+        '    df["age"] = df["age"].astype("int64")',
+        '    df["flag"] = df["flag"].astype("bool")',
+        "    # STEP_END:step_1:change_dtype",
+        "",
+      ].join("\n")
+    );
+    expect(parsePythonCodeToConfig(code).steps[0].config).toEqual({
+      conversions: [
+        { columnName: "age", dtype: "int" },
+        { columnName: "flag", dtype: "bool" },
+      ],
+    });
+  });
+});
+
+describe("preprocessingConfig - bug fixes", () => {
+  const roundTrip = (config: PreprocessingConfig) =>
+    parsePythonCodeToConfig(generatePythonCodeFromConfig(config, BASE_PYTHON_TEMPLATE));
+
+  it("a disabled step generates no code but survives a save/reopen round-trip", () => {
+    const config: PreprocessingConfig = {
+      steps: [
+        {
+          id: "step_1",
+          type: "remove_duplicates",
+          enabled: false,
+          config: { subsetColumns: ["email"], keep: "last" } as RemoveDuplicatesStepConfig,
+        },
+        {
+          id: "step_2",
+          type: "drop_high_null_columns",
+          enabled: true,
+          config: { thresholdPercent: 50 } as DropHighNullColumnsStepConfig,
+        },
+      ],
+    };
+
+    const code = generatePythonCodeFromConfig(config, BASE_PYTHON_TEMPLATE);
+    expect(code).not.toContain("drop_duplicates");
+    expect(code).toContain("df.isnull().mean() * 100 <= 50");
+
+    expect(parsePythonCodeToConfig(code).steps).toEqual(config.steps);
+  });
+
+  it("re-enabling a disabled step brings its code back", () => {
+    const disabled = roundTrip({
+      steps: [
+        {
+          id: "step_1",
+          type: "change_dtype",
+          enabled: false,
+          config: { conversions: [{ columnName: "age", dtype: "float" }] } as ChangeDtypeStepConfig,
+        },
+      ],
+    });
+    const reEnabled = { steps: disabled.steps.map((s) => ({ ...s, enabled: true })) };
+    expect(generatePythonCodeFromConfig(reEnabled, BASE_PYTHON_TEMPLATE)).toContain(
+      'df["age"] = df["age"].astype("float64")'
+    );
+  });
+
+  it("column names with quotes, backslashes, commas and brackets are escaped and round-trip", () => {
+    const tricky = ['say "hi"', "C:\\path", "a, b", "x]y", "it's"];
+    const config: PreprocessingConfig = {
+      steps: [
+        {
+          id: "step_1",
+          type: "remove_duplicates",
+          enabled: true,
+          config: { subsetColumns: tricky, keep: "first" } as RemoveDuplicatesStepConfig,
+        },
+        {
+          id: "step_2",
+          type: "drop_column_or_row",
+          enabled: true,
+          config: { target: "column", columns: tricky, rowIndices: [] } as DropColumnOrRowStepConfig,
+        },
+        {
+          id: "step_3",
+          type: "change_dtype",
+          enabled: true,
+          config: {
+            conversions: tricky.map((columnName) => ({ columnName, dtype: "string" as const })),
+          } as ChangeDtypeStepConfig,
+        },
+      ],
+    };
+
+    const code = generatePythonCodeFromConfig(config, BASE_PYTHON_TEMPLATE);
+    expect(code).toContain(String.raw`"say \"hi\""`);
+    expect(code).toContain(String.raw`"C:\\path"`);
+    expect(parsePythonCodeToConfig(code).steps).toEqual(config.steps);
+  });
+
+  it("a newline in a column name can't break out of the generated comment", () => {
+    const code = generatePythonCodeFromConfig(
+      {
+        steps: [
+          {
+            id: "step_1",
+            type: "change_dtype",
+            enabled: true,
+            config: {
+              conversions: [{ columnName: "a\nimport os", dtype: "float" }],
+            } as ChangeDtypeStepConfig,
+          },
+        ],
+      },
+      BASE_PYTHON_TEMPLATE
+    );
+    expect(code).not.toMatch(/^\s*import os/m);
+  });
+
+  it("steps with nothing configured yet survive a round-trip with their defaults", () => {
+    const config: PreprocessingConfig = {
+      steps: [
+        {
+          id: "step_1",
+          type: "change_dtype",
+          enabled: true,
+          config: { conversions: [] } as ChangeDtypeStepConfig,
+        },
+        {
+          id: "step_2",
+          type: "drop_column_or_row",
+          enabled: true,
+          config: { target: "row", columns: [], rowIndices: [] } as DropColumnOrRowStepConfig,
+        },
+        {
+          id: "step_3",
+          type: "drop_column_or_row",
+          enabled: true,
+          config: { target: "column", columns: [], rowIndices: [] } as DropColumnOrRowStepConfig,
+        },
+      ],
+    };
+    expect(roundTrip(config).steps).toEqual(config.steps);
+  });
+
+  it("int conversion uses nullable Int64 and bool conversion maps text values", () => {
+    const code = generatePythonCodeFromConfig(
+      {
+        steps: [
+          {
+            id: "step_1",
+            type: "change_dtype",
+            enabled: true,
+            config: {
+              conversions: [
+                { columnName: "age", dtype: "int" },
+                { columnName: "flag", dtype: "bool" },
+              ],
+            } as ChangeDtypeStepConfig,
+          },
+        ],
+      },
+      BASE_PYTHON_TEMPLATE
+    );
+    expect(code).toContain('df["age"] = df["age"].astype("Int64")');
+    expect(code).toContain(
+      'df["flag"] = df["flag"].map(lambda v: v if pd.isna(v) else {"true": True, "false": False, "1": True, "0": False, "1.0": True, "0.0": False, "yes": True, "no": False}.get(str(v).strip().lower(), v)).astype("boolean")'
+    );
   });
 });

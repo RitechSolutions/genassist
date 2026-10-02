@@ -69,19 +69,64 @@ export interface ChangeDtypeStepConfig {
   conversions: ChangeDtypeItem[];
 }
 
-const DTYPE_TO_PANDAS: Record<Exclude<ChangeDtypeTarget, "datetime">, string> = {
-  int: "int64",
+// "bool" isn't here: astype("bool") turns any non-empty string (including
+// "false") into True, so bool conversion gets its own generated code.
+// "Int64" (capital I) is pandas' nullable integer type - "int64" fails
+// outright on any column with a missing value.
+const DTYPE_TO_PANDAS: Record<Exclude<ChangeDtypeTarget, "datetime" | "bool">, string> = {
+  int: "Int64",
   float: "float64",
   string: "str",
-  bool: "bool",
 };
 
+// Also accepts the older "int64"/"bool" forms so code saved before this
+// change still parses back into the dialog.
 const PANDAS_TO_DTYPE: Record<string, Exclude<ChangeDtypeTarget, "datetime">> = {
+  Int64: "int",
   int64: "int",
   float64: "float",
   str: "string",
   bool: "bool",
 };
+
+// Text values (case-insensitive, trimmed) accepted as booleans. Anything else
+// is left as-is, so astype("boolean") fails with a clear error instead of
+// silently guessing.
+const PYTHON_BOOL_MAP =
+  '{"true": True, "false": False, "1": True, "0": False, "1.0": True, "0.0": False, "yes": True, "no": False}';
+
+/**
+ * Render a column name as a Python string literal. A JSON string literal is
+ * also a valid Python one, so quotes and backslashes in a column name are
+ * escaped instead of breaking (or changing) the generated code.
+ */
+function pyStr(value: string): string {
+  return JSON.stringify(value);
+}
+
+// One double- or single-quoted Python string literal, escapes included.
+const PY_STR_SOURCE = String.raw`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'`;
+
+function unquotePyStr(literal: string): string {
+  if (literal.startsWith('"')) {
+    try {
+      return JSON.parse(literal);
+    } catch {
+      // Not valid JSON escaping (hand-edited code) - fall through.
+    }
+  }
+  return literal.slice(1, -1);
+}
+
+/** Every string literal in a Python list body, e.g. `"a", "b,c"` -> ["a", "b,c"]. */
+function parsePyStringList(listBody: string): string[] {
+  return (listBody.match(new RegExp(PY_STR_SOURCE, "g")) || [])
+    .map(unquotePyStr)
+    .filter((col) => col.length > 0);
+}
+
+// `[ ... ]` whose body may contain string literals with "]" in them.
+const PY_STR_LIST_SOURCE = String.raw`\[((?:${PY_STR_SOURCE}|[^\]"'])*)\]`;
 
 /**
  * Base template for Python preprocessing code
@@ -148,15 +193,26 @@ export function generatePythonCodeFromConfig(
 
   // Generate code for each step
   config.steps.forEach((step, index) => {
-    if (!step.enabled) return;
-
     if (index > 0 || autogenBodyLines.length > 3) {
       autogenBodyLines.push("");
     }
 
     // Step marker with ID and type
     autogenBodyLines.push(`    # STEP_START:${step.id}:${step.type}`);
-    
+
+    // A disabled step generates no code, but its markers stay - with its full
+    // config in STEP_CONFIG, since there's no code left to parse it back
+    // from. Without this, the dialog (which rebuilds its steps from this
+    // code) would lose a disabled step on the next reopen.
+    if (!step.enabled) {
+      autogenBodyLines.push(
+        `    # STEP_CONFIG:${JSON.stringify({ enabled: false, config: step.config })}`
+      );
+      autogenBodyLines.push("    # Step disabled - skipped");
+      autogenBodyLines.push(`    # STEP_END:${step.id}:${step.type}`);
+      return;
+    }
+
     // Add minimal step configuration as JSON comment for robust parsing
     // Only store data that's ambiguous or hard to parse from code
     try {
@@ -217,6 +273,11 @@ function extractMinimalConfig(
           .map((c) => c.name),
       };
     }
+    case "drop_column_or_row": {
+      // An empty row step generates no code, so its target would otherwise
+      // read back as the default ("column").
+      return { target: (config as DropColumnOrRowStepConfig).target };
+    }
     default:
       return null;
   }
@@ -246,6 +307,11 @@ function restoreConfigFromMinimal(
       }
       return parsed;
     }
+    case "drop_column_or_row": {
+      const parsed = parsedConfig as DropColumnOrRowStepConfig;
+      const minimal = minimalConfig as { target?: DropColumnOrRowStepConfig["target"] };
+      return minimal.target ? { ...parsed, target: minimal.target } : parsed;
+    }
     default:
       return parsedConfig;
   }
@@ -273,7 +339,7 @@ function generateRemoveDuplicatesCode(
 ): void {
   const subset = (config.subsetColumns || [])
     .filter((col) => col.trim().length > 0)
-    .map((col) => `"${col.trim()}"`)
+    .map((col) => pyStr(col.trim()))
     .join(", ");
   const keep = config.keep === "last" ? "last" : "first";
 
@@ -302,7 +368,7 @@ function generateDropColumnOrRowCode(
 
   const columns = (config.columns || [])
     .filter((col) => col.trim().length > 0)
-    .map((col) => `"${col.trim()}"`)
+    .map((col) => pyStr(col.trim()))
     .join(", ");
   if (columns) {
     lines.push("    # Remove column(s)");
@@ -327,12 +393,19 @@ function generateChangeDtypeCode(
     const column = (item.columnName || "").trim();
     if (!column) continue;
 
-    lines.push(`    # Change data type of column "${column}"`);
+    const col = pyStr(column);
+    // Comment text is escaped too, so a newline in a column name can't end
+    // the comment and inject a line of code.
+    lines.push(`    # Change data type of column ${col}`);
     if (item.dtype === "datetime") {
-      lines.push(`    df["${column}"] = pd.to_datetime(df["${column}"], errors="coerce")`);
+      lines.push(`    df[${col}] = pd.to_datetime(df[${col}], errors="coerce")`);
+    } else if (item.dtype === "bool") {
+      lines.push(
+        `    df[${col}] = df[${col}].map(lambda v: v if pd.isna(v) else ${PYTHON_BOOL_MAP}.get(str(v).strip().lower(), v)).astype("boolean")`
+      );
     } else {
       const pandasDtype = DTYPE_TO_PANDAS[item.dtype];
-      lines.push(`    df["${column}"] = df["${column}"].astype("${pandasDtype}")`);
+      lines.push(`    df[${col}] = df[${col}].astype("${pandasDtype}")`);
     }
   }
 }
@@ -383,12 +456,31 @@ export function parsePythonCodeToConfig(code: string): PreprocessingConfig {
         break;
     }
 
+    // A step with markers but nothing to parse (e.g. a Change Type step with
+    // no columns picked yet) is kept with its default config, instead of
+    // silently disappearing on the next reopen.
+    if (!parsedFromCode && stepType !== "column_filter" && isKnownStepType(stepType)) {
+      parsedFromCode = createDefaultStepConfig(stepType);
+    }
+
     // Then, try to merge with minimal config from comment if available
     const configCommentMatch = stepCode.match(/#\s*STEP_CONFIG:(.+?)(?=\n\s*#|$)/s);
     if (configCommentMatch) {
       try {
         const configJson = configCommentMatch[1].trim();
         const minimalConfig = JSON.parse(configJson) as Record<string, unknown>;
+        if (minimalConfig.enabled === false) {
+          // Disabled step: no code to parse, full config is in the comment.
+          config.steps.push({
+            id: stepId,
+            type: stepType,
+            enabled: false,
+            config:
+              (minimalConfig.config as StepConfig | undefined) ??
+              createDefaultStepConfig(stepType),
+          });
+          continue;
+        }
         // Restore full config by merging minimal config with parsed code
         stepConfig = restoreConfigFromMinimal(stepType, minimalConfig, parsedFromCode);
       } catch (e) {
@@ -443,19 +535,13 @@ function parseColumnFilterStep(code: string): ColumnFilterStepConfig | null {
 }
 
 function parseRemoveDuplicatesStep(code: string): RemoveDuplicatesStepConfig | null {
-  const match = code.match(/df\s*=\s*df\.drop_duplicates\(([^)]*)\)/);
-  if (!match) return null;
+  const line = code.split("\n").find((l) => /df\s*=\s*df\.drop_duplicates\(/.test(l));
+  if (!line) return null;
 
-  const args = match[1];
-  const subsetMatch = args.match(/subset\s*=\s*\[([^\]]*)\]/);
-  const keepMatch = args.match(/keep\s*=\s*["'](first|last)["']/);
+  const subsetMatch = line.match(new RegExp(String.raw`subset\s*=\s*${PY_STR_LIST_SOURCE}`));
+  const keepMatch = line.match(/keep\s*=\s*["'](first|last)["']\s*\)\s*$/);
 
-  const subsetColumns = subsetMatch
-    ? subsetMatch[1]
-        .split(",")
-        .map((col) => col.trim().replace(/^["']|["']$/g, ""))
-        .filter((col) => col.length > 0)
-    : [];
+  const subsetColumns = subsetMatch ? parsePyStringList(subsetMatch[1]) : [];
 
   return {
     subsetColumns,
@@ -464,12 +550,11 @@ function parseRemoveDuplicatesStep(code: string): RemoveDuplicatesStepConfig | n
 }
 
 function parseDropColumnOrRowStep(code: string): DropColumnOrRowStepConfig | null {
-  const columnMatch = code.match(/df\s*=\s*df\.drop\(columns\s*=\s*\[([^\]]*)\]/);
+  const columnMatch = code.match(
+    new RegExp(String.raw`df\s*=\s*df\.drop\(columns\s*=\s*${PY_STR_LIST_SOURCE}`)
+  );
   if (columnMatch) {
-    const columns = columnMatch[1]
-      .split(",")
-      .map((col) => col.trim().replace(/^["']|["']$/g, ""))
-      .filter((col) => col.length > 0);
+    const columns = parsePyStringList(columnMatch[1]);
     if (columns.length === 0) return null;
     return { target: "column", columns, rowIndices: [] };
   }
@@ -499,17 +584,28 @@ function parseChangeDtypeStep(code: string): ChangeDtypeStepConfig | null {
   // Scan line by line (rather than one regex with a global flag) so multiple
   // conversions in a single step are collected in the order they were
   // generated in.
+  const col = String.raw`df\[(${PY_STR_SOURCE})\]\s*=\s*`;
+  const datetimeRe = new RegExp(String.raw`^\s*${col}pd\.to_datetime\(df\[\1\]`);
+  const boolRe = new RegExp(String.raw`^\s*${col}df\[\1\]\.map\(.*\)\.astype\("boolean"\)\s*$`);
+  const astypeRe = new RegExp(String.raw`^\s*${col}df\[\1\]\.astype\("([^"]+)"\)\s*$`);
+
   for (const line of code.split("\n")) {
-    const datetimeMatch = line.match(/df\["([^"]+)"\]\s*=\s*pd\.to_datetime\(df\["\1"\]/);
+    const datetimeMatch = line.match(datetimeRe);
     if (datetimeMatch) {
-      conversions.push({ columnName: datetimeMatch[1], dtype: "datetime" });
+      conversions.push({ columnName: unquotePyStr(datetimeMatch[1]), dtype: "datetime" });
       continue;
     }
 
-    const astypeMatch = line.match(/df\["([^"]+)"\]\s*=\s*df\["\1"\]\.astype\("([^"]+)"\)/);
+    const boolMatch = line.match(boolRe);
+    if (boolMatch) {
+      conversions.push({ columnName: unquotePyStr(boolMatch[1]), dtype: "bool" });
+      continue;
+    }
+
+    const astypeMatch = line.match(astypeRe);
     if (astypeMatch) {
       conversions.push({
-        columnName: astypeMatch[1],
+        columnName: unquotePyStr(astypeMatch[1]),
         dtype: PANDAS_TO_DTYPE[astypeMatch[2]] || "string",
       });
     }
@@ -544,6 +640,16 @@ export function createPreprocessingStep(
     enabled: true,
     config: createDefaultStepConfig(type),
   };
+}
+
+function isKnownStepType(type: string): type is PreprocessingStepType {
+  return [
+    "column_filter",
+    "remove_duplicates",
+    "drop_column_or_row",
+    "drop_high_null_columns",
+    "change_dtype",
+  ].includes(type);
 }
 
 function createDefaultStepConfig(type: PreprocessingStepType): StepConfig {

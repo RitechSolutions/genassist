@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Label } from "@/components/label";
 import { Badge } from "@/components/badge";
 import { RichInput } from "@/components/richInput";
@@ -10,6 +10,45 @@ import {
   SelectValue,
 } from "@/components/select";
 import { DropColumnOrRowStepConfig } from "../preprocessingConfig";
+
+const parseColumnNames = (value: string): string[] =>
+  value
+    .split(",")
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0);
+
+const parseRowIndices = (value: string): number[] =>
+  value
+    .split(",")
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0)
+    .map((v) => parseInt(v, 10))
+    .filter((n) => !isNaN(n));
+
+const sameList = <T,>(a: T[], b: T[]) =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
+
+/**
+ * The text a comma-separated input shows. It keeps whatever the user typed
+ * (e.g. a trailing "0, " while they're about to type the next index) instead
+ * of re-rendering from the parsed list on every keystroke, which would strip
+ * the comma before the next value could be typed. It only resyncs from the
+ * config when the config changes to something the current text doesn't
+ * already mean (e.g. a step loaded from saved code).
+ */
+function useListText<T>(
+  list: T[],
+  parse: (value: string) => T[]
+): [string, (value: string) => void] {
+  const [text, setText] = useState(list.join(", "));
+  useEffect(() => {
+    if (!sameList(parse(text), list)) {
+      setText(list.join(", "));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list.join("\u0000")]);
+  return [text, setText];
+}
 
 interface DropColumnOrRowStepProps {
   config: DropColumnOrRowStepConfig | undefined;
@@ -25,6 +64,8 @@ export const DropColumnOrRowStep: React.FC<DropColumnOrRowStepProps> = ({
   const target = config?.target || "column";
   const columns = config?.columns || [];
   const rowIndices = config?.rowIndices || [];
+  const [columnText, setColumnText] = useListText(columns, parseColumnNames);
+  const [rowText, setRowText] = useListText(rowIndices, parseRowIndices);
 
   const toggleColumn = (columnName: string) => {
     const next = columns.includes(columnName)
@@ -34,13 +75,13 @@ export const DropColumnOrRowStep: React.FC<DropColumnOrRowStepProps> = ({
   };
 
   const handleRowIndicesChange = (value: string) => {
-    const parsed = value
-      .split(",")
-      .map((v) => v.trim())
-      .filter((v) => v.length > 0)
-      .map((v) => parseInt(v, 10))
-      .filter((n) => !isNaN(n));
-    onChange({ target: "row", columns, rowIndices: parsed });
+    setRowText(value);
+    onChange({ target: "row", columns, rowIndices: parseRowIndices(value) });
+  };
+
+  const handleColumnNamesChange = (value: string) => {
+    setColumnText(value);
+    onChange({ target: "column", columns: parseColumnNames(value), rowIndices });
   };
 
   return (
@@ -94,17 +135,8 @@ export const DropColumnOrRowStep: React.FC<DropColumnOrRowStepProps> = ({
             <RichInput
               type="text"
               placeholder="Enter column names separated by commas"
-              value={columns.join(", ")}
-              onChange={(e) =>
-                onChange({
-                  target: "column",
-                  columns: e.target.value
-                    .split(",")
-                    .map((c) => c.trim())
-                    .filter((c) => c.length > 0),
-                  rowIndices,
-                })
-              }
+              value={columnText}
+              onChange={(e) => handleColumnNamesChange(e.target.value)}
               className="w-full"
             />
           )}
@@ -115,7 +147,7 @@ export const DropColumnOrRowStep: React.FC<DropColumnOrRowStepProps> = ({
           <RichInput
             type="text"
             placeholder="e.g. 0, 5, 12"
-            value={rowIndices.join(", ")}
+            value={rowText}
             onChange={(e) => handleRowIndicesChange(e.target.value)}
             className="w-full"
           />

@@ -67,6 +67,26 @@ class TestTrailingCommaRemoval:
     def test_removes_trailing_comma_before_closing_bracket(self):
         assert sanitize_python_code("x = [1, 2,]") == "x = [1, 2]"
 
+    def test_removes_trailing_comma_across_lines_and_comments(self):
+        code = "x = [\n    1,\n    2,  # last\n]\n"
+        assert sanitize_python_code(code) == "x = [\n    1,\n    2  # last\n]\n"
+
+    def test_comma_bracket_inside_a_string_is_untouched(self):
+        # DP-3: the old regex rewrote "a,]" -> "a]" even inside a string value.
+        assert sanitize_python_code('x = "a,]"') == 'x = "a,]"'
+        assert sanitize_python_code("x = 'b, }'") == "x = 'b, }'"
+
+    def test_comma_bracket_inside_a_comment_is_untouched(self):
+        assert sanitize_python_code("x = 1  # e.g. [1, 2,]\n") == "x = 1  # e.g. [1, 2,]\n"
+
+    def test_subscript_trailing_comma_is_kept(self):
+        # d[1,] looks up the tuple key (1,), not 1 - removing it changes behavior.
+        assert sanitize_python_code("v = d[1,]") == "v = d[1,]"
+        assert sanitize_python_code("v = arr[0][1,]") == "v = arr[0][1,]"
+
+    def test_tuple_trailing_comma_is_kept(self):
+        assert sanitize_python_code("t = (1,)") == "t = (1,)"
+
 
 class TestFormattingIsPreserved:
     def test_identical_code_with_nothing_to_rewrite_is_byte_for_byte_unchanged(self):
@@ -85,4 +105,17 @@ class TestUnparsableCodeFallsBackUnchanged:
         # An unterminated string literal fails to tokenize - sanitize should
         # not raise or mangle it further; the real error surfaces from exec().
         code = 'x = "unterminated'
+        assert sanitize_python_code(code) == code
+
+
+class TestOtherCodeIsNotRewritten:
+    def test_attribute_named_like_a_json_keyword_is_untouched(self):
+        # obj.True would be a syntax error.
+        assert sanitize_python_code("x = obj.true") == "x = obj.true"
+
+    def test_keyword_inside_a_comment_is_untouched(self):
+        assert sanitize_python_code("x = 1  # null means missing\n") == "x = 1  # null means missing\n"
+
+    def test_f_string_contents_are_untouched(self):
+        code = 'x = f"{name} is {{null}}, true"\n'
         assert sanitize_python_code(code) == code
