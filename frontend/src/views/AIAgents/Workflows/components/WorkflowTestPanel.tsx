@@ -34,7 +34,11 @@ import {
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { HumanInTheLoopFormField } from "../types/nodes";
-import { testWorkflow, WorkflowTestResponse } from "@/services/workflows";
+import {
+  getFailedNodeDisplayMessage,
+  testWorkflow,
+  WorkflowTestResponse,
+} from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
@@ -1088,8 +1092,10 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                                   <span className="font-medium">
                                     {n.name || n.type || n.node_id}
                                   </span>
-                                  {n.error ? (
-                                    <span className="text-amber-700">: {n.error}</span>
+                                  {getFailedNodeDisplayMessage(n) ? (
+                                    <span className="text-amber-700">
+                                      : {getFailedNodeDisplayMessage(n)}
+                                    </span>
                                   ) : null}
                                 </li>
                               ))}

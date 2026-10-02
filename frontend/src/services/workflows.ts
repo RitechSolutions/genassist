@@ -90,14 +90,20 @@ export interface WorkflowTestResponse {
   [key: string]: any;
 }
 
-const TRAIN_DATA_SOURCE_NODE_TYPE = "trainDataSourceNode";
-const GENERIC_TRAIN_DATA_SOURCE_ERRORS = new Set([
-  "error_500",
-  "An internal server error occurred. Please try again later.",
-]);
-
-const TRAIN_DATA_SOURCE_TEST_FALLBACK =
+export const TRAIN_DATA_SOURCE_NODE_TYPE = "trainDataSourceNode";
+export const TRAIN_DATA_SOURCE_TEST_FALLBACK =
   "Train Data Source could not complete the test. Check its configuration and try again.";
+
+const stripEngineNodePrefix = (error: string): string =>
+  error.replace(/^Error executing node [^:]+:\s*/, "").trim();
+
+/** Format a failed node consistently in both workflow-test surfaces. */
+export const getFailedNodeDisplayMessage = (failedNode: FailedNode): string => {
+  const error = failedNode.error?.trim() ?? "";
+  if (failedNode.type !== TRAIN_DATA_SOURCE_NODE_TYPE) return error;
+
+  return stripEngineNodePrefix(error) || TRAIN_DATA_SOURCE_TEST_FALLBACK;
+};
 
 /**
  * Return the client-safe failure reported by a Train Data Source node test.
@@ -113,16 +119,7 @@ export const getTrainDataSourceTestFailureMessage = (
 
   if (!failedNode) return null;
 
-  const message = failedNode.error
-    ?.trim()
-    .replace(/^Error executing node [^:]+:\s*/, "")
-    .trim();
-
-  if (!message || GENERIC_TRAIN_DATA_SOURCE_ERRORS.has(message)) {
-    return TRAIN_DATA_SOURCE_TEST_FALLBACK;
-  }
-
-  return message;
+  return getFailedNodeDisplayMessage(failedNode);
 };
 
 export interface NodeTestPayload {

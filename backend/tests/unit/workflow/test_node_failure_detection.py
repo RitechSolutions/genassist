@@ -85,6 +85,12 @@ class _FakeNode(BaseNode):
         return self._behaviour()
 
 
+class _ClientSafeFakeNode(_FakeNode):
+    """A fake that opts into the same error policy as TrainDataSourceNode."""
+
+    client_safe_failure_messages = True
+
+
 def _bare_state(node_id="n1"):
     """A WorkflowState with only the attributes execute() touches (no Redis/memory)."""
     st = WorkflowState.__new__(WorkflowState)
@@ -161,7 +167,7 @@ async def test_train_data_source_surfaces_an_explicitly_client_safe_app_error():
             error_detail=detail,
         )
 
-    node = _FakeNode("n1", st, _blocked_query, node_type="trainDataSourceNode")
+    node = _ClientSafeFakeNode("n1", st, _blocked_query, node_type="trainDataSourceNode")
     returned = await node.execute()
 
     assert st.node_execution_status["n1"]["error"] == (
@@ -181,12 +187,12 @@ async def test_train_data_source_hides_an_unapproved_app_error_detail():
             error_detail="password=secret host=db.internal",
         )
 
-    node = _FakeNode("n1", st, _internal_error, node_type="trainDataSourceNode")
+    node = _ClientSafeFakeNode("n1", st, _internal_error, node_type="trainDataSourceNode")
     returned = await node.execute()
 
     public_error = st.node_execution_status["n1"]["error"]
     assert public_error == (
-        f"Error executing node n1: {get_error_message(ErrorKey.INTERNAL_ERROR)}"
+        f"Error executing node n1: {get_error_message(ErrorKey.ML_EXTRACT_FAILED)}"
     )
     assert "secret" not in public_error
     assert "db.internal" not in public_error
@@ -200,7 +206,7 @@ async def test_train_data_source_hides_an_unexpected_exception_detail():
     def _unexpected_error():
         raise RuntimeError("password=secret host=db.internal")
 
-    node = _FakeNode(
+    node = _ClientSafeFakeNode(
         "n1",
         st,
         _unexpected_error,
@@ -210,7 +216,7 @@ async def test_train_data_source_hides_an_unexpected_exception_detail():
 
     public_error = st.node_execution_status["n1"]["error"]
     assert public_error == (
-        f"Error executing node n1: {get_error_message(ErrorKey.INTERNAL_ERROR)}"
+        f"Error executing node n1: {get_error_message(ErrorKey.ML_EXTRACT_FAILED)}"
     )
     assert "secret" not in public_error
     assert "db.internal" not in public_error

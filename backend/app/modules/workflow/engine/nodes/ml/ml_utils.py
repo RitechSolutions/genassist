@@ -387,8 +387,8 @@ async def stream_rows_to_csv(
                         error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
                         error_detail=(
                             f"The {source_label} returned more than {max_rows:,} rows, "
-                            f"which exceeds the limit of {max_rows:,}. {limit_hint}, or raise "
-                            "ML_EXTRACT_MAX_ROWS."
+                            f"which exceeds the limit of {max_rows:,}. {limit_hint}, or ask "
+                            "an administrator to raise the row limit."
                         ),
                     )
 
@@ -446,8 +446,8 @@ def _enforce_stream_byte_limit(
         error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
         error_detail=(
             f"The {source_label} is {observed_bytes:,} bytes, which exceeds "
-            f"the limit of {max_bytes:,} bytes. {limit_hint}, or raise "
-            "ML_EXTRACT_MAX_BYTES."
+            f"the limit of {max_bytes:,} bytes. {limit_hint}, or ask an "
+            "administrator to raise the file-size limit."
         ),
     )
 

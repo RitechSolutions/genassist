@@ -12,8 +12,12 @@ from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
 from app.core.exceptions.error_messages import ErrorKey, get_error_message
+from app.core.exceptions.error_policy import (
+    client_safe_error_detail,
+    exception_location,
+    sanitize_error_detail,
+)
 from app.core.exceptions.exception_classes import AppException
-from app.core.exceptions.exception_handler import client_safe_error_detail
 from app.core.observability.otel import (
     is_otel_runtime_enabled,
     record_workflow_node_duration,
@@ -38,6 +42,11 @@ class BaseNode(ABC):
     - Execution tracking
     - Input/output processing
     """
+
+    # Subclasses may opt into publishing only explicitly approved exception
+    # details in workflow-test results. Most nodes retain their existing error
+    # behavior until they are migrated deliberately.
+    client_safe_failure_messages = False
 
     def __init__(self, node_id: str, node_config: Dict[str, Any], state: WorkflowState):
         """
@@ -471,29 +480,60 @@ class BaseNode(ABC):
                     return result
 
                 except Exception as e:
-                    if span is not None and span.is_recording():
-                        span.record_exception(e)
-                        span.set_status(Status(StatusCode.ERROR, str(e)))
-                    if self.get_type() == "trainDataSourceNode":
+                    safe_location = None
+                    if self.client_safe_failure_messages:
                         if isinstance(e, AppException):
-                            error_reason = client_safe_error_detail(e) or get_error_message(
-                                e.error_key,
-                                error_variables=e.error_variables,
-                            )
+                            error_reason = client_safe_error_detail(e)
+                            if not error_reason and e.error_key != ErrorKey.INTERNAL_ERROR:
+                                error_reason = get_error_message(
+                                    e.error_key,
+                                    error_variables=e.error_variables,
+                                )
                         else:
-                            error_reason = get_error_message(ErrorKey.INTERNAL_ERROR)
-                        log_reason = str(e)
+                            error_reason = None
+                        error_reason = error_reason or get_error_message(ErrorKey.ML_EXTRACT_FAILED)
+                        log_reason = sanitize_error_detail(
+                            str(redact_sensitive_substrings(describe_exception(e))),
+                            max_len=2_000,
+                        ) or type(e).__name__
+                        safe_location = exception_location(e)
                     else:
                         error_reason = describe_exception(e)
                         log_reason = error_reason
 
+                    if span is not None and span.is_recording():
+                        if self.client_safe_failure_messages:
+                            span.add_event(
+                                "exception",
+                                {
+                                    "exception.type": type(e).__name__,
+                                    "exception.message": log_reason,
+                                    "genassist.exception.location": safe_location,
+                                },
+                            )
+                            span.set_status(Status(StatusCode.ERROR, log_reason))
+                        else:
+                            span.record_exception(e)
+                            span.set_status(Status(StatusCode.ERROR, str(e)))
+
                     error_msg = f"Error executing node {self.node_id}: {error_reason}"
-                    logger.error(
-                        "Error executing node %s: %s",
-                        self.node_id,
-                        log_reason,
-                        exc_info=True,
-                    )
+                    if self.client_safe_failure_messages:
+                        # Full tracebacks repeat the raw exception message and
+                        # may include driver credentials. Keep a safe diagnostic
+                        # plus the exception type and innermost code location.
+                        logger.error(
+                            "Error executing node %s: %s (%s)",
+                            self.node_id,
+                            log_reason,
+                            safe_location,
+                        )
+                    else:
+                        logger.error(
+                            "Error executing node %s: %s",
+                            self.node_id,
+                            log_reason,
+                            exc_info=True,
+                        )
                     self.complete_execution(error=error_msg)
                     # Return a detectable failure envelope (not None) so a caller using
                     # this node as a tool learns it failed. Downstream engine flow is
