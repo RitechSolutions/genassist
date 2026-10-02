@@ -190,6 +190,9 @@ class ProjectSettings(BaseSettings):
         ),
     )
     ML_EXTRACT_CHUNK_ROWS: int = Field(default=2_000, gt=0)
+    # Profiling builds an in-memory DataFrame and therefore uses lower limits
+    # than a streamed training-data extraction.
+    ML_PROFILE_MAX_ROWS: int = Field(default=100_000, gt=0)
     # Direct browser -> S3 presigned PUT uploads (Phase 1: single PUT).
     # Off by default; enables a new opt-in /file-manager/upload-session/presign + /finalize flow
     # used only when FILE_MANAGER_PROVIDER == "s3". Existing /upload and /upload-session paths
