@@ -19,6 +19,15 @@ class WebhookType(str, Enum):
     SLACK = "slack"
     WHATSAPP = "whatsapp"
     GENERIC = "generic"
+    # Inbound endpoint owned by a Webhook Trigger workflow node
+    WORKFLOW_TRIGGER = "workflow_trigger"
+
+
+class WebhookAuthMode(str, Enum):
+    """How a workflow-trigger endpoint authenticates the caller."""
+
+    BEARER = "bearer"
+    HMAC = "hmac"
 
 
 class WebhookModel(Base):
@@ -45,6 +54,12 @@ class WebhookModel(Base):
     app_settings_id = Column(
         UUID(as_uuid=True), ForeignKey("app_settings.id"), nullable=True
     )
+    # --- workflow_trigger only ---
+    # The Webhook Trigger node this endpoint belongs to (node ids are copied across
+    # workflow versions, so the binding survives publishing a new version).
+    node_id = Column(String(255), nullable=True)
+    auth_mode = Column(String(20), nullable=False, default="bearer", server_default="bearer")
+    rate_limit_per_minute = Column(Integer, nullable=False, default=60, server_default="60")
 
     agent = relationship("AgentModel", uselist=False)
     app_settings = relationship("AppSettingsModel", uselist=False)

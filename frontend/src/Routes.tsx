@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
-import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
 import AppLayout from "@/layout/AppLayout";
 import { Register } from "@/views/Register";
@@ -68,6 +68,7 @@ import EvaluationsPage from "@/views/TestSuites/pages/EvaluationsPage";
 import DatasetDetailPage from "@/views/TestSuites/pages/DatasetDetailPage";
 import EvaluationDetailPage from "@/views/TestSuites/pages/EvaluationDetailPage";
 import WorkflowEvaluationsPage from "@/views/TestSuites/pages/WorkflowEvaluationsPage";
+import MLModelEvaluationsPage from "@/views/TestSuites/pages/MLModelEvaluationsPage";
 import Privacy from "@/views/Privacy";
 import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
@@ -551,6 +552,14 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["test:workflow"]}>
                   <EvaluationDetailPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tests/ml-model-evaluations",
+              element: (
+                <ProtectedRoute requiredPermissions={["*", "read:ml_model"]}>
+                  <MLModelEvaluationsPage />
                 </ProtectedRoute>
               ),
             },

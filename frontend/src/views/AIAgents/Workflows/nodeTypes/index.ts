@@ -1,5 +1,7 @@
 import nodeRegistry from "../registry/nodeRegistry";
 import ChatInputNode from "./chat/chatInputNode";
+import WebhookTriggerNode from "./triggers/webhookTriggerNode";
+import { WEBHOOK_TRIGGER_NODE_DEFINITION } from "./triggers/definitions";
 import LLMModelNode from "./llm/modelNode";
 import APIToolNode from "./tools/apiToolNode";
 import WebScraperNode from "./tools/webScraperNode";
@@ -109,6 +111,8 @@ import {
   TTS_NODE_DEFINITION,
   STT_NODE_DEFINITION,
 } from "./audio/definitions";
+import GroupNode from "./group/groupNode";
+import { GROUP_NODE_TYPE } from "../utils/nodeGroups";
 
 // A function to re-register if needed
 export const registerAllNodeTypes = () => {
@@ -125,6 +129,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(WHATSAPP_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(CHAT_INPUT_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(WEBHOOK_TRIGGER_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(SLACK_OUTPUT_NODE_DEFINITION);
 
@@ -187,6 +192,7 @@ export const registerAllNodeTypes = () => {
 export const getNodeTypes = () => {
   return {
     chatInputNode: ChatInputNode,
+    webhookTriggerNode: WebhookTriggerNode,
     llmModelNode: LLMModelNode,
     templateNode: TemplateNode,
     chatOutputNode: ChatOutputNode,
@@ -234,5 +240,7 @@ export const getNodeTypes = () => {
     fileReaderNode: FileReaderNode,
     ttsNode: TTSNode,
     sttNode: STTNode,
+    // Visual-only container (not in the node registry — never executable, see utils/nodeGroups)
+    [GROUP_NODE_TYPE]: GroupNode,
   };
 };

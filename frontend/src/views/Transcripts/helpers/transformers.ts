@@ -115,9 +115,6 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
         ? lastEntry.start_time - transcriptArray[0].start_time
         : 0
     );
-    const minutes = Math.floor(durationInSeconds / 60);
-    const seconds = Math.floor(durationInSeconds % 60);
-    const formattedDuration = `${minutes}:${seconds.toString().padStart(2, "0")}`;
 
     const toneArray = analysis.tone ? [analysis.tone] : ["neutral"];
 

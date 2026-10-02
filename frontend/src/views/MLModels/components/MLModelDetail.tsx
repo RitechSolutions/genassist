@@ -47,13 +47,6 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/resizable";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
 import { cn } from "@/lib/utils";
 
 import { getMLModel } from "@/services/mlModels";
