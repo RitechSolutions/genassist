@@ -168,7 +168,7 @@ describe("preprocessingConfig - new operations", () => {
 
     const code = generatePythonCodeFromConfig(config, BASE_PYTHON_TEMPLATE);
     expect(code).toContain(
-      'df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")'
+      '_parsed_dates = pd.to_datetime(df["created_at"], errors="coerce", format="mixed")'
     );
 
     const parsed = parsePythonCodeToConfig(code);
@@ -198,7 +198,7 @@ describe("preprocessingConfig - new operations", () => {
     const code = generatePythonCodeFromConfig(config, BASE_PYTHON_TEMPLATE);
     expect(code).toContain('df["lag_336"] = df["lag_336"].astype("float64")');
     expect(code).toContain(
-      'df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")'
+      '_parsed_dates = pd.to_datetime(df["created_at"], errors="coerce", format="mixed")'
     );
     expect(code).toContain('df["is_active"] = df["is_active"].map(');
     expect(code).toContain('.astype("boolean")');
@@ -447,5 +447,59 @@ describe("preprocessingConfig - bug fixes", () => {
     expect(code).toContain(
       'df["flag"] = df["flag"].map(lambda v: v if pd.isna(v) else {"true": True, "false": False, "1": True, "0": False, "1.0": True, "0.0": False, "yes": True, "no": False}.get(str(v).strip().lower(), v)).astype("boolean")'
     );
+  });
+
+  it("datetime conversion fails on unreadable values instead of silently emptying them", () => {
+    const code = generatePythonCodeFromConfig(
+      {
+        steps: [
+          {
+            id: "step_1",
+            type: "change_dtype",
+            enabled: true,
+            config: {
+              conversions: [{ columnName: "created_at", dtype: "datetime" }],
+            } as ChangeDtypeStepConfig,
+          },
+        ],
+      },
+      BASE_PYTHON_TEMPLATE
+    );
+    expect(code).toContain('_unparsed = df["created_at"].notna() & _parsed_dates.isna()');
+    expect(code).toContain("raise ValueError(");
+    expect(code).toContain('df["created_at"] = _parsed_dates');
+  });
+
+  it("datetime code saved in the older one-line form still parses", () => {
+    const code = BASE_PYTHON_TEMPLATE.replace(
+      "    # STEP_MARKER_START: Preprocessing steps will be inserted here\n    # STEP_MARKER_END\n",
+      [
+        "    # STEP_START:step_1:change_dtype",
+        '    df["d"] = pd.to_datetime(df["d"], errors="coerce")',
+        "    # STEP_END:step_1:change_dtype",
+        "",
+      ].join("\n")
+    );
+    expect(parsePythonCodeToConfig(code).steps[0].config).toEqual({
+      conversions: [{ columnName: "d", dtype: "datetime" }],
+    });
+  });
+
+  it("category conversion generates astype(\"category\") and round-trips", () => {
+    const config: PreprocessingConfig = {
+      steps: [
+        {
+          id: "step_1",
+          type: "change_dtype",
+          enabled: true,
+          config: {
+            conversions: [{ columnName: "level", dtype: "category" }],
+          } as ChangeDtypeStepConfig,
+        },
+      ],
+    };
+    const code = generatePythonCodeFromConfig(config, BASE_PYTHON_TEMPLATE);
+    expect(code).toContain('df["level"] = df["level"].astype("category")');
+    expect(parsePythonCodeToConfig(code).steps).toEqual(config.steps);
   });
 });

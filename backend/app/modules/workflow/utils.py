@@ -3,6 +3,8 @@ import io
 import keyword
 import multiprocessing
 import os
+import queue
+import time
 import tokenize
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Callable, Dict, Any, List, Union
@@ -21,6 +23,8 @@ logger = logging.getLogger(__name__)
 # (e.g. preprocessing steps on large datasets). Keep well under the 2-hour
 # cap on full pipeline runs (app/tasks/ml_model_pipeline_tasks.py).
 _EXEC_TIMEOUT_SECONDS = 600
+# How often the parent checks on the subprocess while waiting for its result.
+_RESULT_POLL_SECONDS = 0.2
 
 
 def add_executable_function(code: str) -> str:
@@ -136,31 +140,54 @@ def _execute_python_code_sync(
         daemon=True,
     )
     process.start()
-    process.join(timeout=_EXEC_TIMEOUT_SECONDS)
 
+    # Read the result while the child is still running, never join() first:
+    # a child that has put a large result (e.g. a 30k-row DataFrame) on the
+    # queue can't exit until that data has been read out of the pipe (~64 KB
+    # buffer), so joining before reading deadlocks until the timeout kills
+    # it. Small results fit in the pipe, which is why this only showed up on
+    # real-sized data.
+    deadline = time.monotonic() + _EXEC_TIMEOUT_SECONDS
+    result = None
+    while result is None:
+        try:
+            result = result_queue.get(timeout=_RESULT_POLL_SECONDS)
+        except queue.Empty:
+            if not process.is_alive():
+                # Exited without putting a result (crash, OS kill). One last
+                # non-blocking read covers a result flushed right at exit.
+                try:
+                    result = result_queue.get_nowait()
+                except queue.Empty:
+                    break
+            elif time.monotonic() >= deadline:
+                process.kill()
+                process.join()
+                logger.warning(
+                    "User code execution timed out after %ds — subprocess killed",
+                    _EXEC_TIMEOUT_SECONDS,
+                )
+                return {
+                    "error": f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds",
+                    "traceback": "",
+                    "output": "",
+                    "errors": "",
+                }
+
+    # The result has been read, so the child can finish flushing and exit.
+    process.join(timeout=_RESULT_POLL_SECONDS * 25)
     if process.is_alive():
         process.kill()
         process.join()
-        logger.warning(
-            "User code execution timed out after %ds — subprocess killed",
-            _EXEC_TIMEOUT_SECONDS,
-        )
-        return {
-            "error": f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds",
-            "traceback": "",
-            "output": "",
-            "errors": "",
-        }
 
-    try:
-        return result_queue.get_nowait()
-    except Exception:
+    if result is None:
         return {
             "error": "Subprocess exited without returning a result",
             "traceback": "",
             "output": "",
             "errors": "",
         }
+    return result
 
 
 _JSON_KEYWORD_TO_PYTHON = {"null": "None", "true": "True", "false": "False"}

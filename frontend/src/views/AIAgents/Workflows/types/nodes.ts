@@ -3,6 +3,7 @@ import { ComponentType } from "react";
 import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
 import { MLModelTypeValue } from "@/constants/mlModelTypes";
+import type { PreprocessingConfig } from "../nodeDialogs/training/preprocessingConfig";
 
 // Define compatibility types
 export type NodeCompatibility =
@@ -522,6 +523,10 @@ export interface PreprocessingNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the file for preprocessing
   analysisResult?: CSVAnalysisResult; // Initial CSV analysis result (for backward compatibility)
   stepAnalysisResults?: Record<string, CSVAnalysisResult>; // Analysis results for each step (keyed by step ID or "initial")
+  // The configured steps, stored as data - the dialog's source of truth.
+  // pythonCode is generated from it. Missing on nodes saved before this was
+  // added; those are read from pythonCode once and gain it on their next save.
+  preprocessingConfig?: PreprocessingConfig;
 }
 
 // Train Model Node Data

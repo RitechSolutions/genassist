@@ -29,6 +29,7 @@ const DTYPE_OPTIONS: { value: ChangeDtypeTarget; label: string }[] = [
   { value: "string", label: "String" },
   { value: "bool", label: "Boolean" },
   { value: "datetime", label: "Datetime" },
+  { value: "category", label: "Category" },
 ];
 
 export const ChangeDtypeStep: React.FC<ChangeDtypeStepProps> = ({
