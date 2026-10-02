@@ -11,6 +11,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import _response_error_detail
 from app.schemas.prompt_editor import (
     FieldEqualsConfig,
+    NliEvalConfig,
     NotContainsConfig,
     PromptEvalRequest,
     PromptTechniqueConfigs,
@@ -18,6 +19,7 @@ from app.schemas.prompt_editor import (
 from app.services.prompt_editor_evaluators import (
     _EXPECTATION_RULES,
     PROMPT_CHECK_TECHNIQUES,
+    build_technique_configs,
     describe_expectations,
     validate_prompt_check_techniques,
 )
@@ -114,6 +116,27 @@ class TestValidatePromptCheckTechniques:
         assert built["field_equals"] == {"field": "inputs.message", "expected": "hi"}
 
 
+class TestLenientBuilder:
+
+    def test_not_contains_without_phrases_builds_an_empty_config(self):
+        assert build_technique_configs(["not_contains"], _configs()) == {"not_contains": {}}
+
+    def test_the_check_still_refuses_what_the_builder_allows(self):
+        with pytest.raises(AppException) as exc_info:
+            validate_prompt_check_techniques(["not_contains"], _configs())
+
+        assert exc_info.value.error_detail == (
+            "'not_contains' needs at least one forbidden phrase. Add one or clear the check."
+        )
+
+    def test_a_configured_not_contains_builds_the_same_config_either_way(self):
+        configs = _configs(not_contains={"phrases": ["refund"]})
+
+        assert build_technique_configs(["not_contains"], configs) == validate_prompt_check_techniques(
+            ["not_contains"], configs
+        )
+
+
 class TestRejectionDetailReachesTheUser:
     def test_the_technique_detail_survives_outside_dev(self, monkeypatch):
         monkeypatch.delenv("ENV", raising=False)
@@ -131,13 +154,18 @@ class TestTechniqueConfigContract:
 
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
 
-    def test_nli_eval_has_no_config_object_to_carry_a_model_name(self):
-        assert "nli_eval" not in PromptTechniqueConfigs.model_fields
+    def test_nli_eval_config_carries_a_threshold_and_nothing_else(self):
+        assert set(NliEvalConfig.model_fields) == {"min_entail_score"}
 
         with pytest.raises(ValidationError) as exc_info:
-            PromptTechniqueConfigs(nli_eval={"nli_model_name": "attacker/model"})
+            PromptTechniqueConfigs(nli_eval={"min_entail_score": 0.5, "nli_model_name": "attacker/model"})
 
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    @pytest.mark.parametrize("score", [-0.1, 1.1])
+    def test_an_out_of_range_entail_score_is_rejected(self, score):
+        with pytest.raises(ValidationError):
+            NliEvalConfig(min_entail_score=score)
 
     @pytest.mark.parametrize("key", ["nli_model_name", "evidence_source", "answer_field"])
     def test_a_registry_option_cannot_ride_along_on_a_config_that_does_exist(self, key):
@@ -209,3 +237,53 @@ class TestExpectationRules:
         assert describe_expectations(["nli_eval", "contains"]) == describe_expectations(
             ["contains", "nli_eval"]
         )
+
+    def test_forbidden_phrases_are_described_from_the_built_config(self):
+        described = describe_expectations(
+            ["not_contains"], {"not_contains": {"phrases": ["refund", "chargeback"]}}
+        )
+
+        assert described == (
+            "- not_contains: the reply must not contain any of these phrases, "
+            'case-insensitively: "refund", "chargeback"'
+        )
+
+    def test_a_not_contains_with_no_phrases_describes_nothing(self):
+        assert describe_expectations(["not_contains"], {"not_contains": {}}) == ""
+
+    def test_field_equals_is_described_with_the_value_it_compares(self):
+        described = describe_expectations(
+            ["field_equals"], {"field_equals": {"field": "inputs.message", "expected": "hi"}}
+        )
+
+        assert described == "- field_equals: the reply field 'inputs.message' must equal \"hi\""
+
+    def test_field_equals_without_an_expected_points_at_the_case(self):
+        described = describe_expectations(["field_equals"], {"field_equals": {"field": "outputs"}})
+
+        assert described == "- field_equals: the reply field 'outputs' must equal the expected output"
+
+    def test_the_entailment_threshold_the_grader_runs_at_is_described(self):
+        described = describe_expectations(
+            ["nli_eval"], {"nli_eval": {"evidence_source": "expected_output", "min_entail_score": 0.2}}
+        )
+
+        assert described.startswith("- nli_eval: ")
+        assert "per claim" in described
+        assert "0.2 or higher" in described
+
+    def test_an_nli_eval_without_a_threshold_keeps_the_settled_reading(self):
+        assert describe_expectations(
+            ["nli_eval"], {"nli_eval": {"evidence_source": "expected_output"}}
+        ) == describe_expectations(["nli_eval"])
+
+    def test_configured_lines_keep_the_allow_list_order(self):
+        described = describe_expectations(
+            ["nli_eval", "not_contains", "contains"], {"not_contains": {"phrases": ["x"]}}
+        )
+
+        assert [line.split(":")[0] for line in described.splitlines()] == [
+            "- contains",
+            "- not_contains",
+            "- nli_eval",
+        ]
