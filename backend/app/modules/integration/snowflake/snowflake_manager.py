@@ -1,16 +1,18 @@
 # Standard library imports
+import asyncio
 import base64
 import logging
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+
+# Third-party imports
+from cryptography.hazmat.primitives import serialization
+
+import snowflake.connector
 
 # Local application imports
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.sensitive_data_utils import redact_bound_values
-from cryptography.hazmat.primitives import serialization
-
-# Third-party imports
-import snowflake.connector
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,18 @@ class SnowflakeManager:
     # ---------------------------
     # Private helpers
     # ---------------------------
+
+    @staticmethod
+    def _execute_cursor(cursor, query: str, parameters: Optional[Mapping[str, Any]]) -> None:
+        if parameters:
+            cursor.execute(query, parameters)
+        else:
+            cursor.execute(query)
+
+    @staticmethod
+    def _is_token_expired(error: Exception) -> bool:
+        message = str(error)
+        return "390114" in message or "Authentication token has expired" in message
 
     def _private_key_der_from_pem(
         self, pem_str: str, passphrase: Optional[str]
@@ -194,10 +208,7 @@ class SnowflakeManager:
         def _run_once() -> List[Dict[str, Any]]:
             cur = self.connection.cursor()
             try:
-                if parameters:
-                    cur.execute(query, parameters)
-                else:
-                    cur.execute(query)
+                self._execute_cursor(cur, query, parameters)
                 rows = cur.fetchall()
                 cols = [d[0] for d in cur.description] if cur.description else []
                 return [dict(zip(cols, r)) for r in rows]
@@ -209,8 +220,7 @@ class SnowflakeManager:
             rows = _run_once()
             return rows, None
         except Exception as e:
-            msg = str(e)
-            if "390114" in msg or "Authentication token has expired" in msg:
+            if self._is_token_expired(e):
                 logger.warning("Auth token expired; reconnecting and retrying once.")
                 try:
                     await self.disconnect()
@@ -225,6 +235,63 @@ class SnowflakeManager:
             safe_error = redact_bound_values(e, parameters)
             logger.error(f"Error executing Snowflake query: {safe_error}")
             return [], safe_error
+
+    async def stream_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+        *,
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        """Stream Snowflake rows without materializing the complete result."""
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be a positive integer")
+        if not self.connection:
+            await self.connect()
+
+        cursor = await asyncio.to_thread(self.connection.cursor)
+        try:
+            try:
+                await asyncio.to_thread(
+                    self._execute_cursor,
+                    cursor,
+                    query,
+                    parameters,
+                )
+            except Exception as exc:
+                if not self._is_token_expired(exc):
+                    raise
+
+                logger.warning("Auth token expired; reconnecting and retrying once.")
+                await asyncio.to_thread(cursor.close)
+                await self.disconnect()
+                await self.connect()
+                cursor = await asyncio.to_thread(self.connection.cursor)
+                await asyncio.to_thread(
+                    self._execute_cursor,
+                    cursor,
+                    query,
+                    parameters,
+                )
+
+            columns = [item[0] for item in cursor.description] if cursor.description else []
+            # Yield metadata before fetching so empty results retain headers.
+            yield columns, []
+
+            while True:
+                rows = await asyncio.to_thread(cursor.fetchmany, chunk_size)
+                if not rows:
+                    break
+                yield columns, [tuple(row) for row in rows]
+        except Exception as exc:
+            safe_error = redact_bound_values(exc, parameters)
+            logger.error("Error streaming Snowflake query: %s", safe_error)
+            raise RuntimeError(safe_error) from None
+        finally:
+            try:
+                await asyncio.to_thread(cursor.close)
+            except Exception:
+                logger.debug("Failed to close Snowflake streaming cursor", exc_info=True)
 
     async def _get_schema(
         self,
