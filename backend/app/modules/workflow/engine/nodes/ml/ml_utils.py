@@ -791,8 +791,10 @@ async def execute_and_process_preprocessing_code(
         else:
             return None, failure, response
 
-    # Extract result from response
+    stderr_output = response.get("errors")
     result = response.get("result")
+    if stderr_output:
+        logger.warning("Preprocessing code produced warnings/stderr output: %s", stderr_output)
 
     # Process the result similar to train_preprocess_node
     if isinstance(result, pd.DataFrame):

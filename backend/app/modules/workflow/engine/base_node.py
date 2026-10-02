@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Literal, Optional
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
-from app.core.exceptions.exception_classes import AppException
-from app.core.exceptions.exception_handler import _response_error_detail
 from app.core.observability.otel import (
     is_otel_runtime_enabled,
     record_workflow_node_duration,
@@ -20,7 +18,7 @@ from app.core.observability.otel import (
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.node_result import is_node_failure, node_failure
-from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
+from app.modules.workflow.engine.utils import describe_exception, extract_code_params, replace_config_vars
 from app.modules.workflow.engine.entry_nodes import is_entry_node_type
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -471,17 +469,13 @@ class BaseNode(ABC):
                     return result
 
                 except Exception as e:
-                    detail = ""
-                    if isinstance(e, AppException) and e.error_detail:
-                        detail = " - " + truncate_for_log(redact_sensitive_substrings(str(e.error_detail)), 500)
+                    # Masked and capped: this text reaches the run status, the trace and the agent
+                    reason = truncate_for_log(redact_sensitive_substrings(describe_exception(e)), 500)
                     if span is not None and span.is_recording():
                         span.record_exception(e)
-                        span.set_status(Status(StatusCode.ERROR, str(e) + detail))
-                    logger.error("Error executing node %s: %s%s", self.node_id, e, detail, exc_info=True)
-                    client_detail = _response_error_detail(e) if isinstance(e, AppException) else None
-                    error_msg = f"Error executing node {self.node_id}: {str(e)}"
-                    if client_detail:
-                        error_msg += f" - {client_detail}"
+                        span.set_status(Status(StatusCode.ERROR, reason))
+                    error_msg = f"Error executing node {self.node_id}: {reason}"
+                    logger.error(error_msg, exc_info=True)
                     self.complete_execution(error=error_msg)
                     # Return a detectable failure envelope (not None) so a caller using
                     # this node as a tool learns it failed. Downstream engine flow is

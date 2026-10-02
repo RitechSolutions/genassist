@@ -31,15 +31,22 @@ export const canonicalJson = (value: unknown): string => {
   return JSON.stringify(value) ?? "null";
 };
 
+export const clipCodePoints = (text: string, max: number): string => {
+  const points = Array.from(text);
+  return points.length <= max ? text : points.slice(0, max).join("");
+};
+
 /** One failure handed to the optimizer. Input and expectation are re-read server-side;
  *  the metrics that rejected it travel so the rewrite is told which rule to satisfy */
 export interface FailedCase {
   caseId: string;
   actual: string;
   failedMetrics: string[];
+  feedback: string | null;
 }
 
 export const MAX_OPTIMIZE_FAILED = 10;
+export const MAX_FAILURE_FEEDBACK_CHARS = 500;
 
 // Sorted: metric order follows the technique toggle order, which must not change the key
 const failedMetricsOf = (metrics: Record<string, PromptEvalMetric>): string[] =>
@@ -47,6 +54,37 @@ const failedMetricsOf = (metrics: Record<string, PromptEvalMetric>): string[] =>
     .filter(([, metric]) => metricOutcomeOf(metric) === "failed")
     .map(([key]) => key)
     .sort();
+
+const FEEDBACK_SEPARATOR = "; ";
+
+const clipToShares = (parts: readonly string[], max: number): string[] => {
+  const lengths = parts.map((part) => Array.from(part).length);
+  const clipped: string[] = [];
+  let left = max - FEEDBACK_SEPARATOR.length * (parts.length - 1);
+  parts
+    .map((_, index) => index)
+    .sort((a, b) => lengths[a] - lengths[b])
+    .forEach((index, taken) => {
+      const share = Math.max(Math.floor(left / (parts.length - taken)), 0);
+      clipped[index] = clipCodePoints(parts[index], share);
+      left -= Math.min(lengths[index], share);
+    });
+  return clipped;
+};
+
+/** Technique-prefixed and sorted */
+export const feedbackOf = (
+  metrics: Record<string, PromptEvalMetric>,
+  max = MAX_FAILURE_FEEDBACK_CHARS,
+): string | null => {
+  const parts = Object.entries(metrics ?? {})
+    .filter(([, metric]) => metricOutcomeOf(metric) === "failed" && metric.comment)
+    .map(([key, metric]) => `${key}: ${metric.comment}`)
+    .sort();
+  return parts.length === 0
+    ? null
+    : clipToShares(parts, max).join(FEEDBACK_SEPARATOR);
+};
 
 /** Only graded failures reach optimizer; errors don't measure prompt quality. Server-side order keeps the cap stable */
 export const failedCasesOf = (
@@ -58,6 +96,7 @@ export const failedCasesOf = (
       caseId: r.case_id,
       actual: r.actual,
       failedMetrics: failedMetricsOf(r.metrics),
+      feedback: feedbackOf(r.metrics),
     }))
     .slice(0, MAX_OPTIMIZE_FAILED);
 
@@ -69,6 +108,7 @@ export const failedCaseCount = (
 export interface EvalKeyInputs {
   prompt: string;
   providerId: string;
+  providerRevision: string;
   techniques: readonly string[];
   techniqueConfigs: PromptTechniqueConfigs;
   /** The ordered list actually sent; null when the server picks the first `maxCases` */
@@ -85,11 +125,30 @@ export const evalKeyOf = (input: EvalKeyInputs): string =>
   canonicalJson({
     prompt: input.prompt,
     providerId: input.providerId,
+    providerRevision: input.providerRevision,
     techniques: [...input.techniques].sort(),
     techniqueConfigs: input.techniqueConfigs,
     caseIds: input.caseIds,
     maxCases: input.maxCases,
     caseRowsKey: input.caseRowsKey,
+  });
+
+export type MeasurementContextInputs = Omit<EvalKeyInputs, "prompt"> & {
+  holdoutIds: readonly string[] | null;
+};
+
+export const measurementContextKeyOf = (
+  input: MeasurementContextInputs,
+): string =>
+  canonicalJson({
+    providerId: input.providerId,
+    providerRevision: input.providerRevision,
+    techniques: [...input.techniques].sort(),
+    techniqueConfigs: input.techniqueConfigs,
+    caseIds: input.caseIds,
+    maxCases: input.maxCases,
+    caseRowsKey: input.caseRowsKey,
+    holdoutIds: input.holdoutIds,
   });
 
 export const staleOf = (runKey: string, currentKey: string): boolean =>
@@ -133,6 +192,9 @@ export interface OptimizeKeyInputs {
   caseSplit: CaseSplitRef | null;
   caseRowsKey: string | null;
   techniques: readonly string[];
+  techniqueConfigs: PromptTechniqueConfigs;
+  providerRevision: string;
+  sourceEvalKey: string;
 }
 
 /** The inputs a suggestion relies on. Failures are tracked separately, so early suggestions persist despite later failures */
@@ -140,10 +202,13 @@ export const optimizeKeyOf = (input: OptimizeKeyInputs): string =>
   canonicalJson({
     prompt: input.prompt,
     providerId: input.providerId,
+    providerRevision: input.providerRevision,
     instructions: input.instructions,
     caseSplit: input.caseSplit,
     caseRowsKey: input.caseRowsKey,
     techniques: [...input.techniques].sort(),
+    techniqueConfigs: input.techniqueConfigs,
+    sourceEvalKey: input.sourceEvalKey,
   });
 
 export interface OptimizeRequest {
@@ -156,34 +221,15 @@ export interface OptimizeRequest {
   sourceFailuresKey: string | null;
   caseSplit: CaseSplitRef | null;
   techniques: string[];
+  techniqueConfigs: PromptTechniqueConfigs;
 }
 
-/**
- * Identifies failures, not runs (same prompt/provider can fail differently).
- * Null = no failures, so optimizations without failures never expire.
- */
+/** Identifies failures, not runs: the same prompt and provider can fail differently.
+ *  Recorded on the request as provenance; null when the rewrite was sent none */
 export const failuresKeyOf = (cases: readonly FailedCase[]): string | null =>
   cases.length === 0 ? null : canonicalJson(cases);
 
-/** Suggestion is valid while inputs match and failures are current */
 export const isOptimizeCurrent = (
   request: OptimizeRequest,
-  current: { key: string; failuresKey: string | null },
-): boolean =>
-  !staleOf(request.key, current.key) &&
-  (request.sourceFailuresKey === null ||
-    request.sourceFailuresKey === current.failuresKey);
-
-/** Version-create variables for an accepted suggestion */
-export interface AcceptPayload {
-  content: string;
-  draftAtSubmit: string;
-  token: number;
-}
-
-/** Saves the suggestion */
-export const acceptPayloadOf = (
-  suggestion: string,
-  draft: string,
-  token: number,
-): AcceptPayload => ({ content: suggestion, draftAtSubmit: draft, token });
+  currentKey: string,
+): boolean => !staleOf(request.key, currentKey);

@@ -149,8 +149,7 @@ async def test_execute_on_raise_marks_failed_and_returns_detectable_envelope():
 
 
 @pytest.mark.asyncio
-async def test_execute_keeps_internal_detail_out_of_the_node_error(monkeypatch, caplog):
-    monkeypatch.setenv("ENV", "prod")
+async def test_execute_masks_secrets_in_the_node_error(caplog):
     st = _bare_state()
 
     def _boom():
@@ -162,14 +161,13 @@ async def test_execute_keeps_internal_detail_out_of_the_node_error(monkeypatch, 
     with caplog.at_level(logging.ERROR):
         await _FakeNode("n1", st, _boom).execute()
 
-    assert st.node_execution_status["n1"]["error"] == "Error executing node n1: error_500"
-    assert "/src/datavolume/ml_models/x.pkl" in caplog.text
-    assert "hunter2" not in caplog.text
+    error = st.node_execution_status["n1"]["error"]
+    assert error.startswith("Error executing node n1: Could not load model: /src/datavolume/ml_models/x.pkl")
+    assert "hunter2" not in error and "hunter2" not in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_execute_appends_client_safe_detail(monkeypatch):
-    monkeypatch.setenv("ENV", "prod")
+async def test_execute_puts_the_detail_in_the_node_error():
     st = _bare_state()
     detail = "Unusable inference input for 1 feature(s): lag_24='null'"
 
@@ -178,7 +176,7 @@ async def test_execute_appends_client_safe_detail(monkeypatch):
 
     await _FakeNode("n1", st, _boom).execute()
 
-    assert st.node_execution_status["n1"]["error"] == f"Error executing node n1: ML_INFERENCE_INPUT_INVALID - {detail}"
+    assert st.node_execution_status["n1"]["error"] == f"Error executing node n1: {detail}"
 
 
 @pytest.mark.asyncio

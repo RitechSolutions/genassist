@@ -53,22 +53,21 @@ export const SuggestionDiffEditor: React.FC<SuggestionDiffEditorProps> = ({
 
       {view === "diff" ? (
         <div className="border rounded">
-          {before === suggestion ? (
-            <div className="px-3 py-2 text-xs italic text-muted-foreground">
+          {before === suggestion && (
+            <p className="border-b px-3 py-2 text-xs italic text-muted-foreground">
               No differences
-            </div>
-          ) : (
-            <FieldChangeRow
-              variant="embedded"
-              change={{
-                key: "Suggested prompt",
-                before,
-                after: suggestion,
-              }}
-              minSimilarity={PROMPT_MIN_SIMILARITY}
-              diffTimeoutMs={PROMPT_DIFF_TIMEOUT_MS}
-            />
+            </p>
           )}
+          <FieldChangeRow
+            variant="embedded"
+            change={{
+              key: "Suggested prompt",
+              before,
+              after: suggestion,
+            }}
+            minSimilarity={PROMPT_MIN_SIMILARITY}
+            diffTimeoutMs={PROMPT_DIFF_TIMEOUT_MS}
+          />
         </div>
       ) : (
         <RichTextarea

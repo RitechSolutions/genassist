@@ -17,6 +17,8 @@ export interface PromptProvidersState {
   providerStatus: RunInputs["providerStatus"];
   /** Names the provider a run was sent to when its provenance carries no model */
   fallbackFor: (providerId: string) => ProviderFallback | undefined;
+  /** Row revision; another user's edit stales produced runs. Visible after query refetch*/
+  revisionOf: (providerId: string) => string;
 }
 
 /** The active LLM providers a run can be sent to, and the two independent selections */
@@ -51,6 +53,8 @@ export const usePromptProviders = (
         : providers.length === 0
           ? "empty"
           : "ready",
+    revisionOf: (providerId) =>
+      providers.find((p) => p.id === providerId)?.updated_at ?? "",
     fallbackFor: (providerId) => {
       const provider = providers.find((p) => p.id === providerId);
       return provider
