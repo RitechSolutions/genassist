@@ -13,7 +13,8 @@ import {
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { getNodeColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
 import { renderIcon } from "@/views/AIAgents/Workflows/utils/iconUtils";
-import { Plus, Undo, Redo } from "lucide-react";
+import { Plus, Undo, Redo, Group, Ungroup } from "lucide-react";
+import { useHiddenNodeTypes } from "@/views/AIAgents/Workflows/hooks/useHiddenNodeTypes";
 
 interface CanvasContextMenuProps {
   children: React.ReactNode;
@@ -23,6 +24,12 @@ interface CanvasContextMenuProps {
   canUndo: boolean;
   canRedo: boolean;
   clickPosition: { x: number; y: number } | null;
+  /** Wrap the selected nodes in a visual group (enabled when nodes are selected). */
+  onGroupSelection: () => void;
+  canGroupSelection: boolean;
+  /** Remove the selected group container(s), keeping their nodes. */
+  onUngroupSelection: () => void;
+  canUngroupSelection: boolean;
 }
 
 const categoryLabels: Record<string, string> = {
@@ -45,8 +52,13 @@ const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
   canUndo,
   canRedo,
   clickPosition,
+  onGroupSelection,
+  canGroupSelection,
+  onUngroupSelection,
+  canUngroupSelection,
 }) => {
   const nodeCategories = nodeRegistry.getAllCategories();
+  const hiddenNodeTypes = useHiddenNodeTypes();
 
   const handleAddNode = (nodeType: string) => {
     if (clickPosition) {
@@ -68,7 +80,9 @@ const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
           </ContextMenuSubTrigger>
           <ContextMenuSubContent className="w-64 max-h-96 overflow-y-auto">
             {nodeCategories.map((category) => {
-              const nodesInCategory = nodeRegistry.getNodeTypesByCategory(category);
+              const nodesInCategory = nodeRegistry
+                .getNodeTypesByCategory(category)
+                .filter((def) => !hiddenNodeTypes.has(def.type));
               if (nodesInCategory.length === 0) return null;
 
               const categoryLabel = categoryLabels[category] || category;
@@ -100,6 +114,28 @@ const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
             })}
           </ContextMenuSubContent>
         </ContextMenuSub>
+
+        <ContextMenuSeparator />
+
+        {/* Visual grouping of the current selection */}
+        <ContextMenuItem
+          onClick={onGroupSelection}
+          disabled={!canGroupSelection}
+          className="flex items-center"
+        >
+          <Group className="mr-2 h-4 w-4" />
+          Group selected nodes
+          <ContextMenuShortcut>⌘G</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuItem
+          onClick={onUngroupSelection}
+          disabled={!canUngroupSelection}
+          className="flex items-center"
+        >
+          <Ungroup className="mr-2 h-4 w-4" />
+          Ungroup
+          <ContextMenuShortcut>⇧⌘G</ContextMenuShortcut>
+        </ContextMenuItem>
 
         <ContextMenuSeparator />
 

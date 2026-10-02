@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useCallback } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { HelpCircle, Search, Sparkles, Plus, Pencil, Trash2, X, ExternalLink } from "lucide-react";
 import { RichInput } from "@/components/richInput";
@@ -7,6 +7,7 @@ import { getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/uti
 import { renderIcon } from "@/views/AIAgents/Workflows/utils/iconUtils";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import { useHiddenNodeTypes } from "../../hooks/useHiddenNodeTypes";
 import type { AssistantMessage } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
 import { getActionLabel } from "@/views/AIAgents/Workflows/utils/assistantActionParser";
 import FormattedText from "@/components/FormattedText";
@@ -107,6 +108,13 @@ const NodePanel: React.FC<NodePanelProps> = ({
   }, [activeConversationalTab]);
 
   const showConversationalTab = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CONVERSATIONAL_TAB);
+  // Flag-gated node types never appear in the palette (see useHiddenNodeTypes).
+  const hiddenNodeTypes = useHiddenNodeTypes();
+  const visibleNodesByCategory = useCallback(
+    (category: string) =>
+      nodeRegistry.getNodeTypesByCategory(category).filter((def) => !hiddenNodeTypes.has(def.type)),
+    [hiddenNodeTypes]
+  );
 
   // Focus the node search whenever the panel opens on the Available Nodes tab
   // (e.g. via the ⌘I / Ctrl+I shortcut or the toggle button).
@@ -190,7 +198,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     const filtered: Record<string, ReturnType<typeof nodeRegistry.getNodeTypesByCategory>> = {};
 
     nodeCategories.forEach((category) => {
-      const nodesInCategory = nodeRegistry.getNodeTypesByCategory(category);
+      const nodesInCategory = visibleNodesByCategory(category);
       const matchingNodes = nodesInCategory.filter(
         (node) =>
           node.label.toLowerCase().includes(query) ||
@@ -203,7 +211,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     });
 
     return filtered;
-  }, [searchQuery, nodeCategories]);
+  }, [searchQuery, nodeCategories, visibleNodesByCategory]);
 
   // Render node categories
   const renderNodeCategories = () => {
@@ -235,7 +243,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
 
     // Otherwise, render all categories
     return nodeCategories.map((category) => {
-      const nodesInCategory = nodeRegistry.getNodeTypesByCategory(category);
+      const nodesInCategory = visibleNodesByCategory(category);
       if (nodesInCategory.length === 0) return null;
       return renderCategorySection(category, nodesInCategory);
     });

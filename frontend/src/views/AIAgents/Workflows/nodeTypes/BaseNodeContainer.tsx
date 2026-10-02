@@ -1,4 +1,5 @@
 import { useContext, useEffect, useRef, useState } from "react";
+import { isEntryNodeType } from "../utils/entryNodes";
 import { NodeData, NodeHelpContent } from "../types/nodes";
 import { useReactFlow } from "reactflow";
 import { WorkflowContext } from "../context/WorkflowContext";
@@ -154,8 +155,8 @@ const BaseNodeContainer = <T extends NodeData>({
   const hasError = isDeactivated
     ? false
     : !hasNodeBeenExecuted(id) || hasValidationError;
-  const isSpecialNode =
-    nodeType === "chatInputNode" || nodeType === "chatOutputNode";
+  // Entry nodes (Start / Webhook Trigger) and the Finish node.
+  const isSpecialNode = isEntryNodeType(nodeType) || nodeType === "chatOutputNode";
   // Sub-agents share the agent's gradient treatment
   const isAgentNode =
     nodeType === "agentNode" || nodeType === "subAgentNode";

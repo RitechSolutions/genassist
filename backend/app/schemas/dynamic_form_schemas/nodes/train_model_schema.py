@@ -21,10 +21,37 @@ TRAIN_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         required=True
     ),
     FieldSchema(
+        name="scalingMethod",
+        type="select",
+        label="Feature Scaling",
+        required=False,
+        default="auto",
+        options=[
+            {"label": "None", "value": "none"},
+            {"label": "Standardized (Z-score)", "value": "standard"},
+            {"label": "Min-Max", "value": "minmax"},
+            {"label": "Abs-Max", "value": "maxabs"},
+            {"label": "Robust", "value": "robust"},
+            {"label": "Auto (Recommended)", "value": "auto"},
+        ]
+    ),
+    FieldSchema(
         name="targetColumn",
         type="text",
         label="Target Column",
         required=True
+    ),
+    FieldSchema(
+        name="taskType",
+        type="select",
+        label="Task Type",
+        required=False,
+        default="auto",
+        options=[
+            {"label": "Auto-detect", "value": "auto"},
+            {"label": "Classification", "value": "classification"},
+            {"label": "Regression", "value": "regression"},
+        ]
     ),
     FieldSchema(
         name="featureColumns",

@@ -112,6 +112,8 @@ services:
     image: ${APP_IMAGE:-ghcr.io/ritechsolutions/genassist-backend:latest}
     container_name: genassist-celery-worker
     command: celery -A app.tasks.celery_app worker --loglevel=info
+    volumes:
+      - app_data_volume:/src/datavolume
     networks:
       - genassist-network
 

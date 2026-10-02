@@ -38,19 +38,6 @@ export function AnalyticsAggregatedDataEmptyState() {
   );
 }
 
-/** Node analytics — no rows in summary tables yet. */
-export function NodeAnalyticsAggregatedDataEmptyState() {
-  return (
-    <AnalyticsEmptyStateCard>
-      <ListEmptyState
-        icon={<GitBranch className="h-12 w-12 text-muted-foreground" />}
-        title="No node data yet"
-        description="Run the aggregation task to populate the summary tables. Node execution metrics will appear once workflows have been run in the selected period."
-      />
-    </AnalyticsEmptyStateCard>
-  );
-}
-
 /** Table / chart — filters applied but nothing in range. */
 export function AnalyticsPeriodEmptyState({
   title = "No data for this period",

@@ -92,6 +92,13 @@ class LlmUsageReadRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def last_fallback_at(self) -> datetime | None:
+        """Return when the tenant last recorded a fallback-priced call, ignoring read filters"""
+        stmt = select(func.max(LlmUsageEventModel.created_at)).where(
+            LlmUsageEventModel.is_deleted == 0, _STATUS == PricingStatus.FALLBACK.value
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     async def timeseries(self, params, scope: list[UUID] | None):
         day = _utc_day(LlmUsageEventModel.occurred_at)
         stmt = (

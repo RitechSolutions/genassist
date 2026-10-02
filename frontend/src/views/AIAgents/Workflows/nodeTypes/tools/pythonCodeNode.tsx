@@ -19,14 +19,6 @@ const PythonCodeNode: React.FC<NodeProps<PythonCodeNodeData>> = ({
   const color = getNodeColor(nodeDefinition.category);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // Get code preview (first few lines)
-  const getCodePreview = () => {
-    if (!data.code) return "";
-    const lines = data.code?.split("\n");
-    if (lines?.length <= 3) return data.code;
-    return lines?.slice(0, 3).join("\n") + "\n...";
-  };
-
   const onUpdate = (updatedData: PythonCodeNodeData) => {
     if (data.updateNodeData) {
       const dataToUpdate: Partial<PythonCodeNodeData> = {

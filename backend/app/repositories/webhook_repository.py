@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import HttpUrl
 from sqlalchemy.orm import joinedload
 from app.db.models.agent import AgentModel
-from app.db.models.webhook import WebhookModel
+from app.db.models.webhook import WebhookModel, WebhookType
 from app.repositories.db_repository import DbRepository
 from app.schemas.webhook import WebhookBase, WebhookUpdate
 from sqlalchemy.future import select
@@ -55,7 +55,10 @@ class WebhookRepository(DbRepository[WebhookModel]):
         return webhook
 
     async def get_by_id_full(self, webhook_id: UUID) -> WebhookModel | None:
-        """Fetch webhook definition by ID with full agent and app settings."""
+        """Fetch webhook definition by ID with full agent and app settings.
+
+        Soft-deleted rows are excluded: the public execute route calls this, and
+        a deleted endpoint must stop answering."""
         result = await self.db.execute(
             select(WebhookModel)
             .options(
@@ -63,19 +66,58 @@ class WebhookRepository(DbRepository[WebhookModel]):
                 joinedload(WebhookModel.agent).joinedload(AgentModel.workflow),
                 joinedload(WebhookModel.app_settings)
             )
-            .where(WebhookModel.id == webhook_id)
+            .where(WebhookModel.id == webhook_id, WebhookModel.is_deleted == 0)
         )
         return result.scalars().first()
 
     async def get_all(self) -> list[WebhookModel]:
-        """Fetch all webhook definitions."""
+        """Fetch all webhook definitions (channel webhooks only; Webhook Trigger
+        node endpoints are managed from the workflow builder)."""
         query = (
             select(WebhookModel)
-            .where(WebhookModel.is_deleted == 0)
+            .where(
+                WebhookModel.is_deleted == 0,
+                WebhookModel.webhook_type != WebhookType.WORKFLOW_TRIGGER.value,
+            )
             .order_by(WebhookModel.created_at.asc())
         )
         result = await self.db.execute(query)
         return result.scalars().all()
+
+    # --- Webhook Trigger node endpoints ---
+
+    async def create_model(self, webhook: WebhookModel) -> WebhookModel:
+        """Persist a pre-built row (the trigger service sets every column itself)."""
+        return await DbRepository.create(self, webhook)
+
+    async def save(self, webhook: WebhookModel) -> WebhookModel:
+        """Flush a managed row mutated by the caller."""
+        return await DbRepository.update(self, webhook)
+
+    async def get_trigger_by_agent_node(
+        self, agent_id: UUID, node_id: str
+    ) -> Optional[WebhookModel]:
+        query = select(WebhookModel).where(
+            WebhookModel.is_deleted == 0,
+            WebhookModel.webhook_type == WebhookType.WORKFLOW_TRIGGER.value,
+            WebhookModel.agent_id == agent_id,
+            WebhookModel.node_id == node_id,
+        )
+        result = await self.db.execute(query)
+        return result.scalars().first()
+
+    async def list_triggers_by_agent(self, agent_id: UUID) -> list[WebhookModel]:
+        query = (
+            select(WebhookModel)
+            .where(
+                WebhookModel.is_deleted == 0,
+                WebhookModel.webhook_type == WebhookType.WORKFLOW_TRIGGER.value,
+                WebhookModel.agent_id == agent_id,
+            )
+            .order_by(WebhookModel.created_at.asc())
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
 
     async def update(
         self, webhook_id: UUID, updates: WebhookUpdate

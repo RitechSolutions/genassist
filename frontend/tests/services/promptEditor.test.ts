@@ -12,11 +12,9 @@ vi.mock("@/config/api", () => ({
 
 import { apiRequest } from "@/config/api";
 import {
-  listPromptVersions,
+  getPromptHistory,
   createPromptVersion,
-  restorePromptVersion,
   deletePromptVersion,
-  getPromptConfig,
   linkGoldSuite,
   evaluatePrompt,
   optimizePrompt,
@@ -32,15 +30,31 @@ const FIELD = "system/prompt"; // encodes to system%2Fprompt
 const CTX = "wf1/node%201/system%2Fprompt";
 const BASE = "genagent/prompt-editor";
 
-describe("listPromptVersions", () => {
-  it("GETs the versions for the encoded context", async () => {
-    const versions = [{ id: "v1" }];
-    mockApiRequest.mockResolvedValue(versions as never);
+describe("getPromptHistory", () => {
+  it("GETs the history for the encoded context", async () => {
+    const history = { versions: [{ id: "v1" }], node_missing: false };
+    mockApiRequest.mockResolvedValue(history as never);
 
-    const result = await listPromptVersions(WF, NODE, FIELD);
+    const result = await getPromptHistory(WF, NODE, FIELD);
 
-    expect(mockApiRequest).toHaveBeenCalledWith("GET", `${BASE}/versions/${CTX}`);
-    expect(result).toEqual(versions);
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", `${BASE}/history/${CTX}`);
+    expect(result).toEqual(history);
+  });
+
+  it("appends the node type hint, encoded, only when one is given", async () => {
+    mockApiRequest.mockResolvedValue({} as never);
+
+    await getPromptHistory(WF, NODE, FIELD, "agent/Node");
+    expect(mockApiRequest).toHaveBeenLastCalledWith(
+      "GET",
+      `${BASE}/history/${CTX}?node_type=agent%2FNode`,
+    );
+
+    await getPromptHistory(WF, NODE, FIELD, "");
+    expect(mockApiRequest).toHaveBeenLastCalledWith(
+      "GET",
+      `${BASE}/history/${CTX}`,
+    );
   });
 });
 
@@ -57,18 +71,6 @@ describe("createPromptVersion", () => {
   });
 });
 
-describe("restorePromptVersion", () => {
-  it("POSTs to the restore endpoint for the version id", async () => {
-    const restored = { id: "v9" };
-    mockApiRequest.mockResolvedValue(restored as never);
-
-    const result = await restorePromptVersion("v9");
-
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/versions/v9/restore`);
-    expect(result).toEqual(restored);
-  });
-});
-
 describe("deletePromptVersion", () => {
   it("DELETEs the version by id", async () => {
     mockApiRequest.mockResolvedValue(undefined as never);
@@ -77,27 +79,27 @@ describe("deletePromptVersion", () => {
 
     expect(mockApiRequest).toHaveBeenCalledWith("DELETE", `${BASE}/versions/v9`);
   });
-});
 
-describe("getPromptConfig", () => {
-  it("GETs the config for the encoded context", async () => {
-    const config = { gold_suite_id: "gs1" };
-    mockApiRequest.mockResolvedValue(config as never);
+  it("resolves on the empty body a 204 produces", async () => {
+    mockApiRequest.mockResolvedValue("" as never);
 
-    const result = await getPromptConfig(WF, NODE, FIELD);
+    await expect(deletePromptVersion("v9")).resolves.toBeUndefined();
+  });
 
-    expect(mockApiRequest).toHaveBeenCalledWith("GET", `${BASE}/config/${CTX}`);
-    expect(result).toEqual(config);
+  it("rejects on null, which apiRequest returns for a 403", async () => {
+    mockApiRequest.mockResolvedValue(null as never);
+
+    await expect(deletePromptVersion("v9")).rejects.toThrow(/Not allowed/);
   });
 });
 
 describe("linkGoldSuite", () => {
   it("PUTs the payload to the gold-suite endpoint", async () => {
-    const payload = { gold_suite_id: "gs1" };
+    const payload = { suite_id: "gs1" };
     const config = { gold_suite_id: "gs1" };
     mockApiRequest.mockResolvedValue(config as never);
 
-    const result = await linkGoldSuite(WF, NODE, FIELD, payload as never);
+    const result = await linkGoldSuite(WF, NODE, FIELD, payload);
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       "PUT",

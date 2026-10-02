@@ -2,6 +2,8 @@ import React from "react";
 import { MiniMap } from "reactflow";
 import type { Node } from "reactflow";
 import nodeRegistry from "../registry/nodeRegistry";
+import { isGroupNode } from "../utils/nodeGroups";
+import { getGroupMiniMapColor } from "../nodeTypes/group/groupColors";
 
 // Concrete colors per node category, mirroring utils/nodeColors.ts. The MiniMap
 // paints each node's fill via the SVG `fill` *attribute*, which does not resolve
@@ -22,6 +24,8 @@ const CATEGORY_MINIMAP_COLORS: Record<string, string> = {
 // Color a minimap node by its registry category, falling back to the brand color
 // for unknown/unregistered types.
 const getMiniMapNodeColor = (node: Node): string => {
+  // Visual groups get a faint tint of their colour so they don't paint over their nodes.
+  if (isGroupNode(node)) return getGroupMiniMapColor(node.data?.color);
   const category =
     nodeRegistry.getNodeType(node.type ?? "")?.category ?? "default";
   return CATEGORY_MINIMAP_COLORS[category] ?? CATEGORY_MINIMAP_COLORS.default;

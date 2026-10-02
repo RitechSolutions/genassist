@@ -30,18 +30,28 @@ _DIMENSION_COLUMNS = {
         func.coalesce(LlmUsageEventModel.model_key, "unknown"),
     ),
     "evaluation_method": LlmUsageEventModel.purpose,
+    "analyst_purpose": LlmUsageEventModel.purpose,
     "node": LlmUsageEventModel.node_id,
 }
 
 _EXTRA_BREAKDOWN_CONDITIONS = {
     "llm": (LlmUsageEventModel.source_type == "workflow",),
     "evaluation_method": (LlmUsageEventModel.source_type == "evaluation",),
+    "analyst_purpose": (LlmUsageEventModel.source_type == "llm_analyst",),
     "node": (LlmUsageEventModel.source_type == "workflow",),
 }
 
 _SOURCE_LABELS = {"workflow": "Workflow", "llm_analyst": "Conversation Analyst", "evaluation": "Evaluations"}
 
 _EVALUATION_METHOD_LABELS = {"llm_judge": "LLM Judge", "provenance_judge": "Provenance"}
+
+_ANALYST_PURPOSE_LABELS = {"hostility_analysis": "Hostility Check", "conversation_analysis": "KPI Scoring"}
+
+_KEY_LABELS = {
+    "source": _SOURCE_LABELS,
+    "evaluation_method": _EVALUATION_METHOD_LABELS,
+    "analyst_purpose": _ANALYST_PURPOSE_LABELS,
+}
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -156,6 +166,7 @@ class LlmUsageReadService:
         total_calls = int(row["total_calls"])
         total_tokens = int(row["total_tokens"])
         unpriced_calls = int(row["unpriced_calls"])
+        fallback_calls = int(row["fallback_calls"])
         distinct_conversations = row["distinct_conversations"]
         return LlmUsageSummaryResponse(
             from_date=params.from_date,
@@ -173,13 +184,14 @@ class LlmUsageReadService:
             total_cache_creation_tokens=int(row["cache_creation_tokens"]),
             total_calls=total_calls,
             configured_calls=int(row["configured_calls"]),
-            fallback_calls=int(row["fallback_calls"]),
+            fallback_calls=fallback_calls,
             legacy_estimate_calls=int(row["legacy_estimate_calls"]),
             unpriced_calls=unpriced_calls,
             priced_token_coverage_pct=_coverage_pct(
                 total_calls, total_tokens, int(row["priced_tokens"]), unpriced_calls
             ),
             last_unpriced_at=(await self.repo.last_unpriced_at() if unpriced_calls else None),
+            last_fallback_at=(await self.repo.last_fallback_at() if fallback_calls else None),
         )
 
     async def _breakdown(self, params, scope, dimension: str) -> LlmUsageBreakdownResponse:
@@ -248,15 +260,9 @@ class LlmUsageReadService:
             key_str = key or "unattributed"
             label = "Unattributed" if not key else node_names.get(key) or "Unknown"
             removed = _node_removed(key, node_names, current_nodes)
-        elif dimension == "source":
-            key_str = key or "unknown"
-            label = _SOURCE_LABELS.get(key, key or "Unknown")
-        elif dimension == "evaluation_method":
-            key_str = key or "unknown"
-            label = _EVALUATION_METHOD_LABELS.get(key, key or "Unknown")
         else:
             key_str = key or "unknown"
-            label = key or "Unknown"
+            label = _KEY_LABELS.get(dimension, {}).get(key, key or "Unknown")
         return LlmUsageBreakdownItem(
             key=key_str,
             label=label,

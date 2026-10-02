@@ -114,10 +114,12 @@ async def backfill_custom_attributes_async(force: bool = False):
             log_row = logs_by_conv.get(conv_id)
             if not log_row:
                 if force:
+                    # updated_at self-assignment suppresses its onupdate: a backfill
+                    # write must not make old conversations look newly modified.
                     await db.execute(
                         update(ConversationModel)
                         .where(ConversationModel.id == conv_id)
-                        .values(custom_attributes=None)
+                        .values(custom_attributes=None, updated_at=ConversationModel.updated_at)
                     )
                 continue
 
@@ -145,14 +147,14 @@ async def backfill_custom_attributes_async(force: bool = False):
                     await db.execute(
                         update(ConversationModel)
                         .where(ConversationModel.id == conv_id)
-                        .values(custom_attributes=attrs)
+                        .values(custom_attributes=attrs, updated_at=ConversationModel.updated_at)
                     )
                     batch_updated += 1
                 elif force:
                     await db.execute(
                         update(ConversationModel)
                         .where(ConversationModel.id == conv_id)
-                        .values(custom_attributes=None)
+                        .values(custom_attributes=None, updated_at=ConversationModel.updated_at)
                     )
 
             except (json.JSONDecodeError, AttributeError, KeyError) as e:

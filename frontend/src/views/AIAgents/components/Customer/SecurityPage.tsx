@@ -2,7 +2,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/button";
 import { ArrowLeft } from "lucide-react";
 import { SidebarTrigger } from "@/components/sidebar";
-import { useIsMobile } from "@/hooks/useMobile";
 import SecurityPanel from "@/views/AIAgents/components/Customer/SecurityPanel";
 
 export default function SecurityPage() {

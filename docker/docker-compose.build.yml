@@ -155,6 +155,8 @@ services:
       DB_HOST: ${DB_HOST:-db}
       DB_PORT: ${DB_PORT:-5432}
       WHISPER_TRANSCRIBE_SERVICE: ${WHISPER_TRANSCRIBE_SERVICE:-http://whisper:8001/transcribe}
+    volumes:
+      - app_data_volume_dev:/src/datavolume
     depends_on:
       app:
         condition: service_started
@@ -170,6 +172,10 @@ services:
     container_name: genassist-celery-worker-ml-dev
     command: python /src/run_celery.py worker -l DEBUG --pool=solo -Q ml
     profiles: ["backend", "full", "workers"]
+    volumes:
+      # Shares uploads/model artifacts with the app container. Without this, ML training
+      # nodes can't see files the API just uploaded (and vice versa for saved .pkl models).
+      - app_data_volume_dev:/src/datavolume
     env_file:
       - ../backend/.env
     environment:

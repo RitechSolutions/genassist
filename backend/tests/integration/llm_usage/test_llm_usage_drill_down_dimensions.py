@@ -1,4 +1,4 @@
-"""Integration tests for the agent-scoped LLM and evaluation-method breakdowns"""
+"""Integration tests for the agent-scoped LLM, evaluation-method and analyst purpose breakdowns"""
 
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -27,7 +27,8 @@ _EVENTS = (
     ("workflow", None, "openai", "gpt-4o", "0.05"),
     ("workflow", None, "anthropic", "claude-sonnet", "0.02"),
     ("workflow", None, None, None, None),
-    ("llm_analyst", None, "openai", "gpt-4o-mini", "0.30"),
+    ("llm_analyst", "hostility_analysis", "openai", "gpt-4o-mini", "0.30"),
+    ("llm_analyst", "conversation_analysis", "openai", "gpt-4o-mini", "0.20"),
     ("evaluation", "llm_judge", "openai", "gpt-4o", "0.01"),
     ("evaluation", "provenance_judge", "openai", "gpt-4o", "0.02"),
 )
@@ -163,3 +164,16 @@ async def test_source_dimension_lists_evaluations_beside_workflow_and_analyst(wo
     assert rows["llm_analyst"].label == "Conversation Analyst"
     assert rows["evaluation"].label == "Evaluations"
     assert float(rows["evaluation"].cost_usd) == pytest.approx(0.03)
+
+
+@pytest.mark.asyncio(loop_scope="module")
+async def test_analyst_purpose_rows_add_up_to_the_conversation_analyst_row(world):
+    rows = await world.breakdown("analyst_purpose")
+    analyst = (await world.breakdown("source"))["llm_analyst"]
+    assert {k: r.label for k, r in rows.items()} == {
+        "hostility_analysis": "Hostility Check",
+        "conversation_analysis": "KPI Scoring",
+    }
+    assert sum(r.cost_usd for r in rows.values()) == pytest.approx(analyst.cost_usd)
+    assert sum(r.calls for r in rows.values()) == analyst.calls
+    assert sum(r.total_tokens for r in rows.values()) == analyst.total_tokens

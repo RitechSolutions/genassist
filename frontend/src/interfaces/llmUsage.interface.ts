@@ -20,6 +20,7 @@ export interface LlmUsageSummaryResponse {
   unpriced_calls: number;
   priced_token_coverage_pct: number;
   last_unpriced_at?: string | null;
+  last_fallback_at?: string | null;
 }
 
 export interface LlmUsageBreakdownItem {
@@ -65,7 +66,15 @@ export interface LlmUsageFilterOptionsResponse {
   agents: LlmUsageAgentOption[];
 }
 
-export type LlmUsageDimension = "provider" | "model" | "agent" | "source" | "llm" | "evaluation_method" | "node";
+export type LlmUsageDimension =
+  | "provider"
+  | "model"
+  | "agent"
+  | "source"
+  | "llm"
+  | "evaluation_method"
+  | "analyst_purpose"
+  | "node";
 
 export interface LlmUsageQueryFilters {
   agent_id?: string;

@@ -13,7 +13,6 @@ import { ApiKey } from '@/interfaces/api-key.interface';
 import { getApiKeysPaginated } from '@/services/apiKeys';
 import { toast } from 'react-hot-toast';
 import { formatDate } from '@/helpers/utils';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/RadixTooltip';
 import { TooltipButton } from '@/components/tooltip-button';
 
 const SEARCH_DEBOUNCE_MS = 300;

@@ -18,6 +18,7 @@ from fastapi.websockets import WebSocketDisconnect, WebSocketState
 from fastapi_injector import Injected
 
 from app.auth.dependencies import socket_auth
+from app.core.utils.transcript_utils import VOICE_MESSAGE_PLACEHOLDER
 from app.modules.workflow.agents.live_agent_gemini import GeminiLiveAgent
 from app.schemas.conversation_transcript import InProgConvTranscrUpdate, TranscriptSegmentInput
 from app.schemas.socket_principal import SocketPrincipal
@@ -127,7 +128,7 @@ async def ws_live_voice(
                     start_time=0.0,
                     end_time=0.0,
                     speaker="customer",
-                    text=user_text or "[Voice message]",
+                    text=user_text or VOICE_MESSAGE_PLACEHOLDER,
                     type="message",
                 )
             ],

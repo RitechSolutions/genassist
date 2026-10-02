@@ -36,6 +36,8 @@ export const LLModelDialog: React.FC<LLModelDialogProps> = (props) => {
     >
       <ModelConfiguration
         id="agent-config"
+        nodeId={props.nodeId}
+        nodeType={props.nodeType}
         config={values}
         onConfigChange={setValues}
         typeSelect="model"

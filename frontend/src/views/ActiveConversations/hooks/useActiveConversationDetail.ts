@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import toast from "react-hot-toast";
 
 import { isWsEnabled } from "@/config/api";
-import { DEFAULT_LLM_ANALYST_ID } from "@/constants/llmAnalyst";
 import { Transcript, TranscriptEntry } from "@/interfaces/transcript.interface";
 import { getCurrentUserId } from "@/services/auth";
 import { conversationService } from "@/services/liveConversations";
@@ -521,7 +520,6 @@ export function useActiveConversationDetail({
     try {
       await conversationService.updateConversation(transcript.id, {
         messages: [newEntry],
-        llm_analyst_id: DEFAULT_LLM_ANALYST_ID,
       });
       // Deliberately no list refetch: a message only changes the row's preview, which the
       // workspace takes from `messages` — a refetch per send reloads the whole list.

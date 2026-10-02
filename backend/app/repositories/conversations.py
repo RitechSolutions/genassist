@@ -3,7 +3,7 @@ from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import func, update
+from sqlalchemy import exists, func, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import joinedload, selectinload
@@ -323,19 +323,49 @@ class ConversationRepository(DbRepository[ConversationModel]):
         result = await self.db.execute(query)
         return list(result.unique().scalars().all())
 
-    async def get_finalized_without_analysis(self, limit: int = 100) -> Sequence[ConversationModel]:
+    async def get_finalized_without_analysis(
+        self, limit: int = 100, *, max_attempts: int, max_age_days: int, retry_delay_minutes: int
+    ) -> Sequence[ConversationModel]:
         """Return finalized conversations that have no conversation_analysis row."""
-        query = (
-            select(ConversationModel)
-            .outerjoin(
-                ConversationAnalysisModel,
-                ConversationAnalysisModel.conversation_id == ConversationModel.id,
-            )
-            .where(
-                ConversationModel.status == ConversationStatus.FINALIZED.value,
-                ConversationAnalysisModel.id.is_(None),
-            )
-            .limit(limit)
+        analysis = ConversationAnalysisModel.__table__
+        now = datetime.datetime.now(datetime.timezone.utc)
+        query = select(ConversationModel).where(
+            ConversationModel.status == ConversationStatus.FINALIZED.value,
+            ConversationModel.analysis_attempts < max_attempts,
+            or_(
+                ConversationModel.analysis_last_attempt_at.is_(None),
+                ConversationModel.analysis_last_attempt_at < now - datetime.timedelta(minutes=retry_delay_minutes),
+            ),
+            ~exists().where(analysis.c.conversation_id == ConversationModel.id),
         )
+        if max_age_days > 0:
+            query = query.where(ConversationModel.created_at >= now - datetime.timedelta(days=max_age_days))
+        query = query.order_by(ConversationModel.created_at.asc(), ConversationModel.id.asc()).limit(limit)
         result = await self.db.execute(query)
         return result.scalars().all()
+
+    async def mark_analysis_attempt(self, conversation_id: UUID, error: Optional[str] = None) -> None:
+        values = {
+            "analysis_attempts": ConversationModel.analysis_attempts + 1,
+            "analysis_last_attempt_at": datetime.datetime.now(datetime.timezone.utc),
+        }
+        if error is not None:
+            values["analysis_last_error"] = error[:2000]
+        await self._update_analysis_bookkeeping(conversation_id, **values)
+
+    async def set_analysis_last_error(self, conversation_id: UUID, error: Optional[str]) -> None:
+        await self._update_analysis_bookkeeping(
+            conversation_id, analysis_last_error=error[:2000] if error is not None else None
+        )
+
+    async def fill_topic_if_missing(self, conversation_id: UUID, topic: str) -> None:
+        await self._update_analysis_bookkeeping(conversation_id, ConversationModel.topic.is_(None), topic=topic)
+
+    async def _update_analysis_bookkeeping(self, conversation_id: UUID, *conditions, **values) -> None:
+        stmt = (
+            update(ConversationModel)
+            .where(ConversationModel.id == conversation_id, *conditions)
+            .values(updated_at=ConversationModel.updated_at, **values)
+        )
+        await self.db.execute(stmt)
+        await self.db.flush()

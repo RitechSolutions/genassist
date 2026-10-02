@@ -1,3 +1,6 @@
+import { isEntryNodeType, WEBHOOK_TRIGGER_NODE_TYPE } from "../utils/entryNodes";
+import { sampleTriggerOutput } from "../nodeTypes/triggers/webhookTriggerMapping";
+import type { WebhookTriggerNodeData } from "../types/nodes";
 import React, {
   createContext,
   useContext,
@@ -117,8 +120,8 @@ export const WorkflowExecutionProvider: React.FC<
           nodeName,
         };
 
-        // Update session data for chat input nodes
-        if (nodeType === "chatInputNode") {
+        // Update session data for entry nodes (Chat Input / Webhook Trigger)
+        if (isEntryNodeType(nodeType)) {
           newState.session = output;
           // Merge stateful parameters from persistent state
           if (newState.statefulState) {
@@ -199,7 +202,7 @@ export const WorkflowExecutionProvider: React.FC<
         newState.session = { ...newState.statefulState };
       }
       remainingOutputs.forEach((result) => {
-        if (result.nodeType === "chatInputNode") {
+        if (isEntryNodeType(result.nodeType)) {
           newState.session = { ...newState.session, ...result.output };
         }
       });
@@ -273,6 +276,10 @@ export const WorkflowExecutionProvider: React.FC<
       if (node.type === "chatInputNode" && node.data?.inputSchema) {
         return generateSampleOutput(node.data.inputSchema as NodeSchema);
       }
+      // For a Webhook Trigger, map its sample payload the way a test run would
+      if (node.type === WEBHOOK_TRIGGER_NODE_TYPE) {
+        return sampleTriggerOutput(node.data as WebhookTriggerNodeData);
+      }
 
       // For other nodes, try to use outputSchema if available
       if (node.data?.outputSchema) {
@@ -325,6 +332,10 @@ export const WorkflowExecutionProvider: React.FC<
             {}
           );
         }
+        const triggerNode = nodes.find((n) => n.type === WEBHOOK_TRIGGER_NODE_TYPE);
+        if (triggerNode) {
+          return sampleTriggerOutput(triggerNode.data as WebhookTriggerNodeData);
+        }
         return state.session;
       };
 
@@ -340,7 +351,7 @@ export const WorkflowExecutionProvider: React.FC<
       if (
         predecessorIds.length === 0 &&
         node &&
-        node.type === "chatInputNode"
+        isEntryNodeType(node.type)
       ) {
         // Return session data or generate from schema
         if (Object.keys(state.session).length > 0) {
@@ -348,6 +359,9 @@ export const WorkflowExecutionProvider: React.FC<
         }
         if (node.data?.inputSchema) {
           return generateSampleOutput(node.data.inputSchema as NodeSchema);
+        }
+        if (node.type === WEBHOOK_TRIGGER_NODE_TYPE) {
+          return sampleTriggerOutput(node.data as WebhookTriggerNodeData);
         }
         return state.session;
       }

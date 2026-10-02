@@ -3,7 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, HttpUrl, ConfigDict
 from datetime import datetime
 
-WebhookType = Literal["slack", "whatsapp", "generic"]
+WebhookType = Literal["slack", "whatsapp", "generic", "workflow_trigger"]
 
 class WebhookBase(BaseModel):
     name: str
