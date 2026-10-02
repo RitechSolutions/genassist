@@ -659,17 +659,28 @@ async def execute_and_process_preprocessing_code(
         else:
             return None, hard_error, response
 
-    # "errors" (plural) is just captured stderr output - this includes
-    # Python's own warning noise (e.g. a pandas FutureWarning is printed to
-    # stderr by default), which is not a failure on its own. Logged for
-    # visibility; whether execution actually succeeded is determined by the
-    # shape of "result" below, not by whether anything was printed to stderr.
+    # "errors" (plural) is captured stderr output plus, under "Global errors:",
+    # any exception the user's code raised: wrap_code=True runs it inside a
+    # try/except (add_executable_function) that catches the exception into an
+    # `errors` variable instead of letting it reach "error" above. So:
+    # - result present: stderr is just warning noise (e.g. a pandas
+    #   FutureWarning, printed to stderr by default) - logged, not a failure.
+    # - no result: stderr holds the reason it's missing (the user's
+    #   exception + traceback), so it is the failure - surfacing it is what
+    #   keeps a ValueError in user code from becoming "Got: NoneType".
     stderr_output = response.get("errors")
+    result = response.get("result")
+    if stderr_output and result is None:
+        user_error = stderr_output.replace("Global errors: ", "", 1).strip()
+        if raise_on_error:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Error executing preprocessing code: {user_error}",
+            )
+        else:
+            return None, user_error, response
     if stderr_output:
         logger.warning("Preprocessing code produced warnings/stderr output: %s", stderr_output)
-
-    # Extract result from response
-    result = response.get("result")
 
     # Process the result similar to train_preprocess_node
     if isinstance(result, pd.DataFrame):

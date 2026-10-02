@@ -75,6 +75,60 @@ class TestHardErrorsSurfaceTheRealMessage:
         assert error == "Execution timed out after 120 seconds"
 
 
+class TestUserCodeExceptionsSurfaceTheRealMessage:
+    """DP-1: an exception raised by the user's own code. The execution
+    wrapper catches it and reports it under "errors" (plural) with
+    "Global errors:", not "error" - so these run the real sandbox instead
+    of faking the response, which is what hid this case before."""
+
+    @pytest.mark.asyncio
+    async def test_value_error_in_user_code_is_surfaced(self):
+        code = (
+            "import pandas as pd\n"
+            "def executable_function(params):\n"
+            "    df = params['df']\n"
+            "    df['a'] = df['a'].astype('Int64')\n"
+            "    return df\n"
+        )
+        with pytest.raises(AppException) as exc_info:
+            await execute_and_process_preprocessing_code(
+                code, None, pd.DataFrame({"a": [1.5]}), "f.csv"
+            )
+        assert "cannot safely cast" in exc_info.value.error_detail
+        assert "NoneType" not in exc_info.value.error_detail
+        assert "Global errors" not in exc_info.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_user_exception_with_raise_on_error_false_returns_the_message(self):
+        code = (
+            "def executable_function(params):\n"
+            "    raise KeyError('missing_column')\n"
+        )
+        df, error, response = await execute_and_process_preprocessing_code(
+            code, None, pd.DataFrame({"a": [1]}), "f.csv", raise_on_error=False
+        )
+        assert df is None
+        assert "missing_column" in error
+        assert "NoneType" not in error
+
+    @pytest.mark.asyncio
+    async def test_real_pandas_future_warning_does_not_fail_the_run(self):
+        # DP-2 end-to-end: this fillna on an object column emits a real
+        # FutureWarning to stderr while still returning a valid DataFrame.
+        code = (
+            "import pandas as pd\n"
+            "def executable_function(params):\n"
+            "    df = params['df']\n"
+            "    df['a'] = df['a'].fillna(0)\n"
+            "    return df\n"
+        )
+        df, error, response = await execute_and_process_preprocessing_code(
+            code, None, pd.DataFrame({"a": pd.Series([1, None], dtype=object)}), "f.csv"
+        )
+        assert error is None
+        assert df["a"].tolist() == [1, 0]
+
+
 class TestHarmlessWarningsDoNotFailTheRun:
     """DP-2: stderr output (e.g. a pandas FutureWarning, which Python prints
     to stderr by default) must not fail a run that produced a valid result."""
