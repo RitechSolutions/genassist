@@ -154,12 +154,17 @@ class FieldEqualsConfig(_Forbid):
         return self
 
 
+class NliEvalConfig(_Forbid):
+    min_entail_score: float = Field(..., ge=0, le=1)
+
+
 class PromptTechniqueConfigs(_Forbid):
-    """Config for techniques that accept it. nli_eval gets fixed evidence;
-    llm_judge/provenance_eval have no model, 422 if named"""
+    """Config for techniques that accept it. nli_eval takes only a threshold, its
+    evidence is fixed; llm_judge/provenance_eval have no model, 422 if named"""
 
     not_contains: Optional[NotContainsConfig] = None
     field_equals: Optional[FieldEqualsConfig] = None
+    nli_eval: Optional[NliEvalConfig] = None
 
 
 class PromptEvalRequest(BaseModel):
@@ -251,6 +256,14 @@ class PromptEvalResponse(BaseModel):
 # Prompt Optimization
 # ---------------------------------------------------------------------------
 
+MAX_FAILURE_FEEDBACK_CHARS = 500
+MAX_PREVIOUS_ATTEMPTS = 3
+MAX_ATTEMPT_REGRESSIONS = 5
+MAX_ATTEMPT_TEXT_CHARS = 1_000
+MAX_ATTEMPT_DIFF_CHARS = 1_500
+MAX_HISTORY_CHARS = 6_000
+
+
 class FailedCaseRef(BaseModel):
     """Failed case for the optimizer. Only actual travels;
     input and expectation are re-read server-side"""
@@ -262,11 +275,42 @@ class FailedCaseRef(BaseModel):
         max_length=8,
         description="Techniques that rejected this reply, so the rewrite knows which rule to satisfy.",
     )
+    feedback: Optional[
+        Annotated[str, StringConstraints(strip_whitespace=True, max_length=MAX_FAILURE_FEEDBACK_CHARS)]
+    ] = Field(default=None, description="What the graders said about this reply.")
 
     @field_validator("failed_metrics")
     @classmethod
     def _unique_metrics(cls, value: List[str]) -> List[str]:
         return _reject_duplicates(value)
+
+
+class RegressionRef(_Forbid):
+    case_id: UUID
+    feedback: Optional[Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)]] = None
+
+
+class PreviousAttempt(_Forbid):
+    """Previous round with scores (same cases). No prompt text; diff + explanation only"""
+
+    improved: int = Field(..., ge=0, le=MAX_CHECK_CASES)
+    regressed: int = Field(..., ge=0, le=MAX_CHECK_CASES)
+    unchanged: int = Field(..., ge=0, le=MAX_CHECK_CASES)
+    explanation: Annotated[str, StringConstraints(strip_whitespace=True, max_length=MAX_ATTEMPT_TEXT_CHARS)] = ""
+    diff_summary: Annotated[str, StringConstraints(strip_whitespace=True, max_length=MAX_ATTEMPT_DIFF_CHARS)] = ""
+    regressions: List[RegressionRef] = Field(default_factory=list, max_length=MAX_ATTEMPT_REGRESSIONS)
+
+    @field_validator("regressions")
+    @classmethod
+    def _unique_regressions(cls, value: List[RegressionRef]) -> List[RegressionRef]:
+        _reject_duplicates([entry.case_id for entry in value])
+        return value
+
+    @model_validator(mode="after")
+    def _counts_fit_one_run(self) -> Self:
+        if self.improved + self.regressed + self.unchanged > MAX_CHECK_CASES:
+            raise ValueError(f"improved, regressed and unchanged must sum to at most {MAX_CHECK_CASES}")
+        return self
 
 
 class CaseSplit(BaseModel):
@@ -294,6 +338,12 @@ class PromptOptimizeRequest(BaseModel):
         default_factory=list,
         max_length=8,
         description="Selected grading techniques, used to explain how expected outputs are interpreted.",
+    )
+    technique_configs: PromptTechniqueConfigs = Field(default_factory=PromptTechniqueConfigs)
+    previous_attempts: Optional[List[PreviousAttempt]] = Field(
+        default=None,
+        max_length=MAX_PREVIOUS_ATTEMPTS,
+        description="Earlier rewrites of this prompt and how they scored, so the model can build on them.",
     )
 
     @field_validator("techniques")

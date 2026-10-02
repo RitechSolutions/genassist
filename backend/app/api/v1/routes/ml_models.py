@@ -595,7 +595,7 @@ async def _load_query_profile_dataframe(
     try:
         rows, error = await asyncio.wait_for(
             manager.execute_read_query(profile_query),
-            timeout=settings.ML_EXTRACT_QUERY_TIMEOUT_SECONDS,
+            timeout=settings.ML_EXTRACT_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as exc:
         raise HTTPException(

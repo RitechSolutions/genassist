@@ -1,7 +1,7 @@
 from typing import Optional, Tuple
 from urllib.parse import quote, unquote, urlparse
 
-from pydantic import ConfigDict, Field, computed_field, field_validator
+from pydantic import AliasChoices, ConfigDict, Field, computed_field, field_validator
 from pydantic_settings import BaseSettings
 
 from app.core.project_path import DATA_VOLUME
@@ -182,7 +182,14 @@ class ProjectSettings(BaseSettings):
     # values, but these settings remain the operator-controlled upper bounds.
     ML_EXTRACT_MAX_ROWS: int = 2_000_000
     ML_EXTRACT_MAX_BYTES: int = 2 * 1024**3  # 2 GiB
-    ML_EXTRACT_QUERY_TIMEOUT_SECONDS: int = 600
+    ML_EXTRACT_TIMEOUT_SECONDS: int = Field(
+        default=600,
+        validation_alias=AliasChoices(
+            "ML_EXTRACT_TIMEOUT_SECONDS",
+            "ML_EXTRACT_QUERY_TIMEOUT_SECONDS",
+        ),
+    )
+    ML_EXTRACT_CHUNK_ROWS: int = Field(default=2_000, gt=0)
     # Profiling builds an in-memory DataFrame and therefore uses lower limits
     # than a streamed training-data extraction.
     ML_PROFILE_MAX_ROWS: int = Field(default=100_000, gt=0)

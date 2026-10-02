@@ -1,7 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import type { ImperativePanelHandle } from "react-resizable-panels";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, ChevronLeft, ChevronRight, Save, X } from "lucide-react";
+import { AlertCircle, ChevronDown, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -10,21 +11,27 @@ import {
   DialogPortal,
   DialogTitle,
 } from "@/components/dialog";
-import { EditorTab } from "./EditorTab";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/resizable";
+import { DraftPane } from "./DraftPane";
+import { MeasurementPane } from "./MeasurementPane";
+import { measurementStatus } from "./measurementStatus";
 import { VersionsSidebar } from "./VersionsSidebar";
 import { VersionPreviewPanel } from "./VersionPreviewPanel";
 import { GoldDatasetTab } from "./GoldDatasetTab";
-import { GateTooltip } from "./GateTooltip";
 import { Badge } from "@/components/badge";
 import { TooltipProvider } from "@/components/RadixTooltip";
 import { Button } from "@/components/button";
-import { RichInput } from "@/components/richInput";
 import {
   createPromptVersion,
   deletePromptVersion,
   linkGoldSuite,
 } from "@/services/promptEditor";
 import { extractErrorMessage } from "@/helpers/apiError";
+import { cn } from "@/lib/utils";
 import { usePermissions } from "@/context/PermissionContext";
 import { useWorkflow } from "../../context/WorkflowContext";
 import nodeRegistry from "../../registry/nodeRegistry";
@@ -44,6 +51,7 @@ import {
   promptHistoryWorkflowKey,
   usePromptHistory,
 } from "./usePromptHistory";
+import { usePromptMeasurement } from "./usePromptMeasurement";
 
 interface PromptEditorDialogProps {
   isOpen: boolean;
@@ -85,19 +93,15 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
   const [undoSnapshot, setUndoSnapshot] = useState<string | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [isVersionsPanelOpen, setIsVersionsPanelOpen] = useState(true);
-  const [isSaveLabelOpen, setIsSaveLabelOpen] = useState(false);
-  const [saveLabelDraft, setSaveLabelDraft] = useState("");
-  const saveLabelInputRef = useRef<HTMLInputElement | null>(null);
+  const [comparisonCollapsed, setComparisonCollapsed] = useState(false);
+  const [comparisonPanel, setComparisonPanel] =
+    useState<ImperativePanelHandle | null>(null);
   const [saveVersionStatus, setSaveVersionStatus] = useState<
     { type: "success" | "error"; message: string } | null
   >(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
-
-  // Guard against stale async overwrites
-  const latestDraftRef = useRef(localPrompt);
-  latestDraftRef.current = localPrompt;
 
   const historyQuery = usePromptHistory(workflowId, nodeId, promptField, nodeType);
   const { history } = historyQuery;
@@ -154,11 +158,14 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     commitDraft(content);
   };
 
-  // Clicking the previewed row again closes the panel; a new pick reveals it on the Editor tab
+  // Clicking the previewed row again hides it. A collapsed comparison is not a
+  // preview, so the row that opened it, opens it again rather than deselecting
   const handleVersionSelect = (id: string) => {
-    const isDeselect = selectedVersionId === id;
+    const isDeselect = selectedVersionId === id && !comparisonCollapsed;
     setSelectedVersionId(isDeselect ? null : id);
-    if (!isDeselect) setActiveTab("editor");
+    if (isDeselect) return;
+    setActiveTab("editor");
+    comparisonPanel?.expand();
   };
 
   const handleUndoApply = () => {
@@ -166,6 +173,17 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     commitDraft(undoSnapshot);
     setUndoSnapshot(null);
   };
+
+  const measurement = usePromptMeasurement({
+    workflowId,
+    nodeId,
+    promptField,
+    draft: localPrompt,
+    onAccepted: handleDraftEdit,
+    historyState,
+    caps,
+    defaultProviderId,
+  });
 
   const saveVersionMutation = useMutation({
     mutationFn: async ({
@@ -255,25 +273,29 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
       setLinkError(extractErrorMessage(err, "Failed to link the gold dataset")),
   });
 
-  useEffect(() => {
-    if (isSaveLabelOpen) {
-      window.requestAnimationFrame(() => saveLabelInputRef.current?.focus());
-    }
-  }, [isSaveLabelOpen]);
-
   const gate = saveGate(historyState, caps, localPrompt);
   const canSaveVersion = gate.enabled && !saveVersionMutation.isPending;
 
-  const submitSaveVersion = () => {
-    if (!canSaveVersion) return;
-    const trimmed = saveLabelDraft.trim();
-    saveVersionMutation.mutate({
-      content: localPrompt,
-      label: trimmed ? trimmed : undefined,
-    });
-    setIsSaveLabelOpen(false);
-    setSaveLabelDraft("");
-  };
+  const hasMeasurement = caps.canEvaluate || caps.canOptimize;
+  const draftDefaultSize =
+    100 - (isVersionsPanelOpen ? 20 : 0) - (hasMeasurement ? 36 : 0);
+  const hasSelectedVersion = selectedVersion !== null;
+
+  useEffect(() => {
+    if (!comparisonPanel) return;
+    if (hasSelectedVersion) comparisonPanel.expand();
+    else comparisonPanel.collapse();
+  }, [comparisonPanel, hasSelectedVersion]);
+
+  const status = measurementStatus(measurement);
+  const runAnnouncement = [
+    measurement.error,
+    measurement.successMessage,
+    status.evaluate && `Evaluate: ${status.evaluate}`,
+    status.optimize && `Optimize: ${status.optimize}`,
+  ]
+    .filter(Boolean)
+    .join(". ");
 
   const banner = historyQuery.isPending
     ? null
@@ -290,35 +312,26 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogPortal>
         <DialogOverlay className="z-[1300] bg-black/50 backdrop-blur-sm" />
-        <DialogPrimitive.Content
-          className="fixed left-1/2 top-1/2 z-[1350] w-full max-w-5xl -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-card shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
-          onEscapeKeyDown={(e) => {
-            if (isSaveLabelOpen) {
-              e.preventDefault();
-              setIsSaveLabelOpen(false);
-            }
-          }}
-        >
-          <div className="flex flex-col h-[80vh] min-h-0">
-            <div className="flex flex-col space-y-1.5 px-6 pt-6 pb-2">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0">
-                  <DialogTitle className="flex items-center gap-2">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[1350] flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[1800px] -translate-x-1/2 -translate-y-1/2 flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+          <div className="shrink-0 border-b px-6 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <DialogTitle className="flex items-center gap-2">
                     Prompt Editor <Badge variant="default">Beta</Badge>
                   </DialogTitle>
                   <DialogDescription className="mt-1.5 truncate">
                     {subtitle}
                   </DialogDescription>
                 </div>
-                <DialogPrimitive.Close className="rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none">
-                  <X className="h-4 w-4" />
-                  <span className="sr-only">Close</span>
-                </DialogPrimitive.Close>
-              </div>
+              <DialogPrimitive.Close className="shrink-0 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none">
+                <X className="h-4 w-4" />
+                <span className="sr-only">Close</span>
+              </DialogPrimitive.Close>
             </div>
+          </div>
 
-            {banner && (
-              <div className="px-6 pb-1">
+          {banner && (
+            <div className="shrink-0 px-6 pt-3">
                 <div className="flex items-start gap-2 text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                   <span>{banner}</span>
@@ -337,216 +350,246 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
               </div>
             )}
 
-            <Tabs
-              value={activeTab}
-              onValueChange={setActiveTab}
-              className="flex-1 flex flex-col overflow-hidden min-h-0"
-            >
-              <div className="px-6">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          >
+              <div className="shrink-0 px-6 pt-3">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="editor">Editor</TabsTrigger>
                   <TabsTrigger value="gold-dataset">Gold Dataset</TabsTrigger>
                 </TabsList>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-hidden px-6 pb-6 pt-4">
-                <div className="flex h-full min-h-0 gap-4">
-                  {isVersionsPanelOpen ? (
-                    <aside className="w-64 shrink-0 px-2 pr-4 border-r min-h-0 flex flex-col">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="text-xs font-medium text-muted-foreground">
-                          Versions
-                        </div>
+              <div className="min-h-0 flex-1">
+                <TabsContent
+                  value="editor"
+                  forceMount
+                  hidden={activeTab !== "editor"}
+                  className="mt-0 h-full min-h-0"
+                >
+                  <div className="flex h-full min-h-0">
+                    {!isVersionsPanelOpen && (
+                      <div className="shrink-0 p-2">
                         <button
                           type="button"
-                          onClick={() => setIsVersionsPanelOpen(false)}
-                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          aria-label="Hide versions panel"
+                          onClick={() => setIsVersionsPanelOpen(true)}
+                          className="h-full rounded-md border bg-card px-2 text-xs text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
+                          aria-label="Show versions panel"
+                          title="Show versions"
                         >
-                          <ChevronLeft className="h-4 w-4" />
-                          Hide
+                          <div className="flex items-center gap-1 [writing-mode:vertical-rl] rotate-180">
+                            <ChevronRight className="h-4 w-4" />
+                            Versions
+                          </div>
                         </button>
                       </div>
-                      <div className="flex-1 min-h-0 overflow-y-auto pb-3">
-                        <VersionsSidebar
-                          versions={versions}
-                          legacy={legacy}
-                          selectedVersionId={selectedVersion?.id ?? null}
-                          onSelect={handleVersionSelect}
-                          canEditPrompt={caps.canEditPrompt && historyReady}
-                          currentGoldSuiteId={historyState.goldSuiteId}
-                          onLinkLegacyDataset={() => {
-                            if (legacy?.gold_suite_id)
-                              linkLegacyDatasetMutation.mutate(legacy.gold_suite_id);
-                          }}
-                          linkPending={linkLegacyDatasetMutation.isPending}
-                          linkError={linkError}
-                          status={historyState.status}
-                          onDelete={(versionId, isLegacy) =>
-                            deleteVersionMutation.mutateAsync({
-                              versionId,
-                              isLegacy,
-                            })
-                          }
-                          deletingVersionId={
-                            deleteVersionMutation.isPending
-                              ? (deleteVersionMutation.variables?.versionId ?? null)
-                              : null
-                          }
-                          deleteError={deleteError}
-                        />
-                      </div>
-
-                      <div className="sticky bottom-0 z-20 bg-card border-t pt-3 pb-2">
-                        {saveVersionStatus && (
-                          <div
-                            className={`text-xs mb-2 rounded-md px-2 py-1 ${
-                              saveVersionStatus.type === "error"
-                                ? "text-destructive bg-destructive/10 border border-destructive/20"
-                                : "text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-500/15 border border-green-200 dark:border-green-500/30"
-                            }`}
-                          >
-                            {saveVersionStatus.message}
-                          </div>
-                        )}
-
-                        {isSaveLabelOpen && (
-                          <>
-                            <button
-                              type="button"
-                              className="fixed inset-0 cursor-default"
-                              style={{ zIndex: 60 }}
-                              aria-label="Close label prompt"
-                              onClick={() => setIsSaveLabelOpen(false)}
-                            />
-                            <div
-                              className="absolute left-0 right-0 -top-2 translate-y-[-100%] z-[70] rounded-md border bg-card shadow-lg p-3"
-                              role="dialog"
-                              aria-label="Save version label"
-                            >
-                              <div className="text-xs font-medium mb-2">
-                                Version label (optional)
-                              </div>
-                              <RichInput
-                                ref={saveLabelInputRef}
-                                value={saveLabelDraft}
-                                onChange={(e) => setSaveLabelDraft(e.target.value)}
-                                placeholder="e.g., Added tone instructions"
-                                maxLength={200}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Escape") {
-                                    setIsSaveLabelOpen(false);
-                                  }
-                                  if (e.key === "Enter") {
-                                    submitSaveVersion();
-                                  }
-                                }}
-                              />
-                              <div className="flex justify-end gap-2 mt-3">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => setIsSaveLabelOpen(false)}
-                                >
-                                  Cancel
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  onClick={submitSaveVersion}
-                                  disabled={!canSaveVersion}
-                                >
-                                  Save
-                                </Button>
-                              </div>
-                            </div>
-                          </>
-                        )}
-
-                        {caps.canEditPrompt && (
-                          <GateTooltip reason={gate.reason}>
-                            <Button
-                              className="w-full"
-                              onClick={() => setIsSaveLabelOpen(true)}
-                              disabled={!canSaveVersion}
-                            >
-                              <Save className="h-4 w-4 mr-2" />
-                              {saveVersionMutation.isPending
-                                ? "Saving..."
-                                : "Save Version"}
-                            </Button>
-                          </GateTooltip>
-                        )}
-                      </div>
-                    </aside>
-                  ) : (
-                    <div className="shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => setIsVersionsPanelOpen(true)}
-                        className="h-full rounded-md border bg-card px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
-                        aria-label="Show versions panel"
-                        title="Show versions"
-                      >
-                        <div className="flex items-center gap-1 [writing-mode:vertical-rl] rotate-180">
-                          <ChevronRight className="h-4 w-4" />
-                          Versions
-                        </div>
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="flex-1 min-h-0 overflow-y-auto">
-                    <TabsContent
-                      value="editor"
-                      forceMount
-                      hidden={activeTab !== "editor"}
-                      className="mt-0"
+                    )}
+                    <ResizablePanelGroup
+                      direction="horizontal"
+                      autoSaveId="prompt-editor-v1"
+                      className="h-full"
                     >
-                      {selectedVersion && (
-                        <VersionPreviewPanel
-                          key={selectedVersion.id}
-                          version={selectedVersion}
-                          isLegacy={isSelectedLegacy}
-                          versions={versions}
-                          legacyVersions={legacyVersions}
-                          draft={localPrompt}
-                          isCurrentDraft={isDraftEqual(selectedVersion, localPrompt)}
-                          canEdit={caps.canEditPrompt}
-                          canUndo={undoSnapshot !== null}
-                          nodeMissing={historyState.nodeMissing}
-                          historyReady={historyReady}
-                          onApply={() => handleApplyVersion(selectedVersion.content)}
-                          onUndo={handleUndoApply}
-                          onCopy={() =>
-                            copyVersionMutation.mutate({
-                              content: selectedVersion.content,
-                              label: selectedVersion.label ?? undefined,
-                              sourceVersionId: selectedVersion.id,
-                            })
-                          }
-                          isCopying={copyVersionMutation.isPending}
-                          copyError={copyError}
-                        />
+                      {isVersionsPanelOpen && (
+                      <ResizablePanel
+                        id="versions"
+                        order={1}
+                        defaultSize={20}
+                        minSize={14}
+                        maxSize={30}
+                      >
+                        <div className="flex h-full flex-col overflow-hidden">
+                          <div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
+                            <span className="text-sm font-medium">Versions</span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="w-9 px-0"
+                              onClick={() => setIsVersionsPanelOpen(false)}
+                              aria-label="Hide versions panel"
+                            >
+                              <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                            <VersionsSidebar
+                              versions={versions}
+                              legacy={legacy}
+                              selectedVersionId={selectedVersion?.id ?? null}
+                              onSelect={handleVersionSelect}
+                              canEditPrompt={caps.canEditPrompt && historyReady}
+                              currentGoldSuiteId={historyState.goldSuiteId}
+                              onLinkLegacyDataset={() => {
+                                if (legacy?.gold_suite_id)
+                                  linkLegacyDatasetMutation.mutate(
+                                    legacy.gold_suite_id,
+                                  );
+                              }}
+                              linkPending={linkLegacyDatasetMutation.isPending}
+                              linkError={linkError}
+                              status={historyState.status}
+                              onDelete={(versionId, isLegacy) =>
+                                deleteVersionMutation.mutateAsync({
+                                  versionId,
+                                  isLegacy,
+                                })
+                              }
+                              deletingVersionId={
+                                deleteVersionMutation.isPending
+                                  ? (deleteVersionMutation.variables?.versionId ??
+                                    null)
+                                  : null
+                              }
+                              deleteError={deleteError}
+                            />
+                          </div>
+                        </div>
+                      </ResizablePanel>
                       )}
 
-                      <EditorTab
-                        workflowId={workflowId}
-                        nodeId={nodeId}
-                        promptField={promptField}
-                        value={localPrompt}
-                        onDraftEdit={handleDraftEdit}
-                        onAccepted={handleDraftEdit}
-                        latestDraftRef={latestDraftRef}
-                        fieldLabel={fieldLabel}
-                        historyState={historyState}
-                        caps={caps}
-                        defaultProviderId={defaultProviderId}
-                      />
-                    </TabsContent>
+                      {isVersionsPanelOpen && <ResizableHandle withHandle />}
 
-                    <TabsContent value="gold-dataset" className="mt-0">
+                      <ResizablePanel
+                        id="draft"
+                        order={2}
+                        defaultSize={draftDefaultSize}
+                        minSize={32}
+                      >
+                        <ResizablePanelGroup
+                          direction="vertical"
+                          autoSaveId="prompt-editor-draft-v1"
+                          className="h-full"
+                        >
+                          <ResizablePanel
+                            id="draft-editor"
+                            order={1}
+                            defaultSize={60}
+                            minSize={30}
+                          >
+                            <DraftPane
+                              nodeId={nodeId}
+                              fieldLabel={fieldLabel}
+                              value={localPrompt}
+                              onDraftEdit={handleDraftEdit}
+                              canEditPrompt={caps.canEditPrompt}
+                              save={{
+                                gate,
+                                enabled: canSaveVersion,
+                                pending: saveVersionMutation.isPending,
+                                status: saveVersionStatus,
+                                submit: (label) =>
+                                  saveVersionMutation.mutate({
+                                    content: localPrompt,
+                                    label,
+                                  }),
+                              }}
+                            />
+                          </ResizablePanel>
+
+                          <ResizableHandle withHandle />
+
+                          <ResizablePanel
+                            id="draft-comparison"
+                            order={2}
+                            defaultSize={40}
+                            minSize={20}
+                            collapsible
+                            collapsedSize={0}
+                            ref={setComparisonPanel}
+                            onCollapse={() => setComparisonCollapsed(true)}
+                            onExpand={() => setComparisonCollapsed(false)}
+                          >
+                            <div
+                              className={cn(
+                                "h-full overflow-hidden border-t",
+                                !comparisonCollapsed && "flex flex-col",
+                              )}
+                              hidden={comparisonCollapsed}
+                            >
+                              {selectedVersion ? (
+                                <VersionPreviewPanel
+                                  key={selectedVersion.id}
+                                  version={selectedVersion}
+                                  isLegacy={isSelectedLegacy}
+                                  versions={versions}
+                                  legacyVersions={legacyVersions}
+                                  draft={localPrompt}
+                                  isCurrentDraft={isDraftEqual(
+                                    selectedVersion,
+                                    localPrompt,
+                                  )}
+                                  canEdit={caps.canEditPrompt}
+                                  canUndo={undoSnapshot !== null}
+                                  nodeMissing={historyState.nodeMissing}
+                                  historyReady={historyReady}
+                                  onApply={() =>
+                                    handleApplyVersion(selectedVersion.content)
+                                  }
+                                  onUndo={handleUndoApply}
+                                  onCopy={() =>
+                                    copyVersionMutation.mutate({
+                                      content: selectedVersion.content,
+                                      label: selectedVersion.label ?? undefined,
+                                      sourceVersionId: selectedVersion.id,
+                                    })
+                                  }
+                                  isCopying={copyVersionMutation.isPending}
+                                  copyError={copyError}
+                                  onCollapse={() =>
+                                    comparisonPanel?.collapse()
+                                  }
+                                />
+                              ) : (
+                                <>
+                                  <div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
+                                    <span className="text-sm font-medium">
+                                      Comparison
+                                    </span>
+                                    <Button
+                                      type="button"
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-7 w-7"
+                                      onClick={() =>
+                                        comparisonPanel?.collapse()
+                                      }
+                                      aria-label="Collapse comparison"
+                                    >
+                                      <ChevronDown className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                  <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                                    Select a version to compare with the draft.
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </ResizablePanel>
+                        </ResizablePanelGroup>
+                      </ResizablePanel>
+
+                      {hasMeasurement && <ResizableHandle withHandle />}
+
+                      {hasMeasurement && (
+                        <ResizablePanel
+                          id="measurement"
+                          order={3}
+                          defaultSize={36}
+                          minSize={26}
+                        >
+                          <MeasurementPane caps={caps} measurement={measurement} />
+                        </ResizablePanel>
+                      )}
+                    </ResizablePanelGroup>
+                  </div>
+                </TabsContent>
+
+                <TabsContent
+                  value="gold-dataset"
+                  className="mt-0 h-full min-h-0 overflow-y-auto px-6 pb-6 pt-4"
+                >
                       <GoldDatasetTab
                         workflowId={workflowId}
                         nodeId={nodeId}
@@ -558,12 +601,13 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                         nodeLabel={resolvedNodeLabel}
                         fieldLabel={fieldLabel}
                       />
-                    </TabsContent>
-                  </div>
-                </div>
+                </TabsContent>
               </div>
-            </Tabs>
-          </div>
+          </Tabs>
+
+          <p className="sr-only" role="status" aria-live="polite">
+            {runAnnouncement}
+          </p>
         </DialogPrimitive.Content>
       </DialogPortal>
     </Dialog>

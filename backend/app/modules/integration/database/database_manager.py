@@ -2,9 +2,10 @@ import asyncio
 import logging
 import os
 from collections.abc import Mapping
+from contextlib import aclosing
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 import yaml
 from sqlalchemy import text
@@ -477,6 +478,174 @@ class DatabaseManager:
             error_msg = redact_bound_values(e, parameters)
             logger.error(f"Error executing read query: {error_msg}")
             return [], error_msg
+
+    async def stream_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+        *,
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        """Stream a read-only query as ``(columns, tuple_rows)`` chunks.
+
+        The first yielded chunk always contains the result columns, even when
+        the query returns no rows. Database cursors and read-only transactions
+        remain open only while the iterator is being consumed.
+        """
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be a positive integer")
+
+        try:
+            db_type = (self.db_type or "").strip().lower()
+
+            if db_type == "snowflake":
+                if not self.snowflake_manager:
+                    await self.connect()
+                stream = self.snowflake_manager.stream_query(
+                    query,
+                    parameters,
+                    chunk_size=chunk_size,
+                )
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                return
+
+            if db_type not in {"postgresql", "mysql", "sql", "mssql", "sqlite"}:
+                raise RuntimeError(f"Unsupported database type: {self.db_type}")
+
+            if not self.engine:
+                await self.connect()
+
+            logger.info("Streaming read query: %s", query)
+
+            if db_type == "postgresql":
+                stream = self._stream_postgres_read_query(query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                return
+            if db_type in {"mysql", "sql"}:
+                stream = self._stream_mysql_read_query(query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                return
+            if db_type == "sqlite":
+                stream = self._stream_sqlite_read_query(query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                return
+
+            # MSSQL has no transaction-level READ ONLY equivalent. Its
+            # datasource login must be restricted to read access.
+            async with self.engine.connect() as conn:
+                stream = self._stream_connection_rows(conn, query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+
+        except BoundValueError:
+            logger.error("A bound workflow variable has an invalid database value type")
+            raise
+        except Exception as exc:
+            error_msg = redact_bound_values(exc, parameters)
+            logger.error("Error streaming read query: %s", error_msg)
+            raise RuntimeError(error_msg) from None
+
+    async def _stream_postgres_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        async with self.engine.begin() as conn:
+            await conn.execute(text("SET TRANSACTION READ ONLY"))
+            converted = await self._coerce_postgres_parameters(conn, query, parameters)
+            stream = self._stream_connection_rows(conn, query, converted, chunk_size)
+            async with aclosing(stream):
+                async for chunk in stream:
+                    yield chunk
+
+    async def _stream_mysql_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        async with self.engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            started = False
+            committed = False
+            try:
+                await conn.execute(text("START TRANSACTION READ ONLY"))
+                started = True
+                stream = self._stream_connection_rows(conn, query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                await conn.execute(text("COMMIT"))
+                committed = True
+            finally:
+                if started and not committed:
+                    try:
+                        await conn.execute(text("ROLLBACK"))
+                    except Exception:
+                        logger.debug("MySQL read-only ROLLBACK failed", exc_info=True)
+
+    async def _stream_sqlite_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        readonly_url = self._sqlite_file_readonly_url()
+        if readonly_url is not None:
+            ro_engine = create_async_engine(
+                readonly_url,
+                echo=False,
+                hide_parameters=True,
+                future=True,
+                poolclass=NullPool,
+            )
+            try:
+                async with ro_engine.connect() as conn:
+                    stream = self._stream_connection_rows(conn, query, parameters, chunk_size)
+                    async with aclosing(stream):
+                        async for chunk in stream:
+                            yield chunk
+            finally:
+                await ro_engine.dispose()
+            return
+
+        async with self.engine.connect() as conn:
+            await conn.execute(text("PRAGMA query_only = ON"))
+            try:
+                stream = self._stream_connection_rows(conn, query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+            finally:
+                await conn.execute(text("PRAGMA query_only = OFF"))
+
+    @staticmethod
+    async def _stream_connection_rows(
+        conn,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        result = await conn.stream(text(query), parameters or {})
+        try:
+            columns = list(result.keys()) if result.keys() else []
+            # Column metadata exists before the first row and must survive an
+            # empty result set.
+            yield columns, []
+            async for partition in result.partitions(chunk_size):
+                yield columns, [tuple(row) for row in partition]
+        finally:
+            await result.close()
 
     async def _execute_postgres_read_query(
         self,

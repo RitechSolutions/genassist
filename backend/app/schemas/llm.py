@@ -43,6 +43,8 @@ class LlmProviderCreate(LlmProviderBase):
 
 class LlmProviderRead(LlmProviderBase):
     id: UUID
+    # Row revision, the editor keys runs on it so another user's edit reads stale
+    updated_at: Optional[datetime] = None
 
     @computed_field
     @property
