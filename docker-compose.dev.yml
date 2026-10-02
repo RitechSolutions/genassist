@@ -8,7 +8,7 @@ services:
     image: busybox:latest
     container_name: genassist-volume-init-dev
     volumes:
-      - app_data_volume:/data
+      - ./backend/datavolume:/data
     command: sh -c "mkdir -p /data/logs /data/uploads /data/recordings && chown -R 1000:1000 /data"
     networks:
       - genassist-network-dev
@@ -81,7 +81,7 @@ services:
       whisper:
         condition: service_started
     volumes:
-      - app_data_volume:/src/datavolume
+      - ./backend/datavolume:/src/datavolume
     networks:
       - genassist-network-dev
     restart: unless-stopped
@@ -218,17 +218,24 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
+    volumes:
+      - ./backend/datavolume:/src/datavolume
     networks:
       - genassist-network-dev
     restart: unless-stopped
 
   # ML Celery worker — ML pipeline / evaluation / local fine-tuning tasks on the "ml"
-  # queue. MUST stay on the solo pool: these tasks import torch/sklearn/transformers,
-  # which are fork-unsafe. Solo never forks. Scale by adding replicas/pods.
+  # queue. Stays on the solo pool: workflow Python code nodes run user code in a
+  # subprocess, and a prefork child (daemonic) is not allowed to start children.
   celery_worker_ml:
     image: genassist-app-image
     container_name: genassist-celery-worker-ml-dev
     command: python /src/run_celery.py worker -l DEBUG --pool=solo -Q ml
+    volumes:
+      # Shares uploads/model artifacts with the host-run API server (backend/run.py),
+      # which writes to this same path on the host. Without this, ML training nodes
+      # can't see files the API just uploaded (and vice versa for saved .pkl models).
+      - ./backend/datavolume:/src/datavolume
     env_file:
       - ./backend/.env
     environment:
@@ -392,4 +399,3 @@ volumes:
   chroma_data_dev:
   qdrant_data_dev:
   genassist_pgdata_dev:
-  app_data_volume:

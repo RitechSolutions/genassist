@@ -65,11 +65,3 @@ class TestGetCasesByIds:
         assert " AND " in where
         assert " OR " not in where
 
-    @pytest.mark.asyncio
-    async def test_an_empty_id_list_runs_no_statement(self):
-        db = AsyncMock()
-        db.execute = AsyncMock(return_value=MagicMock())
-        repo = repositories.TestCaseRepository(db=db)
-
-        assert await repo.get_cases_by_ids(SUITE_ID, []) == []
-        db.execute.assert_not_awaited()

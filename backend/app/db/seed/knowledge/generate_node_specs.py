@@ -34,6 +34,17 @@ NODE_DESCRIPTIONS = {
             "Capturing commands for an automation workflow triggered by chat",
         ],
     },
+    "webhookTriggerNode": {
+        "category": "I/O",
+        "description": "Entry point for workflows started by an external system through an inbound HTTP request. Each node gets its own authenticated endpoint (bearer token or HMAC signature). The delivery is available downstream as `webhook` ({method, headers, query, body}); configurable paths map parts of it to `message`, the thread id, an idempotency key and any extra input fields.",
+        "when_to_use": "When a workflow should start from an event in another system (order created, ticket updated, form submitted, monitoring alert) instead of a chat message or a schedule. A workflow may contain both a Chat Input and a Webhook Trigger; each run starts from exactly one of them.",
+        "example_use_cases": [
+            "Starting an order-processing workflow when an e-commerce platform posts a new order",
+            "Reacting to a CRM webhook when an account or ticket changes",
+            "Launching an incident workflow from a monitoring alert",
+            "Letting a customer-facing app kick off automation without a chat interaction",
+        ],
+    },
     "chatOutputNode": {
         "category": "I/O",
         "description": "Exit point for chat-based workflows. Sends the final response back to the user.",
@@ -104,6 +115,26 @@ NODE_DESCRIPTIONS = {
             "Routing high-priority tickets to Jira, low-priority to Slack",
             "Branching based on email sender domain",
             "Conditional processing based on classification results",
+        ],
+    },
+    "filterNode": {
+        "category": "Control Flow",
+        "description": "Gate with a single output. Continues the branch only when field <operator> value holds (text, number and empty/not-empty operators); otherwise the branch stops. Forwards its input unchanged when it passes; an optional stopMessage becomes the chat reply when it stops the main path.",
+        "when_to_use": "When a branch should only continue under a condition and there is no alternative path, e.g. a threshold, an eligibility check or a missing-data check.",
+        "example_use_cases": [
+            "Continue only for records whose status is active",
+            "Only escalate when a confidence or urgency score is above a threshold",
+            "Stop before calling an agent or API when required information is missing",
+        ],
+    },
+    "switchNode": {
+        "category": "Control Flow",
+        "description": "Deterministic multi-way branching. Compares switchValue against an ordered list of cases (each {id, label, value}); the first match routes to output_<case id>, no match routes to output_default. Match modes: equal, contains, starts_with, ends_with, regex.",
+        "when_to_use": "When one value selects between three or more branches, such as a classified intent, a status or a priority. Use instead of chaining several routerNodes.",
+        "example_use_cases": [
+            "Routing billing, technical support, sales and cancellation intents to separate agents",
+            "Different handling for new, pending, approved and rejected items",
+            "Sending low-, medium-, high- and critical-priority tickets down different paths",
         ],
     },
     "aggregatorNode": {

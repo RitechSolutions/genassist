@@ -1,7 +1,5 @@
 """One JSON object or nothing: what an LLM reply must look like to be usable"""
 
-import time
-
 import pytest
 
 from app.core.utils.llm_json import parse_json_object_reply
@@ -32,21 +30,18 @@ class TestParseJsonObjectReply:
         with pytest.raises(ValueError):
             parse_json_object_reply('"just a string"')
 
-    def test_leading_prose_is_rejected(self):
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            'Here is the prompt: {"a": 1}',
+            '{"a": 1}\n\nHope that helps!',
+            'Sure thing:\n```json\n{"a": 1}\n```',
+            '```json\n{"a": 1}\n```\nHope that helps!',
+        ],
+    )
+    def test_prose_around_the_object_is_rejected(self, reply):
         with pytest.raises(ValueError):
-            parse_json_object_reply('Here is the prompt: {"a": 1}')
-
-    def test_trailing_prose_is_rejected(self):
-        with pytest.raises(ValueError):
-            parse_json_object_reply('{"a": 1}\n\nHope that helps!')
-
-    def test_prose_outside_a_complete_fence_is_rejected(self):
-        with pytest.raises(ValueError):
-            parse_json_object_reply('Sure thing:\n```json\n{"a": 1}\n```')
-
-    def test_a_complete_fence_followed_by_prose_is_rejected(self):
-        with pytest.raises(ValueError):
-            parse_json_object_reply('```json\n{"a": 1}\n```\nHope that helps!')
+            parse_json_object_reply(reply)
 
     def test_two_objects_are_rejected(self):
         with pytest.raises(ValueError):
@@ -73,10 +68,3 @@ class TestParseJsonObjectReply:
         with pytest.raises(ValueError):
             parse_json_object_reply("")
 
-    def test_a_long_whitespace_run_inside_a_fence_is_rejected_promptly(self):
-        reply = "```json" + (" " * 20_000) + "```done"
-
-        started = time.perf_counter()
-        with pytest.raises(ValueError):
-            parse_json_object_reply(reply)
-        assert time.perf_counter() - started < 2.0

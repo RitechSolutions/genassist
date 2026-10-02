@@ -7,6 +7,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   mcpNode: "MCP Server",
   // Chat / IO
   chatInputNode: "Start",
+  webhookTriggerNode: "Webhook Trigger",
   chatOutputNode: "Finish",
   setStateNode: "Set State",
   humanInTheLoopNode: "Human In The Loop",
@@ -25,6 +26,8 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   workflowExecutorNode: "Workflow Executor",
   // Router
   routerNode: "Conditional Router",
+  switchNode: "Switch",
+  filterNode: "Filter",
   aggregatorNode: "Result Merger",
   // Utils
   templateNode: "Text Template",

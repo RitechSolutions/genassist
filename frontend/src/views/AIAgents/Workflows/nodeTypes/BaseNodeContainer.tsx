@@ -1,4 +1,5 @@
 import { useContext, useEffect, useRef, useState } from "react";
+import { isEntryNodeType } from "../utils/entryNodes";
 import { NodeData, NodeHelpContent } from "../types/nodes";
 import { useReactFlow } from "reactflow";
 import { WorkflowContext } from "../context/WorkflowContext";
@@ -60,6 +61,11 @@ interface BaseNodeContainerProps<T extends NodeData> {
   nodeContent?: NodeContentRow[];
   onSettings?: () => void;
   children?: React.ReactNode;
+  /**
+   * Replaces the default handle layout for a node style (e.g. a Switch whose
+   * outputs don't fit on the node's edge). Return undefined to keep the default.
+   */
+  renderHandles?: (variant: "compact" | "detailed") => React.ReactNode;
 }
 
 const BaseNodeContainer = <T extends NodeData>({
@@ -74,6 +80,7 @@ const BaseNodeContainer = <T extends NodeData>({
   nodeContent,
   onSettings,
   children,
+  renderHandles,
 }: BaseNodeContainerProps<T>) => {
   const nodeDefinition = nodeRegistry.getNodeType(nodeType);
 
@@ -148,8 +155,8 @@ const BaseNodeContainer = <T extends NodeData>({
   const hasError = isDeactivated
     ? false
     : !hasNodeBeenExecuted(id) || hasValidationError;
-  const isSpecialNode =
-    nodeType === "chatInputNode" || nodeType === "chatOutputNode";
+  // Entry nodes (Start / Webhook Trigger) and the Finish node.
+  const isSpecialNode = isEntryNodeType(nodeType) || nodeType === "chatOutputNode";
   // Sub-agents share the agent's gradient treatment
   const isAgentNode =
     nodeType === "agentNode" || nodeType === "subAgentNode";
@@ -335,7 +342,7 @@ const BaseNodeContainer = <T extends NodeData>({
       {children}
 
       {/* Handlers */}
-      <HandlersRenderer id={id} data={data} />
+      {renderHandles?.("detailed") ?? <HandlersRenderer id={id} data={data} />}
 
       {hasError && (
         <NodeAlert
@@ -479,7 +486,7 @@ const BaseNodeContainer = <T extends NodeData>({
         )}
 
         {/* Handlers anchor to this tile */}
-        <HandlersRenderer id={id} data={data} />
+        {renderHandles?.("compact") ?? <HandlersRenderer id={id} data={data} />}
       </div>
 
       {/* Node name below the tile */}

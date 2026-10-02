@@ -1,18 +1,3 @@
-import { RagConfigValues } from "../types/ragSchema";
-
-// Default RAG configuration
-export const DEFAULT_RAG_CONFIG: RagConfigValues = {
-  vector: {
-    enabled: true,
-    type: "pgvector",
-  },
-  lightrag: {
-    enabled: false,
-  },
-  legra: {
-    enabled: false,
-  },
-};
 
 // Legacy interface for backward compatibility (now same as RagConfigValues)
 export interface LegacyRagConfig {

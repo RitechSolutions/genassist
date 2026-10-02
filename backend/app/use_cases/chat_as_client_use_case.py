@@ -9,8 +9,9 @@ from uuid import UUID
 from app.api.v1.routes.agents import run_query_agent_logic
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.db_connection_utils import release_db_connection
+from app.core.utils.db_connection_utils import release_idle_connection
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
+from app.core.utils.transcript_utils import VOICE_MESSAGE_PLACEHOLDER
 from app.db.base import generate_sequential_uuid
 from app.db.models.conversation import ConversationModel
 from app.dependencies.injector import injector
@@ -355,7 +356,7 @@ async def process_conversation_update_with_agent(
         user_message.audio_format = audio_format or "webm"
         user_message.type = "audio"
         if not user_message.text or user_message.text.strip() == "":
-            user_message.text = "[Voice message]"
+            user_message.text = VOICE_MESSAGE_PLACEHOLDER
 
     # 1:1 chat: broadcast user message immediately with pre-generated ID
     if not is_start_form_trigger:
@@ -389,7 +390,7 @@ async def process_conversation_update_with_agent(
 
         # Release the pooled connection before the LLM/tool run so it isn't held
         # idle-in-transaction for the duration of the call (see incident-queuepool-exhaustion.md).
-        await release_db_connection(context=f"conversation {conversation_id}")
+        await release_idle_connection(context=f"conversation {conversation_id}")
 
         agent_response = await run_query_agent_logic(
             agent_service,

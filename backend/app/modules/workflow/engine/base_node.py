@@ -19,6 +19,7 @@ from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.node_result import is_node_failure, node_failure
 from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
+from app.modules.workflow.engine.entry_nodes import is_entry_node_type
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class BaseNode(ABC):
         self.execution_start_time: Optional[float] = None
         self.execution_end_time: Optional[float] = None
         self.code_params: Dict[str, Any] = {}
+        self.direct_input: Any = None
 
         # Validate configuration
         self._validate_config()
@@ -63,6 +65,38 @@ class BaseNode(ABC):
             raise ValueError("Node ID is required")
         if not self.node_config:
             logger.warning(f"Node {self.node_id} has no configuration")
+
+    def _unresolved_config_fields(self) -> set[str]:
+        """Return config fields a subclass must resolve during processing."""
+        return set()
+
+    def _resolve_config_data(
+        self,
+        source_output: Any,
+        direct_input: Any,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Resolve config variables while preserving subclass-owned fields."""
+        config_data = self.node_config.get("data", {})
+        unresolved_fields = self._unresolved_config_fields()
+        config_to_resolve = {
+            key: value
+            for key, value in config_data.items()
+            if key not in unresolved_fields
+        }
+        resolved_config_data, replacements = replace_config_vars(
+            config=config_to_resolve,
+            state=self.state,
+            source_output=source_output,
+            direct_input=direct_input,
+        )
+        resolved_config_data.update(
+            {
+                key: config_data[key]
+                for key in unresolved_fields
+                if key in config_data
+            }
+        )
+        return resolved_config_data, replacements
 
     def get_name(self) -> str:
         """Get the node name from configuration."""
@@ -145,6 +179,16 @@ class BaseNode(ABC):
         """Get the session context (session data) from workflow state."""
         return self.state.get_session()
 
+    def _is_unused_entry_source(self, source_id: str) -> bool:
+        """True for an entry node (Chat Input / Webhook Trigger) that did not
+        start this run. It never executes, so waiting on it would hang the
+        downstream node and reading it would yield nothing."""
+        entry_node_id = getattr(self.state, "entry_node_id", None)
+        if not entry_node_id or source_id == entry_node_id:
+            return False
+        _, node_type = self.get_node_config(source_id)
+        return is_entry_node_type(node_type)
+
     def get_source_nodes(self) -> List[str]:
         """Get all source nodes connected to this next node."""
         target_edges = self.state.target_edges
@@ -155,6 +199,8 @@ class BaseNode(ABC):
             if source_id:
                 _, node_type = self.get_node_config(source_id)
                 if "toolBuilderNode" in node_type or "mcpNode" in node_type or "subAgentNode" in node_type:
+                    continue
+                if self._is_unused_entry_source(source_id):
                     continue
                 source_nodes.append(source_id)
 
@@ -358,16 +404,14 @@ class BaseNode(ABC):
                 try:
                     # Start execution tracking
                     self.start_execution()
+                    self.direct_input = direct_input
                     # self.set_node_input(input_data)
 
                     # Resolve configuration template variables
                     source_output = self.get_input_from_source()
-                    config_data = self.node_config.get("data", {})
-                    resolved_config_data, replacements = replace_config_vars(
-                        config=config_data,
-                        state=self.state,
-                        source_output=source_output,
-                        direct_input=direct_input,
+                    resolved_config_data, replacements = self._resolve_config_data(
+                        source_output,
+                        direct_input,
                     )
 
                     # Log replacements for debugging
@@ -468,7 +512,11 @@ class BaseNode(ABC):
         """
         all_target_edges = self.get_state().target_edges
         target_edges = all_target_edges.get(self.node_id, [])
-        input_edges = [edge for edge in target_edges if edge.get("targetHandle", "") == "input"]
+        input_edges = [
+            edge
+            for edge in target_edges
+            if edge.get("targetHandle", "") == "input" and not self._is_unused_entry_source(edge["source"])
+        ]
         if not input_edges:
             logger.debug("No target edges found for node %s", self.node_id)
             return None
