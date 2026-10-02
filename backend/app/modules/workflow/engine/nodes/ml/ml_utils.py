@@ -759,23 +759,44 @@ async def execute_and_process_preprocessing_code(
     # Execute the preprocessing Python code
     response = await execute_python_code(python_code, params, wrap_code=True)
 
-    # "error" signals an execution failure (timeout, sandbox violation, syntax
-    # error, uncaught exception); "errors" carries captured stderr from an
-    # otherwise-successful run. Both must be checked, or a failure (e.g. the
-    # 120s execution timeout) is silently missed and surfaces later as a
-    # confusing "must return a DataFrame... Got: NoneType" error instead.
-    errors = response.get("error") or response.get("errors")
-    if errors:
+    # A hard failure (syntax error, blocked import, timeout, uncaught
+    # exception) is reported under "error" (singular) - see
+    # _subprocess_worker/_execute_python_code_sync. This is the authoritative,
+    # specific message for why execution didn't produce a result, so surface
+    # it directly instead of falling through to a generic "Got: NoneType"
+    # guess based on whatever ended up in "result".
+    hard_error = response.get("error")
+    if hard_error:
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {errors}",
+                error_detail=f"Error executing preprocessing code: {hard_error}",
             )
         else:
-            return None, errors, response
+            return None, hard_error, response
 
-    # Extract result from response
+    # "errors" (plural) is captured stderr output plus, under "Global errors:",
+    # any exception the user's code raised: wrap_code=True runs it inside a
+    # try/except (add_executable_function) that catches the exception into an
+    # `errors` variable instead of letting it reach "error" above. So:
+    # - result present: stderr is just warning noise (e.g. a pandas
+    #   FutureWarning, printed to stderr by default) - logged, not a failure.
+    # - no result: stderr holds the reason it's missing (the user's
+    #   exception + traceback), so it is the failure - surfacing it is what
+    #   keeps a ValueError in user code from becoming "Got: NoneType".
+    stderr_output = response.get("errors")
     result = response.get("result")
+    if stderr_output and result is None:
+        user_error = stderr_output.replace("Global errors: ", "", 1).strip()
+        if raise_on_error:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Error executing preprocessing code: {user_error}",
+            )
+        else:
+            return None, user_error, response
+    if stderr_output:
+        logger.warning("Preprocessing code produced warnings/stderr output: %s", stderr_output)
 
     # Process the result similar to train_preprocess_node
     if isinstance(result, pd.DataFrame):
