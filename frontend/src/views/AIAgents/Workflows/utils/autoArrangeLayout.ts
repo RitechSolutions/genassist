@@ -34,6 +34,8 @@
  * row instead of throwing.
  */
 
+import { isEntryNodeType } from "./entryNodes";
+
 import { NodeHandler } from "../types/nodes";
 import { XY } from "./executionLayout";
 
@@ -156,7 +158,7 @@ export const computeAutoArrangeLayout = (input: AutoArrangeInput): Record<string
   // is explicitly excluded here.
   const mainStarts = nodes
     .map((n) => n.id)
-    .filter((id) => !toolRoots.has(id) && (typeOf(id) === "chatInputNode" || (mainIn.get(id) ?? 0) === 0));
+    .filter((id) => !toolRoots.has(id) && (isEntryNodeType(typeOf(id)) || (mainIn.get(id) ?? 0) === 0));
 
   const reachFrom = (seeds: Iterable<string>): Set<string> => {
     const seen = new Set<string>();

@@ -35,8 +35,14 @@ _CLIENT_SAFE_DETAIL_KEYS = frozenset(
         ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED,
         ErrorKey.PROMPT_CASE_SELECTION_INVALID,
         ErrorKey.PROMPT_OPTIMIZE_UNUSABLE,
+        # Policy-generated read-only SQL rejection; not driver/database text.
+        ErrorKey.READ_ONLY_SQL_BLOCKED,
     }
 )
+
+# Must match read_only_sql.read_only_sql_blocked_message(); do not import that
+# module here (it would pull sqlglot into every error response).
+_READ_ONLY_SQL_BLOCKED_DETAIL_PREFIX = "SQL execution blocked:"
 
 
 def _sanitize_public_error_detail(text: str, max_len: int = 450) -> str:
@@ -63,6 +69,9 @@ def _response_error_detail(error: AppException) -> str | None:
     if os.getenv("ENV") == "dev":
         return sanitized
     if error.error_key in _CLIENT_SAFE_DETAIL_KEYS:
+        if error.error_key == ErrorKey.READ_ONLY_SQL_BLOCKED:
+            if not sanitized.startswith(_READ_ONLY_SQL_BLOCKED_DETAIL_PREFIX):
+                return None
         return sanitized
     return None
 

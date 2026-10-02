@@ -24,6 +24,8 @@ from app.core.config.logging import (
     uid_ctx,
 )
 from app.middlewares.rate_limit_middleware import _request_context
+from app.middlewares.read_after_write_middleware import ReadAfterWriteMiddleware
+from app.middlewares.replica_scope_middleware import ReplicaScopeMiddleware
 from app.middlewares.session_cleanup_middleware import TransactionMiddleware
 from app.middlewares.tenant_middleware import TenantMiddleware
 from app.middlewares.tenant_scope_middleware import TenantScopeMiddleware
@@ -169,10 +171,11 @@ def build_middlewares() -> list[Middleware]:
     Order matters:
 
     1. RawContextMiddleware – creates `starlette_context` and the X-Request-ID header.
-    2. TenantMiddleware – extracts tenant information from requests.
-    3. RequestContextMiddleware – copies data into the Loguru ContextVars and
+    2. TenantMiddleware – extracts tenant information from requests (multi-tenant only).
+    3. TenantScopeMiddleware – sets the tenant context, defaulting to master (always).
+    4. RequestContextMiddleware – copies data into the Loguru ContextVars and
        times the request.
-    4. CORS – normal cross-origin checks.
+    5. CORS – normal cross-origin checks.
     """
     middlewares = [
         # 1️⃣  Generates a request-scoped UUID and puts it in `request.headers`
@@ -182,11 +185,11 @@ def build_middlewares() -> list[Middleware]:
         ),
     ]
 
-    # 2️⃣  Tenant resolution (only if multi-tenancy is enabled)
+    # 2️⃣  Tenant resolution from the request (only if multi-tenancy is enabled)
     if settings.MULTI_TENANT_ENABLED:
         middlewares.append(Middleware(TenantMiddleware))
-        # Add tenant scope middleware after tenant middleware
-        middlewares.append(Middleware(TenantScopeMiddleware))
+    # Always installed; defaults the tenant context to master in single-tenant mode.
+    middlewares.append(Middleware(TenantScopeMiddleware))
 
     middlewares.extend(
         [
@@ -203,7 +206,11 @@ def build_middlewares() -> list[Middleware]:
                 allow_headers=["*"],
             ),
             Middleware(VersionHeaderMiddleware),
-            # 6️⃣  DB transaction boundary — must be the *innermost* user middleware so
+            # 6️⃣  Marks HTTP scopes as eligible for replica reads; websockets keep the writer.
+            Middleware(ReplicaScopeMiddleware),
+            # 7️⃣  Read-your-writes guard for the read replica; needs the tenant scope above.
+            Middleware(ReadAfterWriteMiddleware),
+            # 8️⃣  DB transaction boundary — must be the *innermost* user middleware so
             #     it runs inside the tenant scope (tenant context still active when it
             #     commits/rolls back the request-scoped session after the endpoint).
             Middleware(TransactionMiddleware),

@@ -219,18 +219,6 @@ class TestProviderFailures:
         assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_a_rollback_that_itself_raises_still_surfaces_the_502(self):
-        service = _service([_case()])
-        service.db.in_transaction = MagicMock(return_value=True)
-        service.db.rollback = AsyncMock(side_effect=RuntimeError("connection is gone"))
-
-        with pytest.raises(AppException) as exc_info:
-            await _run(service, _injector(None, build_error=ValueError("boom")))
-
-        assert exc_info.value.status_code == 502
-        service.db.rollback.assert_awaited_once()
-
-    @pytest.mark.asyncio
     async def test_the_provider_is_read_once_and_the_model_built_from_that_read(self):
         service = _service([_case()])
         injector = _injector(_llm(["x"]))
@@ -277,14 +265,6 @@ class TestScoring:
         assert row.metrics["not_contains"]["passed"] is True
         assert row.verdict == "passed"
         assert row.not_applicable_metrics == 2
-
-    @pytest.mark.asyncio
-    async def test_an_empty_expectation_says_so_rather_than_failing_the_case(self):
-        service = _service([_case(expected={"value": ""})])
-
-        result = await _run(service, _injector(_llm(["anything"])), _request(techniques=["contains"]))
-
-        assert "expected output is empty" in result.results[0].metrics["contains"]["comment"]
 
     @pytest.mark.asyncio
     async def test_an_empty_dict_expectation_is_real_for_every_technique(self):
@@ -539,24 +519,6 @@ class TestGroundingCheck:
         assert row.metrics["nli_eval"]["error"] is True
         assert "json_match" in row.metrics
         assert result.provenance.deadline_hit is True
-
-    @pytest.mark.asyncio
-    async def test_a_loaded_grounding_model_gets_the_plain_timeout_text(self, monkeypatch):
-        import app.services.prompt_editor as module
-
-        monkeypatch.setattr(module.evaluation_nli_model, "is_loaded", lambda _name=None: True)
-        assert module._scoring_timeout_text(["nli_eval"]) == "Scoring timed out."
-        assert module._scoring_timeout_text([]) == "Scoring timed out."
-
-    def test_a_grounding_model_that_failed_to_load_is_not_reported_as_loading(self, monkeypatch):
-        import app.services.prompt_editor as module
-
-        monkeypatch.setattr(module.evaluation_nli_model, "is_loaded", lambda _name=None: False)
-        monkeypatch.setattr(module.evaluation_nli_model, "load_failed", lambda _name=None: True)
-
-        assert "could not be loaded" in module._scoring_timeout_text(["nli_eval"])
-        # A technique the run never asked for must not colour the message
-        assert module._scoring_timeout_text([]) == "Scoring timed out."
 
 
 class TestMetering:

@@ -44,6 +44,7 @@ export const NODE_DOCS_URLS: Record<string, string> = {
 
   // I/O
   chatInputNode: `${DOCS_BASE_URL}/io/start`,
+  webhookTriggerNode: `${DOCS_BASE_URL}/io/webhook-trigger`,
   chatOutputNode: `${DOCS_BASE_URL}/io/finish`,
   finalizeConversationNode: `${DOCS_BASE_URL}/io/end-conversation`,
   setStateNode: `${DOCS_BASE_URL}/io/set-state`,

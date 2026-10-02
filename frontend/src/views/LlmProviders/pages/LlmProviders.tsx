@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getAllLLMProviders, deleteLLMProvider } from "@/services/llmProviders";
+import { getAllLLMProviders } from "@/services/llmProviders";
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
 import { LLMProviderCard } from "../components/LLMProviderCard";
@@ -15,7 +15,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
-import toast from "react-hot-toast";
 
 export default function LLMProviders() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -66,18 +65,6 @@ export default function LLMProviders() {
     setDialogMode("edit");
     setProviderToEdit(prov);
     setIsDialogOpen(true);
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteLLMProvider(id);
-      //toast.success("LLM provider deleted successfully.");
-      setRefreshKey((prev) => prev + 1);
-    } catch (error) {
-      toast.error(
-        "Failed to delete LLM provider: LLM provider is in use by at least one LLM analyst."
-      );
-    }
   };
 
   return (

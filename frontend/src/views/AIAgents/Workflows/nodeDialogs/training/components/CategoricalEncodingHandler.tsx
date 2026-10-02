@@ -12,7 +12,7 @@ import {
   CategoricalEncodingConfig,
   CategoricalEncodingItem,
   CategoricalEncodingStrategy,
-} from "../preprocessingConfig";
+} from "../../../types/nodes";
 import { CSVAnalysisResult } from "@/services/mlModels";
 
 interface CategoricalEncodingHandlerProps {
