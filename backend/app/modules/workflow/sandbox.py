@@ -33,9 +33,13 @@ ALLOWED_MODULES: frozenset[str] = frozenset({
     "hashlib", "hmac", "base64", "csv", "io",
 })
 
-# Top-level packages whose submodules are also allowed (numpy.linalg, etc.)
+# Top-level packages whose submodules are also allowed (numpy.linalg,
+# sklearn.preprocessing, scipy.stats, etc.). sklearn and scipy are already
+# dependencies used elsewhere in this codebase (e.g. the Train Model node),
+# so they're already loaded in the parent process this sandbox forks from -
+# no new install or deployment change needed to allow them here too.
 ALLOWED_PACKAGES: frozenset[str] = frozenset({
-    "numpy", "pandas", "requests",
+    "numpy", "pandas", "requests", "sklearn", "scipy",
 })
 
 # Union used by the safe importer

@@ -1,7 +1,7 @@
 """Which evaluator techniques an isolated prompt check may run, the exact
 configuration each one receives, and what each makes of a case's expectation"""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -25,7 +25,7 @@ _DEFERRED_TECHNIQUES = ("llm_judge", "provenance_eval")
 _NLI_CONFIG = {"evidence_source": "expected_output"}
 
 # Techniques whose configuration the request may carry, in PromptTechniqueConfigs order
-_CONFIGURABLE = ("not_contains", "field_equals")
+_CONFIGURABLE = ("not_contains", "field_equals", "nli_eval")
 
 # Per-technique expected_output semantics for optimizer (so not all treated as ideal).
 # Follows PROMPT_CHECK_TECHNIQUES order. Omits not_contains and field_equals
@@ -72,18 +72,56 @@ def reject_unsupported_techniques(techniques: List[str]) -> None:
             raise _unsupported(f"'{technique}' is not a matching technique this check knows.")
 
 
-def describe_expectations(techniques: List[str]) -> str:
-    """One line per technique with a settled reading, allow-list ordered (reorder-stable).
-    Empty if none have one"""
+def _configured_rule(technique: str, config: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Technique's config interpretation. None if absent/empty (allows not_contains without values)"""
+    if not config:
+        return None
+    if technique == "not_contains":
+        phrases = config.get("phrases") or []
+        if not phrases:
+            return None
+        return (
+            "the reply must not contain any of these phrases, case-insensitively: "
+            + ", ".join(f'"{phrase}"' for phrase in phrases)
+        )
+    if technique == "field_equals":
+        field = config.get("field")
+        if not field:
+            return None
+        target = f'"{config["expected"]}"' if "expected" in config else "the expected output"
+        return f"the reply field '{field}' must equal {target}"
+    if technique == "nli_eval":
+        score = config.get("min_entail_score")
+        if score is None:
+            return None
+        return (
+            f"{_EXPECTATION_RULES['nli_eval']}. Support is judged per claim, and a claim "
+            f"counts as supported at an entailment score of {score} or higher"
+        )
+    return None
+
+
+def describe_expectations(
+    techniques: List[str], configs: Optional[Dict[str, Dict[str, Any]]] = None
+) -> str:
+    """Entry per technique, allow-list ordered (stable). Omitted if no reading/config"""
     selected = set(techniques)
-    lines = [f"- {technique}: {rule}" for technique, rule in _EXPECTATION_RULES.items() if technique in selected]
+    built = configs or {}
+    lines = []
+    for technique in PROMPT_CHECK_TECHNIQUES:
+        if technique not in selected:
+            continue
+        rule = _configured_rule(technique, built.get(technique)) or _EXPECTATION_RULES.get(technique)
+        if rule:
+            lines.append(f"- {technique}: {rule}")
     return "\n".join(lines)
 
 
-def validate_prompt_check_techniques(
+def build_technique_configs(
     techniques: List[str], configs: PromptTechniqueConfigs
 ) -> Dict[str, Dict[str, Any]]:
-    """Reject unsupported techniques, then build config dicts for the registry"""
+    """Config dicts for the registry. Rejects configuration for techniques that are not
+    selected; requires none, so a rewrite may name a check it has no options for"""
     reject_unsupported_techniques(techniques)
 
     selected = set(techniques)
@@ -91,16 +129,12 @@ def validate_prompt_check_techniques(
         if getattr(configs, name) is not None and name not in selected:
             raise _unsupported(f"Configuration was sent for '{name}', which is not selected.")
 
-    # No expectation fallback. Empty config fails all cases
-    if "not_contains" in selected and configs.not_contains is None:
-        raise _unsupported(
-            "'not_contains' needs at least one forbidden phrase. Add one or clear the check."
-        )
-
     built: Dict[str, Dict[str, Any]] = {}
     for technique in techniques:
         if technique == "not_contains":
-            built[technique] = {"phrases": list(configs.not_contains.phrases)}
+            built[technique] = (
+                {"phrases": list(configs.not_contains.phrases)} if configs.not_contains is not None else {}
+            )
         elif technique == "field_equals" and configs.field_equals is not None:
             config: Dict[str, Any] = {"field": configs.field_equals.field}
             if configs.field_equals.expected is not None:
@@ -108,6 +142,20 @@ def validate_prompt_check_techniques(
             built[technique] = config
         elif technique == "nli_eval":
             built[technique] = dict(_NLI_CONFIG)
+            if configs.nli_eval is not None:
+                built[technique]["min_entail_score"] = configs.nli_eval.min_entail_score
         else:
             built[technique] = {}
+    return built
+
+
+def validate_prompt_check_techniques(
+    techniques: List[str], configs: PromptTechniqueConfigs
+) -> Dict[str, Dict[str, Any]]:
+    """Reject unsupported techniques, then build config dicts for the registry"""
+    built = build_technique_configs(techniques, configs)
+    if "not_contains" in techniques and configs.not_contains is None:
+        raise _unsupported(
+            "'not_contains' needs at least one forbidden phrase. Add one or clear the check."
+        )
     return built

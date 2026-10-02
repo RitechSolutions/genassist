@@ -20,6 +20,7 @@ import {
   type MetricOutcome,
   type ProviderFallback,
 } from "../../utils/promptEditorResults";
+import { Reveal } from "./Reveal";
 
 /** Only a verdict is coloured. A case that never ran is neutral, never a red score */
 const caseTone = (result: PromptEvalCaseResult): string => {
@@ -60,10 +61,13 @@ const Field: React.FC<{ label: string; value: string; suffix?: string }> = ({
 }) => (
   <div>
     <p className="font-medium text-muted-foreground">{label}</p>
-    <p className="line-clamp-3 whitespace-pre-wrap">
-      {value}
-      {suffix && <span className="text-muted-foreground">{suffix}</span>}
-    </p>
+    <Reveal
+      label={label}
+      value={value}
+      suffix={suffix}
+      className="block w-full"
+      clip="line-clamp-3 whitespace-pre-wrap"
+    />
   </div>
 );
 
@@ -122,19 +126,21 @@ const Comparison: React.FC<{
       <p className="text-xs text-muted-foreground">
         {joined.compared} of {joined.rows.length} cases could be compared.
       </p>
-      <div className="space-y-1 max-h-40 overflow-y-auto text-xs">
+      <div className="space-y-1 text-xs">
         {joined.rows.map((row) => (
           <div key={row.caseId} className="flex items-center gap-2">
-            <span className="text-muted-foreground truncate flex-1">
-              {row.baseline?.input ?? row.suggestion?.input ?? row.caseId}
-            </span>
+            <Reveal
+              label="Input"
+              value={row.baseline?.input ?? row.suggestion?.input ?? row.caseId}
+              className="text-muted-foreground flex-1 min-w-0"
+              clip="block truncate"
+            />
             <span>{row.baseline ? caseStatusLabel(row.baseline) : "—"}</span>
             <span className="text-muted-foreground">→</span>
             <span>{row.suggestion ? caseStatusLabel(row.suggestion) : "—"}</span>
           </div>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">{LEAKAGE_NOTE}</p>
     </div>
   );
 };
@@ -174,15 +180,12 @@ export const PromptEvalResults: React.FC<PromptEvalResultsProps> = ({
       {snapshotHeader(results.provenance, providerFallback)}
     </p>
     <p className="text-xs text-muted-foreground">{ISOLATION_NOTE}</p>
-    {leaky && !comparison && (
-      <p className="text-xs text-muted-foreground">{LEAKAGE_NOTE}</p>
-    )}
-
+    {leaky && <p className="text-xs text-muted-foreground">{LEAKAGE_NOTE}</p>}
     {comparison && (
       <Comparison baseline={comparison.baseline} suggestion={results} />
     )}
 
-    <div className="space-y-2 max-h-60 overflow-y-auto">
+    <div className="space-y-2">
       {results.results.map((result, index) => (
         <CaseCard key={result.case_id || index} result={result} />
       ))}

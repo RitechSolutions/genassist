@@ -49,8 +49,16 @@ import {
   getStepTypeDisplayName,
   StepConfig,
   ColumnFilterStepConfig,
+  RemoveDuplicatesStepConfig,
+  DropColumnOrRowStepConfig,
+  DropHighNullColumnsStepConfig,
+  ChangeDtypeStepConfig,
 } from "./preprocessingConfig";
 import { ColumnFilter } from "./components/ColumnFilter";
+import { RemoveDuplicatesStep } from "./components/RemoveDuplicatesStep";
+import { DropColumnOrRowStep } from "./components/DropColumnOrRowStep";
+import { DropHighNullColumnsStep } from "./components/DropHighNullColumnsStep";
+import { ChangeDtypeStep } from "./components/ChangeDtypeStep";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
@@ -439,9 +447,17 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   const getAnalysisResultForStep = (
     stepIndex: number
   ): CSVAnalysisResult | null => {
+    // Column names don't change from filling in a column's config (only from
+    // running the step), so this step's own "Run" result is an acceptable
+    // fallback when the file was never separately analyzed with the top
+    // "Analyze" button - without it, a step added first with no prior
+    // Analyze click would never show a column dropdown at all.
+    const ownStep = config.steps[stepIndex];
+    const ownResult = ownStep ? analysisResults[ownStep.id] : undefined;
+
     if (stepIndex === 0) {
       // First step uses initial analysis result
-      return analysisResults.initial || null;
+      return analysisResults.initial || ownResult || null;
     }
 
     // Get result from previous step
@@ -450,8 +466,9 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       return analysisResults[previousStep.id];
     }
 
-    // Fallback to initial if previous step hasn't been run
-    return analysisResults.initial || null;
+    // Fallback to initial, then to this step's own result, if the previous
+    // step hasn't been run
+    return analysisResults.initial || ownResult || null;
   };
 
   // Render step configuration component
@@ -475,12 +492,50 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
             }}
           />
         );
+      case "remove_duplicates":
+        return (
+          <RemoveDuplicatesStep
+            config={step.config as RemoveDuplicatesStepConfig}
+            availableColumns={stepAnalysisResult?.column_names || []}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
+          />
+        );
+      case "drop_column_or_row":
+        return (
+          <DropColumnOrRowStep
+            config={step.config as DropColumnOrRowStepConfig}
+            availableColumns={stepAnalysisResult?.column_names || []}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
+          />
+        );
+      case "drop_high_null_columns":
+        return (
+          <DropHighNullColumnsStep
+            config={step.config as DropHighNullColumnsStepConfig}
+            analysisResult={stepAnalysisResult}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
+          />
+        );
+      case "change_dtype":
+        return (
+          <ChangeDtypeStep
+            config={step.config as ChangeDtypeStepConfig}
+            availableColumns={stepAnalysisResult?.column_names || []}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
+          />
+        );
       default:
         return null;
     }
   };
 
-  const stepTypes: PreprocessingStepType[] = ["column_filter"];
+  const stepTypes: PreprocessingStepType[] = [
+    "column_filter",
+    "remove_duplicates",
+    "drop_column_or_row",
+    "drop_high_null_columns",
+    "change_dtype",
+  ];
 
   return (
     <>
@@ -689,55 +744,49 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                             <Play className="h-3 w-3 mr-1" />
                             {runningStepId === step.id ? "Running..." : "Run"}
                           </Button>
-                          {/* Hidden: Enable switch */}
-                          <div className="hidden">
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs">Enabled</Label>
-                              <Switch
-                                checked={step.enabled}
-                                onCheckedChange={(checked) =>
-                                  handleToggleStep(step.id, checked)
-                                }
-                              />
-                            </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">Enabled</Label>
+                            <Switch
+                              checked={step.enabled}
+                              onCheckedChange={(checked) =>
+                                handleToggleStep(step.id, checked)
+                              }
+                            />
                           </div>
-                          {/* Hidden: Move up/down buttons */}
-                          <div className="hidden">
-                            <div className="flex items-center gap-1">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0"
-                                onClick={() => handleMoveStep(step.id, "up")}
-                                disabled={index === 0}
-                              >
-                                ↑
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0"
-                                onClick={() => handleMoveStep(step.id, "down")}
-                                disabled={index === config.steps.length - 1}
-                              >
-                                ↓
-                              </Button>
-                            </div>
-                          </div>
-                          {/* Delete button - only show on last step */}
-                          {index === config.steps.length - 1 && (
+                          <div className="flex items-center gap-1">
                             <Button
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 w-7 p-0 text-red-600 dark:text-red-400 hover:text-red-700"
-                              onClick={() => handleRemoveStep(step.id)}
+                              className="h-7 w-7 p-0"
+                              onClick={() => handleMoveStep(step.id, "up")}
+                              disabled={index === 0}
+                              title="Move step up"
                             >
-                              <X className="h-4 w-4" />
+                              ↑
                             </Button>
-                          )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              onClick={() => handleMoveStep(step.id, "down")}
+                              disabled={index === config.steps.length - 1}
+                              title="Move step down"
+                            >
+                              ↓
+                            </Button>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-red-600 dark:text-red-400 hover:text-red-700"
+                            onClick={() => handleRemoveStep(step.id)}
+                            title="Delete step"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
 

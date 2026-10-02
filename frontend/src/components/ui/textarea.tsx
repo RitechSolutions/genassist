@@ -9,8 +9,8 @@ export type TextareaProps = Omit<React.ComponentProps<"textarea">, "size"> &
   TextareaSizingProps;
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
-  ({ className, size, rows, ...props }, ref) => {
-    const sizing = resolveTextareaSizing({ size, rows, className });
+  ({ className, size, rows, fill, ...props }, ref) => {
+    const sizing = resolveTextareaSizing({ size, rows, fill, className });
 
     return (
       <textarea

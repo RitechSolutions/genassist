@@ -10,6 +10,7 @@ export interface FieldChangeRowProps {
   className?: string;
   /** Word overlap threshold for replace vs edit */
   minSimilarity?: number;
+  diffTimeoutMs?: number;
   /** `embedded` drops the border and field header for hosts that supply their own */
   variant?: 'card' | 'embedded';
 }
@@ -73,7 +74,8 @@ type Rendering =
 export const planRendering = (
   before: unknown,
   after: unknown,
-  minSimilarity: number = MIN_SIMILARITY
+  minSimilarity: number = MIN_SIMILARITY,
+  diffTimeoutMs?: number
 ): Rendering => {
   const single = presentSide(before, after);
   if (single) return { kind: 'single', side: single };
@@ -92,7 +94,11 @@ export const planRendering = (
     afterText.length <= MAX_DIFF_CHARS;
   if (!diffable) return { kind: 'replaced' };
 
-  const parts = diffWordsWithSpace(beforeText, afterText);
+  const parts =
+    diffTimeoutMs === undefined
+      ? diffWordsWithSpace(beforeText, afterText)
+      : diffWordsWithSpace(beforeText, afterText, { timeout: diffTimeoutMs });
+  if (!parts) return { kind: 'replaced' };
   if (overlap(parts, beforeText.length, afterText.length) < minSimilarity) return { kind: 'replaced' };
   return { kind: 'inline', parts };
 };
@@ -206,12 +212,16 @@ const ValueLine: React.FC<{ side: 'before' | 'after'; value: unknown; glyph?: bo
   );
 };
 
-const ChangeBody: React.FC<{ before: unknown; after: unknown; minSimilarity?: number }> = ({
-  before,
-  after,
-  minSimilarity,
-}) => {
-  const plan = useMemo(() => planRendering(before, after, minSimilarity), [before, after, minSimilarity]);
+const ChangeBody: React.FC<{
+  before: unknown;
+  after: unknown;
+  minSimilarity?: number;
+  diffTimeoutMs?: number;
+}> = ({ before, after, minSimilarity, diffTimeoutMs }) => {
+  const plan = useMemo(
+    () => planRendering(before, after, minSimilarity, diffTimeoutMs),
+    [before, after, minSimilarity, diffTimeoutMs]
+  );
 
   if (plan.kind === 'single') {
     return <ValueLine side={plan.side} value={plan.side === 'after' ? after : before} glyph={false} />;
@@ -230,6 +240,7 @@ const FieldChangeRow: React.FC<FieldChangeRowProps> = ({
   change,
   className,
   minSimilarity,
+  diffTimeoutMs,
   variant = 'card',
 }) => {
   // For object/array values, surface only the nested leaves that changed rather than the whole blob.
@@ -253,7 +264,12 @@ const FieldChangeRow: React.FC<FieldChangeRowProps> = ({
                 <span className="truncate font-mono text-[10px] text-muted-foreground">{leaf.path}</span>
                 {leafSide && <NameBadge side={leafSide} />}
               </div>
-              <ChangeBody before={leaf.before} after={leaf.after} minSimilarity={minSimilarity} />
+              <ChangeBody
+                before={leaf.before}
+                after={leaf.after}
+                minSimilarity={minSimilarity}
+                diffTimeoutMs={diffTimeoutMs}
+              />
             </div>
           );
         })}
@@ -262,7 +278,12 @@ const FieldChangeRow: React.FC<FieldChangeRowProps> = ({
       <div className="px-2.5 py-2 text-[11px] italic text-muted-foreground">Reordered — same values.</div>
     )
   ) : (
-    <ChangeBody before={change.before} after={change.after} minSimilarity={minSimilarity} />
+    <ChangeBody
+      before={change.before}
+      after={change.after}
+      minSimilarity={minSimilarity}
+      diffTimeoutMs={diffTimeoutMs}
+    />
   );
 
   if (variant === 'embedded') return <div className={cn('min-w-0', className)}>{body}</div>;

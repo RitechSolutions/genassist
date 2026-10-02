@@ -4,10 +4,12 @@ import {
   acceptGate,
   evaluateGate,
   optimizeGate,
+  retryGate,
   saveGate,
   type CasesState,
   type EvalInputs,
   type HistoryState,
+  type HoldoutRetryInputs,
   type OptimizeInputs,
 } from "@/views/AIAgents/Workflows/utils/promptEditorGates";
 
@@ -268,5 +270,53 @@ describe("acceptGate", () => {
     expect(acceptGate(ready(), ADMIN, "x".repeat(200_000), { pending: false, stale: false }).enabled).toBe(
       true,
     );
+  });
+});
+
+describe("retryGate", () => {
+  const current = { baselineKey: "base", suggestionKey: "sugg" };
+  const baselineRetry: HoldoutRetryInputs = {
+    half: "baseline",
+    requestKey: "base",
+    nextKey: "sugg",
+    storedBaselineKey: null,
+  };
+  const suggestionRetry: HoldoutRetryInputs = {
+    half: "suggestion",
+    requestKey: "sugg",
+    storedBaselineKey: "base",
+  };
+
+  it("replays either half while both sides still describe the current inputs", () => {
+    expect(retryGate(baselineRetry, current)).toEqual({
+      enabled: true,
+      reason: null,
+    });
+    expect(retryGate(suggestionRetry, current)).toEqual({
+      enabled: true,
+      reason: null,
+    });
+  });
+
+  it.each([
+    ["the baseline it would re-send", { ...baselineRetry, requestKey: "old" }],
+    ["the suggestion chained behind it", { ...baselineRetry, nextKey: "old" }],
+    ["the suggestion it would re-send", { ...suggestionRetry, requestKey: "old" }],
+    ["the baseline it would complete", { ...suggestionRetry, storedBaselineKey: "old" }],
+  ])("blocks a retry once %s no longer matches", (_label, stored) => {
+    const gate = retryGate(stored, current);
+
+    expect(gate.enabled).toBe(false);
+    expect(gate.reason).toMatch(/Inputs changed/);
+  });
+
+  it("blocks a suggestion retry with no baseline to compare against", () => {
+    expect(
+      retryGate({ ...suggestionRetry, storedBaselineKey: null }, current).enabled,
+    ).toBe(false);
+  });
+
+  it("blocks every retry once the hold-out flow no longer applies", () => {
+    expect(retryGate(suggestionRetry, null).enabled).toBe(false);
   });
 });

@@ -26,4 +26,12 @@ describe("planRendering", () => {
   it("keeps short single-line values on the scalar row", () => {
     expect(planRendering("draft", "final", 0.15).kind).toBe("scalar");
   });
+
+  it("falls back to stacked blocks when the diff runs out of time", () => {
+    const before = "alpha beta gamma delta ".repeat(100);
+    const after = "gamma delta epsilon zeta ".repeat(100);
+
+    expect(planRendering(before, after, 0, 1)).toEqual({ kind: "replaced" });
+    expect(planRendering(before, after, 0).kind).toBe("inline");
+  });
 });

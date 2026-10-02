@@ -17,6 +17,18 @@ export const PROMPT_CHECK_TECHNIQUES = [
 export const MAX_PHRASES = 50;
 export const MAX_PHRASE_LENGTH = 200;
 
+/** The score text as a number. Null for a blank box, which leaves the server default */
+export const parseEntailScore = (text: string): number | null =>
+  text.trim() === "" ? null : Number(text);
+
+/** Null when the value is sendable. Mirrors the bound the endpoint enforces */
+export const entailScoreProblem = (score: number | null): string | null => {
+  if (score === null) return null;
+  return Number.isFinite(score) && score >= 0 && score <= 1
+    ? null
+    : "Use a minimum entailment score between 0 and 1.";
+};
+
 /** Null when the list is sendable. An empty list must never reach the server:
  *  the evaluator scores a silent red rather than skipping the check */
 export const phrasesProblem = (phrases: readonly string[]): string | null => {

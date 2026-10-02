@@ -39,6 +39,7 @@ export interface EvalInputs extends RunInputs {
   techniqueCount: number;
   /** Why the forbidden-phrase list is not sendable; null or absent when it is */
   phrasesProblem?: string | null;
+  entailScoreProblem?: string | null;
   /** Set only for a suggested prompt, which cannot be run once its inputs moved on */
   stale?: boolean;
 }
@@ -57,6 +58,12 @@ export const HISTORY_FORBIDDEN_REASON =
 
 export const SUGGESTION_STALE_REASON =
   "Inputs changed since this suggestion. Run Optimize again.";
+
+export const HOLDOUT_STALE_REASON =
+  "Inputs changed since this comparison. Start a new hold-out run.";
+
+export const HOLDOUT_OFF_REASON =
+  "Turn on Hold out cases to validate on the hold-out set.";
 
 const NODE_MISSING_REASON =
   "This node isn't in the saved workflow. Save the workflow first.";
@@ -157,6 +164,7 @@ export const evaluateGate = (
   if (run.techniqueCount === 0)
     return blocked("Select at least one matching technique.");
   if (run.phrasesProblem) return blocked(run.phrasesProblem);
+  if (run.entailScoreProblem) return blocked(run.entailScoreProblem);
   return bodyGate(run.content, run.contentNoun) ?? OPEN;
 };
 
@@ -183,7 +191,7 @@ export const optimizeGate = (
 };
 
 /**
- * Accept saves and applies the suggestion (follows save contract)
+ * Accept applies the suggestion to the draft
  * Not gated on inline check—suggestions only appear where Optimize is allowed
  */
 export const acceptGate = (
@@ -195,10 +203,54 @@ export const acceptGate = (
   const context = contextGate(
     history,
     caps.canEditPrompt,
-    "Saving versions needs the update:evaluation permission.",
+    "Applying a suggestion needs the update:evaluation permission.",
   );
   if (context) return context;
   if (state.pending) return blocked("A save is already running.");
   if (state.stale) return blocked(SUGGESTION_STALE_REASON);
   return bodyGate(suggestion, "suggested prompt") ?? OPEN;
 };
+
+export interface HoldoutRequestKeys {
+  baselineKey: string;
+  suggestionKey: string;
+}
+
+/**
+ * Compares two prompts against current inputs. Valid only if both match;
+ * missing key invalidates (single version ≠ comparison)
+ */
+export const pairedKeysMatch = (
+  stored: {
+    baselineKey: string | null | undefined;
+    suggestionKey: string | null | undefined;
+  },
+  current: HoldoutRequestKeys | null,
+): boolean =>
+  current !== null &&
+  stored.baselineKey === current.baselineKey &&
+  stored.suggestionKey === current.suggestionKey;
+
+export interface HoldoutRetryInputs {
+  half: "baseline" | "suggestion";
+  requestKey: string;
+  nextKey?: string;
+  storedBaselineKey: string | null;
+}
+
+/** Replaying one half is only honest while the pair it belongs to is still current */
+export const retryGate = (
+  stored: HoldoutRetryInputs,
+  current: HoldoutRequestKeys | null,
+): Gate =>
+  pairedKeysMatch(
+    stored.half === "baseline"
+      ? { baselineKey: stored.requestKey, suggestionKey: stored.nextKey }
+      : {
+          baselineKey: stored.storedBaselineKey,
+          suggestionKey: stored.requestKey,
+        },
+    current,
+  )
+    ? OPEN
+    : blocked(HOLDOUT_STALE_REASON);
