@@ -11,6 +11,7 @@ vi.mock("@/config/api", () => ({
 }));
 
 import { apiRequest } from "@/config/api";
+import type { PromptOptimizeRequestPayload } from "@/interfaces/promptEditor.interface";
 import {
   getPromptHistory,
   createPromptVersion,
@@ -133,5 +134,26 @@ describe("optimizePrompt", () => {
 
     expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload);
     expect(result).toEqual(response);
+  });
+
+  it("carries the grading configuration and the graders' feedback unchanged", async () => {
+    const payload: PromptOptimizeRequestPayload = {
+      provider_id: "p1",
+      current_prompt: "hi",
+      technique_configs: { not_contains: { phrases: ["refund"] } },
+      failed_cases: [
+        {
+          case_id: "c1",
+          actual: "sorry, refund",
+          failed_metrics: ["not_contains"],
+          feedback: "not_contains: said refund",
+        },
+      ],
+    };
+    mockApiRequest.mockResolvedValue({} as never);
+
+    await optimizePrompt(WF, NODE, FIELD, payload);
+
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload);
   });
 });

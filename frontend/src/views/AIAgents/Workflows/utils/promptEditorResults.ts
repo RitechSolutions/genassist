@@ -13,7 +13,7 @@ export const ISOLATION_NOTE =
   "without this node's memory, tools, user prompt or fallback chain. " +
   "It does not reproduce what the node runs.";
 
-/** Shown with the comparison panel and under a development run */
+/** Shown under a run scored on the cases the optimizer was given */
 export const LEAKAGE_NOTE =
   "Development cases are sent to the optimizer word for word, so their scores do not " +
   "show whether the suggestion generalises. The hold-out comparison is the one to read.";
@@ -130,7 +130,7 @@ export interface PairedComparison {
   unchanged: number;
 }
 
-const VERDICT_RANK: Record<string, number> = {
+export const VERDICT_RANK: Record<string, number> = {
   failed: 0,
   inconclusive: 1,
   passed: 2,
@@ -178,4 +178,61 @@ export const joinPairedRuns = (
   }
 
   return comparison;
+};
+
+export interface ChallengerComparison {
+  comparison: PairedComparison;
+  /** Why the runs cannot be compared; null when the comparison is complete */
+  incomplete: string | null;
+}
+
+const sameIdSet = (a: readonly string[], b: readonly string[]): boolean => {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  return (
+    setA.size === a.length &&
+    setB.size === b.length &&
+    setA.size === setB.size &&
+    b.every((id) => setA.has(id))
+  );
+};
+
+const incompleteReason = (
+  baseline: PromptEvalResponse,
+  challenger: PromptEvalResponse,
+  comparison: PairedComparison,
+): string | null => {
+  if (
+    !sameIdSet(
+      baseline.provenance.evaluated_case_ids,
+      challenger.provenance.evaluated_case_ids,
+    )
+  )
+    return "The two runs evaluated different cases.";
+  const unfinished = comparison.rows.filter(
+    (row) =>
+      !row.baseline ||
+      !row.suggestion ||
+      row.baseline.status !== "scored" ||
+      row.suggestion.status !== "scored" ||
+      row.baseline.verdict === null ||
+      row.suggestion.verdict === null,
+  ).length;
+  if (unfinished > 0)
+    return `${unfinished} case${unfinished === 1 ? "" : "s"} did not finish on one side.`;
+  if (comparison.compared !== baseline.provenance.evaluated_case_ids.length)
+    return "Not every case could be compared.";
+  return null;
+};
+
+/** Counts the moves between two runs and states whether the pair is comparable at all */
+export const compareRuns = (
+  baseline: PromptEvalResponse,
+  challenger: PromptEvalResponse,
+): ChallengerComparison => {
+  const comparison = joinPairedRuns(baseline, challenger);
+  return {
+    comparison,
+    incomplete: incompleteReason(baseline, challenger, comparison),
+  };
 };
