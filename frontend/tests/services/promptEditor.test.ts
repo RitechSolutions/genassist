@@ -140,7 +140,12 @@ describe("optimizePrompt", () => {
     const payload: PromptOptimizeRequestPayload = {
       provider_id: "p1",
       current_prompt: "hi",
-      technique_configs: { not_contains: { phrases: ["refund"] } },
+      technique_configs: {
+        not_contains: { phrases: ["refund"] },
+        llm_judge: {
+          rules: [{ rubric: "grade it", min_score: 0.7, source_type: "none" }],
+        },
+      },
       failed_cases: [
         {
           case_id: "c1",

@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import logging
 import json
+import math
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID, uuid4
 
@@ -34,6 +35,7 @@ from app.modules.workflow.engine.workflow_engine import (
 )
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.usage_context import WorkflowUsageContext
+from app.core.utils.llm_json import parse_json_object_reply
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.core.utils.transcript_utils import extract_qa_pairs
 from app.core.utils.uuid_utils import coerce_uuid
@@ -364,17 +366,18 @@ def _is_retrieval_tool(event: Dict[str, Any], nodes: Dict[str, Any]) -> bool:
 def _parse_judge_json(raw_content: Any) -> tuple[float | None, str | None]:
     """Parse a judge's ``{score, reason}`` reply; a missing/invalid score yields no score."""
     try:
-        parsed = json.loads(raw_content)
-        if not isinstance(parsed, dict):
-            return None, "LLM judge response was not a JSON object"
+        parsed = parse_json_object_reply(raw_content)
         # A missing score is a malformed judgment, not a real 0.0 — surface it as
         # an error rather than silently failing the answer.
         if parsed.get("score") is None:
             return None, "LLM judge response did not include a score"
-        score = max(0.0, min(1.0, float(parsed["score"])))
+        score = float(parsed["score"])
+        if not math.isfinite(score):
+            return None, "LLM judge response did not include a usable score"
+        score = max(0.0, min(1.0, score))
         reason = str(parsed.get("reason", "")).strip() or None
         return score, reason
-    except (ValueError, TypeError, json.JSONDecodeError):
+    except (ValueError, TypeError):
         return None, "LLM judge response could not be parsed"
 
 
@@ -819,6 +822,7 @@ class SimpleEvaluatorRegistry:
         technique_configs: Dict[str, Dict[str, Any]] | None = None,
         workflow: Any = None,
         usage_ref: "EvaluationUsageRef | None" = None,
+        judge_model: Any = None,
     ) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
         payload = {
@@ -831,6 +835,7 @@ class SimpleEvaluatorRegistry:
             # Workflow graph for legacy name→id resolution via the full tool catalogue.
             "workflow": workflow,
             "_usage_ref": usage_ref,
+            "_judge_model": judge_model,
         }
         for technique_index, key in enumerate(techniques):
             fn = self._evaluators.get(key)
@@ -1525,10 +1530,13 @@ class SimpleEvaluatorRegistry:
         usage_ref: "EvaluationUsageRef | None" = None,
         purpose: str | None = None,
         call_index: int | None = None,
+        model: Any = None,
     ) -> tuple[float | None, str | None]:
         """Run an LLM judge returning compact JSON {score, reason}; shared by grounding + rubric judges."""
-        llm_provider = injector.get(LLMProvider)
-        llm = await llm_provider.get_model(provider_id)
+        llm = model
+        if llm is None:
+            llm_provider = injector.get(LLMProvider)
+            llm = await llm_provider.get_model(provider_id)
         response = await llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
@@ -1664,6 +1672,7 @@ class SimpleEvaluatorRegistry:
             usage_ref=payload.get("_usage_ref"),
             purpose="llm_judge",
             call_index=_judge_rule_call_index(payload, rule_number),
+            model=payload.get("_judge_model"),
         )
         # A missing score means the judge output was malformed — our evaluator's
         # problem, not the agent's. Report it as an error, not a failing answer.

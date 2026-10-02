@@ -43,7 +43,12 @@ _EXTRA_BREAKDOWN_CONDITIONS = {
 
 _SOURCE_LABELS = {"workflow": "Workflow", "llm_analyst": "Conversation Analyst", "evaluation": "Evaluations"}
 
-_EVALUATION_METHOD_LABELS = {"llm_judge": "LLM Judge", "provenance_judge": "Provenance"}
+_EVALUATION_METHOD_LABELS = {
+    "llm_judge": "LLM Judge",
+    "provenance_judge": "Provenance",
+    "prompt_check": "Prompt check",
+    "prompt_optimize": "Prompt rewrite",
+}
 
 _ANALYST_PURPOSE_LABELS = {"hostility_analysis": "Hostility Check", "conversation_analysis": "KPI Scoring"}
 

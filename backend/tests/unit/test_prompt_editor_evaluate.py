@@ -3,6 +3,7 @@ the run reports about itself"""
 
 import asyncio
 from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -12,8 +13,13 @@ from langchain_core.messages import AIMessage
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.schemas.prompt_editor import MAX_ACTUAL_CHARS, PromptEvalRequest
-from app.services.prompt_editor import TRUNCATION_MARKER, PromptEditorService
+from app.schemas.prompt_editor import MAX_ACTUAL_CHARS, PromptCallUsage, PromptEvalRequest
+from app.services.llm_usage_recorder import _resolve_cost
+from app.services.prompt_editor import (
+    PROMPT_CHECK_CONCURRENCY,
+    TRUNCATION_MARKER,
+    PromptEditorService,
+)
 
 WORKFLOW_ID = uuid4()
 NODE_ID = "n1"
@@ -73,7 +79,18 @@ def _service(cases, *, nodes=None, gold_suite_id=SUITE_ID, index=None):
     )
 
 
-def _injector(llm, provider=PROVIDER, provider_error=None, build_error=None):
+def _rate(provider="openai", model="gpt-4o", input_per_1k="0.01", output_per_1k="0.02"):
+    return SimpleNamespace(
+        provider_key=provider,
+        model_key=model,
+        input_per_1k=Decimal(input_per_1k),
+        output_per_1k=Decimal(output_per_1k),
+        cache_read_per_1k=None,
+        cache_creation_per_1k=None,
+    )
+
+
+def _injector(llm, provider=PROVIDER, provider_error=None, build_error=None, rate_rows=(), rates_error=None):
     provider_service = SimpleNamespace(
         get_by_id=AsyncMock(side_effect=provider_error) if provider_error else AsyncMock(return_value=provider)
     )
@@ -82,10 +99,19 @@ def _injector(llm, provider=PROVIDER, provider_error=None, build_error=None):
         if build_error
         else AsyncMock(return_value=llm)
     )
-    fake = MagicMock()
-    fake.get.side_effect = lambda cls: (
-        provider_service if cls.__name__ == "LlmProviderService" else llm_provider
+    rate_repo = SimpleNamespace(
+        list_active=AsyncMock(side_effect=rates_error) if rates_error else AsyncMock(return_value=list(rate_rows))
     )
+
+    def _get(cls):
+        if cls.__name__ == "LlmProviderService":
+            return provider_service
+        if cls.__name__ == "LlmCostRateRepository":
+            return rate_repo
+        return llm_provider
+
+    fake = MagicMock()
+    fake.get.side_effect = _get
     return fake
 
 
@@ -97,6 +123,8 @@ def _llm(replies):
         reply = pending.pop(0)
         if isinstance(reply, Exception):
             raise reply
+        if isinstance(reply, AIMessage):
+            return reply
         return AIMessage(content=reply)
 
     llm.ainvoke.side_effect = invoke
@@ -106,6 +134,22 @@ def _llm(replies):
 async def _run(service, injector, request=None):
     with patch("app.dependencies.injector.injector", injector):
         return await service.evaluate_prompt(WORKFLOW_ID, NODE_ID, FIELD, request or _request())
+
+
+def _spent_score_budget(score_seconds: float):
+    import app.services.prompt_editor as module
+
+    class SpentScoreBudget(module.Budget):
+        def __init__(self, seconds):
+            self._deadline_seconds = seconds
+            super().__init__(seconds)
+
+        def remaining(self):
+            if self._deadline_seconds == module.PROMPT_CHECK_SCORE_BUDGET_SECONDS:
+                return score_seconds
+            return 10.0
+
+    return SpentScoreBudget
 
 
 class TestFieldGate:
@@ -361,6 +405,27 @@ class TestWireBounds:
         assert metric["actual"].endswith(TRUNCATION_MARKER)
         assert len(metric["expected"]) == MAX_ACTUAL_CHARS
 
+    def test_a_metrics_nested_strings_are_bounded_without_reshaping_it(self):
+        import app.services.prompt_editor as module
+
+        long_text = "z" * 40_000
+        bounded = module._bounded_metrics(
+            {
+                "llm_judge": {
+                    "score": 0.8,
+                    "details": [{"reason": long_text, "rule_number": 1}],
+                },
+                "nli_eval": {"unsupported_claims": [long_text, "short"]},
+            }
+        )
+
+        detail = bounded["llm_judge"]["details"][0]
+        assert len(detail["reason"]) == MAX_ACTUAL_CHARS
+        assert detail["reason"].endswith(TRUNCATION_MARKER)
+        assert (detail["rule_number"], bounded["llm_judge"]["score"]) == (1, 0.8)
+        claims = bounded["nli_eval"]["unsupported_claims"]
+        assert [len(claim) for claim in claims] == [MAX_ACTUAL_CHARS, 5]
+
     @pytest.mark.asyncio
     async def test_a_grounding_model_that_could_not_load_says_so(self, monkeypatch):
         import app.services.prompt_editor as module
@@ -465,6 +530,18 @@ class TestBudget:
         assert result.provenance.deadline_hit is True
 
 
+    @pytest.mark.asyncio
+    async def test_a_run_with_no_model_graded_check_keeps_the_whole_model_budget(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm(["a"])))
+
+        assert module._uses_score_budget(["exact_match"]) is False
+        assert result.provenance.budget_seconds == 70
+
+
 class TestGroundingCheck:
     @pytest.mark.asyncio
     async def test_an_exhausted_scoring_budget_reports_the_grounding_model_not_a_failure(self):
@@ -473,15 +550,7 @@ class TestGroundingCheck:
         service = _service([_case("a", {"value": "a"})])
         request = _request(techniques=["contains", "nli_eval"])
 
-        class SpentScoreBudget(module.Budget):
-            def remaining(self):
-                return 0.0 if self._deadline_seconds == module.PROMPT_CHECK_SCORE_BUDGET_SECONDS else 10.0
-
-            def __init__(self, seconds):
-                self._deadline_seconds = seconds
-                super().__init__(seconds)
-
-        with patch.object(module, "Budget", SpentScoreBudget):
+        with patch.object(module, "Budget", _spent_score_budget(0.0)):
             result = await _run(service, _injector(_llm(["a"])), request)
 
         row = result.results[0]
@@ -502,15 +571,7 @@ class TestGroundingCheck:
 
         service.evaluators._evaluators["nli_eval"] = _hang
 
-        class SpentScoreBudget(module.Budget):
-            def __init__(self, seconds):
-                self._deadline_seconds = seconds
-                super().__init__(seconds)
-
-            def remaining(self):
-                return 0.01 if self._deadline_seconds == module.PROMPT_CHECK_SCORE_BUDGET_SECONDS else 10.0
-
-        with patch.object(module, "Budget", SpentScoreBudget):
+        with patch.object(module, "Budget", _spent_score_budget(0.01)):
             result = await _run(service, _injector(_llm(["a"])), request)
 
         row = result.results[0]
@@ -519,6 +580,20 @@ class TestGroundingCheck:
         assert row.metrics["nli_eval"]["error"] is True
         assert "json_match" in row.metrics
         assert result.provenance.deadline_hit is True
+
+    @pytest.mark.asyncio
+    async def test_a_registry_answer_without_the_grounding_key_leaves_the_metric_absent(self):
+        service = _service([_case("a", {"value": "a"})])
+
+        async def _nothing(*_args, **_kwargs):
+            return {}
+
+        service.evaluators.evaluate = _nothing
+        result = await _run(service, _injector(_llm(["a"])), _request(techniques=["nli_eval"]))
+
+        row = result.results[0]
+        assert row.metrics == {}
+        assert row.verdict == "inconclusive"
 
 
 class TestMetering:
@@ -530,6 +605,7 @@ class TestMetering:
 
         async def _fake_persist(ref):
             captured["ref"] = ref
+            return "recorded"
 
         service._persist_usage = _fake_persist
         result = await _run(service, _injector(_llm(["a", "b", RuntimeError("down")])))
@@ -552,6 +628,7 @@ class TestMetering:
                 captured["execution_id"] = execution_id
                 captured["entries"] = entries
                 captured["kwargs"] = kwargs
+                return "recorded"
 
         async def _resolve(provider_id, cache=None):
             return ("openai", "gpt-4o")
@@ -569,6 +646,7 @@ class TestMetering:
         assert entry["llm_provider_id"] == PROVIDER.id
         assert captured["kwargs"]["source"] == "prompt_editor"
         assert captured["kwargs"]["workflow_id"] == WORKFLOW_ID
+        assert captured["kwargs"]["configured_rates"] == {}, "a loaded but empty snapshot, not a missing one"
         assert result.provenance.metering_handoff_failed is False
 
     @pytest.mark.asyncio
@@ -578,6 +656,7 @@ class TestMetering:
 
         async def _capture(ref):
             captured["entries"] = list(ref.entries)
+            return "recorded"
 
         service._persist_usage = _capture
         service._score_all = AsyncMock(side_effect=RuntimeError("scoring exploded"))
@@ -599,3 +678,339 @@ class TestMetering:
 
         assert result.provenance.metering_handoff_failed is True
         assert result.results[0].verdict == "passed"
+
+    def test_a_judge_row_is_renumbered_out_of_the_model_call_band(self):
+        import app.services.prompt_editor as module
+
+        ref = module.PromptUsageRef(execution_id="prompt_editor:1")
+        case_ref = module.PromptUsageRef(execution_id="prompt_editor:1")
+        case_ref.entries.append({"call_index": 0, "provider_id": "p", "purpose": "llm_judge", "usage": None})
+
+        module._collect_judge_usage(ref, case_ref, 2)
+
+        assert [entry["call_index"] for entry in ref.entries] == [1002]
+        assert ref.entries[0]["purpose"] == "llm_judge"
+        assert case_ref.entries[0]["call_index"] == 0
+
+
+def _judge_metric(score=0.8, reason="the reply answers the question"):
+    detail = {
+        "rule_number": 1,
+        "label": "Rule 1",
+        "score": score,
+        "threshold": 0.5,
+        "passed": score >= 0.5,
+        "reason": reason,
+        "comment": f"Rule 1: {reason}; score={score:.2f}; threshold=0.50",
+    }
+    return {
+        "key": "llm_judge",
+        "score": score,
+        "passed": score >= 0.5,
+        "threshold": 0.5,
+        "comment": f"{reason}; threshold=0.50",
+        "details": [detail],
+    }
+
+
+def _judge_fake(calls, metric=None):
+
+    async def _judge(*, inputs, outputs, reference_outputs, payload, config):
+        calls.append({"inputs": inputs, "outputs": outputs, "config": config})
+        ref = payload.get("_usage_ref")
+        if ref is not None:
+            ref.entries.append(
+                {
+                    "call_index": payload["_technique_index"],
+                    "provider_id": config.get("llm_provider_id"),
+                    "purpose": "llm_judge",
+                    "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                }
+            )
+        return metric if metric is not None else _judge_metric()
+
+    return _judge
+
+
+def _judge_request(source_type="none", **overrides):
+    payload = {
+        "techniques": ["llm_judge"],
+        "technique_configs": {"llm_judge": {"rules": [{"rubric": "grade it", "source_type": source_type}]}},
+    }
+    payload.update(overrides)
+    return _request(**payload)
+
+
+class TestJudgeCheck:
+    @pytest.mark.asyncio
+    async def test_the_judge_is_asked_the_question_the_model_was_sent(self):
+        case = SimpleNamespace(id=uuid4(), input_data="hi", expected_output={"value": "a"})
+        service = _service([case])
+        calls = []
+        service.evaluators._evaluators["llm_judge"] = _judge_fake(calls)
+
+        result = await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        assert calls[0]["inputs"] == {"message": "hi"}
+        assert calls[0]["config"]["llm_provider_id"] == str(PROVIDER.id)
+        assert result.results[0].metrics["llm_judge"]["score"] == 0.8
+
+    @pytest.mark.asyncio
+    async def test_every_judged_case_meters_its_own_row(self):
+        cases = [_case("a", {"value": "a"}), _case("b", {"value": "b"}), _case("c", {"value": "c"})]
+        service = _service(cases)
+        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+        captured = {}
+
+        async def _capture(ref):
+            captured.setdefault("refs", []).append(list(ref.entries))
+            return "recorded"
+
+        service._persist_usage = _capture
+        await _run(service, _injector(_llm(["a", "b", "c"])), _judge_request())
+
+        entries = captured["refs"][0]
+        assert len(captured["refs"]) == 1
+        assert sorted(entry["call_index"] for entry in entries) == [0, 1, 2, 1000, 1001, 1002]
+        assert {entry["purpose"] for entry in entries} == {"prompt_check", "llm_judge"}
+
+    @pytest.mark.asyncio
+    async def test_a_judge_that_hangs_keeps_the_metrics_beside_it(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+        request = _judge_request(techniques=["contains", "llm_judge", "json_match"])
+
+        async def _hang(**_kwargs):
+            await asyncio.sleep(30)
+
+        service.evaluators._evaluators["llm_judge"] = _hang
+
+        with patch.object(module, "Budget", _spent_score_budget(0.01)):
+            result = await _run(service, _injector(_llm(["a"])), request)
+
+        row = result.results[0]
+        assert row.metrics["contains"]["passed"] is True
+        assert "json_match" in row.metrics
+        assert row.metrics["llm_judge"]["error"] is True
+        assert "judge" in row.metrics["llm_judge"]["comment"]
+        assert result.provenance.deadline_hit is True
+
+    @pytest.mark.asyncio
+    async def test_a_spent_score_budget_never_pays_for_the_judge(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+        calls = []
+        service.evaluators._evaluators["llm_judge"] = _judge_fake(calls)
+
+        with patch.object(module, "Budget", _spent_score_budget(0.0)):
+            result = await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        assert calls == []
+        assert result.results[0].metrics["llm_judge"]["error"] is True
+        assert result.provenance.deadline_hit is True
+
+    @pytest.mark.asyncio
+    async def test_a_judge_reading_the_expectation_skips_a_case_without_one(self):
+        service = _service([_case("a")])
+        calls = []
+        service.evaluators._evaluators["llm_judge"] = _judge_fake(calls)
+
+        result = await _run(service, _injector(_llm(["a"])), _judge_request("expected_output"))
+
+        assert calls == []
+        assert result.results[0].metrics["llm_judge"]["not_applicable"] is True
+
+    @pytest.mark.asyncio
+    async def test_a_rubric_only_judge_grades_a_case_without_an_expectation(self):
+        service = _service([_case("a")])
+        calls = []
+        service.evaluators._evaluators["llm_judge"] = _judge_fake(calls)
+
+        result = await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        assert len(calls) == 1
+        assert result.results[0].metrics["llm_judge"]["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_the_cases_are_judged_together_so_one_budget_covers_them_all(self):
+        cases = [_case(str(i), {"value": str(i)}) for i in range(PROMPT_CHECK_CONCURRENCY)]
+        service = _service(cases)
+        gate = asyncio.Barrier(PROMPT_CHECK_CONCURRENCY)
+
+        async def _judge(**_kwargs):
+            await gate.wait()
+            return _judge_metric()
+
+        service.evaluators._evaluators["llm_judge"] = _judge
+        result = await asyncio.wait_for(
+            _run(service, _injector(_llm(["a"] * PROMPT_CHECK_CONCURRENCY)), _judge_request()), timeout=5
+        )
+
+        assert [row.verdict for row in result.results] == ["passed"] * PROMPT_CHECK_CONCURRENCY
+
+    @pytest.mark.asyncio
+    async def test_every_case_is_graded_on_the_model_the_check_already_built(self):
+        service = _service([_case("a", {"value": "a"}), _case("b", {"value": "b"})])
+        service.db.in_transaction = MagicMock(return_value=True)
+        llm = _llm(["a", "b"])
+        seen = []
+
+        async def _judge(*, inputs, outputs, reference_outputs, payload, config):
+            seen.append(payload["_judge_model"])
+            return _judge_metric()
+
+        service.evaluators._evaluators["llm_judge"] = _judge
+        await _run(service, _injector(llm), _judge_request())
+
+        assert seen == [llm, llm]
+        assert service.db.rollback.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_a_judge_run_pays_for_its_scoring_out_of_the_model_budget(self):
+        service = _service([_case("a", {"value": "a"})])
+        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+
+        result = await _run(service, _injector(_llm(["a"])), _judge_request())
+
+        assert result.provenance.budget_seconds == 80
+
+
+def _priced_reply(content="a", input_tokens=1000, output_tokens=500):
+    return AIMessage(
+        content=content,
+        usage_metadata={
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+        },
+    )
+
+
+_BUNDLED_COST = float(_resolve_cost("openai", "gpt-4o", 1000, 500, {})["cost_usd"])
+
+
+class TestSpend:
+    @pytest.mark.asyncio
+    async def test_a_case_reports_the_duration_of_its_own_call(self):
+        service = _service([_case("a", {"value": "a"}), _case("b", {"value": "b"})])
+
+        result = await _run(service, _injector(_llm(["a", RuntimeError("down")])))
+
+        assert isinstance(result.results[0].latency_ms, int) and result.results[0].latency_ms >= 0
+        assert result.results[1].latency_ms is None, "a call that never answered reports no duration"
+
+    @pytest.mark.asyncio
+    async def test_reported_tokens_are_priced_the_way_the_ledger_row_is(self):
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm([_priced_reply()])))
+
+        row = result.results[0]
+        assert row.usage == PromptCallUsage(input_tokens=1000, output_tokens=500, total_tokens=1500)
+        assert row.cost_usd == _BUNDLED_COST
+        assert result.provenance.cost_usd == _BUNDLED_COST
+        assert (result.provenance.unpriced_calls, result.provenance.grader_calls) == (0, 0)
+        assert result.provenance.grader_cost_usd is None, "no judge ran, so it has no share"
+        assert result.provenance.grader_tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_a_configured_rate_beats_the_bundled_table(self):
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm([_priced_reply()]), rate_rows=[_rate()]))
+
+        assert result.results[0].cost_usd == 0.02, "1000 input at 0.01 and 500 output at 0.02, per 1k"
+
+    @pytest.mark.asyncio
+    async def test_a_call_the_provider_reported_no_usage_for_stays_unpriced(self):
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm(["a"])))
+
+        row = result.results[0]
+        assert row.usage is None and row.cost_usd is None
+        assert result.provenance.cost_usd is None, "no $0 for a call nothing is known about"
+        assert result.provenance.unpriced_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_the_run_total_covers_the_priced_calls_and_names_the_rest(self):
+        service = _service([_case("a", {"value": "a"}), _case("b", {"value": "b"})])
+
+        result = await _run(service, _injector(_llm([_priced_reply(), "b"])))
+
+        assert result.results[1].cost_usd is None
+        assert result.provenance.cost_usd == result.results[0].cost_usd
+        assert result.provenance.unpriced_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_grader_spend_counts_on_the_run_and_never_on_a_case(self):
+        service = _service([_case("a", {"value": "a"})])
+        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+        captured = {}
+
+        async def _capture(ref):
+            captured["ref"] = ref
+            return "recorded"
+
+        service._persist_usage = _capture
+        result = await _run(service, _injector(_llm([_priced_reply()])), _judge_request())
+
+        row = result.results[0]
+        assert row.cost_usd == _BUNDLED_COST, "the case shows its own model call"
+        assert result.provenance.grader_calls == 1
+        assert sorted(captured["ref"].costs) == [0, 1000], "the judge call is priced too"
+        assert result.provenance.cost_usd > row.cost_usd
+        assert result.provenance.grader_cost_usd == pytest.approx(
+            result.provenance.cost_usd - row.cost_usd
+        ), "the judge's share is the run total less the case's own call"
+        assert result.provenance.grader_tokens == 2, "the judge's own tokens, not the case's"
+        assert (
+            result.provenance.usage_total["total_tokens"]
+            == row.usage.total_tokens + result.provenance.grader_tokens
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_failed_rate_read_leaves_the_ledger_to_load_its_own(self, monkeypatch):
+        import app.services.llm_usage_recorder as recorder_module
+
+        captured = {}
+
+        class FakeRecorder:
+            async def record_evaluation_calls(self, execution_id, entries, **kwargs):
+                captured["kwargs"] = kwargs
+                return "recorded"
+
+        monkeypatch.setattr(recorder_module, "LlmUsageRecorder", FakeRecorder)
+        service = _service([_case("a", {"value": "a"})])
+
+        result = await _run(service, _injector(_llm(["a"]), rates_error=RuntimeError("rates table gone")))
+
+        assert result.results[0].status == "scored"
+        assert service.db.rollback.await_count == 1
+        assert captured["kwargs"]["configured_rates"] is None
+
+    @pytest.mark.asyncio
+    async def test_pricing_and_the_hand_over_never_read_the_provider_again(self):
+        service = _service([_case("a", {"value": "a"})])
+        service.evaluators._evaluators["llm_judge"] = _judge_fake([])
+        injector = _injector(_llm([_priced_reply()]))
+
+        await _run(service, injector, _judge_request())
+
+        provider_service = injector.get.side_effect(SimpleNamespace(__name__="LlmProviderService"))
+        provider_service.get_by_id.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        "status, failed",
+        [("recorded", False), ("disabled", False), ("empty", False), ("failed", True), (None, True), ("bogus", True)],
+    )
+    @pytest.mark.asyncio
+    async def test_only_a_confirmed_hand_over_clears_the_metering_flag(self, status, failed):
+        service = _service([_case("a", {"value": "a"})])
+        service._persist_usage = AsyncMock(return_value=status)
+
+        result = await _run(service, _injector(_llm(["a"])))
+
+        assert result.provenance.metering_handoff_failed is failed
