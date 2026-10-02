@@ -762,7 +762,7 @@ async def execute_and_process_preprocessing_code(
     Raises:
         AppException: If code execution fails or result cannot be processed (only if raise_on_error=True)
     """
-    from app.modules.workflow.utils import execute_python_code
+    from app.modules.workflow.utils import execute_python_code, script_error
 
     # Prepare parameters for Python code execution
     params = {
@@ -780,20 +780,16 @@ async def execute_and_process_preprocessing_code(
         prelude=_DATA_FROM_DF if _names_data(python_code) else "",
     )
 
-    # "error" signals an execution failure (timeout, sandbox violation, syntax
-    # error, uncaught exception); "errors" carries captured stderr from an
-    # otherwise-successful run. Both must be checked, or a failure (e.g. the
-    # 120s execution timeout) is silently missed and surfaces later as a
-    # confusing "must return a DataFrame... Got: NoneType" error instead.
-    errors = response.get("error") or response.get("errors")
-    if errors:
+    # Library warnings land in stderr, so only a runner error or a raised script counts as failure
+    failure = script_error(response)
+    if failure:
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {errors}",
+                error_detail=f"Error executing preprocessing code: {failure}",
             )
         else:
-            return None, errors, response
+            return None, failure, response
 
     # Extract result from response
     result = response.get("result")

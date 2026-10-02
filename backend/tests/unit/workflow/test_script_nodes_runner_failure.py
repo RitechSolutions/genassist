@@ -1,11 +1,14 @@
+from unittest.mock import MagicMock
+
 import pandas as pd
 import pytest
 
 import app.modules.workflow.utils as workflow_utils
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.node_result import is_node_failure
-from app.modules.workflow.engine.nodes import data_mapper_node
+from app.modules.workflow.engine.nodes import data_mapper_node, external_agent_node
 from app.modules.workflow.engine.nodes.data_mapper_node import DataMapperNode
+from app.modules.workflow.engine.nodes.external_agent_node import ExternalAgentNode
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -14,7 +17,7 @@ SCRIPT_ERROR = {
     "result": None,
     "output": "",
     "errors": "\nGlobal errors: Error processing parameters: KeyError: 'x'",
-    "script_failed": True,
+    "script_error": "Error processing parameters: KeyError: 'x'",
 }
 STDERR_ONLY = {
     "result": {"year": 2026},
@@ -23,6 +26,7 @@ STDERR_ONLY = {
 }
 NONE_WITH_WARNING = {"result": None, "output": "", "errors": "<string>:3: FutureWarning: fillna with 'method'"}
 MAPPER = {"id": "m1", "type": "dataMapperNode", "data": {"name": "Mapper", "pythonScript": "result = 1"}}
+EXTERNAL = {"id": "e1", "type": "externalAgentNode", "data": {"name": "External"}}
 
 
 async def _runner_error(*_args, **_kwargs):
@@ -79,6 +83,58 @@ async def test_data_mapper_none_result_with_a_warning_stays_success(monkeypatch)
 
     assert state.node_execution_status["m1"]["status"] == "success"
     assert returned == NONE_WITH_WARNING
+
+
+async def _map_external_response(monkeypatch, response):
+    async def runner(*_args, **_kwargs):
+        return dict(response)
+
+    monkeypatch.setattr(external_agent_node, "execute_python_code", runner)
+    node = ExternalAgentNode("e1", EXTERNAL, MagicMock())
+    return await node._apply_mapping_script("result = {'message': 'hi'}", {})
+
+
+@pytest.mark.asyncio
+async def test_external_agent_mapping_stderr_with_a_result_stays_success(monkeypatch):
+    mapped = await _map_external_response(monkeypatch, {**STDERR_ONLY, "result": {"message": "hi"}})
+
+    assert mapped == {"message": "hi", "steps": []}
+
+
+@pytest.mark.asyncio
+async def test_external_agent_mapping_runner_error_is_a_failure(monkeypatch):
+    returned = await _map_external_response(monkeypatch, RUNNER_ERROR)
+
+    assert is_node_failure(returned)["error"] == "Mapping script error: Execution timed out after 600 seconds"
+
+
+@pytest.mark.asyncio
+async def test_preprocessing_stderr_with_a_result_stays_success(monkeypatch):
+    async def runner(*_args, **_kwargs):
+        return {**STDERR_ONLY, "result": [{"year": 2026}]}
+
+    monkeypatch.setattr(workflow_utils, "execute_python_code", runner)
+
+    processed, errors, _ = await ml_utils.execute_and_process_preprocessing_code("", None, "", raise_on_error=False)
+
+    assert errors is None
+    assert processed.to_dict("records") == [{"year": 2026}]
+
+
+@pytest.mark.asyncio
+async def test_preprocessing_script_exception_is_reported(monkeypatch):
+    async def runner(*_args, **_kwargs):
+        return dict(SCRIPT_ERROR)
+
+    monkeypatch.setattr(workflow_utils, "execute_python_code", runner)
+
+    processed, errors, response = await ml_utils.execute_and_process_preprocessing_code(
+        "", None, "", raise_on_error=False
+    )
+
+    assert processed is None
+    assert errors == "Error processing parameters: KeyError: 'x'"
+    assert response == SCRIPT_ERROR
 
 
 @pytest.mark.asyncio

@@ -125,10 +125,12 @@ def test_script_failure_survives_the_stream_cut():
     )
 
     response = _execute_python_code_sync(code, {})
+    failure = utils.script_error(response)
 
     assert response["result"] is None
     assert "chars cut" in response["errors"]
-    assert utils.script_error(response).endswith("x" * 1000 + "\n")
+    assert failure.startswith("Error processing parameters: " + "x" * 1000)
+    assert failure.endswith("chars cut)") and len(failure) < 5000
 
 
 def test_top_level_script_with_a_none_result_is_not_a_failure():

@@ -215,7 +215,7 @@ class TestValidateInferenceValues:
         assert result["prediction"] == [0, 0]
 
     @pytest.mark.asyncio
-    async def test_failed_prediction_names_the_unusable_feature(self, monkeypatch):
+    async def test_failed_prediction_names_the_unusable_feature(self, monkeypatch, caplog):
         model = _StubModel(ValueError("could not convert string to float: 'null'"))
         with pytest.raises(AppException) as exc:
             await _predict(monkeypatch, model, {"lag_24": "null", "hour": 3})
@@ -223,7 +223,8 @@ class TestValidateInferenceValues:
         detail = exc.value.error_detail
         assert detail.startswith("Unusable inference input for 1 feature(s): lag_24='null'")
         assert "upstream" in detail
-        assert "could not convert string to float" in detail
+        assert "could not convert string to float" not in detail
+        assert "Error during model prediction: could not convert string to float: 'null'" in caplog.text
 
     @pytest.mark.asyncio
     async def test_failed_preparation_names_the_unusable_feature(self, monkeypatch):
@@ -233,7 +234,7 @@ class TestValidateInferenceValues:
             await _predict(monkeypatch, _StubModel(), inputs, scaler=scaler, scaled_columns=["lag_24"])
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
         assert exc.value.error_detail.startswith("Unusable inference input for 1 feature(s): lag_24='null'")
-        assert "Data preparation failed: could not convert string to float" in exc.value.error_detail
+        assert "could not convert string to float" not in exc.value.error_detail
 
     @pytest.mark.asyncio
     async def test_failed_feature_replay_names_the_unusable_feature(self, monkeypatch):
@@ -249,4 +250,4 @@ class TestValidateInferenceValues:
             )
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
         assert exc.value.error_detail.startswith("Unusable inference input for 1 feature(s): lag_24='null'")
-        assert "Could not reconstruct column(s) ['lag_24_norm']" in exc.value.error_detail
+        assert "Could not reconstruct" not in exc.value.error_detail

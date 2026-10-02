@@ -140,10 +140,8 @@ def _validate_inference_values(
         if len(offending) > _MAX_REPORTED_FEATURES:
             detail += f" (+{len(offending) - _MAX_REPORTED_FEATURES} more)"
         detail += ". A value of 'null' means the upstream node did not produce that field"
-    raise AppException(
-        error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-        error_detail=f"{detail}. {stage}: {error}",
-    ) from error
+    logger.error("%s: %s. Reported as: %s", stage, error, detail)
+    raise AppException(error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID, error_detail=detail) from error
 
 
 def _infer_batch_size(normalized_inputs: Dict[str, List[Any]]) -> int:

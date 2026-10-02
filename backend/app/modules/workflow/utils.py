@@ -31,6 +31,7 @@ _EXIT_GRACE_SECONDS = 5
 _MAX_RESULT_BYTES = 32 * 1024 * 1024
 # Captured stdout/stderr keep this much, half head and half tail, so prints never trip the result cap
 _MAX_STREAM_CHARS = 1024 * 1024
+_MAX_ERROR_CHARS = 4096
 # Preloaded by the fork server; 3.12 ignores "__main__", so children re-run the entry script as __mp_main__
 _FORKSERVER_PRELOAD = ["__main__", "numpy", "pandas", "app.modules.workflow.utils"]
 
@@ -63,11 +64,17 @@ def _error_dict(message: str) -> Dict[str, Any]:
     return {"error": message, "traceback": "", "output": "", "errors": ""}
 
 
+def _cut_error(text: str) -> str:
+    if len(text) <= _MAX_ERROR_CHARS:
+        return text
+    return f"{text[:_MAX_ERROR_CHARS]}\n... ({len(text) - _MAX_ERROR_CHARS} chars cut)"
+
+
 def script_error(response: Dict[str, Any]) -> str:
     if response.get("error"):
-        return str(response["error"])
-    if response.get("script_failed") and response.get("result") is None:
-        return str(response["errors"])
+        return _cut_error(str(response["error"]))
+    if response.get("script_error") and response.get("result") is None:
+        return _cut_error(str(response["script_error"]))
     return ""
 
 
@@ -174,7 +181,7 @@ def _subprocess_worker(
             errors = errors + "\nGlobal errors: " + str(global_errors)
         payload = {"result": result, "output": output, "errors": errors}
         if str(global_errors or "").startswith(_SCRIPT_ERROR_PREFIX) and callable(namespace.get("executable_function")):
-            payload["script_failed"] = True
+            payload["script_error"] = str(global_errors)
 
     except SandboxViolation as sv:
         payload = {
