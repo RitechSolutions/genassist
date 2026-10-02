@@ -23,6 +23,7 @@ import {
   getAllNodeSchemas,
   testNode,
   testWorkflow,
+  getTrainDataSourceTestFailureMessage,
   generatePythonTemplate,
   createWorkflowFromWizard,
   createWorkflowFromBuilder,
@@ -104,6 +105,88 @@ describe("workflows service", () => {
     await testWorkflow(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload, {
       timeout: 1000,
+    });
+  });
+
+  describe("getTrainDataSourceTestFailureMessage", () => {
+    it("returns the client-safe Train Data Source failure without the engine prefix", () => {
+      const response = {
+        status: "success",
+        input: "",
+        output: "",
+        has_failures: true,
+        failed_nodes: [
+          {
+            node_id: "test-trainDataSourceNode-1",
+            name: "Train Data Source",
+            type: "trainDataSourceNode",
+            error:
+              "Error executing node test-trainDataSourceNode-1: The extract exceeds the configured row limit.",
+          },
+        ],
+      };
+
+      expect(getTrainDataSourceTestFailureMessage(response)).toBe(
+        "The extract exceeds the configured row limit."
+      );
+    });
+
+    it("ignores failed nodes of other types", () => {
+      const response = {
+        status: "success",
+        input: "",
+        output: "",
+        has_failures: true,
+        failed_nodes: [
+          {
+            node_id: "test-agentNode-1",
+            name: "Agent",
+            type: "agentNode",
+            error: "Error executing node test-agentNode-1: Agent failed.",
+          },
+        ],
+      };
+
+      expect(getTrainDataSourceTestFailureMessage(response)).toBeNull();
+    });
+
+    it.each([
+      "error_500",
+      "Error executing node test-trainDataSourceNode-1: error_500",
+      "An internal server error occurred. Please try again later.",
+      "",
+    ])("replaces a non-actionable failure (%s) with safe guidance", (error) => {
+      const response = {
+        status: "success",
+        input: "",
+        output: "",
+        has_failures: true,
+        failed_nodes: [
+          {
+            node_id: "test-trainDataSourceNode-1",
+            name: "Train Data Source",
+            type: "trainDataSourceNode",
+            error,
+          },
+        ],
+      };
+
+      expect(getTrainDataSourceTestFailureMessage(response)).toBe(
+        "Train Data Source could not complete the test. Check its configuration and try again."
+      );
+    });
+
+    it("returns null when the response contains no Train Data Source failure", () => {
+      expect(
+        getTrainDataSourceTestFailureMessage({
+          status: "success",
+          input: "",
+          output: "ok",
+          has_failures: false,
+          failed_nodes: [],
+        })
+      ).toBeNull();
+      expect(getTrainDataSourceTestFailureMessage(null)).toBeNull();
     });
   });
 
