@@ -7,6 +7,7 @@ vi.mock("@/config/api", () => ({
   formatUploadOrNetworkError: (e: unknown) => (e instanceof Error ? e.message : String(e)),
   API_DEFAULT_TIMEOUT_MS: 1000,
   API_UPLOAD_TIMEOUT_MS: 1000,
+  API_WORKFLOW_TEST_TIMEOUT_MS: 1000,
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn(), request: vi.fn() },
 }));
 
@@ -93,13 +94,17 @@ describe("workflows service", () => {
   it("testNode POSTs the node test payload", async () => {
     const payload = { input_data: {}, node_type: "agent", node_config: {} };
     await testNode(payload as never);
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-node", payload);
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-node", payload, {
+      timeout: 1000,
+    });
   });
 
   it("testWorkflow POSTs the workflow test payload", async () => {
     const payload = { input_data: {}, workflow: { id: "w" } };
     await testWorkflow(payload as never);
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload);
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload, {
+      timeout: 1000,
+    });
   });
 
   it("generatePythonTemplate POSTs schema and prompt", async () => {

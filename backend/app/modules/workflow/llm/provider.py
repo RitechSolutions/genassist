@@ -18,6 +18,7 @@ from app.core.utils.enums.bedrock_fine_tuning_enum import (
     BedrockJobStatus,
 )
 from app.schemas.dynamic_form_schemas import LLM_FORM_SCHEMAS_DICT
+from app.schemas.llm import LlmProviderRead
 from app.services.llm_providers import LlmProviderService
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
 from app.services.bedrock_fine_tuning import BedrockFineTuningService
@@ -301,6 +302,12 @@ class LLMProvider:
         else:
             llm_provider = await llm_provider_service.get_by_id(model_id)
 
+        return await self._build_from_provider(llm_provider, prompt_caching_enabled)
+
+    async def get_model_from_provider(
+        self, llm_provider: LlmProviderRead, prompt_caching_enabled: bool = False
+    ) -> BaseChatModel:
+        """Public entry; caller passes provider row to report model provenance"""
         return await self._build_from_provider(llm_provider, prompt_caching_enabled)
 
     async def _build_one(self, model_id: str, prompt_caching_enabled: bool = False) -> BaseChatModel:

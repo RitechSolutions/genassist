@@ -9,9 +9,10 @@ from starlette.status import (
 from uuid import UUID
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.indentifiers import get_customer_id
-from app.db.models.webhook import WebhookModel
+from app.db.models.webhook import WebhookModel, WebhookType
 from app.modules.integration.slack import SlackConnector, verify_slack_request
 from app.repositories.webhook_repository import WebhookRepository
+from app.services.workflow_trigger import WorkflowTriggerService
 from app.schemas.conversation_transcript import (
     InProgConvTranscrUpdate,
     TranscriptSegmentInput,
@@ -39,16 +40,27 @@ logger = logging.getLogger(__name__)
 
 
 @inject
+def _reject_trigger_type(webhook_type: Optional[str]) -> None:
+    """Workflow-trigger endpoints can only be created via /workflow-triggers."""
+    if webhook_type == WebhookType.WORKFLOW_TRIGGER.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook Trigger endpoints are managed from the workflow builder",
+        )
+
+
 class WebhookService:
     """Service for managing webhooks."""
 
-    def __init__(self, repo: WebhookRepository):
+    def __init__(self, repo: WebhookRepository, trigger_service: WorkflowTriggerService):
         self.repo = repo
+        self.trigger_service = trigger_service
 
     async def create_webhook(
         self, data: WebhookCreate, webhook_url: str, webhook_id: Optional[UUID] = None
     ):
         """Create a new webhook."""
+        _reject_trigger_type(data.webhook_type)
         if data.secret:
             data.secret = encrypt_key(data.secret)
 
@@ -72,7 +84,7 @@ class WebhookService:
     async def get_webhook_by_id(
         self, webhook_id: UUID, decrypt_sensitive: Optional[bool] = False
     ):
-        data = await self.repo.get_by_id(webhook_id)
+        data = await self._get_channel_webhook(webhook_id)
         if data and decrypt_sensitive:
             if data.secret:
                 data.secret = decrypt_key(str(data.secret))
@@ -87,7 +99,10 @@ class WebhookService:
         return webhooks
 
     async def update_webhook(self, webhook_id: UUID, data: WebhookUpdate):
-        webhook = await self.repo.get_by_id(webhook_id)
+        _reject_trigger_type(data.webhook_type)
+        webhook = await self._get_channel_webhook(webhook_id)
+        if not webhook:
+            return None
 
         if data.secret and data.secret != webhook.secret:
             data.secret = encrypt_key(data.secret)
@@ -96,7 +111,21 @@ class WebhookService:
         return data
 
     async def delete_webhook(self, webhook_id: UUID) -> bool:
+        if not await self._get_channel_webhook(webhook_id):
+            return False
         return await self.repo.delete(webhook_id)
+
+    async def _get_channel_webhook(self, webhook_id: UUID):
+        """Fetch a webhook for the generic CRUD API.
+
+        Webhook Trigger node endpoints are hidden here (treated as not found):
+        they are managed only through /workflow-triggers, which enforces the
+        Workflow permissions. Letting the login-only /webhooks routes read or
+        edit them would bypass those checks (e.g. overwrite the secret)."""
+        webhook = await self.repo.get_by_id(webhook_id)
+        if webhook and webhook.webhook_type == WebhookType.WORKFLOW_TRIGGER.value:
+            return None
+        return webhook
 
     async def validate_webhook_request_and_execute(
         self,
@@ -109,6 +138,7 @@ class WebhookService:
         hub_challenge: Optional[str] = None,
         x_slack_signature: Optional[str] = None,
         x_slack_request_timestamp: Optional[str] = None,
+        raw_body: Optional[bytes] = None,
     ):
         # Lookup webhook by ID
         webhook = await self.get_webhook_by_id_full(webhook_id)
@@ -121,7 +151,13 @@ class WebhookService:
         # Route to type-specific handler
         webhook_type = webhook.webhook_type or "generic"
 
-        if webhook_type == "slack":
+        if webhook_type == "workflow_trigger":
+            # Inbound endpoint of a Webhook Trigger node: queue a workflow run.
+            body = raw_body if raw_body is not None else payload.encode("utf-8")
+            return await self.trigger_service.handle_delivery(
+                webhook, request, body, tenant_id
+            )
+        elif webhook_type == "slack":
             return await self._handle_slack_webhook(
                 webhook,
                 request,

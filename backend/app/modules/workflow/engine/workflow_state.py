@@ -98,6 +98,8 @@ class WorkflowState:
         """
         self.thread_id = thread_id
         self.registry_managed = registry_managed
+        # Set by the engine when the run starts at an entry node; see engine/entry_nodes.py
+        self.entry_node_id: Optional[str] = None
         self.sub_agent_persistent_claimed = False
         if initial_values is None:
             initial_values = {}

@@ -13,7 +13,6 @@ import {
 import { FeatureFlag } from "@/interfaces/featureFlag.interface";
 import { toast } from "react-hot-toast";
 import { Button } from "@/components/button";
-import { Switch } from "@/components/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,11 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/alert-dialog";
-import {
-  getFeatureFlags,
-  deleteFeatureFlag,
-  updateFeatureFlag,
-} from "@/services/featureFlags";
+import { getFeatureFlags, deleteFeatureFlag } from "@/services/featureFlags";
 import { Badge } from "@/components/badge";
 
 interface FeatureFlagsCardProps {
@@ -91,25 +86,6 @@ export function FeatureFlagsCard({
       setIsDeleting(false);
       setIsDeleteDialogOpen(false);
       setFeatureFlagToDelete(null);
-    }
-  };
-
-  const handleToggleActive = async (flag: FeatureFlag) => {
-    if (!flag.id) return;
-
-    try {
-      await updateFeatureFlag(flag.id, {
-        ...flag,
-        is_active: flag.is_active === 1 ? 0 : 1,
-      });
-      toast.success(
-        `Feature flag ${
-          flag.is_active === 1 ? "deactivated" : "activated"
-        } successfully.`
-      );
-      fetchFeatureFlags();
-    } catch (error) {
-      toast.error("Failed to update feature flag status.");
     }
   };
 

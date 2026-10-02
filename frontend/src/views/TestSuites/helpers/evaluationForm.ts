@@ -269,7 +269,7 @@ const parseJsonObject = (
 
 // One forbidden phrase per textarea line: trimmed, empties dropped, ASCII-case dedupe.
 // The backend re-dedupes with Unicode casefold, which is the authoritative pass.
-const splitForbiddenPhrases = (text: string): string[] => {
+export const splitForbiddenPhrases = (text: string): string[] => {
   const phrases: string[] = [];
   const seen = new Set<string>();
   for (const line of text.split("\n")) {

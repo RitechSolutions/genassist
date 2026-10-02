@@ -21,6 +21,7 @@ class FakeReadRepo:
         options=None,
         timeseries_rows=None,
         last_unpriced=None,
+        last_fallback=None,
     ):
         self._summary = summary_row
         self._breakdown = breakdown_rows or []
@@ -28,11 +29,13 @@ class FakeReadRepo:
         self._options = options or {}
         self._timeseries = timeseries_rows or []
         self._last_unpriced = last_unpriced
+        self._last_fallback = last_fallback
         self.scope_resolutions = 0
         self.distinct_calls = []
         self.breakdown_calls = []
         self.pair_calls = []
         self.last_unpriced_calls = 0
+        self.last_fallback_calls = 0
         self.queries = []
 
     async def resolve_scope(self, params):
@@ -46,6 +49,10 @@ class FakeReadRepo:
     async def last_unpriced_at(self):
         self.last_unpriced_calls += 1
         return self._last_unpriced
+
+    async def last_fallback_at(self):
+        self.last_fallback_calls += 1
+        return self._last_fallback
 
     async def timeseries(self, params, scope):
         self.queries.append("timeseries")
@@ -124,8 +131,9 @@ def _service(
     timeseries_rows=None,
     workflows=None,
     last_unpriced=None,
+    last_fallback=None,
 ):
-    repo = FakeReadRepo(summary_row, breakdown_rows, scope, options, timeseries_rows, last_unpriced)
+    repo = FakeReadRepo(summary_row, breakdown_rows, scope, options, timeseries_rows, last_unpriced, last_fallback)
     return LlmUsageReadService(repo, FakeAgentRepo(agents), FakeWorkflowRepo(workflows)), repo
 
 
@@ -236,6 +244,33 @@ async def test_empty_scope_summary_has_no_watermark():
     summ = await service.get_summary(_params())
     assert summ.last_unpriced_at is None
     assert repo.last_unpriced_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_fallback_calls_expose_the_tenant_wide_watermark():
+    watermark = datetime(2026, 9, 23, 9, 15, tzinfo=timezone.utc)
+    row = _row(calls=3, configured=1, fallback=2)
+    service, repo = _service(summary_row=row, last_fallback=watermark)
+    summ = await service.get_summary(_params())
+    assert summ.last_fallback_at == watermark
+    assert repo.last_fallback_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_no_fallback_calls_skips_the_watermark_query():
+    row = _row(calls=4, configured=4, fallback=0)
+    service, repo = _service(summary_row=row, last_fallback=datetime.now(timezone.utc))
+    summ = await service.get_summary(_params())
+    assert summ.last_fallback_at is None
+    assert repo.last_fallback_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_empty_scope_summary_has_no_fallback_watermark():
+    service, repo = _service(scope=[])
+    summ = await service.get_summary(_params())
+    assert summ.last_fallback_at is None
+    assert repo.last_fallback_calls == 0
 
 
 @pytest.mark.asyncio
@@ -420,6 +455,24 @@ async def test_breakdown_evaluation_method_falls_back_to_the_raw_purpose():
 
 
 @pytest.mark.asyncio
+async def test_breakdown_analyst_purpose_labels_the_two_analyst_calls():
+    rows = [
+        ("hostility_analysis", Decimal("0.12"), 0, 900, 30),
+        ("conversation_analysis", Decimal("0.08"), 0, 600, 3),
+        ("some_future_purpose", Decimal("0.01"), 0, 20, 1),
+        (None, Decimal("0"), 0, 0, 1),
+    ]
+    service, *_ = _service(breakdown_rows=rows)
+    resp = await service.get_breakdown(_params(), "analyst_purpose")
+    assert {i.key: i.label for i in resp.items} == {
+        "hostility_analysis": "Hostility Check",
+        "conversation_analysis": "KPI Scoring",
+        "some_future_purpose": "some_future_purpose",
+        "unknown": "Unknown",
+    }
+
+
+@pytest.mark.asyncio
 async def test_llm_dimension_groups_the_provider_model_pair():
     rows = [("openai · gpt-4o", Decimal("0.30"), 0, 500, 3)]
     service, repo = _service(breakdown_rows=rows)
@@ -432,7 +485,12 @@ async def test_llm_dimension_groups_the_provider_model_pair():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "dimension,source_type",
-    [("llm", "workflow"), ("evaluation_method", "evaluation"), ("node", "workflow")],
+    [
+        ("llm", "workflow"),
+        ("evaluation_method", "evaluation"),
+        ("analyst_purpose", "llm_analyst"),
+        ("node", "workflow"),
+    ],
 )
 async def test_drill_down_dimensions_carry_their_source_type_filter(dimension, source_type):
     service, repo = _service(breakdown_rows=[])
@@ -592,7 +650,9 @@ async def test_breakdown_node_passes_the_drill_down_filter_to_the_pairs_query():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("dimension", ["provider", "model", "agent", "source", "llm", "evaluation_method"])
+@pytest.mark.parametrize(
+    "dimension", ["provider", "model", "agent", "source", "llm", "evaluation_method", "analyst_purpose"]
+)
 async def test_removed_stays_null_on_every_other_dimension(dimension):
     service, _ = _service(breakdown_rows=[("openai", Decimal("0.10"), 0, 100, 1)])
     resp = await service.get_breakdown(_params(), dimension)

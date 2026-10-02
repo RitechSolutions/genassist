@@ -1,6 +1,8 @@
 """Unit tests for trace-aware grading (process evaluation)."""
 
+import sys
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -2141,6 +2143,20 @@ class TestSemanticEvaluators:
         assert result.verdict == "entails"
         assert result.entail_score > 0.9
         assert result.chunks_evaluated > 1
+
+    def test_a_failed_load_is_recorded_separately_from_never_having_loaded(self, monkeypatch):
+        stub = SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(from_pretrained=MagicMock(side_effect=OSError("no hub"))),
+            AutoModelForSequenceClassification=SimpleNamespace(from_pretrained=MagicMock()),
+        )
+        monkeypatch.setitem(sys.modules, "transformers", stub)
+        model = EvaluationNLIModel()
+
+        assert model.load_failed(DEFAULT_NLI_MODEL) is False
+
+        assert model._lazy_init(DEFAULT_NLI_MODEL) is False
+        assert model.is_loaded(DEFAULT_NLI_MODEL) is False
+        assert model.load_failed(DEFAULT_NLI_MODEL) is True
 
     def test_nli_evaluation_short_circuits_empty_evidence(self, monkeypatch):
         model = EvaluationNLIModel()

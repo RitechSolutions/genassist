@@ -20,7 +20,7 @@ export const TRAIN_DATA_SOURCE_NODE_DEFINITION: NodeTypeDefinition<TrainDataSour
   {
     type: "trainDataSourceNode",
     label: "Train Data Source",
-    description: "Fetch training data from datasources or upload CSV files",
+    description: "Fetch training data from datasources or upload CSV, Excel, JSON, or Parquet files",
     helpContent: TRAIN_DATA_SOURCE_HELP_CONTENT,
     category: "training",
     icon: "Database",
@@ -140,6 +140,8 @@ export const TRAIN_MODEL_NODE_DEFINITION: NodeTypeDefinition<TrainModelNodeData>
       validationSplit: 0.2,
       splitMethod: "random",
       dateColumn: "",
+      hyperparameterOptimization: "none",
+      optimizationConfig: {},
       handlers: [
         {
           id: "input",

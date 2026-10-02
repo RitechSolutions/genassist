@@ -75,12 +75,19 @@ export const MLModelInferenceDialog: React.FC<
     setSelectedModel(model || null);
 
     if (model) {
-      // Initialize inference inputs based on the model's features
+      // Initialize inference inputs based on the model's features, plus any
+      // extra inputs it needs beyond those (currently just the ratio-target
+      // baseline column, if this model was trained with one).
       const newInferenceInputs: Record<string, string> = {};
       if (model.features) {
         model.features.forEach((key) => {
           newInferenceInputs[key] = values.inferenceInputs[key] || "";
         });
+      }
+      const baselineColumn = model.inference_params?.ratioBaselineColumn;
+      if (baselineColumn) {
+        newInferenceInputs[baselineColumn] =
+          values.inferenceInputs[baselineColumn] || "";
       }
       setField("inferenceInputs", newInferenceInputs);
     }
@@ -191,6 +198,47 @@ export const MLModelInferenceDialog: React.FC<
               </div>
             </div>
           )}
+
+        {/* Ratio-target baseline value - this model's predictions are a
+            ratio (target / baseline) at training time, so the real-unit
+            prediction can't be reconstructed without this column's raw
+            value, even though it isn't one of the model's trained features. */}
+        {selectedModel?.inference_params?.ratioBaselineColumn && (
+          <div className="space-y-2">
+            <Label className="text-sm font-semibold">
+              Ratio Target Baseline
+            </Label>
+            <div className="space-y-1 pl-2 border-l-2 border-border">
+              <Label
+                htmlFor={`param-${selectedModel.inference_params.ratioBaselineColumn}`}
+                className="text-xs text-muted-foreground"
+              >
+                {selectedModel.inference_params.ratioBaselineColumn}
+              </Label>
+              <DraggableInput
+                id={`param-${selectedModel.inference_params.ratioBaselineColumn}`}
+                value={
+                  values.inferenceInputs[
+                    selectedModel.inference_params.ratioBaselineColumn
+                  ] || ""
+                }
+                onChange={(e) =>
+                  updateInferenceInput(
+                    selectedModel.inference_params!.ratioBaselineColumn!,
+                    e.target.value
+                  )
+                }
+                placeholder="Add value"
+                className="text-sm"
+              />
+              <div className="text-xs text-muted-foreground">
+                This model was trained on a ratio target. Required to convert
+                the prediction back to a real-unit value - use{" "}
+                {"{{variable}}"} for dynamic values.
+              </div>
+            </div>
+          </div>
+        )}
 
         {!selectedModel && !loading && (
           <div className="text-sm text-muted-foreground text-center py-4">

@@ -4,37 +4,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
-
-function toEpochMs(ct: string | number | undefined | null): number {
-  if (ct == null) return 0;
-  if (typeof ct === "number") return ct;
-  const t = new Date(ct).getTime();
-  return isNaN(t) ? 0 : t;
-}
-
-function areMessagesEquivalent(
-  previous: TranscriptEntry[],
-  next: TranscriptEntry[]
-): boolean {
-  if (previous === next) return true;
-  if (previous.length !== next.length) return false;
-
-  for (let index = 0; index < previous.length; index += 1) {
-    const prevMsg = previous[index];
-    const nextMsg = next[index];
-
-    if (
-      prevMsg.type !== nextMsg.type ||
-      prevMsg.speaker !== nextMsg.speaker ||
-      prevMsg.text !== nextMsg.text ||
-      toEpochMs(prevMsg.create_time) !== toEpochMs(nextMsg.create_time)
-    ) {
-      return false;
-    }
-  }
-
-  return true;
-}
 import { Transcript, TranscriptEntry } from "@/interfaces/transcript.interface";
 import { useState } from "react";
 import { Database } from "lucide-react";

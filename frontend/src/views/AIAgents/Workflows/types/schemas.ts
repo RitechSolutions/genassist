@@ -238,16 +238,3 @@ const generateSampleValue = (fieldSchema: SchemaField): unknown => {
       return 'unknown_type_sample';
   }
 };
-
-/**
- * Generates sample output for a specific field
- * @param fieldName The name of the field
- * @param fieldSchema The field schema
- * @returns Sample value for the specific field
- */
-export const generateFieldSample = (fieldName: string, fieldSchema: SchemaField): unknown => {
-  if (fieldSchema.defaultValue !== undefined) {
-    return parseDefaultValue(fieldSchema.defaultValue, fieldSchema.type);
-  }
-  return generateSampleValue(fieldSchema);
-}; 

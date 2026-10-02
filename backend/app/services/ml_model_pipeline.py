@@ -258,6 +258,18 @@ class MLModelPipelineRunService:
             model_file_path = execution_output.get("model_file_path")
             target_column = execution_output.get("target_column")
             feature_columns = execution_output.get("feature_columns")
+            # A ratio-target model needs the baseline column's raw value at
+            # inference time to reconstruct a real-unit prediction, even
+            # though it was never one of the model's actual training
+            # features (see TrainModelNode's targetTransform and
+            # MLModelInferenceNode's reconstruction of it). Surfaced here so
+            # the inference UI knows to ask for it alongside the regular
+            # feature inputs.
+            target_transform = execution_output.get("target_transform")
+            inference_params = (
+                {"ratioBaselineColumn": target_transform.get("baselineColumn")}
+                if target_transform else None
+            )
             if model_file_path:
                 from app.schemas.ml_model import MLModelUpdate
 
@@ -266,6 +278,7 @@ class MLModelPipelineRunService:
                         pkl_file=model_file_path,
                         target_variable=target_column,
                         features=feature_columns,
+                        inference_params=inference_params,
                     )
                     await self.model_repository.update(
                         model_id, update_data.model_dump(exclude_unset=True)

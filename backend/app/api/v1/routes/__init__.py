@@ -63,6 +63,7 @@ from app.api.v1.routes import (
     workflow_builder,
     workflow_manager,
     workflow_schedule,
+    workflow_triggers,
     workflows,
     zendesk,
     support_tickets,
@@ -124,6 +125,11 @@ router.include_router(
     workflow_schedule.router,
     prefix="/genagent/workflow-schedules",
     tags=["Workflow Schedules"],
+)
+router.include_router(
+    workflow_triggers.router,
+    prefix="/genagent/workflow-triggers",
+    tags=["Workflow Triggers"],
 )
 
 router.include_router(reports.router, tags=["Reports"])

@@ -40,6 +40,38 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
+    async def get_case_index_for_suite(
+        self, suite_id: UUID
+    ) -> List[Tuple[UUID, Optional[UUID], Optional[int]]]:
+        """(id, source_conversation_id, turn_index) per live case, same order as get_all_for_suite.
+        No JSONB—efficient for counting and windowing"""
+        stmt = (
+            select(
+                TestCaseModel.id,
+                TestCaseModel.source_conversation_id,
+                TestCaseModel.turn_index,
+            )
+            .where(TestCaseModel.suite_id == str(suite_id))
+            .order_by(TestCaseModel.id)
+        )
+        result = await self.db.execute(stmt)
+        return [
+            (row.id, row.source_conversation_id, row.turn_index) for row in result.all()
+        ]
+
+    async def get_cases_by_ids(
+        self, suite_id: UUID, case_ids: List[UUID]
+    ) -> List[TestCaseModel]:
+        """Fetch rows by ids; applies suite scope (DbRepository.get_by_ids doesn't)"""
+        if not case_ids:
+            return []
+        stmt = select(TestCaseModel).where(
+            TestCaseModel.suite_id == str(suite_id),
+            TestCaseModel.id.in_(case_ids),
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
     async def delete_all_for_suite(self, suite_id: UUID) -> None:
         await self.db.execute(
             delete(TestCaseModel).where(TestCaseModel.suite_id == str(suite_id))

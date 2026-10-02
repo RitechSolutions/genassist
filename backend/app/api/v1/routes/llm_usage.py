@@ -105,7 +105,10 @@ async def get_timeseries(
     response_model=LlmUsageBreakdownResponse,
     response_model_exclude_none=True,
     dependencies=[Depends(auth), Depends(permissions(P.Dashboard.READ))],
-    summary="LLM cost / tokens grouped by provider, model, agent, usage type, LLM, evaluation method, or node",
+    summary=(
+        "LLM cost / tokens grouped by provider, model, agent, usage type, LLM, evaluation method, "
+        "analyst purpose, or node"
+    ),
 )
 async def get_breakdown(
     params: LlmUsageQueryParams = Depends(),
