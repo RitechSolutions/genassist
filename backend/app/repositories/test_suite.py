@@ -141,6 +141,11 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
             await self.db.refresh(case)
         return cases
 
+    async def add_many(self, cases: List[TestCaseModel]) -> None:
+        """Insert cases in one flush without reading them back, for large imports."""
+        self.db.add_all(cases)
+        await self.db.flush()
+
 
 @inject
 class TestRunRepository(DbRepository[TestRunModel]):

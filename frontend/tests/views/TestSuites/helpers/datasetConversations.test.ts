@@ -107,7 +107,19 @@ describe("groupCasesByConversation", () => {
       // its turns replay together — so only the tag tells the two apart.
       tc({ id: "m0", source_conversation_id: "thread-1", turn_index: 0 }),
     ]);
-    expect(groups.map((g) => g.isImported)).toEqual([true, false]);
+    expect(groups.map((g) => g.origin)).toEqual(["conversation", "manual"]);
+  });
+
+  it("marks a group imported from a file by its own tag", () => {
+    const groups = groupCasesByConversation([
+      tc({
+        id: "f0",
+        source_conversation_id: "file-1",
+        turn_index: 0,
+        tags: ["refund", "imported-file"],
+      }),
+    ]);
+    expect(groups[0].origin).toBe("file");
   });
 
   it("does not hoist imported conversations above hand-authored ones", () => {
@@ -127,7 +139,7 @@ describe("groupCasesByConversation", () => {
       "conv-1",
       "thread-2",
     ]);
-    expect(groups.map((g) => g.isImported)).toEqual([false, true, false]);
+    expect(groups.map((g) => g.origin)).toEqual(["manual", "conversation", "manual"]);
   });
 
   it("keeps a hand-authored thread's turns in one group, ordered by turn", () => {
@@ -136,7 +148,7 @@ describe("groupCasesByConversation", () => {
       tc({ id: "m0", source_conversation_id: "thread-1", turn_index: 0 }),
     ]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].isImported).toBe(false);
+    expect(groups[0].origin).toBe("manual");
     expect(groups[0].cases.map((c) => c.id)).toEqual(["m0", "m1"]);
   });
 

@@ -4,16 +4,37 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  FileJson,
   MessagesSquare,
+  PenLine,
   Pencil,
   Plus,
   Trash2,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/button";
 import JsonViewer from "@/components/JsonViewer";
 import type { TestCase } from "@/interfaces/testSuite.interface";
-import type { ConversationGroup } from "../helpers/datasetConversations";
+import type {
+  ConversationGroup,
+  ConversationOrigin,
+} from "../helpers/datasetConversations";
 import { answerOf, hasExpected, isPlainRecord, questionOf } from "../helpers/recordFields";
+
+// Each origin has its own shape and colour, so neither cue carries it alone.
+const ORIGINS: Record<
+  ConversationOrigin,
+  { label: string; Icon: LucideIcon; iconClass: string }
+> = {
+  conversation: {
+    label: "Imported from a real conversation",
+    Icon: MessagesSquare,
+    iconClass: "text-blue-600",
+  },
+  file: { label: "Imported from a file", Icon: FileJson, iconClass: "text-violet-600" },
+  // The line under the pen keeps it apart from the turns' pencil edit buttons.
+  manual: { label: "Written by hand", Icon: PenLine, iconClass: "text-muted-foreground" },
+};
 
 // Plain text when the engine reads the field as text, raw JSON otherwise. The
 // label follows the view, since a raw object is not a question or an answer.
@@ -102,15 +123,12 @@ export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = (
   onSetTurnsExpanded,
   onAddTurn,
 }) => {
-  const isImported = group.isImported;
   const turnLabel = `${group.cases.length} turn${group.cases.length === 1 ? "" : "s"}`;
   // Named by its own id, which never changes. A position-based number would
   // shift every time a conversation above it was deleted.
   const shortId = (group.conversationId ?? group.cases[0]?.id ?? "").slice(-6);
   const name = `Conversation #${shortId}`;
-  const origin = isImported
-    ? "Imported from a real conversation"
-    : "Written by hand";
+  const origin = ORIGINS[group.origin];
   // Both actions can be meaningful at once when only some turns are open, so
   // each is offered separately and disabled only when it would do nothing.
   const allTurnsExpanded = group.cases.every((entry) => expandedRecords.has(entry.id ?? ""));
@@ -131,12 +149,14 @@ export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = (
               <ChevronDown className="h-4 w-4" />
             )}
           </span>
-          {/* Both are conversations, so colour carries the distinction. The
-              label is there for anyone who cannot use the colour. */}
-          <span className="flex shrink-0" title={origin} aria-label={origin}>
-            <MessagesSquare
-              className={`h-4 w-4 ${isImported ? "text-blue-600" : "text-muted-foreground"}`}
-            />
+          {/* The label backs the icon up as a tooltip and for screen readers. */}
+          <span
+            role="img"
+            className="flex shrink-0"
+            title={origin.label}
+            aria-label={origin.label}
+          >
+            <origin.Icon className={`h-4 w-4 ${origin.iconClass}`} />
           </span>
           <div className="min-w-0 text-sm font-medium truncate">{name}</div>
           {/* Describes the conversation, so it sits with the title rather than

@@ -1,7 +1,7 @@
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
@@ -13,10 +13,12 @@ from app.schemas.test_suite import (
     ImportCasesFromConversationRequest,
     ImportCasesFromConversationsRequest,
     ImportCasesFromConversationsResult,
+    ImportCasesFromFilesResult,
     TestCase,
     TestCaseCreate,
     TestCaseUpdate,
 )
+from app.services.dataset_file import read_uploads
 from app.services.test_suite import TestSuiteService
 
 
@@ -89,6 +91,35 @@ async def import_cases_from_conversations(
     return await service.import_cases_from_conversations(
         suite_id, data.conversation_ids, data.replace
     )
+
+
+@router.post(
+    "/suites/{suite_id}/cases/import-from-files/preview",
+    response_model=ImportCasesFromFilesResult,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+)
+async def preview_cases_from_files(
+    suite_id: UUID,
+    files: List[UploadFile] = File(...),
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """Report what importing these dataset files would add, without saving anything."""
+    return await service.preview_cases_from_files(suite_id, await read_uploads(files))
+
+
+@router.post(
+    "/suites/{suite_id}/cases/import-from-files",
+    response_model=ImportCasesFromFilesResult,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+)
+async def import_cases_from_files(
+    suite_id: UUID,
+    files: List[UploadFile] = File(...),
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """Add the conversations in these dataset files; unreadable files are reported, not fatal."""
+    return await service.import_cases_from_files(suite_id, await read_uploads(files))
 
 
 @router.get(

@@ -14,6 +14,7 @@ class ErrorKey(Enum):
     RULE_CONFIG_INVALID = "rule_config_invalid"
     EVALUATION_TARGET_NOT_A_VERSION = "evaluation_target_not_a_version"
     EVALUATION_BUNDLE_INVALID = "evaluation_bundle_invalid"
+    DATASET_FILE_IMPORT_INVALID = "dataset_file_import_invalid"
     NOT_FOUND = "not_found"
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
@@ -203,6 +204,7 @@ ERROR_MESSAGES = {
         ErrorKey.RULE_CONFIG_INVALID: "The evaluation rule configuration is not valid.",
         ErrorKey.EVALUATION_TARGET_NOT_A_VERSION: "The target workflow is not a version of the evaluation's workflow.",
         ErrorKey.EVALUATION_BUNDLE_INVALID: "The evaluation bundle is invalid or could not be imported.",
+        ErrorKey.DATASET_FILE_IMPORT_INVALID: "The dataset files could not be imported.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",

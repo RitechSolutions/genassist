@@ -3,16 +3,26 @@ import type { TestCase } from "@/interfaces/testSuite.interface";
 /** Tag the backend stamps on cases created by conversation import. */
 export const IMPORTED_TAG = "imported";
 
+/** Tag the backend stamps on cases imported from a dataset file. */
+export const FILE_IMPORTED_TAG = "imported-file";
+
+/** Where a conversation's turns came from. */
+export type ConversationOrigin = "conversation" | "file" | "manual";
+
 export interface ConversationGroup {
   key: string;
   /** The replay thread. Null only for legacy records with no thread at all. */
   conversationId: string | null;
-  /** True when these turns came from a real conversation rather than by hand.
-   *  Hand-authored threads also carry a conversationId — it is what makes their
-   *  turns replay as one memory thread — so the tag is what tells them apart. */
-  isImported: boolean;
+  /** Read from the tags, since hand-written threads carry a conversationId too. */
+  origin: ConversationOrigin;
   cases: TestCase[];
 }
+
+const originOf = (entry: TestCase): ConversationOrigin => {
+  if (entry.tags?.includes(IMPORTED_TAG)) return "conversation";
+  if (entry.tags?.includes(FILE_IMPORTED_TAG)) return "file";
+  return "manual";
+};
 
 /** When a conversation joined the dataset: its earliest turn. */
 const addedAt = (group: ConversationGroup): number =>
@@ -41,7 +51,7 @@ export const groupCasesByConversation = (cases: TestCase[]): ConversationGroup[]
       groups.set(key, {
         key,
         conversationId,
-        isImported: !!entry.tags?.includes(IMPORTED_TAG),
+        origin: originOf(entry),
         cases: [entry],
       });
     }
