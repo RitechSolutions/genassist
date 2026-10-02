@@ -1,22 +1,25 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AlertCircle, Loader2 } from "lucide-react";
+
+import { Button } from "@/components/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
-import { Role } from "@/interfaces/role.interface";
-import { createRole, updateRole } from "@/services/roles";
-import { Permission } from "@/interfaces/permission.interface";
-import {
-  getAllPermissions,
-  saveRolePermissions,
-  getPermissionsByRoleId,
-} from "@/services/permission";
-import { Checkbox } from "@/components/checkbox";
-import { Skeleton } from "@/components/skeleton";
 import { FormField } from "@/components/ui/form-field";
 import { CRUDDialog } from "@/components/ui/crud-dialog";
 import { extractErrorMessage } from "@/helpers/apiError";
-import { Loader2 } from "lucide-react";
-import { toast } from "react-hot-toast";
+import { Permission } from "@/interfaces/permission.interface";
+import { Role } from "@/interfaces/role.interface";
+import {
+  getAllPermissions,
+  getPermissionsByRoleId,
+  saveRolePermissions,
+} from "@/services/permission";
+import { createRole, updateRole } from "@/services/roles";
+import { PermissionPicker } from "@/views/Roles/components/PermissionPicker";
+
+/** The one role the API lets hold admin-reserved permissions. */
+const ADMIN_ROLE_NAME = "admin";
 
 interface RoleDialogProps {
   isOpen: boolean;
@@ -41,57 +44,69 @@ export function RoleDialog({
   mode = "create",
 }: RoleDialogProps) {
   const [allPermissions, setAllPermissions] = useState<Permission[]>([]);
-  const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>(
-    []
-  );
+  const [selectedPermissionIds, setSelectedPermissionIds] = useState<string[]>([]);
   const [permissionsLoading, setPermissionsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [areAllPermissionsSelected, setAreAllPermissionsSelected] =
-    useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const handleToggleAllPermissions = () => {
-    if (areAllPermissionsSelected) {
+  // Guards against a slow response from a previously opened role landing in the
+  // dialog after it has been reopened for a different one.
+  const requestIdRef = useRef(0);
+  // Set once a role has been created but its permissions failed to save, so a
+  // retry updates that role instead of creating a second one.
+  const createdRoleIdRef = useRef<string | null>(null);
+
+  const loadPermissions = async () => {
+    const requestId = ++requestIdRef.current;
+    const isCurrent = () => requestId === requestIdRef.current;
+
+    setPermissionsLoading(true);
+    setLoadError(null);
+
+    try {
+      const permissions = await getAllPermissions();
+      const rolePermissionIds = roleToEdit?.id
+        ? await getPermissionsByRoleId(roleToEdit.id)
+        : [];
+
+      if (!isCurrent()) return;
+      setAllPermissions(permissions);
+      setSelectedPermissionIds(rolePermissionIds);
+    } catch (error) {
+      if (!isCurrent()) return;
+      // Never fall back to an empty selection: saving that would wipe the
+      // role's real permissions.
+      setAllPermissions([]);
       setSelectedPermissionIds([]);
-    } else {
-      setSelectedPermissionIds(allPermissions.map((permission) => permission.id));
+      setLoadError(
+        extractErrorMessage(error, "Could not load permissions. Close and try again.")
+      );
+    } finally {
+      // Must stay last: the picker mounts on this flip and decides which areas
+      // start expanded from the selection above.
+      if (isCurrent()) setPermissionsLoading(false);
     }
-
-    setAreAllPermissionsSelected(!areAllPermissionsSelected);
   };
 
   useEffect(() => {
-    if (isOpen) {
-      setAllPermissions([]);
-      setSelectedPermissionIds([]);
-      setSearchQuery("");
-      fetchPermissions();
+    if (!isOpen) {
+      // Invalidate any in-flight load so it cannot apply to the next open.
+      requestIdRef.current++;
+      return;
     }
+
+    createdRoleIdRef.current = null;
+    setAllPermissions([]);
+    setSelectedPermissionIds([]);
+    loadPermissions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, roleToEdit, mode]);
-
-  const fetchPermissions = async () => {
-    setPermissionsLoading(true);
-    try {
-      const permissions = await getAllPermissions(mode);
-      setAllPermissions(permissions);
-
-      if (roleToEdit && roleToEdit.id) {
-        const rolePermissionIds = await getPermissionsByRoleId(roleToEdit.id);
-        setSelectedPermissionIds(rolePermissionIds);
-      }
-    } catch (error) {
-      toast.error("Failed to fetch permissions.");
-    } finally {
-      setPermissionsLoading(false);
-    }
-  };
+  }, [isOpen, roleToEdit?.id, mode]);
 
   return (
     <CRUDDialog<RoleFormValues>
       open={isOpen}
       onOpenChange={onOpenChange}
       mode={mode}
-      maxWidth="700px"
+      maxWidth="720px"
       resetKey={roleToEdit?.id ?? null}
       initialValues={{ name: "", is_active: true }}
       editValues={
@@ -117,6 +132,7 @@ export function RoleDialog({
       validate={(values) =>
         !values.name.trim() ? { name: "Name is required." } : null
       }
+      submitDisabled={permissionsLoading || loadError !== null}
       onSubmit={async (values, { mode: m }) => {
         const roleData: Partial<Role> = {
           name: values.name.trim(),
@@ -124,8 +140,28 @@ export function RoleDialog({
         };
 
         if (m === "create") {
-          const createdRole = await createRole(roleData);
-          await saveRolePermissions(createdRole.id, selectedPermissionIds);
+          // A previous attempt may have created the role and then failed to
+          // save its permissions; reuse it so the retry can't duplicate it.
+          const pendingRoleId = createdRoleIdRef.current;
+          let roleId: string;
+
+          if (pendingRoleId) {
+            await updateRole(pendingRoleId, roleData);
+            roleId = pendingRoleId;
+          } else {
+            roleId = (await createRole(roleData)).id;
+            createdRoleIdRef.current = roleId;
+          }
+
+          try {
+            await saveRolePermissions(roleId, selectedPermissionIds);
+          } catch (error) {
+            // The role itself exists now, so let the list show it.
+            onRoleSaved();
+            throw error;
+          }
+
+          createdRoleIdRef.current = null;
           onRoleSaved();
         } else {
           if (!roleToEdit?.id) {
@@ -139,108 +175,53 @@ export function RoleDialog({
     >
       {({ values, setField, errors }) => (
         <>
-          <FormField id="name" label="Name" error={errors.name}>
-            <Input
-              id="name"
-              value={values.name}
-              onChange={(e) => setField("name", e.target.value)}
-              placeholder="Enter role name"
-              autoFocus
-            />
-          </FormField>
+          <div className="flex items-start gap-4">
+            <div className="flex-1">
+              <FormField id="name" label="Name" error={errors.name}>
+                <Input
+                  id="name"
+                  value={values.name}
+                  onChange={(e) => setField("name", e.target.value)}
+                  placeholder="Enter role name"
+                  autoFocus
+                />
+              </FormField>
+            </div>
 
-          {/* Permissions */}
+            <div className="flex flex-col gap-2 pt-1">
+              <Label htmlFor="is-active">Active</Label>
+              <Switch
+                id="is-active"
+                checked={values.is_active}
+                onCheckedChange={(checked) => setField("is_active", checked)}
+              />
+            </div>
+          </div>
+
           {permissionsLoading ? (
-            <div className="flex flex-col gap-4 items-center justify-center p-4">
-              <Loader2 className="w-6 h-6 animate-spin" />
-              <span className="text-sm text-muted-foreground font-medium">
+            <div className="flex flex-col items-center justify-center gap-4 rounded-md border p-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="text-sm font-medium text-muted-foreground">
                 Loading permissions...
               </span>
             </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="mb-3">
-                <Label className="mt-2 mb-0.5" htmlFor="permission-search">
-                  Search Permissions
-                </Label>
-                <Input
-                  className="mt-2"
-                  id="permission-search"
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label>Permissions</Label>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={areAllPermissionsSelected}
-                    onCheckedChange={handleToggleAllPermissions}
-                    className="h-4 w-4"
-                  />
-                  <span className="text-sm font-medium">Select All</span>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto pr-1">
-                {allPermissions.length === 0
-                  ? Array.from({ length: 6 }).map((_, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <Skeleton className="h-4 w-4 rounded-sm" />
-                        <Skeleton className="h-4 w-[150px]" />
-                      </div>
-                    ))
-                  : [...allPermissions]
-                      .filter((perm) =>
-                        perm.name
-                          .toLowerCase()
-                          .includes(searchQuery.toLowerCase())
-                      )
-                      .map((permission) => (
-                        <div
-                          key={permission.id}
-                          className="flex items-center gap-2"
-                        >
-                          <Checkbox
-                            id={`permission-${permission.id}`}
-                            checked={selectedPermissionIds.includes(
-                              permission.id
-                            )}
-                            onCheckedChange={(checked) => {
-                              const isChecked = checked === true;
-                              if (isChecked) {
-                                setSelectedPermissionIds((prev) => [
-                                  ...prev,
-                                  permission.id,
-                                ]);
-                              } else {
-                                setSelectedPermissionIds((prev) =>
-                                  prev.filter((id) => id !== permission.id)
-                                );
-                              }
-                            }}
-                          />
-                          <label
-                            className="break-all cursor-pointer"
-                            htmlFor={`permission-${permission.id}`}
-                          >
-                            {permission.name}
-                          </label>
-                        </div>
-                      ))}
-              </div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-6 text-center">
+              <AlertCircle className="h-6 w-6 text-destructive" />
+              <p className="text-sm text-muted-foreground">{loadError}</p>
+              <Button type="button" variant="outline" size="sm" onClick={loadPermissions}>
+                Retry
+              </Button>
             </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <Label htmlFor="is-active">Active</Label>
-            <Switch
-              id="is-active"
-              checked={values.is_active}
-              onCheckedChange={(checked) => setField("is_active", checked)}
+          ) : (
+            <PermissionPicker
+              key={roleToEdit?.id ?? "create"}
+              permissions={allPermissions}
+              selectedIds={selectedPermissionIds}
+              onChange={setSelectedPermissionIds}
+              canAssignAdminOnly={values.name.trim() === ADMIN_ROLE_NAME}
             />
-          </div>
+          )}
         </>
       )}
     </CRUDDialog>

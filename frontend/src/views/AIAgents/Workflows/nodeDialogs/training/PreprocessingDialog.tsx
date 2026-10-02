@@ -49,16 +49,16 @@ import {
   getStepTypeDisplayName,
   StepConfig,
   ColumnFilterStepConfig,
-  MissingValueHandlingStepConfig,
-  OutlierHandlingStepConfig,
-  CategoricalEncodingStepConfig,
-  FeatureEngineeringStepConfig,
+  RemoveDuplicatesStepConfig,
+  DropColumnOrRowStepConfig,
+  DropHighNullColumnsStepConfig,
+  ChangeDtypeStepConfig,
 } from "./preprocessingConfig";
 import { ColumnFilter } from "./components/ColumnFilter";
-import { MissingValueHandler } from "./components/MissingValueHandler";
-import { OutlierHandler } from "./components/OutlierHandler";
-import { CategoricalEncodingHandler } from "./components/CategoricalEncodingHandler";
-import { FeatureEngineeringHandler } from "./components/FeatureEngineeringHandler";
+import { RemoveDuplicatesStep } from "./components/RemoveDuplicatesStep";
+import { DropColumnOrRowStep } from "./components/DropColumnOrRowStep";
+import { DropHighNullColumnsStep } from "./components/DropHighNullColumnsStep";
+import { ChangeDtypeStep } from "./components/ChangeDtypeStep";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
@@ -447,9 +447,17 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   const getAnalysisResultForStep = (
     stepIndex: number
   ): CSVAnalysisResult | null => {
+    // Column names don't change from filling in a column's config (only from
+    // running the step), so this step's own "Run" result is an acceptable
+    // fallback when the file was never separately analyzed with the top
+    // "Analyze" button - without it, a step added first with no prior
+    // Analyze click would never show a column dropdown at all.
+    const ownStep = config.steps[stepIndex];
+    const ownResult = ownStep ? analysisResults[ownStep.id] : undefined;
+
     if (stepIndex === 0) {
       // First step uses initial analysis result
-      return analysisResults.initial || null;
+      return analysisResults.initial || ownResult || null;
     }
 
     // Get result from previous step
@@ -458,8 +466,9 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       return analysisResults[previousStep.id];
     }
 
-    // Fallback to initial if previous step hasn't been run
-    return analysisResults.initial || null;
+    // Fallback to initial, then to this step's own result, if the previous
+    // step hasn't been run
+    return analysisResults.initial || ownResult || null;
   };
 
   // Render step configuration component
@@ -483,76 +492,36 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
             }}
           />
         );
-      case "missing_value_handling":
+      case "remove_duplicates":
         return (
-          <MissingValueHandler
-            config={{
-              enabled: step.enabled,
-              columns: (step.config as MissingValueHandlingStepConfig).columns,
-            }}
-            analysisResult={stepAnalysisResult}
-            onChange={(missingValueConfig) => {
-              handleUpdateStepConfig(step.id, {
-                columns: missingValueConfig.columns,
-              });
-              if (missingValueConfig.enabled !== step.enabled) {
-                handleToggleStep(step.id, missingValueConfig.enabled);
-              }
-            }}
+          <RemoveDuplicatesStep
+            config={step.config as RemoveDuplicatesStepConfig}
+            availableColumns={stepAnalysisResult?.column_names || []}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
           />
         );
-      case "outlier_handling":
+      case "drop_column_or_row":
         return (
-          <OutlierHandler
-            config={{
-              enabled: step.enabled,
-              columns: (step.config as OutlierHandlingStepConfig).columns,
-            }}
-            analysisResult={stepAnalysisResult}
-            onChange={(outlierConfig) => {
-              handleUpdateStepConfig(step.id, {
-                columns: outlierConfig.columns,
-              });
-              if (outlierConfig.enabled !== step.enabled) {
-                handleToggleStep(step.id, outlierConfig.enabled);
-              }
-            }}
+          <DropColumnOrRowStep
+            config={step.config as DropColumnOrRowStepConfig}
+            availableColumns={stepAnalysisResult?.column_names || []}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
           />
         );
-      case "categorical_encoding":
+      case "drop_high_null_columns":
         return (
-          <CategoricalEncodingHandler
-            config={{
-              enabled: step.enabled,
-              columns: (step.config as CategoricalEncodingStepConfig).columns,
-            }}
+          <DropHighNullColumnsStep
+            config={step.config as DropHighNullColumnsStepConfig}
             analysisResult={stepAnalysisResult}
-            onChange={(encodingConfig) => {
-              handleUpdateStepConfig(step.id, {
-                columns: encodingConfig.columns,
-              });
-              if (encodingConfig.enabled !== step.enabled) {
-                handleToggleStep(step.id, encodingConfig.enabled);
-              }
-            }}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
           />
         );
-      case "feature_engineering":
+      case "change_dtype":
         return (
-          <FeatureEngineeringHandler
-            config={{
-              enabled: step.enabled,
-              features: (step.config as FeatureEngineeringStepConfig).features,
-            }}
-            analysisResult={stepAnalysisResult}
-            onChange={(feConfig) => {
-              handleUpdateStepConfig(step.id, {
-                features: feConfig.features,
-              });
-              if (feConfig.enabled !== step.enabled) {
-                handleToggleStep(step.id, feConfig.enabled);
-              }
-            }}
+          <ChangeDtypeStep
+            config={step.config as ChangeDtypeStepConfig}
+            availableColumns={stepAnalysisResult?.column_names || []}
+            onChange={(newConfig) => handleUpdateStepConfig(step.id, newConfig)}
           />
         );
       default:
@@ -562,10 +531,10 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
 
   const stepTypes: PreprocessingStepType[] = [
     "column_filter",
-    "missing_value_handling",
-    "outlier_handling",
-    "categorical_encoding",
-    "feature_engineering",
+    "remove_duplicates",
+    "drop_column_or_row",
+    "drop_high_null_columns",
+    "change_dtype",
   ];
 
   return (
@@ -718,7 +687,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                     Code runs in a sandboxed environment with limited resources
                   </li>
                   <li className="break-words">
-                    Maximum execution time: 30 seconds
+                    Maximum execution time: 10 minutes
                   </li>
                 </ul>
               </div>
@@ -775,55 +744,49 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                             <Play className="h-3 w-3 mr-1" />
                             {runningStepId === step.id ? "Running..." : "Run"}
                           </Button>
-                          {/* Hidden: Enable switch */}
-                          <div className="hidden">
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs">Enabled</Label>
-                              <Switch
-                                checked={step.enabled}
-                                onCheckedChange={(checked) =>
-                                  handleToggleStep(step.id, checked)
-                                }
-                              />
-                            </div>
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">Enabled</Label>
+                            <Switch
+                              checked={step.enabled}
+                              onCheckedChange={(checked) =>
+                                handleToggleStep(step.id, checked)
+                              }
+                            />
                           </div>
-                          {/* Hidden: Move up/down buttons */}
-                          <div className="hidden">
-                            <div className="flex items-center gap-1">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0"
-                                onClick={() => handleMoveStep(step.id, "up")}
-                                disabled={index === 0}
-                              >
-                                ↑
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0"
-                                onClick={() => handleMoveStep(step.id, "down")}
-                                disabled={index === config.steps.length - 1}
-                              >
-                                ↓
-                              </Button>
-                            </div>
-                          </div>
-                          {/* Delete button - only show on last step */}
-                          {index === config.steps.length - 1 && (
+                          <div className="flex items-center gap-1">
                             <Button
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="h-7 w-7 p-0 text-red-600 dark:text-red-400 hover:text-red-700"
-                              onClick={() => handleRemoveStep(step.id)}
+                              className="h-7 w-7 p-0"
+                              onClick={() => handleMoveStep(step.id, "up")}
+                              disabled={index === 0}
+                              title="Move step up"
                             >
-                              <X className="h-4 w-4" />
+                              ↑
                             </Button>
-                          )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              onClick={() => handleMoveStep(step.id, "down")}
+                              disabled={index === config.steps.length - 1}
+                              title="Move step down"
+                            >
+                              ↓
+                            </Button>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-red-600 dark:text-red-400 hover:text-red-700"
+                            onClick={() => handleRemoveStep(step.id)}
+                            title="Delete step"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
                       </div>
 

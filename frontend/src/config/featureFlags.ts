@@ -46,6 +46,8 @@ export const FeatureFlags = {
       CHAT_INPUT: 'workflow.chatInput',
       CONVERSATIONAL_TAB: 'workflow.conversationalTab',
       PROMPT_EDITOR: 'workflow.promptEditor',
+      // Webhook Trigger node: hidden from the palette until an admin enables it.
+      WEBHOOK_TRIGGER: 'workflow.webhookTrigger',
     },
 
     // Specific UI components within features
@@ -55,19 +57,3 @@ export const FeatureFlags = {
       TOOLS: 'components.tools',
     }
   };
-  
-  /**
-   * Helper function to get a nested feature flag key
-   * Example: getFeatureFlagKey(FeatureFlags.UI.MENU, 'userTypes')
-   * Returns: 'ui.menu.userTypes'
-   */
-  export function getFeatureFlagKey(prefix: string, suffix: string): string {
-    return `${prefix}.${suffix}`;
-  }
-  
-  /**
-   * For menu items specifically
-   */
-  export function getMenuItemKey(itemKey: string): string {
-    return getFeatureFlagKey(FeatureFlags.UI.MENU, itemKey);
-  } 

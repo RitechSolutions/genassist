@@ -4,14 +4,18 @@ Utility functions for ML workflow nodes.
 This module contains shared functionality used across ML-related nodes.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
-import logging
+import asyncio
 import csv
+import logging
 import math
 import os
-import pandas as pd
+from collections import deque
+from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import pandas as pd
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -23,6 +27,46 @@ logger = logging.getLogger(__name__)
 # depth, and a cap on total nodes visited (size). Cycles are caught separately.
 _MAX_SANITIZE_DEPTH = 200
 _MAX_SANITIZE_NODES = 1_000_000
+_STREAM_SOURCE_DETAILS = {
+    "query": ("query", "extract", "Add a filter or LIMIT"),
+    "csv": ("CSV file", "CSV file", "Use a smaller file"),
+    "file": ("training file", "training file", "Use a smaller file"),
+}
+
+
+# Model types that only support one task type, regardless of the target variable
+_CLASSIFICATION_ONLY_MODEL_TYPES: set[str] = {"logistic_regression"}
+_REGRESSION_ONLY_MODEL_TYPES = {"linear_regression", "ridge_regression", "lasso_regression", "elastic_net"}
+
+
+def is_classification_task(y: pd.Series, model_type: str) -> bool:
+    """
+    Determine whether a target column represents a classification or regression task.
+
+    Args:
+        y: Target variable series
+        model_type: Type of model (e.g. "logistic_regression", "linear_regression")
+
+    Returns:
+        True if classification, False if regression
+    """
+    if model_type in _CLASSIFICATION_ONLY_MODEL_TYPES:
+        return True
+    if model_type in _REGRESSION_ONLY_MODEL_TYPES:
+        return False
+
+    # For others (e.g. xgboost, random_forest, svm, knn, neural_network), infer from target variable
+    # Boolean columns (e.g. from Parquet/Excel, which preserve a native bool dtype instead of
+    # coercing to strings) must be checked explicitly - they match neither the object nor the
+    # int64/int32 branch below and would otherwise silently fall through to regression.
+    if pd.api.types.is_bool_dtype(y):
+        return True
+    if y.dtype in ["int64", "int32"] and y.nunique() <= 20:
+        return True
+    if y.dtype == "object":
+        return True
+
+    return False
 
 
 def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budget: list | None = None) -> Any:
@@ -291,73 +335,277 @@ async def save_data_to_csv(
         ) from e
 
 
-def parse_csv_file(file_path: str) -> List[Dict[str, Any]]:
+async def stream_rows_to_csv(
+    row_chunks: AsyncIterable[Tuple[Sequence[str], Sequence[Sequence[Any]]]],
+    thread_id: str,
+    *,
+    max_rows: int,
+    max_bytes: int,
+    suffix: str = "",
+    source_kind: str = "query",
+) -> Tuple[str, List[str], int, List[Dict[str, Any]]]:
+    """Write streamed row chunks to one CSV with bounded memory usage."""
+    try:
+        source_label, byte_source_label, limit_hint = _STREAM_SOURCE_DETAILS[source_kind]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported stream source kind: {source_kind}") from exc
+
+    uploads_dir = DATA_VOLUME / "train" / thread_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = uploads_dir / f"{thread_id}_{timestamp}{suffix}.csv"
+    columns: List[str] = []
+    row_count = 0
+    preview_head: List[Tuple[Any, ...]] = []
+    preview_tail = deque(maxlen=3)
+
+    try:
+        with open(file_path, "w", newline="", encoding="utf-8") as handle:
+            writer = None
+            async for chunk_columns, rows in row_chunks:
+                current_columns = list(chunk_columns)
+                if writer is None:
+                    columns = current_columns
+                    writer = csv.writer(handle, lineterminator="\n")
+                    writer.writerow(columns)
+                    _enforce_stream_byte_limit(
+                        handle.tell(),
+                        max_bytes,
+                        byte_source_label,
+                        limit_hint,
+                    )
+                elif current_columns != columns:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail="Database column ordering changed while streaming the query.",
+                    )
+
+                observed_rows = row_count + len(rows)
+                if observed_rows > max_rows:
+                    raise AppException(
+                        error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
+                        error_detail=(
+                            f"The {source_label} returned more than {max_rows:,} rows, "
+                            f"which exceeds the limit of {max_rows:,}. {limit_hint}, or raise "
+                            "ML_EXTRACT_MAX_ROWS."
+                        ),
+                    )
+
+                for row in rows:
+                    normalized_row = tuple(
+                        None if isinstance(value, float) and math.isnan(value) else value
+                        for value in row
+                    )
+                    if len(preview_head) < 3:
+                        preview_head.append(normalized_row)
+                    else:
+                        preview_tail.append(normalized_row)
+                    writer.writerow(normalized_row)
+                row_count = observed_rows
+                _enforce_stream_byte_limit(
+                    handle.tell(),
+                    max_bytes,
+                    byte_source_label,
+                    limit_hint,
+                )
+
+            # A row stream should always yield its columns once. Keeping
+            # this fallback makes a broken/custom iterator produce a valid,
+            # deterministic empty CSV rather than no file contents at all.
+            if writer is None:
+                writer = csv.writer(handle, lineterminator="\n")
+
+    except BaseException:
+        file_path.unlink(missing_ok=True)
+        raise
+    finally:
+        close_chunks = getattr(row_chunks, "aclose", None)
+        if close_chunks is not None:
+            await close_chunks()
+
+    logger.info("Wrote %s rows to %s", f"{row_count:,}", file_path)
+    preview = sanitize_for_json(
+        [
+            dict(zip(columns, row))
+            for row in preview_head + list(preview_tail)
+        ]
+    )
+    return str(file_path), columns, row_count, preview
+
+
+def _enforce_stream_byte_limit(
+    observed_bytes: int,
+    max_bytes: int,
+    source_label: str = "extract",
+    limit_hint: str = "Add a filter or LIMIT",
+) -> None:
+    if observed_bytes <= max_bytes:
+        return
+    raise AppException(
+        error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
+        error_detail=(
+            f"The {source_label} is {observed_bytes:,} bytes, which exceeds "
+            f"the limit of {max_bytes:,} bytes. {limit_hint}, or raise "
+            "ML_EXTRACT_MAX_BYTES."
+        ),
+    )
+
+
+async def iter_csv_chunks(
+    file_path: str, chunk_size: int
+) -> AsyncIterable[Tuple[List[str], List[Tuple[Any, ...]]]]:
+    """Yield CSV columns and rows while keeping only one chunk in memory."""
+    with open(
+        file_path,
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline="",
+    ) as handle:
+        sample = handle.read(1024)
+        handle.seek(0)
+        try:
+            delimiter = csv.Sniffer().sniff(sample).delimiter
+        except Exception:
+            delimiter = ","
+
+        reader = csv.DictReader(handle, delimiter=delimiter)
+        columns = list(dict.fromkeys(reader.fieldnames or []))
+        yield columns, []
+
+        batch: List[Tuple[Any, ...]] = []
+        for row in reader:
+            if None in row:
+                raise AppException(
+                    error_key=ErrorKey.INVALID_FILE_FORMAT,
+                    error_detail=(
+                        f"Line {reader.line_num} has more values than the header has columns."
+                    ),
+                )
+            batch.append(
+                tuple(None if row[column] == "" else row[column] for column in columns)
+            )
+            if len(batch) >= chunk_size:
+                yield columns, batch
+                batch = []
+                await asyncio.sleep(0)
+
+        if batch:
+            yield columns, batch
+
+
+async def iter_record_chunks(
+    records: Sequence[Dict[str, Any]], chunk_size: int
+) -> AsyncIterable[Tuple[List[str], List[Tuple[Any, ...]]]]:
+    """Yield already-parsed records in bounded batches for the CSV writer."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer")
+
+    columns = list(records[0].keys()) if records else []
+    yield columns, []
+
+    for start in range(0, len(records), chunk_size):
+        batch = records[start : start + chunk_size]
+        yield columns, [tuple(record.get(column) for column in columns) for record in batch]
+        await asyncio.sleep(0)
+
+
+def parse_excel_file(file_path: str) -> List[Dict[str, Any]]:
     """
-    Parse CSV file with proper encoding detection and delimiter handling.
+    Parse an Excel (.xlsx) file into a list of row dictionaries.
 
     Args:
-        file_path: Path to CSV file
+        file_path: Path to the Excel file
 
     Returns:
-        List of dictionaries representing CSV rows
+        List of dictionaries representing spreadsheet rows
     """
-    # Common encodings to try
-    encodings = ["utf-8", "utf-8-sig", "latin-1", "cp1252", "iso-8859-1"]
-
-    # Read a sample to detect delimiter
-    sample_size = 1024
-    delimiter = ","
-
-    for encoding in encodings:
-        try:
-            with open(file_path, "r", encoding=encoding, errors="replace") as f:
-                sample = f.read(sample_size)
-                f.seek(0)
-
-                # Try to detect delimiter
-                try:
-                    sniffer = csv.Sniffer()
-                    dialect = sniffer.sniff(sample)
-                    delimiter = dialect.delimiter
-                    logger.debug(
-                        f"Detected delimiter: '{delimiter}' for encoding: {encoding}"
-                    )
-                except Exception:
-                    # Fall back to comma if detection fails
-                    delimiter = ","
-                    logger.debug(
-                        f"Using default delimiter ',' for encoding: {encoding}"
-                    )
-
-                # Parse the CSV
-                reader = csv.DictReader(f, delimiter=delimiter)
-                results = []
-
-                for row in reader:
-                    # Convert empty strings to None for consistency
-                    cleaned_row = {
-                        k: (v if v != "" else None) for k, v in row.items()
-                    }
-                    results.append(cleaned_row)
-
-                logger.info(f"Successfully parsed CSV with encoding: {encoding}")
-                return results
-
-        except Exception as e:
-            logger.debug(f"Failed to parse CSV with encoding {encoding}: {str(e)}")
-            continue
-
-    # If all encodings fail, try with pandas as fallback
     try:
-        logger.info("Trying pandas fallback for CSV parsing")
-        df = pd.read_csv(file_path, encoding="utf-8", on_bad_lines="skip")
+        df = pd.read_excel(file_path, engine="openpyxl")
         return df.to_dict("records")
     except Exception as e:
-        logger.error(f"Pandas fallback also failed: {str(e)}")
+        logger.error(f"Error parsing Excel file {file_path}: {str(e)}", exc_info=True)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Could not parse CSV file: {str(e)}",
+            error_detail=f"Could not parse Excel file: {str(e)}",
         ) from e
+
+
+def parse_json_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse a JSON file (array of records) into a list of row dictionaries.
+
+    Args:
+        file_path: Path to the JSON file
+
+    Returns:
+        List of dictionaries representing JSON records
+    """
+    try:
+        df = pd.read_json(file_path, orient="records")
+        return df.to_dict("records")
+    except Exception as e:
+        logger.error(f"Error parsing JSON file {file_path}: {str(e)}", exc_info=True)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Could not parse JSON file: {str(e)}",
+        ) from e
+
+
+def parse_parquet_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse a Parquet file into a list of row dictionaries.
+
+    Args:
+        file_path: Path to the Parquet file
+
+    Returns:
+        List of dictionaries representing Parquet rows
+    """
+    try:
+        df = pd.read_parquet(file_path)
+        return df.to_dict("records")
+    except Exception as e:
+        logger.error(f"Error parsing Parquet file {file_path}: {str(e)}", exc_info=True)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Could not parse Parquet file: {str(e)}",
+        ) from e
+
+
+_TRAINING_FILE_PARSERS = {
+    ".xlsx": parse_excel_file,
+    ".json": parse_json_file,
+    ".parquet": parse_parquet_file,
+}
+
+
+def parse_training_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse an uploaded training data file based on its extension.
+
+    Args:
+        file_path: Path to a .xlsx, .json, or .parquet file. CSV files use
+            ``iter_csv_chunks`` so they never materialize all rows at once.
+
+    Returns:
+        List of dictionaries representing file rows
+
+    Raises:
+        AppException: If the file extension is not supported
+    """
+    suffix = Path(file_path).suffix.lower()
+    parser = _TRAINING_FILE_PARSERS.get(suffix)
+    if not parser:
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=(
+                f"Unsupported file type: {suffix}. "
+                f"Supported types: {', '.join(_TRAINING_FILE_PARSERS)}"
+            ),
+        )
+    return parser(file_path)
 
 
 def resolve_csv_file_path(
@@ -511,19 +759,44 @@ async def execute_and_process_preprocessing_code(
     # Execute the preprocessing Python code
     response = await execute_python_code(python_code, params, wrap_code=True)
 
-    # Check for errors in response
-    errors = response.get("errors", None)
-    if errors and errors != "":
+    # A hard failure (syntax error, blocked import, timeout, uncaught
+    # exception) is reported under "error" (singular) - see
+    # _subprocess_worker/_execute_python_code_sync. This is the authoritative,
+    # specific message for why execution didn't produce a result, so surface
+    # it directly instead of falling through to a generic "Got: NoneType"
+    # guess based on whatever ended up in "result".
+    hard_error = response.get("error")
+    if hard_error:
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {errors}",
+                error_detail=f"Error executing preprocessing code: {hard_error}",
             )
         else:
-            return None, errors, response
+            return None, hard_error, response
 
-    # Extract result from response
+    # "errors" (plural) is captured stderr output plus, under "Global errors:",
+    # any exception the user's code raised: wrap_code=True runs it inside a
+    # try/except (add_executable_function) that catches the exception into an
+    # `errors` variable instead of letting it reach "error" above. So:
+    # - result present: stderr is just warning noise (e.g. a pandas
+    #   FutureWarning, printed to stderr by default) - logged, not a failure.
+    # - no result: stderr holds the reason it's missing (the user's
+    #   exception + traceback), so it is the failure - surfacing it is what
+    #   keeps a ValueError in user code from becoming "Got: NoneType".
+    stderr_output = response.get("errors")
     result = response.get("result")
+    if stderr_output and result is None:
+        user_error = stderr_output.replace("Global errors: ", "", 1).strip()
+        if raise_on_error:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Error executing preprocessing code: {user_error}",
+            )
+        else:
+            return None, user_error, response
+    if stderr_output:
+        logger.warning("Preprocessing code produced warnings/stderr output: %s", stderr_output)
 
     # Process the result similar to train_preprocess_node
     if isinstance(result, pd.DataFrame):

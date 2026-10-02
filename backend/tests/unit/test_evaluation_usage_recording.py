@@ -557,7 +557,7 @@ class TestRunAttribution:
         service = _service()
         spy = EvaluatorSpy()
         service.evaluators = spy
-        service.run_repo = SimpleNamespace(update=_accept)
+        service.run_repo = SimpleNamespace(update=_accept, db=SimpleNamespace(commit=_accept))
         service.result_repo = SimpleNamespace(create=_accept)
         case = SimpleNamespace(
             id=uuid4(),
@@ -588,7 +588,7 @@ class TestRunAttribution:
         service = _service()
         spy = EvaluatorSpy()
         service.evaluators = spy
-        service.run_repo = SimpleNamespace(update=_accept)
+        service.run_repo = SimpleNamespace(update=_accept, db=SimpleNamespace(commit=_accept))
         service.result_repo = SimpleNamespace(create=_accept)
         case = SimpleNamespace(
             id=uuid4(),

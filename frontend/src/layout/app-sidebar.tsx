@@ -85,7 +85,7 @@ const navGroups: NavGroup[] = [
         title: "Agent Studio",
         icon: UserRoundCog,
         url: "/ai-agents",
-        permissionsRequired: ["read:llm_analyst"],
+        permissionsRequired: ["read:workflow", "read:llm_analyst"],
       },
       {
         title: "Templates",
@@ -173,6 +173,11 @@ const navGroups: NavGroup[] = [
             title: "Evaluations",
             url: "/tests/evaluations",
             permissionsRequired: ["test:workflow"],
+          },
+          {
+            title: "Evaluate ML models",
+            url: "/tests/ml-model-evaluations",
+            permissionsRequired: ["*", "read:ml_model"],
           },
         ],
       },

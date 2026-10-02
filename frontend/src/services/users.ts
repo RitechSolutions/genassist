@@ -1,7 +1,5 @@
 import { apiRequest } from "@/config/api";
-import { Role } from "@/interfaces/role.interface";
 import { User } from "@/interfaces/user.interface";
-import { UserType } from "@/interfaces/userType.interface";
 
 export const getAllUsers = async (options?: {
   deletedOnly?: boolean;

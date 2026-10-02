@@ -19,8 +19,12 @@ import { BaseNodeDialogProps } from "../base";
 import { DraggableTextArea } from "../../components/custom/DraggableTextArea";
 import { FileUploader } from "@/components/FileUploader";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
-import { analyzeCSV, profileCSV } from "@/services/mlModels";
+import { analyzeCSV, profileData } from "@/services/mlModels";
 import { useNodeDialogState } from "../useNodeDialogState";
+import {
+  buildProfileDataRequest,
+  getProfileDataAvailability,
+} from "./trainDataSourceProfile";
 
 type TrainDataSourceDialogProps = BaseNodeDialogProps<
   TrainDataSourceNodeData,
@@ -139,13 +143,20 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   };
 
   const handleProfileData = async () => {
-    const target = values.csvFilePath || values.csvFileUrl;
-    if (!target) return;
+    const request = buildProfileDataRequest(values);
+    if (!request) return;
 
     try {
       setIsProfiling(true);
-      const baseName = (values.csvFileName || "data").replace(/\.[^./]+$/, "");
-      await profileCSV(target, `${baseName}_profile.html`);
+      if (request.source_type === "datasource") {
+        await profileData(request, "query_profile.html");
+      } else {
+        const baseName = (values.csvFileName || "data").replace(
+          /\.[^./]+$/,
+          "",
+        );
+        await profileData(request, `${baseName}_profile.html`);
+      }
     } catch (err) {
       console.error(err);
       toast({
@@ -214,6 +225,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
     onUpdate(merged);
     onClose();
   };
+
+  const profileAvailability = getProfileDataAvailability(values);
 
   return (
     <NodeConfigPanel
@@ -284,8 +297,9 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
               className="w-full font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              SQL query to fetch training data. Use variables from previous
-              nodes if needed.
+              {"Variables like {{chat.input}} are sent to the database as values, "}
+              so they are safe to use in WHERE and LIMIT. They cannot replace
+              table or column names.
             </p>
           </div>
         )}
@@ -339,22 +353,27 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         {values.sourceType === "csv" && values.analysisResult && (
           <CSVAnalysisDisplay analysisResult={values.analysisResult} />
         )}
-        {values.sourceType === "csv" &&
-          (values.csvFilePath || values.csvFileUrl) &&
-          values.csvFileName?.toLowerCase().endsWith(".csv") && (
+        {profileAvailability.visible && (
+          <div className="space-y-1">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={handleProfileData}
               loading={isProfiling}
-              disabled={isProfiling}
+              disabled={isProfiling || !profileAvailability.enabled}
               icon={<BarChart3 className="h-4 w-4" />}
               className="w-fit"
             >
               {isProfiling ? "Generating profile..." : "Profile Data"}
             </Button>
-          )}
+            {profileAvailability.reason && (
+              <p className="text-xs text-muted-foreground">
+                {profileAvailability.reason}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </NodeConfigPanel>
   );

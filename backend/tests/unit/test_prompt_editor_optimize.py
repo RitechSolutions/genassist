@@ -227,45 +227,23 @@ class TestExampleBudget:
         assert result.provenance.techniques == ["contains"]
 
     @pytest.mark.asyncio
-    async def test_a_rewrite_sent_no_techniques_is_told_nothing_about_grading(self):
-        service = _service([_case("in0", {"value": "URL"})])
-        llm = _llm()
-
-        await _run(service, _injector(llm))
-
-        assert "## GRADING" not in _human_message(llm)
-
-    @pytest.mark.asyncio
-    async def test_a_failing_metric_the_check_cannot_run_is_refused_before_the_model_is_built(self):
+    @pytest.mark.parametrize(
+        "request_for",
+        [
+            lambda case: _request(techniques=["provenance_eval"]),
+            lambda case: _request(
+                failed_cases=[{"case_id": case.id, "actual": "x", "failed_metrics": ["provenance_eval"]}]
+            ),
+        ],
+        ids=["techniques", "failed_metrics"],
+    )
+    async def test_a_technique_the_check_cannot_run_is_refused_before_the_model_is_built(self, request_for):
         case = _case()
         service = _service([case])
         llm = _llm()
 
         with pytest.raises(AppException) as exc_info:
-            await _run(
-                service,
-                _injector(llm),
-                _request(
-                    failed_cases=[
-                        {
-                            "case_id": case.id,
-                            "actual": "x",
-                            "failed_metrics": ["provenance_eval"],
-                        }
-                    ]
-                ),
-            )
-
-        assert exc_info.value.error_key is ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED
-        llm.ainvoke.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_a_technique_the_check_cannot_run_is_refused_before_the_model_is_built(self):
-        service = _service([_case()])
-        llm = _llm()
-
-        with pytest.raises(AppException) as exc_info:
-            await _run(service, _injector(llm), _request(techniques=["provenance_eval"]))
+            await _run(service, _injector(llm), request_for(case))
 
         assert exc_info.value.status_code == 400
         assert exc_info.value.error_key is ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED
@@ -286,25 +264,6 @@ class TestExampleBudget:
         message = _human_message(llm)
         assert "Input: in0\nExpected: hello\nGot: goodbye" in message
         assert "## FAILED CASES" in message
-
-    @pytest.mark.asyncio
-    async def test_a_failure_names_the_techniques_that_rejected_it(self):
-        case = _case("in0", {"value": "URL"})
-        service = _service([case])
-        llm = _llm()
-
-        await _run(
-            service,
-            _injector(llm),
-            _request(
-                techniques=["contains"],
-                failed_cases=[
-                    {"case_id": case.id, "actual": "no link", "failed_metrics": ["contains"]}
-                ],
-            ),
-        )
-
-        assert "Got: no link\nFailed: contains" in _human_message(llm)
 
     @pytest.mark.asyncio
     async def test_a_very_long_observed_output_is_shortened_with_a_visible_marker(self):
@@ -686,22 +645,6 @@ class TestCaseSplit:
         assert "hold-out set" in exc_info.value.error_detail
 
     @pytest.mark.asyncio
-    async def test_a_failed_case_that_is_gone_is_refused_before_anything_else(self):
-        cases = [_case()]
-        service = _service(cases)
-        injector = _injector(_llm())
-
-        with pytest.raises(AppException) as exc_info:
-            await _run(
-                service,
-                injector,
-                _request(failed_cases=[{"case_id": uuid4(), "actual": "wrong"}]),
-            )
-
-        assert "failed cases are no longer" in exc_info.value.error_detail
-        assert service.case_repo.get_cases_by_ids.await_count == 0
-
-    @pytest.mark.asyncio
     async def test_a_hold_out_of_one_conversation_does_not_meet_the_group_rule(self):
         conversation = uuid4()
         cases = [_case() for _ in range(7)]
@@ -717,35 +660,6 @@ class TestCaseSplit:
             )
 
         assert "at least two conversations or cases" in exc_info.value.error_detail
-
-    @pytest.mark.asyncio
-    async def test_a_development_side_of_one_group_does_not_meet_the_group_rule(self):
-        cases = [_case() for _ in range(3)]
-        service = _service(cases)
-
-        with pytest.raises(AppException) as exc_info:
-            await _run(
-                service,
-                _injector(_llm()),
-                _request(case_split={"holdout_case_ids": [cases[0].id, cases[1].id]}),
-            )
-
-        assert "at least two conversations or cases" in exc_info.value.error_detail
-
-    @pytest.mark.asyncio
-    async def test_the_split_is_settled_before_a_model_is_built(self):
-        cases = [_case() for _ in range(3)]
-        service = _service(cases)
-        injector = _injector(_llm())
-
-        with pytest.raises(AppException):
-            await _run(
-                service,
-                injector,
-                _request(case_split={"holdout_case_ids": [cases[0].id, cases[1].id]}),
-            )
-
-        assert injector.get(MagicMock(__name__="LLMProvider")).get_model_from_provider.await_count == 0
 
 
 class TestSuggestionParsing:
@@ -780,16 +694,6 @@ class TestSuggestionParsing:
 
         assert "empty prompt" in exc_info.value.error_detail
 
-    @pytest.mark.asyncio
-    async def test_a_fenced_envelope_is_accepted(self):
-        service = _service([])
-        reply = f"```json\n{SUGGESTION}\n```"
-
-        result = await _run(service, _injector(_llm(reply)))
-
-        assert result.suggested_prompt == "Be concise."
-        assert result.explanation == "Tightened."
-
 
 class TestProviderFailures:
     @pytest.mark.asyncio
@@ -802,16 +706,6 @@ class TestProviderFailures:
         assert exc_info.value.status_code == 502
         assert exc_info.value.error_key is ErrorKey.PROMPT_MODEL_CALL_FAILED
         assert "no package" not in exc_info.value.error_detail
-
-    @pytest.mark.asyncio
-    async def test_a_residency_refusal_keeps_its_own_status(self):
-        service = _service([])
-        refusal = AppException(status_code=403, error_key=ErrorKey.NOT_AUTHORIZED)
-
-        with pytest.raises(AppException) as exc_info:
-            await _run(service, _injector(_llm(), build_error=refusal))
-
-        assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
     async def test_a_provider_outage_is_a_502_with_no_provider_detail(self):

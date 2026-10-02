@@ -146,6 +146,7 @@ def _build_service(*, latest_sequence: int):
     service = ConversationService(
         operator_statistics_service=MagicMock(),
         conversation_repo=conversation_repo,
+        conversation_read_repo=AsyncMock(),
         transcript_message_repo=transcript_repo,
         audit_log_repo=AsyncMock(),
         recordings_repo=AsyncMock(),

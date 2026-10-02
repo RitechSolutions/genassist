@@ -3,6 +3,8 @@ from ..base import FieldSchema
 from .chat_input_schema import CHAT_INPUT_NODE_DIALOG_SCHEMA
 from .chat_output_schema import CHAT_OUTPUT_NODE_DIALOG_SCHEMA
 from .router_schema import ROUTER_NODE_DIALOG_SCHEMA
+from .switch_schema import SWITCH_NODE_DIALOG_SCHEMA
+from .filter_schema import FILTER_NODE_DIALOG_SCHEMA
 from .agent_schema import AGENT_NODE_DIALOG_SCHEMA
 from .api_tool_schema import API_TOOL_NODE_DIALOG_SCHEMA
 from .open_api_schema import OPEN_API_NODE_DIALOG_SCHEMA
@@ -37,11 +39,14 @@ from .web_scraper_schema import WEB_SCRAPER_NODE_DIALOG_SCHEMA
 from .web_search_schema import WEB_SEARCH_NODE_DIALOG_SCHEMA
 from .html_to_image_schema import HTML_TO_IMAGE_NODE_DIALOG_SCHEMA
 from .nlp_schema import NLP_NODE_DIALOG_SCHEMA
+from .webhook_trigger_schema import WEBHOOK_TRIGGER_NODE_DIALOG_SCHEMA
 
 NODE_TYPE_LABELS: Dict[str, str] = {
     "chatInputNode": "Chat Input",
     "chatOutputNode": "Chat Output",
     "routerNode": "Router",
+    "switchNode": "Switch",
+    "filterNode": "Filter",
     "agentNode": "Agent",
     "apiToolNode": "API Tool",
     "openApiNode": "Open API",
@@ -76,12 +81,15 @@ NODE_TYPE_LABELS: Dict[str, str] = {
     "webSearchNode": "Web Search",
     "htmlToImageNode": "HTML to Image",
     "nlpNode": "Text Analysis",
+    "webhookTriggerNode": "Webhook Trigger",
 }
 
 NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "chatInputNode": CHAT_INPUT_NODE_DIALOG_SCHEMA,
     "chatOutputNode": CHAT_OUTPUT_NODE_DIALOG_SCHEMA,
     "routerNode": ROUTER_NODE_DIALOG_SCHEMA,
+    "switchNode": SWITCH_NODE_DIALOG_SCHEMA,
+    "filterNode": FILTER_NODE_DIALOG_SCHEMA,
     "agentNode": AGENT_NODE_DIALOG_SCHEMA,
     "apiToolNode": API_TOOL_NODE_DIALOG_SCHEMA,
     "openApiNode": OPEN_API_NODE_DIALOG_SCHEMA,
@@ -116,6 +124,7 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "webSearchNode": WEB_SEARCH_NODE_DIALOG_SCHEMA,
     "htmlToImageNode": HTML_TO_IMAGE_NODE_DIALOG_SCHEMA,
     "nlpNode": NLP_NODE_DIALOG_SCHEMA,
+    "webhookTriggerNode": WEBHOOK_TRIGGER_NODE_DIALOG_SCHEMA,
 }
 
 
@@ -218,6 +227,10 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
     { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
   ],
 
+  "webhookTriggerNode": [
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
   "chatOutputNode": [
     { "id": "input", "type": "target", "position": "left", "compatibility": "any" }
   ],
@@ -226,6 +239,18 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
     { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
     { "id": "output_true", "type": "source", "position": "right", "compatibility": "any" },
     { "id": "output_false", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  # Plus one `output_<case id>` source handle per configured case (derived from data.cases).
+  "switchNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output_default", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  # A single output, followed only while the filter's condition holds.
+  "filterNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
   ],
 
   "aggregatorNode": [
