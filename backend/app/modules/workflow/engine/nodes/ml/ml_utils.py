@@ -778,6 +778,20 @@ def resolve_csv_file_path(
     Raises:
         AppException: If file is not found or is not a CSV file
     """
+    # A File URL wired to the upstream node's "data" (its sample rows)
+    # instead of "data_path" resolves to a JSON list here; without this check
+    # it surfaces as a baffling OSError "File name too long".
+    stripped_url = (file_url or "").strip()
+    if stripped_url.startswith(("[", "{")):
+        raise AppException(
+            error_key=ErrorKey.FILE_NOT_FOUND,
+            error_detail=(
+                "File URL contains data, not a file path - it is probably set to the upstream "
+                "node's data output. Use its file path instead, e.g. {{source.data_path}}."
+            ),
+        )
+    file_url = stripped_url
+
     try:
         # Handle both absolute paths and relative paths
         if file_url.startswith("/"):

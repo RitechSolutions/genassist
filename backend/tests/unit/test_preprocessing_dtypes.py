@@ -181,3 +181,19 @@ class TestPreprocessedTypesTrainEndToEnd:
             metadata = pickle.load(f)["metadata"]
         assert "count" in metadata["scaled_columns"]
         assert "level" in metadata["categorical_columns"]
+
+
+class TestFileUrlPointingAtData:
+    @pytest.mark.parametrize("file_url", [' [{"a": "1"}]', '{"a": 1}'])
+    def test_data_instead_of_a_path_gives_a_clear_message(self, file_url):
+        from app.core.exceptions.exception_classes import AppException
+
+        with pytest.raises(AppException) as exc_info:
+            ml_utils.resolve_csv_file_path(file_url)
+        assert "contains data, not a file path" in exc_info.value.error_detail
+        assert "data_path" in exc_info.value.error_detail
+
+    def test_surrounding_spaces_in_a_real_path_are_ignored(self, tmp_path):
+        path = tmp_path / "x.csv"
+        path.write_text("a\n1\n")
+        assert ml_utils.resolve_csv_file_path(f"  {path} ") == path
