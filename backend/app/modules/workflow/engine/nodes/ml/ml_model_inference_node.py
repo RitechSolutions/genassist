@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence
 from uuid import UUID
 
 import numpy as np
+import pandas as pd
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -163,14 +164,49 @@ def _broadcast_column(values: List[Any], batch_size: int, feature_name: str) -> 
     )
 
 
+def _validate_categorical_inputs(
+    normalized_inputs: Dict[str, List[Any]],
+    categorical_columns: Sequence[str],
+    categories: Sequence[np.ndarray],
+) -> None:
+    """Reject a caller-supplied categorical value the encoder wasn't trained on,
+    instead of silently encoding it as the dropped baseline category (which is
+    indistinguishable from a legitimate prediction for that category).
+
+    A column the caller left unset is skipped here - normalized_inputs already
+    excludes it (see _is_empty_input), and it's filled with 0 by
+    _build_input_array, the same as a missing numeric feature - not treated as
+    an invalid category.
+    """
+    for col, known in zip(categorical_columns, categories):
+        if col not in normalized_inputs:
+            continue
+        known_values = {str(v) for v in known.tolist()}
+        invalid_values = sorted({str(v) for v in normalized_inputs[col] if str(v) not in known_values})
+        if invalid_values:
+            allowed = ", ".join(str(v) for v in known.tolist())
+            raise AppException(
+                error_key=ErrorKey.MISSING_PARAMETER,
+                error_detail=(
+                    f"Invalid value(s) for feature '{col}': {', '.join(invalid_values)}. "
+                    f"Please enter a correct value, otherwise this field will be ignored. "
+                    f"Expected one of: {allowed}."
+                ),
+            )
+
+
 def _build_input_array(
     normalized_inputs: Dict[str, List[Any]],
     feature_names: Sequence[str],
+    fills: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
-    """Build a 2-D numpy array aligned to feature_names, filling missing features with 0.
+    """Build a 2-D numpy array aligned to feature_names, filling missing features with
+    the value persisted at training time (see TrainModelNode's missing_value_fills
+    metadata), or 0 if the feature has no persisted fill (legacy model, or the
+    feature was never actually missing during training).
 
     Batch size is the maximum length among provided feature columns. Single-value
-    columns are broadcast to that batch size. Missing features default to 0.
+    columns are broadcast to that batch size.
 
     When feature_names is empty (model metadata doesn't specify column order),
     falls back to using all input columns in their dict-insertion order.
@@ -182,6 +218,7 @@ def _build_input_array(
     if len(feature_names) == 0:
         feature_names = list(normalized_inputs.keys())
 
+    fills = fills or {}
     batch_size = _infer_batch_size(normalized_inputs)
     input_cols = set(normalized_inputs)
     columns = []
@@ -189,8 +226,49 @@ def _build_input_array(
         if feat in input_cols:
             columns.append(_broadcast_column(normalized_inputs[feat], batch_size, feat))
         else:
-            columns.append([0] * batch_size)
+            columns.append([fills.get(feat, 0)] * batch_size)
     return np.column_stack(columns) if columns else np.empty((batch_size, 0))
+
+
+def _one_hot_transform(
+    normalized_inputs: Dict[str, List[Any]],
+    columns: Sequence[str],
+    encoder: Any,
+) -> "tuple[np.ndarray, List[str]]":
+    """Reapply a fitted OneHotEncoder to raw categorical inputs, validating
+    against the categories it was fit on."""
+    # object dtype - a categorical column left entirely unset comes back as a
+    # plain numeric (int) array of 0-fillers, which trips an internal numpy
+    # isnan check in OneHotEncoder.transform when compared against its
+    # (string) fitted categories.
+    cat_data = _build_input_array(normalized_inputs, columns).astype(object)
+    _validate_categorical_inputs(normalized_inputs, columns, encoder.categories_)
+    encoded = encoder.transform(cat_data)
+    encoded_columns = encoder.get_feature_names_out(columns).tolist()
+    return encoded, encoded_columns
+
+
+def _mapped_transform(
+    normalized_inputs: Dict[str, List[Any]],
+    columns: Sequence[str],
+    mappings: Dict[str, Dict[Any, Any]],
+    batch_size: int,
+    unseen_value: float,
+) -> np.ndarray:
+    """Reapply a fitted label/ordinal value -> code mapping to raw inputs.
+
+    A value the mapping wasn't fit on (or has no entry for) falls back to
+    unseen_value, mirroring how the same case is handled at training time
+    (see TrainModelNode._encode_categoricals).
+    """
+    if not columns:
+        return np.empty((batch_size, 0))
+    raw = _build_input_array(normalized_inputs, columns).astype(object)
+    out = np.empty(raw.shape, dtype=float)
+    for i, col in enumerate(columns):
+        mapping = mappings.get(col, {})
+        out[:, i] = [mapping.get(v, unseen_value) for v in raw[:, i]]
+    return out
 
 
 def _json_safe_scalar(value: Any) -> Any:
@@ -208,6 +286,97 @@ def _json_safe_scalar(value: Any) -> Any:
     except (TypeError, ValueError):
         return str(value)
     return value
+def _replay_feature_engineering(
+    normalized_inputs: Dict[str, List[Any]],
+    steps: List[Dict[str, Any]],
+    batch_size: int,
+) -> Dict[str, np.ndarray]:
+    """Recompute engineered feature columns from raw caller-supplied inputs,
+    using the exact fitted parameters (bin edges, mean/std, fitted
+    PolynomialFeatures transformer) captured at training time - see
+    TrainModelNode._engineer_features, which returns these same steps.
+
+    Steps run in the same order they were trained in. A later step can
+    reference an earlier step's new column (e.g. a polynomial feature built
+    from a normalized one), same as at training time, so each computed
+    column is folded into `available` for subsequent steps to read.
+    """
+    computed: Dict[str, np.ndarray] = {}
+    available: Dict[str, List[Any]] = dict(normalized_inputs)
+
+    for step in steps:
+        strategy = step.get("strategy")
+        new_col = step.get("new_col")
+
+        try:
+            if strategy == "custom_expression":
+                expression = step.get("expression")
+                df = pd.DataFrame({
+                    col: _build_input_array(available, [col])[:, 0]
+                    for col in available
+                })
+                result = np.asarray(df.eval(expression))
+                computed[new_col] = result
+                available[new_col] = result.tolist()
+
+            elif strategy == "bin_numeric":
+                bin_column = step.get("bin_column")
+                bin_edges = step.get("bin_edges") or []
+                if bin_column not in available or len(bin_edges) < 2:
+                    continue
+                raw = _build_input_array(available, [bin_column], None).astype(float)[:, 0]
+                clipped = np.clip(raw, bin_edges[0], bin_edges[-1])
+                binned = pd.cut(
+                    pd.Series(clipped), bins=bin_edges, labels=False, include_lowest=True
+                ).to_numpy()
+                computed[new_col] = binned
+                available[new_col] = binned.tolist()
+
+            elif strategy in ("normalize", "standardize"):
+                for col, stats in (step.get("column_stats") or {}).items():
+                    if col not in available:
+                        continue
+                    raw = _build_input_array(available, [col], None).astype(float)[:, 0]
+                    out_col = stats["out_col"]
+                    if strategy == "normalize":
+                        result = (raw - stats["min"]) / (stats["max"] - stats["min"])
+                    else:
+                        result = (raw - stats["mean"]) / stats["std"]
+                    computed[out_col] = result
+                    available[out_col] = result.tolist()
+
+            elif strategy == "polynomial":
+                poly_columns = step.get("poly_columns") or []
+                poly = step.get("poly")
+                new_names = step.get("new_names") or []
+                if not poly_columns or poly is None or any(c not in available for c in poly_columns):
+                    continue
+                raw = _build_input_array(available, poly_columns, None).astype(float)
+                poly_out = poly.transform(raw)
+                new_values = poly_out[:, len(poly_columns):]
+                for i, name in enumerate(new_names):
+                    computed[name] = new_values[:, i]
+                    available[name] = new_values[:, i].tolist()
+        except Exception as e:
+            logger.warning(
+                "Failed to replay feature-engineering step '%s' (%s) at inference: %s",
+                new_col, strategy, e,
+            )
+
+    return computed
+
+
+def _label_for_prediction(value: Any) -> str:
+    """Map a model prediction to an availability label."""
+    if value is None:
+        return "Not Available"
+    if isinstance(value, (bool, np.bool_)):
+        return "Available" if value else "Not Available"
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return "Available" if float(value) != 0 else "Not Available"
+    if isinstance(value, str):
+        return "Available" if value.strip() else "Not Available"
+    return "Available" if value else "Not Available"
 
 
 def _build_prediction_outputs(
@@ -322,6 +491,7 @@ class MLModelInferenceNode(BaseNode):
             normalized_inputs = _normalize_inference_inputs(inference_inputs)
 
             # Check if model_response has a "version" key for v2.0 format vs legacy
+            metadata: Dict[str, Any] = {}
             if "version" in model_response and model_response["version"] == "v2.0":
                 model = model_response.get("model", {})
                 metadata = model_response.get("metadata", {})
@@ -336,14 +506,141 @@ class MLModelInferenceNode(BaseNode):
             if len(feature_names) == 0:
                 feature_names = list(normalized_inputs.keys())
             try:
-                input_data = _build_input_array(normalized_inputs, feature_names)
-                batch_size = input_data.shape[0]
+                # Reapply the same missing-value fills computed at training time
+                # (if any) instead of defaulting an unset feature to 0.
+                missing_value_fills: Dict[str, Any] = metadata.get("missing_value_fills") or {}
+
+                # Raw values as supplied by the caller, aligned to feature_names -
+                # used below to build the model-ready matrix and for the
+                # human-readable "input_data" echoed back in the response.
+                raw_input_data = _build_input_array(normalized_inputs, feature_names, missing_value_fills)
+                batch_size = raw_input_data.shape[0]
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
-                    batch_size,
-                    input_data.shape[1] if input_data.ndim == 2 else 0,
-                    list(feature_names),
+                    batch_size, raw_input_data.shape[1] if raw_input_data.ndim == 2 else 0, list(feature_names),
                 )
+
+                # Reapply the same categorical encoding fitted at training time
+                # (if any) so the matrix handed to the model has the exact
+                # columns it was trained on, instead of the raw (pre-encoding)
+                # feature names. No-op for models with no categorical features
+                # or legacy models that predate this metadata.
+                categorical_columns: List[str] = metadata.get("categorical_columns") or []
+                categorical_columns_no_drop: List[str] = metadata.get("categorical_columns_no_drop") or []
+                encoder = metadata.get("encoder")
+                encoder_no_drop = metadata.get("encoder_no_drop")
+                label_encodings: Dict[str, Dict[Any, int]] = metadata.get("label_encodings") or {}
+                ordinal_encodings: Dict[str, Dict[Any, Any]] = metadata.get("ordinal_encodings") or {}
+                label_columns = list(label_encodings.keys())
+                ordinal_columns = list(ordinal_encodings.keys())
+
+                encoded_feature_columns = (
+                    categorical_columns + categorical_columns_no_drop + label_columns + ordinal_columns
+                )
+
+                # Build every output column by name first, then assemble the
+                # final matrix in the exact order the model was actually fit
+                # on (persisted as model_input_columns - see TrainModelNode).
+                # A fixed "all numeric, then all label, then all ordinal,
+                # then one-hot" grouping silently moves label/ordinal columns
+                # away from wherever they actually sat in the training column
+                # order whenever any numeric column came after them in the
+                # original feature list - this builds by name and lets the
+                # persisted order (not a hardcoded grouping) decide position.
+                column_arrays: Dict[str, np.ndarray] = {}
+
+                if encoded_feature_columns:
+                    numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
+                    numeric_data = (
+                        _build_input_array(normalized_inputs, numeric_order, missing_value_fills).astype(float)
+                        if numeric_order else np.empty((batch_size, 0))
+                    )
+                    for i, col in enumerate(numeric_order):
+                        column_arrays[col] = numeric_data[:, i]
+
+                    legacy_order = list(numeric_order)
+
+                    if label_columns:
+                        label_data = _mapped_transform(
+                            normalized_inputs, label_columns, label_encodings, batch_size, unseen_value=-1
+                        )
+                        for i, col in enumerate(label_columns):
+                            column_arrays[col] = label_data[:, i]
+                        legacy_order += label_columns
+
+                    if ordinal_columns:
+                        ordinal_data = _mapped_transform(
+                            normalized_inputs, ordinal_columns, ordinal_encodings, batch_size, unseen_value=np.nan
+                        )
+                        for i, col in enumerate(ordinal_columns):
+                            column_arrays[col] = ordinal_data[:, i]
+                        legacy_order += ordinal_columns
+
+                    if encoder is not None and categorical_columns:
+                        encoded, encoded_columns = _one_hot_transform(normalized_inputs, categorical_columns, encoder)
+                        for i, col in enumerate(encoded_columns):
+                            column_arrays[col] = encoded[:, i]
+                        legacy_order += encoded_columns
+
+                    if encoder_no_drop is not None and categorical_columns_no_drop:
+                        encoded_nd, encoded_nd_columns = _one_hot_transform(
+                            normalized_inputs, categorical_columns_no_drop, encoder_no_drop
+                        )
+                        for i, col in enumerate(encoded_nd_columns):
+                            column_arrays[col] = encoded_nd[:, i]
+                        legacy_order += encoded_nd_columns
+                else:
+                    for i, col in enumerate(feature_names):
+                        column_arrays[col] = raw_input_data[:, i]
+                    legacy_order = list(feature_names)
+
+                # Recompute any engineered features (bin_numeric, normalize,
+                # standardize, polynomial, custom_expression) from the raw
+                # inputs, using the exact fitted parameters captured at
+                # training time (TrainModelNode._engineer_features). No-op
+                # for models with no feature engineering or legacy models
+                # that predate this metadata.
+                feature_engineering_steps = metadata.get("feature_engineering_steps") or []
+                if feature_engineering_steps:
+                    engineered = _replay_feature_engineering(
+                        normalized_inputs, feature_engineering_steps, batch_size
+                    )
+                    column_arrays.update(engineered)
+                    legacy_order += [c for c in engineered if c not in legacy_order]
+
+                # The real training-time column order, when available, always
+                # wins over the grouped fallback above.
+                model_input_columns = metadata.get("model_input_columns")
+                model_feature_names = list(model_input_columns) if model_input_columns else legacy_order
+
+                missing_columns = [c for c in model_feature_names if c not in column_arrays]
+                if missing_columns:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            f"Could not reconstruct column(s) {missing_columns} that the model "
+                            "was trained on - the saved model metadata may be incomplete or from "
+                            "an incompatible older version."
+                        ),
+                    )
+
+                input_data = np.column_stack([column_arrays[c] for c in model_feature_names])
+
+                # Reapply the scaler fitted at training time (if any) so scaled
+                # features match what the model was trained on. No-op for
+                # models trained with scalingMethod "none" or legacy models
+                # that predate this metadata.
+                scaler = metadata.get("scaler")
+                scaled_columns = metadata.get("scaled_columns") or []
+                if scaler is not None and scaled_columns:
+                    scaled_indices = [
+                        model_feature_names.index(c) for c in scaled_columns if c in model_feature_names
+                    ]
+                    if scaled_indices:
+                        input_data = input_data.astype(float)
+                        input_data[:, scaled_indices] = scaler.transform(input_data[:, scaled_indices])
+            except AppException:
+                raise
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
                 raise AppException(
@@ -372,9 +669,39 @@ class MLModelInferenceNode(BaseNode):
                 else:
                     predictions = model.predict(input_data)
 
+                # Reconstruct real-unit predictions for a model trained on a
+                # ratio target (target / baselineColumn - see TrainModelNode's
+                # targetTransform). Without this, predictions come back as the
+                # raw ratio (e.g. 0.73) instead of the real-unit value the
+                # caller expects (e.g. 54750). No-op for models with no
+                # targetTransform or legacy models that predate this metadata.
+                target_transform = metadata.get("target_transform")
+                if target_transform is not None:
+                    baseline_column = target_transform.get("baselineColumn")
+                    if baseline_column not in normalized_inputs:
+                        raise AppException(
+                            error_key=ErrorKey.MISSING_PARAMETER,
+                            error_detail=(
+                                f"This model was trained on a ratio target "
+                                f"('{ml_model.target_variable}' / '{baseline_column}'); "
+                                f"'{baseline_column}' must be supplied as an inference input so "
+                                "predictions can be converted back to real units."
+                            ),
+                        )
+                    baseline_values = _build_input_array(
+                        normalized_inputs, [baseline_column]
+                    ).astype(float)[:, 0]
+                    predictions = predictions * baseline_values
+
                 # Build response (always batch format)
-                # Convert input_data to column-wise dictionary (columns ordered by feature_names)
-                input_data_by_column = {feature_names[i]: input_data[:, i].tolist() for i in range(len(feature_names))}
+                # Convert the raw (pre-encoding) input to a column-wise dictionary
+                # (columns ordered by feature_names) so the echoed input reflects
+                # what the caller actually submitted, not the expanded matrix
+                # handed to the model.
+                input_data_by_column = {
+                    feature_names[i]: raw_input_data[:, i].tolist()
+                    for i in range(len(feature_names))
+                }
 
                 prediction_values, prediction_labels, prediction_entries = _build_prediction_outputs(
                     predictions, class_labels

@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from typing import List, Optional, Set
 from uuid import UUID
+from app.core.utils.enums.transcript_message_type import TranscriptMessageType
 from app.db.models.message_model import TranscriptMessageModel
 from app.db.utils.sql_alchemy_utils import is_loaded
 from app.schemas.conversation_transcript import TranscriptSegmentInput
@@ -97,8 +98,10 @@ def schema_to_transcript_message(
 
     return TranscriptMessageModel(**message_data)
 
-_CUSTOMER_SPEAKERS = {"customer", "user"}
-_AGENT_SPEAKERS = {"agent", "assistant", "bot"}
+CUSTOMER_SPEAKERS = frozenset({"customer", "user"})
+AGENT_SPEAKERS = frozenset({"agent", "assistant", "bot"})
+CONVERSATIONAL_MESSAGE_TYPES = frozenset({TranscriptMessageType.MESSAGE.value, "audio"})
+VOICE_MESSAGE_PLACEHOLDER = "[Voice message]"
 
 
 def extract_qa_pairs(
@@ -117,13 +120,55 @@ def extract_qa_pairs(
 
     for msg in ordered:
         speaker = (msg.speaker or "").lower()
-        if speaker in _CUSTOMER_SPEAKERS:
+        if speaker in CUSTOMER_SPEAKERS:
             pending_customer = msg.text
-        elif speaker in _AGENT_SPEAKERS and pending_customer is not None:
+        elif speaker in AGENT_SPEAKERS and pending_customer is not None:
             pairs.append((pending_customer, msg.text))
             pending_customer = None
 
     return pairs
+
+
+def is_scorable_customer_message(message: TranscriptMessageModel) -> bool:
+    """Real text from non-agent speakers, unknown speaker labels still get scored"""
+    text = (message.text or "").strip()
+    return (
+        (message.type or TranscriptMessageType.MESSAGE.value) in CONVERSATIONAL_MESSAGE_TYPES
+        and (message.speaker or "").strip().lower() not in AGENT_SPEAKERS
+        and bool(text)
+        and text != VOICE_MESSAGE_PLACEHOLDER
+    )
+
+
+def count_scorable_customer_messages(messages: List[TranscriptMessageModel]) -> int:
+    return sum(1 for message in messages if is_scorable_customer_message(message))
+
+
+def _speaker_label(speaker: Optional[str]) -> str:
+    label = (speaker or "").strip().lower()
+    if label in CUSTOMER_SPEAKERS:
+        return "customer"
+    if label in AGENT_SPEAKERS:
+        return "agent"
+    return label or "unknown"
+
+
+def transcript_messages_to_lines(messages: List[TranscriptMessageModel], include_offset: bool = False) -> str:
+    """Formats each message as speaker: text. include_offset adds [+h:mm:ss], clamped at zero"""
+    first_time = next((m.create_time for m in messages if m.create_time), None) if include_offset else None
+    lines = []
+    for message in messages:
+        text = " ".join((message.text or "").split())
+        if not text:
+            continue
+        line = f"{_speaker_label(message.speaker)}: {text}"
+        if first_time is not None and message.create_time:
+            total = max(0, int((message.create_time - first_time).total_seconds()))
+            hours, rest = divmod(total, 3600)
+            minutes, seconds = divmod(rest, 60)
+            line = f"[+{hours}:{minutes:02d}:{seconds:02d}] {line}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def json_to_transcript_messages(

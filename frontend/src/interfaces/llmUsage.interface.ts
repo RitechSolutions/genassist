@@ -66,7 +66,15 @@ export interface LlmUsageFilterOptionsResponse {
   agents: LlmUsageAgentOption[];
 }
 
-export type LlmUsageDimension = "provider" | "model" | "agent" | "source" | "llm" | "evaluation_method" | "node";
+export type LlmUsageDimension =
+  | "provider"
+  | "model"
+  | "agent"
+  | "source"
+  | "llm"
+  | "evaluation_method"
+  | "analyst_purpose"
+  | "node";
 
 export interface LlmUsageQueryFilters {
   agent_id?: string;
