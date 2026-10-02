@@ -12,7 +12,7 @@ import aiohttp
 
 from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.engine.node_result import is_node_failure, node_failure
-from app.modules.workflow.utils import execute_python_code
+from app.modules.workflow.utils import execute_python_code, script_error
 
 logger = logging.getLogger(__name__)
 
@@ -161,10 +161,10 @@ class ExternalAgentNode(BaseNode):
                 script, params={"response": response_data}, wrap_code=False
             )
 
-            error_msg = execution.get("errors") or execution.get("error")
-            if error_msg:
-                logger.error("Mapping script errors: %s", error_msg)
-                return node_failure(f"Mapping script error: {error_msg}")
+            failure = script_error(execution)
+            if failure:
+                logger.error("Mapping script errors: %s", failure)
+                return node_failure(f"Mapping script error: {failure}")
 
             mapped = execution.get("result")
             if not isinstance(mapped, dict) or "message" not in mapped:

@@ -12,8 +12,12 @@ Covers:
   a bare None/error dict, so an agent cannot silently treat it as success.
 """
 
+import logging
+
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import (
     NODE_FAILURE_MARKER,
@@ -142,6 +146,37 @@ async def test_execute_on_raise_marks_failed_and_returns_detectable_envelope():
     assert "kaboom" in st.node_execution_status["n1"]["error"]
     # A caller using this node as a tool must be able to detect the failure.
     assert is_node_failure(returned) is not None
+
+
+@pytest.mark.asyncio
+async def test_execute_masks_secrets_in_the_node_error(caplog):
+    st = _bare_state()
+
+    def _boom():
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail="Could not load model: /src/datavolume/ml_models/x.pkl password=hunter2",
+        )
+
+    with caplog.at_level(logging.ERROR):
+        await _FakeNode("n1", st, _boom).execute()
+
+    error = st.node_execution_status["n1"]["error"]
+    assert error.startswith("Error executing node n1: Could not load model: /src/datavolume/ml_models/x.pkl")
+    assert "hunter2" not in error and "hunter2" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_execute_puts_the_detail_in_the_node_error():
+    st = _bare_state()
+    detail = "Unusable inference input for 1 feature(s): lag_24='null'"
+
+    def _boom():
+        raise AppException(error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID, error_detail=detail)
+
+    await _FakeNode("n1", st, _boom).execute()
+
+    assert st.node_execution_status["n1"]["error"] == f"Error executing node n1: {detail}"
 
 
 @pytest.mark.asyncio

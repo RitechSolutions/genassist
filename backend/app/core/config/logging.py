@@ -116,19 +116,19 @@ def init_logging() -> None:
     logger.add(f"{LOG_DIR}/access.log",
                level="INFO",
                filter=lambda r: r["level"].name == "INFO" and _pii_filter(r),
-               rotation="10 MB", retention="7 days", compression="zip",
+               rotation="10 MB", retention="7 days", compression="zip", watch=True,
                format=JSON_FORMAT, enqueue=False)  # Disabled to avoid multiprocessing queue issues
 
     logger.add(f"{LOG_DIR}/error.log",
                level="ERROR",
                filter=_pii_filter,
-               rotation="5 MB", retention="14 days", compression="zip",
+               rotation="5 MB", retention="14 days", compression="zip", watch=True,
                format=JSON_FORMAT, enqueue=False)  # Disabled to avoid multiprocessing queue issues
 
     logger.add(f"{LOG_DIR}/app.log",
                level="DEBUG",
                filter=_pii_filter,
-               rotation="10 MB", retention="10 days", compression="zip",
+               rotation="10 MB", retention="10 days", compression="zip", watch=True,
                format=JSON_FORMAT, enqueue=False)  # Disabled to avoid multiprocessing queue issues
 
     # Default values so “{extra[…]}” never fails

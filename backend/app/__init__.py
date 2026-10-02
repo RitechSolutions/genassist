@@ -257,6 +257,13 @@ async def _lifespan(app: FastAPI):
 
     await sync_permissions_on_startup()
 
+    # Starts the script fork server at boot
+    from app.modules.workflow.utils import execute_python_code
+
+    warmup = await execute_python_code("result = 1", {}, wrap_code=False)
+    if warmup.get("result") != 1:
+        logger.warning("Workflow script runner warm-up failed: %s", warmup.get("error"))
+
     logger.info("Application startup complete")
 
     try:

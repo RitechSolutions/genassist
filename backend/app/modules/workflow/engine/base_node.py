@@ -449,7 +449,8 @@ class BaseNode(ABC):
                     failure = is_node_failure(result)
                     if failure is not None:
                         if span is not None and span.is_recording():
-                            span.set_status(Status(StatusCode.ERROR, str(failure.get("error"))))
+                            reason = truncate_for_log(redact_sensitive_substrings(str(failure.get("error"))), 500)
+                            span.set_status(Status(StatusCode.ERROR, reason))
                         flow_output = failure.get("output")
                         if flow_output is not None:
                             self.set_node_output(flow_output)
@@ -468,10 +469,12 @@ class BaseNode(ABC):
                     return result
 
                 except Exception as e:
+                    # Masked and capped: this text reaches the run status, the trace and the agent
+                    reason = truncate_for_log(redact_sensitive_substrings(describe_exception(e)), 500)
                     if span is not None and span.is_recording():
                         span.record_exception(e)
-                        span.set_status(Status(StatusCode.ERROR, str(e)))
-                    error_msg = f"Error executing node {self.node_id}: {describe_exception(e)}"
+                        span.set_status(Status(StatusCode.ERROR, reason))
+                    error_msg = f"Error executing node {self.node_id}: {reason}"
                     logger.error(error_msg, exc_info=True)
                     self.complete_execution(error=error_msg)
                     # Return a detectable failure envelope (not None) so a caller using

@@ -40,6 +40,9 @@ _CLIENT_SAFE_DETAIL_KEYS = frozenset(
         ErrorKey.PROMPT_OPTIMIZE_UNUSABLE,
         # Policy-generated read-only SQL rejection; not driver/database text.
         ErrorKey.READ_ONLY_SQL_BLOCKED,
+        # ML inference: names the features that reached the model as "null", so
+        # the user knows which upstream mapping to fix.
+        ErrorKey.ML_INFERENCE_INPUT_INVALID,
     }
 )
 

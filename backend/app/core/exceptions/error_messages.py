@@ -126,6 +126,7 @@ class ErrorKey(Enum):
     ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
+    ML_INFERENCE_INPUT_INVALID = "ML_INFERENCE_INPUT_INVALID"
     INVALID_PKL_FILE = "INVALID_PKL_FILE"
     PKL_FILE_TOO_LARGE = "PKL_FILE_TOO_LARGE"
     ERROR_UPLOAD_FILE_OPEN_AI = "ERROR_UPLOAD_FILE_OPEN_AI"
@@ -314,6 +315,7 @@ ERROR_MESSAGES = {
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
+        ErrorKey.ML_INFERENCE_INPUT_INVALID: "ML model inference received invalid input values.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",
         ErrorKey.PKL_FILE_TOO_LARGE: "PKL file too large. Maximum size is 500MB.",
         ErrorKey.ERROR_UPLOAD_FILE_OPEN_AI: "Failed to upload file to OpenAI.",

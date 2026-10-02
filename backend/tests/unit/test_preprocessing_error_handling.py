@@ -24,12 +24,12 @@ class TestHardErrorsSurfaceTheRealMessage:
         monkeypatch.setattr(
             workflow_utils,
             "execute_python_code",
-            lambda code, params, wrap_code=True: _response(
+            lambda code, params, wrap_code=True, **kwargs: _response(
                 {"error": "Syntax error: invalid syntax (line 3)", "errors": "", "output": ""}
             ),
         )
         with pytest.raises(AppException) as exc_info:
-            await execute_and_process_preprocessing_code("bad code", None, pd.DataFrame(), "f.csv")
+            await execute_and_process_preprocessing_code("bad code", pd.DataFrame(), "f.csv")
         assert "Syntax error: invalid syntax" in exc_info.value.error_detail
         assert "NoneType" not in exc_info.value.error_detail
 
@@ -38,12 +38,12 @@ class TestHardErrorsSurfaceTheRealMessage:
         monkeypatch.setattr(
             workflow_utils,
             "execute_python_code",
-            lambda code, params, wrap_code=True: _response(
+            lambda code, params, wrap_code=True, **kwargs: _response(
                 {"error": "Sandbox violation: import of 'os' is not allowed", "errors": "", "output": ""}
             ),
         )
         with pytest.raises(AppException) as exc_info:
-            await execute_and_process_preprocessing_code("code", None, pd.DataFrame(), "f.csv")
+            await execute_and_process_preprocessing_code("code", pd.DataFrame(), "f.csv")
         assert "import of 'os' is not allowed" in exc_info.value.error_detail
 
     @pytest.mark.asyncio
@@ -51,12 +51,12 @@ class TestHardErrorsSurfaceTheRealMessage:
         monkeypatch.setattr(
             workflow_utils,
             "execute_python_code",
-            lambda code, params, wrap_code=True: _response(
+            lambda code, params, wrap_code=True, **kwargs: _response(
                 {"error": "Execution timed out after 120 seconds", "errors": "", "output": ""}
             ),
         )
         with pytest.raises(AppException) as exc_info:
-            await execute_and_process_preprocessing_code("code", None, pd.DataFrame(), "f.csv")
+            await execute_and_process_preprocessing_code("code", pd.DataFrame(), "f.csv")
         assert "timed out after 120 seconds" in exc_info.value.error_detail
 
     @pytest.mark.asyncio
@@ -64,12 +64,12 @@ class TestHardErrorsSurfaceTheRealMessage:
         monkeypatch.setattr(
             workflow_utils,
             "execute_python_code",
-            lambda code, params, wrap_code=True: _response(
+            lambda code, params, wrap_code=True, **kwargs: _response(
                 {"error": "Execution timed out after 120 seconds", "errors": "", "output": ""}
             ),
         )
         df, error, response = await execute_and_process_preprocessing_code(
-            "code", None, pd.DataFrame(), "f.csv", raise_on_error=False
+            "code", pd.DataFrame(), "f.csv", raise_on_error=False
         )
         assert df is None
         assert error == "Execution timed out after 120 seconds"
@@ -92,7 +92,7 @@ class TestUserCodeExceptionsSurfaceTheRealMessage:
         )
         with pytest.raises(AppException) as exc_info:
             await execute_and_process_preprocessing_code(
-                code, None, pd.DataFrame({"a": [1.5]}), "f.csv"
+                code, pd.DataFrame({"a": [1.5]}), "f.csv"
             )
         assert "cannot safely cast" in exc_info.value.error_detail
         assert "NoneType" not in exc_info.value.error_detail
@@ -105,7 +105,7 @@ class TestUserCodeExceptionsSurfaceTheRealMessage:
             "    raise KeyError('missing_column')\n"
         )
         df, error, response = await execute_and_process_preprocessing_code(
-            code, None, pd.DataFrame({"a": [1]}), "f.csv", raise_on_error=False
+            code, pd.DataFrame({"a": [1]}), "f.csv", raise_on_error=False
         )
         assert df is None
         assert "missing_column" in error
@@ -123,7 +123,7 @@ class TestUserCodeExceptionsSurfaceTheRealMessage:
             "    return df\n"
         )
         df, error, response = await execute_and_process_preprocessing_code(
-            code, None, pd.DataFrame({"a": pd.Series([1, None], dtype=object)}), "f.csv"
+            code, pd.DataFrame({"a": pd.Series([1, None], dtype=object)}), "f.csv"
         )
         assert error is None
         assert df["a"].tolist() == [1, 0]
@@ -139,7 +139,7 @@ class TestHarmlessWarningsDoNotFailTheRun:
         monkeypatch.setattr(
             workflow_utils,
             "execute_python_code",
-            lambda code, params, wrap_code=True: _response(
+            lambda code, params, wrap_code=True, **kwargs: _response(
                 {
                     "result": result_df,
                     "error": None,
@@ -149,7 +149,7 @@ class TestHarmlessWarningsDoNotFailTheRun:
             ),
         )
         df, error, response = await execute_and_process_preprocessing_code(
-            "code", None, pd.DataFrame(), "f.csv"
+            "code", pd.DataFrame(), "f.csv"
         )
         assert error is None
         assert df is not None
@@ -163,12 +163,12 @@ class TestNormalSuccessUnaffected:
         monkeypatch.setattr(
             workflow_utils,
             "execute_python_code",
-            lambda code, params, wrap_code=True: _response(
+            lambda code, params, wrap_code=True, **kwargs: _response(
                 {"result": result_df, "error": None, "errors": "", "output": ""}
             ),
         )
         df, error, response = await execute_and_process_preprocessing_code(
-            "code", None, pd.DataFrame(), "f.csv"
+            "code", pd.DataFrame(), "f.csv"
         )
         assert error is None
         assert df["a"].tolist() == [1]
@@ -181,12 +181,12 @@ class TestNormalSuccessUnaffected:
         monkeypatch.setattr(
             workflow_utils,
             "execute_python_code",
-            lambda code, params, wrap_code=True: _response(
+            lambda code, params, wrap_code=True, **kwargs: _response(
                 {"error": None, "errors": "", "output": ""}
             ),
         )
         with pytest.raises(AppException) as exc_info:
-            await execute_and_process_preprocessing_code("code", None, pd.DataFrame(), "f.csv")
+            await execute_and_process_preprocessing_code("code", pd.DataFrame(), "f.csv")
         assert "NoneType" in exc_info.value.error_detail
 
 
