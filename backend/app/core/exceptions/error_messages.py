@@ -123,7 +123,11 @@ class ErrorKey(Enum):
     ERROR_INSIDE_WHISPER_SERVICE = "ERROR_INSIDE_WHISPER_SERVICE"
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
     ERROR_EXTRACTING_FROM_FILE = "ERROR_EXTRACTING_FROM_FILE"
+    ML_EXTRACT_CONFIGURATION_INVALID = "ML_EXTRACT_CONFIGURATION_INVALID"
+    ML_EXTRACT_QUERY_FAILED = "ML_EXTRACT_QUERY_FAILED"
+    ML_EXTRACT_FILE_UNAVAILABLE = "ML_EXTRACT_FILE_UNAVAILABLE"
     ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
+    ML_EXTRACT_FAILED = "ML_EXTRACT_FAILED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
     INVALID_PKL_FILE = "INVALID_PKL_FILE"
@@ -311,7 +315,14 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_INSIDE_WHISPER_SERVICE: "An error occurred in transcription service.",
         ErrorKey.MESSAGE_NOT_FOUND: "Message not found.",
         ErrorKey.ERROR_EXTRACTING_FROM_FILE: "Failed to extract text from file.",
+        ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID: "Train Data Source configuration is incomplete.",
+        ErrorKey.ML_EXTRACT_QUERY_FAILED: "Could not run the Train Data Source query.",
+        ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE: "The uploaded training file is no longer available.",
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
+        ErrorKey.ML_EXTRACT_FAILED: (
+            "Train Data Source could not complete the test. "
+            "Check its configuration and try again."
+        ),
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",
@@ -394,6 +405,22 @@ ERROR_MESSAGES = {
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.READ_ONLY_SQL_BLOCKED: "Ce SQL a été rejeté car il n'est pas en lecture seule.",
+        ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID: (
+            "La configuration de la source de données d'entraînement est incomplète."
+        ),
+        ErrorKey.ML_EXTRACT_QUERY_FAILED: (
+            "Impossible d'exécuter la requête de la source de données d'entraînement."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE: (
+            "Le fichier de données d'entraînement téléversé n'est plus disponible."
+        ),
+        ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: (
+            "La limite d'extraction des données d'entraînement a été dépassée."
+        ),
+        ErrorKey.ML_EXTRACT_FAILED: (
+            "La source de données d'entraînement n'a pas pu terminer le test. "
+            "Vérifiez sa configuration et réessayez."
+        ),
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",
