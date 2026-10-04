@@ -138,6 +138,21 @@ async def test_preprocessing_script_exception_is_reported(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_preprocessing_none_result_reports_the_script_stderr(monkeypatch):
+    stderr = "\nGlobal errors: Error processing parameters: name 'executable_function' is not defined"
+
+    async def runner(*_args, **_kwargs):
+        return {"result": None, "output": "", "errors": stderr}
+
+    monkeypatch.setattr(workflow_utils, "execute_python_code", runner)
+
+    processed, errors, _ = await ml_utils.execute_and_process_preprocessing_code("", None, "", raise_on_error=False)
+
+    assert processed is None
+    assert errors.endswith(f"Got: NoneType. Script stderr: {stderr.strip()}")
+
+
+@pytest.mark.asyncio
 async def test_preprocessing_sends_df_only_with_its_own_cap(monkeypatch):
     calls = []
 
@@ -169,8 +184,9 @@ async def test_preprocessing_rebuilds_data_only_for_scripts_that_name_it(monkeyp
 
     await ml_utils.execute_and_process_preprocessing_code("result = params['df']  # data", df, "")
     await ml_utils.execute_and_process_preprocessing_code("result = params.get('data')", df, "")
+    await ml_utils.execute_and_process_preprocessing_code("result = {'data': []}", df, "")
 
-    assert preludes == ["", ml_utils._DATA_FROM_DF]
+    assert preludes == ["", ml_utils._DATA_FROM_DF, ""]
 
 
 @pytest.mark.asyncio

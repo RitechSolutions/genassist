@@ -130,7 +130,7 @@ def test_script_failure_survives_the_stream_cut():
     assert response["result"] is None
     assert "chars cut" in response["errors"]
     assert failure.startswith("Error processing parameters: " + "x" * 1000)
-    assert failure.endswith("chars cut)") and len(failure) < 5000
+    assert failure.endswith("chars total)") and len(failure) < 5000
 
 
 def test_top_level_script_with_a_none_result_is_not_a_failure():

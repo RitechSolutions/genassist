@@ -122,7 +122,6 @@ def _validate_inference_values(
     normalized_inputs: Dict[str, List[Any]],
     feature_names: Sequence[str],
     error: Exception,
-    stage: str = "Error during model prediction",
 ) -> None:
     """After a failed preparation or prediction, names the model features that received no upstream value"""
     if not normalized_inputs:
@@ -140,7 +139,6 @@ def _validate_inference_values(
         if len(offending) > _MAX_REPORTED_FEATURES:
             detail += f" (+{len(offending) - _MAX_REPORTED_FEATURES} more)"
         detail += ". A value of 'null' means the upstream node did not produce that field"
-    logger.error("%s: %s. Reported as: %s", stage, error, detail)
     raise AppException(error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID, error_detail=detail) from error
 
 
@@ -619,7 +617,7 @@ class MLModelInferenceNode(BaseNode):
                         "was trained on - the saved model metadata may be incomplete or from "
                         "an incompatible older version."
                     )
-                    _validate_inference_values(normalized_inputs, feature_names, error, stage="Data preparation failed")
+                    _validate_inference_values(normalized_inputs, feature_names, error)
                     raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(error))
 
                 input_data = np.column_stack([column_arrays[c] for c in model_feature_names])
@@ -641,7 +639,7 @@ class MLModelInferenceNode(BaseNode):
                 raise
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
-                _validate_inference_values(normalized_inputs, feature_names, e, stage="Data preparation failed")
+                _validate_inference_values(normalized_inputs, feature_names, e)
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Data preparation failed: {e}"
                 ) from e
@@ -738,6 +736,7 @@ class MLModelInferenceNode(BaseNode):
             except AppException:
                 raise
             except Exception as e:
+                logger.error("Error during model prediction: %s", e, exc_info=True)
                 _validate_inference_values(normalized_inputs, feature_names, e)
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Error during model prediction: {e}"

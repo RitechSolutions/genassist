@@ -113,6 +113,7 @@ def init_logging() -> None:
     )
 
     # Rotating JSON files — PII redaction filter applied to all persistent sinks
+    # watch=True: sandbox children inherit these handles and can rotate a file away from this process
     logger.add(f"{LOG_DIR}/access.log",
                level="INFO",
                filter=lambda r: r["level"].name == "INFO" and _pii_filter(r),

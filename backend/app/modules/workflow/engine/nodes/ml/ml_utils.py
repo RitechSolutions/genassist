@@ -4,8 +4,6 @@ Utility functions for ML workflow nodes.
 This module contains shared functionality used across ML-related nodes.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
-import logging
 import ast
 import asyncio
 import csv
@@ -23,6 +21,7 @@ import pandas as pd
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.string_utils import truncate_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -737,7 +736,10 @@ def _names_data(python_code: str) -> bool:
         tree = ast.parse(python_code)
     except SyntaxError:
         return False
-    return any(isinstance(node, ast.Constant) and node.value == "data" for node in ast.walk(tree))
+    dict_keys = {key for node in ast.walk(tree) if isinstance(node, ast.Dict) for key in node.keys}
+    return any(
+        isinstance(node, ast.Constant) and node.value == "data" and node not in dict_keys for node in ast.walk(tree)
+    )
 
 
 async def execute_and_process_preprocessing_code(
@@ -808,6 +810,8 @@ async def execute_and_process_preprocessing_code(
         processed_df = pd.DataFrame(result)
     else:
         error_msg = f"Preprocessing code must return a DataFrame, list of dicts, or dict with 'data' key. Got: {type(result).__name__}"
+        if result is None and stderr_output:
+            error_msg += f". Script stderr: {truncate_for_log(stderr_output.strip(), 500)}"
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
