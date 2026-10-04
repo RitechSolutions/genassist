@@ -353,7 +353,7 @@ class TrainDataSourceNode(BaseNode):
                 error_detail="Upload a training file.",
             )
 
-        logger.info(f"Processing training file: {csv_file_path or csv_file_id}")
+        logger.info("Processing uploaded training file")
 
         try:
             # Prefer re-downloading by ID over trusting a stored csvFilePath.
@@ -375,7 +375,7 @@ class TrainDataSourceNode(BaseNode):
                 original_suffix = Path(csv_file_name).suffix if csv_file_name else Path(csv_file_path or "").suffix
                 dest_file_path = f"{DATA_VOLUME}/train/{csv_file_id}{original_suffix or '.csv'}"
 
-                logger.info(f"Downloading training file to: {dest_file_path}")
+                logger.info("Downloading uploaded training file for processing")
 
                 # download the file to the destination path
                 try:

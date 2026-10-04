@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from app.core.exceptions.error_messages import ErrorKey, get_error_message
 from app.core.exceptions.exception_classes import AppException
+from app.core.exceptions.exception_handler import _response_error_detail
 from app.modules.integration.database.database_manager import DatabaseManager
 from app.modules.workflow.engine import base_node as base_node_module
 from app.modules.workflow.engine.nodes.ml import ml_utils
@@ -152,6 +153,46 @@ async def test_missing_uploaded_file_does_not_publish_its_path(tmp_path):
         "The uploaded training file is no longer available. Upload it again."
     )
     assert str(missing_path) not in public_error
+
+
+@pytest.mark.asyncio
+async def test_invalid_csv_encoding_is_safe_for_api_and_workflow(
+    monkeypatch, tmp_path, caplog
+):
+    monkeypatch.setenv("ENV", "prod")
+    monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+    source = tmp_path / "private" / "customer-data.csv"
+    source.parent.mkdir()
+    source.write_bytes(b"id,name\n1,TOP-SECRET-\xff\n")
+    data = {
+        "sourceType": "csv",
+        "csvFilePath": str(source),
+        "csvFileName": source.name,
+    }
+    expected = (
+        "The uploaded CSV could not be decoded as UTF-8. "
+        "Save it with UTF-8 encoding and upload it again."
+    )
+
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(AppException) as exc_info:
+            await _node(data).process(data)
+        public_error = await _public_failure(_node(data))
+
+    error = exc_info.value
+    assert error.error_key == ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID
+    assert _response_error_detail(error) == expected
+
+    assert public_error == expected
+    assert str(source) not in public_error
+    assert "TOP-SECRET" not in public_error
+    assert "0xff" not in public_error
+    assert "�" not in public_error
+    assert str(source) not in caplog.text
+    assert source.name not in caplog.text
+    assert "TOP-SECRET" not in caplog.text
+    assert "Traceback" not in caplog.text
+    assert not list((tmp_path / "train" / "thread-1").glob("*.csv"))
 
 
 @pytest.mark.asyncio

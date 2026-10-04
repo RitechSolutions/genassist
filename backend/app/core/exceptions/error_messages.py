@@ -126,6 +126,7 @@ class ErrorKey(Enum):
     ML_EXTRACT_CONFIGURATION_INVALID = "ML_EXTRACT_CONFIGURATION_INVALID"
     ML_EXTRACT_QUERY_FAILED = "ML_EXTRACT_QUERY_FAILED"
     ML_EXTRACT_FILE_UNAVAILABLE = "ML_EXTRACT_FILE_UNAVAILABLE"
+    ML_EXTRACT_FILE_ENCODING_INVALID = "ML_EXTRACT_FILE_ENCODING_INVALID"
     ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
     ML_EXTRACT_FAILED = "ML_EXTRACT_FAILED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
@@ -318,6 +319,9 @@ ERROR_MESSAGES = {
         ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID: "Train Data Source configuration is incomplete.",
         ErrorKey.ML_EXTRACT_QUERY_FAILED: "Could not run the Train Data Source query.",
         ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE: "The uploaded training file is no longer available.",
+        ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
+            "The uploaded CSV uses an unsupported character encoding."
+        ),
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
         ErrorKey.ML_EXTRACT_FAILED: (
             "Train Data Source could not complete the test. "
@@ -413,6 +417,9 @@ ERROR_MESSAGES = {
         ),
         ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE: (
             "Le fichier de données d'entraînement téléversé n'est plus disponible."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
+            "Le fichier CSV téléversé utilise un encodage de caractères non pris en charge."
         ),
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: (
             "La limite d'extraction des données d'entraînement a été dépassée."
