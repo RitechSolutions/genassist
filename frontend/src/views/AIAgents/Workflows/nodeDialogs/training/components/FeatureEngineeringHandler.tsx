@@ -31,11 +31,14 @@ interface FeatureEngineeringHandlerProps {
   config: FeatureEngineeringConfig | undefined;
   onChange: (config: FeatureEngineeringConfig) => void;
   analysisResult: CSVAnalysisResult | null;
+  // The target column: never offered as a feature input (it's what the model
+  // predicts - using it to build a feature would leak the answer).
+  targetColumn?: string;
 }
 
 export const FeatureEngineeringHandler: React.FC<
   FeatureEngineeringHandlerProps
-> = ({ config, onChange, analysisResult }) => {
+> = ({ config, onChange, analysisResult, targetColumn }) => {
   const [features, setFeatures] = useState<FeatureEngineeringItem[]>(
     config?.features || []
   );
@@ -88,14 +91,16 @@ export const FeatureEngineeringHandler: React.FC<
     });
   };
 
-  const availableColumns = analysisResult?.column_names || [];
+  const availableColumns = (analysisResult?.column_names || []).filter(
+    (col) => col !== targetColumn
+  );
 
   // Column transforms (log/quantile/power/PCA) take numeric columns only: the
   // analysis' numeric columns, plus the output of earlier features (features
   // run in order, so a later one can use an earlier one's column).
   const numericColumnsFor = (featureIndex: number): string[] => {
     const numeric = (analysisResult?.columns_info || [])
-      .filter((col) => col.type === "numeric")
+      .filter((col) => col.type === "numeric" && col.name !== targetColumn)
       .map((col) => col.name);
     const earlier = features
       .slice(0, featureIndex)
