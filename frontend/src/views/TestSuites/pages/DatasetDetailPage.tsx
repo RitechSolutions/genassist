@@ -12,13 +12,27 @@ import {
 } from "@/services/testSuites";
 import { TestCase, TestSuite } from "@/interfaces/testSuite.interface";
 import { Button } from "@/components/button";
-import { ChevronLeft, Import, MessagesSquare, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
+import {
+  ChevronDown,
+  ChevronLeft,
+  FileJson,
+  MessagesSquare,
+  Plus,
+  Upload,
+} from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { PageListSkeleton } from "@/components/skeletons";
 import { ConversationRecordGroup } from "../components/ConversationRecordGroup";
 import { ImportFromConversationDialog } from "../components/ImportFromConversationDialog";
+import { ImportFromFilesDialog } from "../components/ImportFromFilesDialog";
 import { RecordDialog, RecordPayload } from "../components/RecordDialog";
 import {
   countConversations,
@@ -41,6 +55,7 @@ const DatasetDetailPage: React.FC = () => {
     nextTurn: number;
   } | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isFileImportDialogOpen, setIsFileImportDialogOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [caseToDelete, setCaseToDelete] = useState<TestCase | null>(null);
@@ -249,15 +264,32 @@ const DatasetDetailPage: React.FC = () => {
             value={searchQuery}
             onChange={setSearchQuery}
           />
-          <Button
-            variant="outline"
-            className="w-full justify-center rounded-full sm:w-auto"
-            icon={<Import className="h-4 w-4" />}
-            disabled={!suite}
-            onClick={() => setIsImportDialogOpen(true)}
-          >
-            Import conversations
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-full justify-center rounded-full sm:w-auto"
+                icon={<Upload className="h-4 w-4" />}
+                disabled={!suite}
+              >
+                Import
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem className="gap-2" onSelect={() => setIsImportDialogOpen(true)}>
+                <MessagesSquare className="h-4 w-4 text-muted-foreground" />
+                From conversations
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="gap-2"
+                onSelect={() => setIsFileImportDialogOpen(true)}
+              >
+                <FileJson className="h-4 w-4 text-muted-foreground" />
+                From files
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             className="w-full justify-center rounded-full sm:w-auto"
             icon={<Plus className="h-4 w-4" />}
@@ -283,7 +315,7 @@ const DatasetDetailPage: React.FC = () => {
               description={
                 isSearching
                   ? "No conversations match your search. Try adjusting your query."
-                  : "A dataset holds the conversations you evaluate an agent against. Import one from a real transcript, or write your own."
+                  : "A dataset holds the conversations you evaluate an agent against. Import them from real transcripts or from files, or write your own."
               }
               action={
                 isSearching ? undefined : (
@@ -357,6 +389,13 @@ const DatasetDetailPage: React.FC = () => {
       <ImportFromConversationDialog
         open={isImportDialogOpen}
         onOpenChange={setIsImportDialogOpen}
+        suite={suite}
+        onDatasetChanged={(_suiteId, records) => setCases(records)}
+      />
+
+      <ImportFromFilesDialog
+        open={isFileImportDialogOpen}
+        onOpenChange={setIsFileImportDialogOpen}
         suite={suite}
         onDatasetChanged={(_suiteId, records) => setCases(records)}
       />
