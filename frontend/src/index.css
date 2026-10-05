@@ -489,3 +489,58 @@ input[type="checkbox"]:hover {
   stroke-dasharray: none !important;
 }
 /* ========================= END LOW-DETAIL MODE ============================= */
+/* Workflow builder loading overlay (WorkflowLoadingOverlay). Transform/opacity
+   only, so the loop keeps running while a large graph is being mounted. */
+@keyframes wf-loader-node {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+  12%,
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes wf-loader-dot {
+  0% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+  4% {
+    opacity: 1;
+  }
+  22% {
+    opacity: 1;
+    transform: translateX(38px);
+  }
+  28%,
+  100% {
+    opacity: 0;
+    transform: translateX(38px);
+  }
+}
+
+.wf-loader-node {
+  opacity: 0.35;
+  transform: scale(0.9);
+  animation: wf-loader-node 2.1s ease-in-out infinite;
+}
+
+.wf-loader-dot {
+  opacity: 0;
+  animation: wf-loader-dot 2.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-loader-node {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .wf-loader-dot {
+    animation: none;
+  }
+}
