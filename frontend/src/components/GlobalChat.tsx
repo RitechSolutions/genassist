@@ -2,12 +2,21 @@ import { GenAgentChat } from "genassist-chat-react";
 import { useEffect, useState } from "react";
 import { getApiUrl, getWsUrl } from "@/config/api";
 import { isWsEnabled, isPollEnabled } from "@/config/api";
+import { useChatTheme } from "@/hooks/useChatTheme";
 
 export const GlobalChat = () => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
   const [websocketUrl, setWebsocketUrl] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const genassistApiKey = import.meta.env.VITE_GENASSIST_CHAT_APIKEY;
+
+  // Follows the app's light/dark mode. Only type is pinned here: primaryColor
+  // comes from the palette, which carries the brand blue in light and a
+  // lightened variant in dark (the brand blue is unreadable on a dark surface).
+  const theme = useChatTheme({
+    fontFamily: "Roboto, Arial, sans-serif",
+    fontSize: "14px",
+  });
   // const tenantId = localStorage.getItem('tenant_id') as string | undefined;
 
   useEffect(() => {
@@ -39,13 +48,7 @@ export const GlobalChat = () => {
       // tenant={tenantId}
       headerTitle="Genassist Chat"
       brandLogoUrl="https://cdn.prod.website-files.com/689da2a76e017a77b0596d1c/694291f3d893f585af78bdd7_genassist_logo.svg"
-      theme={{
-        primaryColor: "#173DED",
-        backgroundColor: "#ffffff",
-        textColor: "#000000",
-        fontFamily: "Roboto, Arial, sans-serif",
-        fontSize: "14px",
-      }}
+      theme={theme}
       useWs={isWsEnabled}
       mode="floating"
       floatingConfig={{

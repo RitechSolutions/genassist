@@ -39,7 +39,7 @@ export const API_DEFAULT_TIMEOUT_MS = 120000;
 
 /**
  * Timeout for CSV analysis / preprocessing-step execution calls, which can run
- * arbitrary pandas code (or ydata-profiling, for the profile-csv endpoint)
+ * arbitrary pandas code (or ydata-profiling, for the profile-data endpoint)
  * server-side. Kept slightly above the backend's _EXEC_TIMEOUT_SECONDS cap
  * (600s, in backend/app/modules/workflow/utils.py) so the backend's own
  * timeout error always wins the race.
@@ -235,8 +235,12 @@ export const apiRequest = async <T>(
       return null;
     }
 
+    const body = errObj.response?.data;
+    const isAppEnvelope =
+      typeof body === "object" && body !== null && "error_key" in body;
+
     // Mark server as down for 5xx errors allowed 500, 501
-    if (status && status > 501) {
+    if (status && status > 501 && !isAppEnvelope) {
       setServerDown();
     } else if (hasResponse) {
       setServerUp();

@@ -25,11 +25,21 @@ _CLIENT_SAFE_DETAIL_KEYS = frozenset(
         # Says which reference could not be re-linked, or why the import was
         # refused — the whole point is telling the user what to change.
         ErrorKey.EVALUATION_BUNDLE_INVALID,
+        # Says which import limit the files went over.
+        ErrorKey.DATASET_FILE_IMPORT_INVALID,
         # Prompt editor: says which node or field is wrong and what to do about
         # it (save the workflow, retry the save).
         ErrorKey.PROMPT_CONTEXT_INVALID,
         ErrorKey.PROMPT_FIELD_NOT_SUPPORTED,
         ErrorKey.PROMPT_VERSION_CONFLICT,
+        # Platform-generated Train Data Source limit messages only
+        # contain configured ceilings and user guidance.
+        ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
+        # Names the technique, the stale cases or the unusable reply, so the user
+        # knows what to change. The 502/504 details stay internal.
+        ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED,
+        ErrorKey.PROMPT_CASE_SELECTION_INVALID,
+        ErrorKey.PROMPT_OPTIMIZE_UNUSABLE,
         # Policy-generated read-only SQL rejection; not driver/database text.
         ErrorKey.READ_ONLY_SQL_BLOCKED,
     }
@@ -168,4 +178,3 @@ async def send_socket_error(websocket: WebSocket, error_key: ErrorKey, lang: str
         "error": get_error_message(error_key, lang=lang),
         "error_key": error_key.value,
         }))
-

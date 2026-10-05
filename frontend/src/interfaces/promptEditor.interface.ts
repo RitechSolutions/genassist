@@ -1,3 +1,5 @@
+import type { TestResultMetric } from "@/interfaces/testSuite.interface";
+
 export interface PromptVersion {
   id: string;
   workflow_id: string;
@@ -37,29 +39,95 @@ export interface PromptHistory {
   legacy_shared: LegacyPromptHistory | null;
 }
 
+/** Why a case has no verdict, mirroring ResultStatus vocabulary */
+export type PromptCaseStatus =
+  | "scored"
+  | "execution_failed"
+  | "scoring_failed"
+  | "skipped";
+
+export type PromptCaseVerdict = "passed" | "failed" | "inconclusive";
+export type PromptEvalMetric = TestResultMetric & { not_applicable?: boolean };
+
+/** Tokens the provider reported for one call */
+export interface PromptCallUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
 export interface PromptEvalCaseResult {
   case_id: string;
   input: string;
   expected: string;
   actual: string;
-  metrics: Record<string, { score: number | boolean; passed: boolean; comment?: string }>;
+  actual_truncated: boolean;
+  status: PromptCaseStatus;
+  error: string | null;
+  metrics: Record<string, PromptEvalMetric>;
+  verdict: PromptCaseVerdict | null;
   passed: boolean;
+  case_score: number | null;
+  scored_metrics: number;
+  failed_metrics: number;
+  errored_metrics: number;
+  not_evaluated_metrics: number;
+  not_applicable_metrics: number;
+  latency_ms: number | null;
+  usage: PromptCallUsage | null;
+  cost_usd: number | null;
 }
 
 export interface PromptEvalSummary {
   total: number;
   passed: number;
-  avg_score: number;
+  failed: number;
+  inconclusive: number;
+  execution_failed: number;
+  scoring_failed: number;
+  skipped: number;
+  scored: number;
+  avg_score: number | null;
+}
+
+/** What the run actually did, so the header can state it rather than imply it */
+export interface PromptRunProvenance {
+  mode: "isolated_prompt";
+  provider_id: string;
+  /** "" when the provider row has no model provider set */
+  provider_key: string;
+  model: string;
+  techniques: string[];
+  evaluated_case_ids: string[];
+  total_cases: number;
+  trials: number;
+  ran_at: string;
+  latency_ms_total: number;
+  usage_total: Record<string, number>;
+  cost_usd: number | null;
+  unpriced_calls: number;
+  grader_calls: number;
+  grader_tokens: number;
+  grader_cost_usd: number | null;
+  budget_seconds: number;
+  deadline_hit: boolean;
+  metering_handoff_failed: boolean;
 }
 
 export interface PromptEvalResponse {
   results: PromptEvalCaseResult[];
   summary: PromptEvalSummary;
+  provenance: PromptRunProvenance;
 }
 
 export interface PromptOptimizeResponse {
   suggested_prompt: string;
   explanation: string;
+  exposure: Record<string, string[]>;
+  examples_truncated: boolean;
+  holdout_case_ids: string[];
+  exploratory: boolean;
+  provenance: PromptRunProvenance;
 }
 
 export interface CreatePromptVersionPayload {
@@ -72,15 +140,54 @@ export interface GoldSuiteLinkPayload {
   name?: string;
 }
 
+export interface JudgeRuleConfig {
+  rubric: string;
+  /** Omitted = default 0.5 */
+  min_score?: number;
+  source_type: "none" | "expected_output";
+}
+
+/** Options for the techniques that take them. nli_eval gets a fixed evidence
+ *  source server-side; llm_judge takes one rule; provenance_eval is rejected outright */
+export interface PromptTechniqueConfigs {
+  not_contains?: { phrases: string[] };
+  field_equals?: { field: string; expected?: string };
+  nli_eval?: { min_entail_score: number };
+  llm_judge?: { rules: JudgeRuleConfig[] };
+}
+
 export interface PromptEvalRequestPayload {
   prompt_content: string;
   techniques: string[];
   provider_id: string;
+  technique_configs?: PromptTechniqueConfigs;
+  case_ids?: string[];
+  max_cases?: number;
 }
 
 export interface PromptOptimizeRequestPayload {
   provider_id: string;
   current_prompt: string;
   instructions?: string;
-  failed_cases?: Array<{ input: string; expected: string; actual: string }>;
+  failed_cases?: Array<{
+    case_id: string;
+    actual: string;
+    failed_metrics: string[];
+    /** What the graders said about the reply, so the rewrite reads the same notes */
+    feedback?: string;
+  }>;
+  case_split?: { holdout_case_ids: string[] };
+  techniques?: string[];
+  technique_configs?: PromptTechniqueConfigs;
+  previous_attempts?: PreviousAttemptPayload[];
+}
+
+/** Previous rewrite + scores. Diff + counts; dev cases only */
+export interface PreviousAttemptPayload {
+  improved: number;
+  regressed: number;
+  unchanged: number;
+  explanation: string;
+  diff_summary: string;
+  regressions: Array<{ case_id: string; feedback: string | null }>;
 }

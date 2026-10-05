@@ -84,6 +84,7 @@ import {
   toRenderableNodes,
   ungroupNodes,
 } from "./utils/nodeGroups";
+import { withCopyNames } from "./utils/nodeNaming";
 import DeleteGroupDialog from "./components/DeleteGroupDialog";
 import RenameNodeDialog from "./components/RenameNodeDialog";
 import toast from "react-hot-toast";
@@ -899,12 +900,13 @@ const GraphFlowContent: React.FC = () => {
     copiedNodes.forEach((node) => idMap.set(node.id, uuidv4()));
 
     // Remaps ids and group membership, and offsets root-level nodes (see prepareNodesForPaste).
-    const newNodes: Node[] = prepareNodesForPaste(
-      copiedNodes,
-      nodesRef.current,
-      idMap,
-      offset
-    ).map((node) => ({ ...node, data: { ...node.data } }));
+    // Pasted copies get "(n)" names so they stay distinguishable from their originals.
+    const newNodes: Node[] = withCopyNames(
+      prepareNodesForPaste(copiedNodes, nodesRef.current, idMap, offset).map(
+        (node) => ({ ...node, data: { ...node.data } })
+      ),
+      nodesRef.current
+    );
 
     const newEdges = copiedEdges.map((edge) => ({
       ...edge,
@@ -937,16 +939,21 @@ const GraphFlowContent: React.FC = () => {
         if (!original) return nds;
         const offset = 40;
         const { position } = original;
-        const clone: Node = {
-          ...original,
-          id: uuidv4(),
-          position: {
-            x: (position?.x || 0) + offset,
-            y: (position?.y || 0) + offset,
-          },
-          data: { ...original.data, updateNodeData },
-          selected: true,
-        };
+        const [clone] = withCopyNames(
+          [
+            {
+              ...original,
+              id: uuidv4(),
+              position: {
+                x: (position?.x || 0) + offset,
+                y: (position?.y || 0) + offset,
+              },
+              data: { ...original.data, updateNodeData },
+              selected: true,
+            },
+          ],
+          nds
+        );
         return [
           ...nds.map((n) => (n.selected ? { ...n, selected: false } : n)),
           clone,

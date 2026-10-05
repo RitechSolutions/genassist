@@ -30,11 +30,26 @@ export interface RunInputs {
   providerId: string;
 }
 
+export interface OptimizeInputs extends RunInputs {
+  /** May be empty; only its length is checked */
+  instructions: string;
+  rubricProblem?: string | null;
+  judgeScoreProblem?: string | null;
+}
+
 export interface EvalInputs extends RunInputs {
   techniqueCount: number;
+  /** Why the forbidden-phrase list is not sendable; null or absent when it is */
+  phrasesProblem?: string | null;
+  entailScoreProblem?: string | null;
+  rubricProblem?: string | null;
+  judgeScoreProblem?: string | null;
+  /** Set only for a suggested prompt, which cannot be run once its inputs moved on */
+  stale?: boolean;
 }
 
 export const MAX_PROMPT_LENGTH = 200_000;
+export const MAX_INSTRUCTIONS_LENGTH = 4_000;
 
 /** Code points, matching the backend bound; JS `.length` double-counts astral characters */
 export const promptLength = (content: string): number =>
@@ -44,6 +59,15 @@ export const promptLength = (content: string): number =>
 export const HISTORY_ERROR_REASON = "Prompt history could not be loaded.";
 export const HISTORY_FORBIDDEN_REASON =
   "You don't have permission to view prompt history.";
+
+export const SUGGESTION_STALE_REASON =
+  "Inputs changed since this suggestion. Run Optimize again.";
+
+export const HOLDOUT_STALE_REASON =
+  "Inputs changed since this comparison. Start a new hold-out run.";
+
+export const HOLDOUT_OFF_REASON =
+  "Turn on Hold out cases to validate on the hold-out set.";
 
 const NODE_MISSING_REASON =
   "This node isn't in the saved workflow. Save the workflow first.";
@@ -69,9 +93,8 @@ const contextGate = (
 const blankGate = (content: string, noun: string): Gate | null =>
   content.trim() ? null : blocked(`The ${noun} is empty.`);
 
-/** POST body bounds prevent invalid requests. Version writes only — the
- *  evaluate and optimize endpoints set no maximum */
-const versionBodyGate = (content: string, noun: string): Gate | null => {
+/** POST body bounds, shared by every endpoint that takes a prompt */
+const bodyGate = (content: string, noun: string): Gate | null => {
   const blank = blankGate(content, noun);
   if (blank) return blank;
   // Quick check first; code-point walk only if already over
@@ -117,7 +140,7 @@ export const saveGate = (
     "Saving versions needs the update:evaluation permission.",
   );
   if (context) return context;
-  return versionBodyGate(draft, "prompt") ?? OPEN;
+  return bodyGate(draft, "prompt") ?? OPEN;
 };
 
 export const evaluateGate = (
@@ -134,6 +157,7 @@ export const evaluateGate = (
   if (context) return context;
   const inline = inlineCheckGate(history);
   if (inline) return inline;
+  if (run.stale) return blocked(SUGGESTION_STALE_REASON);
   if (!history.goldSuiteId)
     return blocked("Link a gold dataset before running an evaluation.");
   if (cases.status === "pending") return blocked("Loading cases…");
@@ -143,13 +167,17 @@ export const evaluateGate = (
   if (provider) return provider;
   if (run.techniqueCount === 0)
     return blocked("Select at least one matching technique.");
-  return blankGate(run.content, run.contentNoun) ?? OPEN;
+  if (run.phrasesProblem) return blocked(run.phrasesProblem);
+  if (run.entailScoreProblem) return blocked(run.entailScoreProblem);
+  if (run.rubricProblem) return blocked(run.rubricProblem);
+  if (run.judgeScoreProblem) return blocked(run.judgeScoreProblem);
+  return bodyGate(run.content, run.contentNoun) ?? OPEN;
 };
 
 export const optimizeGate = (
   history: HistoryState,
   caps: PromptEditorCapabilities,
-  run: RunInputs,
+  run: OptimizeInputs,
 ): Gate => {
   const context = contextGate(
     history,
@@ -159,25 +187,78 @@ export const optimizeGate = (
   if (context) return context;
   const inline = inlineCheckGate(history);
   if (inline) return inline;
-  return providerGate(run) ?? blankGate(run.content, run.contentNoun) ?? OPEN;
+  const provider = providerGate(run);
+  if (provider) return provider;
+  if (run.rubricProblem) return blocked(run.rubricProblem);
+  if (run.judgeScoreProblem) return blocked(run.judgeScoreProblem);
+  if (promptLength(run.instructions) > MAX_INSTRUCTIONS_LENGTH)
+    return blocked(
+      `The additional instructions are longer than ${MAX_INSTRUCTIONS_LENGTH.toLocaleString()} characters.`,
+    );
+  return bodyGate(run.content, run.contentNoun) ?? OPEN;
 };
 
 /**
- * Accept saves and applies the suggestion (follows save contract)
+ * Accept applies the suggestion to the draft
  * Not gated on inline check—suggestions only appear where Optimize is allowed
  */
 export const acceptGate = (
   history: HistoryState,
   caps: PromptEditorCapabilities,
-  pending: boolean,
   suggestion: string,
+  state: { pending: boolean; stale: boolean },
 ): Gate => {
   const context = contextGate(
     history,
     caps.canEditPrompt,
-    "Saving versions needs the update:evaluation permission.",
+    "Applying a suggestion needs the update:evaluation permission.",
   );
   if (context) return context;
-  if (pending) return blocked("A save is already running.");
-  return versionBodyGate(suggestion, "suggested prompt") ?? OPEN;
+  if (state.pending) return blocked("A save is already running.");
+  if (state.stale) return blocked(SUGGESTION_STALE_REASON);
+  return bodyGate(suggestion, "suggested prompt") ?? OPEN;
 };
+
+export interface HoldoutRequestKeys {
+  baselineKey: string;
+  suggestionKey: string;
+}
+
+/**
+ * Compares two prompts against current inputs. Valid only if both match;
+ * missing key invalidates (single version ≠ comparison)
+ */
+export const pairedKeysMatch = (
+  stored: {
+    baselineKey: string | null | undefined;
+    suggestionKey: string | null | undefined;
+  },
+  current: HoldoutRequestKeys | null,
+): boolean =>
+  current !== null &&
+  stored.baselineKey === current.baselineKey &&
+  stored.suggestionKey === current.suggestionKey;
+
+export interface HoldoutRetryInputs {
+  half: "baseline" | "suggestion";
+  requestKey: string;
+  nextKey?: string;
+  storedBaselineKey: string | null;
+}
+
+/** Replaying one half is only honest while the pair it belongs to is still current */
+export const retryGate = (
+  stored: HoldoutRetryInputs,
+  current: HoldoutRequestKeys | null,
+): Gate =>
+  pairedKeysMatch(
+    stored.half === "baseline"
+      ? { baselineKey: stored.requestKey, suggestionKey: stored.nextKey }
+      : {
+          baselineKey: stored.storedBaselineKey,
+          suggestionKey: stored.requestKey,
+        },
+    current,
+  )
+    ? OPEN
+    : blocked(HOLDOUT_STALE_REASON);

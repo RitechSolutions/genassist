@@ -177,7 +177,7 @@ const navGroups: NavGroup[] = [
           {
             title: "Evaluate ML models",
             url: "/tests/ml-model-evaluations",
-            permissionsRequired: ["test:workflow"],
+            permissionsRequired: ["*", "read:ml_model"],
           },
         ],
       },

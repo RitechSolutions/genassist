@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Any, Optional
 
+from app.core.exceptions.error_messages import get_error_message
+from app.core.exceptions.exception_classes import AppException
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -16,10 +18,28 @@ logger = logging.getLogger(__name__)
 # JSON fields whose values are treated as executable code (Python, etc.)
 CODE_FIELD_NAMES = ["code", "pythonScript", "pythonCode"]
 
+# JSON fields whose values are themselves JSON documents (Tool Builder forward templates)
+FORWARD_TEMPLATE_FIELD_NAMES = ["forwardTemplate"]
+
 PARAM_STYLE_NAMED = "named"
 PARAM_STYLE_PYFORMAT = "pyformat"
 _SUPPORTED_PARAM_STYLES = {PARAM_STYLE_NAMED, PARAM_STYLE_PYFORMAT}
 _VARIABLE_RE = re.compile(r"{{([^\s{}]+)}}")
+
+
+def describe_exception(e: Exception) -> str:
+    """Human-readable message for an exception caught during node execution.
+
+    `AppException.__str__` (inherited from `Exception.__init__(error_key.value)`)
+    only ever returns the bare error key (e.g. "file_not_found", "error_500") -
+    `error_detail`, the specific reason a node builds and raises it with, is a
+    separate attribute `str()` never sees. Using plain `str(e)` here is what
+    made every node failure collapse to its generic error key instead of the
+    actual cause.
+    """
+    if isinstance(e, AppException):
+        return e.error_detail.strip() if e.error_detail and e.error_detail.strip() else get_error_message(e.error_key)
+    return str(e)
 
 
 class QueryVariableError(ValueError):
@@ -585,19 +605,17 @@ def _convert_json_escapes_for_code_context(json_string: str) -> str:
     return result
 
 
-def _is_in_code_field_context(json_string: str, var_start: int) -> bool:
+def _is_in_field_context(json_string: str, var_start: int, field_names: list[str]) -> bool:
     """
-    Determine if a variable position is within a "code" field context.
-
-    This checks if the variable is inside a JSON string value for a "code" key,
-    which typically contains Python code that will be executed.
+    Determine if a variable position is within the string value of one of the given JSON keys.
 
     Args:
         json_string: The JSON string to analyze
         var_start: The starting position of the variable
+        field_names: JSON keys whose string values qualify
 
     Returns:
-        True if the variable is inside a "code" field value, False otherwise
+        True if the variable is inside the value of one of ``field_names``, False otherwise
     """
     if var_start == -1:
         return False
@@ -639,7 +657,7 @@ def _is_in_code_field_context(json_string: str, var_start: int) -> bool:
     if colon_pos == -1:
         return False
 
-    # Look backwards from colon to find any of the known code field names
+    # Look backwards from colon to find any of the given field names
     pattern_end = colon_pos
     # Skip whitespace before colon
     for i in range(colon_pos - 1, -1, -1):
@@ -647,8 +665,8 @@ def _is_in_code_field_context(json_string: str, var_start: int) -> bool:
             pattern_end = i + 1
             break
 
-    # Check if any known code field name appears just before the colon
-    for field_name in CODE_FIELD_NAMES:
+    # Check if any of the given field names appears just before the colon
+    for field_name in field_names:
         code_pattern = f'"{field_name}"'
         if pattern_end >= len(code_pattern):
             potential_match = json_string[pattern_end - len(code_pattern) : pattern_end]
@@ -656,6 +674,16 @@ def _is_in_code_field_context(json_string: str, var_start: int) -> bool:
                 return True
 
     return False
+
+
+def _is_in_code_field_context(json_string: str, var_start: int) -> bool:
+    """True if the variable sits inside a code field value (Python that will be executed)."""
+    return _is_in_field_context(json_string, var_start, CODE_FIELD_NAMES)
+
+
+def _is_in_forward_template_context(json_string: str, var_start: int) -> bool:
+    """True if the variable sits inside a Tool Builder forward template, which is JSON nested in JSON."""
+    return _is_in_field_context(json_string, var_start, FORWARD_TEMPLATE_FIELD_NAMES)
 
 
 def _encode_replacement_value(replacement_value: Any, var_name: str, json_string: str, var_pattern: str) -> str:
@@ -676,12 +704,22 @@ def _encode_replacement_value(replacement_value: Any, var_name: str, json_string
         var_start = json_string.find(var_pattern)
         in_string_context = _is_in_string_context(json_string, var_start)
         in_code_context = _is_in_code_field_context(json_string, var_start)
+        in_forward_template_context = _is_in_forward_template_context(json_string, var_start)
 
         # Always encode the replacement value as JSON first
         json_encoded = json.dumps(replacement_value)
 
         if isinstance(replacement_value, str):
-            if in_string_context:
+            if in_string_context and in_forward_template_context:
+                # The forward template is a JSON document stored as a JSON string, so the value
+                # must survive two decodes: once for the config, once for the template itself.
+                json_replacement = json.dumps(json_encoded[1:-1])[1:-1]
+                logger.debug(
+                    "Replaced %s with doubly escaped string content for forward template: %s",
+                    var_name,
+                    truncate_for_log(redact_sensitive_substrings(json_replacement)),
+                )
+            elif in_string_context:
                 # For strings inside JSON string fields, remove outer quotes
                 # The JSON encoding already properly escapes all special characters.
                 json_replacement = json_encoded[1:-1]

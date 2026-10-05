@@ -142,14 +142,7 @@ async def evaluate_prompt(
     data: PromptEvalRequest,
     service: PromptEditorService = Injected(PromptEditorService),
 ):
-    return await service.evaluate_prompt(
-        workflow_id,
-        node_id,
-        prompt_field,
-        prompt_content=data.prompt_content,
-        techniques=data.techniques,
-        provider_id=data.provider_id,
-    )
+    return await service.evaluate_prompt(workflow_id, node_id, prompt_field, data)
 
 
 @router.post(
@@ -164,12 +157,4 @@ async def optimize_prompt(
     data: PromptOptimizeRequest,
     service: PromptEditorService = Injected(PromptEditorService),
 ):
-    return await service.optimize_prompt(
-        workflow_id,
-        node_id,
-        prompt_field,
-        current_prompt=data.current_prompt,
-        provider_id=data.provider_id,
-        instructions=data.instructions,
-        failed_cases=data.failed_cases,
-    )
+    return await service.optimize_prompt(workflow_id, node_id, prompt_field, data)

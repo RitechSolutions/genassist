@@ -37,6 +37,7 @@ export const DEFAULT_TEXTAREA_SIZE: TextareaSize = "description";
 export interface TextareaSizingProps {
   size?: TextareaSize;
   rows?: number;
+  fill?: boolean;
 }
 
 // Turns a size preset into the props a textarea spreads. An explicit `rows`
@@ -45,6 +46,7 @@ export interface TextareaSizingProps {
 export function resolveTextareaSizing({
   size,
   rows,
+  fill,
   className,
 }: TextareaSizingProps & { className?: string }) {
   const preset = TEXTAREA_SIZES[size ?? DEFAULT_TEXTAREA_SIZE];
@@ -54,6 +56,10 @@ export function resolveTextareaSizing({
     rows: rows ?? preset.rows,
     spellCheck: preset.spellCheck,
     contentClassName,
-    className: cn(TEXTAREA_BASE_CLASS, contentClassName),
+    className: cn(
+      TEXTAREA_BASE_CLASS,
+      contentClassName,
+      fill && "h-full resize-none",
+    ),
   };
 }
