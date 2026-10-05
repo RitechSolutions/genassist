@@ -175,8 +175,13 @@ async def clear_conversation_memory_cache(conversation_id: UUID) -> None:
     """
     Delete the Redis keys written by RedisConversationMemory for a conversation.
 
-    Keys follow the pattern set in memory.py:
+    Keys follow the pattern set in memory.py. Keep this suffix list in sync with
+    RedisConversationMemory.__init__ in app/modules/workflow/agents/memory.py:
       {tenant_prefix}:conversation:{conversation_id}:{info|messages|metadata|stateful}
+
+    Deletes the known keys directly instead of SCANning the keyspace for matches:
+    SCAN cost is O(total keys in Redis) per call regardless of match count, which
+    made per-conversation cleanup expensive as the shared keyspace grew.
     """
     from app.core.tenant_scope import get_tenant_context
     from app.dependencies.dependency_injection import RedisString
@@ -186,12 +191,12 @@ async def clear_conversation_memory_cache(conversation_id: UUID) -> None:
     tenant_prefix = f"tenant:{tenant_id}:" if tenant_id else ""
     conv_str = str(conversation_id)
 
-    pattern = f"{tenant_prefix}:conversation:{conv_str}:*"
+    key_suffixes = ("info", "messages", "metadata", "stateful")
+    keys = [f"{tenant_prefix}:conversation:{conv_str}:{suffix}" for suffix in key_suffixes]
 
     try:
         redis = injector.get(RedisString)
-        keys = [key async for key in redis.scan_iter(pattern)]
-        deleted = await redis.delete(*keys) if keys else 0
+        deleted = await redis.delete(*keys)
         logger.debug(f"Cleared {deleted} conversation memory keys for {conversation_id}")
     except Exception as e:
         logger.error(f"Failed to clear conversation memory cache for {conversation_id}: {e}")
