@@ -443,7 +443,7 @@ class TrainModelNode(BaseNode):
             logger.info(f"Training {model_type} model: {name}")
 
             # Load data from CSV file
-            data, df = ml_utils.load_csv_file(file_url, self.state.thread_id)
+            df = ml_utils.load_csv_file(file_url, self.state.thread_id)
             # Column types saved by an upstream Preprocessing node (nullable
             # Int64/boolean, string, category, datetime) are converted to the
             # plain dtypes the steps below select on - see

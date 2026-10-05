@@ -5,10 +5,14 @@ import time
 from celery.signals import worker_process_init
 from app import create_celery
 from app.core.config.settings import settings
-# Registers the beat leader lock and tick heartbeat (beat_init signal)
-import app.tasks.beat_leader  # noqa: F401
-# Stops a solo-pool worker whose task ran past its hard limit (celeryd_after_setup signal)
-import app.tasks.solo_watchdog  # noqa: F401
+
+# Skipped when a sandbox child re-runs this file as __mp_main__
+if __name__ != "__mp_main__":
+    # Registers the beat leader lock and tick heartbeat (beat_init signal)
+    import app.tasks.beat_leader  # noqa: F401
+
+    # Stops a solo-pool worker whose task ran past its hard limit (celeryd_after_setup signal)
+    import app.tasks.solo_watchdog  # noqa: F401
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -72,7 +76,8 @@ def init_worker_cache(**kwargs):
 # imports the workflow engine and pulls torch/sklearn into the process. Building the
 # Celery app on its own keeps the (prefork) master process free of ML libs so it can
 # fork children safely. See app/__init__.py create_celery() and the lean-import note.
-celery_app = create_celery()
+if __name__ != "__mp_main__":
+    celery_app = create_celery()
 
 if __name__ == "__main__":
     logger.debug(f"Starting Celery worker with Redis URL: {settings.REDIS_URL}")

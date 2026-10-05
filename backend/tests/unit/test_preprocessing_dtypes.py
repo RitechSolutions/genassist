@@ -43,7 +43,7 @@ class TestColumnTypesSurviveTheCsvRoundTrip:
         )
         assert ml_utils.dtypes_sidecar_path(path).exists()
 
-        _, loaded = ml_utils.load_csv_file(path)
+        loaded = ml_utils.load_csv_file(path)
         # Text stays text - a plain read_csv turned "001" into the number 1.
         assert loaded["code"].tolist()[:2] == ["001", "002"]
         assert str(loaded["count"].dtype) == "Int64"

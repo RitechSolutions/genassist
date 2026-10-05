@@ -4,6 +4,7 @@ Utility functions for ML workflow nodes.
 This module contains shared functionality used across ML-related nodes.
 """
 
+import ast
 import asyncio
 import csv
 import json
@@ -862,9 +863,7 @@ def resolve_csv_file_path(
         ) from e
 
 
-def load_csv_file(
-    file_url: str, thread_id: Optional[str] = None
-) -> Tuple[List[Dict[str, Any]], pd.DataFrame]:
+def load_csv_file(file_url: str, thread_id: Optional[str] = None) -> pd.DataFrame:
     """
     Load data from a CSV file URL/path.
 
@@ -873,7 +872,7 @@ def load_csv_file(
         thread_id: Optional thread ID for relative path resolution
 
     Returns:
-        Tuple of (data as list of dicts, DataFrame)
+        DataFrame
 
     Raises:
         AppException: If file cannot be loaded
@@ -883,11 +882,10 @@ def load_csv_file(
 
         # Load CSV file using pandas (with any saved column types reapplied)
         df = read_csv_with_dtypes(file_path, encoding="utf-8")
-        data = df.to_dict("records")
 
-        logger.info(f"Loaded {len(data)} rows from {file_path}")
+        logger.info(f"Loaded {len(df)} rows from {file_path}")
 
-        return data, df
+        return df
 
     except AppException:
         raise
@@ -899,9 +897,28 @@ def load_csv_file(
         ) from e
 
 
+_PREPROCESS_MAX_RESULT_BYTES = 128 * 1024 * 1024
+
+# Runs in the sandbox before a preprocessing script that names params["data"], rebuilding it from df
+_DATA_FROM_DF = """
+if params.get("df") is not None:
+    params["data"] = params["df"].to_dict("records")
+"""
+
+
+def _names_data(python_code: str) -> bool:
+    try:
+        tree = ast.parse(python_code)
+    except SyntaxError:
+        return False
+    dict_keys = {key for node in ast.walk(tree) if isinstance(node, ast.Dict) for key in node.keys}
+    return any(
+        isinstance(node, ast.Constant) and node.value == "data" and node not in dict_keys for node in ast.walk(tree)
+    )
+
+
 async def execute_and_process_preprocessing_code(
     python_code: str,
-    data: Optional[List[Dict[str, Any]]],
     df: Optional[pd.DataFrame],
     file_url: str,
     raise_on_error: bool = True,
@@ -911,7 +928,6 @@ async def execute_and_process_preprocessing_code(
 
     Args:
         python_code: Python code for data preprocessing
-        data: Optional list of dictionaries representing the data rows
         df: Optional pandas DataFrame
         file_url: URL or path to the file
         raise_on_error: If True, raise AppException on errors. If False, return error info.
@@ -923,43 +939,35 @@ async def execute_and_process_preprocessing_code(
     Raises:
         AppException: If code execution fails or result cannot be processed (only if raise_on_error=True)
     """
-    from app.modules.workflow.utils import execute_python_code
+    from app.modules.workflow.utils import execute_python_code, script_error
 
     # Prepare parameters for Python code execution
     params = {
-        "data": data,
+        "data": None,
         "df": df,
         "fileUrl": file_url,
     }
 
     # Execute the preprocessing Python code
-    response = await execute_python_code(python_code, params, wrap_code=True)
+    response = await execute_python_code(
+        python_code,
+        params,
+        wrap_code=True,
+        max_result_bytes=_PREPROCESS_MAX_RESULT_BYTES,
+        prelude=_DATA_FROM_DF if _names_data(python_code) else "",
+    )
 
-    # A hard failure (syntax error, blocked import, timeout, uncaught
-    # exception) is reported under "error" (singular) - see
-    # _subprocess_worker/_execute_python_code_sync. This is the authoritative,
-    # specific message for why execution didn't produce a result, so surface
-    # it directly instead of falling through to a generic "Got: NoneType"
-    # guess based on whatever ended up in "result".
-    hard_error = response.get("error")
-    if hard_error:
+    # Library warnings land in stderr, so only a runner error or a raised script counts as failure
+    failure = script_error(response)
+    if failure:
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {hard_error}",
+                error_detail=f"Error executing preprocessing code: {failure}",
             )
         else:
-            return None, hard_error, response
+            return None, failure, response
 
-    # "errors" (plural) is captured stderr output plus, under "Global errors:",
-    # any exception the user's code raised: wrap_code=True runs it inside a
-    # try/except (add_executable_function) that catches the exception into an
-    # `errors` variable instead of letting it reach "error" above. So:
-    # - result present: stderr is just warning noise (e.g. a pandas
-    #   FutureWarning, printed to stderr by default) - logged, not a failure.
-    # - no result: stderr holds the reason it's missing (the user's
-    #   exception + traceback), so it is the failure - surfacing it is what
-    #   keeps a ValueError in user code from becoming "Got: NoneType".
     stderr_output = response.get("errors")
     result = response.get("result")
     if stderr_output and result is None:

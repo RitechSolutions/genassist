@@ -359,12 +359,12 @@ async def analyze_csv(
 
             try:
                 # Load the CSV file using shared utility
-                data, df = ml_utils.load_csv_file(file_url)
+                df = ml_utils.load_csv_file(file_url)
 
                 # Execute preprocessing code using shared utility
                 # Use raise_on_error=True to raise exceptions for API endpoint
                 processed_df, _, _ = await ml_utils.execute_and_process_preprocessing_code(
-                    python_code, data, df, str(file_path), raise_on_error=True
+                    python_code, df, str(file_path), raise_on_error=True
                 )
 
                 # Save processed data to a temporary CSV file

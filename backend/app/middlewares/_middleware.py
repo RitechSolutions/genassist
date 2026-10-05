@@ -14,6 +14,7 @@ from starlette_context.middleware import RawContextMiddleware
 from starlette_context.plugins import RequestIdPlugin
 
 from app import settings
+from app.auth.utils import API_KEY_HEADER_NAME
 from app.core.config.logging import (
     duration_ctx,
     ip_ctx,
@@ -23,6 +24,7 @@ from app.core.config.logging import (
     status_ctx,
     uid_ctx,
 )
+from app.core.utils.sensitive_data_utils import TOKEN_REDACTION_LABEL
 from app.middlewares.rate_limit_middleware import _request_context
 from app.middlewares.read_after_write_middleware import ReadAfterWriteMiddleware
 from app.middlewares.replica_scope_middleware import ReplicaScopeMiddleware
@@ -225,6 +227,17 @@ def build_middlewares() -> list[Middleware]:
 # -------------------------------------------------------------------------------- #
 
 
+_API_KEY_SHAPE = re.compile(r"[A-Za-z0-9_-]{54}")
+
+
+def _path_without_api_key(path: str, api_key: str | None) -> str:
+    """Masks API key."""
+    return "/".join(
+        TOKEN_REDACTION_LABEL if (api_key and segment == api_key) or _API_KEY_SHAPE.fullmatch(segment) else segment
+        for segment in path.split("/")
+    )
+
+
 class RequestContextMiddleware(BaseHTTPMiddleware):
     """Logs start/end of every request and populates Loguru ContextVars."""
 
@@ -244,7 +257,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         )
         ip = request.client.host if request.client else "-"
         meth = request.method
-        pth = request.url.path
+        pth = _path_without_api_key(request.url.path, request.headers.get(API_KEY_HEADER_NAME))
         uid = getattr(getattr(request.state, "user", None), "id", "guest")
 
         # ------------------------------------------------------------------ #
