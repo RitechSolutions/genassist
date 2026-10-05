@@ -75,6 +75,10 @@ class ProjectSettings(BaseSettings):
     # (worker died mid-run). Kept above the 2h execution timeout and the broker
     # redelivery delay so a lost run is re-run before it is declared dead.
     WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m
+    # Loop node: the most iterations one Loop may run, and the most a single run
+    # may spend across all of its loops (bounds nested loops).
+    WORKFLOW_LOOP_MAX_ITERATIONS: int = 1000
+    WORKFLOW_LOOP_MAX_TOTAL_ITERATIONS: int = 5000
     # Webhook Trigger node ingress (public /webhook/execute/{id} for workflow_trigger rows).
     WEBHOOK_TRIGGER_MAX_BODY_BYTES: int = 1_048_576  # 1 MiB
     WEBHOOK_TRIGGER_HMAC_TOLERANCE_SECONDS: int = 300

@@ -192,6 +192,35 @@ export interface FilterNodeData extends BaseNodeData {
   stopMessage?: string;
 }
 
+// Loop node data — repeats its body per list item or until a condition holds.
+// The stop condition uses the same operators as the Filter node.
+export type LoopMode = "forEach" | "repeatUntil";
+
+export type LoopOnError = "stop" | "continue";
+
+/** What the Done output keeps in `results`. */
+export type LoopCollect = "all" | "last" | "none";
+
+export interface LoopNodeData extends BaseNodeData {
+  mode?: LoopMode;
+  /** The list to go through (For each item), usually a variable. */
+  items?: string;
+  /** Items per pass (For each item); above 1 the body receives a list. */
+  batchSize?: number;
+  maxIterations?: number;
+  stopField?: string;
+  stopOperator?: FilterOperator;
+  stopValue?: string;
+  stopCaseSensitive?: boolean;
+  onError?: LoopOnError;
+  /** Seconds to wait between passes; doubled after every pass with `delayBackoff`. */
+  delaySeconds?: number;
+  delayBackoff?: boolean;
+  /** No new pass starts once the loop has run this long; 0 = no limit. */
+  timeLimitSeconds?: number;
+  collect?: LoopCollect;
+}
+
 // NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
 export interface NlpNodeData extends BaseNodeData {
   providerId?: string;
@@ -715,6 +744,7 @@ export type NodeData =
   | RouterNodeData
   | SwitchNodeData
   | FilterNodeData
+  | LoopNodeData
   | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData

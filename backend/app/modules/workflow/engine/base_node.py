@@ -55,6 +55,9 @@ class BaseNode(ABC):
         self.execution_end_time: Optional[float] = None
         self.code_params: Dict[str, Any] = {}
         self.direct_input: Any = None
+        # Set by the engine when it builds the node for a run; None when the node
+        # is built as an agent tool. Lets a node run part of the graph (Loop).
+        self.engine: Any = None
 
         # Validate configuration
         self._validate_config()
@@ -125,6 +128,14 @@ class BaseNode(ABC):
         JSONB column, so it is persisted with the workflow.
         """
         return bool(self.node_data.get("deactivated", False))
+
+    def get_bypass_next_nodes(self) -> Optional[List[str]]:
+        """Nodes to continue with when this node is deactivated.
+
+        ``None`` (the default) means every connected node. A node whose outputs
+        are not all "what comes next" (a Loop's body) overrides this.
+        """
+        return None
 
     def get_node_config(self, node_id: str):
         """Get the node config and type."""

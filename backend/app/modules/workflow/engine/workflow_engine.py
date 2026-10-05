@@ -43,6 +43,7 @@ from app.modules.workflow.engine.nodes import (
     JiraNode,
     KnowledgeToolNode,
     LLMModelNode,
+    LoopNode,
     MCPNode,
     MLModelInferenceNode,
     NLPNode,
@@ -150,6 +151,7 @@ class WorkflowEngine:
         cls._node_registry["routerNode"] = RouterNode
         cls._node_registry["switchNode"] = SwitchNode
         cls._node_registry["filterNode"] = FilterNode
+        cls._node_registry["loopNode"] = LoopNode
         cls._node_registry["agentNode"] = AgentNode
         cls._node_registry["externalAgentNode"] = ExternalAgentNode
         cls._node_registry["apiToolNode"] = ApiToolNode
@@ -217,6 +219,7 @@ class WorkflowEngine:
             "routerNode",
             "switchNode",
             "filterNode",
+            "loopNode",
             "chatInputNode",
             "chatOutputNode",
             "pythonCodeNode",
@@ -566,8 +569,22 @@ class WorkflowEngine:
         if node_output and "next_nodes" in node_output:
             next_nodes = node_output.get("next_nodes", [])
         else:
-            next_nodes = self._find_next_nodes(node_id)
+            bypass_next = node.get_bypass_next_nodes() if node.is_deactivated() else None
+            next_nodes = bypass_next if bypass_next is not None else self._find_next_nodes(node_id)
 
+        await self._execute_next_nodes(next_nodes, state, visited)
+
+    async def run_subgraph(self, start_node_ids: List[str], state: WorkflowState, blocked: Set[str]) -> None:
+        """Run part of the graph within the current run, e.g. one pass of a loop body.
+
+        Execution starts at ``start_node_ids`` with a fresh visited set, so nodes
+        that already ran can run again; it never enters a ``blocked`` node, which
+        is where the sub-graph ends (the Loop node its body wires back into).
+        """
+        await self._execute_next_nodes(start_node_ids, state, set(blocked))
+
+    async def _execute_next_nodes(self, next_nodes: List[str], state: WorkflowState, visited: Set[str]) -> None:
+        """Execute the given nodes (in parallel when there are several) and everything after them."""
         # Find and execute next nodes in parallel
         if next_nodes:
             # Capture tenant context from the main request scope
@@ -686,6 +703,7 @@ class WorkflowEngine:
             raise ValueError(
                 f"Unknown node type: {node_type}, skipping node {node_id}")
         node = node_class(node_id, node_config, state)
+        node.engine = self
         return node
 
     async def _execute_single_node(

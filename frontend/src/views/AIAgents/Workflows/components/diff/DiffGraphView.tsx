@@ -15,6 +15,7 @@ import { ScrollArea } from '@/components/scroll-area';
 import { Workflow } from '@/interfaces/workflow.interface';
 import { NodeDiff, WorkflowDiff } from '@/interfaces/workflow-diff.interface';
 import { computeLayeredLayout } from '../../utils/executionLayout';
+import { withoutLoopBackEdges } from '../../utils/loopGraph';
 import { getNodeLabel } from '../../utils/versionDiff';
 import { NodeHandler } from '../../types/nodes';
 import { DIFF_STATUS_STYLES } from './diffStatusStyles';
@@ -66,7 +67,7 @@ const DiffGraphPane: React.FC<DiffGraphPaneProps> = ({
     () =>
       computeLayeredLayout(
         sourceNodes.map((n) => n.id),
-        sourceEdges.map((e) => ({ source: e.source, target: e.target }))
+        withoutLoopBackEdges(sourceEdges).map((e) => ({ source: e.source, target: e.target }))
       ),
     [sourceNodes, sourceEdges]
   );

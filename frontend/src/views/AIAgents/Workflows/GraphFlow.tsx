@@ -61,6 +61,7 @@ import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
 import { validateSubAgentConnection } from "./utils/subAgentGraph";
+import { validateLoopConnection } from "./utils/loopGraph";
 import { buildDeleteConfirmation } from "./utils/nodeDeletion";
 import {
   applyDragReparenting,
@@ -622,7 +623,9 @@ const GraphFlowContent: React.FC = () => {
         return { ok: false };
       }
       const scopedEdges = ignoreEdgeId ? edges.filter((e) => e.id !== ignoreEdgeId) : edges;
-      return validateSubAgentConnection(params, nodes, scopedEdges);
+      const subAgentCheck = validateSubAgentConnection(params, nodes, scopedEdges);
+      if (!subAgentCheck.ok) return subAgentCheck;
+      return validateLoopConnection(params, nodes, scopedEdges);
     },
     [validateConnection, nodes, edges]
   );
