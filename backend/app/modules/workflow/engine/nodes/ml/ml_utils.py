@@ -7,6 +7,7 @@ This module contains shared functionality used across ML-related nodes.
 import ast
 import asyncio
 import csv
+import json
 import logging
 import math
 import os
@@ -16,12 +17,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
-from app.core.utils.string_utils import truncate_for_log
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,9 @@ _STREAM_SOURCE_DETAILS = {
     "csv": ("CSV file", "CSV file", "Use a smaller file"),
     "file": ("training file", "training file", "Use a smaller file"),
 }
+
+# Distinct values listed per categorical column in a CSV analysis.
+_MAX_ANALYSIS_CATEGORIES = 100
 
 
 # Model types that only support one task type, regardless of the target variable
@@ -270,12 +274,156 @@ def get_sample_data(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sanitize_for_json(result)
 
 
+# A CSV stores only text, so a plain pd.read_csv re-guesses every column's
+# type. For a file written from an already-typed DataFrame (the Data
+# Preprocessing node's output), the real dtypes are saved next to it in
+# "<name>.dtypes.json" and reapplied by read_csv_with_dtypes - otherwise a
+# "Change Column Data Type" step is lost the moment the next node (e.g.
+# Train Model) reloads the file: "001" as text comes back as the number 1,
+# datetimes come back as text, Int64 with missing values comes back as float.
+_DTYPES_SIDECAR_SUFFIX = ".dtypes.json"
+
+# Dtypes read_csv can apply directly from their saved name.
+_READ_CSV_DTYPES = {
+    "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
+    "float32", "float64", "bool",
+    "Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64",
+    "Float32", "Float64", "boolean", "string", "category",
+}
+
+
+def dtypes_sidecar_path(csv_path: Any) -> Path:
+    """Path of the saved-dtypes file for a CSV: data.csv -> data.dtypes.json."""
+    path = Path(csv_path)
+    return path.with_name(path.stem + _DTYPES_SIDECAR_SUFFIX)
+
+
+def write_dtypes_sidecar(csv_path: Any, df: pd.DataFrame) -> str:
+    """Save df's column dtypes next to csv_path; returns the saved file's path."""
+    sidecar = dtypes_sidecar_path(csv_path)
+    sidecar.write_text(
+        json.dumps({str(c): str(t) for c, t in df.dtypes.items()}), encoding="utf-8"
+    )
+    return str(sidecar)
+
+
+def read_csv_with_dtypes(file_path: Any, **read_csv_kwargs: Any) -> pd.DataFrame:
+    """pd.read_csv that reapplies the dtypes saved next to the file, if any.
+
+    Files without a saved-dtypes file (e.g. a user upload) are read exactly
+    as before. If the saved dtypes can't be applied (the file was edited, a
+    value no longer fits its type), it falls back to a plain read rather than
+    failing the node.
+    """
+    sidecar = dtypes_sidecar_path(file_path)
+    if not sidecar.exists():
+        return pd.read_csv(file_path, **read_csv_kwargs)
+
+    try:
+        saved_dtypes: Dict[str, str] = json.loads(sidecar.read_text(encoding="utf-8"))
+        header = set(pd.read_csv(file_path, nrows=0, **read_csv_kwargs).columns)
+        dtype_arg: Dict[str, Any] = {}
+        parse_dates: List[str] = []
+        for column, dtype_name in saved_dtypes.items():
+            if column not in header:
+                continue
+            if dtype_name.startswith("datetime64"):
+                parse_dates.append(column)
+            elif dtype_name == "object":
+                # Text stays text ("001" must not become 1).
+                dtype_arg[column] = str
+            elif dtype_name in _READ_CSV_DTYPES:
+                dtype_arg[column] = dtype_name
+        return pd.read_csv(
+            file_path,
+            dtype=dtype_arg or None,
+            parse_dates=parse_dates or False,
+            **read_csv_kwargs,
+        )
+    except (ValueError, TypeError, OSError) as e:
+        logger.warning(
+            f"Could not apply saved column types from {sidecar} ({e}); "
+            "reading the file with inferred types instead"
+        )
+        return pd.read_csv(file_path, **read_csv_kwargs)
+
+
+def normalize_dtypes_for_training(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert pandas extension dtypes to the plain NumPy/object dtypes the
+    Train Model pipeline works with.
+
+    Train Model picks columns by exact dtype - int64/float64 for outlier
+    handling and scaling, object for one-hot encoding, bool for the bool
+    pass - so nullable Int64/boolean, string, category or 32-bit columns
+    (now that preprocessing dtypes survive into Train Model, see
+    read_csv_with_dtypes) would otherwise be silently skipped or left
+    unencoded.
+
+    - integer (incl. nullable Int64): int64, or float64 if values are missing
+    - float (incl. Float64, float32): float64
+    - boolean: bool, or float64 (1.0/0.0/NaN) if values are missing
+    - string / category: object (text), so it is one-hot encoded as before
+    - datetime: text, matching how a date column always reached Train Model
+      before (the time-based split parses its date column itself)
+    """
+    df = df.copy()
+    for column in df.columns:
+        series = df[column]
+        dtype = series.dtype
+        has_missing = bool(series.isna().any())
+        if pd.api.types.is_bool_dtype(dtype):
+            if dtype != bool:
+                df[column] = series.astype("float64") if has_missing else series.astype(bool)
+        elif pd.api.types.is_integer_dtype(dtype):
+            if has_missing:
+                df[column] = series.astype("float64")
+            elif dtype != "int64":
+                df[column] = series.astype("int64")
+        elif pd.api.types.is_float_dtype(dtype):
+            if dtype != "float64":
+                df[column] = series.astype("float64")
+        elif pd.api.types.is_datetime64_any_dtype(dtype):
+            df[column] = series.astype(str).where(series.notna(), np.nan).astype(object)
+        elif isinstance(dtype, pd.CategoricalDtype) or (
+            pd.api.types.is_string_dtype(dtype) and dtype != object
+        ):
+            df[column] = series.astype(object).where(series.notna(), np.nan)
+    return df
+
+
+def ordinal_key(value: Any) -> Optional[str]:
+    """Normalize a value for ordinal-mapping lookup.
+
+    Ordinal mappings come from JSON, so their keys are always strings, while
+    the data values may be numbers (a CSV column of 1/2/3 loads as int, or as
+    float 1.0/2.0 when values are missing) or text with stray spaces. Without
+    one normalization applied to both sides, those values silently map to
+    NaN. Missing values stay missing (None). Matching is case-sensitive, so
+    distinct categories like "A" and "a" are never merged.
+    """
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, (bool, np.bool_)):
+        return str(bool(value))
+    if isinstance(value, (int, np.integer)):
+        return str(int(value))
+    if isinstance(value, (float, np.floating)) and float(value).is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
 async def save_data_to_csv(
     data: List[Dict[str, Any]],
     columns: List[str],
     thread_id: str,
     suffix: Optional[str] = None,
     file_description: str = "CSV",
+    dtypes: Optional[Dict[str, str]] = None,
 ) -> str:
     """
     Save data to CSV file using thread_id and timestamp as filename.
@@ -286,6 +434,8 @@ async def save_data_to_csv(
         thread_id: Thread ID for filename generation
         suffix: Optional suffix to add to filename (e.g., "_preprocess")
         file_description: Description for logging (e.g., "CSV", "preprocessed CSV")
+        dtypes: Optional column -> dtype name map, saved next to the CSV so
+            read_csv_with_dtypes can restore the column types on reload
 
     Returns:
         Path to the saved CSV file
@@ -316,6 +466,9 @@ async def save_data_to_csv(
                 writer = csv.writer(csvfile)
                 if columns:
                     writer.writerow(columns)
+
+        if dtypes:
+            dtypes_sidecar_path(file_path).write_text(json.dumps(dtypes), encoding="utf-8")
 
         logger.info(f"Saved {file_description} file: {file_path}")
         return str(file_path)
@@ -626,6 +779,20 @@ def resolve_csv_file_path(
     Raises:
         AppException: If file is not found or is not a CSV file
     """
+    # A File URL wired to the upstream node's "data" (its sample rows)
+    # instead of "data_path" resolves to a JSON list here; without this check
+    # it surfaces as a baffling OSError "File name too long".
+    stripped_url = (file_url or "").strip()
+    if stripped_url.startswith(("[", "{")):
+        raise AppException(
+            error_key=ErrorKey.FILE_NOT_FOUND,
+            error_detail=(
+                "File URL contains data, not a file path - it is probably set to the upstream "
+                "node's data output. Use its file path instead, e.g. {{source.data_path}}."
+            ),
+        )
+    file_url = stripped_url
+
     try:
         # Handle both absolute paths and relative paths
         if file_url.startswith("/"):
@@ -705,8 +872,8 @@ def load_csv_file(file_url: str, thread_id: Optional[str] = None) -> pd.DataFram
     try:
         file_path = resolve_csv_file_path(file_url, thread_id)
 
-        # Load CSV file using pandas
-        df = pd.read_csv(file_path, encoding="utf-8")
+        # Load CSV file using pandas (with any saved column types reapplied)
+        df = read_csv_with_dtypes(file_path, encoding="utf-8")
 
         logger.info(f"Loaded {len(df)} rows from {file_path}")
 
@@ -795,6 +962,19 @@ async def execute_and_process_preprocessing_code(
 
     stderr_output = response.get("errors")
     result = response.get("result")
+    if stderr_output and result is None:
+        user_error = (
+            stderr_output.replace("Global errors: ", "", 1)
+            .replace("Error processing parameters: ", "", 1)
+            .strip()
+        )
+        if raise_on_error:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Error executing preprocessing code: {user_error}",
+            )
+        else:
+            return None, user_error, response
     if stderr_output:
         logger.warning("Preprocessing code produced warnings/stderr output: %s", stderr_output)
 
@@ -810,8 +990,6 @@ async def execute_and_process_preprocessing_code(
         processed_df = pd.DataFrame(result)
     else:
         error_msg = f"Preprocessing code must return a DataFrame, list of dicts, or dict with 'data' key. Got: {type(result).__name__}"
-        if result is None and stderr_output:
-            error_msg += f". Script stderr: {truncate_for_log(stderr_output.strip(), 500)}"
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
@@ -839,8 +1017,9 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
         - columns_info: Detailed info per column
     """
     try:
-        # Load CSV using pandas for better analysis
-        df = pd.read_csv(file_path, encoding="utf-8", on_bad_lines="skip")
+        # Load CSV using pandas for better analysis (with any saved column
+        # types reapplied, so the analysis matches what the next node sees)
+        df = read_csv_with_dtypes(file_path, encoding="utf-8", on_bad_lines="skip")
 
         # Convert to list of dicts for sample data
         data = df.to_dict("records")
@@ -862,8 +1041,8 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
                 "missing_count": int(df[col].isna().sum() + (df[col] == "").sum()),
             }
 
-            # Determine if numeric
-            is_numeric = pd.api.types.is_numeric_dtype(df[col])
+            # Determine if numeric (bool/boolean count as categorical, not numeric)
+            is_numeric = pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])
 
             if is_numeric:
                 # Numeric column stats
@@ -874,9 +1053,24 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
                 col_info["unique_count"] = int(df[col].nunique())
             else:
                 # Non-numeric column stats
-                col_info["type"] = "categorical" if df[col].dtype == "object" else "other"
+                is_categorical = (
+                    df[col].dtype == "object"
+                    or isinstance(df[col].dtype, pd.CategoricalDtype)
+                    or pd.api.types.is_string_dtype(df[col])
+                    or pd.api.types.is_bool_dtype(df[col])
+                )
+                col_info["type"] = "categorical" if is_categorical else "other"
                 col_info["unique_count"] = int(df[col].nunique())
                 col_info["category_count"] = int(df[col].nunique())
+                if is_categorical:
+                    # The distinct values, so the Train Model dialog can offer
+                    # them for ordering an ordinal encoding. Normalized the same
+                    # way the encoding itself matches them (ordinal_key).
+                    keys = {ordinal_key(v) for v in df[col].dropna().unique()}
+                    keys.discard(None)
+                    categories = sorted(keys)
+                    col_info["categories"] = categories[:_MAX_ANALYSIS_CATEGORIES]
+                    col_info["categories_truncated"] = len(categories) > _MAX_ANALYSIS_CATEGORIES
 
             # Sanitize the column info
             col_info = sanitize_for_json(col_info)

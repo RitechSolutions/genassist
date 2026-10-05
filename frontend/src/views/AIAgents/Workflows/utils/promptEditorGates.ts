@@ -33,6 +33,8 @@ export interface RunInputs {
 export interface OptimizeInputs extends RunInputs {
   /** May be empty; only its length is checked */
   instructions: string;
+  rubricProblem?: string | null;
+  judgeScoreProblem?: string | null;
 }
 
 export interface EvalInputs extends RunInputs {
@@ -40,6 +42,8 @@ export interface EvalInputs extends RunInputs {
   /** Why the forbidden-phrase list is not sendable; null or absent when it is */
   phrasesProblem?: string | null;
   entailScoreProblem?: string | null;
+  rubricProblem?: string | null;
+  judgeScoreProblem?: string | null;
   /** Set only for a suggested prompt, which cannot be run once its inputs moved on */
   stale?: boolean;
 }
@@ -165,6 +169,8 @@ export const evaluateGate = (
     return blocked("Select at least one matching technique.");
   if (run.phrasesProblem) return blocked(run.phrasesProblem);
   if (run.entailScoreProblem) return blocked(run.entailScoreProblem);
+  if (run.rubricProblem) return blocked(run.rubricProblem);
+  if (run.judgeScoreProblem) return blocked(run.judgeScoreProblem);
   return bodyGate(run.content, run.contentNoun) ?? OPEN;
 };
 
@@ -183,6 +189,8 @@ export const optimizeGate = (
   if (inline) return inline;
   const provider = providerGate(run);
   if (provider) return provider;
+  if (run.rubricProblem) return blocked(run.rubricProblem);
+  if (run.judgeScoreProblem) return blocked(run.judgeScoreProblem);
   if (promptLength(run.instructions) > MAX_INSTRUCTIONS_LENGTH)
     return blocked(
       `The additional instructions are longer than ${MAX_INSTRUCTIONS_LENGTH.toLocaleString()} characters.`,

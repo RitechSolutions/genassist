@@ -192,3 +192,36 @@ class TestNormalSuccessUnaffected:
 
 async def _response(d):
     return d
+
+
+class TestLargeResultsDoNotHang:
+    """A result bigger than the subprocess pipe buffer (~64 KB) - e.g. a real
+    30k-row dataset - used to deadlock: the parent joined the child before
+    reading its result, and the child can't exit until the result is read.
+    The run then hung until the execution timeout killed it."""
+
+    @pytest.mark.asyncio
+    async def test_30k_row_dataframe_result_returns_without_timing_out(self, monkeypatch):
+        import time
+
+        import numpy as np
+
+        # Short timeout so a regression fails fast instead of waiting 10 minutes.
+        monkeypatch.setattr(workflow_utils, "_EXEC_TIMEOUT_SECONDS", 10)
+        rng = np.random.default_rng(0)
+        df = pd.DataFrame(rng.normal(size=(29757, 17)), columns=[f"c{i}" for i in range(17)])
+        code = (
+            "import pandas as pd\n"
+            "def executable_function(params):\n"
+            "    df = params['df']\n"
+            "    df['c0'] = df['c0'].astype('float64')\n"
+            "    return df\n"
+        )
+        started = time.monotonic()
+        out, error, response = await execute_and_process_preprocessing_code(
+            code, df, "f.csv", raise_on_error=False
+        )
+        elapsed = time.monotonic() - started
+        assert error is None, error
+        assert len(out) == 29757
+        assert elapsed < 10, f"took {elapsed:.1f}s"

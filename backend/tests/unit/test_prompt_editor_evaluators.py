@@ -10,7 +10,10 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import _response_error_detail
 from app.schemas.prompt_editor import (
+    MAX_JUDGE_RUBRIC_CHARS,
     FieldEqualsConfig,
+    JudgeRule,
+    LlmJudgeConfig,
     NliEvalConfig,
     NotContainsConfig,
     PromptEvalRequest,
@@ -45,7 +48,7 @@ class TestValidatePromptCheckTechniques:
         assert exc_info.value.error_key is ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED
         assert "execution trace" in exc_info.value.error_detail
 
-    @pytest.mark.parametrize("technique", ["llm_judge", "provenance_eval"])
+    @pytest.mark.parametrize("technique", ["provenance_eval"])
     def test_deferred_techniques_are_rejected_until_d9(self, technique):
         with pytest.raises(AppException) as exc_info:
             validate_prompt_check_techniques([technique], _configs())
@@ -70,6 +73,41 @@ class TestValidatePromptCheckTechniques:
 
         assert exc_info.value.status_code == 400
         assert "not_contains" in exc_info.value.error_detail
+
+    def test_the_judge_receives_its_rule_and_the_checks_own_provider(self):
+        provider_id = uuid4()
+        built = validate_prompt_check_techniques(
+            ["llm_judge"],
+            _configs(
+                llm_judge={"rules": [{"rubric": "  grade it  ", "min_score": 0.7, "source_type": "expected_output"}]}
+            ),
+            judge_provider_id=provider_id,
+        )
+
+        assert built["llm_judge"] == {
+            "rules": [{"rubric": "grade it", "min_score": 0.7, "source_type": "expected_output"}],
+            "llm_provider_id": str(provider_id),
+        }
+
+    def test_the_rewrite_builds_the_judge_config_without_a_provider(self):
+        built = build_technique_configs(["llm_judge"], _configs(llm_judge={"rules": [{"rubric": "grade it"}]}))
+
+        assert built["llm_judge"] == {"rules": [{"rubric": "grade it", "min_score": 0.5, "source_type": "none"}]}
+
+    @pytest.mark.parametrize("build", [validate_prompt_check_techniques, build_technique_configs])
+    def test_a_judge_with_no_rubric_is_refused_on_both_routes(self, build):
+        with pytest.raises(AppException) as exc_info:
+            build(["contains", "llm_judge"], _configs())
+
+        assert exc_info.value.status_code == 400
+        assert "rubric" in exc_info.value.error_detail
+
+    def test_a_judge_config_sent_for_an_unselected_judge_is_rejected(self):
+        with pytest.raises(AppException) as exc_info:
+            validate_prompt_check_techniques(["contains"], _configs(llm_judge={"rules": [{"rubric": "grade it"}]}))
+
+        assert exc_info.value.status_code == 400
+        assert "llm_judge" in exc_info.value.error_detail
 
     def test_the_expectation_based_techniques_receive_an_empty_config(self):
         built = validate_prompt_check_techniques(
@@ -147,7 +185,7 @@ class TestRejectionDetailReachesTheUser:
 
 
 class TestTechniqueConfigContract:
-    @pytest.mark.parametrize("key", ["llm_judge", "provenance_eval"])
+    @pytest.mark.parametrize("key", ["provenance_eval"])
     def test_a_deferred_evaluator_has_no_config_model_at_all(self, key):
         with pytest.raises(ValidationError) as exc_info:
             PromptTechniqueConfigs(**{key: {}})
@@ -166,6 +204,60 @@ class TestTechniqueConfigContract:
     def test_an_out_of_range_entail_score_is_rejected(self, score):
         with pytest.raises(ValidationError):
             NliEvalConfig(min_entail_score=score)
+
+    def test_a_judge_rule_carries_a_rubric_a_threshold_and_a_source_and_nothing_else(self):
+        assert set(JudgeRule.model_fields) == {"rubric", "min_score", "source_type"}
+
+        with pytest.raises(ValidationError) as exc_info:
+            PromptTechniqueConfigs(llm_judge={"rules": [{"rubric": "grade it", "source_field": "trace.x"}]})
+
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    @pytest.mark.parametrize("key", ["label", "source_field", "llm_provider_id", "answer_field", "question_field"])
+    def test_a_registry_selector_cannot_ride_along_on_a_judge_rule(self, key):
+        with pytest.raises(ValidationError) as exc_info:
+            JudgeRule(rubric="grade it", **{key: "anything"})
+
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    def test_the_judge_config_cannot_choose_its_own_provider(self):
+        with pytest.raises(ValidationError) as exc_info:
+            LlmJudgeConfig(rules=[{"rubric": "grade it"}], llm_provider_id=str(uuid4()))
+
+        assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    @pytest.mark.parametrize("rules, error", [([], "too_short"), ([{"rubric": "a"}, {"rubric": "b"}], "too_long")])
+    def test_the_judge_grades_exactly_one_rule(self, rules, error):
+        with pytest.raises(ValidationError) as exc_info:
+            LlmJudgeConfig(rules=rules)
+
+        assert exc_info.value.errors()[0]["type"] == error
+
+    @pytest.mark.parametrize("rubric", ["", "   ", "x" * (MAX_JUDGE_RUBRIC_CHARS + 1)])
+    def test_a_rubric_the_judge_could_not_grade_with_is_rejected(self, rubric):
+        with pytest.raises(ValidationError):
+            JudgeRule(rubric=rubric)
+
+    def test_a_rubric_at_the_bound_is_accepted_and_stripped(self):
+        rule = JudgeRule(rubric=f"  {'x' * MAX_JUDGE_RUBRIC_CHARS}  ")
+
+        assert rule.rubric == "x" * MAX_JUDGE_RUBRIC_CHARS
+
+    def test_a_rule_grades_the_rubric_alone_until_a_source_is_chosen(self):
+        rule = JudgeRule(rubric="grade it")
+
+        assert (rule.source_type, rule.min_score) == ("none", 0.5)
+
+    def test_a_source_the_editor_does_not_offer_is_rejected(self):
+        with pytest.raises(ValidationError) as exc_info:
+            JudgeRule(rubric="grade it", source_type="output")
+
+        assert exc_info.value.errors()[0]["type"] == "literal_error"
+
+    @pytest.mark.parametrize("score", [-0.1, 1.1])
+    def test_an_out_of_range_judge_threshold_is_rejected(self, score):
+        with pytest.raises(ValidationError):
+            JudgeRule(rubric="grade it", min_score=score)
 
     @pytest.mark.parametrize("key", ["nli_model_name", "evidence_source", "answer_field"])
     def test_a_registry_option_cannot_ride_along_on_a_config_that_does_exist(self, key):
@@ -219,12 +311,15 @@ class TestPromptEvalRequestContract:
 class TestExpectationRules:
 
     def test_a_new_technique_cannot_be_added_without_deciding_what_it_expects(self):
-        assert set(_EXPECTATION_RULES) | {"not_contains", "field_equals"} == set(
-            PROMPT_CHECK_TECHNIQUES
-        )
+        assert set(_EXPECTATION_RULES) | {
+            "not_contains",
+            "field_equals",
+            "llm_judge",
+        } == set(PROMPT_CHECK_TECHNIQUES)
 
     def test_a_technique_with_no_settled_meaning_describes_nothing(self):
         assert describe_expectations(["not_contains", "field_equals"]) == ""
+        assert describe_expectations(["llm_judge"]) == ""
         assert describe_expectations([]) == ""
 
     def test_contains_is_described_as_a_fragment_not_the_whole_reply(self):
@@ -276,6 +371,33 @@ class TestExpectationRules:
         assert describe_expectations(
             ["nli_eval"], {"nli_eval": {"evidence_source": "expected_output"}}
         ) == describe_expectations(["nli_eval"])
+
+    def test_the_rubric_the_judge_runs_is_quoted_with_its_threshold(self):
+        described = describe_expectations(
+            ["llm_judge"],
+            {"llm_judge": {"rules": [{"rubric": "Is it polite?", "min_score": 0.7}]}},
+        )
+
+        assert described == (
+            "- llm_judge: an LLM judge scores the reply from 0 to 1 against this rubric "
+            'and it passes at 0.7 or higher: "Is it polite?"'
+        )
+
+    def test_the_judges_source_is_described_only_once_it_is_chosen(self):
+        with_source = describe_expectations(
+            ["llm_judge"],
+            {"llm_judge": {"rules": [{"rubric": "r", "source_type": "expected_output"}]}},
+        )
+        without = describe_expectations(
+            ["llm_judge"], {"llm_judge": {"rules": [{"rubric": "r", "source_type": "none"}]}}
+        )
+
+        assert "shown to the judge as its source" in with_source
+        assert "source" not in without
+
+    def test_a_judge_with_no_rule_describes_nothing(self):
+        assert describe_expectations(["llm_judge"], {"llm_judge": {}}) == ""
+        assert describe_expectations(["llm_judge"], {"llm_judge": {"rules": []}}) == ""
 
     def test_configured_lines_keep_the_allow_list_order(self):
         described = describe_expectations(

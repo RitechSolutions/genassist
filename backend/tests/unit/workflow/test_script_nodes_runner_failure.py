@@ -149,7 +149,7 @@ async def test_preprocessing_none_result_reports_the_script_stderr(monkeypatch):
     processed, errors, _ = await ml_utils.execute_and_process_preprocessing_code("", None, "", raise_on_error=False)
 
     assert processed is None
-    assert errors.endswith(f"Got: NoneType. Script stderr: {stderr.strip()}")
+    assert errors == "name 'executable_function' is not defined"
 
 
 @pytest.mark.asyncio

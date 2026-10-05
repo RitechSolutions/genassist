@@ -4,6 +4,7 @@ import type {
   ConversationDataset,
   CreateTestCasePayload,
   CreateTestSuitePayload,
+  ImportCasesFromFilesResult,
   ImportFromConversationsResult,
   TestCase,
   TestResult,
@@ -74,6 +75,27 @@ export const importCasesFromConversations = (
     "POST",
     `${BASE}/suites/${suiteId}/cases/import-from-conversations`,
     { conversation_ids: conversationIds },
+  );
+
+const datasetFilesForm = (files: File[]) => {
+  const form = new FormData();
+  files.forEach((file) => form.append("files", file));
+  return form;
+};
+
+/** What importing these files would add, without saving anything. */
+export const previewCasesFromFiles = (suiteId: string, files: File[]) =>
+  apiRequest<ImportCasesFromFilesResult>(
+    "POST",
+    `${BASE}/suites/${suiteId}/cases/import-from-files/preview`,
+    datasetFilesForm(files),
+  );
+
+export const importCasesFromFiles = (suiteId: string, files: File[]) =>
+  apiRequest<ImportCasesFromFilesResult>(
+    "POST",
+    `${BASE}/suites/${suiteId}/cases/import-from-files`,
+    datasetFilesForm(files),
   );
 
 /** Every dataset, with how much of this conversation each already holds. */

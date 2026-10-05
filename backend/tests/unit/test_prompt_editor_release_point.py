@@ -66,7 +66,7 @@ def _service(db, cases):
         workflow_repo=workflow_repo,
         db=db,
     )
-    service._persist_usage = AsyncMock()
+    service._persist_usage = AsyncMock(return_value="recorded")
     return service
 
 
@@ -77,10 +77,17 @@ def _injector(llm, build_error=None):
         if build_error
         else AsyncMock(return_value=llm)
     )
+    rate_repo = SimpleNamespace(list_active=AsyncMock(return_value=[]))
+
+    def _get(cls):
+        if cls.__name__ == "LlmProviderService":
+            return provider_service
+        if cls.__name__ == "LlmCostRateRepository":
+            return rate_repo
+        return llm_provider
+
     fake = MagicMock()
-    fake.get.side_effect = lambda cls: (
-        provider_service if cls.__name__ == "LlmProviderService" else llm_provider
-    )
+    fake.get.side_effect = _get
     return fake
 
 
@@ -103,6 +110,24 @@ def _eval_request():
 
 def _optimize_request():
     return PromptOptimizeRequest(provider_id=PROVIDER.id, current_prompt="You are helpful.")
+
+
+def _judge_request():
+    return PromptEvalRequest(
+        prompt_content="You are helpful.",
+        provider_id=PROVIDER.id,
+        techniques=["llm_judge"],
+        technique_configs={"llm_judge": {"rules": [{"rubric": "grade it"}]}},
+    )
+
+
+def _judge(session, seen):
+
+    async def _grade(**_kwargs):
+        seen.append(session.in_transaction())
+        return {"key": "llm_judge", "score": 0.8, "passed": True, "threshold": 0.5, "comment": "ok"}
+
+    return _grade
 
 
 class TestReleasePoint:
@@ -146,3 +171,19 @@ class TestReleasePoint:
         await session.begin()
         assert session.in_transaction() is True
         await session.rollback()
+
+    @pytest.mark.asyncio
+    async def test_the_session_is_free_while_the_judge_grades(self, session):
+        await session.begin()
+        seen = []
+        service = _service(session, [_case(), _case()])
+        service.evaluators._evaluators["llm_judge"] = _judge(session, seen)
+        llm = AsyncMock()
+        llm.ainvoke.return_value = AIMessage(content="hi")
+
+        with patch("app.dependencies.injector.injector", _injector(llm)):
+            result = await service.evaluate_prompt(WORKFLOW_ID, NODE_ID, FIELD, _judge_request())
+
+        assert seen == [False, False]
+        assert session.in_transaction() is False
+        assert result.results[0].verdict == "passed"
