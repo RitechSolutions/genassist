@@ -899,6 +899,30 @@ def load_csv_file(
         ) from e
 
 
+# Marker _subprocess_worker puts before an exception the user's code raised,
+# after whatever else was written to stderr (e.g. pandas warnings).
+_USER_EXCEPTION_MARKER = "Global errors: "
+_WRAPPER_ERROR_PREFIX = "Error processing parameters: "
+
+
+def _format_user_code_error(stderr_output: str) -> str:
+    """The error to show for a run that returned no result.
+
+    stderr holds any warnings first and the user's exception last, so the
+    real error would otherwise be buried under e.g. a pandas FutureWarning
+    the user can ignore. Puts the exception (message + traceback) first and
+    any other stderr output after it, under "Warnings:".
+    """
+    if _USER_EXCEPTION_MARKER not in stderr_output:
+        return stderr_output.strip()
+    warnings_text, _, error_text = stderr_output.partition(_USER_EXCEPTION_MARKER)
+    error_text = error_text.strip()
+    if error_text.startswith(_WRAPPER_ERROR_PREFIX):
+        error_text = error_text[len(_WRAPPER_ERROR_PREFIX):]
+    warnings_text = warnings_text.strip()
+    return f"{error_text}\n\nWarnings:\n{warnings_text}" if warnings_text else error_text
+
+
 async def execute_and_process_preprocessing_code(
     python_code: str,
     data: Optional[List[Dict[str, Any]]],
@@ -963,11 +987,7 @@ async def execute_and_process_preprocessing_code(
     stderr_output = response.get("errors")
     result = response.get("result")
     if stderr_output and result is None:
-        user_error = (
-            stderr_output.replace("Global errors: ", "", 1)
-            .replace("Error processing parameters: ", "", 1)
-            .strip()
-        )
+        user_error = _format_user_code_error(stderr_output)
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,

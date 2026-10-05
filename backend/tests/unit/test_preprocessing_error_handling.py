@@ -225,3 +225,61 @@ class TestLargeResultsDoNotHang:
         assert error is None, error
         assert len(out) == 29757
         assert elapsed < 10, f"took {elapsed:.1f}s"
+
+
+class TestRealErrorIsShownBeforeWarnings:
+    """When a run fails after pandas printed a warning, the user's actual
+    exception comes first in the message and the warning after it."""
+
+    # stderr exactly as the sandbox returns it when user code raises after a
+    # pandas FutureWarning (captured from a real run; pytest's own warning
+    # capture stops the warning reaching stderr inside the test process).
+    REAL_STDERR = (
+        "<string>:4: FutureWarning: Downcasting object dtype arrays on .fillna, .ffill, "
+        ".bfill is deprecated and will change in a future version.\n"
+        "\nGlobal errors: Error processing parameters: real problem after the warning\n"
+        "Traceback (most recent call last):\n"
+        '  File "<string>", line 9, in <module>\n'
+        '  File "<string>", line 5, in executable_function\n'
+        "ValueError: real problem after the warning\n"
+    )
+
+    @pytest.mark.asyncio
+    async def test_exception_after_a_future_warning_is_listed_first(self, monkeypatch):
+        monkeypatch.setattr(
+            workflow_utils,
+            "execute_python_code",
+            lambda code, params, wrap_code=True: _response(
+                {"result": None, "output": "", "errors": self.REAL_STDERR}
+            ),
+        )
+        df, error, response = await execute_and_process_preprocessing_code(
+            "code", None, pd.DataFrame(), "f.csv", raise_on_error=False
+        )
+        assert df is None
+        assert error.startswith("real problem after the warning")
+        assert "ValueError: real problem after the warning" in error
+        warnings_at = error.index("Warnings:")
+        assert "FutureWarning" in error[warnings_at:]
+        assert "FutureWarning" not in error[:warnings_at]
+
+    @pytest.mark.asyncio
+    async def test_raised_message_also_leads_with_the_real_error(self, monkeypatch):
+        monkeypatch.setattr(
+            workflow_utils,
+            "execute_python_code",
+            lambda code, params, wrap_code=True: _response(
+                {"result": None, "output": "", "errors": self.REAL_STDERR}
+            ),
+        )
+        with pytest.raises(AppException) as exc_info:
+            await execute_and_process_preprocessing_code("code", None, pd.DataFrame(), "f.csv")
+        assert exc_info.value.error_detail.startswith(
+            "Error executing preprocessing code: real problem after the warning"
+        )
+
+    def test_formatting_without_warnings_or_marker(self):
+        from app.modules.workflow.engine.nodes.ml.ml_utils import _format_user_code_error
+
+        assert _format_user_code_error("\nGlobal errors: Error processing parameters: boom\ntb") == "boom\ntb"
+        assert _format_user_code_error("  plain stderr  ") == "plain stderr"
