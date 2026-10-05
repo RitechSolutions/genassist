@@ -16,7 +16,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
-from app.modules.workflow.engine.nodes.ml.ml_utils import ordinal_key
+from app.modules.workflow.engine.nodes.ml.ml_utils import normalize_feature_expression, ordinal_key
 from app.schemas.ml_model import MLModelBase
 from app.services.ml_model_manager import download_pkl_file, get_ml_model_manager
 from app.services.ml_models import MLModelsService
@@ -294,7 +294,7 @@ def _replay_feature_engineering(
                     col: _build_input_array(available, [col])[:, 0]
                     for col in available
                 })
-                result = np.asarray(df.eval(expression))
+                result = np.asarray(df.eval(normalize_feature_expression(expression)))
                 computed[new_col] = result
                 available[new_col] = result.tolist()
 

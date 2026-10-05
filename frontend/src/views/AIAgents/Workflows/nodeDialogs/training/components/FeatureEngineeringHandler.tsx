@@ -195,11 +195,12 @@ export const FeatureEngineeringHandler: React.FC<
                                 expression: e.target.value,
                               })
                             }
-                            placeholder='e.g., df["col1"] + df["col2"]'
+                            placeholder="e.g., price * quantity"
                             className="text-xs font-mono"
                           />
                           <p className="text-xs text-muted-foreground mt-1">
-                            Use df["column_name"] to reference columns
+                            Reference columns by name, e.g. price * quantity. Use
+                            backticks for a name with spaces, e.g. `unit price` * quantity.
                           </p>
                         </div>
                       )}

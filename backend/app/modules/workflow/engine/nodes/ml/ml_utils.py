@@ -7,9 +7,11 @@ This module contains shared functionality used across ML-related nodes.
 import asyncio
 import csv
 import json
+import keyword
 import logging
 import math
 import os
+import re
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
@@ -388,6 +390,29 @@ def normalize_dtypes_for_training(df: pd.DataFrame) -> pd.DataFrame:
         ):
             df[column] = series.astype(object).where(series.notna(), np.nan)
     return df
+
+
+# df["col"] / df['col'] column references, as the Custom Expression field
+# used to suggest.
+_DF_COLUMN_REFERENCE = re.compile(r"""\bdf\s*\[\s*(["'])(.*?)\1\s*\]""")
+
+
+def normalize_feature_expression(expression: str) -> str:
+    """Rewrite df["col"] / df['col'] references to the plain column names
+    DataFrame.eval understands.
+
+    Custom Expression features are evaluated with DataFrame.eval, where
+    columns are referenced by name (price * quantity) and there is no `df`
+    variable - but the Train Model dialog used to suggest df["column_name"],
+    so expressions written that way failed with "name 'df' is not defined".
+    A name that isn't a valid identifier (e.g. it has a space) becomes a
+    backtick-quoted reference, which DataFrame.eval also supports.
+    """
+    def to_name(match: "re.Match[str]") -> str:
+        name = match.group(2)
+        return name if name.isidentifier() and not keyword.iskeyword(name) else f"`{name}`"
+
+    return _DF_COLUMN_REFERENCE.sub(to_name, expression or "")
 
 
 def ordinal_key(value: Any) -> Optional[str]:

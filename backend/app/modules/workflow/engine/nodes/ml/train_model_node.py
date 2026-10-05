@@ -1248,17 +1248,30 @@ class TrainModelNode(BaseNode):
                 # DataFrame.eval() only exposes column references and basic
                 # arithmetic/comparison operators (via numexpr/Python parser)
                 # - no access to builtins or arbitrary Python, unlike eval().
+                # Columns are referenced by name; the older df["col"] form is
+                # rewritten to that first (see normalize_feature_expression).
+                eval_expression = ml_utils.normalize_feature_expression(expression)
                 try:
-                    X_train[new_col] = X_train.eval(expression)
+                    X_train[new_col] = X_train.eval(eval_expression)
                     if X_val is not None:
-                        X_val[new_col] = X_val.eval(expression)
-                    steps.append({
-                        "strategy": "custom_expression",
-                        "new_col": new_col,
-                        "expression": expression,
-                    })
+                        X_val[new_col] = X_val.eval(eval_expression)
                 except Exception as e:
-                    logger.warning(f"Skipping custom_expression for '{new_col}': {e}")
+                    # Fail instead of skipping: a skipped feature used to
+                    # train a "successful" model silently missing a column
+                    # the user configured.
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            f"Feature engineering '{new_col}': the expression `{expression}` could not "
+                            f"be evaluated ({e}). Reference columns by name, e.g. price * quantity "
+                            "(use `backticks` for a name with spaces, e.g. `unit price` * quantity)."
+                        ),
+                    ) from e
+                steps.append({
+                    "strategy": "custom_expression",
+                    "new_col": new_col,
+                    "expression": eval_expression,
+                })
 
             elif strategy == "bin_numeric":
                 bin_column = item.get("binColumn")
