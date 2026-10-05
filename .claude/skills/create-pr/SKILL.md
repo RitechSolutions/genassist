@@ -50,7 +50,13 @@ The flow: preflight (target branch + conflict check) -> review the changes -> co
 
 ## 2. Code review gate
 
-Run the `code-review` skill at the chosen level on everything that will be in the PR: the commits already on the branch plus the uncommitted changes, compared with `git merge-base <main-remote>/<base> HEAD`. Read untracked files that will be committed too. Do not use `--comment` or `--fix`. Also include `security-review` concerns (secrets, auth, injection, multi-tenant data leaks) in the same pass.
+Run the `code-review` skill at the chosen level on everything that will be in the PR: the commits already on the branch plus the uncommitted changes. Always pass the scope explicitly in its args. Without it, `code-review` falls back to `@{upstream}...HEAD` or `main...HEAD`, which is the wrong base here.
+
+1. Compute it: `MB=$(git merge-base <main-remote>/<base> HEAD)`. The scope is `git diff $MB` (commits plus working tree) plus the untracked files that will be committed.
+2. Invoke the skill with args like this: `<level> review exactly: git diff <MB-sha> (merge-base with <main-remote>/<base>; includes uncommitted changes) + untracked: <paths>`.
+3. Before using the results, check that the files reviewed match `git diff --name-only $MB` plus the untracked files. If they don't match, run the review again.
+
+Do not use `--comment` or `--fix`. Also include `security-review` concerns (secrets, auth, injection, multi-tenant data leaks) in the same pass.
 
 Classify every verified finding:
 
