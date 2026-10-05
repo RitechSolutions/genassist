@@ -10,12 +10,16 @@ import {
   ISOLATION_NOTE,
   LEAKAGE_NOTE,
   STALE_NOTE,
+  caseSpendLine,
   caseStatusLabel,
   formatAvgScore,
   joinPairedRuns,
   metricOutcomeLabel,
   metricOutcomeOf,
+  metricScoreLabel,
   snapshotHeader,
+  soleMetricEchoesVerdict,
+  spendComparisonLine,
   summaryLine,
   type MetricOutcome,
   type ProviderFallback,
@@ -73,9 +77,17 @@ const Field: React.FC<{ label: string; value: string; suffix?: string }> = ({
 
 const CaseCard: React.FC<{ result: PromptEvalCaseResult }> = ({ result }) => {
   const metrics = Object.entries(result.metrics ?? {});
+  const showMetrics = metrics.length > 0 && !soleMetricEchoesVerdict(result);
+  const notes = metrics.filter(
+    ([technique, metric]) =>
+      (technique === "llm_judge" || metric.error || metric.not_evaluated) &&
+      metric.comment &&
+      !metric.not_applicable,
+  );
+  const spend = caseSpendLine(result);
   return (
     <div className={`border rounded p-3 text-sm ${caseTone(result)}`}>
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         <CaseIcon result={result} />
         <span className="font-medium">{caseStatusLabel(result)}</span>
         {result.case_score !== null && (
@@ -83,19 +95,43 @@ const CaseCard: React.FC<{ result: PromptEvalCaseResult }> = ({ result }) => {
             {formatAvgScore(result.case_score)}
           </span>
         )}
+        {spend && (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {spend}
+          </span>
+        )}
       </div>
       {result.error && (
         <p className="text-xs text-muted-foreground mb-2">{result.error}</p>
       )}
-      {metrics.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-2">
-          {metrics.map(([technique, metric]) => (
-            <span key={technique} className="flex items-baseline gap-1">
-              <span className="font-medium">{methodLabel(technique)}</span>
-              <span className={METRIC_TONE[metricOutcomeOf(metric)]}>
-                {metricOutcomeLabel(metric)}
-              </span>
-            </span>
+      {(showMetrics || notes.length > 0) && (
+        <div className="space-y-1 mb-2">
+          {showMetrics && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+              {metrics.map(([technique, metric]) => {
+                const score = metricScoreLabel(metric);
+                return (
+                  <span key={technique} className="flex items-baseline gap-1">
+                    <span className="font-medium">{methodLabel(technique)}</span>
+                    <span className={METRIC_TONE[metricOutcomeOf(metric)]}>
+                      {metricOutcomeLabel(metric)}
+                    </span>
+                    {score && (
+                      <span className="text-muted-foreground">{score}</span>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {notes.map(([technique, metric]) => (
+            <Reveal
+              key={technique}
+              label={`${methodLabel(technique)} note`}
+              value={`${methodLabel(technique)}: ${metric.comment}`}
+              className="block w-full text-xs text-muted-foreground"
+              clip="line-clamp-1"
+            />
           ))}
         </div>
       )}
@@ -117,6 +153,7 @@ const Comparison: React.FC<{
   suggestion: PromptEvalResponse;
 }> = ({ baseline, suggestion }) => {
   const joined = joinPairedRuns(baseline, suggestion);
+  const spendLine = spendComparisonLine(joined);
   return (
     <div className="border-t pt-3 space-y-2">
       <p className="text-sm font-medium">
@@ -126,6 +163,9 @@ const Comparison: React.FC<{
       <p className="text-xs text-muted-foreground">
         {joined.compared} of {joined.rows.length} cases could be compared.
       </p>
+      {spendLine && (
+        <p className="text-xs text-muted-foreground tabular-nums">{spendLine}</p>
+      )}
       <div className="space-y-1 text-xs">
         {joined.rows.map((row) => (
           <div key={row.caseId} className="flex items-center gap-2">
@@ -176,7 +216,7 @@ export const PromptEvalResults: React.FC<PromptEvalResultsProps> = ({
 
     {stale && <div className={AMBER_BANNER}>{STALE_NOTE}</div>}
 
-    <p className="text-xs text-muted-foreground">
+    <p className="text-xs text-muted-foreground tabular-nums">
       {snapshotHeader(results.provenance, providerFallback)}
     </p>
     <p className="text-xs text-muted-foreground">{ISOLATION_NOTE}</p>

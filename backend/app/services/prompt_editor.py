@@ -3,7 +3,8 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Dict, List, Optional, Tuple
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from injector import inject
@@ -33,11 +34,13 @@ from app.schemas.llm import LlmProviderRead
 from app.schemas.prompt_editor import (
     MAX_ACTUAL_CHARS,
     MAX_HISTORY_CHARS,
+    MAX_JUDGE_RULES,
     MAX_PROMPT_CONTENT,
     CaseSplit,
     FailedCaseRef,
     LegacyHistoryRead,
     PreviousAttempt,
+    PromptCallUsage,
     PromptConfigRead,
     PromptEvalCaseResult,
     PromptEvalRequest,
@@ -59,9 +62,12 @@ from app.services.prompt_editor_evaluators import (
     validate_prompt_check_techniques,
 )
 
+if TYPE_CHECKING:
+    from app.services.llm_usage_recorder import RecordingStatus
+
 logger = logging.getLogger(__name__)
 
-# Timeouts sum to 100s (no grounding) / 110s (with grounding)
+# Timeouts sum to 100s (no grounding) / 110s (with grounding or a judge)
 # Margin under SPA's 120s axios timeout. Phases may overrun during cancellation
 PROMPT_CHECK_CONCURRENCY = 4
 PROMPT_CHECK_PREPARE_SECONDS = 10
@@ -81,10 +87,14 @@ MAX_OPTIMIZE_PASSING_WITH_FAILURES = 5  # passing examples are format anchors on
 TRUNCATION_MARKER = " […shortened by the editor]"
 _GROUNDING_TECHNIQUE = "nli_eval"
 _JSON_TECHNIQUE = "json_match"
+_JUDGE_TECHNIQUE = "llm_judge"
 # Graded against the case's expectation, so a case without one cannot support them
 _EXPECTATION_TECHNIQUES = ("exact_match", "contains", _GROUNDING_TECHNIQUE)
+_SCORE_BUDGET_TECHNIQUES = frozenset({_GROUNDING_TECHNIQUE, _JUDGE_TECHNIQUE})
+PROMPT_JUDGE_CALL_INDEX_BASE = 1_000
 
 _INTERNAL_FAILURE = "Something went wrong on the server. Check the server logs for details."
+_HANDED_OVER = frozenset({"recorded", "disabled", "empty"})
 
 
 class Budget:
@@ -115,6 +125,7 @@ class PromptUsageRef:
     workflow_id: Optional[UUID] = None
     agent_id: Optional[UUID] = None
     entries: List[Dict[str, Any]] = field(default_factory=list)
+    costs: Dict[int, Optional[Decimal]] = field(default_factory=dict)
 
 
 @dataclass
@@ -126,6 +137,8 @@ class _CaseRun:
     response: Any = None
     error: Optional[str] = None
     budget_cut: bool = False
+    latency_ms: Optional[int] = None
+    usage: Optional[Dict[str, Any]] = None
 
 
 def _case_input_text(input_data: Any) -> str:
@@ -171,6 +184,10 @@ def _stale_selection(missing: List[str]) -> AppException:
     )
 
 
+def _uses_score_budget(techniques: List[str]) -> bool:
+    return not _SCORE_BUDGET_TECHNIQUES.isdisjoint(techniques)
+
+
 def _scoring_timeout_text(techniques: List[str]) -> str:
     """Failed loads are permanent (operator fix only), not waiting.
     Loading and never-attempted self-resolve"""
@@ -190,6 +207,27 @@ def _grounding_timed_out(techniques: List[str]) -> Dict[str, Any]:
         "error": True,
         "comment": _scoring_timeout_text(techniques),
     }
+
+
+def _judge_timed_out() -> Dict[str, Any]:
+    return {
+        "key": _JUDGE_TECHNIQUE,
+        "score": None,
+        "passed": False,
+        "error": True,
+        "comment": "Scoring timed out before the judge answered.",
+    }
+
+
+def _timed_out(technique: str, techniques: List[str]) -> Dict[str, Any]:
+    if technique == _GROUNDING_TECHNIQUE:
+        return _grounding_timed_out(techniques)
+    return _judge_timed_out()
+
+
+def _judge_source(configs: Dict[str, Dict[str, Any]]) -> Optional[str]:
+    rules = configs.get(_JUDGE_TECHNIQUE, {}).get("rules") or []
+    return rules[0].get("source_type") if rules else None
 
 
 def _metric_outcome(metric: Dict[str, Any]) -> str:
@@ -264,14 +302,71 @@ def _usage_total(ref: "PromptUsageRef") -> Dict[str, Any]:
     return totals
 
 
+def _cost_total(ref: "PromptUsageRef") -> Tuple[Optional[Decimal], int]:
+    """Priced subtotal and how many calls it leaves out. None when nothing was priced,
+    so the header can say 'unpriced'"""
+    priced = [cost for cost in ref.costs.values() if cost is not None]
+    return (sum(priced, Decimal(0)) if priced else None), len(ref.costs) - len(priced)
+
+
+def _grader_entries(ref: "PromptUsageRef") -> List[Dict[str, Any]]:
+    return [entry for entry in ref.entries if entry.get("purpose") == _JUDGE_TECHNIQUE]
+
+
+def _grader_calls(ref: "PromptUsageRef") -> int:
+    return len(_grader_entries(ref))
+
+
+def _grader_tokens(ref: "PromptUsageRef") -> int:
+    graded = PromptUsageRef(execution_id=ref.execution_id, entries=_grader_entries(ref))
+    return int(_usage_total(graded)["total_tokens"])
+
+
+def _grader_cost(ref: "PromptUsageRef") -> Optional[Decimal]:
+    graded = [ref.costs.get(entry.get("call_index")) for entry in _grader_entries(ref)]
+    priced = [cost for cost in graded if cost is not None]
+    return sum(priced, Decimal(0)) if priced else None
+
+
+def _call_usage(usage: Optional[Dict[str, Any]]) -> Optional[PromptCallUsage]:
+    """The three counts the case card shows; token details stay on the ledger row"""
+    if not usage:
+        return None
+    return PromptCallUsage(
+        input_tokens=int(usage.get("input_tokens") or 0),
+        output_tokens=int(usage.get("output_tokens") or 0),
+        total_tokens=int(usage.get("total_tokens") or 0),
+    )
+
+
+def _wire_cost(cost: Optional[Decimal]) -> Optional[float]:
+    return None if cost is None else float(cost)
+
+
+def _with_costs(
+    rows: List[PromptEvalCaseResult], runs: List["_CaseRun"], ref: "PromptUsageRef"
+) -> List[PromptEvalCaseResult]:
+    return [
+        row.model_copy(update={"cost_usd": _wire_cost(ref.costs.get(run.position))})
+        if run.response is not None
+        else row
+        for row, run in zip(rows, runs)
+    ]
+
+
+def _bounded_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _for_wire(value)
+    if isinstance(value, list):
+        return [_bounded_value(item) for item in value]
+    if isinstance(value, dict):
+        return {name: _bounded_value(item) for name, item in value.items()}
+    return value
+
+
 def _bounded_metrics(metrics: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        key: {
-            name: _for_wire(value) if isinstance(value, str) else value
-            for name, value in metric.items()
-        }
-        for key, metric in metrics.items()
-    }
+    """Judge details carry the model's reason, so nested strings are bounded too"""
+    return {key: _bounded_value(metric) for key, metric in metrics.items()}
 
 
 def _usage_entry(response: Any, call_index: int, purpose: str, provider_id: UUID) -> Dict[str, Any]:
@@ -290,7 +385,16 @@ def _collect_usage(ref: "PromptUsageRef", runs: List["_CaseRun"], provider_id: U
     for run in runs:
         if run.response is None:
             continue
-        ref.entries.append(_usage_entry(run.response, run.position, "prompt_check", provider_id))
+        entry = _usage_entry(run.response, run.position, "prompt_check", provider_id)
+        run.usage = entry["usage"]
+        ref.entries.append(entry)
+
+
+def _collect_judge_usage(ref: "PromptUsageRef", case_ref: "PromptUsageRef", position: int) -> None:
+    """The registry numbers a judge call by its technique position"""
+    for offset, entry in enumerate(case_ref.entries):
+        call_index = PROMPT_JUDGE_CALL_INDEX_BASE + position * MAX_JUDGE_RULES + offset
+        ref.entries.append({**entry, "call_index": call_index})
 
 
 def _summarise(rows: List[PromptEvalCaseResult]) -> PromptEvalSummary:
@@ -569,6 +673,7 @@ class PromptEditorService:
         self.db = db
         # Request-scoped, so one provider is resolved once per run for pricing
         self._name_cache: Dict[str, Tuple[str, str]] = {}
+        self._rates: Optional[Dict[str, Any]] = None
         # Lazy import to avoid circular dependency (test_suite imports injector at module level)
         from app.services.test_suite import SimpleEvaluatorRegistry
 
@@ -842,6 +947,27 @@ class PromptEditorService:
         ]
         return cases, len(index)
 
+    def _remember_provider(self, provider: LlmProviderRead) -> None:
+        """Caches provider name so pricing and ledger skip lookups after the release point"""
+        self._name_cache[str(provider.id)] = ((provider.llm_model_provider or "").lower(), provider.llm_model or "")
+
+    async def _load_rates(self) -> Optional[Dict[str, Any]]:
+        """Reads tenant rates before the model phase releases the connection"""
+        from app.dependencies.injector import injector
+        from app.repositories.llm_cost_rates import LlmCostRateRepository
+        from app.services.llm_usage_recorder import nested_rates
+
+        try:
+            rows = await injector.get(LlmCostRateRepository).list_active()
+        except Exception:
+            await self.db.rollback()
+            logger.warning(
+                """Failed to load prompt check rates; using bundled rates instead""",
+                exc_info=True,
+            )
+            return None
+        return nested_rates(rows)
+
     async def _build_model(self, provider: LlmProviderRead, check_id: UUID) -> Any:
         """Release point; report the provider that built the model"""
         from app.dependencies.injector import injector
@@ -879,7 +1005,9 @@ class PromptEditorService:
         from app.services.llm_providers import LlmProviderService
 
         ctx = await self._prepare_context(workflow_id, node_id, prompt_field)
-        configs = validate_prompt_check_techniques(request.techniques, request.technique_configs)
+        configs = validate_prompt_check_techniques(
+            request.techniques, request.technique_configs, judge_provider_id=request.provider_id
+        )
 
         config = await self.config_repo.get_by_context(workflow_id, node_id, prompt_field)
         if not config or not config.gold_suite_id:
@@ -891,6 +1019,8 @@ class PromptEditorService:
         cases, total_cases = await self._select_cases(config.gold_suite_id, request)
 
         provider = await injector.get(LlmProviderService).get_by_id(request.provider_id)
+        self._remember_provider(provider)
+        self._rates = await self._load_rates()
         llm = await self._build_model(provider, check_id)
         return ctx, cases, configs, provider, llm, total_cases
 
@@ -915,6 +1045,7 @@ class PromptEditorService:
                 )
             call_timeout = min(PROMPT_CHECK_CALL_TIMEOUT_SECONDS, remaining)
             try:
+                call_started = time.monotonic()
                 response = await asyncio.wait_for(
                     llm.ainvoke(
                         [
@@ -924,6 +1055,7 @@ class PromptEditorService:
                     ),
                     timeout=call_timeout,
                 )
+                latency_ms = int((time.monotonic() - call_started) * 1000)
                 actual = response.text
             except asyncio.TimeoutError:
                 budget_cut = call_timeout < PROMPT_CHECK_CALL_TIMEOUT_SECONDS
@@ -944,7 +1076,9 @@ class PromptEditorService:
                 return _CaseRun(
                     case=case, position=position, status="execution_failed", error=_INTERNAL_FAILURE,
                 )
-        return _CaseRun(case=case, position=position, status="scored", actual=actual, response=response)
+        return _CaseRun(
+            case=case, position=position, status="scored", actual=actual, response=response, latency_ms=latency_ms
+        )
 
     async def _score(
         self,
@@ -952,9 +1086,13 @@ class PromptEditorService:
         request: PromptEvalRequest,
         configs: Dict[str, Dict[str, Any]],
         budget: Optional[Budget],
+        *,
+        judge_model: Any = None,
+        usage_ref: Optional[PromptUsageRef] = None,
     ) -> Tuple[Dict[str, Any], bool]:
-        """Up to three calls: plain text group, nli_eval, json_match. nli_eval is
-        called on its own so its deadline cannot cancel the metrics beside it"""
+        """Up to four calls: plain text group, nli_eval, llm_judge, json_match. The two
+        model-graded checks are called on their own so a deadline cannot cancel the
+        metrics beside them"""
         case = run.case
         reference = case.expected_output if case.expected_output is not None else case.expected_text
         metrics: Dict[str, Any] = {}
@@ -973,15 +1111,18 @@ class PromptEditorService:
                 t for t in text_ids
                 if t in _EXPECTATION_TECHNIQUES
                 or (t == "field_equals" and "expected" not in configs.get(t, {}))
+                or (t == _JUDGE_TECHNIQUE and _judge_source(configs) == "expected_output")
             ]
             for technique in gaps:
                 metrics[technique] = _not_applicable(technique, reason)
             text_ids = [t for t in text_ids if t not in gaps]
 
-        if budget is not None and _GROUNDING_TECHNIQUE in text_ids and budget.remaining() <= 0:
+        model_graded = [t for t in text_ids if t in _SCORE_BUDGET_TECHNIQUES]
+        if budget is not None and model_graded and budget.remaining() <= 0:
             exhausted = True
-            text_ids = [t for t in text_ids if t != _GROUNDING_TECHNIQUE]
-            metrics[_GROUNDING_TECHNIQUE] = _grounding_timed_out(request.techniques)
+            text_ids = [t for t in text_ids if t not in _SCORE_BUDGET_TECHNIQUES]
+            for technique in model_graded:
+                metrics[technique] = _timed_out(technique, request.techniques)
 
         def _evaluate(technique_ids: List[str]) -> Awaitable[Dict[str, Any]]:
             return self.evaluators.evaluate(
@@ -993,25 +1134,89 @@ class PromptEditorService:
                 usage_ref=None,
             )
 
-        plain_ids = [t for t in text_ids if t != _GROUNDING_TECHNIQUE]
+        plain_ids = [t for t in text_ids if t not in _SCORE_BUDGET_TECHNIQUES]
         if plain_ids:
             metrics.update(await _evaluate(plain_ids))
 
         if _GROUNDING_TECHNIQUE in text_ids:
-            call = _evaluate([_GROUNDING_TECHNIQUE])
-            if budget is not None:
-                call = asyncio.wait_for(call, timeout=max(1.0, budget.remaining()))
-            try:
-                metrics.update(await call)
-            except asyncio.TimeoutError:
-                exhausted = True
-                metrics[_GROUNDING_TECHNIQUE] = _grounding_timed_out(request.techniques)
+            exhausted |= await self._score_bounded(
+                _GROUNDING_TECHNIQUE,
+                _evaluate,
+                budget=budget,
+                techniques=request.techniques,
+                metrics=metrics,
+            )
             self._rewrite_grounding_comment(metrics, request.techniques)
+
+        if _JUDGE_TECHNIQUE in text_ids:
+            exhausted |= await self._score_judge(
+                run,
+                reference,
+                configs,
+                budget=budget,
+                techniques=request.techniques,
+                metrics=metrics,
+                judge_model=judge_model,
+                usage_ref=usage_ref,
+            )
 
         if _JSON_TECHNIQUE in request.techniques:
             metrics[_JSON_TECHNIQUE] = await self._score_json(case, run.actual, reference, configs)
 
         return metrics, exhausted
+
+    @staticmethod
+    async def _score_bounded(
+        technique: str,
+        evaluate: Callable[[List[str]], Awaitable[Dict[str, Any]]],
+        *,
+        budget: Optional[Budget],
+        techniques: List[str],
+        metrics: Dict[str, Any],
+    ) -> bool:
+        """Model technique (true if timeout). Shape-preserving: absent stays absent"""
+        call = evaluate([technique])
+        if budget is not None:
+            call = asyncio.wait_for(call, timeout=max(1.0, budget.remaining()))
+        try:
+            metrics.update(await call)
+        except asyncio.TimeoutError:
+            metrics[technique] = _timed_out(technique, techniques)
+            return True
+        return False
+
+    async def _score_judge(
+        self,
+        run: _CaseRun,
+        reference: Any,
+        configs: Dict[str, Dict[str, Any]],
+        *,
+        budget: Optional[Budget],
+        techniques: List[str],
+        metrics: Dict[str, Any],
+        judge_model: Any,
+        usage_ref: Optional[PromptUsageRef],
+    ) -> bool:
+        case_ref = PromptUsageRef(execution_id=usage_ref.execution_id) if usage_ref is not None else None
+
+        def _evaluate(technique_ids: List[str]) -> Awaitable[Dict[str, Any]]:
+            return self.evaluators.evaluate(
+                technique_ids,
+                inputs={"message": run.case.input_text},
+                outputs=run.actual,
+                reference_outputs=reference,
+                technique_configs=configs,
+                usage_ref=case_ref,
+                judge_model=judge_model,
+            )
+
+        try:
+            return await self._score_bounded(
+                _JUDGE_TECHNIQUE, _evaluate, budget=budget, techniques=techniques, metrics=metrics
+            )
+        finally:
+            if usage_ref is not None and case_ref.entries:
+                _collect_judge_usage(usage_ref, case_ref, run.position)
 
     @staticmethod
     def _rewrite_grounding_comment(metrics: Dict[str, Any], techniques: List[str]) -> None:
@@ -1067,10 +1272,29 @@ class PromptEditorService:
             status=status,
             error=error,
             metrics=_bounded_metrics(metrics) if metrics else {},
+            latency_ms=run.latency_ms,
+            usage=_call_usage(run.usage),
             **outcome,
         )
 
-    async def _persist_usage(self, ref: PromptUsageRef) -> None:
+    async def _price_usage(self, ref: PromptUsageRef) -> None:
+        """Prices calls with the ledger's function, sharing the rate snapshot for consistency.
+        Without a snapshot, prices may differ across pages"""
+        from app.modules.workflow.engine.llm_usage_tracking import resolve_provider_model
+        from app.services.llm_usage_recorder import price_usage
+
+        for entry in ref.entries:
+            index = entry["call_index"]
+            if index in ref.costs:
+                continue
+            try:
+                provider, model = await resolve_provider_model(entry.get("provider_id"), self._name_cache)
+                ref.costs[index] = price_usage(provider, model, entry.get("usage"), self._rates)["cost_usd"]
+            except Exception:
+                logger.warning("Pricing prompt-editor call %s failed", index, exc_info=True)
+                ref.costs[index] = None
+
+    async def _persist_usage(self, ref: PromptUsageRef) -> "RecordingStatus":
         from app.modules.workflow.engine.llm_usage_tracking import resolve_provider_model
         from app.services.llm_usage_recorder import LlmUsageRecorder
 
@@ -1085,25 +1309,27 @@ class PromptEditorService:
                     "llm_provider_id": coerce_uuid(collected.get("provider_id")),
                 }
             )
-        await LlmUsageRecorder().record_evaluation_calls(
+        return await LlmUsageRecorder().record_evaluation_calls(
             ref.execution_id,
             entries,
             workflow_id=ref.workflow_id,
             agent_id=ref.agent_id,
             source="prompt_editor",
+            configured_rates=self._rates,
         )
 
     async def _flush_usage(self, ref: PromptUsageRef) -> bool:
-        """One hand-over per run (per-case would exceed budget). Returns failure status.
-        False = handed over, not confirmed written"""
+        """One hand-over per run (per-case would exceed budget). True unless the ledger
+        reported the batch written, capture switched off, or nothing to write. Anything
+        else, including an unknown status, reads as not recorded"""
         if not ref.entries:
             return False
         try:
-            await asyncio.wait_for(self._persist_usage(ref), PROMPT_CHECK_METERING_SECONDS)
+            status = await asyncio.wait_for(self._persist_usage(ref), PROMPT_CHECK_METERING_SECONDS)
         except Exception:
             logger.warning("Recording prompt-editor LLM usage failed", exc_info=True)
             return True
-        return False
+        return status not in _HANDED_OVER
 
     async def evaluate_prompt(
         self,
@@ -1129,9 +1355,9 @@ class PromptEditorService:
             ) from exc
         ref.workflow_id, ref.agent_id = ctx.workflow_id, ctx.agent_id
 
-        uses_grounding = _GROUNDING_TECHNIQUE in request.techniques
+        uses_score_budget = _uses_score_budget(request.techniques)
         model_budget = Budget(
-            PROMPT_CHECK_MODEL_BUDGET_WITH_NLI if uses_grounding else PROMPT_CHECK_MODEL_BUDGET_SECONDS
+            PROMPT_CHECK_MODEL_BUDGET_WITH_NLI if uses_score_budget else PROMPT_CHECK_MODEL_BUDGET_SECONDS
         )
         semaphore = asyncio.Semaphore(PROMPT_CHECK_CONCURRENCY)
 
@@ -1145,10 +1371,13 @@ class PromptEditorService:
                 )
             )
             _collect_usage(ref, runs, request.provider_id)
-            rows, deadline_hit = await self._score_all(runs, request, configs, check_id)
+            rows, deadline_hit = await self._score_all(runs, request, configs, check_id, llm, usage_ref=ref)
+            await self._price_usage(ref)
+            rows = _with_costs(rows, runs, ref)
         finally:
             metering_handoff_failed = await self._flush_usage(ref)
 
+        cost_usd, unpriced_calls = _cost_total(ref)
         # Built after the flush; inside it the hand-over flag would be frozen False
         return PromptEvalResponse(
             results=rows,
@@ -1163,8 +1392,13 @@ class PromptEditorService:
                 ran_at=utc_now(),
                 latency_ms_total=int((time.monotonic() - started) * 1000),
                 usage_total=_usage_total(ref),
+                cost_usd=_wire_cost(cost_usd),
+                unpriced_calls=unpriced_calls,
+                grader_calls=_grader_calls(ref),
+                grader_tokens=_grader_tokens(ref),
+                grader_cost_usd=_wire_cost(_grader_cost(ref)),
                 budget_seconds=PROMPT_CHECK_MODEL_BUDGET_WITH_NLI + PROMPT_CHECK_SCORE_BUDGET_SECONDS
-                if uses_grounding
+                if uses_score_budget
                 else PROMPT_CHECK_MODEL_BUDGET_SECONDS,
                 deadline_hit=deadline_hit,
                 metering_handoff_failed=metering_handoff_failed,
@@ -1177,30 +1411,41 @@ class PromptEditorService:
         request: PromptEvalRequest,
         configs: Dict[str, Dict[str, Any]],
         check_id: UUID,
+        judge_model: Any,
+        usage_ref: Optional[PromptUsageRef] = None,
     ) -> Tuple[List[PromptEvalCaseResult], bool]:
-        """Sequential. nli_eval serializes with module lock; rest is in-memory"""
-        rows: List[PromptEvalCaseResult] = []
-        deadline_hit = any(run.status == "skipped" or run.budget_cut for run in runs)
+        """Cases score together under one budget; the judge grades on the model the check
+        built, so scoring touches no session. nli_eval serializes on a process lock, so a
+        grounded run keeps one case in flight instead of queueing threads behind it"""
         score_budget = (
             Budget(PROMPT_CHECK_SCORE_BUDGET_SECONDS)
-            if _GROUNDING_TECHNIQUE in request.techniques
+            if _uses_score_budget(request.techniques)
             else None
         )
+        semaphore = asyncio.Semaphore(
+            1 if _GROUNDING_TECHNIQUE in request.techniques else PROMPT_CHECK_CONCURRENCY
+        )
 
-        for run in runs:
+        async def _score_one(run: _CaseRun) -> Tuple[PromptEvalCaseResult, bool]:
             if run.status != "scored":
-                rows.append(self._row(run, status=run.status, error=run.error))
-                continue
-            try:
-                metrics, exhausted = await self._score(run, request, configs, score_budget)
-                deadline_hit = deadline_hit or exhausted
-                rows.append(self._row(run, status="scored", metrics=metrics))
-            except Exception:
-                logger.exception(
-                    "Prompt check %s: scoring case %s failed", str(check_id)[:8], run.position
-                )
-                rows.append(self._row(run, status="scoring_failed", error=_INTERNAL_FAILURE))
-        return rows, deadline_hit
+                return self._row(run, status=run.status, error=run.error), False
+            async with semaphore:
+                try:
+                    metrics, exhausted = await self._score(
+                        run, request, configs, score_budget, judge_model=judge_model, usage_ref=usage_ref
+                    )
+                    return self._row(run, status="scored", metrics=metrics), exhausted
+                except Exception:
+                    logger.exception(
+                        "Prompt check %s: scoring case %s failed", str(check_id)[:8], run.position
+                    )
+                    return self._row(run, status="scoring_failed", error=_INTERNAL_FAILURE), False
+
+        scored = await asyncio.gather(*(_score_one(run) for run in runs))
+        deadline_hit = any(run.status == "skipped" or run.budget_cut for run in runs) or any(
+            exhausted for _, exhausted in scored
+        )
+        return [row for row, _ in scored], deadline_hit
 
     # ---- Optimize ------------------------------------------------------------
 
@@ -1318,7 +1563,9 @@ class PromptEditorService:
         request: PromptOptimizeRequest,
         op_id: UUID,
     ) -> Tuple[PromptContext, LlmProviderRead, Any, ValidatedSplit, _Examples, int, Dict[str, Dict[str, Any]]]:
-        """Same gate as check. Allows no dataset (instructions-only is valid)"""
+        """The check's context gate and technique allow-list; configs are built leniently
+        so a rewrite may name a check it has no options for, except the judge, whose rubric
+        is what the rewrite is told. Allows no dataset (instructions-only is valid)"""
         from app.dependencies.injector import injector
         from app.services.llm_providers import LlmProviderService
 
@@ -1336,6 +1583,8 @@ class PromptEditorService:
         examples = await self._build_examples(suite_id, split, failed)
 
         provider = await injector.get(LlmProviderService).get_by_id(request.provider_id)
+        self._remember_provider(provider)
+        self._rates = await self._load_rates()
         llm = await self._build_model(provider, op_id)
         return ctx, provider, llm, split, examples, len(index), configs
 
@@ -1400,10 +1649,12 @@ class PromptEditorService:
                 ) from exc
 
             ref.entries.append(_usage_entry(response, 0, "prompt_optimize", request.provider_id))
+            await self._price_usage(ref)
             suggested_prompt, explanation = _parse_suggestion(response.text)
         finally:
             metering_handoff_failed = await self._flush_usage(ref)
 
+        cost_usd, unpriced_calls = _cost_total(ref)
         return PromptOptimizeResponse(
             suggested_prompt=suggested_prompt,
             explanation=explanation,
@@ -1424,6 +1675,11 @@ class PromptEditorService:
                 ran_at=utc_now(),
                 latency_ms_total=int((time.monotonic() - started) * 1000),
                 usage_total=_usage_total(ref),
+                cost_usd=_wire_cost(cost_usd),
+                unpriced_calls=unpriced_calls,
+                grader_calls=_grader_calls(ref),
+                grader_tokens=_grader_tokens(ref),
+                grader_cost_usd=_wire_cost(_grader_cost(ref)),
                 budget_seconds=OPTIMIZE_CALL_TIMEOUT_SECONDS,
                 metering_handoff_failed=metering_handoff_failed,
             ),

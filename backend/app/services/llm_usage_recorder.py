@@ -2,7 +2,7 @@ import asyncio
 import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Iterable, Literal, Optional
 from uuid import UUID
 from weakref import WeakKeyDictionary
 
@@ -46,6 +46,8 @@ _UNPRICED = {
     "cost_usd": None,
     "pricing_status": PricingStatus.UNPRICED.value,
 }
+
+RecordingStatus = Literal["recorded", "disabled", "failed", "empty"]
 
 # Deferred captures outlive their request, so cap how many share the tenant pool at once
 _CAPTURE_CONCURRENCY = 4
@@ -153,6 +155,48 @@ def _resolve_cost(
     }
 
 
+def nested_rates(rows: Iterable[Any]) -> dict[str, dict[str, dict[str, Any]]]:
+    """{provider: {model: rates}} from llm_cost_rates rows, keys normalized as the ledger stores them"""
+    nested: dict[str, dict[str, dict[str, Any]]] = {}
+    for row in rows:
+        provider_key = _normalize(row.provider_key, 64)
+        model_key = _normalize(row.model_key, 512)
+        if not provider_key or not model_key:
+            continue
+        nested.setdefault(provider_key, {})[model_key] = {
+            "input_per_1k": row.input_per_1k,
+            "output_per_1k": row.output_per_1k,
+            "cache_read_per_1k": getattr(row, "cache_read_per_1k", None),
+            "cache_creation_per_1k": getattr(row, "cache_creation_per_1k", None),
+        }
+    return nested
+
+
+def price_usage(
+    provider: str,
+    model: str,
+    usage: Optional[dict[str, Any]],
+    configured_rates: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Token columns and pricing for one call, as the ledger writes them. No usage stays unpriced"""
+    reported = usage_or_placeholder(usage)
+    input_tokens = int(reported.get("input_tokens") or 0)
+    output_tokens = int(reported.get("output_tokens") or 0)
+    token_details = reported.get("token_details")
+    token_columns = _token_columns(provider, reported, input_tokens, output_tokens, token_details)
+    pricing = _resolve_cost(
+        provider,
+        model,
+        input_tokens,
+        output_tokens,
+        configured_rates,
+        usage_missing=is_usage_metadata_missing(token_details),
+        cache_read_tokens=token_columns["cache_read_tokens"],
+        cache_creation_tokens=token_columns["cache_creation_tokens"],
+    )
+    return {**token_columns, **pricing}
+
+
 class LlmUsageRecorder:
     """Isolated, always-safe writer. Each public method manages its own request scope"""
 
@@ -177,19 +221,7 @@ class LlmUsageRecorder:
             logger.warning("Loading LLM cost rates failed; pricing from bundled rates only", exc_info=True)
             return {}
 
-        nested: dict[str, dict[str, dict[str, Any]]] = {}
-        for row in rows:
-            provider_key = _normalize(row.provider_key, 64)
-            model_key = _normalize(row.model_key, 512)
-            if not provider_key or not model_key:
-                continue
-            nested.setdefault(provider_key, {})[model_key] = {
-                "input_per_1k": row.input_per_1k,
-                "output_per_1k": row.output_per_1k,
-                "cache_read_per_1k": getattr(row, "cache_read_per_1k", None),
-                "cache_creation_per_1k": getattr(row, "cache_creation_per_1k", None),
-            }
-        return nested
+        return nested_rates(rows)
 
     async def _persisted_event_count(self, session: AsyncSession, execution_id: str) -> int:
         result = await session.execute(
@@ -345,19 +377,25 @@ class LlmUsageRecorder:
         agent_id: Optional[UUID] = None,
         source: str = "test_suite",
         occurred_at: Optional[datetime] = None,
-    ) -> None:
-        """One batch per evaluated case: the case's judge events plus a single receipt"""
+        configured_rates: Optional[dict[str, Any]] = None,
+    ) -> RecordingStatus:
+        """One batch per evaluated case: the case's judge events plus a single receipt.
+
+        ``configured_rates`` lets a caller that already read this tenant's rates price
+        its own view from the same snapshot the ledger row is written from
+        """
         if not entries:
-            return
+            return "empty"
         try:
             async with _capture_slot():
                 async with create_tenant_request_scope():
                     session = injector.get(AsyncSession)
                     try:
                         if not await self._capture_enabled(session):
-                            return
+                            return "disabled"
 
-                        configured_rates = await self._configured_rates(session)
+                        if configured_rates is None:
+                            configured_rates = await self._configured_rates(session)
                         occurred_at = occurred_at or utc_now()
 
                         valid_workflows = await self._existing_ids(session, WorkflowModel, {workflow_id})
@@ -371,24 +409,10 @@ class LlmUsageRecorder:
 
                         event_rows = []
                         for entry in entries:
-                            usage = usage_or_placeholder(entry.get("usage"))
-                            input_tokens = int(usage.get("input_tokens") or 0)
-                            output_tokens = int(usage.get("output_tokens") or 0)
-                            token_details = usage.get("token_details")
                             provider = entry.get("provider", "") or ""
                             model = entry.get("model", "") or ""
                             provider_id = coerce_uuid(entry.get("llm_provider_id"))
-                            token_columns = _token_columns(provider, usage, input_tokens, output_tokens, token_details)
-                            pricing = _resolve_cost(
-                                provider,
-                                model,
-                                input_tokens,
-                                output_tokens,
-                                configured_rates,
-                                usage_missing=is_usage_metadata_missing(token_details),
-                                cache_read_tokens=token_columns["cache_read_tokens"],
-                                cache_creation_tokens=token_columns["cache_creation_tokens"],
-                            )
+                            priced = price_usage(provider, model, entry.get("usage"), configured_rates)
                             event_rows.append(
                                 {
                                     "execution_id": execution_id,
@@ -404,9 +428,8 @@ class LlmUsageRecorder:
                                     "node_id": None,
                                     "provider_key": _normalize(provider, 64),
                                     "model_key": _normalize(model, 512),
-                                    **token_columns,
+                                    **priced,
                                     "occurred_at": occurred_at,
-                                    **pricing,
                                 }
                             )
 
@@ -439,13 +462,16 @@ class LlmUsageRecorder:
                         await session.execute(receipt)
 
                         await session.commit()
+                        return "recorded"
                     except Exception:
                         await session.rollback()
                         logger.warning("Failed recording evaluation LLM usage", exc_info=True)
+                        return "failed"
                     finally:
                         await session.close()
         except Exception:
             logger.warning("Failed opening scope for evaluation LLM usage recording", exc_info=True)
+            return "failed"
 
     async def record_analyst_call(
         self,

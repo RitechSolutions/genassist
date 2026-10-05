@@ -158,13 +158,32 @@ class NliEvalConfig(_Forbid):
     min_entail_score: float = Field(..., ge=0, le=1)
 
 
+MAX_JUDGE_RUBRIC_CHARS = 2_000
+MAX_JUDGE_RULES = 1
+
+JudgeSourceType = Literal["none", "expected_output"]
+
+
+class JudgeRule(_Forbid):
+    rubric: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_JUDGE_RUBRIC_CHARS)]
+    min_score: float = Field(default=0.5, ge=0, le=1)
+    # `none` grades rubric alone. Uses expected_output as SOURCE; skips cases without
+    source_type: JudgeSourceType = "none"
+
+
+class LlmJudgeConfig(_Forbid):
+    rules: List[JudgeRule] = Field(..., min_length=1, max_length=MAX_JUDGE_RULES)
+
+
 class PromptTechniqueConfigs(_Forbid):
     """Config for techniques that accept it. nli_eval takes only a threshold, its
-    evidence is fixed; llm_judge/provenance_eval have no model, 422 if named"""
+    evidence is fixed; llm_judge takes one rubric rule and never a provider;
+    provenance_eval has no model, 422 if named"""
 
     not_contains: Optional[NotContainsConfig] = None
     field_equals: Optional[FieldEqualsConfig] = None
     nli_eval: Optional[NliEvalConfig] = None
+    llm_judge: Optional[LlmJudgeConfig] = None
 
 
 class PromptEvalRequest(BaseModel):
@@ -192,6 +211,14 @@ class PromptEvalRequest(BaseModel):
         return _reject_duplicates(value)
 
 
+class PromptCallUsage(BaseModel):
+    """Tokens the provider reported for one call"""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
 class PromptEvalCaseResult(BaseModel):
     case_id: UUID
     input: str = Field(default="", max_length=MAX_ACTUAL_CHARS)
@@ -209,6 +236,9 @@ class PromptEvalCaseResult(BaseModel):
     errored_metrics: int = 0
     not_evaluated_metrics: int = 0
     not_applicable_metrics: int = 0
+    latency_ms: Optional[int] = None  # None when the call never answered
+    usage: Optional[PromptCallUsage] = None  # None when the provider reported no usage
+    cost_usd: Optional[float] = None  # None when unpriced
 
 
 class PromptEvalSummary(BaseModel):
@@ -241,6 +271,11 @@ class PromptRunProvenance(BaseModel):
     ran_at: datetime
     latency_ms_total: int
     usage_total: Dict[str, Any]
+    cost_usd: Optional[float] = None
+    unpriced_calls: int = 0
+    grader_calls: int = 0  # judge calls actually recorded; 0 on a rewrite
+    grader_tokens: int = 0  # the judge's share of usage_total
+    grader_cost_usd: Optional[float] = None  # the judge's share of cost_usd
     budget_seconds: int
     deadline_hit: bool = False
     metering_handoff_failed: bool = False
