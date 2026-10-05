@@ -373,17 +373,17 @@ NODE_DESCRIPTIONS = {
     },
     "preprocessingNode": {
         "category": "ML",
-        "description": "Preprocesses data for ML model training. Applies transformations using custom Python code on the loaded dataset.",
-        "when_to_use": "When training data needs cleaning, transformation, or feature engineering before model training.",
+        "description": "Cleans the dataset before model training: column filter, remove duplicate rows, remove columns/rows, remove mostly-empty columns, change column data types, plus custom Python code on the loaded dataset.",
+        "when_to_use": "When the raw training data needs cleaning (rows, columns, data types) before model training. Missing values, outliers, encoding, feature engineering and scaling are configured on the Train Model node instead, where they are fit on the training split only.",
         "example_use_cases": [
-            "Cleaning and normalizing training data",
-            "Feature engineering before model training",
-            "Handling missing values and outliers",
+            "Removing duplicate rows and unneeded columns",
+            "Fixing column data types (int, float, text, boolean, date, category)",
+            "Dropping mostly-empty columns",
         ],
     },
     "trainModelNode": {
         "category": "ML",
-        "description": "Trains an ML model on preprocessed data. Configure model type, target column, feature columns, and validation split.",
+        "description": "Trains an ML model on preprocessed data. Configure model type, target column, feature columns, and validation split, plus (fit on the training split only) missing-value handling, outlier handling, categorical encoding, feature engineering (custom_expression, bin_numeric, polynomial, log_transform, quantile_transform, power_transform, pca) and scaling method.",
         "when_to_use": "When you need to train a custom ML model within the platform.",
         "example_use_cases": [
             "Training a classification model on labeled data",

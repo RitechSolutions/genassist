@@ -632,7 +632,13 @@ export type FeatureEngineeringStrategy =
   | "bin_numeric"
   | "normalize" // retired
   | "standardize" // retired
-  | "polynomial";
+  | "polynomial"
+  // Column transforms of numeric sourceColumns - fit (where anything is fit)
+  // on the training split only, replayed at inference.
+  | "log_transform" // log(1 + x), values must be >= 0
+  | "quantile_transform" // sklearn QuantileTransformer
+  | "power_transform" // sklearn PowerTransformer (Yeo-Johnson / Box-Cox)
+  | "pca"; // [StandardScaler +] PCA -> newColumnName_1..k
 
 export interface FeatureEngineeringItem {
   id: string;
@@ -644,6 +650,15 @@ export interface FeatureEngineeringItem {
   binColumn?: string;
   polynomialDegree?: number;
   polynomialColumns?: string[];
+  // Column transforms (log/quantile/power/PCA) read sourceColumns, plus:
+  quantileOutputDistribution?: "uniform" | "normal";
+  nQuantiles?: number;
+  powerMethod?: "yeo-johnson" | "box-cox";
+  pcaComponents?: number; // whole number of components, or a 0-1 share of variance to keep
+  pcaStandardize?: boolean;
+  // Train on the transformed columns instead of the originals (default: on for
+  // PCA, off otherwise). Originals are still needed as inputs at prediction.
+  replaceSourceColumns?: boolean;
 }
 
 export interface FeatureEngineeringConfig {

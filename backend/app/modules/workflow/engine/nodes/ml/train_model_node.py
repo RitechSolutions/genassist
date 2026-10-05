@@ -10,7 +10,9 @@ import pickle
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 from sklearn.ensemble import (
     ExtraTreesClassifier,
     ExtraTreesRegressor,
@@ -23,6 +25,7 @@ from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, LogisticRe
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.neural_network import MLPClassifier, MLPRegressor
+from sklearn.pipeline import Pipeline
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.preprocessing import (
@@ -30,6 +33,8 @@ from sklearn.preprocessing import (
     MinMaxScaler,
     OneHotEncoder,
     PolynomialFeatures,
+    PowerTransformer,
+    QuantileTransformer,
     RobustScaler,
     StandardScaler,
 )
@@ -172,12 +177,19 @@ class TrainModelNode(BaseNode):
                             validation, never the other way around.
                 - featureEngineering: Optional list of derived-feature specs, each a
                             dict with: newColumnName (required), strategy
-                            ("custom_expression", "bin_numeric", or "polynomial"),
-                            plus strategy-specific fields (expression /
-                            binColumn+numBins / polynomialColumns+polynomialDegree).
-                            Bin edges and polynomial features are fit on the
-                            training split only and then applied to validation,
-                            never the other way around. "normalize" and
+                            ("custom_expression", "bin_numeric", "polynomial",
+                            "log_transform", "quantile_transform",
+                            "power_transform", or "pca"), plus strategy-specific
+                            fields (expression / binColumn+numBins /
+                            polynomialColumns+polynomialDegree / sourceColumns,
+                            with quantileOutputDistribution+nQuantiles,
+                            powerMethod, pcaComponents+pcaStandardize, and
+                            replaceSourceColumns). Bin edges, polynomial
+                            features, quantiles, power-transform lambdas and PCA
+                            components are fit on the training split only and
+                            then applied to validation, never the other way
+                            around. Missing values are always filled before
+                            feature engineering runs. "normalize" and
                             "standardize" (with sourceColumns) are retired -
                             scalingMethod already rescales numeric features - but
                             still run for workflows saved with them, with a
@@ -390,6 +402,7 @@ class TrainModelNode(BaseNode):
 
             valid_fe_strategies = [
                 "custom_expression", "bin_numeric", "polynomial",
+                *ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS,
                 *_RETIRED_FE_STRATEGIES,
             ]
             for item in feature_engineering:
@@ -419,6 +432,8 @@ class TrainModelNode(BaseNode):
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"featureEngineering entry '{item.get('newColumnName')}' has strategy '{strategy}' but no sourceColumns",
                     )
+                if strategy in ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS:
+                    self._validate_column_transform_config(item)
                 if strategy == "polynomial" and (not item.get("polynomialColumns") or not item.get("polynomialDegree")):
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
@@ -625,6 +640,9 @@ class TrainModelNode(BaseNode):
             has_missing = X_train.isnull().any().any() or (
                 X_val is not None and X_val.isnull().any().any()
             )
+            # Told to the user in the result's "warnings": with no Missing
+            # Value Handling configured, this fill used to be silent.
+            auto_fill_warnings: List[str] = []
             if has_missing:
                 logger.warning("Found missing values in features. Filling with median for numeric and mode for categorical.")
                 for col in X_train.columns:
@@ -632,15 +650,26 @@ class TrainModelNode(BaseNode):
                     # override above - don't recompute/overwrite it here.
                     if col in missing_value_fills:
                         continue
+                    missing_count = int(X_train[col].isna().sum()) + (
+                        int(X_val[col].isna().sum()) if X_val is not None else 0
+                    )
                     if X_train[col].dtype in ['int64', 'float64']:
                         fill_value = X_train[col].median()
+                        fill_kind = "median"
                     else:
                         mode_values = X_train[col].mode()
                         fill_value = mode_values[0] if not mode_values.empty else ''
+                        fill_kind = "most frequent value"
                     X_train[col].fillna(fill_value, inplace=True)
                     if X_val is not None:
                         X_val[col].fillna(fill_value, inplace=True)
                     missing_value_fills[col] = fill_value
+                    if missing_count:
+                        auto_fill_warnings.append(
+                            f"Column '{col}': {missing_count} empty value(s) filled automatically with the "
+                            f"{fill_kind} ({fill_value!r}) of the training data. Set Missing Value Handling "
+                            "for this column to choose how instead."
+                        )
 
             # A "drop_column" missing-value strategy above removes the column
             # from X_train entirely, but feature_columns (saved to metadata
@@ -900,6 +929,7 @@ class TrainModelNode(BaseNode):
                 for item in feature_engineering
                 if item.get("strategy") in _RETIRED_FE_STRATEGIES
             ]
+            training_warnings = auto_fill_warnings + training_warnings
             for warning in training_warnings:
                 logger.warning(warning)
 
@@ -1360,7 +1390,174 @@ class TrainModelNode(BaseNode):
                     "new_names": new_names,
                 })
 
+            elif strategy in ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS:
+                X_train, X_val, step = self._apply_column_transform(X_train, X_val, item)
+                steps.append(step)
+
         return X_train, X_val, steps
+
+    @staticmethod
+    def _validate_column_transform_config(item: Dict[str, Any]) -> None:
+        """Config checks for log/quantile/power/PCA features, before any data is loaded."""
+        strategy = item.get("strategy")
+        label = ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS[strategy]
+        name = item.get("newColumnName")
+
+        def fail(problem: str) -> None:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Feature engineering '{name}' ({label}): {problem}",
+            )
+
+        columns = item.get("sourceColumns") or []
+        if not columns:
+            fail("choose at least one column")
+        if strategy == "pca":
+            if len(set(columns)) < 2:
+                fail("choose at least 2 columns to combine")
+            components = item.get("pcaComponents", 2)
+            is_count = isinstance(components, int) and not isinstance(components, bool)
+            is_share = isinstance(components, float) and 0 < components < 1
+            if not (is_count and components >= 1) and not is_share:
+                fail(
+                    "number of components must be a whole number of 1 or more, or a share of "
+                    f"variance to keep between 0 and 1 (e.g. 0.95) - got {components!r}"
+                )
+            if is_count and components > len(set(columns)):
+                fail(f"asks for {components} components from only {len(set(columns))} columns")
+        if strategy == "power_transform" and item.get("powerMethod", "yeo-johnson") not in ("yeo-johnson", "box-cox"):
+            fail(f"method must be 'yeo-johnson' or 'box-cox' - got {item.get('powerMethod')!r}")
+        if strategy == "quantile_transform":
+            if item.get("quantileOutputDistribution", "uniform") not in ("uniform", "normal"):
+                fail(
+                    "output distribution must be 'uniform' or 'normal' - "
+                    f"got {item.get('quantileOutputDistribution')!r}"
+                )
+            n_quantiles = item.get("nQuantiles", 1000)
+            if not isinstance(n_quantiles, int) or isinstance(n_quantiles, bool) or n_quantiles < 2:
+                fail(f"number of quantiles must be a whole number of 2 or more - got {n_quantiles!r}")
+
+    def _apply_column_transform(self, X_train, X_val, item):
+        """Log Transform, Quantile Transformer, Power Transformer or PCA on
+        numeric source columns.
+
+        Anything fitted (quantiles, power lambdas, PCA components and the
+        optional pre-PCA scaling) is fit on X_train only and applied to
+        X_val. Missing values were already filled before feature
+        engineering; empty or infinite values here can only come from an
+        earlier feature step (e.g. a division by zero), and fail clearly
+        instead of erroring inside scikit-learn.
+
+        Output: one new column per source (named newColumnName for a single
+        source, newColumnName_<source> for several), or newColumnName_1..k
+        for PCA. replaceSourceColumns (default: on for PCA, off otherwise)
+        removes the source columns from what the model is trained on - they
+        are still collected as raw inputs at inference, since the transform
+        needs them.
+        """
+        strategy = item["strategy"]
+        label = ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS[strategy]
+        new_col = item.get("newColumnName")
+        columns = list(dict.fromkeys(item.get("sourceColumns") or []))
+        power_method = item.get("powerMethod", "yeo-johnson")
+
+        def fail(problem: str) -> None:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Feature engineering '{new_col}' ({label}): {problem}",
+            )
+
+        not_found = [c for c in columns if c not in X_train.columns]
+        if not_found:
+            fail(
+                f"column(s) {not_found} not found - they must be feature columns, or created by "
+                "an earlier feature engineering step"
+            )
+        not_numeric = [
+            c for c in columns
+            if not pd.api.types.is_numeric_dtype(X_train[c]) or pd.api.types.is_bool_dtype(X_train[c])
+        ]
+        if not_numeric:
+            fail(f"needs numeric columns, but {not_numeric} are not numeric")
+
+        splits = {"training": X_train, "validation": X_val}
+        matrices = {
+            name: split[columns].astype(float).to_numpy()
+            for name, split in splits.items() if split is not None
+        }
+        for name, values in matrices.items():
+            problem = ml_utils.column_transform_value_problem(strategy, values, columns, power_method)
+            if problem:
+                if problem.startswith("empty or infinite"):
+                    problem = (
+                        f"{problem} in the {name} data. Missing values are filled before feature "
+                        "engineering, so these come from an earlier feature engineering step "
+                        "(e.g. a division by zero)"
+                    )
+                else:
+                    problem = f"{problem} (in the {name} data)"
+                fail(problem)
+
+        train_values = matrices["training"]
+        transformer = None
+        extra: Dict[str, Any] = {}
+        if strategy == "quantile_transform":
+            transformer = QuantileTransformer(
+                n_quantiles=min(item.get("nQuantiles", 1000), len(train_values)),
+                output_distribution=item.get("quantileOutputDistribution", "uniform"),
+                random_state=0,
+            ).fit(train_values)
+        elif strategy == "power_transform":
+            # standardize=False: Scaling Method already standardizes numeric
+            # features afterwards; doing it here too would scale twice.
+            transformer = PowerTransformer(method=power_method, standardize=False).fit(train_values)
+        elif strategy == "pca":
+            components = item.get("pcaComponents", 2)
+            if isinstance(components, int) and components > min(len(columns), len(train_values)):
+                fail(f"asks for {components} components, but there are only {len(train_values)} training rows")
+            pipeline_steps = [("scale", StandardScaler())] if item.get("pcaStandardize", True) else []
+            pipeline_steps.append(("pca", PCA(n_components=components, random_state=0)))
+            transformer = Pipeline(pipeline_steps).fit(train_values)
+            extra["explained_variance_ratio"] = [
+                float(v) for v in transformer.named_steps["pca"].explained_variance_ratio_
+            ]
+
+        transformed = {
+            name: ml_utils.apply_column_transform(strategy, transformer, values)
+            for name, values in matrices.items()
+        }
+        if strategy == "pca":
+            output_columns = [f"{new_col}_{i + 1}" for i in range(transformed["training"].shape[1])]
+        elif len(columns) == 1:
+            output_columns = [new_col]
+        else:
+            output_columns = [f"{new_col}_{c}" for c in columns]
+
+        replace = bool(item.get("replaceSourceColumns", strategy == "pca"))
+        kept_columns = [c for c in X_train.columns if not (replace and c in columns)]
+        clashes = [c for c in output_columns if c in kept_columns]
+        if clashes:
+            fail(f"output column(s) {clashes} already exist - choose another New Column Name")
+
+        def with_outputs(split, values):
+            base = split[kept_columns]
+            new = pd.DataFrame(values, columns=output_columns, index=split.index)
+            return pd.concat([base, new], axis=1)
+
+        X_train = with_outputs(X_train, transformed["training"])
+        if X_val is not None:
+            X_val = with_outputs(X_val, transformed["validation"])
+
+        return X_train, X_val, {
+            "strategy": strategy,
+            "new_col": new_col,
+            "columns": columns,
+            "output_columns": output_columns,
+            "transformer": transformer,
+            "power_method": power_method if strategy == "power_transform" else None,
+            "replace_source_columns": replace,
+            **extra,
+        }
 
     def _is_classification_task(self, y: pd.Series, model_type: str, task_type: str = "auto") -> bool:
         """

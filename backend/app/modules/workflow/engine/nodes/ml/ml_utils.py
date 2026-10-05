@@ -416,6 +416,54 @@ def normalize_feature_expression(expression: str) -> str:
     return _DF_COLUMN_REFERENCE.sub(to_name, expression or "")
 
 
+# Feature engineering strategies that turn numeric source columns into new
+# numeric columns through a (possibly fitted) transform. Labels are what the
+# Train Model dialog shows, used in error messages.
+COLUMN_TRANSFORM_STRATEGY_LABELS = {
+    "log_transform": "Log Transform",
+    "quantile_transform": "Quantile Transformer",
+    "power_transform": "Power Transformer",
+    "pca": "PCA",
+}
+
+
+def column_transform_value_problem(
+    strategy: str, values: np.ndarray, columns: List[str], power_method: Optional[str] = None
+) -> Optional[str]:
+    """Why `values` can't go through this transform, or None if they can.
+
+    Shared by training and inference, so a value that would be rejected at
+    training is rejected the same way at prediction time.
+    """
+    non_finite = ~np.isfinite(values)
+    if non_finite.any():
+        counts = {c: int(n) for c, n in zip(columns, non_finite.sum(axis=0)) if n}
+        return f"empty or infinite values in {counts}"
+    if strategy == "log_transform":
+        negative = values < 0
+        if negative.any():
+            counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
+            return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
+    if strategy == "power_transform" and power_method == "box-cox":
+        not_positive = values <= 0
+        if not_positive.any():
+            counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
+            return (
+                f"Box-Cox needs values above 0; values of 0 or less in {counts}. "
+                "Use the Yeo-Johnson method instead, which accepts any value"
+            )
+    return None
+
+
+def apply_column_transform(strategy: str, transformer: Any, values: np.ndarray) -> np.ndarray:
+    """Apply a column-transform feature: log(1 + x) for Log Transform, else
+    the transformer fitted on the training split (QuantileTransformer,
+    PowerTransformer, or a [StandardScaler +] PCA pipeline)."""
+    if strategy == "log_transform":
+        return np.log1p(values)
+    return transformer.transform(values)
+
+
 def ordinal_key(value: Any) -> Optional[str]:
     """Normalize a value for ordinal-mapping lookup.
 

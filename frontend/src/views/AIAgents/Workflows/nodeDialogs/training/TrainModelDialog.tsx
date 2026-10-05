@@ -978,10 +978,11 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                     }
                   />
                   <p className="text-xs text-muted-foreground">
-                    Bin edges and polynomial features are fit on the training
-                    split only, so validation rows never influence a derived
-                    feature's definition. To rescale numeric features, use
-                    Scaling Method.
+                    Bin edges, polynomial features, quantiles, power-transform
+                    parameters and PCA components are fit on the training split
+                    only, so validation rows never influence a derived feature's
+                    definition. Missing values are filled before these run. To
+                    rescale numeric features, use Scaling Method.
                   </p>
                 </div>
               )}
