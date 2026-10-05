@@ -11,7 +11,6 @@ The output is written to app/db/seed/knowledge/node_specs.md.
 Hand-authored descriptions and use cases are merged in from NODE_DESCRIPTIONS below.
 """
 
-import os
 from pathlib import Path
 
 from app.schemas.dynamic_form_schemas.nodes import (
@@ -363,10 +362,10 @@ NODE_DESCRIPTIONS = {
     },
     "trainDataSourceNode": {
         "category": "ML",
-        "description": "Loads training data from a configured data source (CSV file, database query, etc.) for ML model training pipelines.",
+        "description": "Loads training data from a database query or uploaded file for ML model training pipelines.",
         "when_to_use": "When setting up an ML training pipeline and you need to load the training dataset.",
         "example_use_cases": [
-            "Loading a CSV dataset for model training",
+            "Loading an uploaded dataset for model training",
             "Querying a database for training data",
             "Fetching data from a data source for preprocessing",
         ],
