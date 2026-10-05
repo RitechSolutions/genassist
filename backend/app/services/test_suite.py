@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import logging
 import json
+import math
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID, uuid4
 
@@ -24,6 +25,16 @@ from app.services.evaluation_text import (
     normalize_text as _normalize_text,
 )
 from app.services.route_action_rules import action_observations, route_observations
+from app.services.dataset_file import (
+    FILE_STATUS_FAILED,
+    FILE_STATUS_OK,
+    DatasetTurn,
+    DatasetUpload,
+    conversation_key,
+    invalid_file_import,
+    parse_dataset_file,
+    turn_limit_error,
+)
 from app.services.evaluation_nli import (
     NLI_MAX_ANSWER_CLAIMS,
     evaluation_nli_model,
@@ -34,6 +45,7 @@ from app.modules.workflow.engine.workflow_engine import (
 )
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.usage_context import WorkflowUsageContext
+from app.core.utils.llm_json import parse_json_object_reply
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.core.utils.transcript_utils import extract_qa_pairs
 from app.core.utils.uuid_utils import coerce_uuid
@@ -50,8 +62,10 @@ from app.schemas.test_suite import (
     AddConversationToSuitesResult,
     ConversationSuiteImportResult,
     ConversationSuiteMembership,
+    DatasetFileResult,
     ImportCasesFromConversationRequest,
     ImportCasesFromConversationsResult,
+    ImportCasesFromFilesResult,
     ImportedConversationResult,
     PaginatedEvaluations,
     StartedEvaluationRun,
@@ -364,17 +378,18 @@ def _is_retrieval_tool(event: Dict[str, Any], nodes: Dict[str, Any]) -> bool:
 def _parse_judge_json(raw_content: Any) -> tuple[float | None, str | None]:
     """Parse a judge's ``{score, reason}`` reply; a missing/invalid score yields no score."""
     try:
-        parsed = json.loads(raw_content)
-        if not isinstance(parsed, dict):
-            return None, "LLM judge response was not a JSON object"
+        parsed = parse_json_object_reply(raw_content)
         # A missing score is a malformed judgment, not a real 0.0 — surface it as
         # an error rather than silently failing the answer.
         if parsed.get("score") is None:
             return None, "LLM judge response did not include a score"
-        score = max(0.0, min(1.0, float(parsed["score"])))
+        score = float(parsed["score"])
+        if not math.isfinite(score):
+            return None, "LLM judge response did not include a usable score"
+        score = max(0.0, min(1.0, score))
         reason = str(parsed.get("reason", "")).strip() or None
         return score, reason
-    except (ValueError, TypeError, json.JSONDecodeError):
+    except (ValueError, TypeError):
         return None, "LLM judge response could not be parsed"
 
 
@@ -819,6 +834,7 @@ class SimpleEvaluatorRegistry:
         technique_configs: Dict[str, Dict[str, Any]] | None = None,
         workflow: Any = None,
         usage_ref: "EvaluationUsageRef | None" = None,
+        judge_model: Any = None,
     ) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
         payload = {
@@ -831,6 +847,7 @@ class SimpleEvaluatorRegistry:
             # Workflow graph for legacy name→id resolution via the full tool catalogue.
             "workflow": workflow,
             "_usage_ref": usage_ref,
+            "_judge_model": judge_model,
         }
         for technique_index, key in enumerate(techniques):
             fn = self._evaluators.get(key)
@@ -1525,10 +1542,13 @@ class SimpleEvaluatorRegistry:
         usage_ref: "EvaluationUsageRef | None" = None,
         purpose: str | None = None,
         call_index: int | None = None,
+        model: Any = None,
     ) -> tuple[float | None, str | None]:
         """Run an LLM judge returning compact JSON {score, reason}; shared by grounding + rubric judges."""
-        llm_provider = injector.get(LLMProvider)
-        llm = await llm_provider.get_model(provider_id)
+        llm = model
+        if llm is None:
+            llm_provider = injector.get(LLMProvider)
+            llm = await llm_provider.get_model(provider_id)
         response = await llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
@@ -1664,6 +1684,7 @@ class SimpleEvaluatorRegistry:
             usage_ref=payload.get("_usage_ref"),
             purpose="llm_judge",
             call_index=_judge_rule_call_index(payload, rule_number),
+            model=payload.get("_judge_model"),
         )
         # A missing score means the judge output was malformed — our evaluator's
         # problem, not the agent's. Report it as an error, not a failing answer.
@@ -2009,6 +2030,104 @@ class TestSuiteService:
             replaced=sum(1 for r in results if r.status == "replaced"),
             failed=sum(1 for r in results if r.status == "failed"),
         )
+
+    async def _plan_file_import(
+        self, suite_id: UUID, uploads: List[DatasetUpload]
+    ) -> Tuple[ImportCasesFromFilesResult, List[List[DatasetTurn]]]:
+        """Read every file and decide which conversations it adds, writing nothing."""
+        suite = await self.suite_repo.get_by_id(suite_id)
+        if not suite:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+
+        # Conversations already here turn for turn are skipped, so a repeated
+        # import adds nothing.
+        existing = await self.case_repo.get_all_for_suite(suite_id)
+        in_dataset = {
+            conversation_key((case.input_data, case.expected_output) for case in group)
+            for group in _group_cases_into_conversations(existing)
+        }
+        # Where each conversation of this import first appeared, by file position.
+        first_seen: Dict[str, int] = {}
+
+        files: List[DatasetFileResult] = []
+        accepted: List[List[DatasetTurn]] = []
+        for position, upload in enumerate(uploads):
+            if upload.error:
+                files.append(
+                    DatasetFileResult(
+                        filename=upload.filename,
+                        status=FILE_STATUS_FAILED,
+                        errors=[upload.error],
+                    )
+                )
+                continue
+            parsed = parse_dataset_file(upload.content)
+            entry = DatasetFileResult(
+                filename=upload.filename, status=parsed.status, errors=parsed.errors
+            )
+            for conversation in parsed.conversations:
+                key = conversation_key(
+                    (turn.input_data, turn.expected_output) for turn in conversation
+                )
+                if key in in_dataset:
+                    entry.duplicates += 1
+                    continue
+                if key in first_seen:
+                    entry.repeated += 1
+                    if first_seen[key] not in entry.repeated_from:
+                        entry.repeated_from.append(first_seen[key])
+                    continue
+                first_seen[key] = position
+                accepted.append(conversation)
+                entry.conversations += 1
+                entry.turns += len(conversation)
+            files.append(entry)
+
+        turns = sum(entry.turns for entry in files)
+        result = ImportCasesFromFilesResult(
+            files=files,
+            conversations=len(accepted),
+            turns=turns,
+            duplicates=sum(entry.duplicates for entry in files),
+            repeated=sum(entry.repeated for entry in files),
+            failed_files=sum(1 for entry in files if entry.status != FILE_STATUS_OK),
+            error=turn_limit_error(turns),
+        )
+        return result, accepted
+
+    async def preview_cases_from_files(
+        self, suite_id: UUID, uploads: List[DatasetUpload]
+    ) -> ImportCasesFromFilesResult:
+        """Report what importing these files would add, without saving anything."""
+        result, _accepted = await self._plan_file_import(suite_id, uploads)
+        return result
+
+    async def import_cases_from_files(
+        self, suite_id: UUID, uploads: List[DatasetUpload]
+    ) -> ImportCasesFromFilesResult:
+        """Add every new conversation from the readable files in one insert."""
+        result, accepted = await self._plan_file_import(suite_id, uploads)
+        if result.error:
+            raise invalid_file_import(result.error)
+
+        cases: List[TestCaseModel] = []
+        for conversation in accepted:
+            conversation_id = uuid4()
+            for turn_index, turn in enumerate(conversation):
+                cases.append(
+                    TestCaseModel(
+                        suite_id=suite_id,
+                        source_conversation_id=conversation_id,
+                        turn_index=turn_index,
+                        input_data=turn.input_data,
+                        expected_output=turn.expected_output,
+                        tags=turn.tags,
+                        weight=turn.weight,
+                    )
+                )
+        if cases:
+            await self.case_repo.add_many(cases)
+        return result
 
     async def remove_conversation_from_suite(
         self, suite_id: UUID, conversation_id: UUID

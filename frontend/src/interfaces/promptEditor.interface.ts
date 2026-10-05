@@ -49,6 +49,13 @@ export type PromptCaseStatus =
 export type PromptCaseVerdict = "passed" | "failed" | "inconclusive";
 export type PromptEvalMetric = TestResultMetric & { not_applicable?: boolean };
 
+/** Tokens the provider reported for one call */
+export interface PromptCallUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+}
+
 export interface PromptEvalCaseResult {
   case_id: string;
   input: string;
@@ -66,6 +73,9 @@ export interface PromptEvalCaseResult {
   errored_metrics: number;
   not_evaluated_metrics: number;
   not_applicable_metrics: number;
+  latency_ms: number | null;
+  usage: PromptCallUsage | null;
+  cost_usd: number | null;
 }
 
 export interface PromptEvalSummary {
@@ -94,6 +104,11 @@ export interface PromptRunProvenance {
   ran_at: string;
   latency_ms_total: number;
   usage_total: Record<string, number>;
+  cost_usd: number | null;
+  unpriced_calls: number;
+  grader_calls: number;
+  grader_tokens: number;
+  grader_cost_usd: number | null;
   budget_seconds: number;
   deadline_hit: boolean;
   metering_handoff_failed: boolean;
@@ -125,12 +140,20 @@ export interface GoldSuiteLinkPayload {
   name?: string;
 }
 
+export interface JudgeRuleConfig {
+  rubric: string;
+  /** Omitted = default 0.5 */
+  min_score?: number;
+  source_type: "none" | "expected_output";
+}
+
 /** Options for the techniques that take them. nli_eval gets a fixed evidence
- *  source server-side; llm_judge and provenance_eval are rejected outright */
+ *  source server-side; llm_judge takes one rule; provenance_eval is rejected outright */
 export interface PromptTechniqueConfigs {
   not_contains?: { phrases: string[] };
   field_equals?: { field: string; expected?: string };
   nli_eval?: { min_entail_score: number };
+  llm_judge?: { rules: JudgeRuleConfig[] };
 }
 
 export interface PromptEvalRequestPayload {

@@ -44,6 +44,37 @@ export interface ImportFromConversationsResult {
   failed: number;
 }
 
+/** One uploaded file of a dataset file import, and what it adds. */
+export interface DatasetFileResult {
+  filename: string;
+  /** evaluation_bundle files belong to the evaluation import instead. */
+  status: "ok" | "failed" | "evaluation_bundle";
+  /** What the file adds, after skipping conversations seen before. */
+  conversations: number;
+  turns: number;
+  /** Skipped because the dataset already holds them. */
+  duplicates: number;
+  /** Skipped because an earlier file in this import, or this one, already has them. */
+  repeated: number;
+  /** Positions in `files` of the files holding the first copies. */
+  repeated_from: number[];
+  /** Why the file cannot be imported. */
+  errors: string[];
+}
+
+/** Response of `POST /cases/import-from-files` and of its preview. */
+export interface ImportCasesFromFilesResult {
+  /** One entry per uploaded file, in upload order. */
+  files: DatasetFileResult[];
+  conversations: number;
+  turns: number;
+  duplicates: number;
+  repeated: number;
+  failed_files: number;
+  /** Set when the import cannot go ahead at all, e.g. it adds too many turns. */
+  error?: string | null;
+}
+
 /** One dataset, and what it already holds of a given conversation. */
 export interface ConversationDataset {
   suite_id: string;

@@ -337,11 +337,29 @@ class TrainModelNode(BaseNode):
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"Invalid categoricalEncoding strategy: {strategy}. Must be one of: {', '.join(valid_encoding_strategies)}",
                     )
-                if strategy == "ordinal" and not item.get("ordinalMapping"):
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=f"categoricalEncoding entry for '{item.get('columnName')}' has strategy 'ordinal' but no ordinalMapping",
-                    )
+                if strategy == "ordinal":
+                    mapping = item.get("ordinalMapping")
+                    if not mapping or not isinstance(mapping, dict):
+                        raise AppException(
+                            error_key=ErrorKey.INTERNAL_ERROR,
+                            error_detail=(
+                                f"Ordinal encoding for column '{item.get('columnName')}' has no value order. "
+                                "Open the Train Model node, and under Categorical Encoding set the order "
+                                "of the column's values (e.g. Low < Medium < High)."
+                            ),
+                        )
+                    bad_positions = [
+                        k for k, v in mapping.items()
+                        if isinstance(v, bool) or not isinstance(v, (int, float))
+                    ]
+                    if bad_positions:
+                        raise AppException(
+                            error_key=ErrorKey.INTERNAL_ERROR,
+                            error_detail=(
+                                f"Ordinal encoding for column '{item.get('columnName')}': every value needs a "
+                                f"numeric position, but {bad_positions[:10]} do not."
+                            ),
+                        )
 
             valid_missing_value_strategies = [
                 "no_action", "drop_column", "drop_rows",
@@ -426,6 +444,11 @@ class TrainModelNode(BaseNode):
 
             # Load data from CSV file
             data, df = ml_utils.load_csv_file(file_url, self.state.thread_id)
+            # Column types saved by an upstream Preprocessing node (nullable
+            # Int64/boolean, string, category, datetime) are converted to the
+            # plain dtypes the steps below select on - see
+            # normalize_dtypes_for_training.
+            df = ml_utils.normalize_dtypes_for_training(df)
             logger.info(f"Loaded {len(df)} rows from {file_url}")
 
             # Validate columns exist
@@ -980,7 +1003,13 @@ class TrainModelNode(BaseNode):
         for item in categorical_encoding:
             column = item.get("columnName")
             strategy = item.get("strategy", "no_action")
-            if strategy == "no_action" or column not in X_train.columns:
+            if strategy == "no_action":
+                continue
+            if column not in X_train.columns:
+                logger.warning(
+                    f"Skipping {strategy} encoding for '{column}': it is not one of the feature "
+                    "columns (or was dropped earlier)"
+                )
                 continue
 
             if strategy == "one_hot":
@@ -997,11 +1026,38 @@ class TrainModelNode(BaseNode):
                     X_val[column] = X_val[column].map(mapping).fillna(-1).astype(int)
 
             elif strategy == "ordinal":
-                mapping = item.get("ordinalMapping") or {}
+                # Keys come from JSON (always strings) while values may be
+                # numbers or text with stray spaces - normalize both sides the
+                # same way so e.g. 2 and "2", or " High" and "High", match.
+                mapping = {
+                    ml_utils.ordinal_key(k): v
+                    for k, v in (item.get("ordinalMapping") or {}).items()
+                }
+                splits = [("training", X_train)] + ([("validation", X_val)] if X_val is not None else [])
+                encoded = {}
+                for split_name, split in splits:
+                    keys = split[column].map(ml_utils.ordinal_key)
+                    unmapped = sorted({k for k in keys.dropna().unique() if k not in mapping})
+                    if unmapped:
+                        # Never silently turn a value into "missing": an
+                        # unmapped value means the configured order is
+                        # incomplete, and training on NaNs would hide that.
+                        raise AppException(
+                            error_key=ErrorKey.INTERNAL_ERROR,
+                            error_detail=(
+                                f"Ordinal encoding for column '{column}': {len(unmapped)} value(s) in the "
+                                f"{split_name} data have no position in the configured order: "
+                                f"{unmapped[:10]}{' ...' if len(unmapped) > 10 else ''}. "
+                                f"Configured order: {list(mapping)}. Add the missing values to the "
+                                "order in the Train Model node."
+                            ),
+                        )
+                    encoded[split_name] = keys.map(mapping).astype("float64")
                 ordinal_encodings[column] = mapping
-                X_train[column] = X_train[column].map(mapping)
+                X_train[column] = encoded["training"]
                 if X_val is not None:
-                    X_val[column] = X_val[column].map(mapping)
+                    X_val[column] = encoded["validation"]
+                logger.info(f"Ordinal-encoded '{column}' using order {mapping}")
 
         return X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns
 
@@ -1075,10 +1131,10 @@ class TrainModelNode(BaseNode):
                     if baseline_val is not None:
                         baseline_val = baseline_val[val_mask].reset_index(drop=True)
             elif strategy == "impute_constant":
-                fill_value = item.get("imputeValue", 0)
-                X_train[column] = X_train[column].fillna(fill_value)
+                fill_value = self._coerce_fill_value(X_train[column], item.get("imputeValue", 0))
+                X_train[column] = self._fill_missing(X_train[column], fill_value)
                 if X_val is not None:
-                    X_val[column] = X_val[column].fillna(fill_value)
+                    X_val[column] = self._fill_missing(X_val[column], fill_value)
                 fills[column] = fill_value
             elif strategy in ("impute_mean", "impute_median", "impute_mode"):
                 if strategy == "impute_mean":
@@ -1088,12 +1144,53 @@ class TrainModelNode(BaseNode):
                 else:
                     mode_values = X_train[column].mode()
                     fill_value = mode_values[0] if not mode_values.empty else None
-                X_train[column] = X_train[column].fillna(fill_value)
+                X_train[column] = self._fill_missing(X_train[column], fill_value)
                 if X_val is not None:
-                    X_val[column] = X_val[column].fillna(fill_value)
+                    X_val[column] = self._fill_missing(X_val[column], fill_value)
                 fills[column] = fill_value
 
         return X_train, y_train, X_val, y_val, baseline_train, baseline_val, fills
+
+    @staticmethod
+    def _coerce_fill_value(series: pd.Series, fill_value: Any) -> Any:
+        """Match a constant fill value to its column's type.
+
+        The value comes from a text box, so a numeric column often gets "0"
+        or "2.5" as a string - filling with that would turn the column into
+        mixed text/numbers (object), dropping it out of scaling and outlier
+        handling and sending it to one-hot encoding instead.
+        """
+        if isinstance(fill_value, str) and pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(series):
+            try:
+                number = float(fill_value.strip())
+            except ValueError:
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=(
+                        f"Missing-value fill '{fill_value}' for numeric column '{series.name}' "
+                        "is not a number"
+                    ),
+                )
+            return int(number) if number.is_integer() and pd.api.types.is_integer_dtype(series) else number
+        return fill_value
+
+    @staticmethod
+    def _fill_missing(series: pd.Series, fill_value: Any) -> pd.Series:
+        """fillna without pandas' "Downcasting object dtype arrays" FutureWarning.
+
+        On an object column, fillna silently downcasts the result (e.g. to
+        int) and warns that this will stop in a future version. Opting in to
+        the future behavior and inferring the dtype explicitly gives the same
+        result today without the warning, and keeps working after pandas
+        changes the default.
+        """
+        try:
+            with pd.option_context("future.no_silent_downcasting", True):
+                filled = series.fillna(fill_value)
+        except (KeyError, AttributeError):
+            # pandas < 2.2 has no such option (and doesn't warn either).
+            filled = series.fillna(fill_value)
+        return filled.infer_objects()
 
     def _engineer_features(self, X_train, X_val, feature_engineering):
         """

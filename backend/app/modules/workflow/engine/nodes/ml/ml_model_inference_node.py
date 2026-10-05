@@ -16,6 +16,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.nodes.ml.ml_utils import ordinal_key
 from app.schemas.ml_model import MLModelBase
 from app.services.ml_model_manager import download_pkl_file, get_ml_model_manager
 from app.services.ml_models import MLModelsService
@@ -222,12 +223,18 @@ def _mapped_transform(
     mappings: Dict[str, Dict[Any, Any]],
     batch_size: int,
     unseen_value: float,
+    normalize_keys: bool = False,
 ) -> np.ndarray:
     """Reapply a fitted label/ordinal value -> code mapping to raw inputs.
 
     A value the mapping wasn't fit on (or has no entry for) falls back to
     unseen_value, mirroring how the same case is handled at training time
     (see TrainModelNode._encode_categoricals).
+
+    normalize_keys (ordinal mappings): match values with ordinal_key, as
+    training does, so e.g. an input of 2 finds the JSON key "2" and " High"
+    finds "High". Applied to the stored keys too, so models trained before
+    ordinal_key existed still match.
     """
     if not columns:
         return np.empty((batch_size, 0))
@@ -235,7 +242,11 @@ def _mapped_transform(
     out = np.empty(raw.shape, dtype=float)
     for i, col in enumerate(columns):
         mapping = mappings.get(col, {})
-        out[:, i] = [mapping.get(v, unseen_value) for v in raw[:, i]]
+        if normalize_keys:
+            mapping = {ordinal_key(k): v for k, v in mapping.items()}
+            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in raw[:, i]]
+        else:
+            out[:, i] = [mapping.get(v, unseen_value) for v in raw[:, i]]
     return out
 
 
@@ -538,7 +549,8 @@ class MLModelInferenceNode(BaseNode):
 
                     if ordinal_columns:
                         ordinal_data = _mapped_transform(
-                            normalized_inputs, ordinal_columns, ordinal_encodings, batch_size, unseen_value=np.nan
+                            normalized_inputs, ordinal_columns, ordinal_encodings, batch_size,
+                            unseen_value=np.nan, normalize_keys=True,
                         )
                         for i, col in enumerate(ordinal_columns):
                             column_arrays[col] = ordinal_data[:, i]

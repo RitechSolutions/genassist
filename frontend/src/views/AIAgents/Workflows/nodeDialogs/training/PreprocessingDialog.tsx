@@ -42,7 +42,6 @@ import {
   PreprocessingConfig,
   PreprocessingStep,
   PreprocessingStepType,
-  parsePythonCodeToConfig,
   generatePythonCodeFromConfig,
   BASE_PYTHON_TEMPLATE,
   createPreprocessingStep,
@@ -54,6 +53,12 @@ import {
   DropHighNullColumnsStepConfig,
   ChangeDtypeStepConfig,
 } from "./preprocessingConfig";
+import {
+  cloneConfig,
+  generatedSectionMatchesConfig,
+  hasUnsavedHandEdits,
+  loadPreprocessingConfig,
+} from "./preprocessingConfigState";
 import { ColumnFilter } from "./components/ColumnFilter";
 import { RemoveDuplicatesStep } from "./components/RemoveDuplicatesStep";
 import { DropColumnOrRowStep } from "./components/DropColumnOrRowStep";
@@ -89,27 +94,41 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     Record<string, CSVAnalysisResult>
   >({});
   const [runningStepId, setRunningStepId] = useState<string | null>(null);
+  // The generated function in the code was edited by hand, so regenerating it
+  // from the steps would overwrite those edits - see generatedSectionMatchesConfig.
+  const [hasHandEdits, setHasHandEdits] = useState(false);
+  const [isDiscardEditsDialogOpen, setIsDiscardEditsDialogOpen] = useState(false);
   const isGeneratingCodeRef = useRef(false);
   const isInitializingRef = useRef(true);
   const pythonCodeRef = useRef<string>("");
+  // The code as loaded or last generated from the steps - edits to the
+  // generated function are measured against this (see hasUnsavedHandEdits).
+  const baselineCodeRef = useRef<string>("");
   const { toast } = useToast();
 
-  // Parse Python code to config when switching to configure mode
+  // The steps (config) are the source of truth - switching back to Configure
+  // keeps them as they are instead of re-reading them from the code. If the
+  // generated function was edited by hand in Code mode, ask before the steps
+  // regenerate (and so overwrite) it.
   const handleModeChange = (newMode: "configure" | "code") => {
-    if (newMode === "configure") {
-      if (pythonCode) {
-        try {
-          const parsedConfig = parsePythonCodeToConfig(pythonCode);
-          setConfig(parsedConfig);
-        } catch (error) {
-          console.error("Failed to parse Python code:", error);
-          setConfig({ steps: [] });
-        }
-      } else {
-        setConfig({ steps: [] });
-      }
+    if (
+      newMode === "configure" &&
+      (hasHandEdits || hasUnsavedHandEdits(pythonCode, config, baselineCodeRef.current))
+    ) {
+      setIsDiscardEditsDialogOpen(true);
+      return;
     }
     setMode(newMode);
+  };
+
+  const discardHandEditsAndConfigure = () => {
+    const regenerated = generatePythonCodeFromConfig(config, pythonCode || BASE_PYTHON_TEMPLATE);
+    setPythonCode(regenerated);
+    pythonCodeRef.current = regenerated;
+    baselineCodeRef.current = regenerated;
+    setHasHandEdits(false);
+    setIsDiscardEditsDialogOpen(false);
+    setMode("configure");
   };
 
   // Update ref when pythonCode changes
@@ -125,6 +144,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       const generatedCode = generatePythonCodeFromConfig(config, existingCode);
       setPythonCode(generatedCode);
       pythonCodeRef.current = generatedCode;
+      baselineCodeRef.current = generatedCode;
       setTimeout(() => {
         isGeneratingCodeRef.current = false;
       }, 100);
@@ -152,16 +172,20 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
         setAnalysisResults({});
       }
 
-      if (data.pythonCode) {
-        try {
-          const parsedConfig = parsePythonCodeToConfig(data.pythonCode);
-          setConfig(parsedConfig);
-        } catch (error) {
-          setConfig({ steps: [] });
-        }
-      } else {
-        setConfig({ steps: [] });
-      }
+      // Stored steps if the node has them; older nodes are read from their
+      // code once and store their steps on the next save.
+      const loaded = loadPreprocessingConfig(data);
+      setConfig(loaded.config);
+      // Code whose generated function was edited by hand opens in Code mode,
+      // so nothing regenerates over those edits without asking.
+      // Only checked for stored steps: an older node's steps were just read
+      // from this very code, so it has nothing hand-edited to protect.
+      const handEdited =
+        loaded.source === "stored" &&
+        !generatedSectionMatchesConfig(initialPythonCode, loaded.config);
+      baselineCodeRef.current = initialPythonCode;
+      setHasHandEdits(handEdited);
+      setMode(handEdited ? "code" : "configure");
 
       setTimeout(() => {
         isInitializingRef.current = false;
@@ -195,6 +219,9 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       name,
       pythonCode,
       fileUrl,
+      // The steps, stored as data (DP-7) - the dialog loads these instead of
+      // re-reading them from pythonCode. pythonCode is still what runs.
+      preprocessingConfig: cloneConfig(config),
       analysisResult: analysisResults.initial || undefined, // For backward compatibility
       stepAnalysisResults:
         Object.keys(analysisResults).length > 0 ? analysisResults : undefined,
@@ -627,6 +654,14 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
             </Tabs>
           </div>
 
+          {mode === "code" && hasHandEdits && (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              The generated <code>autogenerated_preprocessing_function</code> was edited by hand.
+              Switching to Configure regenerates it from the steps and replaces those edits
+              (you'll be asked first). Code outside that function is never changed.
+            </p>
+          )}
+
           {/* Code Mode */}
           {mode === "code" && (
             <div className="space-y-2">
@@ -846,6 +881,27 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       </NodeConfigPanel>
 
       {/* Prompt Dialog for Template Generation */}
+      <Dialog open={isDiscardEditsDialogOpen} onOpenChange={setIsDiscardEditsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Replace hand edits?</DialogTitle>
+            <DialogDescription>
+              The generated <code>autogenerated_preprocessing_function</code> was edited by
+              hand. Configure mode regenerates it from the configured steps, which replaces
+              those edits. Your code outside that function is kept.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setIsDiscardEditsDialogOpen(false)}>
+              Keep editing code
+            </Button>
+            <Button variant="destructive" onClick={discardHandEditsAndConfigure}>
+              Replace with steps
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isPromptDialogOpen} onOpenChange={setIsPromptDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

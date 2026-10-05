@@ -94,6 +94,9 @@ class TrainPreprocessNode(BaseNode):
                     self.state.thread_id,
                     suffix="_preprocess",
                     file_description="preprocessed CSV",
+                    # Keep the column types the preprocessing code produced
+                    # (e.g. a Change Column Data Type step) for the next node.
+                    dtypes={str(c): str(t) for c, t in processed_df.dtypes.items()},
                 )
 
                 # Get first 3 and last 3 records for response

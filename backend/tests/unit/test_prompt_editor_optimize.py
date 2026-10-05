@@ -20,6 +20,7 @@ from app.schemas.prompt_editor import (
     MAX_FAILURE_FEEDBACK_CHARS,
     PromptOptimizeRequest,
 )
+from app.services.llm_usage_recorder import _resolve_cost
 from app.services.prompt_editor import (
     _HISTORY_OMITTED,
     _OPTIMIZE_SYSTEM_PROMPT,
@@ -94,17 +95,26 @@ def _service(cases, *, nodes=None, gold_suite_id=SUITE_ID, index=None):
     )
 
 
-def _injector(llm, provider=PROVIDER, build_error=None):
+def _injector(llm, provider=PROVIDER, build_error=None, rate_rows=(), rates_error=None):
     provider_service = SimpleNamespace(get_by_id=AsyncMock(return_value=provider))
     llm_provider = SimpleNamespace(
         get_model_from_provider=AsyncMock(side_effect=build_error)
         if build_error
         else AsyncMock(return_value=llm)
     )
-    fake = MagicMock()
-    fake.get.side_effect = lambda cls: (
-        provider_service if cls.__name__ == "LlmProviderService" else llm_provider
+    rate_repo = SimpleNamespace(
+        list_active=AsyncMock(side_effect=rates_error) if rates_error else AsyncMock(return_value=list(rate_rows))
     )
+
+    def _get(cls):
+        if cls.__name__ == "LlmProviderService":
+            return provider_service
+        if cls.__name__ == "LlmCostRateRepository":
+            return rate_repo
+        return llm_provider
+
+    fake = MagicMock()
+    fake.get.side_effect = _get
     return fake
 
 
@@ -114,6 +124,8 @@ def _llm(reply=SUGGESTION):
     async def invoke(_messages):
         if isinstance(reply, Exception):
             raise reply
+        if isinstance(reply, AIMessage):
+            return reply
         return AIMessage(content=reply)
 
     llm.ainvoke.side_effect = invoke
@@ -218,9 +230,9 @@ class TestExampleBudget:
     @pytest.mark.parametrize(
         "request_for",
         [
-            lambda case: _request(techniques=["llm_judge"]),
+            lambda case: _request(techniques=["provenance_eval"]),
             lambda case: _request(
-                failed_cases=[{"case_id": case.id, "actual": "x", "failed_metrics": ["llm_judge"]}]
+                failed_cases=[{"case_id": case.id, "actual": "x", "failed_metrics": ["provenance_eval"]}]
             ),
         ],
         ids=["techniques", "failed_metrics"],
@@ -395,6 +407,37 @@ class TestExampleBudget:
         assert "## GRADING" in message
         assert '- not_contains: the reply must not contain any of these phrases' in message
         assert '"refund"' in message
+
+    @pytest.mark.asyncio
+    async def test_the_rewrite_is_told_the_rubric_the_judge_grades_with(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(
+                techniques=["llm_judge"],
+                technique_configs={"llm_judge": {"rules": [{"rubric": "Is it polite?"}]}},
+            ),
+        )
+
+        message = _human_message(llm)
+        assert "## GRADING" in message
+        assert "Is it polite?" in message
+
+    @pytest.mark.asyncio
+    async def test_a_rubric_less_judge_is_refused_before_the_model_is_built(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        with pytest.raises(AppException) as exc_info:
+            await _run(service, _injector(llm), _request(techniques=["llm_judge"]))
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_key is ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED
+        assert "rubric" in exc_info.value.error_detail
+        llm.ainvoke.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_not_contains_without_phrases_is_still_accepted_by_the_rewrite(self):
@@ -700,6 +743,7 @@ class TestMetering:
 
         async def _capture(ref):
             captured["ref"] = ref
+            return "recorded"
 
         service._persist_usage = _capture
         result = await _run(service, _injector(_llm()))
@@ -718,6 +762,7 @@ class TestMetering:
 
         async def _capture(ref):
             captured["entries"] = list(ref.entries)
+            return "recorded"
 
         service._persist_usage = _capture
 
@@ -730,7 +775,7 @@ class TestMetering:
     async def test_a_call_that_never_answered_records_nothing(self):
         service = _service([])
         called = []
-        service._persist_usage = AsyncMock(side_effect=lambda ref: called.append(ref))
+        service._persist_usage = AsyncMock(side_effect=lambda ref: called.append(ref) or "recorded")
 
         with pytest.raises(AppException):
             await _run(service, _injector(_llm(RuntimeError("down"))))
@@ -749,6 +794,35 @@ class TestMetering:
 
         assert result.provenance.metering_handoff_failed is True
         assert result.suggested_prompt == "Be concise."
+
+    @pytest.mark.parametrize(
+        "status, failed",
+        [("recorded", False), ("disabled", False), ("empty", False), ("failed", True), (None, True), ("bogus", True)],
+    )
+    @pytest.mark.asyncio
+    async def test_only_a_confirmed_hand_over_clears_the_metering_flag(self, status, failed):
+        service = _service([])
+        service._persist_usage = AsyncMock(return_value=status)
+
+        result = await _run(service, _injector(_llm()))
+
+        assert result.provenance.metering_handoff_failed is failed
+
+    @pytest.mark.asyncio
+    async def test_the_rewrite_reports_its_own_spend_and_no_grader(self):
+        service = _service([])
+        reply = AIMessage(
+            content=SUGGESTION,
+            usage_metadata={"input_tokens": 1000, "output_tokens": 500, "total_tokens": 1500},
+        )
+
+        result = await _run(service, _injector(_llm(reply)))
+
+        expected = float(_resolve_cost("openai", "gpt-4o", 1000, 500, {})["cost_usd"])
+        assert result.provenance.cost_usd == expected
+        assert (result.provenance.unpriced_calls, result.provenance.grader_calls) == (0, 0)
+        assert result.provenance.grader_cost_usd is None
+        assert result.provenance.grader_tokens == 0
 
 
 class TestRequestBounds:
