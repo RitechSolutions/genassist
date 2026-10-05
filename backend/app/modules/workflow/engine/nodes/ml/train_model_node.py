@@ -43,6 +43,13 @@ from app.modules.workflow.engine.nodes.ml import ml_utils
 
 logger = logging.getLogger(__name__)
 
+# Feature engineering strategies no longer offered for new features: they
+# duplicate scalingMethod (rescaling numeric columns, fit on the training
+# split) and so scaled the same values twice. Still accepted and run for
+# workflows saved with them, and replayed at inference for models trained
+# with them.
+_RETIRED_FE_STRATEGIES = ("normalize", "standardize")
+
 # Try to import xgboost (optional dependency)
 try:
     import xgboost as xgb
@@ -165,13 +172,16 @@ class TrainModelNode(BaseNode):
                             validation, never the other way around.
                 - featureEngineering: Optional list of derived-feature specs, each a
                             dict with: newColumnName (required), strategy
-                            ("custom_expression", "bin_numeric", "normalize",
-                            "standardize", or "polynomial"), plus strategy-specific
-                            fields (expression / binColumn+numBins /
-                            sourceColumns / polynomialColumns+polynomialDegree).
-                            Bin edges and normalize/standardize statistics are fit
-                            on the training split only and then applied to
-                            validation, never the other way around.
+                            ("custom_expression", "bin_numeric", or "polynomial"),
+                            plus strategy-specific fields (expression /
+                            binColumn+numBins / polynomialColumns+polynomialDegree).
+                            Bin edges and polynomial features are fit on the
+                            training split only and then applied to validation,
+                            never the other way around. "normalize" and
+                            "standardize" (with sourceColumns) are retired -
+                            scalingMethod already rescales numeric features - but
+                            still run for workflows saved with them, with a
+                            warning in the result.
                 - targetTransform: Optional dict for training on a ratio of the
                             target instead of its raw value - {"type": "ratio",
                             "baselineColumn": <column name>}. The model is fit on
@@ -379,7 +389,8 @@ class TrainModelNode(BaseNode):
                     )
 
             valid_fe_strategies = [
-                "custom_expression", "bin_numeric", "normalize", "standardize", "polynomial",
+                "custom_expression", "bin_numeric", "polynomial",
+                *_RETIRED_FE_STRATEGIES,
             ]
             for item in feature_engineering:
                 if not isinstance(item, dict) or not item.get("newColumnName"):
@@ -877,6 +888,21 @@ class TrainModelNode(BaseNode):
                 target_transform=target_transform,
             )
 
+            # Retired strategies still run (so saved workflows and their models
+            # keep behaving the same), but the user is told to move off them.
+            training_warnings = [
+                (
+                    f"Feature engineering '{item.get('newColumnName')}' uses the retired "
+                    f"'{item.get('strategy')}' strategy. Scaling Method already rescales "
+                    "numeric features (fit on the training split only), so this scales the "
+                    "same values twice - switch the feature to another strategy or remove it."
+                )
+                for item in feature_engineering
+                if item.get("strategy") in _RETIRED_FE_STRATEGIES
+            ]
+            for warning in training_warnings:
+                logger.warning(warning)
+
             # Prepare response
             result = {
                 "success": True,
@@ -898,6 +924,8 @@ class TrainModelNode(BaseNode):
                 result["hyperparameter_optimization"] = search_metadata
             if registration_error:
                 result["registration_error"] = registration_error
+            if training_warnings:
+                result["warnings"] = training_warnings
 
             logger.info(f"Model training completed successfully: {model_artifact['model_file_path']}")
             return result
@@ -1196,9 +1224,9 @@ class TrainModelNode(BaseNode):
         """
         Create derived features from existing columns.
 
-        Bin edges (bin_numeric) and normalize/standardize statistics are
-        computed from X_train only, then applied to X_val - never the other
-        way around. custom_expression and polynomial don't fit anything from
+        Bin edges (bin_numeric), polynomial features and (retired)
+        normalize/standardize statistics are computed from X_train only, then
+        applied to X_val - never the other way around. custom_expression and polynomial don't fit anything from
         the data (a deterministic per-row formula and a fixed-degree feature
         map, respectively), so leakage isn't a concern for those, but they
         live here too so all feature configuration lives in one place.

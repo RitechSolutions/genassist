@@ -312,6 +312,8 @@ def _replay_feature_engineering(
                 available[new_col] = binned.tolist()
 
             elif strategy in ("normalize", "standardize"):
+                # Retired for new features (see train_model_node), but models
+                # trained with them still need them replayed.
                 for col, stats in (step.get("column_stats") or {}).items():
                     if col not in available:
                         continue

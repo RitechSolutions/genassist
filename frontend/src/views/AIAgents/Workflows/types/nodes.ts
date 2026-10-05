@@ -620,16 +620,18 @@ export interface MissingValueHandlingConfig {
 }
 
 // Feature engineering: lives on the Train Model node (not the pre-split
-// Preprocessing node) because bin_numeric/normalize/standardize/polynomial
-// fit bin edges or scaling stats from the data, so fitting them on the full
-// dataset before the split leaks validation-row statistics into training.
-// custom_expression is a deterministic per-row formula with nothing fit from
-// data, but stays here too so all feature configuration lives in one place.
+// Preprocessing node) because bin_numeric and polynomial are fit on the data,
+// so fitting them on the full dataset before the split leaks validation rows
+// into training. custom_expression is a deterministic per-row formula with
+// nothing fit from data, but stays here too so inference replays it with the
+// rest. "normalize"/"standardize" are retired (Scaling Method already does
+// this) - kept in the type only so features saved with them still load; see
+// featureEngineeringStrategies.ts.
 export type FeatureEngineeringStrategy =
   | "custom_expression"
   | "bin_numeric"
-  | "normalize"
-  | "standardize"
+  | "normalize" // retired
+  | "standardize" // retired
   | "polynomial";
 
 export interface FeatureEngineeringItem {

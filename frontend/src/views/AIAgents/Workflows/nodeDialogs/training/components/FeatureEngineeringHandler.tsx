@@ -16,6 +16,10 @@ import {
   FeatureEngineeringStrategy,
 } from "../../../types/nodes";
 import { CSVAnalysisResult } from "@/services/mlModels";
+import {
+  isRetiredFeatureStrategy,
+  strategyOptionsFor,
+} from "../featureEngineeringStrategies";
 import { Plus, X } from "lucide-react";
 
 interface FeatureEngineeringHandlerProps {
@@ -159,16 +163,27 @@ export const FeatureEngineeringHandler: React.FC<
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="custom_expression">
-                              Custom Expression
-                            </SelectItem>
-                            <SelectItem value="bin_numeric">Bin Numeric</SelectItem>
-                            <SelectItem value="normalize">Normalize</SelectItem>
-                            <SelectItem value="standardize">Standardize</SelectItem>
-                            <SelectItem value="polynomial">Polynomial</SelectItem>
+                            {strategyOptionsFor(feature.strategy).map((option) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                                disabled={isRetiredFeatureStrategy(option.value)}
+                              >
+                                {option.label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
+                      {isRetiredFeatureStrategy(feature.strategy) && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          {feature.strategy === "normalize" ? "Normalize" : "Standardize"} is
+                          retired: Train Model's Scaling Method already scales every numeric
+                          feature (fit on the training split only), so this would scale the
+                          same values twice. It still works for now - switch this feature to
+                          another strategy or remove it, and use Scaling Method instead.
+                        </p>
+                      )}
                       {feature.strategy === "custom_expression" && (
                         <div>
                           <Label className="text-xs">Expression</Label>
