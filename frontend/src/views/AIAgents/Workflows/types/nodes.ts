@@ -507,8 +507,7 @@ export interface MLModelInferenceNodeData extends BaseNodeData {
 // Train Data Source Node Data
 export interface TrainDataSourceNodeData extends BaseNodeData {
   sourceType: "datasource" | "csv"; // Type of data source
-  dataSourceId?: string; // ID of the datasource (for timedb/snowflake)
-  dataSourceType?: string; // Type of datasource (timedb/snowflake)
+  dataSourceId?: string; // ID of the database data source
   query?: string; // SQL query to fetch data
   csvFileName?: string; // Name of the uploaded CSV file
   csvFilePath?: string; // Server path to the uploaded CSV file

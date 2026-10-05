@@ -8,6 +8,7 @@ import { DataSource } from "@/interfaces/dataSource.interface";
 import { getAllDataSources } from "@/services/dataSources";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { NodeContentRow } from "../nodeContent";
+import { isTrainingDatabaseSource } from "../../utils/trainDataSource";
 
 export const TRAIN_DATA_SOURCE_NODE_TYPE = "trainDataSourceNode";
 
@@ -29,13 +30,8 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
     const loadDataSources = async () => {
       try {
         const dataSources = await getAllDataSources();
-        // Filter for timedb and snowflake
         const trainingDataSources = dataSources.filter(
-          (ds) =>
-            ds.source_type.toLowerCase().includes("timedb") ||
-            ds.source_type.toLowerCase().includes("snowflake") ||
-            ds.source_type.toLowerCase().includes("timescale") ||
-            ds.source_type.toLowerCase().includes("postgres")
+          isTrainingDatabaseSource
         );
         setAvailableDataSources(trainingDataSources);
       } catch (err) {

@@ -25,6 +25,10 @@ import {
   buildProfileDataRequest,
   getProfileDataAvailability,
 } from "./trainDataSourceProfile";
+import {
+  getTrainDataSourceSelection,
+  isTrainingDatabaseSource,
+} from "../../utils/trainDataSource";
 
 type TrainDataSourceDialogProps = BaseNodeDialogProps<
   TrainDataSourceNodeData,
@@ -35,15 +39,13 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   props
 ) => {
   const { isOpen, onClose, data, onUpdate } = props;
+  const initialSelection = getTrainDataSourceSelection(data);
 
   const { values, setField, setValues, merged } = useNodeDialogState(
     props,
     () => ({
       name: data.name || "Train Data Source",
-      // Determine initial sourceType from existing data
-      sourceType: (data.sourceType === "datasource" && data.dataSourceId
-        ? "datasource"
-        : "csv") as "datasource" | "csv",
+      sourceType: initialSelection.sourceType,
       dataSourceId: data.dataSourceId ?? null,
       query: data.query ?? null,
       csvFileName: data.csvFileName ?? null,
@@ -66,12 +68,9 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   );
 
   // selectedSource tracks what's selected in the dropdown (datasource ID or "csv")
-  const [selectedSource, setSelectedSource] = useState<string>(() => {
-    if (data.sourceType === "datasource" && data.dataSourceId) {
-      return data.dataSourceId;
-    }
-    return "csv";
-  });
+  const [selectedSource, setSelectedSource] = useState<string>(
+    initialSelection.selectedSource
+  );
   const [isCsvUploading, setIsCsvUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isProfiling, setIsProfiling] = useState(false);
@@ -82,27 +81,14 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
 
   useEffect(() => {
     if (isOpen) {
-      // Determine sourceType from data
-      const currentSourceType: "datasource" | "csv" =
-        data.sourceType === "datasource" && data.dataSourceId
-          ? "datasource"
-          : "csv";
-
-      // Set selectedSource based on sourceType
-      const initialSelectedSource =
-        currentSourceType === "datasource" && data.dataSourceId
-          ? data.dataSourceId
-          : "csv";
-
-      setSelectedSource(initialSelectedSource);
+      setSelectedSource(getTrainDataSourceSelection(data).selectedSource);
 
       const loadDataSources = async () => {
         try {
           const dataSources = await getAllDataSources();
 
-          // Filter for timedb, snowflake, and other time-series or SQL databases
-          const trainingDataSources = dataSources.filter((ds) =>
-            ["snowflake", "database"].includes(ds.source_type.toLowerCase())
+          const trainingDataSources = dataSources.filter(
+            isTrainingDatabaseSource
           );
           setAvailableDataSources(trainingDataSources);
         } catch (err) {
