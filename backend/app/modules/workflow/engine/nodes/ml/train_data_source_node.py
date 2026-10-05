@@ -7,6 +7,7 @@ This node fetches training data from databases or uploaded files (CSV, Excel, JS
 import asyncio
 import logging
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,9 +16,10 @@ from uuid import UUID
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
-from app.core.utils.sensitive_data_utils import redact_bound_values
+from app.core.utils.sensitive_data_utils import redact_bound_values, redact_sensitive_substrings
 from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.database.provider_manager import DBProviderManager
 from app.modules.integration.database.query_validator import AdvancedQueryValidator
@@ -39,6 +41,22 @@ logger = logging.getLogger(__name__)
 
 NumericLimit = TypeVar("NumericLimit", int, float)
 
+_QUERY_REASON_PATTERNS = (
+    r"no such (?:column|table): [\w.\"`]+",
+    r"(?:column|relation|table) \"[^\"]+\" does not exist",
+    r"syntax error at or near \"[^\"]*\"",
+    r"Unknown column '[^']+'(?: in '[^']+')?",
+    r"Table '[^']+' doesn't exist",
+    r"You have an error in your SQL syntax.*?near '[^']{0,80}'",
+    r"Invalid (?:column|object) name '[^']+'",
+    r"invalid identifier '[^']+'",
+    r"near [\"'][^\"']{0,80}[\"']: syntax error",
+)
+_QUERY_REASON_RE = re.compile(
+    "|".join(f"(?:{pattern})" for pattern in _QUERY_REASON_PATTERNS),
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class ExtractionLimits:
@@ -59,6 +77,8 @@ class TrainDataSourceNode(BaseNode):
     - Multiple database types (TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB)
     - Snowflake-specific query execution via SnowflakeManager
     """
+
+    client_safe_failure_messages = True
 
     def _unresolved_config_fields(self) -> set[str]:
         """Keep SQL templates intact until they can be bound for the driver."""
@@ -87,14 +107,14 @@ class TrainDataSourceNode(BaseNode):
 
             if not source_type:
                 raise AppException(
-                    error_key=ErrorKey.MISSING_PARAMETER,
-                    error_detail="sourceType is required (must be 'datasource' or 'csv')",
+                    error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                    error_detail="Choose a database or uploaded file for Train Data Source.",
                 )
 
             if source_type not in ["datasource", "csv"]:
                 raise AppException(
-                    error_key=ErrorKey.MISSING_PARAMETER,
-                    error_detail="sourceType must be 'datasource' or 'csv'",
+                    error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                    error_detail="Choose a database or uploaded file for Train Data Source.",
                 )
 
             limits = self._resolve_extraction_limits(config)
@@ -117,17 +137,20 @@ class TrainDataSourceNode(BaseNode):
             else:
                 # This should never happen due to validation above, but for completeness
                 raise AppException(
-                    error_key=ErrorKey.MISSING_PARAMETER,
-                    error_detail=f"Unsupported sourceType: {source_type}",
+                    error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                    error_detail="Choose a database or uploaded file for Train Data Source.",
                 )
 
         except AppException:
             # Re-raise AppException as is
             raise
         except Exception as e:
-            logger.error(f"Unexpected error in train data source node: {str(e)}", exc_info=True)
+            logger.error(
+                "Unexpected error in train data source node: %s",
+                self._sanitized_diagnostic(e),
+            )
             raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR,
+                error_key=ErrorKey.ML_EXTRACT_FAILED,
                 error_detail=f"Train data source processing failed: {str(e)}",
             ) from e
 
@@ -151,14 +174,14 @@ class TrainDataSourceNode(BaseNode):
 
         if not data_source_id:
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
-                error_detail="dataSourceId is required for database source type",
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail="Select a data source.",
             )
 
         if not query_template:
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
-                error_detail="query is required for database source type",
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail="Enter a SQL query.",
             )
 
         # Convert data_source_id to string if it's a UUID
@@ -243,7 +266,7 @@ class TrainDataSourceNode(BaseNode):
                     error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
                     error_detail=(
                         "Training data extraction timed out after "
-                        f"{self._format_number(limits.extraction_timeout_seconds)} seconds"
+                        f"{self._format_duration(limits.extraction_timeout_seconds)}"
                     ),
                 ) from exc
             except AppException:
@@ -255,22 +278,20 @@ class TrainDataSourceNode(BaseNode):
                     error_detail=f"Training data storage failed: {str(exc)}",
                 ) from None
             except Exception as exc:
-                safe_error = redact_bound_values(exc, parameters)
+                safe_error = self._sanitized_diagnostic(
+                    redact_bound_values(exc, parameters)
+                )
                 logger.error(
                     "Training database query failed with %d bound parameter(s): %s",
                     len(parameters),
                     safe_error,
                 )
-                if parameters:
-                    error_detail = (
-                        "Database query failed. Check that each workflow variable's "
-                        "value matches the column it is compared with."
-                    )
-                else:
-                    error_detail = f"Database query failed: {safe_error}"
                 raise AppException(
-                    error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail=error_detail,
+                    error_key=ErrorKey.ML_EXTRACT_QUERY_FAILED,
+                    error_detail=self._client_safe_database_error(
+                        exc,
+                        has_bound_parameters=bool(parameters),
+                    ),
                 ) from None
 
             if not row_count:
@@ -295,9 +316,12 @@ class TrainDataSourceNode(BaseNode):
         except AppException:
             raise
         except Exception as e:
-            logger.error(f"Error processing database source: {str(e)}", exc_info=True)
+            logger.error(
+                "Error processing database source: %s",
+                self._sanitized_diagnostic(e),
+            )
             raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR,
+                error_key=ErrorKey.ML_EXTRACT_FAILED,
                 error_detail=f"Database source processing failed: {str(e)}",
             ) from e
 
@@ -325,11 +349,11 @@ class TrainDataSourceNode(BaseNode):
 
         if not csv_file_path and not csv_file_id:
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
-                error_detail="csvFilePath is required for CSV source type",
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail="Upload a training file.",
             )
 
-        logger.info(f"Processing training file: {csv_file_path or csv_file_id}")
+        logger.info("Processing uploaded training file")
 
         try:
             # Prefer re-downloading by ID over trusting a stored csvFilePath.
@@ -351,10 +375,23 @@ class TrainDataSourceNode(BaseNode):
                 original_suffix = Path(csv_file_name).suffix if csv_file_name else Path(csv_file_path or "").suffix
                 dest_file_path = f"{DATA_VOLUME}/train/{csv_file_id}{original_suffix or '.csv'}"
 
-                logger.info(f"Downloading training file to: {dest_file_path}")
+                logger.info("Downloading uploaded training file for processing")
 
                 # download the file to the destination path
-                await file_manager_service.download_file_to_path(csv_file_id, dest_file_path)
+                try:
+                    await file_manager_service.download_file_to_path(csv_file_id, dest_file_path)
+                except Exception as exc:
+                    logger.error(
+                        "Could not download training file: %s",
+                        self._sanitized_diagnostic(exc),
+                    )
+                    raise AppException(
+                        error_key=ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE,
+                        error_detail=(
+                            "The uploaded training file is no longer available. "
+                            "Upload it again."
+                        ),
+                    ) from None
 
                 # set the csv file path to the destination path
                 csv_file_path = dest_file_path
@@ -363,14 +400,19 @@ class TrainDataSourceNode(BaseNode):
             csv_path = Path(csv_file_path)
             if not csv_path.exists():
                 raise AppException(
-                    error_key=ErrorKey.FILE_NOT_FOUND,
-                    error_detail=f"Training file not found: {csv_file_path}",
+                    error_key=ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE,
+                    error_detail=(
+                        "The uploaded training file is no longer available. "
+                        "Upload it again."
+                    ),
                 )
 
             if not os.access(csv_file_path, os.R_OK):
                 raise AppException(
-                    error_key=ErrorKey.FILE_NOT_FOUND,
-                    error_detail=f"Training file not readable: {csv_file_path}",
+                    error_key=ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE,
+                    error_detail=(
+                        "The uploaded training file cannot be read. Upload it again."
+                    ),
                 )
 
             self._enforce_csv_byte_limit(csv_path, limits.max_bytes)
@@ -407,7 +449,7 @@ class TrainDataSourceNode(BaseNode):
                     error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
                     error_detail=(
                         "Training data extraction timed out after "
-                        f"{self._format_number(limits.extraction_timeout_seconds)} seconds"
+                        f"{self._format_duration(limits.extraction_timeout_seconds)}"
                     ),
                 ) from exc
 
@@ -435,9 +477,12 @@ class TrainDataSourceNode(BaseNode):
                 error_detail=f"Training data storage failed: {str(exc)}",
             ) from None
         except Exception as e:
-            logger.error(f"Error processing CSV source: {str(e)}", exc_info=True)
+            logger.error(
+                "Error processing CSV source: %s",
+                self._sanitized_diagnostic(e),
+            )
             raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR,
+                error_key=ErrorKey.ML_EXTRACT_FAILED,
                 error_detail=f"CSV source processing failed: {str(e)}",
             ) from e
 
@@ -526,8 +571,9 @@ class TrainDataSourceNode(BaseNode):
             ),
         )
 
-    @staticmethod
+    @classmethod
     def _resolve_limit(
+        cls,
         config: Dict[str, Any],
         config_key: str,
         platform_limit: NumericLimit,
@@ -541,14 +587,14 @@ class TrainDataSourceNode(BaseNode):
             requested_limit = converter(raw_value)
         except (TypeError, ValueError) as exc:
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
-                error_detail=f"{config_key} must be a positive number",
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail=f"{cls._limit_label(config_key)} must be a positive number.",
             ) from exc
 
         if isinstance(raw_value, bool) or requested_limit <= 0:
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
-                error_detail=f"{config_key} must be a positive number",
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail=f"{cls._limit_label(config_key)} must be a positive number.",
             )
 
         return min(requested_limit, platform_limit)
@@ -556,6 +602,53 @@ class TrainDataSourceNode(BaseNode):
     @staticmethod
     def _format_number(value: float) -> str:
         return f"{value:g}"
+
+    @classmethod
+    def _format_duration(cls, seconds: float) -> str:
+        unit = "second" if seconds == 1 else "seconds"
+        return f"{cls._format_number(seconds)} {unit}"
+
+    @staticmethod
+    def _limit_label(config_key: str) -> str:
+        return {
+            "maxRows": "The row limit",
+            "maxBytes": "The file-size limit",
+            "timeoutSeconds": "The extraction timeout",
+        }.get(config_key, "This limit")
+
+    @staticmethod
+    def _sanitized_diagnostic(error: Any) -> str:
+        redacted = redact_sensitive_substrings(str(error))
+        return sanitize_error_detail(str(redacted), max_len=2_000)
+
+    @staticmethod
+    def _client_safe_database_error(
+        error: Exception,
+        *,
+        has_bound_parameters: bool,
+    ) -> str:
+        if has_bound_parameters:
+            return (
+                "Database query failed. Check that each workflow variable's "
+                "value matches the column it is compared with."
+            )
+
+        # Driver errors may include class names, codes, hosts and the full SQL.
+        # Search the complete message but expose only a recognized correction
+        # phrase and its identifier.
+        match = _QUERY_REASON_RE.search(str(error))
+        if match:
+            safe_reason = sanitize_error_detail(
+                str(redact_sensitive_substrings(match.group(0))),
+                max_len=300,
+            )
+            if safe_reason:
+                return f"Database query failed: {safe_reason}"
+
+        return (
+            "Could not run the query on the selected data source. "
+            "Check the query and connection settings."
+        )
 
     @staticmethod
     def _enforce_csv_byte_limit(csv_path: Path, max_bytes: int) -> None:
@@ -568,7 +661,7 @@ class TrainDataSourceNode(BaseNode):
             error_detail=(
                 f"CSV file is {csv_size:,} bytes, which exceeds the limit "
                 f"of {max_bytes:,} bytes for training extracts. "
-                "Use a smaller file or raise ML_EXTRACT_MAX_BYTES."
+                "Use a smaller file or ask an administrator to raise the file-size limit."
             ),
         )
 

@@ -328,7 +328,13 @@ def test_invalid_node_limit_is_rejected(config_key, config_value):
     with pytest.raises(AppException) as exc_info:
         TrainDataSourceNode._resolve_extraction_limits({config_key: config_value})
 
-    assert exc_info.value.error_detail == f"{config_key} must be a positive number"
+    expected_label = {
+        "maxRows": "The row limit",
+        "maxBytes": "The file-size limit",
+        "timeoutSeconds": "The extraction timeout",
+    }[config_key]
+    assert exc_info.value.error_detail == f"{expected_label} must be a positive number."
+    assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID
 
 
 def test_node_timeout_override_cannot_raise_platform_limit(monkeypatch):
