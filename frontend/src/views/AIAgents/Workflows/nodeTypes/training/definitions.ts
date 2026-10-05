@@ -28,9 +28,7 @@ export const TRAIN_DATA_SOURCE_NODE_DEFINITION: NodeTypeDefinition<TrainDataSour
       name: "Train Data Source",
       sourceType: "datasource",
       dataSourceId: "",
-      dataSourceType: "",
       query: "",
-      csvFile: null,
       csvFileName: "",
       csvFilePath: "",
       handlers: [
