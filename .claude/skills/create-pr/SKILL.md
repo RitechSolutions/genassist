@@ -20,7 +20,15 @@ The flow: preflight (target branch + conflict check) -> review the changes -> co
 ## 1. Preflight
 
 1. Run `git status`. Note the staged, unstaged and untracked files; they will be committed in step 3.
-2. Current branch: never commit to or open a PR from `main`, `test`, `origin/development` or `release/*`, unless the user is doing a merge or back-merge PR on purpose. If the user is on one of these branches with uncommitted work, propose a new branch name from the change and create it with `git switch -c <branch>`. The uncommitted changes move with it. Branch names follow `feature/`, `feat/`, `fix/`, `bugfix/`, `hotfix/`, `chore/`, `merge/` (lowercase, with hyphens).
+2. **Branch name.** Never commit to or open a PR from `main`, `test`, `origin/development` or `release/*`, unless the user is doing a merge or back-merge PR on purpose. Always ask for the branch name with `AskUserQuestion`, even when one could be inferred:
+   - **On a protected branch:** ask "Which branch name should I create for this change?" Offer 2-3 names built from the change (e.g. `fix/chat-turn-pool-release`, `feature/prompt-optimizer-rounds`), with the best one first, marked "(Recommended)". The user can also type their own name through "Other". Create it with `git switch -c <branch>`; uncommitted changes move with it.
+   - **Already on a non-protected branch:** ask "Use the current branch `<branch>`?" The options are *Keep `<branch>` (Recommended)*, *Rename it*, and *New branch from here*. Only offer *Rename it* if the branch has not been pushed and has no open PR. Rename with `git branch -m <new>`.
+
+   Check every name before using it (detect the remotes from item 3 first):
+   - It starts with `feature/`, `feat/`, `fix/`, `bugfix/`, `hotfix/`, `chore/`, `docs/`, `refactor/` or `merge/`, and the rest is lowercase, with hyphens, no spaces, and under ~50 characters. A ticket id like `fix/67570-csv-export` is fine.
+   - It is not already used, either locally (`git rev-parse --verify --quiet refs/heads/<name>`) or on the main or push remote (`git ls-remote --exit-code --heads <remote> refs/heads/<name>`).
+
+   If the name is invalid or taken, say why and ask again.
 3. Remotes: detect them with `git remote -v`, because remote names differ between people.
    - `<main-remote>` = the remote whose URL points to `RitechSolutions/genassist`. Run `git fetch <main-remote>`.
    - `<push-remote>` = the user's fork, if one exists. That is a remote pointing to `<owner>/genassist` with an owner other than RitechSolutions. Take `<fork-owner>` from its URL.
