@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import logging
 import json
+import math
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID, uuid4
 
@@ -24,6 +25,16 @@ from app.services.evaluation_text import (
     normalize_text as _normalize_text,
 )
 from app.services.route_action_rules import action_observations, route_observations
+from app.services.dataset_file import (
+    FILE_STATUS_FAILED,
+    FILE_STATUS_OK,
+    DatasetTurn,
+    DatasetUpload,
+    conversation_key,
+    invalid_file_import,
+    parse_dataset_file,
+    turn_limit_error,
+)
 from app.services.evaluation_nli import (
     NLI_MAX_ANSWER_CLAIMS,
     evaluation_nli_model,
@@ -34,6 +45,7 @@ from app.modules.workflow.engine.workflow_engine import (
 )
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.usage_context import WorkflowUsageContext
+from app.core.utils.llm_json import parse_json_object_reply
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.core.utils.transcript_utils import extract_qa_pairs
 from app.core.utils.uuid_utils import coerce_uuid
@@ -47,9 +59,17 @@ from app.repositories.test_suite import (
     TestToolRuleResultRepository,
 )
 from app.schemas.test_suite import (
+    AddConversationToSuitesResult,
+    ConversationSuiteImportResult,
+    ConversationSuiteMembership,
+    DatasetFileResult,
     ImportCasesFromConversationRequest,
+    ImportCasesFromConversationsResult,
+    ImportCasesFromFilesResult,
+    ImportedConversationResult,
     PaginatedEvaluations,
     StartedEvaluationRun,
+    TestCase,
     TestCaseCreate,
     TestCaseInDB,
     TestCaseUpdate,
@@ -87,6 +107,13 @@ def _truncate_output(output: Any, max_length: int = 64000) -> Any:
         return output[: max_length - 3] + "..."
     return output
 
+
+# Why one conversation in a multi-import was skipped. These reach the client in the
+# 2xx body, unlike error_detail, which is withheld outside dev.
+_IMPORT_FAILURE_DETAILS = {
+    ErrorKey.NOT_FOUND: "Conversation not found.",
+    ErrorKey.TRANSCRIPT_EMPTY: "No question and answer turns to import.",
+}
 
 # Reserved key holding run-level counts alongside the per-technique metrics.
 RUN_TOTALS_KEY = "_totals"
@@ -351,17 +378,18 @@ def _is_retrieval_tool(event: Dict[str, Any], nodes: Dict[str, Any]) -> bool:
 def _parse_judge_json(raw_content: Any) -> tuple[float | None, str | None]:
     """Parse a judge's ``{score, reason}`` reply; a missing/invalid score yields no score."""
     try:
-        parsed = json.loads(raw_content)
-        if not isinstance(parsed, dict):
-            return None, "LLM judge response was not a JSON object"
+        parsed = parse_json_object_reply(raw_content)
         # A missing score is a malformed judgment, not a real 0.0 — surface it as
         # an error rather than silently failing the answer.
         if parsed.get("score") is None:
             return None, "LLM judge response did not include a score"
-        score = max(0.0, min(1.0, float(parsed["score"])))
+        score = float(parsed["score"])
+        if not math.isfinite(score):
+            return None, "LLM judge response did not include a usable score"
+        score = max(0.0, min(1.0, score))
         reason = str(parsed.get("reason", "")).strip() or None
         return score, reason
-    except (ValueError, TypeError, json.JSONDecodeError):
+    except (ValueError, TypeError):
         return None, "LLM judge response could not be parsed"
 
 
@@ -806,6 +834,7 @@ class SimpleEvaluatorRegistry:
         technique_configs: Dict[str, Dict[str, Any]] | None = None,
         workflow: Any = None,
         usage_ref: "EvaluationUsageRef | None" = None,
+        judge_model: Any = None,
     ) -> Dict[str, Dict[str, Any]]:
         results: Dict[str, Dict[str, Any]] = {}
         payload = {
@@ -818,6 +847,7 @@ class SimpleEvaluatorRegistry:
             # Workflow graph for legacy name→id resolution via the full tool catalogue.
             "workflow": workflow,
             "_usage_ref": usage_ref,
+            "_judge_model": judge_model,
         }
         for technique_index, key in enumerate(techniques):
             fn = self._evaluators.get(key)
@@ -1512,10 +1542,13 @@ class SimpleEvaluatorRegistry:
         usage_ref: "EvaluationUsageRef | None" = None,
         purpose: str | None = None,
         call_index: int | None = None,
+        model: Any = None,
     ) -> tuple[float | None, str | None]:
         """Run an LLM judge returning compact JSON {score, reason}; shared by grounding + rubric judges."""
-        llm_provider = injector.get(LLMProvider)
-        llm = await llm_provider.get_model(provider_id)
+        llm = model
+        if llm is None:
+            llm_provider = injector.get(LLMProvider)
+            llm = await llm_provider.get_model(provider_id)
         response = await llm.ainvoke(
             [
                 SystemMessage(content=system_prompt),
@@ -1651,6 +1684,7 @@ class SimpleEvaluatorRegistry:
             usage_ref=payload.get("_usage_ref"),
             purpose="llm_judge",
             call_index=_judge_rule_call_index(payload, rule_number),
+            model=payload.get("_judge_model"),
         )
         # A missing score means the judge output was malformed — our evaluator's
         # problem, not the agent's. Report it as an error, not a failing answer.
@@ -1860,49 +1894,240 @@ class TestSuiteService:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.case_repo.delete(case)
 
-    async def import_cases_from_conversation(
-        self, suite_id: UUID, conversation_id: UUID, replace: bool = False
-    ) -> List[TestCaseInDB]:
+    async def _import_conversations(
+        self,
+        suite_id: UUID,
+        conversation_ids: List[UUID],
+        replace: bool,
+    ) -> Tuple[
+        List[TestCaseModel],
+        List[ImportedConversationResult],
+        Dict[UUID, AppException],
+    ]:
+        """Import several conversations as one batch.
+
+        Returns the created cases, one outcome per requested conversation, and the
+        failures keyed by conversation so a single-conversation import can re-raise.
+        """
         suite = await self.suite_repo.get_by_id(suite_id)
         if not suite:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
 
-        conversation = await self.conversation_repo.fetch_conversation_by_id(
-            conversation_id, include_messages=True
+        # The same conversation picked twice is one import, not two.
+        requested = list(dict.fromkeys(conversation_ids))
+
+        # Every conversation is read and checked before anything is deleted, so one
+        # unusable id in a selection cannot cost the dataset turns it already had.
+        turns_by_conversation: Dict[UUID, List[Tuple[str, str]]] = {}
+        failures: Dict[UUID, AppException] = {}
+        for conversation_id in requested:
+            conversation = await self.conversation_repo.fetch_conversation_by_id(
+                conversation_id, include_messages=True
+            )
+            if not conversation:
+                failures[conversation_id] = AppException(
+                    status_code=404, error_key=ErrorKey.NOT_FOUND
+                )
+                continue
+            turns = extract_qa_pairs(conversation.messages)
+            if not turns:
+                failures[conversation_id] = AppException(
+                    status_code=400,
+                    error_key=ErrorKey.TRANSCRIPT_EMPTY,
+                    error_detail="Conversation has no question/answer turns to import",
+                )
+                continue
+            turns_by_conversation[conversation_id] = turns
+
+        # A re-import refreshes a conversation rather than adding a new one, so it
+        # inherits the date its turns first landed here and keeps its place in the
+        # dataset instead of dropping to the end.
+        existing = await self.case_repo.get_all_for_suite(suite_id)
+        joined_at: Dict[UUID, Any] = {}
+        for case in existing:
+            key = case.source_conversation_id
+            if not key or not case.created_at:
+                continue
+            if key not in joined_at or case.created_at < joined_at[key]:
+                joined_at[key] = case.created_at
+
+        cases: List[TestCaseModel] = []
+        # Nothing usable means nothing to delete either, or a failed selection would
+        # wipe the dataset on its way to importing none of it.
+        if turns_by_conversation:
+            # Replacing the suite wipes every conversation; otherwise re-importing the
+            # same conversation replaces only its own turns, keeping the append
+            # idempotent.
+            if replace:
+                await self.case_repo.soft_delete_all_for_suite(suite_id, commit=False)
+            else:
+                for conversation_id in turns_by_conversation:
+                    await self.case_repo.soft_delete_for_conversation(
+                        suite_id, conversation_id, commit=False
+                    )
+
+            for conversation_id, turns in turns_by_conversation.items():
+                joined = joined_at.get(conversation_id)
+                for turn_index, (question, answer) in enumerate(turns):
+                    cases.append(
+                        TestCaseModel(
+                            suite_id=suite_id,
+                            source_conversation_id=conversation_id,
+                            turn_index=turn_index,
+                            input_data={"message": question},
+                            expected_output={"value": answer},
+                            tags=["imported"],
+                            **({"created_at": joined} if joined else {}),
+                        )
+                    )
+
+        # One insert for the whole selection rather than one per conversation.
+        created = await self.case_repo.create_many(cases) if cases else []
+
+        results = [
+            ImportedConversationResult(
+                conversation_id=conversation_id,
+                status="failed",
+                detail=_IMPORT_FAILURE_DETAILS.get(
+                    failures[conversation_id].error_key, "Conversation could not be imported."
+                ),
+            )
+            if conversation_id in failures
+            else ImportedConversationResult(
+                conversation_id=conversation_id,
+                status="replaced" if conversation_id in joined_at else "imported",
+                turns=len(turns_by_conversation[conversation_id]),
+            )
+            for conversation_id in requested
+        ]
+        return created, results, failures
+
+    async def import_cases_from_conversation(
+        self, suite_id: UUID, conversation_id: UUID, replace: bool = False
+    ) -> List[TestCaseInDB]:
+        created, _results, failures = await self._import_conversations(
+            suite_id, [conversation_id], replace
         )
-        if not conversation:
+        failure = failures.get(conversation_id)
+        if failure:
+            raise failure
+        return [TestCaseInDB.model_validate(c, from_attributes=True) for c in created]
+
+    async def import_cases_from_conversations(
+        self,
+        suite_id: UUID,
+        conversation_ids: List[UUID],
+        replace: bool = False,
+    ) -> ImportCasesFromConversationsResult:
+        """Import a selection of conversations, reporting each one's outcome."""
+        created, results, _failures = await self._import_conversations(
+            suite_id, conversation_ids, replace
+        )
+        return ImportCasesFromConversationsResult(
+            cases=[TestCase.model_validate(c, from_attributes=True) for c in created],
+            results=results,
+            imported=sum(1 for r in results if r.status == "imported"),
+            replaced=sum(1 for r in results if r.status == "replaced"),
+            failed=sum(1 for r in results if r.status == "failed"),
+        )
+
+    async def _plan_file_import(
+        self, suite_id: UUID, uploads: List[DatasetUpload]
+    ) -> Tuple[ImportCasesFromFilesResult, List[List[DatasetTurn]]]:
+        """Read every file and decide which conversations it adds, writing nothing."""
+        suite = await self.suite_repo.get_by_id(suite_id)
+        if not suite:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
 
-        turns = extract_qa_pairs(conversation.messages)
-        if not turns:
-            raise AppException(
-                status_code=400,
-                error_key=ErrorKey.TRANSCRIPT_EMPTY,
-                error_detail="Conversation has no question/answer turns to import",
-            )
+        # Conversations already here turn for turn are skipped, so a repeated
+        # import adds nothing.
+        existing = await self.case_repo.get_all_for_suite(suite_id)
+        in_dataset = {
+            conversation_key((case.input_data, case.expected_output) for case in group)
+            for group in _group_cases_into_conversations(existing)
+        }
+        # Where each conversation of this import first appeared, by file position.
+        first_seen: Dict[str, int] = {}
 
-        # Replacing the suite wipes every conversation; otherwise re-importing the
-        # same conversation replaces only its own turns, keeping the append idempotent.
-        if replace:
-            await self.case_repo.soft_delete_all_for_suite(suite_id, commit=False)
-        else:
-            await self.case_repo.soft_delete_for_conversation(
-                suite_id, conversation_id, commit=False
+        files: List[DatasetFileResult] = []
+        accepted: List[List[DatasetTurn]] = []
+        for position, upload in enumerate(uploads):
+            if upload.error:
+                files.append(
+                    DatasetFileResult(
+                        filename=upload.filename,
+                        status=FILE_STATUS_FAILED,
+                        errors=[upload.error],
+                    )
+                )
+                continue
+            parsed = parse_dataset_file(upload.content)
+            entry = DatasetFileResult(
+                filename=upload.filename, status=parsed.status, errors=parsed.errors
             )
+            for conversation in parsed.conversations:
+                key = conversation_key(
+                    (turn.input_data, turn.expected_output) for turn in conversation
+                )
+                if key in in_dataset:
+                    entry.duplicates += 1
+                    continue
+                if key in first_seen:
+                    entry.repeated += 1
+                    if first_seen[key] not in entry.repeated_from:
+                        entry.repeated_from.append(first_seen[key])
+                    continue
+                first_seen[key] = position
+                accepted.append(conversation)
+                entry.conversations += 1
+                entry.turns += len(conversation)
+            files.append(entry)
 
-        cases = [
-            TestCaseModel(
-                suite_id=suite_id,
-                source_conversation_id=conversation_id,
-                turn_index=turn_index,
-                input_data={"message": question},
-                expected_output={"value": answer},
-                tags=["imported"],
-            )
-            for turn_index, (question, answer) in enumerate(turns)
-        ]
-        created = await self.case_repo.create_many(cases)
-        return [TestCaseInDB.model_validate(c, from_attributes=True) for c in created]
+        turns = sum(entry.turns for entry in files)
+        result = ImportCasesFromFilesResult(
+            files=files,
+            conversations=len(accepted),
+            turns=turns,
+            duplicates=sum(entry.duplicates for entry in files),
+            repeated=sum(entry.repeated for entry in files),
+            failed_files=sum(1 for entry in files if entry.status != FILE_STATUS_OK),
+            error=turn_limit_error(turns),
+        )
+        return result, accepted
+
+    async def preview_cases_from_files(
+        self, suite_id: UUID, uploads: List[DatasetUpload]
+    ) -> ImportCasesFromFilesResult:
+        """Report what importing these files would add, without saving anything."""
+        result, _accepted = await self._plan_file_import(suite_id, uploads)
+        return result
+
+    async def import_cases_from_files(
+        self, suite_id: UUID, uploads: List[DatasetUpload]
+    ) -> ImportCasesFromFilesResult:
+        """Add every new conversation from the readable files in one insert."""
+        result, accepted = await self._plan_file_import(suite_id, uploads)
+        if result.error:
+            raise invalid_file_import(result.error)
+
+        cases: List[TestCaseModel] = []
+        for conversation in accepted:
+            conversation_id = uuid4()
+            for turn_index, turn in enumerate(conversation):
+                cases.append(
+                    TestCaseModel(
+                        suite_id=suite_id,
+                        source_conversation_id=conversation_id,
+                        turn_index=turn_index,
+                        input_data=turn.input_data,
+                        expected_output=turn.expected_output,
+                        tags=turn.tags,
+                        weight=turn.weight,
+                    )
+                )
+        if cases:
+            await self.case_repo.add_many(cases)
+        return result
 
     async def remove_conversation_from_suite(
         self, suite_id: UUID, conversation_id: UUID
@@ -1912,6 +2137,91 @@ class TestSuiteService:
         if not suite:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         await self.case_repo.soft_delete_for_conversation(suite_id, conversation_id)
+
+    async def list_suites_for_conversation(
+        self, conversation_id: UUID
+    ) -> List[ConversationSuiteMembership]:
+        """Every dataset, saying what each already holds of this conversation.
+
+        Datasets the conversation is not in are included with zero turns, because
+        this answers "where can I add it" as much as "where is it already".
+        """
+        suites = await self.suite_repo.get_all()
+        membership = await self.case_repo.get_conversation_membership(conversation_id)
+        by_suite = {row[0]: (row[1], row[2]) for row in membership}
+
+        entries = [
+            ConversationSuiteMembership(
+                suite_id=suite.id,
+                name=suite.name,
+                description=suite.description,
+                turns=by_suite.get(suite.id, (0, None))[0],
+                added_at=by_suite.get(suite.id, (0, None))[1],
+            )
+            for suite in suites
+        ]
+        # list_suites has no ORDER BY, so the picker would otherwise get DB order.
+        entries.sort(key=lambda entry: entry.name.casefold())
+        return entries
+
+    async def add_conversation_to_suites(
+        self, conversation_id: UUID, suite_ids: List[UUID]
+    ) -> AddConversationToSuitesResult:
+        """Add one conversation to several datasets, reporting each one's outcome.
+
+        A dataset that already holds the conversation has its turns refreshed, so
+        the same call covers both a first add and a re-import.
+        """
+        # Read the conversation once up front: it is the same for every dataset, so
+        # a bad id is one error rather than the same failure repeated per dataset.
+        conversation = await self.conversation_repo.fetch_conversation_by_id(
+            conversation_id, include_messages=True
+        )
+        if not conversation:
+            raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
+        if not extract_qa_pairs(conversation.messages):
+            raise AppException(
+                status_code=400,
+                error_key=ErrorKey.TRANSCRIPT_EMPTY,
+                error_detail="Conversation has no question/answer turns to import",
+            )
+
+        # The same dataset picked twice is one add, not two.
+        requested = list(dict.fromkeys(suite_ids))
+
+        results: List[ConversationSuiteImportResult] = []
+        for suite_id in requested:
+            try:
+                _created, outcomes, _failures = await self._import_conversations(
+                    suite_id, [conversation_id], replace=False
+                )
+            except AppException:
+                # Only a missing dataset reaches here; a bad conversation was
+                # already rejected above.
+                results.append(
+                    ConversationSuiteImportResult(
+                        suite_id=suite_id,
+                        status="failed",
+                        detail="Dataset not found.",
+                    )
+                )
+                continue
+            outcome = outcomes[0]
+            results.append(
+                ConversationSuiteImportResult(
+                    suite_id=suite_id,
+                    status=outcome.status,
+                    turns=outcome.turns,
+                    detail=outcome.detail,
+                )
+            )
+
+        return AddConversationToSuitesResult(
+            results=results,
+            imported=sum(1 for r in results if r.status == "imported"),
+            replaced=sum(1 for r in results if r.status == "replaced"),
+            failed=sum(1 for r in results if r.status == "failed"),
+        )
 
     # ---- Runs -------------------------------------------------------------
 

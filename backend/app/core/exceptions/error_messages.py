@@ -14,6 +14,7 @@ class ErrorKey(Enum):
     RULE_CONFIG_INVALID = "rule_config_invalid"
     EVALUATION_TARGET_NOT_A_VERSION = "evaluation_target_not_a_version"
     EVALUATION_BUNDLE_INVALID = "evaluation_bundle_invalid"
+    DATASET_FILE_IMPORT_INVALID = "dataset_file_import_invalid"
     NOT_FOUND = "not_found"
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
@@ -71,6 +72,7 @@ class ErrorKey(Enum):
     CONVERSATION_TAKEN_OVER = "CONVERSATION_TAKEN_OVER"
     CONVERSATION_TAKEN_OVER_OTHER = "CONVERSATION_TAKEN_OVER_OTHER"
     DATASOURCE_NOT_FOUND = "DATASOURCE_NOT_FOUND"
+    READ_ONLY_SQL_BLOCKED = "READ_ONLY_SQL_BLOCKED"
     WEBHOOK_NOT_FOUND = "WEBHOOK_NOT_FOUND"
     LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND"
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
@@ -122,6 +124,7 @@ class ErrorKey(Enum):
     ERROR_INSIDE_WHISPER_SERVICE = "ERROR_INSIDE_WHISPER_SERVICE"
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
     ERROR_EXTRACTING_FROM_FILE = "ERROR_EXTRACTING_FROM_FILE"
+    ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
     INVALID_PKL_FILE = "INVALID_PKL_FILE"
@@ -182,6 +185,14 @@ class ErrorKey(Enum):
     LLM_CATALOG_MODEL_ALREADY_EXISTS = "LLM_CATALOG_MODEL_ALREADY_EXISTS"
     LLM_CATALOG_UNKNOWN_PROVIDER = "LLM_CATALOG_UNKNOWN_PROVIDER"
     LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD = "LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD"
+    PROMPT_CONTEXT_INVALID = "PROMPT_CONTEXT_INVALID"
+    PROMPT_FIELD_NOT_SUPPORTED = "PROMPT_FIELD_NOT_SUPPORTED"
+    PROMPT_VERSION_CONFLICT = "PROMPT_VERSION_CONFLICT"
+    PROMPT_EVAL_TECHNIQUE_UNSUPPORTED = "PROMPT_EVAL_TECHNIQUE_UNSUPPORTED"
+    PROMPT_CASE_SELECTION_INVALID = "PROMPT_CASE_SELECTION_INVALID"
+    PROMPT_OPTIMIZE_UNUSABLE = "PROMPT_OPTIMIZE_UNUSABLE"
+    PROMPT_EXECUTION_TIMEOUT = "PROMPT_EXECUTION_TIMEOUT"
+    PROMPT_MODEL_CALL_FAILED = "PROMPT_MODEL_CALL_FAILED"
     CHAT_TURN_CAPACITY_EXCEEDED = "CHAT_TURN_CAPACITY_EXCEEDED"
     CHAT_TURN_CLIENT_DISCONNECTED = "CHAT_TURN_CLIENT_DISCONNECTED"
 
@@ -193,6 +204,7 @@ ERROR_MESSAGES = {
         ErrorKey.RULE_CONFIG_INVALID: "The evaluation rule configuration is not valid.",
         ErrorKey.EVALUATION_TARGET_NOT_A_VERSION: "The target workflow is not a version of the evaluation's workflow.",
         ErrorKey.EVALUATION_BUNDLE_INVALID: "The evaluation bundle is invalid or could not be imported.",
+        ErrorKey.DATASET_FILE_IMPORT_INVALID: "The dataset files could not be imported.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
@@ -252,6 +264,7 @@ ERROR_MESSAGES = {
         ErrorKey.CONVERSATION_TAKEN_OVER: "Conversation already taken over.",
         ErrorKey.CONVERSATION_TAKEN_OVER_OTHER: "Conversation already taken over by another user.",
         ErrorKey.DATASOURCE_NOT_FOUND: "Datasource not found.",
+        ErrorKey.READ_ONLY_SQL_BLOCKED: "This SQL was rejected because it is not read-only.",
         ErrorKey.LLM_PROVIDER_NOT_FOUND: "LLM Provider not found.",
         ErrorKey.LLM_ANALYST_NOT_FOUND: "LLM Analyst not found.",
         ErrorKey.LLM_ANALYST_INACTIVE: "LLM Analyst is inactive.",
@@ -272,6 +285,7 @@ ERROR_MESSAGES = {
         ErrorKey.TRANSCRIPT_ERROR_PARSING: "Couldn't parse transcript, please try again later.",
         ErrorKey.APP_SETTINGS_NOT_FOUND: "App Settings not found.",
         ErrorKey.FEATURE_FLAG_NOT_FOUND: "Feature Flags not found.",
+        ErrorKey.WORKFLOW_NOT_FOUND: "The workflow could not be found.",
         ErrorKey.OPERATOR_ROLE_MISSING: "Operator role missing.",
         ErrorKey.CREATE_USER_TYPE_IN_MENU: "Operators and ai agents should be created in their specific menus.",
         ErrorKey.LOGIN_ERROR_CONSOLE_USER: "Failed to give access for console type user.",
@@ -299,6 +313,7 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_INSIDE_WHISPER_SERVICE: "An error occurred in transcription service.",
         ErrorKey.MESSAGE_NOT_FOUND: "Message not found.",
         ErrorKey.ERROR_EXTRACTING_FROM_FILE: "Failed to extract text from file.",
+        ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",
@@ -366,11 +381,21 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
+        ErrorKey.PROMPT_CONTEXT_INVALID: "The prompt context is not valid for this workflow.",
+        ErrorKey.PROMPT_FIELD_NOT_SUPPORTED: "This node has no editable prompt field with that name.",
+        ErrorKey.PROMPT_VERSION_CONFLICT: "Another save completed first. Try again.",
+        # No braces in any message: get_error_message calls .format() unconditionally.
+        ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED: "This matching technique is not available for an isolated prompt check.",
+        ErrorKey.PROMPT_CASE_SELECTION_INVALID: "The selected gold dataset cases are not valid for this run.",
+        ErrorKey.PROMPT_OPTIMIZE_UNUSABLE: "The model did not return a usable prompt suggestion.",
+        ErrorKey.PROMPT_EXECUTION_TIMEOUT: "The prompt check did not finish within the time budget.",
+        ErrorKey.PROMPT_MODEL_CALL_FAILED: "The LLM provider call failed.",
         ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "The assistant is busy right now. Please try again in a moment.",
         ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED: "The request was abandoned before the assistant could answer.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
+        ErrorKey.READ_ONLY_SQL_BLOCKED: "Ce SQL a été rejeté car il n'est pas en lecture seule.",
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",

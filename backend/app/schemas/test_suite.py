@@ -62,9 +62,114 @@ class TestCase(TestCaseInDB):
     pass
 
 
+# Upper bound on one multi-import, so a runaway selection cannot fan out into an
+# unbounded number of transcript reads inside a single request.
+MAX_IMPORT_CONVERSATIONS = 100
+
+
 class ImportCasesFromConversationRequest(BaseModel):
     conversation_id: UUID
     replace: bool = False
+
+
+class ImportCasesFromConversationsRequest(BaseModel):
+    conversation_ids: List[UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_IMPORT_CONVERSATIONS,
+        description="Conversations to import. Repeats are collapsed.",
+    )
+    replace: bool = False
+
+
+class ImportedConversationResult(BaseModel):
+    conversation_id: UUID
+    # imported (new to the dataset), replaced (its turns were refreshed), failed.
+    status: str
+    turns: int = 0
+    # Why the conversation failed, in one client-safe sentence.
+    detail: Optional[str] = None
+
+
+class ImportCasesFromConversationsResult(BaseModel):
+    # Every turn created by this import, across all conversations.
+    cases: List[TestCase] = Field(default_factory=list)
+    # One entry per requested conversation, in the order they were requested.
+    results: List[ImportedConversationResult] = Field(default_factory=list)
+    imported: int = 0
+    replaced: int = 0
+    failed: int = 0
+
+
+class DatasetFileResult(BaseModel):
+    filename: str
+    # ok (readable), failed, or evaluation_bundle (belongs to the evaluation import).
+    status: str
+    # What the file adds, after skipping conversations seen before.
+    conversations: int = 0
+    turns: int = 0
+    # Skipped because the dataset already holds them.
+    duplicates: int = 0
+    # Skipped because a file earlier in this import, or this one, already has them.
+    repeated: int = 0
+    # Positions in `files` of the files holding the first copies.
+    repeated_from: List[int] = Field(default_factory=list)
+    # Why the file cannot be imported, in client-safe sentences.
+    errors: List[str] = Field(default_factory=list)
+
+
+class ImportCasesFromFilesResult(BaseModel):
+    # One entry per uploaded file, in upload order.
+    files: List[DatasetFileResult] = Field(default_factory=list)
+    conversations: int = 0
+    turns: int = 0
+    duplicates: int = 0
+    repeated: int = 0
+    failed_files: int = 0
+    # Set when the import cannot go ahead as a whole, e.g. it adds too many turns.
+    error: Optional[str] = None
+
+
+# Upper bound on how many datasets one conversation can be added to at once.
+MAX_CONVERSATION_SUITES = 50
+
+
+class ConversationSuiteMembership(BaseModel):
+    """One dataset, and what it already holds of a given conversation."""
+
+    suite_id: UUID
+    name: str
+    description: Optional[str] = None
+    # Turns of this conversation already in the dataset. 0 means not in it yet.
+    turns: int = 0
+    # When the conversation first joined this dataset, or null if it has not.
+    added_at: Optional[datetime] = None
+
+
+class AddConversationToSuitesRequest(BaseModel):
+    suite_ids: List[UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_CONVERSATION_SUITES,
+        description="Datasets to add the conversation to. Repeats are collapsed.",
+    )
+
+
+class ConversationSuiteImportResult(BaseModel):
+    suite_id: UUID
+    # imported (new to the dataset), replaced (its turns were refreshed), failed.
+    status: str
+    turns: int = 0
+    # Why it failed, in one client-safe sentence.
+    detail: Optional[str] = None
+
+
+class AddConversationToSuitesResult(BaseModel):
+    # One entry per requested dataset, in the order they were requested.
+    results: List[ConversationSuiteImportResult] = Field(default_factory=list)
+    imported: int = 0
+    replaced: int = 0
+    failed: int = 0
 
 
 class TestSuiteBase(BaseModel):
@@ -339,11 +444,14 @@ class EvaluationRouterBranch(BaseModel):
 
     value: str
     destination: Optional[str] = None
+    # Display name of the branch when the value is opaque (a Switch case id).
+    label: Optional[str] = None
 
 
 class EvaluationRouterInfo(BaseModel):
     id: str
     label: str
+    type: Optional[str] = None
     workflow_path: List[str] = Field(default_factory=list)
     branches: List[EvaluationRouterBranch] = Field(default_factory=list)
 

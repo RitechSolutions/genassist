@@ -47,9 +47,15 @@ import { analyticsFadeUpClass } from "../constants/animations";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { LlmUsageBreakdownChart } from "../components/reports/LlmUsageBreakdownChart";
 import { LlmUsageCostShare } from "../components/reports/LlmUsageCostShare";
-import { LlmUsageEvaluationMethods } from "../components/reports/LlmUsageEvaluationMethods";
 import { LlmUsageProviderDonut } from "../components/reports/LlmUsageProviderDonut";
+import { LlmUsageSourceSubRows } from "../components/reports/LlmUsageSourceSubRows";
 import { LlmUsageTimeseriesChart, type SpendMetric } from "../components/reports/LlmUsageTimeseriesChart";
+import {
+  SOURCE_SUB_ROWS,
+  isSourceSubRowParent,
+  subRowCountLabel,
+  type SourceSubRowParent,
+} from "../helpers/llmUsageSubRows";
 
 // Provider is covered by the always-on Provider share card, so it stays out of this selector
 const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: string }> = [
@@ -60,8 +66,9 @@ const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: str
 
 const ALL = ALL_FILTER_VALUE;
 const KPI_SUB_CLASS = "text-sm font-medium text-muted-foreground";
-const EVALUATION_KEY = "evaluation";
 const COVERAGE_NOTICE = "llm-unpriced-coverage";
+const MIN_UNPRICED_TOKEN_PCT = 0.1;
+const FALLBACK_NOTICE = "llm-fallback-rates";
 const PARTIAL_COST_HELP =
   "Some calls here ran on a model with no configured rate. " +
   "This figure is the priced subtotal, real spend may be higher. Add the missing rates under " +
@@ -117,6 +124,21 @@ function KpiDelta({ delta, unit = "%", tone = "semantic" }: KpiDeltaProps) {
   );
 }
 
+function useSourceSubRows(
+  parent: SourceSubRowParent,
+  enabled: boolean,
+  filterKey: unknown[],
+  filters: LlmUsageQueryFilters
+) {
+  const { dimension } = SOURCE_SUB_ROWS[parent];
+  return useQuery({
+    queryKey: ["llm-usage", "breakdown", dimension, ...filterKey],
+    queryFn: () => fetchLlmUsageBreakdown(dimension, filters),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
 function LlmUsagePage() {
   const [dateRange, setDateRange] = usePersistedDateRange({
     from: subDays(new Date(), 7),
@@ -130,7 +152,7 @@ function LlmUsagePage() {
   const [model, setModel] = useState(ALL);
   const [dimension, setDimension] = useState<LlmUsageDimension>("model");
   const [spendMetric, setSpendMetric] = useState<SpendMetric>("cost");
-  const [evalExpanded, setEvalExpanded] = useState(false);
+  const [expandedSources, setExpandedSources] = useState<string[]>([]);
 
   const dateParams = useMemo(() => toExpandedUTCDateRange(dateRange), [dateRange]);
   const queryFilters = useMemo<LlmUsageQueryFilters>(
@@ -176,12 +198,11 @@ function LlmUsagePage() {
     placeholderData: keepPreviousData,
   });
 
-  const evalMethods = useQuery({
-    queryKey: ["llm-usage", "breakdown", "evaluation_method", ...filterKey],
-    queryFn: () => fetchLlmUsageBreakdown("evaluation_method", queryFilters),
-    enabled: evalExpanded && dimension === "source",
-    placeholderData: keepPreviousData,
-  });
+  const isSourceExpanded = (parent: SourceSubRowParent) => dimension === "source" && expandedSources.includes(parent);
+  const subRowQueries: Record<SourceSubRowParent, ReturnType<typeof useSourceSubRows>> = {
+    evaluation: useSourceSubRows("evaluation", isSourceExpanded("evaluation"), filterKey, queryFilters),
+    llm_analyst: useSourceSubRows("llm_analyst", isSourceExpanded("llm_analyst"), filterKey, queryFilters),
+  };
 
   const showNodePanel = agentFilter !== ALL;
   const agentNodes = useQuery({
@@ -242,39 +263,47 @@ function LlmUsagePage() {
   const dimensionLabel = activeDimension?.label ?? "Model";
   const dimensionHeading = activeDimension?.heading ?? dimensionLabel;
   const costFor = (key: string) => sourceItems.find((i) => i.key === key)?.cost_usd ?? 0;
-  const unpricedTokenPct = 100 - (summary?.priced_token_coverage_pct ?? 100);
+  // Gated on the rounded figure the notice prints, so it never reads "0.0%"
+  const unpricedTokenPct = Number((100 - (summary?.priced_token_coverage_pct ?? 100)).toFixed(1));
   const totalItemCost = items.reduce((sum, i) => sum + i.cost_usd, 0);
   const previous = hasCompare ? compare.data : undefined;
   const hasPartialCost = items.some((i) => i.cost_is_partial);
   const coverageNotice = useDismissibleNotice(COVERAGE_NOTICE, summary?.last_unpriced_at);
+  const fallbackNotice = useDismissibleNotice(FALLBACK_NOTICE, summary?.last_fallback_at);
 
-  const isEvaluationRow = (i: LlmUsageBreakdownItem) => dimension === "source" && i.key === EVALUATION_KEY;
+  const subRowParentOf = (i: LlmUsageBreakdownItem): SourceSubRowParent | null =>
+    dimension === "source" && isSourceSubRowParent(i.key) ? i.key : null;
+  const toggleSource = (parent: SourceSubRowParent) =>
+    setExpandedSources((current) =>
+      current.includes(parent) ? current.filter((key) => key !== parent) : [...current, parent]
+    );
 
   // Only a settled response may label the row, so a filter change can't flash a stale count
-  const evaluationMethodCount =
-    !evalMethods.isPlaceholderData && !evalMethods.isError ? evalMethods.data?.total : undefined;
-  const methodCountLabel = evaluationMethodCount
-    ? `${evaluationMethodCount} ${evaluationMethodCount === 1 ? "method" : "methods"}`
-    : null;
+  const countLabelFor = (parent: SourceSubRowParent) => {
+    const query = subRowQueries[parent];
+    return subRowCountLabel(parent, !query.isPlaceholderData && !query.isError ? query.data?.total : undefined);
+  };
 
   const columns: Column<LlmUsageBreakdownItem>[] = [
     {
       header: dimensionLabel,
       key: "label",
-      cell: (i) =>
-        isEvaluationRow(i) ? (
+      cell: (i) => {
+        const parent = subRowParentOf(i);
+        if (!parent) return <span className="font-medium">{i.label}</span>;
+        const countLabel = countLabelFor(parent);
+        return (
           // No onClick: the native click bubbles to the row handler, keyboard included
           <button
             type="button"
-            aria-expanded={evalExpanded}
+            aria-expanded={isSourceExpanded(parent)}
             className="flex items-center gap-2 rounded text-left font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <span>{i.label}</span>
-            {methodCountLabel && <span className="text-xs font-normal text-muted-foreground">{methodCountLabel}</span>}
+            {countLabel && <span className="text-xs font-normal text-muted-foreground">{countLabel}</span>}
           </button>
-        ) : (
-          <span className="font-medium">{i.label}</span>
-        ),
+        );
+      },
     },
     {
       header: "Calls",
@@ -413,7 +442,7 @@ function LlmUsagePage() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
-        {summary && summary.unpriced_calls > 0 && coverageNotice.visible && (
+        {summary && summary.unpriced_calls > 0 && unpricedTokenPct >= MIN_UNPRICED_TOKEN_PCT && coverageNotice.visible && (
           <div className="flex items-center gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>
@@ -432,7 +461,7 @@ function LlmUsagePage() {
           </div>
         )}
 
-        {summary && summary.fallback_calls > 0 && (
+        {summary && summary.fallback_calls > 0 && fallbackNotice.visible && (
           <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2.5 text-sm text-muted-foreground">
             <Info className="h-4 w-4 shrink-0" />
             <span>
@@ -441,6 +470,14 @@ function LlmUsagePage() {
               </span>{" "}
               Add matching rates to price them from your own configuration.
             </span>
+            <button
+              type="button"
+              onClick={fallbackNotice.dismiss}
+              aria-label="Dismiss fallback rates notice"
+              className="ml-auto shrink-0 rounded p-0.5 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         )}
 
@@ -509,26 +546,34 @@ function LlmUsagePage() {
               pageSize={10}
               getRowProps={
                 dimension === "source"
-                  ? (i) =>
-                      isEvaluationRow(i)
+                  ? (i) => {
+                      const parent = subRowParentOf(i);
+                      return parent
                         ? {
-                            onClick: () => setEvalExpanded((current) => !current),
+                            onClick: () => toggleSource(parent),
                             className: "cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60",
                           }
-                        : undefined
+                        : undefined;
+                    }
                   : undefined
               }
               renderSubRows={
                 dimension === "source"
-                  ? (i) =>
-                      isEvaluationRow(i) && evalExpanded ? (
-                        <LlmUsageEvaluationMethods
-                          items={evalMethods.data?.items ?? []}
+                  ? (i) => {
+                      const parent = subRowParentOf(i);
+                      if (!parent || !isSourceExpanded(parent)) return null;
+                      const query = subRowQueries[parent];
+                      return (
+                        <LlmUsageSourceSubRows
+                          items={query.data?.items ?? []}
                           totalCostUsd={totalItemCost}
-                          loading={evalMethods.isPending || evalMethods.isPlaceholderData}
-                          error={evalMethods.isError}
+                          emptyText={SOURCE_SUB_ROWS[parent].emptyText}
+                          errorText={SOURCE_SUB_ROWS[parent].errorText}
+                          loading={query.isPending || query.isPlaceholderData}
+                          error={query.isError}
                         />
-                      ) : null
+                      );
+                    }
                   : undefined
               }
             />

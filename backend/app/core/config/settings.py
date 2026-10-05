@@ -1,7 +1,7 @@
 from typing import Optional, Tuple
 from urllib.parse import quote, unquote, urlparse
 
-from pydantic import ConfigDict, Field, computed_field, field_validator
+from pydantic import AliasChoices, ConfigDict, Field, computed_field, field_validator
 from pydantic_settings import BaseSettings
 
 from app.core.project_path import DATA_VOLUME
@@ -75,6 +75,9 @@ class ProjectSettings(BaseSettings):
     # (worker died mid-run). Kept above the 2h execution timeout and the broker
     # redelivery delay so a lost run is re-run before it is declared dead.
     WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m
+    # Webhook Trigger node ingress (public /webhook/execute/{id} for workflow_trigger rows).
+    WEBHOOK_TRIGGER_MAX_BODY_BYTES: int = 1_048_576  # 1 MiB
+    WEBHOOK_TRIGGER_HMAC_TOLERANCE_SECONDS: int = 300
     # Evaluation (test) runs use the same orphaned-run reconciliation.
     CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK: bool = True
     TEST_RUN_QUEUED_MAX_AGE_SECONDS: int = 900  # 15 minutes
@@ -108,6 +111,12 @@ class ProjectSettings(BaseSettings):
 
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
+    # Backfill gives up on a conversation after 3 runs, each run makes up to 3 LLM calls
+    CONVERSATION_ANALYSIS_BACKFILL_MAX_ATTEMPTS: int = 3
+    # Only conversations created within 30 days are backfilled, 0 disables the window
+    CONVERSATION_ANALYSIS_BACKFILL_MAX_AGE_DAYS: int = 30
+    # Minimum 60 minutes wait between runs for one conversation
+    CONVERSATION_ANALYSIS_BACKFILL_RETRY_DELAY_MINUTES: int = 60
 
     # === GDPR Right-to-Erasure ===
     # Default mode used by the admin GDPR delete endpoint when the caller does
@@ -117,9 +126,11 @@ class ProjectSettings(BaseSettings):
     # row in place for a manual hard purge later.
     GDPR_DEFAULT_DELETE_MODE: str = "soft"
 
-    # Number of latest messages used for in-progress hostility scoring.
-    # If the conversation has fewer messages than this, all messages are used.
+    # Number of latest message/audio rows used for in-progress hostility scoring.
+    # If the conversation has fewer, or this is 0 or less, all of them are used.
     HOSTILITY_SCORE_MESSAGE_COUNT: int = 20
+    # Scored on every Nth customer message
+    HOSTILITY_SCORE_EVERY_N_MESSAGES: int = Field(default=3, ge=1)
 
     FERNET_KEY: Optional[str]
 
@@ -167,6 +178,21 @@ class ProjectSettings(BaseSettings):
     # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
     FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
     FILES_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
+    # Train Data Source extraction ceilings. Workflow nodes may request lower
+    # values, but these settings remain the operator-controlled upper bounds.
+    ML_EXTRACT_MAX_ROWS: int = 2_000_000
+    ML_EXTRACT_MAX_BYTES: int = 2 * 1024**3  # 2 GiB
+    ML_EXTRACT_TIMEOUT_SECONDS: int = Field(
+        default=600,
+        validation_alias=AliasChoices(
+            "ML_EXTRACT_TIMEOUT_SECONDS",
+            "ML_EXTRACT_QUERY_TIMEOUT_SECONDS",
+        ),
+    )
+    ML_EXTRACT_CHUNK_ROWS: int = Field(default=2_000, gt=0)
+    # Profiling builds an in-memory DataFrame and therefore uses lower limits
+    # than a streamed training-data extraction.
+    ML_PROFILE_MAX_ROWS: int = Field(default=100_000, gt=0)
     # Direct browser -> S3 presigned PUT uploads (Phase 1: single PUT).
     # Off by default; enables a new opt-in /file-manager/upload-session/presign + /finalize flow
     # used only when FILE_MANAGER_PROVIDER == "s3". Existing /upload and /upload-session paths
@@ -374,6 +400,16 @@ class ProjectSettings(BaseSettings):
     # Max searches per tenant per minute. Only the request that actually runs the
     # search counts; duplicate in-flight requests reuse that result and are not charged.
     WEB_SEARCH_TENANT_PER_MINUTE: int = 30
+
+    # === Analytics Aggregation ===
+    # Rollout flag: off restores the legacy discovery strategy. Not a full revert,
+    # the shared UTC date alignment stays active either way.
+    ANALYTICS_AGG_V2: bool = True
+    ANALYTICS_AGG_PREVIEW_ENABLED: bool = False
+    # First-cutover seed window below the MAX(last_aggregated_at).
+    ANALYTICS_AGG_HEAL_LOOKBACK_HOURS: int = 12
+    # Discovery overlap absorbing in-flight commits; recompute is idempotent.
+    ANALYTICS_AGG_SCAN_OVERLAP_MINUTES: int = 15
 
     @property
     def _zendesk_base(self) -> str:

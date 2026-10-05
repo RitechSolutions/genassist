@@ -1,4 +1,4 @@
-import { apiRequest } from "@/config/api";
+import { apiRequest, API_WORKFLOW_TEST_TIMEOUT_MS } from "@/config/api";
 import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
 
 import {
@@ -113,14 +113,16 @@ export const testNode = (testData: NodeTestPayload) =>
   apiRequest<WorkflowTestResponse>(
     "POST",
     `${BASE}/test-node`,
-    testData as unknown as Record<string, unknown>
+    testData as unknown as Record<string, unknown>,
+    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS }
   );
 
 export const testWorkflow = (testData: WorkflowTestPayload) =>
   apiRequest<WorkflowTestResponse>(
     "POST",
     `${BASE}/test`,
-    testData as unknown as Record<string, unknown>
+    testData as unknown as Record<string, unknown>,
+    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS }
   );
 
 export const generatePythonTemplate = (schema: any, prompt?: string) =>

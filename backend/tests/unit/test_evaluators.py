@@ -1,6 +1,8 @@
 """Unit tests for trace-aware grading (process evaluation)."""
 
+import sys
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -1737,6 +1739,15 @@ class TestParseJudgeJson:
         assert _parse_judge_json('{"score": 5}')[0] == 1.0
         assert _parse_judge_json('{"score": -2}')[0] == 0.0
 
+    @pytest.mark.parametrize("raw", ['{"score": NaN}', '{"score": Infinity}', '{"score": "NaN"}'])
+    def test_non_finite_score_is_none(self, raw):
+        assert _parse_judge_json(raw)[0] is None
+
+    def test_fenced_reply_is_parsed(self):
+        score, reason = _parse_judge_json('```json\n{"score": 0.2, "reason": "off topic"}\n```')
+        assert score == 0.2
+        assert reason == "off topic"
+
 
 class TestSemanticEvaluators:
     """Source-aware NLI and Provenance: skip vs fail, model reporting, real embeddings."""
@@ -2141,6 +2152,20 @@ class TestSemanticEvaluators:
         assert result.verdict == "entails"
         assert result.entail_score > 0.9
         assert result.chunks_evaluated > 1
+
+    def test_a_failed_load_is_recorded_separately_from_never_having_loaded(self, monkeypatch):
+        stub = SimpleNamespace(
+            AutoTokenizer=SimpleNamespace(from_pretrained=MagicMock(side_effect=OSError("no hub"))),
+            AutoModelForSequenceClassification=SimpleNamespace(from_pretrained=MagicMock()),
+        )
+        monkeypatch.setitem(sys.modules, "transformers", stub)
+        model = EvaluationNLIModel()
+
+        assert model.load_failed(DEFAULT_NLI_MODEL) is False
+
+        assert model._lazy_init(DEFAULT_NLI_MODEL) is False
+        assert model.is_loaded(DEFAULT_NLI_MODEL) is False
+        assert model.load_failed(DEFAULT_NLI_MODEL) is True
 
     def test_nli_evaluation_short_circuits_empty_evidence(self, monkeypatch):
         model = EvaluationNLIModel()

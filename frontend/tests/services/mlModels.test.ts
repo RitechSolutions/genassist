@@ -19,6 +19,7 @@ import {
   updateMLModel,
   deleteMLModel,
   analyzeCSV,
+  profileData,
 } from "@/services/mlModels";
 
 const mockApiRequest = vi.mocked(apiRequest);
@@ -131,5 +132,88 @@ describe("analyzeCSV", () => {
   it("rethrows when apiRequest rejects", async () => {
     mockApiRequest.mockRejectedValue(new Error("boom"));
     await expect(analyzeCSV("http://x/file.csv")).rejects.toThrow("boom");
+  });
+});
+
+describe("profileData", () => {
+  beforeEach(() => {
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:profile"),
+      revokeObjectURL: vi.fn(),
+    });
+  });
+
+  it("profiles a CSV by File Manager ID", async () => {
+    const click = vi.fn();
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => ({ click })),
+    });
+    mockApiRequest.mockResolvedValue(new Blob(["report"]) as never);
+
+    await profileData(
+      {
+        source_type: "csv",
+        file_id: "file-1",
+        file_name: "training.csv",
+      },
+      "training_profile.html",
+    );
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "ml-models/profile-data",
+      {
+        source_type: "csv",
+        file_id: "file-1",
+        file_name: "training.csv",
+      },
+      {
+        timeout: API_PREPROCESSING_TIMEOUT_MS,
+        responseType: "blob",
+      },
+    );
+    expect(click).toHaveBeenCalledOnce();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:profile");
+  });
+
+  it("profiles a SQL query result", async () => {
+    vi.stubGlobal("document", {
+      createElement: vi.fn(() => ({ click: vi.fn() })),
+    });
+    mockApiRequest.mockResolvedValue(new Blob(["report"]) as never);
+
+    await profileData(
+      {
+        source_type: "datasource",
+        data_source_id: "datasource-1",
+        query: "SELECT * FROM training_data",
+      },
+      "query_profile.html",
+    );
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "ml-models/profile-data",
+      {
+        source_type: "datasource",
+        data_source_id: "datasource-1",
+        query: "SELECT * FROM training_data",
+      },
+      {
+        timeout: API_PREPROCESSING_TIMEOUT_MS,
+        responseType: "blob",
+      },
+    );
+  });
+
+  it("throws when the profile response is empty", async () => {
+    mockApiRequest.mockResolvedValue(null as never);
+
+    await expect(
+      profileData(
+        { source_type: "csv", file_id: "file-1" },
+        "data_profile.html",
+      ),
+    ).rejects.toThrow("Failed to generate data profile");
   });
 });

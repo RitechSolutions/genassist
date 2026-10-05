@@ -929,14 +929,11 @@ async def finalize(
                 msg_type="finalize",
                 room_id=roomId,
                 current_user_id=get_current_user_id(),
+                payload={"conversation_id": str(conversation_id)},
                 required_topic="finalize",
                 tenant_id=tenant_id,
             )
         )
-
-    # Notify dashboard and conversation room
-    notify_socket(conversation_id)
-    notify_socket(SocketRoomType.DASHBOARD)
 
     # Resolve analyst: explicit override > agent's configured analyst > default seed
     analyst_id = finalize.llm_analyst_id
@@ -951,6 +948,11 @@ async def finalize(
         conversation_id=conversation_id,
         llm_analyst_id=analyst_id,
     )
+
+    # Notify dashboard and conversation room only once the conversation is really finalized —
+    # announcing it up front makes listeners drop a conversation a failed finalize left running.
+    notify_socket(conversation_id)
+    notify_socket(SocketRoomType.DASHBOARD)
 
     # Increment finalized conversation counters in background
     _ = asyncio.create_task(update_conversation_finalized(conversation_id))

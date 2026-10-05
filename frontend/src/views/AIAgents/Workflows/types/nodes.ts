@@ -1,7 +1,9 @@
-import { Edge, Node, NodeProps } from "reactflow";
+import { Node, NodeProps } from "reactflow";
 import { ComponentType } from "react";
 import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
+import { MLModelTypeValue } from "@/constants/mlModelTypes";
+import type { PreprocessingConfig } from "../nodeDialogs/training/preprocessingConfig";
 
 // Define compatibility types
 export type NodeCompatibility =
@@ -20,6 +22,8 @@ export interface NodeHandler {
   position: "left" | "right" | "top" | "bottom";
   compatibility: NodeCompatibility;
   schema?: NodeSchema;
+  /** Optional human-readable name shown in the handle tooltip (e.g. a Switch case). */
+  label?: string;
 }
 
 // Base node data interface
@@ -50,10 +54,30 @@ export interface ChatInputNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
 }
 
+// Webhook Trigger node data — endpoint settings (method, auth, secret, rate
+// limit) live on the backend endpoint row, not here, so publishing a new
+// workflow version never rotates a secret. Paths are dotted and start at the
+// delivery envelope: body.*, headers.*, query.*
+export interface WebhookFieldMapping {
+  key: string;
+  path: string;
+  required?: boolean;
+  default?: string;
+}
+
+export interface WebhookTriggerNodeData extends BaseNodeData {
+  fieldMappings?: WebhookFieldMapping[];
+  messagePath?: string;
+  messageRequired?: boolean;
+  threadIdPath?: string;
+  idempotencyPath?: string;
+  samplePayload?: string;
+}
+
 // Human In The Loop node data — collects structured data from the user mid-flow
 export interface HumanInTheLoopFormField {
   name: string;
-  type: "text" | "number" | "select" | "boolean" | "date";
+  type: "text" | "textarea" | "number" | "select" | "boolean" | "date";
   label: string;
   required?: boolean;
   placeholder?: string;
@@ -112,6 +136,61 @@ export interface RouterNodeData extends BaseNodeData {
     | "not_ends_with"
     | "regex";
   second_value?: string;
+}
+
+// Switch node data — deterministic N-way routing on a single value. Each case
+// owns an `output_<case.id>` source handle; unmatched values take `output_default`.
+export type SwitchMatchMode =
+  | "equal"
+  | "contains"
+  | "starts_with"
+  | "ends_with"
+  | "regex";
+
+export interface SwitchCase {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface SwitchNodeData extends BaseNodeData {
+  /** When on, an LLM picks the case (from smartPrompt) instead of comparing switchValue. */
+  smartModeEnabled?: boolean | string;
+  providerId?: string;
+  smartPrompt?: string;
+  systemPrompt?: string;
+  switchValue?: string;
+  matchMode?: SwitchMatchMode;
+  caseSensitive?: boolean;
+  cases?: SwitchCase[];
+}
+
+// Filter node data — a gate with one output: the branch continues only while
+// `field <operator> value` holds. Operators mirror engine/conditions.py.
+export type FilterOperator =
+  | "equal"
+  | "not_equal"
+  | "contains"
+  | "not_contain"
+  | "starts_with"
+  | "not_starts_with"
+  | "ends_with"
+  | "not_ends_with"
+  | "regex"
+  | "greater_than"
+  | "greater_than_or_equal"
+  | "less_than"
+  | "less_than_or_equal"
+  | "is_empty"
+  | "is_not_empty";
+
+export interface FilterNodeData extends BaseNodeData {
+  field?: string;
+  operator?: FilterOperator;
+  value?: string;
+  caseSensitive?: boolean;
+  /** Chat reply used when the filter stops the conversation's main path. */
+  stopMessage?: string;
 }
 
 // NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
@@ -444,27 +523,164 @@ export interface PreprocessingNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the file for preprocessing
   analysisResult?: CSVAnalysisResult; // Initial CSV analysis result (for backward compatibility)
   stepAnalysisResults?: Record<string, CSVAnalysisResult>; // Analysis results for each step (keyed by step ID or "initial")
+  // The configured steps, stored as data - the dialog's source of truth.
+  // pythonCode is generated from it. Missing on nodes saved before this was
+  // added; those are read from pythonCode once and gain it on their next save.
+  preprocessingConfig?: PreprocessingConfig;
 }
 
 // Train Model Node Data
 export type SplitMethod = "random" | "time_based";
 
+// Keep in sync with backend/app/modules/workflow/engine/nodes/ml/hyperparameter_optimization.py::VALID_METHODS
+export type HyperparameterOptimizationMethod =
+  | "none"
+  | "random_search"
+  | "grid_search"
+  | "bayesian_optimization";
+
+export interface OptimizationConfig {
+  scoring?: string; // sklearn scoring name; defaults to accuracy/r2 based on task
+  cvFolds?: number; // cross-validation folds used during the search (default: 3)
+  nIter?: number; // random_search: number of parameter combinations to sample
+  nTrials?: number; // bayesian_optimization: number of Optuna trials
+  timeoutSeconds?: number; // bayesian_optimization: optional wall-clock cap
+  gridPoints?: number; // grid_search: discretization points per numeric parameter
+}
+
+// Outlier handling: lives on the Train Model node (not the pre-split
+// Preprocessing node) because bounds must be fit on the training split only —
+// fitting them on the full dataset before the split leaks validation-row
+// statistics into training.
+export type OutlierStrategy = "no_action" | "remove_outliers" | "cap_outliers";
+export type OutlierMethod = "iqr" | "zscore";
+
+export interface OutlierHandlingItem {
+  columnName: string;
+  strategy: OutlierStrategy;
+  method?: OutlierMethod;
+  iqrMultiplier?: number;
+  zScoreThreshold?: number;
+}
+
+export interface OutlierHandlingConfig {
+  enabled: boolean;
+  columns: OutlierHandlingItem[];
+}
+
+// Categorical encoding: lives on the Train Model node (not the pre-split
+// Preprocessing node) for the same reason as outlier handling above — "one_hot"
+// and "label" fit a vocabulary/set of codes from the data, so fitting them on
+// the full dataset before the split leaks validation-only categories into
+// training. "ordinal" uses a fixed, caller-supplied mapping so it isn't fit
+// from data, but stays here too so all encoding configuration lives in one
+// place.
+export type CategoricalEncodingStrategy =
+  | "no_action"
+  | "one_hot"
+  | "label"
+  | "ordinal";
+
+export interface CategoricalEncodingItem {
+  columnName: string;
+  strategy: CategoricalEncodingStrategy;
+  dropFirst?: boolean;
+  ordinalMapping?: Record<string, number>;
+}
+
+export interface CategoricalEncodingConfig {
+  enabled: boolean;
+  columns: CategoricalEncodingItem[];
+}
+
+// Missing value handling: lives on the Train Model node (not the pre-split
+// Preprocessing node) because impute_mean/median/mode fit a fill value from
+// the data, so fitting it on the full dataset before the split leaks
+// validation-row statistics into training.
+export type MissingValueStrategy =
+  | "no_action"
+  | "drop_column"
+  | "drop_rows"
+  | "impute_constant"
+  | "impute_mean"
+  | "impute_median"
+  | "impute_mode";
+
+export interface MissingValueHandlingItem {
+  columnName: string;
+  missingCount: number;
+  missingPercentage: number;
+  strategy: MissingValueStrategy;
+  imputeValue?: string | number;
+}
+
+export interface MissingValueHandlingConfig {
+  enabled: boolean;
+  columns: MissingValueHandlingItem[];
+}
+
+// Feature engineering: lives on the Train Model node (not the pre-split
+// Preprocessing node) because bin_numeric/normalize/standardize/polynomial
+// fit bin edges or scaling stats from the data, so fitting them on the full
+// dataset before the split leaks validation-row statistics into training.
+// custom_expression is a deterministic per-row formula with nothing fit from
+// data, but stays here too so all feature configuration lives in one place.
+export type FeatureEngineeringStrategy =
+  | "custom_expression"
+  | "bin_numeric"
+  | "normalize"
+  | "standardize"
+  | "polynomial";
+
+export interface FeatureEngineeringItem {
+  id: string;
+  newColumnName: string;
+  strategy: FeatureEngineeringStrategy;
+  expression?: string;
+  sourceColumns?: string[];
+  numBins?: number;
+  binColumn?: string;
+  polynomialDegree?: number;
+  polynomialColumns?: string[];
+}
+
+export interface FeatureEngineeringConfig {
+  enabled: boolean;
+  features: FeatureEngineeringItem[];
+}
+
+// Target transform: trains on a ratio of the target (targetColumn /
+// baselineColumn) instead of its raw value, and reconstructs predictions
+// back to real units (predicted_ratio * baselineColumn) before computing
+// validation metrics — useful for a target with strong trend/seasonality,
+// where a ratio to a rolling baseline is far more learnable than the raw
+// value. baselineColumn is read from the source data like targetColumn; it
+// doesn't need to be one of featureColumns (and usually shouldn't be, or the
+// model can trivially learn to predict ratio ~= 1).
+export interface TargetTransform {
+  type: "ratio";
+  baselineColumn: string;
+}
+
 export interface TrainModelNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the CSV file for training
   analysisResult?: CSVAnalysisResult; // CSV analysis result
-  modelType:
-    | "xgboost"
-    | "random_forest"
-    | "linear_regression"
-    | "logistic_regression"
-    | "neural_network"
-    | "other";
+  modelType: MLModelTypeValue;
   targetColumn: string; // Target variable column name
   featureColumns: string[]; // Feature column names
-  modelParameters: Record<string, any>; // Model-specific parameters
+  modelParameters: Record<string, any>; // Model-specific parameters (fixed; excluded from search)
   validationSplit: number; // Train/validation split ratio
   splitMethod?: SplitMethod; // How to split train/validation data (default: "random")
   dateColumn?: string; // Date/timestamp column to sort by when splitMethod is "time_based"
+  hyperparameterOptimization?: HyperparameterOptimizationMethod; // Search method (default: "none")
+  optimizationConfig?: OptimizationConfig; // Overrides for the selected search method
+  scalingMethod?: "none" | "standard" | "minmax" | "maxabs" | "robust" | "auto"; // Feature scaling for numeric inputs (default: "auto")
+  taskType?: "auto" | "classification" | "regression"; // Override for the classification/regression heuristic (default: "auto")
+  outlierHandling?: OutlierHandlingItem[]; // Per-column outlier handling; bounds are fit on the training split only (default: [])
+  categoricalEncoding?: CategoricalEncodingItem[]; // Per-column categorical encoding; one_hot/label mappings are fit on the training split only (default: [])
+  missingValueHandling?: MissingValueHandlingItem[]; // Per-column missing-value handling; impute fill values are fit on the training split only (default: [])
+  featureEngineering?: FeatureEngineeringItem[]; // Derived feature definitions; bin edges/scaling stats are fit on the training split only (default: [])
+  targetTransform?: TargetTransform; // Train on targetColumn/baselineColumn instead of the raw target; predictions are reconstructed to real units before scoring (default: undefined)
 }
 
 // Per Chat RAG Node Data
@@ -608,6 +824,7 @@ export interface STTNodeData extends BaseNodeData {
 // Union type for all node data types
 export type NodeData =
   | ChatInputNodeData
+  | WebhookTriggerNodeData
   | LLMModelNodeData
   | TemplateNodeData
   | ChatOutputNodeData
@@ -622,6 +839,8 @@ export type NodeData =
   | SlackOutputNodeData
   | WhatsappNodeData
   | RouterNodeData
+  | SwitchNodeData
+  | FilterNodeData
   | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData
@@ -665,6 +884,12 @@ export interface NodeTypeDefinition<T extends NodeData> {
     | "training" | "utils"
   icon: string;
   defaultData: T;
+  /**
+   * For nodes whose handles depend on their config (e.g. one output per Switch
+   * case): derives the handles from the node data. When set, hydration rebuilds
+   * handles from this instead of back-filling `defaultData.handlers`.
+   */
+  getHandlers?: (data: T) => NodeHandler[];
   component: ComponentType<NodeProps<NodeData>>; // React component for the node
   createNode: (id: string, position: { x: number; y: number }, data: T) => Node;
 }
@@ -681,20 +906,5 @@ export const createNode = <T extends NodeData>(
     type,
     position,
     data: data,
-  };
-};
-
-export const createEdge = (
-  source: string,
-  target: string,
-  data: Record<string, unknown>,
-): Edge => {
-  return {
-    id: `${source}-${target}`,
-    sourceHandle: source,
-    targetHandle: target,
-    source,
-    target,
-    data,
   };
 };

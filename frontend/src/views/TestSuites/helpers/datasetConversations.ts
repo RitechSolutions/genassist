@@ -1,18 +1,36 @@
 import type { TestCase } from "@/interfaces/testSuite.interface";
 
+/** Tag the backend stamps on cases created by conversation import. */
+export const IMPORTED_TAG = "imported";
+
+/** Tag the backend stamps on cases imported from a dataset file. */
+export const FILE_IMPORTED_TAG = "imported-file";
+
+/** Where a conversation's turns came from. */
+export type ConversationOrigin = "conversation" | "file" | "manual";
+
 export interface ConversationGroup {
   key: string;
-  /** Null for manual and legacy records, which replay independently. */
+  /** The replay thread. Null only for legacy records with no thread at all. */
   conversationId: string | null;
+  /** Read from the tags, since hand-written threads carry a conversationId too. */
+  origin: ConversationOrigin;
   cases: TestCase[];
-  /** First turn's message, used to make the conversation recognisable. */
-  preview: string;
 }
 
-const previewOf = (entry: TestCase): string => {
-  const message = (entry.input_data as Record<string, unknown>)?.message;
-  return typeof message === "string" ? message : JSON.stringify(entry.input_data ?? {});
+const originOf = (entry: TestCase): ConversationOrigin => {
+  if (entry.tags?.includes(IMPORTED_TAG)) return "conversation";
+  if (entry.tags?.includes(FILE_IMPORTED_TAG)) return "file";
+  return "manual";
 };
+
+/** When a conversation joined the dataset: its earliest turn. */
+const addedAt = (group: ConversationGroup): number =>
+  Math.min(
+    ...group.cases.map((entry) =>
+      entry.created_at ? Date.parse(entry.created_at) : 0,
+    ),
+  );
 
 /**
  * Group records by source conversation, ordered by turn.
@@ -30,21 +48,23 @@ export const groupCasesByConversation = (cases: TestCase[]): ConversationGroup[]
     if (existing) {
       existing.cases.push(entry);
     } else {
-      groups.set(key, { key, conversationId, cases: [entry], preview: "" });
+      groups.set(key, {
+        key,
+        conversationId,
+        origin: originOf(entry),
+        cases: [entry],
+      });
     }
   }
 
   const ordered = [...groups.values()];
   for (const group of ordered) {
     group.cases.sort((a, b) => (a.turn_index ?? 0) - (b.turn_index ?? 0));
-    group.preview = previewOf(group.cases[0]);
   }
 
-  // Imported conversations first; independent records trail behind them.
-  return ordered.sort((a, b) => {
-    if (!!a.conversationId === !!b.conversationId) return 0;
-    return a.conversationId ? -1 : 1;
-  });
+  // Oldest first, so a new conversation lands at the end rather than shuffling
+  // the list. Sorting is stable, so same-timestamp groups keep their order.
+  return ordered.sort((a, b) => addedAt(a) - addedAt(b));
 };
 
 export const countConversations = (cases: TestCase[]): number =>

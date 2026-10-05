@@ -89,6 +89,8 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
     >
       <ModelConfiguration
         id="sub-agent-config"
+        nodeId={props.nodeId}
+        nodeType={props.nodeType}
         config={values}
         onConfigChange={handleModelConfigChange}
         typeSelect="agent"
@@ -121,6 +123,7 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
               </Label>
               <Textarea
                 id="sub-agent-description"
+                size="description"
                 value={values.description || ""}
                 onChange={(e) => setField("description", e.target.value)}
                 placeholder="What this sub agent handles, e.g. searches flights and checks fares"

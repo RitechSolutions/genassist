@@ -40,6 +40,38 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
+    async def get_case_index_for_suite(
+        self, suite_id: UUID
+    ) -> List[Tuple[UUID, Optional[UUID], Optional[int]]]:
+        """(id, source_conversation_id, turn_index) per live case, same order as get_all_for_suite.
+        No JSONB—efficient for counting and windowing"""
+        stmt = (
+            select(
+                TestCaseModel.id,
+                TestCaseModel.source_conversation_id,
+                TestCaseModel.turn_index,
+            )
+            .where(TestCaseModel.suite_id == str(suite_id))
+            .order_by(TestCaseModel.id)
+        )
+        result = await self.db.execute(stmt)
+        return [
+            (row.id, row.source_conversation_id, row.turn_index) for row in result.all()
+        ]
+
+    async def get_cases_by_ids(
+        self, suite_id: UUID, case_ids: List[UUID]
+    ) -> List[TestCaseModel]:
+        """Fetch rows by ids; applies suite scope (DbRepository.get_by_ids doesn't)"""
+        if not case_ids:
+            return []
+        stmt = select(TestCaseModel).where(
+            TestCaseModel.suite_id == str(suite_id),
+            TestCaseModel.id.in_(case_ids),
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
     async def delete_all_for_suite(self, suite_id: UUID) -> None:
         await self.db.execute(
             delete(TestCaseModel).where(TestCaseModel.suite_id == str(suite_id))
@@ -76,6 +108,31 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         if commit:
             await self.db.flush()
 
+    async def get_conversation_membership(
+        self, conversation_id: UUID
+    ) -> List[Tuple[UUID, int, datetime]]:
+        """Per suite, how many turns of one conversation it holds and when they landed.
+
+        Only cases tagged ``imported`` count: a hand-authored thread carries a
+        generated source_conversation_id too, so the tag is what says the turns
+        came from a real conversation.
+        """
+        stmt = (
+            select(
+                TestCaseModel.suite_id,
+                func.count(TestCaseModel.id),
+                func.min(TestCaseModel.created_at),
+            )
+            .where(
+                TestCaseModel.source_conversation_id == conversation_id,
+                TestCaseModel.is_deleted == 0,
+                TestCaseModel.tags.contains(["imported"]),
+            )
+            .group_by(TestCaseModel.suite_id)
+        )
+        result = await self.db.execute(stmt)
+        return [(row[0], row[1], row[2]) for row in result.all()]
+
     async def create_many(self, cases: List[TestCaseModel]) -> List[TestCaseModel]:
         """Insert cases in a single transaction so a partial import cannot persist."""
         self.db.add_all(cases)
@@ -83,6 +140,11 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         for case in cases:
             await self.db.refresh(case)
         return cases
+
+    async def add_many(self, cases: List[TestCaseModel]) -> None:
+        """Insert cases in one flush without reading them back, for large imports."""
+        self.db.add_all(cases)
+        await self.db.flush()
 
 
 @inject
