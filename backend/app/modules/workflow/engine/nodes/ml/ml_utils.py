@@ -542,8 +542,8 @@ async def stream_rows_to_csv(
                         error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
                         error_detail=(
                             f"The {source_label} returned more than {max_rows:,} rows, "
-                            f"which exceeds the limit of {max_rows:,}. {limit_hint}, or raise "
-                            "ML_EXTRACT_MAX_ROWS."
+                            f"which exceeds the limit of {max_rows:,}. {limit_hint}, or ask "
+                            "an administrator to raise the row limit."
                         ),
                     )
 
@@ -601,8 +601,8 @@ def _enforce_stream_byte_limit(
         error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
         error_detail=(
             f"The {source_label} is {observed_bytes:,} bytes, which exceeds "
-            f"the limit of {max_bytes:,} bytes. {limit_hint}, or raise "
-            "ML_EXTRACT_MAX_BYTES."
+            f"the limit of {max_bytes:,} bytes. {limit_hint}, or ask an "
+            "administrator to raise the file-size limit."
         ),
     )
 
@@ -611,43 +611,51 @@ async def iter_csv_chunks(
     file_path: str, chunk_size: int
 ) -> AsyncIterable[Tuple[List[str], List[Tuple[Any, ...]]]]:
     """Yield CSV columns and rows while keeping only one chunk in memory."""
-    with open(
-        file_path,
-        "r",
-        encoding="utf-8",
-        errors="replace",
-        newline="",
-    ) as handle:
-        sample = handle.read(1024)
-        handle.seek(0)
-        try:
-            delimiter = csv.Sniffer().sniff(sample).delimiter
-        except Exception:
-            delimiter = ","
+    try:
+        with open(
+            file_path,
+            "r",
+            encoding="utf-8-sig",
+            newline="",
+        ) as handle:
+            sample = handle.read(1024)
+            handle.seek(0)
+            try:
+                delimiter = csv.Sniffer().sniff(sample).delimiter
+            except Exception:
+                delimiter = ","
 
-        reader = csv.DictReader(handle, delimiter=delimiter)
-        columns = list(dict.fromkeys(reader.fieldnames or []))
-        yield columns, []
+            reader = csv.DictReader(handle, delimiter=delimiter)
+            columns = list(dict.fromkeys(reader.fieldnames or []))
+            yield columns, []
 
-        batch: List[Tuple[Any, ...]] = []
-        for row in reader:
-            if None in row:
-                raise AppException(
-                    error_key=ErrorKey.INVALID_FILE_FORMAT,
-                    error_detail=(
-                        f"Line {reader.line_num} has more values than the header has columns."
-                    ),
+            batch: List[Tuple[Any, ...]] = []
+            for row in reader:
+                if None in row:
+                    raise AppException(
+                        error_key=ErrorKey.INVALID_FILE_FORMAT,
+                        error_detail=(
+                            f"Line {reader.line_num} has more values than the header has columns."
+                        ),
+                    )
+                batch.append(
+                    tuple(None if row[column] == "" else row[column] for column in columns)
                 )
-            batch.append(
-                tuple(None if row[column] == "" else row[column] for column in columns)
-            )
-            if len(batch) >= chunk_size:
-                yield columns, batch
-                batch = []
-                await asyncio.sleep(0)
+                if len(batch) >= chunk_size:
+                    yield columns, batch
+                    batch = []
+                    await asyncio.sleep(0)
 
-        if batch:
-            yield columns, batch
+            if batch:
+                yield columns, batch
+    except UnicodeDecodeError:
+        raise AppException(
+            error_key=ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID,
+            error_detail=(
+                "The uploaded CSV could not be decoded as UTF-8. "
+                "Save it with UTF-8 encoding and upload it again."
+            ),
+        ) from None
 
 
 async def iter_record_chunks(

@@ -9,7 +9,10 @@ import {
 import { Button } from "@/components/button";
 import { Play, X } from "lucide-react";
 import { NodeData, HumanInTheLoopNodeData } from "../types/nodes";
-import { testNode } from "@/services/workflows";
+import {
+  getTrainDataSourceTestFailureMessage,
+  testNode,
+} from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { SchemaField, SchemaType } from "../types/schemas";
@@ -261,6 +264,10 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         node_config: nodeData,
       });
 
+      if (nodeType === "trainDataSourceNode") {
+        setError(getTrainDataSourceTestFailureMessage(response));
+      }
+
       if (response && response.output !== undefined) {
         const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
         setOutput(Object.assign({}, response, { output: truncatedOutput }));
@@ -367,6 +374,9 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         node_config: nodeData,
       });
 
+      if (nodeType === "trainDataSourceNode") {
+        setError(getTrainDataSourceTestFailureMessage(response));
+      }
 
       if (response && response.output !== undefined) {
         const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;

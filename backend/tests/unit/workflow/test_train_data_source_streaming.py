@@ -249,7 +249,7 @@ async def test_mysql_executable_comment_never_executes():
 
 
 @pytest.mark.asyncio
-async def test_database_failure_after_valid_sql_stays_internal(monkeypatch):
+async def test_database_failure_after_valid_sql_hides_driver_details(monkeypatch):
     monkeypatch.setenv("ENV", "prod")
     db_manager = _db_manager()
     async def fail_stream(*_args, **_kwargs):
@@ -261,9 +261,13 @@ async def test_database_failure_after_valid_sql_stays_internal(monkeypatch):
         with pytest.raises(AppException) as exc_info:
             await _node().process(_config("SELECT 1"))
 
-    assert exc_info.value.error_key == ErrorKey.INTERNAL_ERROR
-    assert "password=secret" in exc_info.value.error_detail
-    assert _response_error_detail(exc_info.value) is None
+    assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_QUERY_FAILED
+    assert exc_info.value.error_detail == (
+        "Could not run the query on the selected data source. "
+        "Check the query and connection settings."
+    )
+    assert "password=secret" not in exc_info.value.error_detail
+    assert _response_error_detail(exc_info.value) == exc_info.value.error_detail
     db_manager.stream_query.assert_called_once_with("SELECT 1", chunk_size=2_000)
 
 
