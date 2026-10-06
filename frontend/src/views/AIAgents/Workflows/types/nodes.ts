@@ -649,17 +649,25 @@ export interface MissingValueHandlingConfig {
 }
 
 // Feature engineering: lives on the Train Model node (not the pre-split
-// Preprocessing node) because bin_numeric/normalize/standardize/polynomial
-// fit bin edges or scaling stats from the data, so fitting them on the full
-// dataset before the split leaks validation-row statistics into training.
-// custom_expression is a deterministic per-row formula with nothing fit from
-// data, but stays here too so all feature configuration lives in one place.
+// Preprocessing node) because bin_numeric and polynomial are fit on the data,
+// so fitting them on the full dataset before the split leaks validation rows
+// into training. custom_expression is a deterministic per-row formula with
+// nothing fit from data, but stays here too so inference replays it with the
+// rest. "normalize"/"standardize" are retired (Scaling Method already does
+// this) - kept in the type only so features saved with them still load; see
+// featureEngineeringStrategies.ts.
 export type FeatureEngineeringStrategy =
   | "custom_expression"
   | "bin_numeric"
-  | "normalize"
-  | "standardize"
-  | "polynomial";
+  | "normalize" // retired
+  | "standardize" // retired
+  | "polynomial"
+  // Column transforms of numeric sourceColumns - fit (where anything is fit)
+  // on the training split only, replayed at inference.
+  | "log_transform" // log(1 + x), values must be >= 0
+  | "quantile_transform" // sklearn QuantileTransformer
+  | "power_transform" // sklearn PowerTransformer (Yeo-Johnson / Box-Cox)
+  | "pca"; // [StandardScaler +] PCA -> newColumnName_1..k
 
 export interface FeatureEngineeringItem {
   id: string;
@@ -671,6 +679,15 @@ export interface FeatureEngineeringItem {
   binColumn?: string;
   polynomialDegree?: number;
   polynomialColumns?: string[];
+  // Column transforms (log/quantile/power/PCA) read sourceColumns, plus:
+  quantileOutputDistribution?: "uniform" | "normal";
+  nQuantiles?: number;
+  powerMethod?: "yeo-johnson" | "box-cox";
+  pcaComponents?: number; // whole number of components, or a 0-1 share of variance to keep
+  pcaStandardize?: boolean;
+  // Train on the transformed columns instead of the originals (default: on for
+  // PCA, off otherwise). Originals are still needed as inputs at prediction.
+  replaceSourceColumns?: boolean;
 }
 
 export interface FeatureEngineeringConfig {

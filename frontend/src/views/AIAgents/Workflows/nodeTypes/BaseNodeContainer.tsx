@@ -13,7 +13,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import nodeRegistry from "../registry/nodeRegistry";
 import { useNodeValidation } from "../hooks/useNodeValidation";
 import { NodeContent, NodeContentRow } from "./nodeContent";
-import { NodeAlert } from "./nodeAlert";
+import { CompactNodeAlert, NodeAlert } from "./nodeAlert";
 import {
   Dialog,
   DialogClose,
@@ -38,7 +38,6 @@ import {
 } from "../utils/helpHeaderGradients";
 import { getNodeDocsUrl } from "../utils/nodeDocsLinks";
 import {
-  CircleAlert,
   ExternalLink,
   MoreVertical,
   Play,
@@ -482,7 +481,11 @@ const BaseNodeContainer = <T extends NodeData>({
         {/* Not-tested / validation indicator — a small alert badge in the
             bottom-right corner; the node keeps its own centered icon. */}
         {hasError && (
-          <CircleAlert className="absolute bottom-2.5 right-2.5 h-5 w-5 text-red-500" />
+          <CompactNodeAlert
+            missingFields={missingFields}
+            onFix={onSettings}
+            onTest={handleTest}
+          />
         )}
 
         {/* Handlers anchor to this tile */}

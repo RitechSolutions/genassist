@@ -4,12 +4,15 @@ Utility functions for ML workflow nodes.
 This module contains shared functionality used across ML-related nodes.
 """
 
+import ast
 import asyncio
 import csv
 import json
+import keyword
 import logging
 import math
 import os
+import re
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
@@ -390,6 +393,77 @@ def normalize_dtypes_for_training(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# df["col"] / df['col'] column references, as the Custom Expression field
+# used to suggest.
+_DF_COLUMN_REFERENCE = re.compile(r"""\bdf\s*\[\s*(["'])(.*?)\1\s*\]""")
+
+
+def normalize_feature_expression(expression: str) -> str:
+    """Rewrite df["col"] / df['col'] references to the plain column names
+    DataFrame.eval understands.
+
+    Custom Expression features are evaluated with DataFrame.eval, where
+    columns are referenced by name (price * quantity) and there is no `df`
+    variable - but the Train Model dialog used to suggest df["column_name"],
+    so expressions written that way failed with "name 'df' is not defined".
+    A name that isn't a valid identifier (e.g. it has a space) becomes a
+    backtick-quoted reference, which DataFrame.eval also supports.
+    """
+    def to_name(match: "re.Match[str]") -> str:
+        name = match.group(2)
+        return name if name.isidentifier() and not keyword.iskeyword(name) else f"`{name}`"
+
+    return _DF_COLUMN_REFERENCE.sub(to_name, expression or "")
+
+
+# Feature engineering strategies that turn numeric source columns into new
+# numeric columns through a (possibly fitted) transform. Labels are what the
+# Train Model dialog shows, used in error messages.
+COLUMN_TRANSFORM_STRATEGY_LABELS = {
+    "log_transform": "Log Transform",
+    "quantile_transform": "Quantile Transformer",
+    "power_transform": "Power Transformer",
+    "pca": "PCA",
+}
+
+
+def column_transform_value_problem(
+    strategy: str, values: np.ndarray, columns: List[str], power_method: Optional[str] = None
+) -> Optional[str]:
+    """Why `values` can't go through this transform, or None if they can.
+
+    Shared by training and inference, so a value that would be rejected at
+    training is rejected the same way at prediction time.
+    """
+    non_finite = ~np.isfinite(values)
+    if non_finite.any():
+        counts = {c: int(n) for c, n in zip(columns, non_finite.sum(axis=0)) if n}
+        return f"empty or infinite values in {counts}"
+    if strategy == "log_transform":
+        negative = values < 0
+        if negative.any():
+            counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
+            return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
+    if strategy == "power_transform" and power_method == "box-cox":
+        not_positive = values <= 0
+        if not_positive.any():
+            counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
+            return (
+                f"Box-Cox needs values above 0; values of 0 or less in {counts}. "
+                "Use the Yeo-Johnson method instead, which accepts any value"
+            )
+    return None
+
+
+def apply_column_transform(strategy: str, transformer: Any, values: np.ndarray) -> np.ndarray:
+    """Apply a column-transform feature: log(1 + x) for Log Transform, else
+    the transformer fitted on the training split (QuantileTransformer,
+    PowerTransformer, or a [StandardScaler +] PCA pipeline)."""
+    if strategy == "log_transform":
+        return np.log1p(values)
+    return transformer.transform(values)
+
+
 def ordinal_key(value: Any) -> Optional[str]:
     """Normalize a value for ordinal-mapping lookup.
 
@@ -541,8 +615,8 @@ async def stream_rows_to_csv(
                         error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
                         error_detail=(
                             f"The {source_label} returned more than {max_rows:,} rows, "
-                            f"which exceeds the limit of {max_rows:,}. {limit_hint}, or raise "
-                            "ML_EXTRACT_MAX_ROWS."
+                            f"which exceeds the limit of {max_rows:,}. {limit_hint}, or ask "
+                            "an administrator to raise the row limit."
                         ),
                     )
 
@@ -600,8 +674,8 @@ def _enforce_stream_byte_limit(
         error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
         error_detail=(
             f"The {source_label} is {observed_bytes:,} bytes, which exceeds "
-            f"the limit of {max_bytes:,} bytes. {limit_hint}, or raise "
-            "ML_EXTRACT_MAX_BYTES."
+            f"the limit of {max_bytes:,} bytes. {limit_hint}, or ask an "
+            "administrator to raise the file-size limit."
         ),
     )
 
@@ -610,43 +684,51 @@ async def iter_csv_chunks(
     file_path: str, chunk_size: int
 ) -> AsyncIterable[Tuple[List[str], List[Tuple[Any, ...]]]]:
     """Yield CSV columns and rows while keeping only one chunk in memory."""
-    with open(
-        file_path,
-        "r",
-        encoding="utf-8",
-        errors="replace",
-        newline="",
-    ) as handle:
-        sample = handle.read(1024)
-        handle.seek(0)
-        try:
-            delimiter = csv.Sniffer().sniff(sample).delimiter
-        except Exception:
-            delimiter = ","
+    try:
+        with open(
+            file_path,
+            "r",
+            encoding="utf-8-sig",
+            newline="",
+        ) as handle:
+            sample = handle.read(1024)
+            handle.seek(0)
+            try:
+                delimiter = csv.Sniffer().sniff(sample).delimiter
+            except Exception:
+                delimiter = ","
 
-        reader = csv.DictReader(handle, delimiter=delimiter)
-        columns = list(dict.fromkeys(reader.fieldnames or []))
-        yield columns, []
+            reader = csv.DictReader(handle, delimiter=delimiter)
+            columns = list(dict.fromkeys(reader.fieldnames or []))
+            yield columns, []
 
-        batch: List[Tuple[Any, ...]] = []
-        for row in reader:
-            if None in row:
-                raise AppException(
-                    error_key=ErrorKey.INVALID_FILE_FORMAT,
-                    error_detail=(
-                        f"Line {reader.line_num} has more values than the header has columns."
-                    ),
+            batch: List[Tuple[Any, ...]] = []
+            for row in reader:
+                if None in row:
+                    raise AppException(
+                        error_key=ErrorKey.INVALID_FILE_FORMAT,
+                        error_detail=(
+                            f"Line {reader.line_num} has more values than the header has columns."
+                        ),
+                    )
+                batch.append(
+                    tuple(None if row[column] == "" else row[column] for column in columns)
                 )
-            batch.append(
-                tuple(None if row[column] == "" else row[column] for column in columns)
-            )
-            if len(batch) >= chunk_size:
-                yield columns, batch
-                batch = []
-                await asyncio.sleep(0)
+                if len(batch) >= chunk_size:
+                    yield columns, batch
+                    batch = []
+                    await asyncio.sleep(0)
 
-        if batch:
-            yield columns, batch
+            if batch:
+                yield columns, batch
+    except UnicodeDecodeError:
+        raise AppException(
+            error_key=ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID,
+            error_detail=(
+                "The uploaded CSV could not be decoded as UTF-8. "
+                "Save it with UTF-8 encoding and upload it again."
+            ),
+        ) from None
 
 
 async def iter_record_chunks(
@@ -854,9 +936,7 @@ def resolve_csv_file_path(
         ) from e
 
 
-def load_csv_file(
-    file_url: str, thread_id: Optional[str] = None
-) -> Tuple[List[Dict[str, Any]], pd.DataFrame]:
+def load_csv_file(file_url: str, thread_id: Optional[str] = None) -> pd.DataFrame:
     """
     Load data from a CSV file URL/path.
 
@@ -865,7 +945,7 @@ def load_csv_file(
         thread_id: Optional thread ID for relative path resolution
 
     Returns:
-        Tuple of (data as list of dicts, DataFrame)
+        DataFrame
 
     Raises:
         AppException: If file cannot be loaded
@@ -875,11 +955,10 @@ def load_csv_file(
 
         # Load CSV file using pandas (with any saved column types reapplied)
         df = read_csv_with_dtypes(file_path, encoding="utf-8")
-        data = df.to_dict("records")
 
-        logger.info(f"Loaded {len(data)} rows from {file_path}")
+        logger.info(f"Loaded {len(df)} rows from {file_path}")
 
-        return data, df
+        return df
 
     except AppException:
         raise
@@ -891,9 +970,52 @@ def load_csv_file(
         ) from e
 
 
+_PREPROCESS_MAX_RESULT_BYTES = 128 * 1024 * 1024
+
+# Runs in the sandbox before a preprocessing script that names params["data"], rebuilding it from df
+_DATA_FROM_DF = """
+if params.get("df") is not None:
+    params["data"] = params["df"].to_dict("records")
+"""
+
+
+def _names_data(python_code: str) -> bool:
+    try:
+        tree = ast.parse(python_code)
+    except SyntaxError:
+        return False
+    dict_keys = {key for node in ast.walk(tree) if isinstance(node, ast.Dict) for key in node.keys}
+    return any(
+        isinstance(node, ast.Constant) and node.value == "data" and node not in dict_keys for node in ast.walk(tree)
+    )
+
+
+# Marker _subprocess_worker puts before an exception the user's code raised,
+# after whatever else was written to stderr (e.g. pandas warnings).
+_USER_EXCEPTION_MARKER = "Global errors: "
+_WRAPPER_ERROR_PREFIX = "Error processing parameters: "
+
+
+def _format_user_code_error(stderr_output: str) -> str:
+    """The error to show for a run that returned no result.
+
+    stderr holds any warnings first and the user's exception last, so the
+    real error would otherwise be buried under e.g. a pandas FutureWarning
+    the user can ignore. Puts the exception (message + traceback) first and
+    any other stderr output after it, under "Warnings:".
+    """
+    if _USER_EXCEPTION_MARKER not in stderr_output:
+        return stderr_output.strip()
+    warnings_text, _, error_text = stderr_output.partition(_USER_EXCEPTION_MARKER)
+    error_text = error_text.strip()
+    if error_text.startswith(_WRAPPER_ERROR_PREFIX):
+        error_text = error_text[len(_WRAPPER_ERROR_PREFIX):]
+    warnings_text = warnings_text.strip()
+    return f"{error_text}\n\nWarnings:\n{warnings_text}" if warnings_text else error_text
+
+
 async def execute_and_process_preprocessing_code(
     python_code: str,
-    data: Optional[List[Dict[str, Any]]],
     df: Optional[pd.DataFrame],
     file_url: str,
     raise_on_error: bool = True,
@@ -903,7 +1025,6 @@ async def execute_and_process_preprocessing_code(
 
     Args:
         python_code: Python code for data preprocessing
-        data: Optional list of dictionaries representing the data rows
         df: Optional pandas DataFrame
         file_url: URL or path to the file
         raise_on_error: If True, raise AppException on errors. If False, return error info.
@@ -915,51 +1036,39 @@ async def execute_and_process_preprocessing_code(
     Raises:
         AppException: If code execution fails or result cannot be processed (only if raise_on_error=True)
     """
-    from app.modules.workflow.utils import execute_python_code
+    from app.modules.workflow.utils import execute_python_code, script_error
 
     # Prepare parameters for Python code execution
     params = {
-        "data": data,
+        "data": None,
         "df": df,
         "fileUrl": file_url,
     }
 
     # Execute the preprocessing Python code
-    response = await execute_python_code(python_code, params, wrap_code=True)
+    response = await execute_python_code(
+        python_code,
+        params,
+        wrap_code=True,
+        max_result_bytes=_PREPROCESS_MAX_RESULT_BYTES,
+        prelude=_DATA_FROM_DF if _names_data(python_code) else "",
+    )
 
-    # A hard failure (syntax error, blocked import, timeout, uncaught
-    # exception) is reported under "error" (singular) - see
-    # _subprocess_worker/_execute_python_code_sync. This is the authoritative,
-    # specific message for why execution didn't produce a result, so surface
-    # it directly instead of falling through to a generic "Got: NoneType"
-    # guess based on whatever ended up in "result".
-    hard_error = response.get("error")
-    if hard_error:
+    # Library warnings land in stderr, so only a runner error or a raised script counts as failure
+    failure = script_error(response)
+    if failure:
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {hard_error}",
+                error_detail=f"Error executing preprocessing code: {failure}",
             )
         else:
-            return None, hard_error, response
+            return None, failure, response
 
-    # "errors" (plural) is captured stderr output plus, under "Global errors:",
-    # any exception the user's code raised: wrap_code=True runs it inside a
-    # try/except (add_executable_function) that catches the exception into an
-    # `errors` variable instead of letting it reach "error" above. So:
-    # - result present: stderr is just warning noise (e.g. a pandas
-    #   FutureWarning, printed to stderr by default) - logged, not a failure.
-    # - no result: stderr holds the reason it's missing (the user's
-    #   exception + traceback), so it is the failure - surfacing it is what
-    #   keeps a ValueError in user code from becoming "Got: NoneType".
     stderr_output = response.get("errors")
     result = response.get("result")
     if stderr_output and result is None:
-        user_error = (
-            stderr_output.replace("Global errors: ", "", 1)
-            .replace("Error processing parameters: ", "", 1)
-            .strip()
-        )
+        user_error = _format_user_code_error(stderr_output)
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,

@@ -1179,8 +1179,8 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 
 ### trainDataSourceNode — Train Data Source
 **Category:** ML
-**Purpose:** Loads training data from a data source for ML training pipelines.
-**Use cases:** Loading CSV datasets, querying databases for training data.
+**Purpose:** Loads training data from a database query or uploaded file for ML training pipelines.
+**Use cases:** Loading uploaded datasets, querying databases for training data.
 
 **Handlers:**
 | ID | Type | Position | Compatibility |
@@ -1191,21 +1191,21 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 **Config:**
 | Field | Type | Required | Description |
 |---|---|---|---|
-| sourceType | select | Yes | Type of data source: "datasource" (database) or "csv" (file upload) |
+| sourceType | select | Yes | Type of data source: "datasource" (database) or "csv" (uploaded file) |
 | name | text | No | Node name |
-| dataSourceId | select | No | Data source ID (required when sourceType="datasource") |
+| dataSourceId | text | No | Data source ID (required when sourceType="datasource") |
 | query | text | No | SQL query for data extraction (required when sourceType="datasource") |
-| csvFileName | text | No | Name of the uploaded CSV file (when sourceType="csv") |
-| csvFilePath | text | No | Server path to the uploaded CSV file |
-| csvFileId | text | No | ID of the uploaded CSV file |
-| csvFileUrl | text | No | URL of the uploaded CSV file |
+| csvFileName | text | No | Original name of the uploaded training file |
+| csvFilePath | text | No | Server path to the uploaded training file |
+| csvFileId | text | No | File Manager ID of the uploaded training file |
+| csvFileUrl | text | No | File Manager URL of the uploaded training file |
 
 ---
 
 ### preprocessingNode — Preprocessing
 **Category:** ML
-**Purpose:** Preprocesses data for ML model training. Applies transformations using custom Python code.
-**Use cases:** Data cleaning, feature engineering, handling missing values and outliers.
+**Purpose:** Cleans the dataset before model training: column filter, remove duplicate rows, remove columns/rows, remove mostly-empty columns, change column data types, plus custom Python code.
+**Use cases:** Removing duplicates and unneeded columns, fixing data types. Missing values, outliers, encoding, feature engineering and scaling belong on trainModelNode, where they are fit on the training split only.
 
 **Handlers:**
 | ID | Type | Position | Compatibility |
@@ -1243,6 +1243,9 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 | validationSplit | number | Yes | Train/test split ratio (default: 0.2, range: 0.1–0.5) |
 | name | text | No | Node name |
 | modelParameters | object | No | Model-specific hyperparameters |
+| missingValueHandling | list | No | Per-column `{columnName, strategy}`: drop_rows, drop_column, impute_constant (+ imputeValue), impute_mean, impute_median, impute_mode. Remaining missing values are always filled automatically (median / most frequent) before feature engineering |
+| featureEngineering | list | No | Derived features `{newColumnName, strategy, ...}`: custom_expression (expression, e.g. `price * quantity`), bin_numeric (binColumn, numBins), polynomial (polynomialColumns, polynomialDegree), log_transform (sourceColumns; log(1 + x), values ≥ 0), quantile_transform (sourceColumns, quantileOutputDistribution uniform/normal, nQuantiles), power_transform (sourceColumns, powerMethod yeo-johnson/box-cox), pca (sourceColumns ≥ 2, pcaComponents, pcaStandardize). Column transforms accept replaceSourceColumns (default true for pca). normalize/standardize are retired - use scalingMethod |
+| scalingMethod | select | No | auto, standard, minmax, maxabs, robust, none - applied to all numeric features after feature engineering |
 
 ---
 
