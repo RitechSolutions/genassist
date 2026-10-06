@@ -1125,8 +1125,8 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 
 ### preprocessingNode — Preprocessing
 **Category:** ML
-**Purpose:** Preprocesses data for ML model training. Applies transformations using custom Python code.
-**Use cases:** Data cleaning, feature engineering, handling missing values and outliers.
+**Purpose:** Cleans the dataset before model training: column filter, remove duplicate rows, remove columns/rows, remove mostly-empty columns, change column data types, plus custom Python code.
+**Use cases:** Removing duplicates and unneeded columns, fixing data types. Missing values, outliers, encoding, feature engineering and scaling belong on trainModelNode, where they are fit on the training split only.
 
 **Handlers:**
 | ID | Type | Position | Compatibility |
@@ -1164,6 +1164,9 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 | validationSplit | number | Yes | Train/test split ratio (default: 0.2, range: 0.1–0.5) |
 | name | text | No | Node name |
 | modelParameters | object | No | Model-specific hyperparameters |
+| missingValueHandling | list | No | Per-column `{columnName, strategy}`: drop_rows, drop_column, impute_constant (+ imputeValue), impute_mean, impute_median, impute_mode. Remaining missing values are always filled automatically (median / most frequent) before feature engineering |
+| featureEngineering | list | No | Derived features `{newColumnName, strategy, ...}`: custom_expression (expression, e.g. `price * quantity`), bin_numeric (binColumn, numBins), polynomial (polynomialColumns, polynomialDegree), log_transform (sourceColumns; log(1 + x), values ≥ 0), quantile_transform (sourceColumns, quantileOutputDistribution uniform/normal, nQuantiles), power_transform (sourceColumns, powerMethod yeo-johnson/box-cox), pca (sourceColumns ≥ 2, pcaComponents, pcaStandardize). Column transforms accept replaceSourceColumns (default true for pca). normalize/standardize are retired - use scalingMethod |
+| scalingMethod | select | No | auto, standard, minmax, maxabs, robust, none - applied to all numeric features after feature engineering |
 
 ---
 
