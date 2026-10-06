@@ -35,6 +35,9 @@ STUCK_TEST_RUN_ERROR = (
     "Run stopped unexpectedly (its worker crashed or was restarted) and was "
     "marked failed by the reconciliation job."
 )
+UNSTARTED_TEST_RUN_ERROR = (
+    "No worker picked up this run. Check that a worker is listening on the ml queue."
+)
 STUCK_WORKFLOW_RUN_ERROR = (
     "Run did not complete — the worker/pod was lost or restarted "
     "mid-execution and the task was not resumed."
@@ -53,6 +56,8 @@ class RunReconciliation:
     waiting_max_age_seconds: int
     running_max_age_seconds: int
     error_message: str
+    # Reason given to a run that never started; defaults to error_message.
+    waiting_error_message: Optional[str] = None
 
 
 def run_id_from_message(raw, task_name: str) -> Optional[str]:
@@ -117,10 +122,14 @@ async def _reconcile_runs(spec: RunReconciliation) -> None:
         try:
             repository = spec.repository(session)
             candidates = await repository.get_waiting_ids_older_than(waiting_before)
+            messages = {"error_message": spec.error_message}
+            # Only repositories that can tell the two apart get the second message.
+            if spec.waiting_error_message:
+                messages["waiting_error_message"] = spec.waiting_error_message
             failed = await repository.mark_orphaned_as_failed(
                 waiting_ids=await orphaned_waiting_runs(candidates, spec.task_name),
                 running_before=running_before,
-                error_message=spec.error_message,
+                **messages,
             )
             # Repos only flush; this out-of-band session owns its commit
             await session.commit()
@@ -147,6 +156,7 @@ async def reconcile_stuck_test_runs_async() -> None:
             waiting_max_age_seconds=settings.TEST_RUN_QUEUED_MAX_AGE_SECONDS,
             running_max_age_seconds=settings.TEST_RUN_RUNNING_MAX_AGE_SECONDS,
             error_message=STUCK_TEST_RUN_ERROR,
+            waiting_error_message=UNSTARTED_TEST_RUN_ERROR,
         )
     )
 

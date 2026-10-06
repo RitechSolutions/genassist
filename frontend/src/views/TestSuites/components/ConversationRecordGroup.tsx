@@ -18,6 +18,7 @@ import type { TestCase } from "@/interfaces/testSuite.interface";
 import type {
   ConversationGroup,
   ConversationOrigin,
+  PositionedTurn,
 } from "../helpers/datasetConversations";
 import { answerOf, hasExpected, isPlainRecord, questionOf } from "../helpers/recordFields";
 
@@ -92,6 +93,10 @@ const RecordBody: React.FC<{ entry: TestCase }> = ({ entry }) => {
 
 interface ConversationRecordGroupProps {
   group: ConversationGroup;
+  /** The conversation's name, unique within the dataset. */
+  label: string;
+  /** Turns to show, with their positions in the whole conversation. Defaults to all. */
+  turns?: PositionedTurn[];
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   expandedRecords: Set<string>;
@@ -113,6 +118,8 @@ interface ConversationRecordGroupProps {
 
 export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = ({
   group,
+  label,
+  turns,
   isCollapsed,
   onToggleCollapse,
   expandedRecords,
@@ -124,10 +131,8 @@ export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = (
   onAddTurn,
 }) => {
   const turnLabel = `${group.cases.length} turn${group.cases.length === 1 ? "" : "s"}`;
-  // Named by its own id, which never changes. A position-based number would
-  // shift every time a conversation above it was deleted.
-  const shortId = (group.conversationId ?? group.cases[0]?.id ?? "").slice(-6);
-  const name = `Conversation #${shortId}`;
+  const visibleTurns =
+    turns ?? group.cases.map((entry, index) => ({ entry, position: index + 1 }));
   const origin = ORIGINS[group.origin];
   // Both actions can be meaningful at once when only some turns are open, so
   // each is offered separately and disabled only when it would do nothing.
@@ -158,7 +163,7 @@ export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = (
           >
             <origin.Icon className={`h-4 w-4 ${origin.iconClass}`} />
           </span>
-          <div className="min-w-0 text-sm font-medium truncate">{name}</div>
+          <div className="min-w-0 text-sm font-medium truncate">{label}</div>
           {/* Describes the conversation, so it sits with the title rather than
               among the buttons that act on it. */}
           {/* Carries the card's own ground, not the hover ground, so it stays
@@ -194,7 +199,7 @@ export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = (
                 e.stopPropagation();
                 onRemoveConversation({
                   id: group.conversationId as string,
-                  label: name,
+                  label,
                   turns: group.cases.length,
                 });
               }}
@@ -233,7 +238,7 @@ export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = (
             </div>
           )}
           <div className="space-y-2 p-4">
-            {group.cases.map((entry, index) => {
+            {visibleTurns.map(({ entry, position }) => {
               const isExpanded = expandedRecords.has(entry.id ?? "");
               return (
                 <div
@@ -258,7 +263,7 @@ export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = (
                           rest rather than leaving a gap. The stored turn_index
                           keeps its value, since that is what rules target. */}
                       <span className="shrink-0 text-sm font-medium">
-                        Turn {index + 1}
+                        Turn {position}
                       </span>
                     </div>
                     <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -266,7 +271,7 @@ export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = (
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        aria-label={`Edit turn ${index + 1}`}
+                        aria-label={`Edit turn ${position}`}
                         onClick={() => onEdit(entry)}
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -275,8 +280,8 @@ export const ConversationRecordGroup: React.FC<ConversationRecordGroupProps> = (
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7 text-red-500"
-                        aria-label={`Delete turn ${index + 1}`}
-                        onClick={() => onDelete(entry, index + 1)}
+                        aria-label={`Delete turn ${position}`}
+                        onClick={() => onDelete(entry, position)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
