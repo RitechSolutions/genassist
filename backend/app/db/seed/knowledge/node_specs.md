@@ -1100,8 +1100,8 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 
 ### trainDataSourceNode — Train Data Source
 **Category:** ML
-**Purpose:** Loads training data from a data source for ML training pipelines.
-**Use cases:** Loading CSV datasets, querying databases for training data.
+**Purpose:** Loads training data from a database query or uploaded file for ML training pipelines.
+**Use cases:** Loading uploaded datasets, querying databases for training data.
 
 **Handlers:**
 | ID | Type | Position | Compatibility |
@@ -1112,14 +1112,14 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 **Config:**
 | Field | Type | Required | Description |
 |---|---|---|---|
-| sourceType | select | Yes | Type of data source: "datasource" (database) or "csv" (file upload) |
+| sourceType | select | Yes | Type of data source: "datasource" (database) or "csv" (uploaded file) |
 | name | text | No | Node name |
-| dataSourceId | select | No | Data source ID (required when sourceType="datasource") |
+| dataSourceId | text | No | Data source ID (required when sourceType="datasource") |
 | query | text | No | SQL query for data extraction (required when sourceType="datasource") |
-| csvFileName | text | No | Name of the uploaded CSV file (when sourceType="csv") |
-| csvFilePath | text | No | Server path to the uploaded CSV file |
-| csvFileId | text | No | ID of the uploaded CSV file |
-| csvFileUrl | text | No | URL of the uploaded CSV file |
+| csvFileName | text | No | Original name of the uploaded training file |
+| csvFilePath | text | No | Server path to the uploaded training file |
+| csvFileId | text | No | File Manager ID of the uploaded training file |
+| csvFileUrl | text | No | File Manager URL of the uploaded training file |
 
 ---
 
