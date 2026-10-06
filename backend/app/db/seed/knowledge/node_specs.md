@@ -228,7 +228,7 @@ These rules are **non-negotiable**. Violating any of them produces a broken work
 - The body is everything reachable from `output_loop`. Its last node MUST connect back to the Loop's `input_loop`; that node's output is the iteration's result.
 - Nodes that run after the loop connect from `output_done` ONLY. A body node must never connect to them directly.
 - The first body node reads the current item as `{{source.item}}`; deeper body nodes use `{{node_outputs.<loop_id>.item}}`.
-- `humanInTheLoopNode` is not allowed inside a loop body.
+- `humanInTheLoopNode` is not allowed inside a loop body. An `agentNode` inside a body must not have a `task` or `chat` sub-agent, nor a tool whose sub-flow contains a `humanInTheLoopNode` (`single_turn` sub-agents are fine).
 - Always set `maxIterations`. A `filterNode` inside the body skips the current item.
 
 ### Tool Connection Rules

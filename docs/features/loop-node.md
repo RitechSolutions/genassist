@@ -29,9 +29,9 @@ Rules, enforced on the canvas and again when the workflow is saved:
 - A connection may only close a cycle through a Loop's **Loop back** input.
 - Only a node that runs inside the loop can connect to its Loop back input.
 - Nodes that run after the loop are connected from **Done** only; a body node cannot feed them directly.
-- A Human in the Loop node cannot sit inside a loop body, because a paused run cannot be resumed mid-loop.
+- Nothing that pauses the run for user input can run inside a loop body, because a paused run cannot be resumed mid-loop. That rules out a Human in the Loop node in the body, and for an agent in the body: a **task** or **chat** sub-agent (at any depth), and a tool whose sub-flow reaches a Human in the Loop node. Agents with ordinary tools and **single turn** sub-agents are fine.
 
-Loops can be nested. A Filter inside the body skips the current item. If nothing is connected to Loop back, the last body node that ran provides the result.
+Loops can be nested. A nested loop deals with failures in its own body: one it carries on past (`onError: continue`) is not a failure of the outer pass, one that stops it is. A Filter inside the body skips the current item. If nothing is connected to Loop back, the last body node that ran provides the result.
 
 ## Configuration
 

@@ -14,7 +14,7 @@ Handles are matched exactly, never by substring.
 """
 
 from collections import defaultdict
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 LOOP_NODE_TYPE = "loopNode"
 LOOP_BODY_HANDLE = "output_loop"
@@ -25,8 +25,16 @@ LOOP_BACK_HANDLE = "input_loop"
 # paused node, so the loop's position (item, iteration, collected results) is lost.
 NODE_TYPES_NOT_ALLOWED_IN_LOOP = frozenset({"humanInTheLoopNode"})
 
+# A body node can also pause through what is attached to it: a task/chat
+# sub-agent hands the conversation to the user, and a tool's sub-flow can reach
+# a node that pauses. A single-turn sub-agent answers within the pass.
+_SUB_AGENT_NODE_TYPE = "subAgentNode"
+_INTERACTIVE_SUB_AGENT_MODES = frozenset({"task", "chat"})
+
 # Handle of the child → parent delegation edge; never part of the main flow.
 _SUB_AGENT_HANDLE = "output_sub_agent"
+# Target handles through which a tool or a sub-agent is attached to an agent.
+_ATTACHMENT_HANDLES = frozenset({"input_tools", "input_sub_agents"})
 
 
 class LoopTopologyError(ValueError):
@@ -87,6 +95,49 @@ def loop_body(loop_id: str, source_edges: Dict[str, List[dict]]) -> Set[str]:
     return reachable_from(handle_targets(loop_id, LOOP_BODY_HANDLE, source_edges), source_edges, {loop_id})
 
 
+def pausing_node_in_body(
+    loop_id: str,
+    body: Set[str],
+    nodes_by_id: Dict[Any, dict],
+    source_edges: Dict[str, List[dict]],
+    target_edges: Dict[str, List[dict]],
+) -> Optional[Tuple[str, str]]:
+    """A node that can pause the run during a pass, as ``(node, body node)``.
+
+    Looks at the body and at everything its nodes run on demand: the tools and
+    sub-agents attached to them, and the tools' sub-flows. ``body node`` is the
+    one it is reached from (the node itself when it sits in the body).
+    """
+    owner: Dict[str, str] = {}
+    stack = [(node_id, node_id) for node_id in sorted(body, reverse=True)]
+    while stack:
+        node_id, body_node = stack.pop()
+        if node_id in owner or node_id == loop_id:
+            continue
+        owner[node_id] = body_node
+
+        node = nodes_by_id.get(node_id) or {}
+        node_type = node.get("type")
+        interactive = (
+            node_type == _SUB_AGENT_NODE_TYPE and (node.get("data") or {}).get("mode") in _INTERACTIVE_SUB_AGENT_MODES
+        )
+        if node_type in NODE_TYPES_NOT_ALLOWED_IN_LOOP or interactive:
+            return node_id, body_node
+
+        for edge in target_edges.get(node_id, []):
+            if edge.get("targetHandle") in _ATTACHMENT_HANDLES and edge.get("source"):
+                stack.append((edge["source"], body_node))
+        if node_id in body:
+            continue  # its main-flow successors are body nodes already
+        for edge in source_edges.get(node_id, []):
+            # Follow a tool's sub-flow, but not the edge that attaches it to an agent.
+            if is_loop_back_edge(edge) or edge.get("targetHandle") in _ATTACHMENT_HANDLES:
+                continue
+            if edge.get("target"):
+                stack.append((edge["target"], body_node))
+    return None
+
+
 def _source_edge_map(edges: Optional[List[dict]]) -> Dict[str, List[dict]]:
     mapping: Dict[str, List[dict]] = defaultdict(list)
     for edge in edges or []:
@@ -128,12 +179,18 @@ def validate_loop_topology(nodes: Optional[List[dict]], edges: Optional[List[dic
                     "loop's body. Only a node that runs inside the loop can connect back."
                 )
 
-        for node_id in sorted(body):
-            if (by_id.get(node_id) or {}).get("type") in NODE_TYPES_NOT_ALLOWED_IN_LOOP:
-                raise LoopTopologyError(
-                    f"'{loop_name}': '{name_of(node_id)}' pauses the workflow for user input, which is not "
-                    "supported inside a loop. Move it before the loop or after Done."
-                )
+        pausing = pausing_node_in_body(loop_id, body, by_id, source_edges, target_edges)
+        if pausing and pausing[0] == pausing[1]:
+            raise LoopTopologyError(
+                f"'{loop_name}': '{name_of(pausing[0])}' pauses the workflow for user input, which is not "
+                "supported inside a loop. Move it before the loop or after Done."
+            )
+        if pausing:
+            raise LoopTopologyError(
+                f"'{loop_name}': '{name_of(pausing[0])}' pauses the workflow for user input, which is not "
+                f"supported inside a loop, and '{name_of(pausing[1])}' in the loop's body uses it. Detach it, "
+                "or move that node before the loop or after Done."
+            )
 
         after = reachable_from(handle_targets(loop_id, LOOP_DONE_HANDLE, source_edges), source_edges, {loop_id})
         shared = sorted(body & after)

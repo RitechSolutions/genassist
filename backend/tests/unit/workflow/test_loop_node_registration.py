@@ -112,6 +112,90 @@ def test_human_in_the_loop_inside_a_body_is_rejected():
         validate_loop_topology(*_looped(body_type="humanInTheLoopNode"))
 
 
+def _agent_in_body(*attached_nodes, edges=()):
+    """The loop of ``_looped`` with an agent as body node ``a`` and things attached to it."""
+    nodes, base_edges = _looped(body_type="agentNode")
+    return [*nodes, *attached_nodes], [*base_edges, *edges]
+
+
+def _sub_agent(node_id, mode):
+    return {"id": node_id, "type": "subAgentNode", "data": {"name": node_id.title(), "mode": mode}}
+
+
+@pytest.mark.parametrize("mode", ["task", "chat"])
+def test_an_interactive_sub_agent_of_a_body_agent_is_rejected(mode):
+    nodes, edges = _agent_in_body(
+        _sub_agent("helper", mode), edges=[_edge("helper", "a", "output_sub_agent", "input_sub_agents")]
+    )
+    with pytest.raises(LoopTopologyError, match="'Helper' pauses the workflow .* and 'A' in the loop's body uses it"):
+        validate_loop_topology(nodes, edges)
+
+
+def test_an_interactive_sub_agent_below_a_single_turn_one_is_rejected():
+    nodes, edges = _agent_in_body(
+        _sub_agent("helper", "single_turn"),
+        _sub_agent("deep", "chat"),
+        edges=[
+            _edge("helper", "a", "output_sub_agent", "input_sub_agents"),
+            _edge("deep", "helper", "output_sub_agent", "input_sub_agents"),
+        ],
+    )
+    with pytest.raises(LoopTopologyError, match="'Deep' pauses"):
+        validate_loop_topology(nodes, edges)
+
+
+def test_a_tool_whose_sub_flow_pauses_is_rejected_on_a_body_agent():
+    nodes, edges = _agent_in_body(
+        _node("tool", "toolBuilderNode"),
+        _node("fetch"),
+        _node("approve", "humanInTheLoopNode"),
+        edges=[
+            _edge("tool", "a", "output_tool", "input_tools"),
+            _edge("tool", "fetch", "starter_processor"),
+            _edge("fetch", "approve"),
+        ],
+    )
+    with pytest.raises(LoopTopologyError, match="'Approve' pauses the workflow .* 'A' in the loop's body uses it"):
+        validate_loop_topology(nodes, edges)
+
+
+def test_agents_with_tools_and_single_turn_sub_agents_are_allowed_in_a_body():
+    nodes, edges = _agent_in_body(
+        _sub_agent("helper", "single_turn"),
+        _sub_agent("unset", None),
+        _node("tool", "toolBuilderNode"),
+        _node("fetch"),
+        edges=[
+            _edge("helper", "a", "output_sub_agent", "input_sub_agents"),
+            _edge("unset", "a", "output_sub_agent", "input_sub_agents"),
+            _edge("tool", "a", "output_tool", "input_tools"),
+            _edge("tool", "fetch", "starter_processor"),
+        ],
+    )
+    validate_loop_topology(nodes, edges)
+
+
+def test_what_pauses_outside_the_loop_is_not_blamed_on_it():
+    # The tool is shared with an agent after the loop, which is followed by a Human in the Loop
+    # node and has an interactive sub-agent of its own.
+    nodes, edges = _agent_in_body(
+        _node("tool", "toolBuilderNode"),
+        _node("fetch"),
+        _node("outside", "agentNode"),
+        _node("approve", "humanInTheLoopNode"),
+        _sub_agent("helper", "chat"),
+        edges=[
+            _edge("tool", "a", "output_tool", "input_tools"),
+            _edge("tool", "outside", "output_tool", "input_tools"),
+            _edge("tool", "fetch", "starter_processor"),
+            _edge("after", "outside"),
+            _edge("outside", "approve"),
+            _edge("helper", "outside", "output_sub_agent", "input_sub_agents"),
+        ],
+    )
+    validate_loop_topology(nodes, edges)
+
+
 def test_a_body_node_that_also_feeds_the_done_branch_is_rejected():
     with pytest.raises(LoopTopologyError, match="from Done only"):
         validate_loop_topology(*_looped(_edge("b", "after")))

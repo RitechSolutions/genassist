@@ -26,13 +26,22 @@ node never sees a value left over from the pass before.
 import asyncio
 import json
 import logging
+import math
 import re
+import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 from ..base_node import BaseNode
 from ..conditions import evaluate, parse_bool, to_text
-from ..loops import LOOP_BODY_HANDLE, LOOP_DONE_HANDLE, back_edge_sources, handle_targets, loop_body
+from ..loops import (
+    LOOP_BODY_HANDLE,
+    LOOP_DONE_HANDLE,
+    LOOP_NODE_TYPE,
+    back_edge_sources,
+    handle_targets,
+    loop_body,
+)
 from ..node_result import node_failure
 from ..utils import replace_config_vars
 
@@ -109,8 +118,9 @@ class LoopNode(BaseNode):
         upstream = self.get_input_from_source()
 
         batch_size = 1
-        batches: Optional[List[List[Any]]] = None
+        items: Optional[Sequence[Any]] = None
         total_items = 0
+        total = limit
         if mode == MODE_FOR_EACH:
             try:
                 items = self._parse_items(config.get("items"))
@@ -118,9 +128,13 @@ class LoopNode(BaseNode):
                 return node_failure(str(e))
             total_items = len(items)
             batch_size = max(int(self._number(config.get("batchSize"), 1)), 1)
-            batches = [items[start : start + batch_size] for start in range(0, total_items, batch_size)]
+            if isinstance(items, range):
+                # A count comes from upstream data and can be any size; it is never
+                # turned into a list, and neither is a batch larger than the server cap.
+                batch_size = min(batch_size, max(settings.WORKFLOW_LOOP_MAX_ITERATIONS, 1))
+            # Batches are sliced one pass at a time, so only the passes that run cost memory.
+            total = -(-total_items // batch_size)
 
-        total = len(batches) if batches is not None else limit
         planned = min(total, limit)
         on_error = str(config.get("onError") or ON_ERROR_STOP)
         collect = str(config.get("collect") or COLLECT_ALL)
@@ -133,6 +147,10 @@ class LoopNode(BaseNode):
         body_entry = handle_targets(self.node_id, LOOP_BODY_HANDLE, state.source_edges)
         body = loop_body(self.node_id, state.source_edges)
         returning = back_edge_sources(self.node_id, state.target_edges)
+        nested_loops = self._nested_loops(body)
+        # A nested loop answers for its own body: what it does about a failure
+        # there is its ``onError``, not this loop's.
+        own_body = body.difference(*(loop_body(loop_id, state.source_edges) for loop_id in nested_loops))
 
         results: List[Any] = []
         errors: List[Dict[str, Any]] = []
@@ -176,7 +194,7 @@ class LoopNode(BaseNode):
                 for body_node_id in body:
                     state.node_outputs.pop(body_node_id, None)
 
-                batch = batches[index] if batches is not None else None
+                batch = None if items is None else list(items[index * batch_size : (index + 1) * batch_size])
                 context = {
                     # One item per pass, or the whole batch when batchSize > 1.
                     "item": None if batch is None else (batch[0] if batch_size == 1 else batch),
@@ -195,7 +213,7 @@ class LoopNode(BaseNode):
                 await self.engine.run_subgraph(body_entry, state, blocked=set(state.active_loops))
 
                 result = self._iteration_result(returning, body, path_mark)
-                failures = self._iteration_failures(body, started_ms, index)
+                failures = self._iteration_failures(own_body, nested_loops, started_ms, index)
                 errors.extend(failures)
                 for body_node_id in body:
                     state.trim_archived_node_runs(body_node_id, ARCHIVED_RUNS_KEPT_PER_NODE)
@@ -273,14 +291,14 @@ class LoopNode(BaseNode):
         return value if value == value and value not in (float("inf"), float("-inf")) else default
 
     @staticmethod
-    def _parse_items(raw: Any) -> List[Any]:
+    def _parse_items(raw: Any) -> Sequence[Any]:
         """The list to iterate.
 
         A variable in a text field resolves to JSON text, so a JSON array is the
         usual form. Also accepted: an object (iterates as ``{key, value}``
-        entries), a whole number N (iterates 0..N-1), and plain text (one item
-        per line, or per comma when it is a single line). Nothing at all is an
-        empty list.
+        entries), a whole number N (iterates 0..N-1, returned as a ``range`` so
+        a huge N costs nothing), and plain text (one item per line, or per comma
+        when it is a single line). Nothing at all is an empty list.
         """
         value = raw
         if isinstance(value, str):
@@ -303,9 +321,9 @@ class LoopNode(BaseNode):
         if isinstance(value, bool):
             raise ValueError("Items must be a list, but the value is true/false")
         if isinstance(value, (int, float)):
-            if value < 0 or value != int(value):
+            if not math.isfinite(value) or value < 0 or value != int(value):
                 raise ValueError(f"Items must be a list or a whole number of repetitions, but the value is {value}")
-            return list(range(int(value)))
+            return range(min(int(value), sys.maxsize))
         raise ValueError(f"Items must be a list, but the value is a {type(value).__name__}")
 
     # ---- per-iteration bookkeeping -----------------------------------------
@@ -325,11 +343,27 @@ class LoopNode(BaseNode):
                 return state.get_node_output(node_id)
         return None
 
-    def _iteration_failures(self, body: set, started_ms: int, index: int) -> List[Dict[str, Any]]:
-        """Body nodes that failed during this pass."""
+    def _nested_loops(self, body: Set[str]) -> List[str]:
+        """Active Loop nodes inside this loop's body (a deactivated one runs nothing)."""
+        if self.engine is None:
+            return []
+        nodes = {node.get("id"): node for node in self.engine.workflow["nodes"]}
+        return [
+            node_id
+            for node_id in sorted(body)
+            if (nodes.get(node_id) or {}).get("type") == LOOP_NODE_TYPE
+            and not ((nodes.get(node_id) or {}).get("data") or {}).get("deactivated")
+        ]
+
+    def _iteration_failures(
+        self, own_body: Set[str], nested_loops: List[str], started_ms: int, index: int
+    ) -> List[Dict[str, Any]]:
+        """What failed during this pass: this loop's own body nodes, and the
+        failure that stopped a nested loop. A failure a nested loop carried on
+        past (``onError: continue``) stays in that loop's ``errors`` only."""
         state = self.get_state()
         failures = []
-        for node_id in body:
+        for node_id in own_body:
             status = state.node_execution_status.get(node_id)
             if not status or status.get("status") != "failed":
                 continue
@@ -341,6 +375,20 @@ class LoopNode(BaseNode):
                     "node_id": node_id,
                     "node_name": status.get("name") or node_id,
                     "error": status.get("error"),
+                }
+            )
+        for loop_id in nested_loops:
+            # Body outputs are cleared before each pass, so this is this pass's run.
+            output = state.get_node_output(loop_id)
+            if not isinstance(output, dict) or output.get("stopped_reason") != "error":
+                continue
+            cause = (output.get("errors") or [{}])[-1]
+            failures.append(
+                {
+                    "index": index,
+                    "node_id": cause.get("node_id") or loop_id,
+                    "node_name": cause.get("node_name") or loop_id,
+                    "error": cause.get("error"),
                 }
             )
         return failures

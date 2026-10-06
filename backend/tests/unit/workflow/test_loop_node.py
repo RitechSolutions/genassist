@@ -281,7 +281,70 @@ async def test_the_run_trace_keeps_a_bounded_number_of_earlier_passes():
     assert state.active_loops == []
 
 
+@pytest.mark.asyncio
+async def test_a_huge_count_is_never_built_into_a_list():
+    state = await _run(_workflow({"mode": "forEach", "items": "1e12", "maxIterations": 3}))
+    loop = state.node_outputs["loop"]
+    assert loop["results"] == ["did 0", "did 1", "did 2"]
+    assert (loop["total_items"], loop["total"], loop["stopped_reason"]) == (10**12, 10**12, "max_iterations")
+
+
+@pytest.mark.asyncio
+async def test_a_huge_count_in_huge_batches_is_bounded_by_the_server_cap(monkeypatch):
+    monkeypatch.setattr(settings, "WORKFLOW_LOOP_MAX_ITERATIONS", 4)
+    body = [_template("work", "{{source.item}}")]
+    state = await _run(_workflow({"mode": "forEach", "items": "1e12", "batchSize": 10**12, "maxIterations": 1}, body=body))
+    assert state.node_outputs["loop"]["results"] == ["[0, 1, 2, 3]"]
+
+
+def test_a_count_is_lazy_and_must_be_a_finite_whole_number():
+    assert LoopNode._parse_items("1e12") == range(10**12)
+    assert LoopNode._parse_items(3) == range(3)
+    for bad in ("Infinity", "NaN", "1e400", "-1", "2.5"):
+        with pytest.raises(ValueError, match="whole number"):
+            LoopNode._parse_items(bad)
+
+
 # ---- nesting, deactivation --------------------------------------------------
+
+
+def _nested_failing_workflow(inner_on_error, outer_items='[["a", "bad", "c"], ["d"]]', **outer):
+    """outer loop → inner loop (→ work → back) ─done→ row → back to the outer loop"""
+    body = [
+        _loop("inner", mode="forEach", items="{{source.item}}", onError=inner_on_error),
+        {"id": "work", "type": "failsOnBadNode", "data": {"name": "Worker", "value": "{{source.item}}"}},
+        _template("row", "{{source.count}}"),
+    ]
+    workflow = _workflow({"mode": "forEach", "items": outer_items, **outer}, body=body)
+    workflow["edges"] = [e for e in workflow["edges"] if (e["source"], e["target"]) not in {("inner", "work"), ("work", "row")}]
+    workflow["edges"] += [
+        _edge("inner", "work", "output_loop"),
+        _edge("work", "inner", target_handle="input_loop"),
+        _edge("inner", "row", "output_done"),
+    ]
+    return workflow
+
+
+@pytest.mark.asyncio
+async def test_a_failure_the_inner_loop_carried_on_past_does_not_fail_the_outer_pass(failing_node_type):
+    state = await _run(_nested_failing_workflow("continue"))
+    loop = state.node_outputs["loop"]
+    assert (loop["iterations"], loop["stopped_reason"]) == (2, "completed")
+    assert (loop["failed"], loop["errors"]) == (0, [])
+    assert loop["results"] == ["2", "1"]
+
+
+@pytest.mark.asyncio
+async def test_a_failure_that_stopped_the_inner_loop_fails_the_outer_pass(failing_node_type):
+    state = await _run(_nested_failing_workflow("stop"))
+    loop = state.node_outputs["loop"]
+    assert (loop["iterations"], loop["stopped_reason"]) == (1, "error")
+    assert loop["errors"] == [{"index": 0, "node_id": "work", "node_name": "Worker", "error": "could not process bad"}]
+
+    state = await _run(_nested_failing_workflow("stop", onError="continue"))
+    loop = state.node_outputs["loop"]
+    assert (loop["iterations"], loop["failed"], loop["stopped_reason"]) == (2, 1, "completed")
+    assert loop["results"] == ["1"]
 
 
 @pytest.mark.asyncio

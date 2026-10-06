@@ -78,6 +78,67 @@ describe("loopTopologyError", () => {
     expect(loopTopologyError(withHitl, edges)).toMatch(/not supported inside a loop/);
   });
 
+  describe("with an agent in the body", () => {
+    const agentNodes = nodes.map((n) => (n.id === "a" ? node("a", "agentNode") : n));
+    const subAgent = (id: string, mode?: string): LoopGraphNode => ({ id, type: "subAgentNode", data: { name: id, mode } });
+    const delegate = (child: string, parent: string) => edge(child, parent, "output_sub_agent", "input_sub_agents");
+
+    it("rejects a task or chat sub-agent, however deep", () => {
+      for (const mode of ["task", "chat"]) {
+        const problem = loopTopologyError([...agentNodes, subAgent("helper", mode)], [...edges, delegate("helper", "a")]);
+        expect(problem).toMatch(/"helper" pauses the workflow .* "a" in the body of "loop" uses it/);
+      }
+      const deep = [...agentNodes, subAgent("helper", "single_turn"), subAgent("deep", "chat")];
+      expect(loopTopologyError(deep, [...edges, delegate("helper", "a"), delegate("deep", "helper")])).toMatch(
+        /"deep" pauses/
+      );
+    });
+
+    it("rejects a tool whose sub-flow reaches a Human in the Loop node", () => {
+      const withTool = [...agentNodes, node("tool", "toolBuilderNode"), node("fetch"), node("approve", "humanInTheLoopNode")];
+      const toolEdges = [
+        ...edges,
+        edge("tool", "a", "output_tool", "input_tools"),
+        edge("tool", "fetch", "starter_processor"),
+        edge("fetch", "approve"),
+      ];
+      expect(loopTopologyError(withTool, toolEdges)).toMatch(/"approve" pauses the workflow .* "a" in the body/);
+    });
+
+    it("accepts tools and single-turn sub-agents", () => {
+      const fine = [...agentNodes, subAgent("helper", "single_turn"), subAgent("unset"), node("tool", "toolBuilderNode"), node("fetch")];
+      const fineEdges = [
+        ...edges,
+        delegate("helper", "a"),
+        delegate("unset", "a"),
+        edge("tool", "a", "output_tool", "input_tools"),
+        edge("tool", "fetch", "starter_processor"),
+      ];
+      expect(loopTopologyError(fine, fineEdges)).toBeNull();
+    });
+
+    it("does not blame the loop for what pauses outside it", () => {
+      const shared = [
+        ...agentNodes,
+        node("tool", "toolBuilderNode"),
+        node("fetch"),
+        node("outside", "agentNode"),
+        node("approve", "humanInTheLoopNode"),
+        subAgent("helper", "chat"),
+      ];
+      const sharedEdges = [
+        ...edges,
+        edge("tool", "a", "output_tool", "input_tools"),
+        edge("tool", "outside", "output_tool", "input_tools"),
+        edge("tool", "fetch", "starter_processor"),
+        edge("after", "outside"),
+        edge("outside", "approve"),
+        delegate("helper", "outside"),
+      ];
+      expect(loopTopologyError(shared, sharedEdges)).toBeNull();
+    });
+  });
+
   it("rejects a body node that also feeds the Done branch", () => {
     expect(loopTopologyError(nodes, [...edges, edge("b", "after")])).toMatch(/from Done only/);
   });
@@ -120,6 +181,15 @@ describe("validateLoopConnection", () => {
   it("leaves sub-agent delegation edges to their own rules", () => {
     const delegation = { source: "b", target: "a", sourceHandle: "output_sub_agent", targetHandle: "input_sub_agents" };
     expect(validateLoopConnection(delegation, nodes, edges)).toEqual({ ok: true });
+  });
+
+  it("blocks attaching a sub-agent that pauses to an agent in the body", () => {
+    const delegation = { source: "helper", target: "a", sourceHandle: "output_sub_agent", targetHandle: "input_sub_agents" };
+    const helper = (mode: string): LoopGraphNode => ({ id: "helper", type: "subAgentNode", data: { name: "helper", mode } });
+    const check = validateLoopConnection(delegation, [...nodes, helper("chat")], edges);
+    expect(check.ok).toBe(false);
+    expect(check.reason).toMatch(/"helper" pauses the workflow/);
+    expect(validateLoopConnection(delegation, [...nodes, helper("single_turn")], edges)).toEqual({ ok: true });
   });
 });
 

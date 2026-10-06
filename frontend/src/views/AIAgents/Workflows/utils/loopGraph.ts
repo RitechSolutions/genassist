@@ -16,12 +16,21 @@ export const LOOP_BACK_HANDLE = "input_loop";
 /** Pausing for user input cannot be resumed mid-loop, so these may not sit in a body. */
 const NOT_ALLOWED_IN_LOOP = new Set(["humanInTheLoopNode"]);
 
+/**
+ * A body node can also pause through what is attached to it: a task/chat sub-agent hands the
+ * conversation to the user, and a tool's sub-flow can reach a node that pauses.
+ */
+const SUB_AGENT_NODE_TYPE = "subAgentNode";
+const INTERACTIVE_SUB_AGENT_MODES = new Set(["task", "chat"]);
+
 const SUB_AGENT_SOURCE_HANDLE = "output_sub_agent";
+/** Target handles through which a tool or a sub-agent is attached to an agent. */
+const ATTACHMENT_HANDLES = new Set(["input_tools", "input_sub_agents"]);
 
 export interface LoopGraphNode {
   id: string;
   type?: string;
-  data?: { name?: string };
+  data?: { name?: string; mode?: string };
 }
 
 export interface LoopGraphEdge {
@@ -86,6 +95,41 @@ const reachableFrom = (
 export const loopBody = (loopId: string, edges: LoopGraphEdge[]): Set<string> =>
   reachableFrom(handleTargets(loopId, LOOP_BODY_HANDLE, edges), edges, new Set([loopId]));
 
+/**
+ * A node that can pause the run during a pass, with the body node it is reached from (itself when
+ * it sits in the body). Covers the body and everything its nodes run on demand: the tools and
+ * sub-agents attached to them, and the tools' sub-flows.
+ */
+const pausingNodeInBody = (
+  loopId: string,
+  body: ReadonlySet<string>,
+  byId: ReadonlyMap<string, LoopGraphNode>,
+  edges: LoopGraphEdge[]
+): { id: string; bodyNode: string } | null => {
+  const owner = new Map<string, string>();
+  const stack = [...body].sort().reverse().map((id) => ({ id, bodyNode: id }));
+  while (stack.length) {
+    const { id, bodyNode } = stack.pop()!;
+    if (owner.has(id) || id === loopId) continue;
+    owner.set(id, bodyNode);
+
+    const node = byId.get(id);
+    const interactive =
+      node?.type === SUB_AGENT_NODE_TYPE && INTERACTIVE_SUB_AGENT_MODES.has(node.data?.mode ?? "");
+    if (NOT_ALLOWED_IN_LOOP.has(node?.type ?? "") || interactive) return { id, bodyNode };
+
+    for (const edge of edges) {
+      const attaches = ATTACHMENT_HANDLES.has(edge.targetHandle ?? "");
+      if (edge.target === id && attaches) stack.push({ id: edge.source, bodyNode });
+      // Follow a tool's sub-flow, but not the edge that attaches it to an agent.
+      if (edge.source === id && !body.has(id) && !attaches && !isLoopBackEdge(edge)) {
+        stack.push({ id: edge.target, bodyNode });
+      }
+    }
+  }
+  return null;
+};
+
 /** The first wiring problem among the workflow's loops, or null when they are all runnable. */
 export const loopTopologyError = (nodes: LoopGraphNode[], edges: LoopGraphEdge[]): string | null => {
   const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -100,10 +144,12 @@ export const loopTopologyError = (nodes: LoopGraphNode[], edges: LoopGraphEdge[]
         return `Only a node that runs inside "${nameOf(loop.id)}" can connect to its Loop back input.`;
       }
     }
-    for (const id of body) {
-      if (NOT_ALLOWED_IN_LOOP.has(byId.get(id)?.type ?? "")) {
-        return `"${nameOf(id)}" pauses the workflow for user input, which is not supported inside a loop.`;
-      }
+    const pausing = pausingNodeInBody(loop.id, body, byId, edges);
+    if (pausing && pausing.id === pausing.bodyNode) {
+      return `"${nameOf(pausing.id)}" pauses the workflow for user input, which is not supported inside a loop.`;
+    }
+    if (pausing) {
+      return `"${nameOf(pausing.id)}" pauses the workflow for user input, which is not supported inside a loop, and "${nameOf(pausing.bodyNode)}" in the body of "${nameOf(loop.id)}" uses it.`;
     }
     const after = reachableFrom(handleTargets(loop.id, LOOP_DONE_HANDLE, edges), edges, new Set([loop.id]));
     for (const id of body) {
@@ -128,11 +174,12 @@ export const validateLoopConnection = (
 ): LoopConnectionCheck => {
   const { source, target, sourceHandle, targetHandle } = connection;
   if (!source || !target) return { ok: true };
-  // Delegation edges have their own rules (see subAgentGraph.ts).
-  if (sourceHandle === SUB_AGENT_SOURCE_HANDLE) return { ok: true };
 
+  // Delegation edges are never part of the flow, so they cannot close a cycle; their own rules
+  // are in subAgentGraph.ts. They can still attach a sub-agent that pauses to a loop body.
+  const isDelegation = sourceHandle === SUB_AGENT_SOURCE_HANDLE;
   const isBackEdge = targetHandle === LOOP_BACK_HANDLE;
-  if (!isBackEdge && reachableFrom([target], edges).has(source)) {
+  if (!isBackEdge && !isDelegation && reachableFrom([target], edges).has(source)) {
     return {
       ok: false,
       reason: "That connection would create a cycle. To repeat steps, use a Loop node and connect back to its Loop back input.",
