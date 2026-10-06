@@ -1,11 +1,11 @@
 ---
 name: create-pr
-description: Commit, push and open a GenAssist pull request the way this repo does it, linked to its required Azure DevOps ticket (fork -> RitechSolutions/genassist, base `origin/development`), with a code-review gate first. HIGH findings stop everything, MEDIUM findings ask before continuing. Use when the user says "create a PR", "open a PR", "commit and push", "/create-pr", or "ship this".
+description: Commit, push and open a GenAssist pull request the way this repo does it, linked to its Azure DevOps ticket when there is one (fork -> RitechSolutions/genassist, base `origin/development`), with a code-review gate first. HIGH findings stop everything, MEDIUM findings ask before continuing. Use when the user says "create a PR", "open a PR", "commit and push", "/create-pr", or "ship this".
 ---
 
 # Create PR (branch -> review -> commit -> push -> PR)
 
-Arguments (all optional): `ticket=<id>[,<id>...]` (Azure DevOps work item; if omitted, ask, see step 0b), `base=<branch>` (the target branch; if omitted, ask, see step 1.4), `draft`, `level=<low|medium|high>` (review effort, default `high`), `no-pr` (stop after the push), plus free text describing the change.
+Arguments (all optional): `ticket=<id>[,<id>...]` or `ticket=none` (Azure DevOps work item; if omitted, ask, see step 0b), `base=<branch>` (the target branch; if omitted, ask, see step 1.4), `draft`, `level=<low|medium|high>` (review effort, default `high`), `no-pr` (stop after the push), plus free text describing the change.
 
 The flow: Azure ticket -> preflight (branch name, target branch, conflict check) -> review the changes -> commit -> push -> create the PR. Ask for approval at the commit, and again before the push and PR. Never skip the review.
 
@@ -17,15 +17,15 @@ The flow: Azure ticket -> preflight (branch name, target branch, conflict check)
   git log <main-remote>/<base>..HEAD --format='%h %B' | grep -inE 'co-authored-by: *claude|generated with \[?claude|anthropic'
   ```
 
-## 0b. Hard rule: an Azure DevOps ticket is required
+## 0b. Azure DevOps ticket (always ask, never block)
 
-Every PR must reference at least one Azure DevOps work item (`https://dev.azure.com/Ritech/GenAssist/_workitems/edit/<id>`). Get it before anything else.
+Always ask whether the change has an Azure DevOps work item (`https://dev.azure.com/Ritech/GenAssist/_workitems/edit/<id>`), before anything else. A ticket is recommended but not required.
 
-1. **Ask for it.** If `ticket=` was not passed, ask with `AskUserQuestion`: "Which Azure DevOps ticket is this for?" If a number is visible in the current branch name or the commit subjects (e.g. `fix/67572-...`, `(66739, 66740)`), offer it first as "(Recommended)". Otherwise the user types it through "Other". Never invent a number or pick one without the user confirming it.
+1. **Ask for it.** If `ticket=` was not passed, ask with `AskUserQuestion`: "Which Azure DevOps ticket is this for?" If a number is visible in the current branch name or the commit subjects (e.g. `fix/67572-...`, `(66739, 66740)`), offer it first as "(Recommended)". Always include a *No ticket* option. Otherwise the user types the number through "Other". Never invent a number or pick one without the user confirming it.
 2. **Validate.** Each id is 4-7 digits, with no `#` and no `AB#` prefix (strip those if typed). Several ids are allowed, comma-separated. If the answer is not a valid id, say so and ask again.
-3. **No ticket = no PR.** If the user has no ticket, STOP: no commit, no push, no PR. Ask them to create the work item in Azure DevOps first. The only exception is merge, back-merge, sync and release PRs (a `merge/`, `sync/` or `release/` branch, or `main` -> `test` -> `development` back-merges). For those, offer *No ticket (merge/release PR)* as an option.
+3. **No ticket is fine.** If the user picks *No ticket*, continue normally and do not ask again. Leave the ticket out everywhere in the table below: the branch is `<prefix>/<slug>`, there is no `AB#` footer, no `(<id>)` title suffix and no Related Issues ticket line. Mention once, in the final summary, that the PR has no ticket linked.
 
-Call the result `<ticket>` (the first id) and `<tickets>` (all of them). It is used in:
+Call the result `<ticket>` (the first id) and `<tickets>` (all of them). When there is a ticket, it is used in:
 
 | Where | Format | Example |
 |---|---|---|
@@ -56,12 +56,12 @@ Call the result `<ticket>` (the first id) and `<tickets>` (all of them). It is u
      | chore / docs / refactor / perf / test / security | `chore/`, `docs/`, `refactor/` ... (same word) | same word | 🔧 Config / 📚 Docs / 🏗️ Core / 🧪 Test | `origin/development` |
 
      If the user is already on a non-protected branch, take `<change-type>` from its prefix, and ask only if the prefix doesn't match the diff (e.g. a `fix/` branch that clearly adds a new feature).
-   - **On a protected branch:** ask "Which branch name should I create for this change?" Offer 2-3 names as `<prefix>/<ticket>-<slug>`, using the prefix from `<change-type>` (e.g. `fix/67572-display-workflow-test-errors`, `feature/67574-loop-node`), with the best one first, marked "(Recommended)". The user can also type their own name through "Other". Create it with `git switch -c <branch>`; uncommitted changes move with it.
-   - **Already on a non-protected branch:** ask "Use the current branch `<branch>`?" The options are *Keep `<branch>` (Recommended)*, *Rename it*, and *New branch from here*. Only offer *Rename it* if the branch has not been pushed and has no open PR. Rename with `git branch -m <new>`. If the current name does not contain `<ticket>`, recommend *Rename it* (or *New branch from here* if it is already pushed) instead of *Keep*. A pushed branch without the ticket may be kept, but then the ticket must be in the title and body.
+   - **On a protected branch:** ask "Which branch name should I create for this change?" Offer 2-3 names as `<prefix>/<ticket>-<slug>` (or `<prefix>/<slug>` without a ticket), using the prefix from `<change-type>` (e.g. `fix/67572-display-workflow-test-errors`, `feature/67574-loop-node`), with the best one first, marked "(Recommended)". The user can also type their own name through "Other". Create it with `git switch -c <branch>`; uncommitted changes move with it.
+   - **Already on a non-protected branch:** ask "Use the current branch `<branch>`?" The options are *Keep `<branch>` (Recommended)*, *Rename it*, and *New branch from here*. Only offer *Rename it* if the branch has not been pushed and has no open PR. Rename with `git branch -m <new>`. If there is a ticket and the current name does not contain it, recommend *Rename it* (or *Keep* if it is already pushed); the ticket still goes in the title and body.
 
    Check every name before using it (detect the remotes from item 3 first):
    - Its prefix matches `<change-type>` (or `merge/`, `sync/` or `release/` for those PRs). If the user types `feat/` or `bugfix/`, accept it and note that the team uses `feature/` and `fix/`. The rest of the name is lowercase, with hyphens, no spaces, and under ~60 characters.
-   - New branches must have the form `<prefix>/<ticket>-<slug>`, e.g. `fix/67570-csv-export`. Ticket-exempt merge and release PRs (step 0b.3) are the only exception.
+   - With a ticket, new branches have the form `<prefix>/<ticket>-<slug>` (e.g. `fix/67570-csv-export`); without one, `<prefix>/<slug>` (e.g. `fix/csv-export`).
    - It is not already used, either locally (`git rev-parse --verify --quiet refs/heads/<name>`) or on the main or push remote (`git ls-remote --exit-code --heads <remote> refs/heads/<name>`).
 
    If the name is invalid or taken, say why and ask again.
@@ -129,7 +129,7 @@ Skip this step if there are no uncommitted changes.
 
    <body: what changed and why, wrapped at ~72 chars>
 
-   AB#<ticket>                    # one line per ticket; required (step 0b)
+   AB#<ticket>                    # one line per ticket; only if there is one (step 0b)
    ```
    Use the type that matches `<change-type>` (`feat`, `fix`, `hotfix`, `chore`, ...). The types are the same as in the PR title list below. The scope is optional (`backend`, `frontend`, `workflow`, `plugins`, ...). There is NO `Co-Authored-By` trailer and no AI mention (step 0).
 3. Use one commit for one logical change. If the changes clearly cover unrelated things, propose splitting them into several commits.
@@ -138,7 +138,7 @@ Skip this step if there are no uncommitted changes.
 
 ## 4. Write PR title and body
 
-**Title** (the CI `pr-title-check` enforces this): `<type>: <subject> (<tickets>)`, where `<type>` comes from `<change-type>`, e.g. `fix: preserve ML prediction output types (66739, 66740)`. The ticket suffix is required (step 0b). Allowed types are feat, fix, docs, style, refactor, test, chore, perf, ci, hotfix, bugfix, security, build, release, merge, rebase, revert, cleanup, enhancement. Keep it lowercase and imperative, with no trailing period. For merges, use `Merge: <what> into <where>`.
+**Title** (the CI `pr-title-check` enforces this): `<type>: <subject> (<tickets>)`, where `<type>` comes from `<change-type>`, e.g. `fix: preserve ML prediction output types (66739, 66740)`. Add the ticket suffix only when there is a ticket (step 0b); otherwise `<type>: <subject>`. Allowed types are feat, fix, docs, style, refactor, test, chore, perf, ci, hotfix, bugfix, security, build, release, merge, rebase, revert, cleanup, enhancement. Keep it lowercase and imperative, with no trailing period. For merges, use `Merge: <what> into <where>`.
 
 **Body**: follow `.github/pull_request_template.md`, but write real content and drop the empty placeholder sections and HTML comments. Good PRs in this repo read like this:
 
@@ -157,7 +157,7 @@ Skip this step if there are no uncommitted changes.
 - [x] <the option for `<change-type>`, plus any others that also apply>
 
 ## Related Issues
-- AB#<ticket> - https://dev.azure.com/Ritech/GenAssist/_workitems/edit/<ticket>   (one line per ticket; required)
+- AB#<ticket> - https://dev.azure.com/Ritech/GenAssist/_workitems/edit/<ticket>   (one line per ticket; omit without a ticket)
 - Closes #<github-issue>   (only if there is one)
 ```
 
@@ -169,7 +169,7 @@ Show the title and body to the user and wait for approval before pushing.
 
 ## 5. Push and create
 
-First, confirm that the PR title and body contain every `<tickets>` id (step 0b). Then run the step 0 attribution check again, and the step 1.5 conflict check (`<main-remote>` may have moved while you worked).
+First, if there is a ticket, confirm that the PR title and body contain every `<tickets>` id (step 0b). Then run the step 0 attribution check again, and the step 1.5 conflict check (`<main-remote>` may have moved while you worked).
 
 ```bash
 git push -u <push-remote> <branch>
