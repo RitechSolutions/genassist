@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "azure-devops": {
-      "type": "http",
-      "url": "https://mcp.dev.azure.com/Ritech"
-    }
-  }
-}
