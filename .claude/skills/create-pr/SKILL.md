@@ -23,7 +23,14 @@ Always ask whether the change has an Azure DevOps work item (`https://dev.azure.
 
 1. **Ask for it.** If `ticket=` was not passed, ask with `AskUserQuestion`: "Which Azure DevOps ticket is this for?" If a number is visible in the current branch name or the commit subjects (e.g. `fix/67572-...`, `(66739, 66740)`), offer it first as "(Recommended)". Always include a *No ticket* option. Otherwise the user types the number through "Other". Never invent a number or pick one without the user confirming it.
 2. **Validate.** Each id is 4-7 digits, with no `#` and no `AB#` prefix (strip those if typed). Several ids are allowed, comma-separated. If the answer is not a valid id, say so and ask again.
-3. **No ticket is fine.** If the user picks *No ticket*, continue normally and do not ask again. Leave the ticket out everywhere in the table below: the branch is `<prefix>/<slug>`, there is no `AB#` footer, no `(<id>)` title suffix and no Related Issues ticket line. Mention once, in the final summary, that the PR has no ticket linked.
+3. **Look it up in Azure DevOps (when connected).** The repo's `.mcp.json` registers the `azure-devops` MCP server (`https://mcp.dev.azure.com/Ritech`). If its tools are available (e.g. a tool to get a work item by id), fetch each id in project `GenAssist`:
+   - **Found:** show the id, type, title and state in one line, e.g. `67608 · Task · Add create-pr skill · Active`. Use the title to suggest the branch slug in step 1.2, and the type to recommend `<change-type>`: Bug -> *Fix*, User Story / Feature / Product Backlog Item -> *Feature*, Task -> whatever fits the diff.
+   - **Not found:** say so and ask again; it is probably a typo. The user can still keep the number, or pick *No ticket*.
+   - **State is Closed / Done / Removed:** mention it and ask whether this is the right ticket.
+   - **Tools missing, not signed in, or an error:** don't block. Say in one line that the ticket was not verified, and how to connect: run `claude` in the repo, type `/mcp`, choose `azure-devops`, then *Authenticate*. Then continue with the number as typed.
+
+   Only read from Azure DevOps in this step. Write to it (comment, link, state change) only in step 5, and only after asking.
+4. **No ticket is fine.** If the user picks *No ticket*, continue normally and do not ask again. Leave the ticket out everywhere in the table below: the branch is `<prefix>/<slug>`, there is no `AB#` footer, no `(<id>)` title suffix and no Related Issues ticket line. Mention once, in the final summary, that the PR has no ticket linked.
 
 Call the result `<ticket>` (the first id) and `<tickets>` (all of them). When there is a ticket, it is used in:
 
@@ -183,5 +190,7 @@ gh pr create -R RitechSolutions/genassist --base <base> --head <head> --title "<
 - **`no-pr` argument**: stop after the push, and print the branch and remote.
 
 Labels are applied automatically by `.github/labeler.yml`. Do not add them by hand.
+
+If the ticket was verified in Azure DevOps (step 0b.3), offer once with `AskUserQuestion` to add a comment with the PR link to the work item. The options are *Add PR link to ticket*, and *Skip (Recommended)* when the Azure Boards GitHub app already links `AB#` mentions. Never change the work item's state or fields unless the user asks.
 
 Afterwards, print the PR URL and a summary of the review result: how many HIGH, MEDIUM and LOW findings there were, and what was accepted.
