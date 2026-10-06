@@ -26,10 +26,11 @@ Always ask whether the change has an Azure DevOps work item (`https://dev.azure.
 3. **Look it up in Azure DevOps (when a token is set up).** Each person can keep a read-only Azure DevOps personal access token in their macOS Keychain, under the service name `azure-devops-pat`. For each id, run this read-only lookup. It never prints the token; don't echo it, log it, write it to a file or pass it anywhere else:
    ```bash
    T=$(security find-generic-password -a "$USER" -s azure-devops-pat -w 2>/dev/null)
-   curl -s -m 20 -o <scratch>/ado-<id>.json -w '%{http_code}' -u ":$T" \
+   printf 'user = ":%s"\n' "$T" | curl -s -m 20 -K - -o <scratch>/ado-<id>.json -w '%{http_code}' \
      "https://dev.azure.com/Ritech/GenAssist/_apis/wit/workitems/<id>?fields=System.WorkItemType,System.Title,System.State,System.IterationPath&api-version=7.1"
    unset T
    ```
+   The token goes to curl through stdin (`-K -`), never as a command-line argument, so other processes can't see it with `ps`. `printf` is a shell builtin, so it doesn't show up as a process either.
    Then read `fields` from the JSON and delete the file.
    - **`200` (found):** show one line, e.g. `67608 · Task · Claude PR Creation Skill · In Progress · Sprint 62`. Use the title to suggest the branch slug in step 1.2. Use the type to recommend `<change-type>`: Bug -> *Fix*; User Story, Feature or Product Backlog Item -> *Feature*; Task -> whatever fits the diff.
    - **`404` (not found, `TF401232`):** say the ticket doesn't exist or isn't readable, which is probably a typo, and ask again. The user can still keep the number, or pick *No ticket*.
