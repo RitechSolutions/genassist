@@ -40,11 +40,27 @@ Call the result `<ticket>` (the first id) and `<tickets>` (all of them). It is u
 
 1. Run `git status`. Note the staged, unstaged and untracked files; they will be committed in step 3. Get the Azure ticket (step 0b) before going on.
 2. **Branch name.** Never commit to or open a PR from `main`, `test`, `origin/development` or `release/*`, unless the user is doing a merge or back-merge PR on purpose. Always ask for the branch name with `AskUserQuestion`, even when one could be inferred:
-   - **On a protected branch:** ask "Which branch name should I create for this change?" Offer 2-3 names built from the ticket and the change (e.g. `fix/67572-display-workflow-test-errors`, `feature/67574-loop-node`), with the best one first, marked "(Recommended)". The user can also type their own name through "Other". Create it with `git switch -c <branch>`; uncommitted changes move with it.
+   - **Change type first.** When a new branch will be created, first ask with `AskUserQuestion`: "What kind of change is this?" Recommend the option that fits the diff, marked "(Recommended)":
+     - *Feature*: new functionality.
+     - *Fix*: a bug fix going to `origin/development`.
+     - *Hotfix*: an urgent production fix going to `main`.
+     - *Other*: the user types `chore`, `docs`, `refactor`, `perf`, `test` or `security`.
+
+     The answer sets `<change-type>`, which is used everywhere after this:
+
+     | Change type | Branch prefix | Commit / PR title type | Template "Type of Change" | Recommended target (step 1.4) |
+     |---|---|---|---|---|
+     | Feature | `feature/` | `feat` | ✨ New feature | `origin/development` |
+     | Fix | `fix/` | `fix` | 🐛 Bug fix | `origin/development` |
+     | Hotfix | `hotfix/` | `hotfix` | 🐛 Bug fix | `main` |
+     | chore / docs / refactor / perf / test / security | `chore/`, `docs/`, `refactor/` ... (same word) | same word | 🔧 Config / 📚 Docs / 🏗️ Core / 🧪 Test | `origin/development` |
+
+     If the user is already on a non-protected branch, take `<change-type>` from its prefix, and ask only if the prefix doesn't match the diff (e.g. a `fix/` branch that clearly adds a new feature).
+   - **On a protected branch:** ask "Which branch name should I create for this change?" Offer 2-3 names as `<prefix>/<ticket>-<slug>`, using the prefix from `<change-type>` (e.g. `fix/67572-display-workflow-test-errors`, `feature/67574-loop-node`), with the best one first, marked "(Recommended)". The user can also type their own name through "Other". Create it with `git switch -c <branch>`; uncommitted changes move with it.
    - **Already on a non-protected branch:** ask "Use the current branch `<branch>`?" The options are *Keep `<branch>` (Recommended)*, *Rename it*, and *New branch from here*. Only offer *Rename it* if the branch has not been pushed and has no open PR. Rename with `git branch -m <new>`. If the current name does not contain `<ticket>`, recommend *Rename it* (or *New branch from here* if it is already pushed) instead of *Keep*. A pushed branch without the ticket may be kept, but then the ticket must be in the title and body.
 
    Check every name before using it (detect the remotes from item 3 first):
-   - It starts with `feature/`, `feat/`, `fix/`, `bugfix/`, `hotfix/`, `chore/`, `docs/`, `refactor/` or `merge/`, and the rest is lowercase, with hyphens, no spaces, and under ~60 characters.
+   - Its prefix matches `<change-type>` (or `merge/`, `sync/` or `release/` for those PRs). If the user types `feat/` or `bugfix/`, accept it and note that the team uses `feature/` and `fix/`. The rest of the name is lowercase, with hyphens, no spaces, and under ~60 characters.
    - New branches must have the form `<prefix>/<ticket>-<slug>`, e.g. `fix/67570-csv-export`. Ticket-exempt merge and release PRs (step 0b.3) are the only exception.
    - It is not already used, either locally (`git rev-parse --verify --quiet refs/heads/<name>`) or on the main or push remote (`git ls-remote --exit-code --heads <remote> refs/heads/<name>`).
 
@@ -53,7 +69,7 @@ Call the result `<ticket>` (the first id) and `<tickets>` (all of them). It is u
    - `<main-remote>` = the remote whose URL points to `RitechSolutions/genassist`. Run `git fetch <main-remote>`.
    - `<push-remote>` = the user's fork, if one exists. That is a remote pointing to `<owner>/genassist` with an owner other than RitechSolutions. Take `<fork-owner>` from its URL.
    - If there is no fork remote, the user pushes branches directly to RitechSolutions. Then `<push-remote>` = `<main-remote>`.
-4. **Target branch.** If `base=` was not passed, ask with `AskUserQuestion`: "Which branch should this PR target?" Put the recommended option first, marked "(Recommended)":
+4. **Target branch.** If `base=` was not passed, ask with `AskUserQuestion`: "Which branch should this PR target?" Put the recommended option first, marked "(Recommended)", based on `<change-type>` (see the table in item 2):
    - `origin/development`: the default for `feature/`, `feat/`, `fix/`, `bugfix/`, `chore/` branches.
    - `main`: hotfixes only. Recommend it for `hotfix/*` branches.
    - `test`: back-merges or syncs into test.
@@ -115,14 +131,14 @@ Skip this step if there are no uncommitted changes.
 
    AB#<ticket>                    # one line per ticket; required (step 0b)
    ```
-   The types are the same as in the PR title list below. The scope is optional (`backend`, `frontend`, `workflow`, `plugins`, ...). There is NO `Co-Authored-By` trailer and no AI mention (step 0).
+   Use the type that matches `<change-type>` (`feat`, `fix`, `hotfix`, `chore`, ...). The types are the same as in the PR title list below. The scope is optional (`backend`, `frontend`, `workflow`, `plugins`, ...). There is NO `Co-Authored-By` trailer and no AI mention (step 0).
 3. Use one commit for one logical change. If the changes clearly cover unrelated things, propose splitting them into several commits.
 4. Show the staged file list (`git diff --cached --stat`) and the message, and wait for approval. Then commit with `git commit -F <scratch-file>`.
 5. If a pre-commit hook fails, fix the problem and create a NEW commit. Never use `--no-verify` and never `--amend` a commit that is already pushed.
 
 ## 4. Write PR title and body
 
-**Title** (the CI `pr-title-check` enforces this): `<type>: <subject> (<tickets>)`, e.g. `fix: preserve ML prediction output types (66739, 66740)`. The ticket suffix is required (step 0b). Allowed types are feat, fix, docs, style, refactor, test, chore, perf, ci, hotfix, bugfix, security, build, release, merge, rebase, revert, cleanup, enhancement. Keep it lowercase and imperative, with no trailing period. For merges, use `Merge: <what> into <where>`.
+**Title** (the CI `pr-title-check` enforces this): `<type>: <subject> (<tickets>)`, where `<type>` comes from `<change-type>`, e.g. `fix: preserve ML prediction output types (66739, 66740)`. The ticket suffix is required (step 0b). Allowed types are feat, fix, docs, style, refactor, test, chore, perf, ci, hotfix, bugfix, security, build, release, merge, rebase, revert, cleanup, enhancement. Keep it lowercase and imperative, with no trailing period. For merges, use `Merge: <what> into <where>`.
 
 **Body**: follow `.github/pull_request_template.md`, but write real content and drop the empty placeholder sections and HTML comments. Good PRs in this repo read like this:
 
@@ -138,7 +154,7 @@ Skip this step if there are no uncommitted changes.
 - <what was verified: compiles, `docker compose config -q`, alembic single head `<rev>`, tests run or "test suites not run locally">
 
 ## Type of Change
-- [x] <only the matching options from the template>
+- [x] <the option for `<change-type>`, plus any others that also apply>
 
 ## Related Issues
 - AB#<ticket> - https://dev.azure.com/Ritech/GenAssist/_workitems/edit/<ticket>   (one line per ticket; required)
