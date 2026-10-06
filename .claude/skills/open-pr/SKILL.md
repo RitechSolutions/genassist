@@ -1,6 +1,6 @@
 ---
-name: create-pr
-description: Commit, push and open a GenAssist pull request the way this repo does it, linked to its Azure DevOps ticket when there is one (fork -> RitechSolutions/genassist, base `origin/development`), with a code-review gate first. HIGH findings stop everything, MEDIUM findings ask before continuing. Use when the user says "create a PR", "open a PR", "commit and push", "/create-pr", or "ship this".
+name: open-pr
+description: Commit, push and open a GenAssist pull request the way this repo does it, linked to its Azure DevOps ticket when there is one (fork -> RitechSolutions/genassist, base `origin/development`), with a code-review gate first. HIGH findings stop everything, MEDIUM findings ask before continuing. Use when the user says "create a PR", "open a PR", "commit and push", "/open-pr", or "ship this".
 ---
 
 # Create PR (branch -> review -> commit -> push -> PR)
