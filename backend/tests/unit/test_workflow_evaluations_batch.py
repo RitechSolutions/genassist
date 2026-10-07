@@ -6,6 +6,9 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.error_policy import client_safe_error_detail
+from app.core.exceptions.exception_classes import AppException
 from app.services.test_suite import TestSuiteService as EvalService
 from app.services.test_suite import resolvers_from_agents
 
@@ -181,6 +184,46 @@ class TestFullNestedToolCatalog:
         assert out["tool_used"]["rules"][0]["tool_ids"] == ["t1"]
 
 
+class TestRuleConfigErrorsAreClientSafe:
+    """Save-time rule errors reach the user as fixed sentences, never pydantic text."""
+
+    def test_invalid_route_rules_get_a_fixed_sentence(self):
+        configs = {"route_taken": {"rules": [
+            {"id": "r", "router": "router-1", "expected": "true", "scope": "specific_turn"},
+        ]}}
+
+        with pytest.raises(AppException) as excinfo:
+            EvalService._validate_route_action_configs(configs)
+
+        error = excinfo.value
+        assert error.error_key == ErrorKey.RULE_CONFIG_INVALID
+        assert client_safe_error_detail(error) == (
+            "Route taken rules are not valid. Check each rule's settings and selected turns."
+        )
+        assert "specific_turn" not in error.error_detail
+
+    @pytest.mark.asyncio
+    async def test_unresolvable_tool_rules_get_a_fixed_sentence(self):
+        parent_id, _, by_id = TestFullNestedToolCatalog._nested_workflows()
+        service = _service()
+        service.workflow_service.get_by_id = AsyncMock(side_effect=lambda wid: by_id[str(wid)])
+
+        with pytest.raises(AppException) as excinfo:
+            await service._canonicalize_tool_used_configs(
+                parent_id,
+                {"tool_used": {"rules": [
+                    {"id": "r", "tool_ids": ["No Such Tool"], "operator": "all"},
+                ]}},
+            )
+
+        error = excinfo.value
+        assert error.error_key == ErrorKey.TOOL_USAGE_CONFIG_INVALID
+        assert client_safe_error_detail(error) == (
+            "Tool usage rules do not match this workflow. Check each rule's agent and tools."
+        )
+        assert "No Such Tool" not in error.error_detail
+
+
 class TestToolResultSnapshot:
     """Item 1: each result carries a readable, rename-proof snapshot."""
 
@@ -262,6 +305,42 @@ class TestStartWorkflowEvaluations:
         # raw exception text must never reach the client
         assert failed[0].error == "Failed to start evaluation."
         assert "boom" not in (failed[0].error or "")
+
+    @pytest.mark.asyncio
+    async def test_missing_workflow_is_reported_by_name(self):
+        ev = _eval(suite_id=uuid4())
+        service = _service()
+        service._evaluations_for_workflow = AsyncMock(return_value=[ev])
+        service._start_evaluation_run = AsyncMock(
+            side_effect=AppException(
+                status_code=400, error_key=ErrorKey.EVALUATION_WORKFLOW_REQUIRED
+            )
+        )
+
+        (result,) = await service.start_workflow_evaluations(uuid4(), MagicMock())
+
+        assert result.status == "failed_to_start"
+        assert result.error == "This evaluation has no workflow. Edit it and choose a workflow."
+
+
+class TestStartEvaluationRunWithoutWorkflow:
+    @pytest.mark.asyncio
+    async def test_no_workflow_anywhere_is_refused_before_a_run_exists(self):
+        ev = _eval(suite_id=uuid4(), workflow_id=None)
+        service = _service()
+        # The dataset has no default workflow either.
+        service.suite_repo.get_by_id = AsyncMock(
+            return_value=SimpleNamespace(id=ev.suite_id, workflow_id=None)
+        )
+        service.create_run = AsyncMock()
+
+        with pytest.raises(AppException) as excinfo:
+            await service._start_evaluation_run(ev, MagicMock())
+
+        assert excinfo.value.status_code == 400
+        assert excinfo.value.error_key == ErrorKey.EVALUATION_WORKFLOW_REQUIRED
+        assert ErrorKey.EVALUATION_WORKFLOW_REQUIRED.value == "evaluation_workflow_required"
+        service.create_run.assert_not_awaited()
 
 
 class TestStartEvaluationRunOrphanCleanup:
@@ -366,6 +445,41 @@ class TestWorkflowEvaluationSummaries:
         service.run_repo.get_by_ids.assert_awaited_once()
         requested_ids = set(service.run_repo.get_by_ids.await_args.args[0])
         assert requested_ids == {"r1", "r2", "r3"}  # empty pointer excluded
+
+    @pytest.mark.asyncio
+    async def test_health_skips_metrics_with_no_graded_checks(self):
+        """A null accuracy means nothing was graded, so it is skipped rather than
+        averaged in as 0. A failed run still counts as 0."""
+        wf = uuid4()
+        service = _service()
+        service.evaluation_repo.count_by_effective_workflow = AsyncMock(return_value=[(wf, 3)])
+        service.evaluation_repo.get_latest_run_pointers = AsyncMock(
+            return_value=[(wf, ["r1"]), (wf, ["r2"]), (wf, ["r3"])]
+        )
+        service.run_repo.get_by_ids = AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    id="r1",
+                    status="completed",
+                    summary_metrics={
+                        "exact_match": {"accuracy": 1.0},
+                        "tool_used": {"accuracy": None, "avg_score": None},
+                    },
+                ),
+                # Nothing graded at all: not scored, not counted.
+                SimpleNamespace(
+                    id="r2",
+                    status="completed",
+                    summary_metrics={"route_taken": {"accuracy": None}},
+                ),
+                SimpleNamespace(id="r3", status="failed", summary_metrics={"error": "boom"}),
+            ]
+        )
+
+        summaries = await service.get_workflow_evaluation_summaries()
+        summary = next(s for s in summaries if s.workflow_id == wf)
+        assert summary.finished_count == 2
+        assert summary.health == pytest.approx((1.0 + 0.0) / 2)
 
     @pytest.mark.asyncio
     async def test_running_run_sets_any_running_and_is_not_scored(self):

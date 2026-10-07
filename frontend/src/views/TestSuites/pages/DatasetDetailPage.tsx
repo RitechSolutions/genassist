@@ -35,8 +35,10 @@ import { ImportFromConversationDialog } from "../components/ImportFromConversati
 import { ImportFromFilesDialog } from "../components/ImportFromFilesDialog";
 import { RecordDialog, RecordPayload } from "../components/RecordDialog";
 import {
+  conversationLabels,
   countConversations,
   groupCasesByConversation,
+  searchConversations,
   type ConversationGroup,
 } from "../helpers/datasetConversations";
 
@@ -170,7 +172,7 @@ const DatasetDetailPage: React.FC = () => {
       setCases((prev) =>
         prev.filter((c) => c.source_conversation_id !== conversationToRemove.id),
       );
-      toast.success(`${conversationToRemove.label} removed.`);
+      toast.success(`"${conversationToRemove.label}" removed.`);
       setConversationToRemove(null);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
@@ -182,15 +184,10 @@ const DatasetDetailPage: React.FC = () => {
     }
   };
 
-  const filteredCases = cases.filter((entry) => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return true;
-    const inputText = JSON.stringify(entry.input_data ?? {}).toLowerCase();
-    const expectedText = JSON.stringify(entry.expected_output ?? {}).toLowerCase();
-    return inputText.includes(query) || expectedText.includes(query);
-  });
-
-  const conversationGroups = groupCasesByConversation(filteredCases);
+  // Grouped before searching, so a matching turn keeps its number and label.
+  const allGroups = groupCasesByConversation(cases);
+  const labels = conversationLabels(allGroups);
+  const conversationMatches = searchConversations(allGroups, searchQuery);
   // The header counts describe the dataset, so they ignore the search filter.
   const conversationCount = countConversations(cases);
   const countLabel = `${conversationCount} conversation${
@@ -303,7 +300,7 @@ const DatasetDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {isLoading || conversationGroups.length === 0 ? (
+      {isLoading || conversationMatches.length === 0 ? (
         <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
           {isLoading ? <PageListSkeleton bordered={false} /> : null}
           {!isLoading && (
@@ -337,10 +334,12 @@ const DatasetDetailPage: React.FC = () => {
       ) : (
         // Each conversation is its own card, so they read as separate threads.
         <div className="space-y-3">
-          {conversationGroups.map((group) => (
+          {conversationMatches.map(({ group, turns }) => (
             <ConversationRecordGroup
               key={group.key}
               group={group}
+              label={labels.get(group.key) ?? ""}
+              turns={turns}
               isCollapsed={!expandedGroups.has(group.key)}
               onToggleCollapse={() => toggleGroupExpansion(group.key)}
               expandedRecords={expandedRecords}
@@ -407,10 +406,12 @@ const DatasetDetailPage: React.FC = () => {
         }}
         onConfirm={handleRemoveConversation}
         isInProgress={isRemovingConversation}
-        title={`Remove ${conversationToRemove?.label ?? "conversation"}?`}
-        description={`This will permanently delete its ${conversationToRemove?.turns ?? 0} turn${
-          conversationToRemove?.turns === 1 ? "" : "s"
-        }. Everything else in "${suite?.name ?? ""}" is kept.`}
+        title="Remove this conversation?"
+        description={
+          `This will permanently delete "${conversationToRemove?.label ?? ""}" and its ` +
+          `${conversationToRemove?.turns ?? 0} turn${conversationToRemove?.turns === 1 ? "" : "s"}. ` +
+          `Everything else in "${suite?.name ?? ""}" is kept.`
+        }
         primaryButtonText="Remove"
       />
 

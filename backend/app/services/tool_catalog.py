@@ -188,6 +188,15 @@ def resolve_node_labels(workflow: Any) -> Dict[str, str]:
     return {node.get("id"): _node_label(node) for node in _nodes(workflow) if node.get("id")}
 
 
+def resolve_branch_labels(workflow: Any) -> Dict[str, Dict[str, str]]:
+    """Switch node id -> {route: case label}, so results can name a switch branch."""
+    return {
+        node.get("id"): _switch_branch_labels(node)
+        for node in _nodes(workflow)
+        if node.get("type") == SWITCH_NODE_TYPE and node.get("id")
+    }
+
+
 def nested_workflow_refs(workflow: Any) -> List[Dict[str, Any]]:
     """Executor nodes that run another workflow, for the caller to expand recursively."""
     refs = []
