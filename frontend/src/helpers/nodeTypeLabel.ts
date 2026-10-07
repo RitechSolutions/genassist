@@ -28,6 +28,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   routerNode: "Conditional Router",
   switchNode: "Switch",
   filterNode: "Filter",
+  loopNode: "Loop",
   aggregatorNode: "Result Merger",
   // Utils
   templateNode: "Text Template",

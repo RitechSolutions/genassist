@@ -471,6 +471,7 @@ def describe_tool_rule(
     rule: "ToolUsageRule",
     agent_labels: Optional[Dict[str, str]] = None,
     tool_labels: Optional[Dict[str, str]] = None,
+    turn_positions: Optional[Dict[int, int]] = None,
 ) -> str:
     """A plain-language sentence for a rule, using human labels where available.
 
@@ -481,7 +482,7 @@ def describe_tool_rule(
 
     subject = agent_labels.get(rule.agent_id, "The agent") if rule.agent_id else "Any agent"
     names = [tool_labels.get(tool_id, tool_id) for tool_id in rule.tool_ids]
-    phrase = scope_phrase(rule)
+    phrase = scope_phrase(rule, turn_positions)
 
     if rule.operator == "none":
         return f"{subject} must not use {_quote_join(names, 'or')} {phrase}."

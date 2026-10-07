@@ -34,6 +34,7 @@ import { useSchemaValidation } from "./hooks/useSchemaValidation";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
 import { useParams, useSearchParams } from "react-router-dom";
+import { WorkflowLoadingOverlay } from "./components/WorkflowLoadingOverlay";
 import { getWorkflowById, updateWorkflow } from "@/services/workflows";
 import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
@@ -61,6 +62,7 @@ import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
 import { validateSubAgentConnection } from "./utils/subAgentGraph";
+import { validateLoopConnection } from "./utils/loopGraph";
 import { buildDeleteConfirmation } from "./utils/nodeDeletion";
 import {
   applyDragReparenting,
@@ -372,6 +374,9 @@ const GraphFlowContent: React.FC = () => {
   const { validateConnection } = useSchemaValidation();
 
   const { agentId } = useParams<{ agentId: string }>();
+  // True from the moment an agent's workflow is requested until its nodes have
+  // been mounted and framed — drives the canvas loading overlay.
+  const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(!!agentId);
   const edgeReconnectSuccessful = useRef(true);
 
   // Handle double-click on nodes to focus view using helper function
@@ -417,6 +422,9 @@ const GraphFlowContent: React.FC = () => {
         // a freshly opened workflow (whose nodes can sit at large coordinates) renders off-screen.
         // Frame it now that its nodes have loaded.
         if (nodes.length > 0) reactFlowInstance?.fitView({ padding: 0.2 });
+        // `workflow` is only set once the fetch has resolved, so the settle pass
+        // that runs at mount (before any data) leaves the overlay up.
+        if (workflow) setIsLoadingWorkflow(false);
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -570,9 +578,16 @@ const GraphFlowContent: React.FC = () => {
 
   const loadAgent = useCallback(
     async (agentId: string) => {
-      const agent = await getAgentConfig(agentId);
-      setAgent(agent);
-      loadWorkflow(agent.workflow_id);
+      setIsLoadingWorkflow(true);
+      try {
+        const agent = await getAgentConfig(agentId);
+        setAgent(agent);
+        await loadWorkflow(agent.workflow_id);
+      } catch (error) {
+        // Nothing to mount — don't leave the overlay up forever.
+        setIsLoadingWorkflow(false);
+        throw error;
+      }
     },
     [loadWorkflow]
   );
@@ -623,7 +638,9 @@ const GraphFlowContent: React.FC = () => {
         return { ok: false };
       }
       const scopedEdges = ignoreEdgeId ? edges.filter((e) => e.id !== ignoreEdgeId) : edges;
-      return validateSubAgentConnection(params, nodes, scopedEdges);
+      const subAgentCheck = validateSubAgentConnection(params, nodes, scopedEdges);
+      if (!subAgentCheck.ok) return subAgentCheck;
+      return validateLoopConnection(params, nodes, scopedEdges);
     },
     [validateConnection, nodes, edges]
   );
@@ -1703,6 +1720,8 @@ const GraphFlowContent: React.FC = () => {
                 </ReactFlow>
               </div>
             </CanvasContextMenu>
+
+            <WorkflowLoadingOverlay visible={isLoadingWorkflow} />
 
             {/* Top-left view switcher: graph editor vs. executions/test page.
                 The sidebar's floating toggle button sits at the top-left corner

@@ -25,17 +25,27 @@ import {
 } from "@/components/select";
 import { listResultsForRun } from "@/services/testSuites";
 import { getToolRuleResults } from "@/services/testEvaluations";
-import { TestResult, TestRun } from "@/interfaces/testSuite.interface";
+import { TestCase, TestResult, TestRun } from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
 import { cn } from "@/helpers/utils";
 import { methodLabel } from "../helpers/methodLabels";
-import { CaseStatus, caseStatusFor, isTurnScope } from "../helpers/runResults";
+import {
+  CaseStatus,
+  NOT_EVALUATED,
+  caseStatusFor,
+  isTurnScope,
+  techniqueAccuracy,
+  techniqueSummaries,
+} from "../helpers/runResults";
+import { caseLabel, indexConversations } from "../helpers/datasetConversations";
 
 interface CompareRunsDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   /** All runs of the evaluation, newest first. */
   runs: TestRun[];
+  /** The dataset's current cases, used to name each row. */
+  cases?: TestCase[];
 }
 
 type CaseChange = "regression" | "improvement" | "unchanged" | "other";
@@ -52,10 +62,8 @@ interface RunData {
   ruleResults: TestToolRuleResult[];
 }
 
-/** Summary metric shape stored per technique on a run. */
-type TechniqueSummary = { accuracy?: number };
-
-const RUN_TOTALS_KEY = "_totals";
+// Accuracy in one run: null when nothing was checked, undefined when the run lacks the method.
+type TechniqueValue = number | null | undefined;
 
 const runLabel = (run: TestRun): string => {
   const version = run.workflow_version ? ` · v${run.workflow_version}` : "";
@@ -117,10 +125,10 @@ const ChangeBadge: React.FC<{ change: CaseChange }> = ({ change }) => {
 
 const TechniqueDelta: React.FC<{
   technique: string;
-  baseline: number | null;
-  candidate: number | null;
+  baseline: TechniqueValue;
+  candidate: TechniqueValue;
 }> = ({ technique, baseline, candidate }) => {
-  const hasBoth = baseline !== null && candidate !== null;
+  const hasBoth = typeof baseline === "number" && typeof candidate === "number";
   const delta = hasBoth ? candidate - baseline : null;
   const deltaClass =
     delta === null || Math.abs(delta) < 0.005
@@ -128,8 +136,8 @@ const TechniqueDelta: React.FC<{
       : delta > 0
         ? "text-green-600 dark:text-green-400"
         : "text-red-600 dark:text-red-400";
-  const percent = (value: number | null) =>
-    value === null ? "–" : `${Math.round(value * 100)}%`;
+  const percent = (value: TechniqueValue) =>
+    value === undefined ? "–" : value === null ? NOT_EVALUATED : `${Math.round(value * 100)}%`;
 
   return (
     <div className="flex items-center justify-between gap-2 text-xs">
@@ -151,6 +159,7 @@ export const CompareRunsDialog: React.FC<CompareRunsDialogProps> = ({
   isOpen,
   onOpenChange,
   runs,
+  cases,
 }) => {
   const [baselineRunId, setBaselineRunId] = useState<string>("");
   const [candidateRunId, setCandidateRunId] = useState<string>("");
@@ -241,22 +250,19 @@ export const CompareRunsDialog: React.FC<CompareRunsDialogProps> = ({
 
   // Per-technique accuracy across both runs, keyed by technique.
   const techniqueRows = useMemo(() => {
-    const accuracyOf = (run: TestRun | undefined, technique: string): number | null => {
-      const summary = run?.summary_metrics?.[technique] as TechniqueSummary | undefined;
-      return typeof summary?.accuracy === "number" ? summary.accuracy : null;
-    };
-    const techniques = new Set<string>();
-    [baselineRun, candidateRun].forEach((run) => {
-      Object.keys(run?.summary_metrics ?? {})
-        .filter((key) => key !== RUN_TOTALS_KEY)
-        .forEach((key) => techniques.add(key));
-    });
+    const baseline = new Map(techniqueSummaries(baselineRun));
+    const candidate = new Map(techniqueSummaries(candidateRun));
+    const valueOf = (summaries: typeof baseline, technique: string): TechniqueValue =>
+      summaries.has(technique) ? techniqueAccuracy(summaries.get(technique)) : undefined;
+    const techniques = new Set([...baseline.keys(), ...candidate.keys()]);
     return [...techniques].map((technique) => ({
       technique,
-      baseline: accuracyOf(baselineRun, technique),
-      candidate: accuracyOf(candidateRun, technique),
+      baseline: valueOf(baseline, technique),
+      candidate: valueOf(candidate, technique),
     }));
   }, [baselineRun, candidateRun]);
+
+  const conversationIndex = useMemo(() => indexConversations(cases ?? []), [cases]);
 
   const verdict =
     regressionCount > 0
@@ -364,7 +370,7 @@ export const CompareRunsDialog: React.FC<CompareRunsDialogProps> = ({
               {comparisons.map((row) => (
                 <div key={row.caseId} className="flex items-center gap-3 py-2">
                   <span className="flex-1 truncate text-sm">
-                    Case #{row.caseId.slice(-4)}
+                    {caseLabel(conversationIndex, row.caseId)}
                   </span>
                   <span className="flex w-16 justify-center">
                     <StatusIcon status={row.baseline} />

@@ -172,11 +172,27 @@ class WorkflowService:
                     error_detail=detail,
                 ) from e
 
+    @staticmethod
+    def _validate_loops(payload: dict) -> None:
+        """Save-time Loop wiring check"""
+        from app.modules.workflow.engine.loops import LoopTopologyError, validate_loop_topology
+
+        try:
+            validate_loop_topology(payload.get("nodes"), payload.get("edges"))
+        except LoopTopologyError as e:
+            raise AppException(
+                error_key=ErrorKey.LOOP_INVALID_TOPOLOGY,
+                status_code=400,
+                error_variables=[str(e)],
+                error_detail=str(e),
+            ) from e
+
     # ---------- WRITE ----------
     async def create(self, data: WorkflowCreate) -> WorkflowInDB:
         # convert schema ➜ ORM
         payload = data.model_dump()
         self._validate_sub_agents(payload)
+        self._validate_loops(payload)
         # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
         payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
         new_workflow = WorkflowModel(**payload)
@@ -193,6 +209,7 @@ class WorkflowService:
         # mutate ORM object in place
         payload = data.model_dump()
         self._validate_sub_agents(payload)
+        self._validate_loops(payload)
         # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
         payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
         for field, value in payload.items():

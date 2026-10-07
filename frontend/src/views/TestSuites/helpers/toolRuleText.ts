@@ -12,6 +12,35 @@ const listPhrase = (names: string[], conjunction: "and" | "or"): string => {
   return `${quoted.slice(0, -1).join(", ")} ${conjunction} ${quoted[quoted.length - 1]}`;
 };
 
+interface ToolRuleSummaryInput {
+  agentId?: string | null;
+  agentLabel?: string | null;
+  toolLabels: string[];
+  operator: string;
+  requireSuccess?: boolean;
+  scope: string;
+}
+
+// The builder's one-line rule summary, worded like the backend's describe_tool_rule.
+export const toolRuleSummary = ({
+  agentId,
+  agentLabel,
+  toolLabels,
+  operator,
+  requireSuccess,
+  scope,
+}: ToolRuleSummaryInput): string => {
+  const subject = agentId ? agentLabel || "The agent" : "Any agent";
+  if (operator === "none") return `${subject} must not use ${listPhrase(toolLabels, "or")} ${scope}.`;
+  if (operator === "only") {
+    if (toolLabels.length === 0) return `${subject} must not use any tools ${scope}.`;
+    return `${subject} may only use ${listPhrase(toolLabels, "or")} ${scope}.`;
+  }
+  const conjunction = operator === "all" ? "and" : "or";
+  const successfully = requireSuccess ? "successfully " : "";
+  return `${subject} must ${successfully}use ${listPhrase(toolLabels, conjunction)} ${scope}.`;
+};
+
 // One-line "what the rule requires", derived from the stored rule snapshot.
 export const toolExpectedText = (details: ToolRuleResultDetails): string => {
   const rule = details.rule ?? {};

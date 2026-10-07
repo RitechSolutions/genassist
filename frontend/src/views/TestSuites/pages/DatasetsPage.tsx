@@ -282,7 +282,7 @@ const DatasetsPage: React.FC = () => {
             if (!editingDatasetId) return;
             const updated = await updateTestSuite(editingDatasetId, {
               name: values.name.trim(),
-              description: values.description.trim() || undefined,
+              description: values.description.trim(), // "" clears it; undefined would keep the old one
             });
             setSuites((prev) =>
               prev.map((s) => (s.id === editingDatasetId ? updated : s))

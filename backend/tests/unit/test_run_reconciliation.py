@@ -2,12 +2,15 @@
 import base64
 import json
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.core.config.settings import settings
+from app.repositories.test_suite import TestRunRepository as RunRepository
 from app.tasks import run_reconciliation_tasks as reconciliation
 
 EVAL_TASK = reconciliation.EVALUATION_RUN_TASK
@@ -166,6 +169,32 @@ class TestQueueAwareReconciler:
         assert repository.mark_orphaned_as_failed.await_args.kwargs["waiting_ids"] == pending
 
     @pytest.mark.asyncio
+    async def test_a_run_that_never_started_is_not_blamed_on_a_crashed_worker(self):
+        repository = _repository([str(uuid4())])
+        _, patches = _patched(repository, "TestRunRepository", set())
+
+        with patches[0], patches[1], patches[2], patches[3]:
+            await reconciliation.reconcile_stuck_test_runs_async()
+
+        kwargs = repository.mark_orphaned_as_failed.await_args.kwargs
+        assert kwargs["error_message"] == reconciliation.STUCK_TEST_RUN_ERROR
+        assert kwargs["waiting_error_message"] == (
+            "No worker picked up this run. Check that a worker is listening on the ml queue."
+        )
+
+    @pytest.mark.asyncio
+    async def test_workflow_runs_keep_a_single_message(self):
+        repository = _repository([str(uuid4())])
+        _, patches = _patched(repository, "WorkflowScheduleRunRepository", set())
+
+        with patches[0], patches[1], patches[2], patches[3]:
+            await reconciliation.reconcile_stuck_workflow_runs_async()
+
+        kwargs = repository.mark_orphaned_as_failed.await_args.kwargs
+        assert kwargs["error_message"] == reconciliation.STUCK_WORKFLOW_RUN_ERROR
+        assert "waiting_error_message" not in kwargs
+
+    @pytest.mark.asyncio
     async def test_errors_roll_back_and_do_not_raise(self):
         repository = _repository([str(uuid4())])
         repository.mark_orphaned_as_failed = AsyncMock(side_effect=RuntimeError("db down"))
@@ -176,3 +205,31 @@ class TestQueueAwareReconciler:
 
         session.rollback.assert_awaited_once()
         session.commit.assert_not_awaited()
+
+
+class TestOrphanMessages:
+    """Queued and running test runs are failed with different reasons in one update."""
+
+    async def _statement(self, **kwargs):
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=SimpleNamespace(rowcount=2))
+        db.flush = AsyncMock()
+        failed = await RunRepository(db).mark_orphaned_as_failed(
+            waiting_ids=[str(uuid4())],
+            running_before=datetime.now(timezone.utc),
+            error_message="crashed",
+            **kwargs,
+        )
+        assert failed == 2
+        db.execute.assert_awaited_once()
+        return str(db.execute.await_args.args[0].compile(dialect=postgresql.dialect()))
+
+    @pytest.mark.asyncio
+    async def test_waiting_message_switches_on_the_old_status(self):
+        sql = await self._statement(waiting_error_message="never picked up")
+        assert "summary_metrics=CASE WHEN (test_runs.status =" in sql
+
+    @pytest.mark.asyncio
+    async def test_without_a_waiting_message_every_run_gets_the_same_reason(self):
+        sql = await self._statement()
+        assert "CASE" not in sql

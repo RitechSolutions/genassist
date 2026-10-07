@@ -29,6 +29,16 @@ def normalize_text(value: Any) -> str:
     return str(value).strip()
 
 
+def reply_text(value: Any) -> str:
+    """The reply live chat would show: a dict's message or response, else the whole value."""
+    if isinstance(value, dict):
+        for key in ("message", "response"):
+            text = value.get(key)
+            if isinstance(text, str) and text:
+                return text.strip()
+    return normalize_text(value)
+
+
 def names_equal(first: Any, second: Any) -> bool:
     return normalize_text(first).lower() == normalize_text(second).lower()
 

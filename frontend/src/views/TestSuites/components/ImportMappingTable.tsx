@@ -169,8 +169,8 @@ export const ImportMappingTable: React.FC<ImportMappingTableProps> = ({
                           needsReview
                             ? "Confirm or pick the right node"
                             : isAmbiguous
-                              ? "Several matches — choose one"
-                              : "No match — choose manually"
+                              ? "Several matches: choose one"
+                              : "No match: choose manually"
                         }
                       />
                     </SelectTrigger>
@@ -188,7 +188,7 @@ export const ImportMappingTable: React.FC<ImportMappingTableProps> = ({
                       onClick={() => allowAll(rowKey)}
                       className="mt-1 text-xs text-muted-foreground underline hover:text-foreground"
                     >
-                      Showing same-type nodes only — show all {allOptions.length}
+                      Showing same-type nodes only. Show all {allOptions.length}
                     </button>
                   )}
                   </>

@@ -8,9 +8,11 @@ import ast
 import asyncio
 import csv
 import json
+import keyword
 import logging
 import math
 import os
+import re
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
@@ -389,6 +391,77 @@ def normalize_dtypes_for_training(df: pd.DataFrame) -> pd.DataFrame:
         ):
             df[column] = series.astype(object).where(series.notna(), np.nan)
     return df
+
+
+# df["col"] / df['col'] column references, as the Custom Expression field
+# used to suggest.
+_DF_COLUMN_REFERENCE = re.compile(r"""\bdf\s*\[\s*(["'])(.*?)\1\s*\]""")
+
+
+def normalize_feature_expression(expression: str) -> str:
+    """Rewrite df["col"] / df['col'] references to the plain column names
+    DataFrame.eval understands.
+
+    Custom Expression features are evaluated with DataFrame.eval, where
+    columns are referenced by name (price * quantity) and there is no `df`
+    variable - but the Train Model dialog used to suggest df["column_name"],
+    so expressions written that way failed with "name 'df' is not defined".
+    A name that isn't a valid identifier (e.g. it has a space) becomes a
+    backtick-quoted reference, which DataFrame.eval also supports.
+    """
+    def to_name(match: "re.Match[str]") -> str:
+        name = match.group(2)
+        return name if name.isidentifier() and not keyword.iskeyword(name) else f"`{name}`"
+
+    return _DF_COLUMN_REFERENCE.sub(to_name, expression or "")
+
+
+# Feature engineering strategies that turn numeric source columns into new
+# numeric columns through a (possibly fitted) transform. Labels are what the
+# Train Model dialog shows, used in error messages.
+COLUMN_TRANSFORM_STRATEGY_LABELS = {
+    "log_transform": "Log Transform",
+    "quantile_transform": "Quantile Transformer",
+    "power_transform": "Power Transformer",
+    "pca": "PCA",
+}
+
+
+def column_transform_value_problem(
+    strategy: str, values: np.ndarray, columns: List[str], power_method: Optional[str] = None
+) -> Optional[str]:
+    """Why `values` can't go through this transform, or None if they can.
+
+    Shared by training and inference, so a value that would be rejected at
+    training is rejected the same way at prediction time.
+    """
+    non_finite = ~np.isfinite(values)
+    if non_finite.any():
+        counts = {c: int(n) for c, n in zip(columns, non_finite.sum(axis=0)) if n}
+        return f"empty or infinite values in {counts}"
+    if strategy == "log_transform":
+        negative = values < 0
+        if negative.any():
+            counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
+            return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
+    if strategy == "power_transform" and power_method == "box-cox":
+        not_positive = values <= 0
+        if not_positive.any():
+            counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
+            return (
+                f"Box-Cox needs values above 0; values of 0 or less in {counts}. "
+                "Use the Yeo-Johnson method instead, which accepts any value"
+            )
+    return None
+
+
+def apply_column_transform(strategy: str, transformer: Any, values: np.ndarray) -> np.ndarray:
+    """Apply a column-transform feature: log(1 + x) for Log Transform, else
+    the transformer fitted on the training split (QuantileTransformer,
+    PowerTransformer, or a [StandardScaler +] PCA pipeline)."""
+    if strategy == "log_transform":
+        return np.log1p(values)
+    return transformer.transform(values)
 
 
 def ordinal_key(value: Any) -> Optional[str]:
@@ -917,6 +990,30 @@ def _names_data(python_code: str) -> bool:
     )
 
 
+# Marker _subprocess_worker puts before an exception the user's code raised,
+# after whatever else was written to stderr (e.g. pandas warnings).
+_USER_EXCEPTION_MARKER = "Global errors: "
+_WRAPPER_ERROR_PREFIX = "Error processing parameters: "
+
+
+def _format_user_code_error(stderr_output: str) -> str:
+    """The error to show for a run that returned no result.
+
+    stderr holds any warnings first and the user's exception last, so the
+    real error would otherwise be buried under e.g. a pandas FutureWarning
+    the user can ignore. Puts the exception (message + traceback) first and
+    any other stderr output after it, under "Warnings:".
+    """
+    if _USER_EXCEPTION_MARKER not in stderr_output:
+        return stderr_output.strip()
+    warnings_text, _, error_text = stderr_output.partition(_USER_EXCEPTION_MARKER)
+    error_text = error_text.strip()
+    if error_text.startswith(_WRAPPER_ERROR_PREFIX):
+        error_text = error_text[len(_WRAPPER_ERROR_PREFIX):]
+    warnings_text = warnings_text.strip()
+    return f"{error_text}\n\nWarnings:\n{warnings_text}" if warnings_text else error_text
+
+
 async def execute_and_process_preprocessing_code(
     python_code: str,
     df: Optional[pd.DataFrame],
@@ -971,11 +1068,7 @@ async def execute_and_process_preprocessing_code(
     stderr_output = response.get("errors")
     result = response.get("result")
     if stderr_output and result is None:
-        user_error = (
-            stderr_output.replace("Global errors: ", "", 1)
-            .replace("Error processing parameters: ", "", 1)
-            .strip()
-        )
+        user_error = _format_user_code_error(stderr_output)
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
