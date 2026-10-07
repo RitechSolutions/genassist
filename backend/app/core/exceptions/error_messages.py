@@ -13,7 +13,9 @@ class ErrorKey(Enum):
     TOOL_USAGE_CONFIG_INVALID = "tool_usage_config_invalid"
     RULE_CONFIG_INVALID = "rule_config_invalid"
     EVALUATION_TARGET_NOT_A_VERSION = "evaluation_target_not_a_version"
+    EVALUATION_WORKFLOW_REQUIRED = "evaluation_workflow_required"
     EVALUATION_BUNDLE_INVALID = "evaluation_bundle_invalid"
+    DATASET_FILE_IMPORT_INVALID = "dataset_file_import_invalid"
     NOT_FOUND = "not_found"
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
@@ -97,6 +99,7 @@ class ErrorKey(Enum):
     SUB_AGENT_SESSION_STALE = "SUB_AGENT_SESSION_STALE"
     SUB_AGENT_INVALID_TOPOLOGY = "SUB_AGENT_INVALID_TOPOLOGY"
     SUB_AGENT_INVALID_CONFIG = "SUB_AGENT_INVALID_CONFIG"
+    LOOP_INVALID_TOPOLOGY = "LOOP_INVALID_TOPOLOGY"
     OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING"
     CREATE_USER_TYPE_IN_MENU = "CREATE_USER_TYPE_IN_MENU"
     LOGIN_ERROR_CONSOLE_USER = "LOGIN_ERROR_CONSOLE_USER"
@@ -123,9 +126,15 @@ class ErrorKey(Enum):
     ERROR_INSIDE_WHISPER_SERVICE = "ERROR_INSIDE_WHISPER_SERVICE"
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
     ERROR_EXTRACTING_FROM_FILE = "ERROR_EXTRACTING_FROM_FILE"
+    ML_EXTRACT_CONFIGURATION_INVALID = "ML_EXTRACT_CONFIGURATION_INVALID"
+    ML_EXTRACT_QUERY_FAILED = "ML_EXTRACT_QUERY_FAILED"
+    ML_EXTRACT_FILE_UNAVAILABLE = "ML_EXTRACT_FILE_UNAVAILABLE"
+    ML_EXTRACT_FILE_ENCODING_INVALID = "ML_EXTRACT_FILE_ENCODING_INVALID"
     ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
+    ML_EXTRACT_FAILED = "ML_EXTRACT_FAILED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
+    ML_INFERENCE_INPUT_INVALID = "ML_INFERENCE_INPUT_INVALID"
     INVALID_PKL_FILE = "INVALID_PKL_FILE"
     PKL_FILE_TOO_LARGE = "PKL_FILE_TOO_LARGE"
     ERROR_UPLOAD_FILE_OPEN_AI = "ERROR_UPLOAD_FILE_OPEN_AI"
@@ -202,7 +211,9 @@ ERROR_MESSAGES = {
         ErrorKey.TOOL_USAGE_CONFIG_INVALID: "The tool usage configuration could not be resolved to canonical tool ids.",
         ErrorKey.RULE_CONFIG_INVALID: "The evaluation rule configuration is not valid.",
         ErrorKey.EVALUATION_TARGET_NOT_A_VERSION: "The target workflow is not a version of the evaluation's workflow.",
+        ErrorKey.EVALUATION_WORKFLOW_REQUIRED: "This evaluation has no workflow. Edit it and choose a workflow.",
         ErrorKey.EVALUATION_BUNDLE_INVALID: "The evaluation bundle is invalid or could not be imported.",
+        ErrorKey.DATASET_FILE_IMPORT_INVALID: "The dataset files could not be imported.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
@@ -311,9 +322,20 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_INSIDE_WHISPER_SERVICE: "An error occurred in transcription service.",
         ErrorKey.MESSAGE_NOT_FOUND: "Message not found.",
         ErrorKey.ERROR_EXTRACTING_FROM_FILE: "Failed to extract text from file.",
+        ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID: "Train Data Source configuration is incomplete.",
+        ErrorKey.ML_EXTRACT_QUERY_FAILED: "Could not run the Train Data Source query.",
+        ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE: "The uploaded training file is no longer available.",
+        ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
+            "The uploaded CSV uses an unsupported character encoding."
+        ),
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
+        ErrorKey.ML_EXTRACT_FAILED: (
+            "Train Data Source could not complete the test. "
+            "Check its configuration and try again."
+        ),
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
+        ErrorKey.ML_INFERENCE_INPUT_INVALID: "ML model inference received invalid input values.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",
         ErrorKey.PKL_FILE_TOO_LARGE: "PKL file too large. Maximum size is 500MB.",
         ErrorKey.ERROR_UPLOAD_FILE_OPEN_AI: "Failed to upload file to OpenAI.",
@@ -379,6 +401,7 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
+        ErrorKey.LOOP_INVALID_TOPOLOGY: "A loop in this workflow is not connected correctly: {0}",
         ErrorKey.PROMPT_CONTEXT_INVALID: "The prompt context is not valid for this workflow.",
         ErrorKey.PROMPT_FIELD_NOT_SUPPORTED: "This node has no editable prompt field with that name.",
         ErrorKey.PROMPT_VERSION_CONFLICT: "Another save completed first. Try again.",
@@ -394,11 +417,31 @@ ERROR_MESSAGES = {
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.READ_ONLY_SQL_BLOCKED: "Ce SQL a été rejeté car il n'est pas en lecture seule.",
+        ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID: (
+            "La configuration de la source de données d'entraînement est incomplète."
+        ),
+        ErrorKey.ML_EXTRACT_QUERY_FAILED: (
+            "Impossible d'exécuter la requête de la source de données d'entraînement."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE: (
+            "Le fichier de données d'entraînement téléversé n'est plus disponible."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
+            "Le fichier CSV téléversé utilise un encodage de caractères non pris en charge."
+        ),
+        ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: (
+            "La limite d'extraction des données d'entraînement a été dépassée."
+        ),
+        ErrorKey.ML_EXTRACT_FAILED: (
+            "La source de données d'entraînement n'a pas pu terminer le test. "
+            "Vérifiez sa configuration et réessayez."
+        ),
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "Les connexions de sous-agents de ce workflow sont invalides : {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "Un sous-agent de ce workflow est mal configuré : {0}",
+        ErrorKey.LOOP_INVALID_TOPOLOGY: "Une boucle de ce workflow n'est pas connectée correctement : {0}",
         ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "L'assistant est occupé pour le moment. Veuillez réessayer dans un instant.",
         ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED: "La demande a été abandonnée avant que l'assistant puisse répondre.",
     },

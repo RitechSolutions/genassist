@@ -1,3 +1,4 @@
+import { formatUsd } from "@/helpers/formatCurrency";
 import type {
   PromptEvalCaseResult,
   PromptEvalMetric,
@@ -5,7 +6,9 @@ import type {
   PromptEvalSummary,
   PromptRunProvenance,
 } from "@/interfaces/promptEditor.interface";
+import { methodLabel } from "@/views/TestSuites/helpers/methodLabels";
 import { notScoredLabel } from "@/views/TestSuites/helpers/runResults";
+import { formatDuration } from "./executionView";
 
 /** Shown under every run: the check is not what the node runs */
 export const ISOLATION_NOTE =
@@ -19,6 +22,7 @@ export const LEAKAGE_NOTE =
   "show whether the suggestion generalises. The hold-out comparison is the one to read.";
 
 export const STALE_NOTE = "Inputs changed since this run. Re-run to compare.";
+export const METERING_NOTE = "spend not recorded";
 
 /** Counts that are zero are dropped; "passed" always renders so a run always has a
  *  headline. An execution or scoring error is never reported as a failure */
@@ -58,6 +62,53 @@ const ranAt = (isoTimestamp: string): string => {
     : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
+export const formatTokens = (count: number): string => count.toLocaleString();
+
+export const formatSpend = (cost: number): string =>
+  cost > 0 && cost < 0.0001 ? "<$0.0001" : formatUsd(cost);
+
+const numberOrNull = (value: number | null | undefined): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const calls = (count: number): string =>
+  `${count} call${count === 1 ? "" : "s"}`;
+
+const JUDGE_LABEL = methodLabel("llm_judge");
+
+const spendSegments = (provenance: PromptRunProvenance): string[] => {
+  const usage = provenance.usage_total ?? {};
+  const tokens = usage.total_tokens ?? 0;
+  const unreported = usage.responses_without_usage ?? 0;
+  const unpriced = provenance.unpriced_calls ?? 0;
+  const cost = numberOrNull(provenance.cost_usd);
+  const segments = [`took ${formatDuration(provenance.latency_ms_total)}`];
+
+  if (tokens > 0) {
+    const gap = unreported > 0 ? `, ${calls(unreported)} unreported` : "";
+    segments.push(`${formatTokens(tokens)} tokens${gap}`);
+  } else if (unreported > 0) {
+    segments.push("tokens unreported");
+  }
+
+  if (cost !== null) {
+    const gap = unpriced > 0 ? ` (${calls(unpriced)} unpriced)` : "";
+    segments.push(`${formatSpend(cost)}${gap}`);
+  } else if (unpriced > 0) {
+    segments.push("unpriced");
+  }
+
+  const graderTokens = provenance.grader_tokens ?? 0;
+  const graderCost = numberOrNull(provenance.grader_cost_usd);
+  const grader = [
+    ...(graderTokens > 0 ? [`${formatTokens(graderTokens)} tokens`] : []),
+    ...(graderCost !== null ? [formatSpend(graderCost)] : []),
+  ];
+  if ((provenance.grader_calls ?? 0) > 0 && grader.length > 0) {
+    segments.push(`${JUDGE_LABEL} ${grader.join(" · ")}`);
+  }
+  return segments;
+};
+
 /**
  * One line stating what the run did. Names the provider and model used
  * rather than the locally selected row: another user's edit to the provider
@@ -68,19 +119,48 @@ export const snapshotHeader = (
   providerFallback?: ProviderFallback,
 ): string => {
   const parts = [
-    "Snapshot",
     `${provenance.evaluated_case_ids.length} of ${provenance.total_cases} cases`,
     `ran ${ranAt(provenance.ran_at)}`,
     modelLabel(provenance, providerFallback),
     provenance.trials === 1 ? "single sample" : `${provenance.trials} samples`,
+    ...spendSegments(provenance),
   ];
   if (provenance.deadline_hit) parts.push("cut by the time budget");
-  if (provenance.metering_handoff_failed) parts.push("spend hand-off failed");
+  if (provenance.metering_handoff_failed) parts.push(METERING_NOTE);
   return parts.join(" · ");
 };
 
-export const formatAvgScore = (avg: number | null): string =>
-  avg === null ? "—" : `${(avg * 100).toFixed(1)}%`;
+export const rewriteHeader = (
+  provenance: PromptRunProvenance,
+  providerFallback?: ProviderFallback,
+): string => {
+  const parts = [
+    "Rewrite",
+    `${provenance.evaluated_case_ids.length} of ${provenance.total_cases} cases shown`,
+    `ran ${ranAt(provenance.ran_at)}`,
+    modelLabel(provenance, providerFallback),
+    ...spendSegments(provenance),
+  ];
+  if (provenance.metering_handoff_failed) parts.push(METERING_NOTE);
+  return parts.join(" · ");
+};
+
+/** What the case's own model call took, used and cost */
+export const caseSpendLine = (result: PromptEvalCaseResult): string | null => {
+  const latency = numberOrNull(result.latency_ms);
+  const cost = numberOrNull(result.cost_usd);
+  const parts: string[] = [];
+  if (latency !== null) parts.push(formatDuration(latency));
+  if (result.usage) parts.push(`${formatTokens(result.usage.total_tokens)} tokens`);
+  if (cost !== null) parts.push(formatSpend(cost));
+  return parts.length > 0 ? parts.join(" · ") : null;
+};
+
+export const formatAvgScore = (avg: number | null): string => {
+  if (avg === null) return "—";
+  const percent = (avg * 100).toFixed(1);
+  return `${percent.endsWith(".0") ? percent.slice(0, -2) : percent}%`;
+};
 
 /** A case that never ran has no verdict, so it never shows as a failure */
 export const caseStatusLabel = (result: PromptEvalCaseResult): string => {
@@ -115,6 +195,16 @@ const METRIC_OUTCOME_LABELS: Record<MetricOutcome, string> = {
 
 export const metricOutcomeLabel = (metric: PromptEvalMetric): string =>
   METRIC_OUTCOME_LABELS[metricOutcomeOf(metric)];
+
+export const metricScoreLabel = (metric: PromptEvalMetric): string | null =>
+  typeof metric.score === "number" ? formatAvgScore(metric.score) : null;
+
+export const soleMetricEchoesVerdict = (
+  result: PromptEvalCaseResult,
+): boolean => {
+  const metrics = Object.values(result.metrics ?? {});
+  return metrics.length === 1 && metricOutcomeOf(metrics[0]) === result.verdict;
+};
 
 export interface PairedCaseRow {
   caseId: string;
@@ -178,6 +268,68 @@ export const joinPairedRuns = (
   }
 
   return comparison;
+};
+
+interface SpendPair {
+  before: PromptEvalCaseResult;
+  after: PromptEvalCaseResult;
+}
+
+/** One before/after figure over the pairs that carry it, disclosing its own coverage
+ *  when some pair does not. Null when no pair carries the metric at all */
+const pairedFigure = (
+  pairs: readonly SpendPair[],
+  read: (result: PromptEvalCaseResult) => number | null,
+  render: (before: number, after: number, covered: number) => string,
+): string | null => {
+  const covered = pairs
+    .map((pair) => ({ before: read(pair.before), after: read(pair.after) }))
+    .filter(
+      (pair): pair is { before: number; after: number } =>
+        pair.before !== null && pair.after !== null,
+    );
+  if (covered.length === 0) return null;
+
+  const total = (side: "before" | "after") =>
+    covered.reduce((running, pair) => running + pair[side], 0);
+  const figure = render(total("before"), total("after"), covered.length);
+  return covered.length === pairs.length
+    ? figure
+    : `${figure} (${covered.length} of ${pairs.length} cases)`;
+};
+
+/** Model-call spend across a paired hold-out run */
+export const spendComparisonLine = (joined: PairedComparison): string | null => {
+  const pairs: SpendPair[] = [];
+  for (const row of joined.rows) {
+    if (row.baseline?.status === "scored" && row.suggestion?.status === "scored") {
+      pairs.push({ before: row.baseline, after: row.suggestion });
+    }
+  }
+  if (pairs.length === 0) return null;
+
+  const figures = [
+    pairedFigure(
+      pairs,
+      (result) => numberOrNull(result.latency_ms),
+      (before, after, covered) =>
+        `avg ${formatDuration(before / covered)} → ${formatDuration(after / covered)}`,
+    ),
+    pairedFigure(
+      pairs,
+      (result) => result.usage?.total_tokens ?? null,
+      (before, after) => `${formatTokens(before)} → ${formatTokens(after)} tokens`,
+    ),
+    pairedFigure(
+      pairs,
+      (result) => numberOrNull(result.cost_usd),
+      (before, after) => `${formatSpend(before)} → ${formatSpend(after)}`,
+    ),
+  ].filter((figure): figure is string => figure !== null);
+
+  if (figures.length === 0) return null;
+  const scope = `${pairs.length} compared case${pairs.length === 1 ? "" : "s"}`;
+  return `Model calls over ${scope}: ${figures.join(" · ")}`;
 };
 
 export interface ChallengerComparison {

@@ -142,6 +142,7 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     input: entry.input,
     output: entry.output,
     error: asString(entry.error) ?? null,
+    ...((asNumber(entry.run) ?? 1) > 1 ? { runCount: asNumber(entry.run) } : {}),
     promptCaching: normalizePromptCaching(rawDiagnostics[nodeId]),
   }));
 

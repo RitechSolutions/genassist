@@ -1,5 +1,6 @@
 """How metrics become a verdict and a summary"""
 
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -10,7 +11,9 @@ from app.services.prompt_editor import (
     PromptUsageRef,
     _case_input_text,
     _case_outcome,
+    _cost_total,
     _for_wire,
+    _grader_calls,
     _metric_outcome,
     _summarise,
     _usage_total,
@@ -179,3 +182,33 @@ class TestUsageTotal:
             "total_tokens": 7,
             "responses_without_usage": 1,
         }
+
+
+class TestCostTotal:
+    def test_a_run_that_priced_nothing_reports_no_subtotal(self):
+        assert _cost_total(PromptUsageRef(execution_id="e")) == (None, 0)
+
+    def test_calls_that_could_not_be_priced_are_named_not_counted_as_zero(self):
+        ref = PromptUsageRef(execution_id="e")
+        ref.costs = {0: None, 1: None}
+
+        assert _cost_total(ref) == (None, 2)
+
+    def test_the_subtotal_covers_the_priced_calls_and_reports_the_rest(self):
+        ref = PromptUsageRef(execution_id="e")
+        ref.costs = {0: Decimal("0.0012"), 1: None, 1000: Decimal("0.0003")}
+
+        assert _cost_total(ref) == (Decimal("0.0015"), 1)
+
+
+class TestGraderCalls:
+    def test_only_judge_calls_count_as_grading(self):
+        ref = PromptUsageRef(execution_id="e")
+        ref.entries = [
+            {"purpose": "prompt_check"},
+            {"purpose": "llm_judge"},
+            {"purpose": "llm_judge"},
+            {},
+        ]
+
+        assert _grader_calls(ref) == 2

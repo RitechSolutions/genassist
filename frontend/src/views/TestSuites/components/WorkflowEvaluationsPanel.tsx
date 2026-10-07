@@ -47,6 +47,8 @@ import { EvaluationWizard, EvaluationWizardData } from "./EvaluationWizard";
 import { EvaluationListRow } from "./EvaluationListRow";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
 import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../helpers/evaluationForm";
+import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
+import { runAvgAccuracy } from "../helpers/runResults";
 import {
   apiErrorDetail,
   bundleFilename,
@@ -237,13 +239,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
 
   const getAverageAccuracy = (evaluation: TestEvaluationConfig): number | null => {
     const lastRun = evaluation.id ? lastRunsByEvaluationId[evaluation.id] : null;
-    if (!lastRun?.summary_metrics) return null;
-    const metrics = lastRun.summary_metrics as Record<string, { accuracy?: number }>;
-    const accuracies = Object.values(metrics)
-      .map((m) => m.accuracy)
-      .filter((a): a is number => typeof a === "number");
-    if (!accuracies.length) return null;
-    return accuracies.reduce((sum, a) => sum + a, 0) / accuracies.length;
+    return lastRun ? runAvgAccuracy(lastRun) : null;
   };
 
   const handleQuickRun = async (evaluation: TestEvaluationConfig, e: React.MouseEvent) => {
@@ -258,12 +254,8 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         void refetchPage(); // any_running turns on, which starts the status poll
       }
     } catch (error) {
-      if (isRunningConflict(error)) {
-        toast.error("This evaluation is already running");
-        void refetchPage();
-      } else {
-        toast.error("Failed to start evaluation");
-      }
+      toast.error(runStartErrorMessage(error));
+      if (isRunConflict(error)) void refetchPage();
     } finally {
       setRunningEvalIds((prev) => {
         const next = new Set(prev);
@@ -353,21 +345,16 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       runAllPollTimer.current = window.setTimeout(poll, 2000);
     } catch (error) {
       if (isStale()) return; // navigated away before the POST rejected
-      const status = (error as { response?: { status?: number } })?.response?.status;
-      if (status === 409) {
+      // A 409 here is about the whole workflow, so it keeps its own message.
+      if (isRunConflict(error)) {
         toast.error("This workflow already has running evaluations");
         void refetchPage(); // refetch so any_running blocks the button
       } else {
-        toast.error("Failed to start evaluations");
+        toast.error(runStartErrorMessage(error));
       }
       finish();
     }
   };
-
-  // The backend refuses (409) if the evaluation started running since the page
-  // loaded, so a stale UI can't edit or delete a run in flight.
-  const isRunningConflict = (error: unknown): boolean =>
-    (error as { response?: { status?: number } })?.response?.status === 409;
 
   const handleCreateSubmit = async (data: EvaluationWizardData) => {
     try {
@@ -394,7 +381,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     try {
       const updated = await updateTestEvaluation(editingEvaluation.id, {
         name: data.name.trim(),
-        description: data.description.trim() || undefined,
+        description: data.description.trim(), // "" clears it; undefined would keep the old one
         suite_id: data.suiteId,
         workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
         techniques: data.metrics,
@@ -406,7 +393,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       toast.success("Evaluation updated");
       void refetchPage(); // its workflow may have changed — refetch the page
     } catch (error) {
-      if (isRunningConflict(error)) {
+      if (isRunConflict(error)) {
         toast.error("This evaluation is running. Wait for it to finish before editing.");
         setEditingEvaluation(null);
         void refetchPage();
@@ -453,7 +440,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       await deleteTestEvaluation(id);
     } catch (error) {
       setDeletingEvaluationId(null);
-      if (isRunningConflict(error)) {
+      if (isRunConflict(error)) {
         toast.error("This evaluation is running. Wait for it to finish before deleting.");
         void refetchPage();
       } else {

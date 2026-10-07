@@ -52,10 +52,9 @@ class TrainPreprocessNode(BaseNode):
             logger.info("Processing train preprocess node")
 
             # Load data from file if fileUrl is provided
-            data = None
             df = None
             if file_url:
-                data, df = ml_utils.load_csv_file(file_url, self.state.thread_id)
+                df = ml_utils.load_csv_file(file_url, self.state.thread_id)
                 logger.info(
                     f"Loaded data from file: {file_url} ({len(df) if df is not None else 0} rows)"
                 )
@@ -67,7 +66,7 @@ class TrainPreprocessNode(BaseNode):
                 # Execute and process preprocessing code using shared utility
                 # Use raise_on_error=False to handle errors in the node's expected format
                 processed_df, errors, response = await ml_utils.execute_and_process_preprocessing_code(
-                    python_code, data, df, file_url or "", raise_on_error=False
+                    python_code, df, file_url or "", raise_on_error=False
                 )
 
                 # Check for errors and return in expected format
@@ -94,6 +93,9 @@ class TrainPreprocessNode(BaseNode):
                     self.state.thread_id,
                     suffix="_preprocess",
                     file_description="preprocessed CSV",
+                    # Keep the column types the preprocessing code produced
+                    # (e.g. a Change Column Data Type step) for the next node.
+                    dtypes={str(c): str(t) for c, t in processed_df.dtypes.items()},
                 )
 
                 # Get first 3 and last 3 records for response

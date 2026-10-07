@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi_injector import Injected
 from app.core.permissions.constants import Permissions as P
 from app.auth.dependencies import auth, permissions
+from app.auth.utils import api_key_header
 from app.cache.redis_cache import invalidate_agent_cache
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -60,7 +61,10 @@ async def query_agent(
         thread_id: str,
         request: QueryRequest,
         agent_service: AgentConfigService = Injected(AgentConfigService),
+        api_key: Optional[str] = Depends(api_key_header),
 ):
+    if api_key and thread_id == api_key:
+        logger.warning("API key used as thread_id for agent %s; send a per-conversation id instead", str(agent_id)[:8])
     return await run_query_agent_logic(agent_service, str(agent_id), request.query, {**(request.metadata if
                                                                                         request.metadata else {}), "thread_id": thread_id})
 
@@ -111,6 +115,8 @@ async def run_query_agent_logic(
                 "row_agent_response": result,
                 "token_usage": result.get("token_usage", {}),
                 "cost_usd": result.get("cost_usd", 0.0),
+                "has_failures": result.get("has_failures", False),
+                "failed_nodes": result.get("failed_nodes", []),
     }
 
     logger.debug("Result: %s", truncate_for_log(redact_sensitive_substrings(str(result))))

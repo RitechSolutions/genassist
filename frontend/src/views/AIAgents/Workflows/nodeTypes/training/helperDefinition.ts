@@ -59,7 +59,8 @@ export const DATA_PREPROCESSING_HELP_CONTENT: NodeHelpContent = {
       body: "Use the Data Preprocessing node when you need to:",
       bullets: [
         "Clean raw training data",
-        "Normalize or transform features",
+        "Remove duplicate rows, unneeded columns or rows, and mostly-empty columns",
+        "Fix column data types (integer, float, text, boolean, date, category)",
         "Prepare datasets for training",
         "Apply repeatable preprocessing logic",
       ],

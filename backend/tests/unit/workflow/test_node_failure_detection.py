@@ -12,8 +12,13 @@ Covers:
   a bare None/error dict, so an agent cannot silently treat it as success.
 """
 
+import logging
+
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey, get_error_message
+from app.core.exceptions.exception_classes import AppException
+from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import (
     NODE_FAILURE_MARKER,
@@ -21,8 +26,6 @@ from app.modules.workflow.engine.node_result import (
     node_failure,
 )
 from app.modules.workflow.engine.workflow_state import WorkflowState
-from app.modules.workflow.agents.base_tool import BaseTool
-
 
 # --------------------------------------------------------------------------- #
 # node_result contract
@@ -72,12 +75,22 @@ def test_non_failures_not_flagged(result):
 class _FakeNode(BaseNode):
     """Minimal node whose process() returns/raises whatever the test wants."""
 
-    def __init__(self, node_id, state, behaviour):
-        super().__init__(node_id, {"id": node_id, "type": "fakeNode", "data": {"name": "Fake"}}, state)
+    def __init__(self, node_id, state, behaviour, node_type="fakeNode"):
+        super().__init__(
+            node_id,
+            {"id": node_id, "type": node_type, "data": {"name": "Fake"}},
+            state,
+        )
         self._behaviour = behaviour
 
     async def process(self, config):
         return self._behaviour()
+
+
+class _ClientSafeFakeNode(_FakeNode):
+    """A fake that opts into the same error policy as TrainDataSourceNode."""
+
+    client_safe_failure_messages = True
 
 
 def _bare_state(node_id="n1"):
@@ -142,6 +155,105 @@ async def test_execute_on_raise_marks_failed_and_returns_detectable_envelope():
     assert "kaboom" in st.node_execution_status["n1"]["error"]
     # A caller using this node as a tool must be able to detect the failure.
     assert is_node_failure(returned) is not None
+
+
+@pytest.mark.asyncio
+async def test_execute_masks_secrets_in_the_node_error(caplog):
+    st = _bare_state()
+
+    def _boom():
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail="Could not load model: /src/datavolume/ml_models/x.pkl password=hunter2",
+        )
+
+    with caplog.at_level(logging.ERROR):
+        await _FakeNode("n1", st, _boom).execute()
+
+    error = st.node_execution_status["n1"]["error"]
+    assert error.startswith("Error executing node n1: Could not load model: /src/datavolume/ml_models/x.pkl")
+    assert "hunter2" not in error and "hunter2" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_execute_puts_the_detail_in_the_node_error():
+    st = _bare_state()
+    detail = "Unusable inference input for 1 feature(s): lag_24='null'"
+
+    def _boom():
+        raise AppException(error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID, error_detail=detail)
+
+    await _FakeNode("n1", st, _boom).execute()
+
+    assert st.node_execution_status["n1"]["error"] == f"Error executing node n1: {detail}"
+
+
+@pytest.mark.asyncio
+async def test_train_data_source_surfaces_an_explicitly_client_safe_app_error():
+    st = _bare_state()
+    detail = "SQL execution blocked: Delete statements are not allowed."
+
+    def _blocked_query():
+        raise AppException(
+            ErrorKey.READ_ONLY_SQL_BLOCKED,
+            status_code=400,
+            error_detail=detail,
+        )
+
+    node = _ClientSafeFakeNode("n1", st, _blocked_query, node_type="trainDataSourceNode")
+    returned = await node.execute()
+
+    assert st.node_execution_status["n1"]["error"] == (
+        f"Error executing node n1: {detail}"
+    )
+    assert is_node_failure(returned)["error"].endswith(detail)
+
+
+@pytest.mark.asyncio
+async def test_train_data_source_hides_an_unapproved_app_error_detail():
+    st = _bare_state()
+
+    def _internal_error():
+        raise AppException(
+            ErrorKey.INTERNAL_ERROR,
+            status_code=500,
+            error_detail="password=secret host=db.internal",
+        )
+
+    node = _ClientSafeFakeNode("n1", st, _internal_error, node_type="trainDataSourceNode")
+    returned = await node.execute()
+
+    public_error = st.node_execution_status["n1"]["error"]
+    assert public_error == (
+        f"Error executing node n1: {get_error_message(ErrorKey.ML_EXTRACT_FAILED)}"
+    )
+    assert "secret" not in public_error
+    assert "db.internal" not in public_error
+    assert is_node_failure(returned)["error"] == public_error
+
+
+@pytest.mark.asyncio
+async def test_train_data_source_hides_an_unexpected_exception_detail():
+    st = _bare_state()
+
+    def _unexpected_error():
+        raise RuntimeError("password=secret host=db.internal")
+
+    node = _ClientSafeFakeNode(
+        "n1",
+        st,
+        _unexpected_error,
+        node_type="trainDataSourceNode",
+    )
+    returned = await node.execute()
+
+    public_error = st.node_execution_status["n1"]["error"]
+    assert public_error == (
+        f"Error executing node n1: {get_error_message(ErrorKey.ML_EXTRACT_FAILED)}"
+    )
+    assert "secret" not in public_error
+    assert "db.internal" not in public_error
+    assert is_node_failure(returned)["error"] == public_error
 
 
 @pytest.mark.asyncio

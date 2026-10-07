@@ -12,11 +12,13 @@ from app.services.evaluation_nli import (
     EvaluationNLIModel,
     NLIClaimResult,
 )
+from app.services.evaluation_text import reply_text
 from app.services.test_suite import (
     SimpleEvaluatorRegistry,
     _build_grading_context,
     _is_waiting_for_human,
     _parse_judge_json,
+    _resolve_grading_source,
 )
 
 
@@ -647,6 +649,97 @@ class TestContainsAndNotContains:
         assert metrics["contains"]["passed"] is True
         assert metrics["not_contains"]["passed"] is False
         assert "Acme" in metrics["not_contains"]["comment"]
+
+
+# What an agent node (and Chat Output after it) returns: the reply plus its working.
+_AGENT_OUTPUT = {
+    "message": "Your order has shipped.",
+    "steps": [{"tool": "lookup_order", "result": "internal-ticket-4471"}],
+    "tools_used": [{"tool_name": "lookup_order", "result": "internal-ticket-4471"}],
+}
+
+
+class TestReplyText:
+    def test_message_is_the_reply(self):
+        assert reply_text(_AGENT_OUTPUT) == "Your order has shipped."
+
+    def test_response_is_used_when_there_is_no_message(self):
+        assert reply_text({"message": "", "response": " Hello there. "}) == "Hello there."
+
+    def test_dict_without_a_reply_falls_back_to_the_whole_value(self):
+        output = {"message": 42, "status": "done"}
+        assert reply_text(output) == str(output)
+
+    def test_plain_strings_are_trimmed(self):
+        assert reply_text("  Plain reply  ") == "Plain reply"
+        assert reply_text(None) == ""
+
+    def test_value_wrapper_is_unwrapped(self):
+        assert reply_text({"value": "Wrapped reply"}) == "Wrapped reply"
+
+    def test_legacy_outputs_field_grades_the_reply(self):
+        # An old config pointing a source at "outputs" reads it like the "output" source.
+        payload = {"outputs": _AGENT_OUTPUT, "trace": {}}
+        assert _resolve_grading_source(
+            {"evidence_field": "outputs"},
+            source_key="evidence_source",
+            legacy_field_key="evidence_field",
+            payload=payload,
+        ) == "Your order has shipped."
+
+
+class TestTextGradersReadTheReply:
+    """Text checks grade the agent's message, never its steps or tool results."""
+
+    def setup_method(self):
+        self.registry = SimpleEvaluatorRegistry()
+
+    async def _grade(self, technique, *, reference_outputs=None, config=None):
+        metrics = await self.registry.evaluate(
+            [technique],
+            inputs={},
+            outputs=_AGENT_OUTPUT,
+            reference_outputs=reference_outputs,
+            technique_configs={technique: config} if config else None,
+        )
+        return metrics[technique]
+
+    @pytest.mark.asyncio
+    async def test_not_contains_ignores_phrases_only_in_tool_results(self):
+        metric = await self._grade("not_contains", config={"phrases": ["internal-ticket"]})
+        assert metric["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_contains_does_not_match_tool_results(self):
+        metric = await self._grade("contains", reference_outputs={"value": "internal-ticket-4471"})
+        assert metric["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_exact_match_compares_the_message(self):
+        metric = await self._grade("exact_match", reference_outputs={"value": "Your order has shipped."})
+        assert metric["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_field_equals_without_a_field_compares_the_message(self):
+        metric = await self._grade("field_equals", config={"expected": "Your order has shipped."})
+        assert metric["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_judge_answer_and_output_source_are_the_message(self):
+        captured = {}
+
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
+            captured["user_content"] = user_content
+            return 1.0, "ok"
+
+        self.registry._invoke_json_judge = fake_judge
+        await self._grade(
+            "llm_judge",
+            config={"rules": [{"rubric": "Is the reply clear?", "source_type": "output"}]},
+        )
+        assert "SOURCE:\nYour order has shipped." in captured["user_content"]
+        assert "ANSWER:\nYour order has shipped." in captured["user_content"]
+        assert "internal-ticket" not in captured["user_content"]
 
 
 # Synthetic trace fixture with generic placeholder values (not tied to any workflow).
@@ -1612,6 +1705,27 @@ class TestLlmJudge:
         assert "Sample retrieved content" in captured["user_content"]
 
     @pytest.mark.asyncio
+    async def test_legacy_outputs_source_field_gives_the_judge_the_reply(self):
+        captured = {}
+
+        async def fake_judge(*, system_prompt, user_content, provider_id=None, **_):
+            captured["user_content"] = user_content
+            return 1.0, "fine"
+
+        self.registry._invoke_json_judge = fake_judge
+        await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={},
+            outputs=_AGENT_OUTPUT,
+            reference_outputs=None,
+            technique_configs={"llm_judge": {"rubric": "Polite?", "source_field": "outputs"}},
+        )
+        # The block between SOURCE and ANSWER, so the answer can't satisfy the check.
+        source = captured["user_content"].split("SOURCE:", 1)[1].split("ANSWER:", 1)[0]
+        assert "Your order has shipped." in source
+        assert "internal-ticket-4471" not in source
+
+    @pytest.mark.asyncio
     async def test_no_source_block_when_unconfigured(self):
         captured = {}
 
@@ -1738,6 +1852,15 @@ class TestParseJudgeJson:
     def test_score_is_clamped(self):
         assert _parse_judge_json('{"score": 5}')[0] == 1.0
         assert _parse_judge_json('{"score": -2}')[0] == 0.0
+
+    @pytest.mark.parametrize("raw", ['{"score": NaN}', '{"score": Infinity}', '{"score": "NaN"}'])
+    def test_non_finite_score_is_none(self, raw):
+        assert _parse_judge_json(raw)[0] is None
+
+    def test_fenced_reply_is_parsed(self):
+        score, reason = _parse_judge_json('```json\n{"score": 0.2, "reason": "off topic"}\n```')
+        assert score == 0.2
+        assert reason == "off topic"
 
 
 class TestSemanticEvaluators:

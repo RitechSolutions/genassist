@@ -100,6 +100,20 @@ describe('buildExecutionViewModel', () => {
     expect(m.byId.extractor.status).toBe('completed');
   });
 
+  it('reports how often a node ran when it ran more than once', () => {
+    const m = buildExecutionViewModel({
+      state: {
+        nodeExecutionStatus: {
+          once: { status: 'success' },
+          looped: { status: 'success', run: 12 },
+          looped_10: { status: 'success', run: 11 },
+        },
+      },
+    });
+    expect(m.byId.looped.runCount).toBe(12);
+    expect(m.byId.once.runCount).toBeUndefined();
+  });
+
   it('reads from the top level when there is no nested state', () => {
     const m = buildExecutionViewModel({
       total_steps: 2,

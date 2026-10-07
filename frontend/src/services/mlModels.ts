@@ -113,6 +113,10 @@ export interface CSVAnalysisResult {
     type: "categorical" | "numeric";
     unique_count: number;
     category_count?: number;
+    // Distinct values of a categorical column (up to 100), for ordering an
+    // ordinal encoding; categories_truncated is set when there are more.
+    categories?: string[];
+    categories_truncated?: boolean;
     min?: number | null;
     max?: number | null;
   }>;

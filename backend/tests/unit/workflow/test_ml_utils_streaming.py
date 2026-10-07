@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.nodes.ml import ml_utils
 
@@ -24,7 +25,7 @@ async def _chunks(columns, rows, chunk_size=2):
 
 
 def _legacy_csv_output(file_path: Path) -> bytes:
-    with file_path.open("r", encoding="utf-8", errors="replace") as handle:
+    with file_path.open("r", encoding="utf-8") as handle:
         sample = handle.read(1024)
         handle.seek(0)
         try:
@@ -105,8 +106,6 @@ async def test_streamed_file_matches_legacy_writer_byte_for_byte(monkeypatch, tm
         ("semicolon", b"id;name\n1;Ada\n"),
         ("blank-lines", b"id,name\n\n1,Ada\n\n2,Linus\n"),
         ("short-row", b"id,name,note\n1,Ada\n"),
-        ("bom", b"\xef\xbb\xbfid,name\n1,Ada\n"),
-        ("latin-1", b"id,city\n1,Tiran\xeb\n"),
         ("duplicate-header", b"a,a,b\n1,2,3\n"),
     ],
 )
@@ -126,6 +125,82 @@ async def test_uploaded_csv_stream_matches_legacy_output(
     )
 
     assert Path(streamed).read_bytes() == _legacy_csv_output(source)
+
+
+@pytest.mark.asyncio
+async def test_uploaded_csv_preserves_valid_utf8(monkeypatch, tmp_path):
+    monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+    source = tmp_path / "utf8.csv"
+    source.write_text("id,city\n1,Tiranë\n2,東京\n", encoding="utf-8")
+
+    streamed, columns, count, preview = await ml_utils.stream_rows_to_csv(
+        ml_utils.iter_csv_chunks(str(source), chunk_size=1),
+        "valid-utf8",
+        max_rows=100,
+        max_bytes=1_000_000,
+        source_kind="csv",
+    )
+
+    assert columns == ["id", "city"]
+    assert count == 2
+    assert preview == [
+        {"id": "1", "city": "Tiranë"},
+        {"id": "2", "city": "東京"},
+    ]
+    assert Path(streamed).read_text(encoding="utf-8") == (
+        "id,city\n1,Tiranë\n2,東京\n"
+    )
+    assert "�" not in Path(streamed).read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_uploaded_csv_strips_utf8_bom_from_first_header(monkeypatch, tmp_path):
+    monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+    source = tmp_path / "excel-utf8.csv"
+    source.write_bytes(b"\xef\xbb\xbfid,name\n1,Ada\n")
+
+    streamed, columns, count, preview = await ml_utils.stream_rows_to_csv(
+        ml_utils.iter_csv_chunks(str(source), chunk_size=2),
+        "utf8-bom",
+        max_rows=100,
+        max_bytes=1_000_000,
+        source_kind="csv",
+    )
+
+    assert columns == ["id", "name"]
+    assert count == 1
+    assert preview == [{"id": "1", "name": "Ada"}]
+    assert Path(streamed).read_bytes() == b"id,name\n1,Ada\n"
+
+
+@pytest.mark.asyncio
+async def test_uploaded_csv_rejects_invalid_utf8_and_removes_partial_output(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+    source = tmp_path / "invalid-utf8.csv"
+    valid_prefix = b"id,name\n" + b"".join(
+        f"{index},name-{index}\n".encode("utf-8") for index in range(1_000)
+    )
+    source.write_bytes(valid_prefix + b"1000,TOP-SECRET-\xff\n")
+
+    with pytest.raises(AppException) as exc_info:
+        await ml_utils.stream_rows_to_csv(
+            ml_utils.iter_csv_chunks(str(source), chunk_size=10),
+            "invalid-utf8",
+            max_rows=2_000,
+            max_bytes=1_000_000,
+            source_kind="csv",
+        )
+
+    assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID
+    assert exc_info.value.error_detail == (
+        "The uploaded CSV could not be decoded as UTF-8. "
+        "Save it with UTF-8 encoding and upload it again."
+    )
+    assert "TOP-SECRET" not in exc_info.value.error_detail
+    assert "�" not in exc_info.value.error_detail
+    assert not list((tmp_path / "train" / "invalid-utf8").glob("*.csv"))
 
 
 @pytest.mark.asyncio
@@ -225,15 +300,13 @@ async def test_uploaded_csv_row_cap_stops_early_with_csv_wording(monkeypatch, tm
 @pytest.mark.asyncio
 async def test_uploaded_csv_output_byte_cap_uses_csv_wording(monkeypatch, tmp_path):
     monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
-    source = tmp_path / "expands.csv"
-    source.write_bytes(b"a\n\xe9\n")
 
     with pytest.raises(AppException) as exc_info:
         await ml_utils.stream_rows_to_csv(
-            ml_utils.iter_csv_chunks(str(source), chunk_size=2),
+            _chunks(["a"], [("é" * 20,)]),
             "csv-byte-limit",
             max_rows=100,
-            max_bytes=source.stat().st_size,
+            max_bytes=10,
             source_kind="csv",
         )
 

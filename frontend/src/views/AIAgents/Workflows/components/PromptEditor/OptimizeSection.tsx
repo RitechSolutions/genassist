@@ -6,6 +6,7 @@ import { Label } from "@/components/label";
 import { RichTextarea } from "@/components/richTextarea";
 import type { PromptEditorCapabilities } from "../../utils/promptEditorCapabilities";
 import { SUGGESTION_STALE_REASON } from "../../utils/promptEditorGates";
+import { rewriteHeader } from "../../utils/promptEditorResults";
 import type { Round, RoundCounts } from "../../utils/promptEditorRounds";
 import { GateTooltip } from "./GateTooltip";
 import { PromptEvalResults } from "./PromptEvalResults";
@@ -25,7 +26,8 @@ const roundStatus = (round: Round): string => {
   return countsLine(round.counts);
 };
 
-const RESTORE_BLOCKED_REASON = "Wait for the running rewrite to finish.";
+const RESTORE_BLOCKED_REASON = "Wait for the running rewrite to finish";
+const RUN_IN_FLIGHT_REASON = "Wait for the current run to finish";
 
 const RoundRow: React.FC<{
   round: Round;
@@ -100,6 +102,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     restoreRound,
     restoreBlocked,
     optimizeResult,
+    optimizeProviderFallback,
     optimizeStale,
     suggestion,
     optimizedFrom,
@@ -121,6 +124,12 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
   } = measurement;
   const [roundsOpen, setRoundsOpen] = useState(false);
 
+  // A run that lands after a newer one started is dropped, so its spend is wasted
+  const runInFlight =
+    optimize.pending || evaluateSuggested.pending || validateHoldout.pending;
+  const waitReason = (reason: string | null, pending = false) =>
+    reason ?? (runInFlight && !pending ? RUN_IN_FLIGHT_REASON : null);
+
   const showHoldout = caps.canEvaluate && (splitActive || pairedRun !== null);
   const primaryAction =
     showHoldout && validateHoldout.enabled
@@ -132,12 +141,12 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
           : null;
 
   const optimizeButton = (
-    <GateTooltip reason={optimize.reason}>
+    <GateTooltip reason={waitReason(optimize.reason, optimize.pending)}>
       <Button
         size="sm"
         variant={optimizeResult ? "outline" : "default"}
         onClick={optimize.run}
-        disabled={!optimize.enabled || optimize.pending}
+        disabled={!optimize.enabled || runInFlight}
       >
         {optimize.pending ? (
           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -213,6 +222,10 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
             onChange={editSuggestion}
           />
 
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {rewriteHeader(optimizeResult.provenance, optimizeProviderFallback)}
+          </p>
+
           {optimizeResult.explanation && (
             <div className="space-y-1">
               <Label className="text-sm font-medium">Explanation</Label>
@@ -261,13 +274,16 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
           <div className="flex flex-wrap gap-2">
             {optimizeButton}
             {caps.canEvaluate && (
-              <GateTooltip reason={evaluateSuggested.reason}>
+              <GateTooltip
+                reason={waitReason(
+                  evaluateSuggested.reason,
+                  evaluateSuggested.pending,
+                )}
+              >
                 <Button
                   size="sm"
                   onClick={evaluateSuggested.run}
-                  disabled={
-                    !evaluateSuggested.enabled || evaluateSuggested.pending
-                  }
+                  disabled={!evaluateSuggested.enabled || runInFlight}
                   variant={
                     primaryAction === "suggested" ? "default" : "outline"
                   }
@@ -284,11 +300,16 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
               </GateTooltip>
             )}
             {showHoldout && (
-              <GateTooltip reason={validateHoldout.reason}>
+              <GateTooltip
+                reason={waitReason(
+                  validateHoldout.reason,
+                  validateHoldout.pending,
+                )}
+              >
                 <Button
                   size="sm"
                   onClick={validateHoldout.run}
-                  disabled={!validateHoldout.enabled || validateHoldout.pending}
+                  disabled={!validateHoldout.enabled || runInFlight}
                   variant={primaryAction === "holdout" ? "default" : "outline"}
                 >
                   {validateHoldout.pending ? (
@@ -332,12 +353,12 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
                 The {holdoutError.half === "baseline" ? "current" : "suggested"}{" "}
                 prompt was not evaluated: {holdoutError.message}
               </span>
-              <GateTooltip reason={holdoutError.retry.reason}>
+              <GateTooltip reason={waitReason(holdoutError.retry.reason)}>
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={retryHoldout}
-                  disabled={!holdoutError.retry.enabled}
+                  disabled={!holdoutError.retry.enabled || runInFlight}
                 >
                   Retry
                 </Button>

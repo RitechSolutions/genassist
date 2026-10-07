@@ -7,6 +7,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/RadixTooltip";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 import { PromptEditorDialog } from "./PromptEditorDialog";
 
 export interface PromptEditorButtonProps {
@@ -31,6 +33,10 @@ export const PromptEditorButton: React.FC<PromptEditorButtonProps> = ({
   defaultProviderId,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const promptEditorEnabled = useFeatureFlagVisible(
+    FeatureFlags.WORKFLOW.PROMPT_EDITOR,
+  );
+  if (!promptEditorEnabled) return null;
 
   return (
     <>

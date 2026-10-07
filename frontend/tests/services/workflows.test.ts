@@ -23,6 +23,8 @@ import {
   getAllNodeSchemas,
   testNode,
   testWorkflow,
+  getFailedNodeDisplayMessage,
+  getTrainDataSourceTestFailureMessage,
   generatePythonTemplate,
   createWorkflowFromWizard,
   createWorkflowFromBuilder,
@@ -104,6 +106,106 @@ describe("workflows service", () => {
     await testWorkflow(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload, {
       timeout: 1000,
+    });
+  });
+
+  describe("getTrainDataSourceTestFailureMessage", () => {
+    it("returns the client-safe Train Data Source failure without the engine prefix", () => {
+      const response = {
+        status: "success",
+        input: "",
+        output: "",
+        has_failures: true,
+        failed_nodes: [
+          {
+            node_id: "test-trainDataSourceNode-1",
+            name: "Train Data Source",
+            type: "trainDataSourceNode",
+            error:
+              "Error executing node test-trainDataSourceNode-1: The query returned more than 2,000,000 rows, which exceeds the limit of 2,000,000. Add a filter or LIMIT, or ask an administrator to raise the row limit.",
+          },
+        ],
+      };
+
+      expect(getTrainDataSourceTestFailureMessage(response)).toBe(
+        "The query returned more than 2,000,000 rows, which exceeds the limit of 2,000,000. Add a filter or LIMIT, or ask an administrator to raise the row limit."
+      );
+    });
+
+    it("ignores failed nodes of other types", () => {
+      const response = {
+        status: "success",
+        input: "",
+        output: "",
+        has_failures: true,
+        failed_nodes: [
+          {
+            node_id: "test-agentNode-1",
+            name: "Agent",
+            type: "agentNode",
+            error: "Error executing node test-agentNode-1: Agent failed.",
+          },
+        ],
+      };
+
+      expect(getTrainDataSourceTestFailureMessage(response)).toBeNull();
+    });
+
+    it("uses safe guidance when a Train Data Source failure has no message", () => {
+      const response = {
+        status: "success",
+        input: "",
+        output: "",
+        has_failures: true,
+        failed_nodes: [
+          {
+            node_id: "test-trainDataSourceNode-1",
+            name: "Train Data Source",
+            type: "trainDataSourceNode",
+            error: "",
+          },
+        ],
+      };
+
+      expect(getTrainDataSourceTestFailureMessage(response)).toBe(
+        "Train Data Source could not complete the test. Check its configuration and try again."
+      );
+    });
+
+    it("formats Train Data Source errors for the full workflow panel", () => {
+      expect(
+        getFailedNodeDisplayMessage({
+          node_id: "source-1",
+          name: "Train Data Source",
+          type: "trainDataSourceNode",
+          error: "Error executing node source-1: Enter a SQL query.",
+        })
+      ).toBe("Enter a SQL query.");
+    });
+
+    it("does not change errors for other node types", () => {
+      const error = "Error executing node agent-1: Upstream failed.";
+      expect(
+        getFailedNodeDisplayMessage({
+          node_id: "agent-1",
+          name: "Agent",
+          type: "agentNode",
+          error,
+        })
+      ).toBe(error);
+    });
+
+    it("returns null when the response contains no Train Data Source failure", () => {
+      expect(
+        getTrainDataSourceTestFailureMessage({
+          status: "success",
+          input: "",
+          output: "ok",
+          has_failures: false,
+          failed_nodes: [],
+        })
+      ).toBeNull();
+      expect(getTrainDataSourceTestFailureMessage(null)).toBeNull();
     });
   });
 

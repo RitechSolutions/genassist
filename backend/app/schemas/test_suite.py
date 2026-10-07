@@ -101,6 +101,35 @@ class ImportCasesFromConversationsResult(BaseModel):
     failed: int = 0
 
 
+class DatasetFileResult(BaseModel):
+    filename: str
+    # ok (readable), failed, or evaluation_bundle (belongs to the evaluation import).
+    status: str
+    # What the file adds, after skipping conversations seen before.
+    conversations: int = 0
+    turns: int = 0
+    # Skipped because the dataset already holds them.
+    duplicates: int = 0
+    # Skipped because a file earlier in this import, or this one, already has them.
+    repeated: int = 0
+    # Positions in `files` of the files holding the first copies.
+    repeated_from: List[int] = Field(default_factory=list)
+    # Why the file cannot be imported, in client-safe sentences.
+    errors: List[str] = Field(default_factory=list)
+
+
+class ImportCasesFromFilesResult(BaseModel):
+    # One entry per uploaded file, in upload order.
+    files: List[DatasetFileResult] = Field(default_factory=list)
+    conversations: int = 0
+    turns: int = 0
+    duplicates: int = 0
+    repeated: int = 0
+    failed_files: int = 0
+    # Set when the import cannot go ahead as a whole, e.g. it adds too many turns.
+    error: Optional[str] = None
+
+
 # Upper bound on how many datasets one conversation can be added to at once.
 MAX_CONVERSATION_SUITES = 50
 

@@ -39,7 +39,7 @@ class AggregatorNode(BaseNode):
             return True
 
         for source_id in source_nodes:
-            if self.state.get_node_output(source_id) is not None:
+            if self.is_source_ready(source_id):
                 logger.debug(
                     f"Aggregator {self.node_id} has at least one ready source ({source_id}), proceeding (requireAllInputs=false)")
                 return True
@@ -129,7 +129,7 @@ class AggregatorNode(BaseNode):
 
         for source_id in source_nodes:
             source_output = self.state.get_node_output(source_id)
-            if source_output is not None:
+            if self.is_source_ready(source_id):
                 aggregated_outputs[source_id] = source_output
                 logger.debug(
                     f"Source node {source_id} output: {source_output}")

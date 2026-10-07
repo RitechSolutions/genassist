@@ -23,17 +23,19 @@ from typing import Dict, Any
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from mcp.server.stdio import stdio_server
-from mcp.server import Server
-from app.repositories.workflow import WorkflowRepository
-from app.modules.workflow.engine.workflow_engine import WorkflowEngine
-from app.modules.workflow.mcp.mcp_server_adapter import WorkflowMCPServerAdapter
-from app.db.multi_tenant_session import multi_tenant_manager
-from app.repositories.mcp_server import MCPServerRepository
-from app.auth.utils import hash_api_key
-from sqlalchemy.orm import selectinload
-from sqlalchemy import select
-from app.db.models.mcp_server import MCPServerModel
+# Skipped when a sandbox child re-runs this file as __mp_main__
+if __name__ != "__mp_main__":
+    from mcp.server.stdio import stdio_server
+    from mcp.server import Server
+    from app.repositories.workflow import WorkflowRepository
+    from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+    from app.modules.workflow.mcp.mcp_server_adapter import WorkflowMCPServerAdapter
+    from app.db.multi_tenant_session import multi_tenant_manager
+    from app.repositories.mcp_server import MCPServerRepository
+    from app.auth.utils import hash_api_key
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy import select
+    from app.db.models.mcp_server import MCPServerModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

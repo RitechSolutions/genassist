@@ -16,6 +16,13 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.nodes.ml.ml_utils import (
+    COLUMN_TRANSFORM_STRATEGY_LABELS,
+    apply_column_transform,
+    column_transform_value_problem,
+    normalize_feature_expression,
+    ordinal_key,
+)
 from app.schemas.ml_model import MLModelBase
 from app.services.ml_model_manager import download_pkl_file, get_ml_model_manager
 from app.services.ml_models import MLModelsService
@@ -26,6 +33,7 @@ ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
 
 _BOOL_TRUE = frozenset({"true"})
 _BOOL_FALSE = frozenset({"false"})
+_MAX_REPORTED_FEATURES = 5
 
 
 def convert_value(val: Any) -> Any:
@@ -113,6 +121,34 @@ def _normalize_inference_inputs(inference_inputs: Dict[str, Any]) -> Dict[str, L
     return normalized
 
 
+def _is_unusable_value(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().lower() == "null"
+
+
+def _validate_inference_values(
+    normalized_inputs: Dict[str, List[Any]],
+    feature_names: Sequence[str],
+    error: Exception,
+) -> None:
+    """After a failed preparation or prediction, names the model features that received no upstream value"""
+    if not normalized_inputs:
+        detail = "No inference inputs were provided, map at least one feature value"
+    else:
+        offending = [
+            (name, next(v for v in normalized_inputs[name] if _is_unusable_value(v)))
+            for name in feature_names
+            if name in normalized_inputs and any(_is_unusable_value(v) for v in normalized_inputs[name])
+        ]
+        if not offending:
+            return
+        shown = ", ".join(f"{name}={value!r}" for name, value in offending[:_MAX_REPORTED_FEATURES])
+        detail = f"Unusable inference input for {len(offending)} feature(s): {shown}"
+        if len(offending) > _MAX_REPORTED_FEATURES:
+            detail += f" (+{len(offending) - _MAX_REPORTED_FEATURES} more)"
+        detail += ". A value of 'null' means the upstream node did not produce that field"
+    raise AppException(error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID, error_detail=detail) from error
+
+
 def _infer_batch_size(normalized_inputs: Dict[str, List[Any]]) -> int:
     if not normalized_inputs:
         return 0
@@ -163,6 +199,33 @@ def _validate_categorical_inputs(
             )
 
 
+def _is_missing_value(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _with_training_fills(
+    normalized_inputs: Dict[str, List[Any]], fills: Dict[str, Any], batch_size: int
+) -> Dict[str, List[Any]]:
+    """Inputs with missing and null values replaced by the training-time fills.
+
+    Training fills missing values before feature engineering runs, so
+    engineered features must be rebuilt from filled inputs too - otherwise a
+    missing or null input made the feature impossible to rebuild.
+    """
+    filled = dict(normalized_inputs)
+    for col, fill in fills.items():
+        if col not in filled:
+            filled[col] = [fill] * batch_size
+        else:
+            filled[col] = [fill if _is_missing_value(v) else v for v in filled[col]]
+    return filled
+
+
 def _build_input_array(
     normalized_inputs: Dict[str, List[Any]],
     feature_names: Sequence[str],
@@ -192,7 +255,12 @@ def _build_input_array(
     columns = []
     for feat in feature_names:
         if feat in input_cols:
-            columns.append(_broadcast_column(normalized_inputs[feat], batch_size, feat))
+            values = _broadcast_column(normalized_inputs[feat], batch_size, feat)
+            if feat in fills:
+                # A null sent for a feature gets the same training-time fill
+                # as a feature that wasn't sent at all.
+                values = [fills[feat] if _is_missing_value(v) else v for v in values]
+            columns.append(values)
         else:
             columns.append([fills.get(feat, 0)] * batch_size)
     return np.column_stack(columns) if columns else np.empty((batch_size, 0))
@@ -222,12 +290,18 @@ def _mapped_transform(
     mappings: Dict[str, Dict[Any, Any]],
     batch_size: int,
     unseen_value: float,
+    normalize_keys: bool = False,
 ) -> np.ndarray:
     """Reapply a fitted label/ordinal value -> code mapping to raw inputs.
 
     A value the mapping wasn't fit on (or has no entry for) falls back to
     unseen_value, mirroring how the same case is handled at training time
     (see TrainModelNode._encode_categoricals).
+
+    normalize_keys (ordinal mappings): match values with ordinal_key, as
+    training does, so e.g. an input of 2 finds the JSON key "2" and " High"
+    finds "High". Applied to the stored keys too, so models trained before
+    ordinal_key existed still match.
     """
     if not columns:
         return np.empty((batch_size, 0))
@@ -235,7 +309,11 @@ def _mapped_transform(
     out = np.empty(raw.shape, dtype=float)
     for i, col in enumerate(columns):
         mapping = mappings.get(col, {})
-        out[:, i] = [mapping.get(v, unseen_value) for v in raw[:, i]]
+        if normalize_keys:
+            mapping = {ordinal_key(k): v for k, v in mapping.items()}
+            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in raw[:, i]]
+        else:
+            out[:, i] = [mapping.get(v, unseen_value) for v in raw[:, i]]
     return out
 
 
@@ -258,6 +336,7 @@ def _replay_feature_engineering(
     normalized_inputs: Dict[str, List[Any]],
     steps: List[Dict[str, Any]],
     batch_size: int,
+    fills: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, np.ndarray]:
     """Recompute engineered feature columns from raw caller-supplied inputs,
     using the exact fitted parameters (bin edges, mean/std, fitted
@@ -270,7 +349,8 @@ def _replay_feature_engineering(
     column is folded into `available` for subsequent steps to read.
     """
     computed: Dict[str, np.ndarray] = {}
-    available: Dict[str, List[Any]] = dict(normalized_inputs)
+    # Same order as training: fill missing values first, then engineer.
+    available: Dict[str, List[Any]] = _with_training_fills(normalized_inputs, fills or {}, batch_size)
 
     for step in steps:
         strategy = step.get("strategy")
@@ -283,7 +363,7 @@ def _replay_feature_engineering(
                     col: _build_input_array(available, [col])[:, 0]
                     for col in available
                 })
-                result = np.asarray(df.eval(expression))
+                result = np.asarray(df.eval(normalize_feature_expression(expression)))
                 computed[new_col] = result
                 available[new_col] = result.tolist()
 
@@ -301,6 +381,8 @@ def _replay_feature_engineering(
                 available[new_col] = binned.tolist()
 
             elif strategy in ("normalize", "standardize"):
+                # Retired for new features (see train_model_node), but models
+                # trained with them still need them replayed.
                 for col, stats in (step.get("column_stats") or {}).items():
                     if col not in available:
                         continue
@@ -325,6 +407,38 @@ def _replay_feature_engineering(
                 for i, name in enumerate(new_names):
                     computed[name] = new_values[:, i]
                     available[name] = new_values[:, i].tolist()
+
+            elif strategy in COLUMN_TRANSFORM_STRATEGY_LABELS:
+                label = COLUMN_TRANSFORM_STRATEGY_LABELS[strategy]
+                columns = step.get("columns") or []
+                absent = [c for c in columns if c not in available]
+                if absent:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            f"Feature '{new_col}' ({label}) needs input column(s) {absent}, "
+                            "which were not provided"
+                        ),
+                    )
+                try:
+                    raw = _build_input_array(available, columns).astype(float)
+                except (TypeError, ValueError) as e:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"Feature '{new_col}' ({label}) needs numeric inputs for {columns}: {e}",
+                    ) from e
+                problem = column_transform_value_problem(strategy, raw, columns, step.get("power_method"))
+                if problem:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"Feature '{new_col}' ({label}) can't use these inputs: {problem}",
+                    )
+                out = apply_column_transform(strategy, step.get("transformer"), raw)
+                for i, name in enumerate(step.get("output_columns") or []):
+                    computed[name] = out[:, i]
+                    available[name] = out[:, i].tolist()
+        except AppException:
+            raise
         except Exception as e:
             logger.warning(
                 "Failed to replay feature-engineering step '%s' (%s) at inference: %s",
@@ -538,7 +652,8 @@ class MLModelInferenceNode(BaseNode):
 
                     if ordinal_columns:
                         ordinal_data = _mapped_transform(
-                            normalized_inputs, ordinal_columns, ordinal_encodings, batch_size, unseen_value=np.nan
+                            normalized_inputs, ordinal_columns, ordinal_encodings, batch_size,
+                            unseen_value=np.nan, normalize_keys=True,
                         )
                         for i, col in enumerate(ordinal_columns):
                             column_arrays[col] = ordinal_data[:, i]
@@ -571,7 +686,7 @@ class MLModelInferenceNode(BaseNode):
                 feature_engineering_steps = metadata.get("feature_engineering_steps") or []
                 if feature_engineering_steps:
                     engineered = _replay_feature_engineering(
-                        normalized_inputs, feature_engineering_steps, batch_size
+                        normalized_inputs, feature_engineering_steps, batch_size, missing_value_fills
                     )
                     column_arrays.update(engineered)
                     legacy_order += [c for c in engineered if c not in legacy_order]
@@ -583,14 +698,13 @@ class MLModelInferenceNode(BaseNode):
 
                 missing_columns = [c for c in model_feature_names if c not in column_arrays]
                 if missing_columns:
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=(
-                            f"Could not reconstruct column(s) {missing_columns} that the model "
-                            "was trained on - the saved model metadata may be incomplete or from "
-                            "an incompatible older version."
-                        ),
+                    error = ValueError(
+                        f"Could not reconstruct column(s) {missing_columns} that the model "
+                        "was trained on - the saved model metadata may be incomplete or from "
+                        "an incompatible older version."
                     )
+                    _validate_inference_values(normalized_inputs, feature_names, error)
+                    raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(error))
 
                 input_data = np.column_stack([column_arrays[c] for c in model_feature_names])
 
@@ -611,6 +725,7 @@ class MLModelInferenceNode(BaseNode):
                 raise
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
+                _validate_inference_values(normalized_inputs, feature_names, e)
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Data preparation failed: {e}"
                 ) from e
@@ -707,6 +822,8 @@ class MLModelInferenceNode(BaseNode):
             except AppException:
                 raise
             except Exception as e:
+                logger.error("Error during model prediction: %s", e, exc_info=True)
+                _validate_inference_values(normalized_inputs, feature_names, e)
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Error during model prediction: {e}"
                 ) from e

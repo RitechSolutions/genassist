@@ -34,6 +34,7 @@ import type {
 } from "@/interfaces/testEvaluation.interface";
 import { RuleScopeFields } from "./RuleScopeFields";
 import { scopePhrase } from "../helpers/ruleScope";
+import { toolRuleSummary } from "../helpers/toolRuleText";
 
 export type { RuleConversation };
 
@@ -76,12 +77,6 @@ export const newToolRule = (): ToolUsageRule => ({
   require_success: false,
   scope: "every_turn",
 });
-
-const joinPhrases = (items: string[], conjunction: "and" | "or"): string => {
-  if (items.length === 0) return "a tool";
-  if (items.length === 1) return items[0];
-  return `${items.slice(0, -1).join(", ")} ${conjunction} ${items[items.length - 1]}`;
-};
 
 const toNumberOrNull = (value: string): number | null => {
   const trimmed = value.trim();
@@ -162,19 +157,15 @@ const RuleCard: React.FC<RuleCardProps> = ({
     onChange({ tool_ids });
   };
 
-  const summary = (): string => {
-    const agent = rule.agent_id ? catalog.find((a) => a.id === rule.agent_id) : null;
-    const agentLabel = agent ? `"${agent.label}"` : "Any agent";
-    const tools = rule.tool_ids.map((id) => `"${toolLabelById.get(id) ?? id}"`);
-    const scope = scopePhrase(rule, conversations);
-    const successfully = rule.require_success ? "successfully " : "";
-    if (expectation === "must_not_use")
-      return `${agentLabel} must not use ${joinPhrases(tools, "or")} ${scope}.`;
-    if (expectation === "only")
-      return `${agentLabel} may only use ${joinPhrases(tools, "or")} ${scope}.`;
-    const conjunction = match === "all" ? "and" : "or";
-    return `${agentLabel} must ${successfully}use ${joinPhrases(tools, conjunction)} ${scope}.`;
-  };
+  const summary = (): string =>
+    toolRuleSummary({
+      agentId: rule.agent_id,
+      agentLabel: catalog.find((a) => a.id === rule.agent_id)?.label,
+      toolLabels: rule.tool_ids.map((id) => toolLabelById.get(id) ?? id),
+      operator: rule.operator,
+      requireSuccess: rule.require_success,
+      scope: scopePhrase(rule, conversations),
+    });
 
   const toolsRequired = expectation !== "only" && rule.tool_ids.length === 0;
   const matchDisabled = expectation !== "must_use";
@@ -250,7 +241,7 @@ const RuleCard: React.FC<RuleCardProps> = ({
 
       {/* Tools multi-select — inline dropdown so it stays anchored inside the dialog */}
       <div className="space-y-1.5">
-        <Label>Tools{expectation === "only" ? " (allowed set)" : ""}</Label>
+        <Label>{expectation === "only" ? "Allowed tools (leave empty to allow none)" : "Tools"}</Label>
         <div className="relative" ref={toolsRef}>
           <div
             role="button"

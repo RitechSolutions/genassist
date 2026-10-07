@@ -10,7 +10,9 @@ import pickle
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 from sklearn.ensemble import (
     ExtraTreesClassifier,
     ExtraTreesRegressor,
@@ -23,6 +25,7 @@ from sklearn.linear_model import ElasticNet, Lasso, LinearRegression, LogisticRe
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.neural_network import MLPClassifier, MLPRegressor
+from sklearn.pipeline import Pipeline
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from sklearn.preprocessing import (
@@ -30,6 +33,8 @@ from sklearn.preprocessing import (
     MinMaxScaler,
     OneHotEncoder,
     PolynomialFeatures,
+    PowerTransformer,
+    QuantileTransformer,
     RobustScaler,
     StandardScaler,
 )
@@ -42,6 +47,13 @@ from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as 
 from app.modules.workflow.engine.nodes.ml import ml_utils
 
 logger = logging.getLogger(__name__)
+
+# Feature engineering strategies no longer offered for new features: they
+# duplicate scalingMethod (rescaling numeric columns, fit on the training
+# split) and so scaled the same values twice. Still accepted and run for
+# workflows saved with them, and replayed at inference for models trained
+# with them.
+_RETIRED_FE_STRATEGIES = ("normalize", "standardize")
 
 # Try to import xgboost (optional dependency)
 try:
@@ -165,13 +177,23 @@ class TrainModelNode(BaseNode):
                             validation, never the other way around.
                 - featureEngineering: Optional list of derived-feature specs, each a
                             dict with: newColumnName (required), strategy
-                            ("custom_expression", "bin_numeric", "normalize",
-                            "standardize", or "polynomial"), plus strategy-specific
+                            ("custom_expression", "bin_numeric", "polynomial",
+                            "log_transform", "quantile_transform",
+                            "power_transform", or "pca"), plus strategy-specific
                             fields (expression / binColumn+numBins /
-                            sourceColumns / polynomialColumns+polynomialDegree).
-                            Bin edges and normalize/standardize statistics are fit
-                            on the training split only and then applied to
-                            validation, never the other way around.
+                            polynomialColumns+polynomialDegree / sourceColumns,
+                            with quantileOutputDistribution+nQuantiles,
+                            powerMethod, pcaComponents+pcaStandardize, and
+                            replaceSourceColumns). Bin edges, polynomial
+                            features, quantiles, power-transform lambdas and PCA
+                            components are fit on the training split only and
+                            then applied to validation, never the other way
+                            around. Missing values are always filled before
+                            feature engineering runs. "normalize" and
+                            "standardize" (with sourceColumns) are retired -
+                            scalingMethod already rescales numeric features - but
+                            still run for workflows saved with them, with a
+                            warning in the result.
                 - targetTransform: Optional dict for training on a ratio of the
                             target instead of its raw value - {"type": "ratio",
                             "baselineColumn": <column name>}. The model is fit on
@@ -337,11 +359,29 @@ class TrainModelNode(BaseNode):
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"Invalid categoricalEncoding strategy: {strategy}. Must be one of: {', '.join(valid_encoding_strategies)}",
                     )
-                if strategy == "ordinal" and not item.get("ordinalMapping"):
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=f"categoricalEncoding entry for '{item.get('columnName')}' has strategy 'ordinal' but no ordinalMapping",
-                    )
+                if strategy == "ordinal":
+                    mapping = item.get("ordinalMapping")
+                    if not mapping or not isinstance(mapping, dict):
+                        raise AppException(
+                            error_key=ErrorKey.INTERNAL_ERROR,
+                            error_detail=(
+                                f"Ordinal encoding for column '{item.get('columnName')}' has no value order. "
+                                "Open the Train Model node, and under Categorical Encoding set the order "
+                                "of the column's values (e.g. Low < Medium < High)."
+                            ),
+                        )
+                    bad_positions = [
+                        k for k, v in mapping.items()
+                        if isinstance(v, bool) or not isinstance(v, (int, float))
+                    ]
+                    if bad_positions:
+                        raise AppException(
+                            error_key=ErrorKey.INTERNAL_ERROR,
+                            error_detail=(
+                                f"Ordinal encoding for column '{item.get('columnName')}': every value needs a "
+                                f"numeric position, but {bad_positions[:10]} do not."
+                            ),
+                        )
 
             valid_missing_value_strategies = [
                 "no_action", "drop_column", "drop_rows",
@@ -361,7 +401,9 @@ class TrainModelNode(BaseNode):
                     )
 
             valid_fe_strategies = [
-                "custom_expression", "bin_numeric", "normalize", "standardize", "polynomial",
+                "custom_expression", "bin_numeric", "polynomial",
+                *ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS,
+                *_RETIRED_FE_STRATEGIES,
             ]
             for item in feature_engineering:
                 if not isinstance(item, dict) or not item.get("newColumnName"):
@@ -390,6 +432,8 @@ class TrainModelNode(BaseNode):
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"featureEngineering entry '{item.get('newColumnName')}' has strategy '{strategy}' but no sourceColumns",
                     )
+                if strategy in ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS:
+                    self._validate_column_transform_config(item)
                 if strategy == "polynomial" and (not item.get("polynomialColumns") or not item.get("polynomialDegree")):
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
@@ -425,7 +469,12 @@ class TrainModelNode(BaseNode):
             logger.info(f"Training {model_type} model: {name}")
 
             # Load data from CSV file
-            data, df = ml_utils.load_csv_file(file_url, self.state.thread_id)
+            df = ml_utils.load_csv_file(file_url, self.state.thread_id)
+            # Column types saved by an upstream Preprocessing node (nullable
+            # Int64/boolean, string, category, datetime) are converted to the
+            # plain dtypes the steps below select on - see
+            # normalize_dtypes_for_training.
+            df = ml_utils.normalize_dtypes_for_training(df)
             logger.info(f"Loaded {len(df)} rows from {file_url}")
 
             # Validate columns exist
@@ -591,6 +640,9 @@ class TrainModelNode(BaseNode):
             has_missing = X_train.isnull().any().any() or (
                 X_val is not None and X_val.isnull().any().any()
             )
+            # Told to the user in the result's "warnings": with no Missing
+            # Value Handling configured, this fill used to be silent.
+            auto_fill_warnings: List[str] = []
             if has_missing:
                 logger.warning("Found missing values in features. Filling with median for numeric and mode for categorical.")
                 for col in X_train.columns:
@@ -598,15 +650,26 @@ class TrainModelNode(BaseNode):
                     # override above - don't recompute/overwrite it here.
                     if col in missing_value_fills:
                         continue
+                    missing_count = int(X_train[col].isna().sum()) + (
+                        int(X_val[col].isna().sum()) if X_val is not None else 0
+                    )
                     if X_train[col].dtype in ['int64', 'float64']:
                         fill_value = X_train[col].median()
+                        fill_kind = "median"
                     else:
                         mode_values = X_train[col].mode()
                         fill_value = mode_values[0] if not mode_values.empty else ''
+                        fill_kind = "most frequent value"
                     X_train[col].fillna(fill_value, inplace=True)
                     if X_val is not None:
                         X_val[col].fillna(fill_value, inplace=True)
                     missing_value_fills[col] = fill_value
+                    if missing_count:
+                        auto_fill_warnings.append(
+                            f"Column '{col}': {missing_count} empty value(s) filled automatically with the "
+                            f"{fill_kind} ({fill_value!r}) of the training data. Set Missing Value Handling "
+                            "for this column to choose how instead."
+                        )
 
             # A "drop_column" missing-value strategy above removes the column
             # from X_train entirely, but feature_columns (saved to metadata
@@ -854,6 +917,22 @@ class TrainModelNode(BaseNode):
                 target_transform=target_transform,
             )
 
+            # Retired strategies still run (so saved workflows and their models
+            # keep behaving the same), but the user is told to move off them.
+            training_warnings = [
+                (
+                    f"Feature engineering '{item.get('newColumnName')}' uses the retired "
+                    f"'{item.get('strategy')}' strategy. Scaling Method already rescales "
+                    "numeric features (fit on the training split only), so this scales the "
+                    "same values twice - switch the feature to another strategy or remove it."
+                )
+                for item in feature_engineering
+                if item.get("strategy") in _RETIRED_FE_STRATEGIES
+            ]
+            training_warnings = auto_fill_warnings + training_warnings
+            for warning in training_warnings:
+                logger.warning(warning)
+
             # Prepare response
             result = {
                 "success": True,
@@ -875,6 +954,8 @@ class TrainModelNode(BaseNode):
                 result["hyperparameter_optimization"] = search_metadata
             if registration_error:
                 result["registration_error"] = registration_error
+            if training_warnings:
+                result["warnings"] = training_warnings
 
             logger.info(f"Model training completed successfully: {model_artifact['model_file_path']}")
             return result
@@ -980,7 +1061,13 @@ class TrainModelNode(BaseNode):
         for item in categorical_encoding:
             column = item.get("columnName")
             strategy = item.get("strategy", "no_action")
-            if strategy == "no_action" or column not in X_train.columns:
+            if strategy == "no_action":
+                continue
+            if column not in X_train.columns:
+                logger.warning(
+                    f"Skipping {strategy} encoding for '{column}': it is not one of the feature "
+                    "columns (or was dropped earlier)"
+                )
                 continue
 
             if strategy == "one_hot":
@@ -997,11 +1084,38 @@ class TrainModelNode(BaseNode):
                     X_val[column] = X_val[column].map(mapping).fillna(-1).astype(int)
 
             elif strategy == "ordinal":
-                mapping = item.get("ordinalMapping") or {}
+                # Keys come from JSON (always strings) while values may be
+                # numbers or text with stray spaces - normalize both sides the
+                # same way so e.g. 2 and "2", or " High" and "High", match.
+                mapping = {
+                    ml_utils.ordinal_key(k): v
+                    for k, v in (item.get("ordinalMapping") or {}).items()
+                }
+                splits = [("training", X_train)] + ([("validation", X_val)] if X_val is not None else [])
+                encoded = {}
+                for split_name, split in splits:
+                    keys = split[column].map(ml_utils.ordinal_key)
+                    unmapped = sorted({k for k in keys.dropna().unique() if k not in mapping})
+                    if unmapped:
+                        # Never silently turn a value into "missing": an
+                        # unmapped value means the configured order is
+                        # incomplete, and training on NaNs would hide that.
+                        raise AppException(
+                            error_key=ErrorKey.INTERNAL_ERROR,
+                            error_detail=(
+                                f"Ordinal encoding for column '{column}': {len(unmapped)} value(s) in the "
+                                f"{split_name} data have no position in the configured order: "
+                                f"{unmapped[:10]}{' ...' if len(unmapped) > 10 else ''}. "
+                                f"Configured order: {list(mapping)}. Add the missing values to the "
+                                "order in the Train Model node."
+                            ),
+                        )
+                    encoded[split_name] = keys.map(mapping).astype("float64")
                 ordinal_encodings[column] = mapping
-                X_train[column] = X_train[column].map(mapping)
+                X_train[column] = encoded["training"]
                 if X_val is not None:
-                    X_val[column] = X_val[column].map(mapping)
+                    X_val[column] = encoded["validation"]
+                logger.info(f"Ordinal-encoded '{column}' using order {mapping}")
 
         return X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns
 
@@ -1075,10 +1189,10 @@ class TrainModelNode(BaseNode):
                     if baseline_val is not None:
                         baseline_val = baseline_val[val_mask].reset_index(drop=True)
             elif strategy == "impute_constant":
-                fill_value = item.get("imputeValue", 0)
-                X_train[column] = X_train[column].fillna(fill_value)
+                fill_value = self._coerce_fill_value(X_train[column], item.get("imputeValue", 0))
+                X_train[column] = self._fill_missing(X_train[column], fill_value)
                 if X_val is not None:
-                    X_val[column] = X_val[column].fillna(fill_value)
+                    X_val[column] = self._fill_missing(X_val[column], fill_value)
                 fills[column] = fill_value
             elif strategy in ("impute_mean", "impute_median", "impute_mode"):
                 if strategy == "impute_mean":
@@ -1088,20 +1202,61 @@ class TrainModelNode(BaseNode):
                 else:
                     mode_values = X_train[column].mode()
                     fill_value = mode_values[0] if not mode_values.empty else None
-                X_train[column] = X_train[column].fillna(fill_value)
+                X_train[column] = self._fill_missing(X_train[column], fill_value)
                 if X_val is not None:
-                    X_val[column] = X_val[column].fillna(fill_value)
+                    X_val[column] = self._fill_missing(X_val[column], fill_value)
                 fills[column] = fill_value
 
         return X_train, y_train, X_val, y_val, baseline_train, baseline_val, fills
+
+    @staticmethod
+    def _coerce_fill_value(series: pd.Series, fill_value: Any) -> Any:
+        """Match a constant fill value to its column's type.
+
+        The value comes from a text box, so a numeric column often gets "0"
+        or "2.5" as a string - filling with that would turn the column into
+        mixed text/numbers (object), dropping it out of scaling and outlier
+        handling and sending it to one-hot encoding instead.
+        """
+        if isinstance(fill_value, str) and pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(series):
+            try:
+                number = float(fill_value.strip())
+            except ValueError:
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=(
+                        f"Missing-value fill '{fill_value}' for numeric column '{series.name}' "
+                        "is not a number"
+                    ),
+                )
+            return int(number) if number.is_integer() and pd.api.types.is_integer_dtype(series) else number
+        return fill_value
+
+    @staticmethod
+    def _fill_missing(series: pd.Series, fill_value: Any) -> pd.Series:
+        """fillna without pandas' "Downcasting object dtype arrays" FutureWarning.
+
+        On an object column, fillna silently downcasts the result (e.g. to
+        int) and warns that this will stop in a future version. Opting in to
+        the future behavior and inferring the dtype explicitly gives the same
+        result today without the warning, and keeps working after pandas
+        changes the default.
+        """
+        try:
+            with pd.option_context("future.no_silent_downcasting", True):
+                filled = series.fillna(fill_value)
+        except (KeyError, AttributeError):
+            # pandas < 2.2 has no such option (and doesn't warn either).
+            filled = series.fillna(fill_value)
+        return filled.infer_objects()
 
     def _engineer_features(self, X_train, X_val, feature_engineering):
         """
         Create derived features from existing columns.
 
-        Bin edges (bin_numeric) and normalize/standardize statistics are
-        computed from X_train only, then applied to X_val - never the other
-        way around. custom_expression and polynomial don't fit anything from
+        Bin edges (bin_numeric), polynomial features and (retired)
+        normalize/standardize statistics are computed from X_train only, then
+        applied to X_val - never the other way around. custom_expression and polynomial don't fit anything from
         the data (a deterministic per-row formula and a fixed-degree feature
         map, respectively), so leakage isn't a concern for those, but they
         live here too so all feature configuration lives in one place.
@@ -1123,17 +1278,30 @@ class TrainModelNode(BaseNode):
                 # DataFrame.eval() only exposes column references and basic
                 # arithmetic/comparison operators (via numexpr/Python parser)
                 # - no access to builtins or arbitrary Python, unlike eval().
+                # Columns are referenced by name; the older df["col"] form is
+                # rewritten to that first (see normalize_feature_expression).
+                eval_expression = ml_utils.normalize_feature_expression(expression)
                 try:
-                    X_train[new_col] = X_train.eval(expression)
+                    X_train[new_col] = X_train.eval(eval_expression)
                     if X_val is not None:
-                        X_val[new_col] = X_val.eval(expression)
-                    steps.append({
-                        "strategy": "custom_expression",
-                        "new_col": new_col,
-                        "expression": expression,
-                    })
+                        X_val[new_col] = X_val.eval(eval_expression)
                 except Exception as e:
-                    logger.warning(f"Skipping custom_expression for '{new_col}': {e}")
+                    # Fail instead of skipping: a skipped feature used to
+                    # train a "successful" model silently missing a column
+                    # the user configured.
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            f"Feature engineering '{new_col}': the expression `{expression}` could not "
+                            f"be evaluated ({e}). Reference columns by name, e.g. price * quantity "
+                            "(use `backticks` for a name with spaces, e.g. `unit price` * quantity)."
+                        ),
+                    ) from e
+                steps.append({
+                    "strategy": "custom_expression",
+                    "new_col": new_col,
+                    "expression": eval_expression,
+                })
 
             elif strategy == "bin_numeric":
                 bin_column = item.get("binColumn")
@@ -1222,7 +1390,174 @@ class TrainModelNode(BaseNode):
                     "new_names": new_names,
                 })
 
+            elif strategy in ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS:
+                X_train, X_val, step = self._apply_column_transform(X_train, X_val, item)
+                steps.append(step)
+
         return X_train, X_val, steps
+
+    @staticmethod
+    def _validate_column_transform_config(item: Dict[str, Any]) -> None:
+        """Config checks for log/quantile/power/PCA features, before any data is loaded."""
+        strategy = item.get("strategy")
+        label = ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS[strategy]
+        name = item.get("newColumnName")
+
+        def fail(problem: str) -> None:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Feature engineering '{name}' ({label}): {problem}",
+            )
+
+        columns = item.get("sourceColumns") or []
+        if not columns:
+            fail("choose at least one column")
+        if strategy == "pca":
+            if len(set(columns)) < 2:
+                fail("choose at least 2 columns to combine")
+            components = item.get("pcaComponents", 2)
+            is_count = isinstance(components, int) and not isinstance(components, bool)
+            is_share = isinstance(components, float) and 0 < components < 1
+            if not (is_count and components >= 1) and not is_share:
+                fail(
+                    "number of components must be a whole number of 1 or more, or a share of "
+                    f"variance to keep between 0 and 1 (e.g. 0.95) - got {components!r}"
+                )
+            if is_count and components > len(set(columns)):
+                fail(f"asks for {components} components from only {len(set(columns))} columns")
+        if strategy == "power_transform" and item.get("powerMethod", "yeo-johnson") not in ("yeo-johnson", "box-cox"):
+            fail(f"method must be 'yeo-johnson' or 'box-cox' - got {item.get('powerMethod')!r}")
+        if strategy == "quantile_transform":
+            if item.get("quantileOutputDistribution", "uniform") not in ("uniform", "normal"):
+                fail(
+                    "output distribution must be 'uniform' or 'normal' - "
+                    f"got {item.get('quantileOutputDistribution')!r}"
+                )
+            n_quantiles = item.get("nQuantiles", 1000)
+            if not isinstance(n_quantiles, int) or isinstance(n_quantiles, bool) or n_quantiles < 2:
+                fail(f"number of quantiles must be a whole number of 2 or more - got {n_quantiles!r}")
+
+    def _apply_column_transform(self, X_train, X_val, item):
+        """Log Transform, Quantile Transformer, Power Transformer or PCA on
+        numeric source columns.
+
+        Anything fitted (quantiles, power lambdas, PCA components and the
+        optional pre-PCA scaling) is fit on X_train only and applied to
+        X_val. Missing values were already filled before feature
+        engineering; empty or infinite values here can only come from an
+        earlier feature step (e.g. a division by zero), and fail clearly
+        instead of erroring inside scikit-learn.
+
+        Output: one new column per source (named newColumnName for a single
+        source, newColumnName_<source> for several), or newColumnName_1..k
+        for PCA. replaceSourceColumns (default: on for PCA, off otherwise)
+        removes the source columns from what the model is trained on - they
+        are still collected as raw inputs at inference, since the transform
+        needs them.
+        """
+        strategy = item["strategy"]
+        label = ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS[strategy]
+        new_col = item.get("newColumnName")
+        columns = list(dict.fromkeys(item.get("sourceColumns") or []))
+        power_method = item.get("powerMethod", "yeo-johnson")
+
+        def fail(problem: str) -> None:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Feature engineering '{new_col}' ({label}): {problem}",
+            )
+
+        not_found = [c for c in columns if c not in X_train.columns]
+        if not_found:
+            fail(
+                f"column(s) {not_found} not found - they must be feature columns, or created by "
+                "an earlier feature engineering step"
+            )
+        not_numeric = [
+            c for c in columns
+            if not pd.api.types.is_numeric_dtype(X_train[c]) or pd.api.types.is_bool_dtype(X_train[c])
+        ]
+        if not_numeric:
+            fail(f"needs numeric columns, but {not_numeric} are not numeric")
+
+        splits = {"training": X_train, "validation": X_val}
+        matrices = {
+            name: split[columns].astype(float).to_numpy()
+            for name, split in splits.items() if split is not None
+        }
+        for name, values in matrices.items():
+            problem = ml_utils.column_transform_value_problem(strategy, values, columns, power_method)
+            if problem:
+                if problem.startswith("empty or infinite"):
+                    problem = (
+                        f"{problem} in the {name} data. Missing values are filled before feature "
+                        "engineering, so these come from an earlier feature engineering step "
+                        "(e.g. a division by zero)"
+                    )
+                else:
+                    problem = f"{problem} (in the {name} data)"
+                fail(problem)
+
+        train_values = matrices["training"]
+        transformer = None
+        extra: Dict[str, Any] = {}
+        if strategy == "quantile_transform":
+            transformer = QuantileTransformer(
+                n_quantiles=min(item.get("nQuantiles", 1000), len(train_values)),
+                output_distribution=item.get("quantileOutputDistribution", "uniform"),
+                random_state=0,
+            ).fit(train_values)
+        elif strategy == "power_transform":
+            # standardize=False: Scaling Method already standardizes numeric
+            # features afterwards; doing it here too would scale twice.
+            transformer = PowerTransformer(method=power_method, standardize=False).fit(train_values)
+        elif strategy == "pca":
+            components = item.get("pcaComponents", 2)
+            if isinstance(components, int) and components > min(len(columns), len(train_values)):
+                fail(f"asks for {components} components, but there are only {len(train_values)} training rows")
+            pipeline_steps = [("scale", StandardScaler())] if item.get("pcaStandardize", True) else []
+            pipeline_steps.append(("pca", PCA(n_components=components, random_state=0)))
+            transformer = Pipeline(pipeline_steps).fit(train_values)
+            extra["explained_variance_ratio"] = [
+                float(v) for v in transformer.named_steps["pca"].explained_variance_ratio_
+            ]
+
+        transformed = {
+            name: ml_utils.apply_column_transform(strategy, transformer, values)
+            for name, values in matrices.items()
+        }
+        if strategy == "pca":
+            output_columns = [f"{new_col}_{i + 1}" for i in range(transformed["training"].shape[1])]
+        elif len(columns) == 1:
+            output_columns = [new_col]
+        else:
+            output_columns = [f"{new_col}_{c}" for c in columns]
+
+        replace = bool(item.get("replaceSourceColumns", strategy == "pca"))
+        kept_columns = [c for c in X_train.columns if not (replace and c in columns)]
+        clashes = [c for c in output_columns if c in kept_columns]
+        if clashes:
+            fail(f"output column(s) {clashes} already exist - choose another New Column Name")
+
+        def with_outputs(split, values):
+            base = split[kept_columns]
+            new = pd.DataFrame(values, columns=output_columns, index=split.index)
+            return pd.concat([base, new], axis=1)
+
+        X_train = with_outputs(X_train, transformed["training"])
+        if X_val is not None:
+            X_val = with_outputs(X_val, transformed["validation"])
+
+        return X_train, X_val, {
+            "strategy": strategy,
+            "new_col": new_col,
+            "columns": columns,
+            "output_columns": output_columns,
+            "transformer": transformer,
+            "power_method": power_method if strategy == "power_transform" else None,
+            "replace_source_columns": replace,
+            **extra,
+        }
 
     def _is_classification_task(self, y: pd.Series, model_type: str, task_type: str = "auto") -> bool:
         """

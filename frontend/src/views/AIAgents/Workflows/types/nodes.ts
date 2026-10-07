@@ -3,6 +3,7 @@ import { ComponentType } from "react";
 import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
 import { MLModelTypeValue } from "@/constants/mlModelTypes";
+import type { PreprocessingConfig } from "../nodeDialogs/training/preprocessingConfig";
 
 // Define compatibility types
 export type NodeCompatibility =
@@ -190,6 +191,35 @@ export interface FilterNodeData extends BaseNodeData {
   caseSensitive?: boolean;
   /** Chat reply used when the filter stops the conversation's main path. */
   stopMessage?: string;
+}
+
+// Loop node data — repeats its body per list item or until a condition holds.
+// The stop condition uses the same operators as the Filter node.
+export type LoopMode = "forEach" | "repeatUntil";
+
+export type LoopOnError = "stop" | "continue";
+
+/** What the Done output keeps in `results`. */
+export type LoopCollect = "all" | "last" | "none";
+
+export interface LoopNodeData extends BaseNodeData {
+  mode?: LoopMode;
+  /** The list to go through (For each item), usually a variable. */
+  items?: string;
+  /** Items per pass (For each item); above 1 the body receives a list. */
+  batchSize?: number;
+  maxIterations?: number;
+  stopField?: string;
+  stopOperator?: FilterOperator;
+  stopValue?: string;
+  stopCaseSensitive?: boolean;
+  onError?: LoopOnError;
+  /** Seconds to wait between passes; doubled after every pass with `delayBackoff`. */
+  delaySeconds?: number;
+  delayBackoff?: boolean;
+  /** No new pass starts once the loop has run this long; 0 = no limit. */
+  timeLimitSeconds?: number;
+  collect?: LoopCollect;
 }
 
 // NLP (Text Analysis) node data — unified classify/sentiment/extract/summarize
@@ -522,6 +552,10 @@ export interface PreprocessingNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the file for preprocessing
   analysisResult?: CSVAnalysisResult; // Initial CSV analysis result (for backward compatibility)
   stepAnalysisResults?: Record<string, CSVAnalysisResult>; // Analysis results for each step (keyed by step ID or "initial")
+  // The configured steps, stored as data - the dialog's source of truth.
+  // pythonCode is generated from it. Missing on nodes saved before this was
+  // added; those are read from pythonCode once and gain it on their next save.
+  preprocessingConfig?: PreprocessingConfig;
 }
 
 // Train Model Node Data
@@ -615,17 +649,25 @@ export interface MissingValueHandlingConfig {
 }
 
 // Feature engineering: lives on the Train Model node (not the pre-split
-// Preprocessing node) because bin_numeric/normalize/standardize/polynomial
-// fit bin edges or scaling stats from the data, so fitting them on the full
-// dataset before the split leaks validation-row statistics into training.
-// custom_expression is a deterministic per-row formula with nothing fit from
-// data, but stays here too so all feature configuration lives in one place.
+// Preprocessing node) because bin_numeric and polynomial are fit on the data,
+// so fitting them on the full dataset before the split leaks validation rows
+// into training. custom_expression is a deterministic per-row formula with
+// nothing fit from data, but stays here too so inference replays it with the
+// rest. "normalize"/"standardize" are retired (Scaling Method already does
+// this) - kept in the type only so features saved with them still load; see
+// featureEngineeringStrategies.ts.
 export type FeatureEngineeringStrategy =
   | "custom_expression"
   | "bin_numeric"
-  | "normalize"
-  | "standardize"
-  | "polynomial";
+  | "normalize" // retired
+  | "standardize" // retired
+  | "polynomial"
+  // Column transforms of numeric sourceColumns - fit (where anything is fit)
+  // on the training split only, replayed at inference.
+  | "log_transform" // log(1 + x), values must be >= 0
+  | "quantile_transform" // sklearn QuantileTransformer
+  | "power_transform" // sklearn PowerTransformer (Yeo-Johnson / Box-Cox)
+  | "pca"; // [StandardScaler +] PCA -> newColumnName_1..k
 
 export interface FeatureEngineeringItem {
   id: string;
@@ -637,6 +679,15 @@ export interface FeatureEngineeringItem {
   binColumn?: string;
   polynomialDegree?: number;
   polynomialColumns?: string[];
+  // Column transforms (log/quantile/power/PCA) read sourceColumns, plus:
+  quantileOutputDistribution?: "uniform" | "normal";
+  nQuantiles?: number;
+  powerMethod?: "yeo-johnson" | "box-cox";
+  pcaComponents?: number; // whole number of components, or a 0-1 share of variance to keep
+  pcaStandardize?: boolean;
+  // Train on the transformed columns instead of the originals (default: on for
+  // PCA, off otherwise). Originals are still needed as inputs at prediction.
+  replaceSourceColumns?: boolean;
 }
 
 export interface FeatureEngineeringConfig {
@@ -836,6 +887,7 @@ export type NodeData =
   | RouterNodeData
   | SwitchNodeData
   | FilterNodeData
+  | LoopNodeData
   | NlpNodeData
   | AggregatorNodeData
   | ToolBuilderNodeData

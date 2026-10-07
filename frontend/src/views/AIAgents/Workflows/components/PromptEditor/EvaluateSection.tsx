@@ -45,6 +45,15 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
     nliScoreText,
     setNliScoreText,
     nliScoreIssue,
+    judgeSelected,
+    rubricText,
+    setRubricText,
+    rubricIssue,
+    judgeScoreText,
+    setJudgeScoreText,
+    judgeScoreIssue,
+    judgeSeesExpected,
+    setJudgeSeesExpected,
     casesToCheck,
     setCasesToCheck,
     split,
@@ -112,6 +121,47 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
             </p>
             {nliScoreIssue && (
               <p className="text-xs text-destructive">{nliScoreIssue}</p>
+            )}
+          </div>
+        )}
+
+        {judgeSelected && (
+          <div className="space-y-2">
+            <Label className="text-sm">Judge rubric</Label>
+            <RichTextarea
+              value={rubricText}
+              onChange={(e) => setRubricText(e.target.value)}
+              placeholder="Score from 0.0 to 1.0 how well the reply answers the question."
+              size="description"
+              className="text-sm"
+            />
+            <Label className="text-sm">Minimum judge score (0-1)</Label>
+            <RichInput
+              inputMode="decimal"
+              value={judgeScoreText}
+              onChange={(e) => setJudgeScoreText(e.target.value)}
+              placeholder="0.5"
+              className="w-28 text-sm"
+            />
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={judgeSeesExpected}
+                onCheckedChange={setJudgeSeesExpected}
+              />
+              <Label className="text-sm cursor-pointer">
+                Show the judge the expected output
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The evaluation model grades each reply against the rubric, one call
+              per case. Turn the switch on to show the judge the expected output
+              as its SOURCE; cases without one are then skipped.
+            </p>
+            {rubricIssue && (
+              <p className="text-xs text-destructive">{rubricIssue}</p>
+            )}
+            {judgeScoreIssue && (
+              <p className="text-xs text-destructive">{judgeScoreIssue}</p>
             )}
           </div>
         )}

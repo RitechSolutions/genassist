@@ -189,6 +189,36 @@ describe("run inputs", () => {
     expect(evaluate({ techniqueCount: 0 }).reason).toMatch(/technique/);
   });
 
+  it("blocks a rubric the endpoint would reject", () => {
+    const gate = evaluate({ rubricProblem: "Write a rubric for the judge." });
+
+    expect(gate.enabled).toBe(false);
+    expect(gate.reason).toBe("Write a rubric for the judge.");
+  });
+
+  it("blocks a rewrite whose judge has no rubric", () => {
+    const gate = optimizeGate(
+      ready(),
+      ADMIN,
+      run({ rubricProblem: "Write a rubric for the judge." }),
+    );
+
+    expect(gate.enabled).toBe(false);
+    expect(gate.reason).toBe("Write a rubric for the judge.");
+  });
+
+  it("blocks a rewrite told a judge threshold the check rejects", () => {
+    const problem = "Use a minimum judge score between 0 and 1.";
+    const gate = optimizeGate(
+      ready(),
+      ADMIN,
+      run({ judgeScoreProblem: problem }),
+    );
+
+    expect(gate.enabled).toBe(false);
+    expect(gate.reason).toBe(problem);
+  });
+
   it("names the content it blocks on", () => {
     expect(evaluate({ content: "  " }).reason).toBe("The prompt is empty.");
     expect(

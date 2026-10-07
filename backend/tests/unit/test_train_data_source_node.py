@@ -2,8 +2,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.nodes.ml.train_data_source_node import TrainDataSourceNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from app.schemas.dynamic_form_schemas.nodes.train_data_source_schema import (
+    TRAIN_DATA_SOURCE_NODE_DIALOG_SCHEMA,
+)
 
 
 @pytest.fixture
@@ -22,10 +27,9 @@ class TestProcessCsvSourcePrefersDownloadById:
         always be used to re-download the file fresh, ignoring csvFilePath,
         instead of trusting a path that may not exist here.
         """
-        downloaded_path = tmp_path / "train" / "file-id-123.csv"
-
         async def fake_download(file_id, path):
             from pathlib import Path
+
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             Path(path).write_text("col1,col2\n1,2\n")
 
@@ -37,9 +41,6 @@ class TestProcessCsvSourcePrefersDownloadById:
             tmp_path,
         ), patch(
             "app.dependencies.injector.injector.get", return_value=mock_file_manager
-        ), patch(
-            "app.modules.workflow.engine.nodes.ml.ml_utils.save_data_to_csv",
-            new=AsyncMock(return_value=str(tmp_path / "saved.csv")),
         ):
             result = await node._process_csv_source(
                 {
@@ -50,6 +51,7 @@ class TestProcessCsvSourcePrefersDownloadById:
                     "csvFilePath": "/nonexistent/host/only/path.csv",
                 },
                 node._resolve_extraction_limits({}),
+                1,
             )
 
         mock_file_manager.download_file_to_path.assert_called_once()
@@ -63,12 +65,11 @@ class TestProcessCsvSourcePrefersDownloadById:
         csv_path = tmp_path / "uploaded.csv"
         csv_path.write_text("a,b\n1,2\n")
 
-        with patch("app.dependencies.injector.injector.get") as mock_get, patch(
-            "app.modules.workflow.engine.nodes.ml.ml_utils.save_data_to_csv",
-            new=AsyncMock(return_value=str(tmp_path / "saved.csv")),
-        ):
+        with patch("app.dependencies.injector.injector.get") as mock_get:
             result = await node._process_csv_source(
-                {"csvFilePath": str(csv_path)}, node._resolve_extraction_limits({})
+                {"csvFilePath": str(csv_path)},
+                node._resolve_extraction_limits({}),
+                1,
             )
 
         mock_get.assert_not_called()
@@ -77,7 +78,84 @@ class TestProcessCsvSourcePrefersDownloadById:
 
     @pytest.mark.asyncio
     async def test_raises_when_neither_path_nor_id_given(self, node):
-        from app.core.exceptions.exception_classes import AppException
-
         with pytest.raises(AppException):
-            await node._process_csv_source({}, node._resolve_extraction_limits({}))
+            await node._process_csv_source(
+                {},
+                node._resolve_extraction_limits({}),
+                1,
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "config",
+    [
+        {},
+        {"sourceType": None},
+        {"sourceType": ""},
+        {"sourceType": "file"},
+        {"sourceType": 1},
+        {"sourceType": ["csv"]},
+    ],
+)
+async def test_process_rejects_missing_or_unsupported_source_types(node, config):
+    with pytest.raises(AppException) as exc_info:
+        await node.process(config)
+
+    assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID
+    assert exc_info.value.error_detail == (
+        "Choose a database or uploaded file for Train Data Source."
+    )
+
+
+@pytest.mark.asyncio
+async def test_saved_workflow_legacy_fields_do_not_change_file_execution(
+    node, tmp_path
+):
+    source = tmp_path / "saved-workflow.csv"
+    source.write_text("id,name\n1,Ada\n", encoding="utf-8")
+    config = {
+        "sourceType": "csv",
+        "csvFilePath": str(source),
+        # Existing workflow data can still contain fields retired from the
+        # backend dialog schema. They must remain harmless extra data.
+        "dataSourceType": "database",
+        "csvFile": "legacy-placeholder",
+    }
+
+    with patch(
+        "app.modules.workflow.engine.nodes.ml.ml_utils.DATA_VOLUME",
+        tmp_path,
+    ):
+        result = await node.process(config)
+
+    assert result["success"] is True
+    assert result["data"] == [{"id": "1", "name": "Ada"}]
+    assert result["metadata"] == {"rowCount": 1, "columns": ["id", "name"]}
+
+
+def test_dialog_schema_lists_source_fields():
+    fields = {field.name: field for field in TRAIN_DATA_SOURCE_NODE_DIALOG_SCHEMA}
+
+    assert list(fields) == [
+        "name",
+        "sourceType",
+        "dataSourceId",
+        "query",
+        "csvFileName",
+        "csvFilePath",
+        "csvFileId",
+        "csvFileUrl",
+    ]
+    assert fields["sourceType"].options == [
+        {"label": "Database", "value": "datasource"},
+        {"label": "Uploaded File", "value": "csv"},
+    ]
+    assert fields["dataSourceId"].conditional.model_dump() == {
+        "field": "sourceType",
+        "value": "datasource",
+    }
+    assert fields["csvFileId"].conditional.model_dump() == {
+        "field": "sourceType",
+        "value": "csv",
+    }

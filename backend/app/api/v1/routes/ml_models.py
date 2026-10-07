@@ -359,29 +359,33 @@ async def analyze_csv(
 
             try:
                 # Load the CSV file using shared utility
-                data, df = ml_utils.load_csv_file(file_url)
+                df = ml_utils.load_csv_file(file_url)
 
                 # Execute preprocessing code using shared utility
                 # Use raise_on_error=True to raise exceptions for API endpoint
                 processed_df, _, _ = await ml_utils.execute_and_process_preprocessing_code(
-                    python_code, data, df, str(file_path), raise_on_error=True
+                    python_code, df, str(file_path), raise_on_error=True
                 )
 
                 # Save processed data to a temporary CSV file
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as tmp_file:
                     processed_df.to_csv(tmp_file.name, index=False, encoding='utf-8')
                     temp_file_path = tmp_file.name
+                # Keep the column types the preprocessing code produced, so the
+                # analysis reports them the way the next node will see them.
+                dtypes_path = ml_utils.write_dtypes_sidecar(temp_file_path, processed_df)
 
                 try:
                     # Analyze the processed CSV file
                     analysis = ml_utils.analyze_csv_data(temp_file_path)
                     return analysis
                 finally:
-                    # Clean up temporary file
-                    try:
-                        os.unlink(temp_file_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to delete temporary file {temp_file_path}: {str(e)}")
+                    # Clean up temporary files
+                    for path in (temp_file_path, dtypes_path):
+                        try:
+                            os.unlink(path)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete temporary file {path}: {str(e)}")
 
             except AppException as e:
                 # Convert AppException to HTTPException for API endpoint
