@@ -4,7 +4,9 @@ Loop node implementation using the BaseNode class.
 Runs a *body* of nodes repeatedly. The engine itself never revisits a node, so
 the Loop owns the iteration: for every pass it publishes an iteration context as
 its output, asks the engine to run the body sub-graph, and reads the result from
-the node wired back into its ``input_loop`` handle (see engine/loops.py).
+the node wired back into its ``input_loop`` handle (see engine/loops.py). Only
+the body reads that context: to every other node the Loop has no output until
+it has finished (``BaseNode.is_source_ready``).
 
 Two modes:
 
@@ -246,6 +248,9 @@ class LoopNode(BaseNode):
                     stopped_reason = "max_iterations"
         finally:
             state.active_loops.remove(self.node_id)
+            # The pass context was this node's output only for the body to read.
+            # It must not outlive the loop: if a pass raised, nothing replaces it.
+            state.node_outputs.pop(self.node_id, None)
 
         logger.info("LoopNode %s finished: %s iteration(s), %s", self.node_id, iterations, stopped_reason)
 

@@ -1,6 +1,8 @@
 """Tests for LoopNode: per-item and repeat-until iteration, what the body and the
 Done branch see, limits, failures, nesting and deactivation, all as real engine runs."""
 
+import asyncio
+
 import pytest
 
 from app.core.config.settings import settings
@@ -397,6 +399,102 @@ async def test_source_in_the_stop_condition_is_the_loops_own_input():
     loop_data = {"mode": "repeatUntil", "maxIterations": 4, "stopField": "{{source}}", "stopOperator": "equal", "stopValue": "go"}
     state = await _run(_workflow(loop_data))
     assert (state.node_outputs["loop"]["iterations"], state.node_outputs["loop"]["stopped_reason"]) == (1, "condition")
+
+
+# ---- Done next to a parallel branch -----------------------------------------
+
+
+class _TakesAWhile(BaseNode):
+    """Yields to the event loop, so whatever runs in parallel finishes first."""
+
+    async def process(self, config):
+        await asyncio.sleep(0.01)
+        return f"did {config.get('value')}"
+
+
+@pytest.fixture
+def slow_node(monkeypatch):
+    WorkflowEngine._initialize_node_registry()
+    monkeypatch.setitem(WorkflowEngine._node_registry, "takesAWhileNode", _TakesAWhile)
+
+    def build(node_id, value):
+        return {"id": node_id, "type": "takesAWhileNode", "data": {"name": node_id, "value": value}}
+
+    return build
+
+
+def _done_joins_a_parallel_branch(work, side, after):
+    """prep → loop ─done→ after, and prep → side → after: ``after`` waits for both."""
+    workflow = _workflow(
+        {"mode": "forEach", "items": '["a", "b"]'},
+        body=[work],
+        extra_nodes=[side],
+        extra_edges=[_edge("prep", "side"), _edge("side", "after")],
+    )
+    workflow["nodes"][4] = after
+    return workflow
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("slow", ["work", "side"])
+async def test_a_node_fed_by_done_and_a_parallel_branch_runs_once_with_the_loops_result(slow_node, slow):
+    nodes = {"work": _template("work", "did {{source.item}}"), "side": _template("side", "did side")}
+    nodes[slow] = slow_node(slow, "{{source.item}}" if slow == "work" else "side")
+    after = _template("after", "{{source.loop.results}} + {{source.side}}")
+    state = await _run(_done_joins_a_parallel_branch(nodes["work"], nodes["side"], after))
+    assert state.execution_path.count("after") == 1
+    assert state.node_outputs["after"] == '["did a", "did b"] + did side'
+
+
+@pytest.mark.asyncio
+async def test_an_aggregator_that_does_not_wait_leaves_a_running_loop_out(slow_node):
+    after = {
+        "id": "after",
+        "type": "aggregatorNode",
+        "data": {"name": "after", "aggregationStrategy": "list", "requireAllInputs": False},
+    }
+    workflow = _done_joins_a_parallel_branch(slow_node("work", "{{source.item}}"), _template("side", "did side"), after)
+    state = await _run(workflow)
+    first_run = state.node_execution_status.get("after_0") or state.node_execution_status["after"]
+    assert first_run["output"]["aggregated_outputs"]["outputs"] == ["did side"]
+
+
+@pytest.mark.asyncio
+async def test_a_node_fed_by_an_inner_loops_done_runs_once_per_outer_pass(slow_node):
+    body = [
+        _loop("inner", mode="forEach", items="{{source.item}}"),
+        slow_node("cell", "{{source.item}}"),
+        _template("row", "{{source.inner.results}} + {{source.side}}"),
+    ]
+    workflow = _workflow(
+        {"mode": "forEach", "items": "[[1, 2], [3]]"},
+        body=body,
+        extra_nodes=[_template("side", "side {{source.index}}")],
+        extra_edges=[_edge("loop", "side", "output_loop"), _edge("side", "row")],
+    )
+    # inner: loop → cell → back to inner; inner done → row ← side; row → back to the outer loop
+    workflow["edges"] = [e for e in workflow["edges"] if (e["source"], e["target"]) not in {("inner", "cell"), ("cell", "row")}]
+    workflow["edges"] += [
+        _edge("inner", "cell", "output_loop"),
+        _edge("cell", "inner", target_handle="input_loop"),
+        _edge("inner", "row", "output_done"),
+    ]
+    state = await _run(workflow)
+    assert state.node_outputs["loop"]["results"] == ['["did 1", "did 2"] + side 0', '["did 3"] + side 1']
+    assert state.node_execution_status["row"]["run"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_loop_that_breaks_mid_pass_leaves_no_pass_data_behind_as_its_output(monkeypatch):
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(LoopNode, "_iteration_result", broken)
+    state = await _run(_workflow({"mode": "forEach", "items": '["a", "b"]'}))
+    assert state.node_execution_status["loop"]["status"] == "failed"
+    assert "loop" not in state.node_outputs and "after" not in state.node_outputs
+    assert state.execution_path.count("work") == 1
+    assert state.active_loops == []
 
 
 # ---- items, batches ---------------------------------------------------------

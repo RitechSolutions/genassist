@@ -75,6 +75,7 @@ After the loop, from Done:
 ## Behaviour and limits
 
 - Passes run one at a time, in order. Body outputs are cleared before each pass, so a node never reads a value left over from the previous one.
+- While it iterates, the Loop's output is the pass context, and only its body reads it. A node connected from Done waits for the loop to finish, even when another branch it also depends on finished long before, so it runs once and with the final result.
 - In the variable picker, `item` shows the fields of the first element when Items is a single variable pointing at a list the builder already knows (from a test run or a schema).
 - A failing pass ends the loop (or is skipped with `onError: continue`); either way the workflow continues from Done with the failures in `errors`, and the run reports `has_failures`.
 - A deactivated Loop skips its body and continues from Done with its input unchanged.

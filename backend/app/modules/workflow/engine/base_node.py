@@ -25,6 +25,7 @@ from app.core.observability.otel import (
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.entry_nodes import is_entry_node_type
+from app.modules.workflow.engine.loops import LOOP_BODY_HANDLE
 from app.modules.workflow.engine.node_result import is_node_failure, node_failure
 from app.modules.workflow.engine.utils import describe_exception, extract_code_params, replace_config_vars
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -230,6 +231,22 @@ class BaseNode(ABC):
         logger.debug(f"Found {len(source_nodes)} source nodes for next node {self.node_id}: {source_nodes}")
         return source_nodes
 
+    def is_source_ready(self, source_id: str) -> bool:
+        """Whether a source node has finished, so its output is there to read.
+
+        A Loop keeps the pass context in its output while it iterates. That is
+        for its body only: to every other node the loop has no output until it
+        has finished, however long a parallel branch has been waiting for it.
+        """
+        if self.state.get_node_output(source_id) is None:
+            return False
+        if source_id not in self.state.active_loops:
+            return True
+        return any(
+            edge.get("source") == source_id and edge.get("sourceHandle") == LOOP_BODY_HANDLE
+            for edge in self.state.target_edges.get(self.node_id, [])
+        )
+
     def check_if_requirement_satisfied(self) -> bool:
         """
         Check if all requirements for this node are satisfied.
@@ -244,8 +261,7 @@ class BaseNode(ABC):
 
         # Check if all source nodes have outputs
         for source_id in source_nodes:
-            source_output = self.state.get_node_output(source_id)
-            if source_output is None:
+            if not self.is_source_ready(source_id):
                 logger.debug(f"Source node {source_id} not ready for next node {self.node_id}")
                 return False
 
