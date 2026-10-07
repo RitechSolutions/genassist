@@ -514,6 +514,8 @@ export const ImportFromConversationDialog: React.FC<
                               variant="compact"
                               // The row above already states the date and status.
                               showConversationMarkers={false}
+                              // Takeovers are not turns, so only the messages show.
+                              showTakeoverMarkers={false}
                               className="max-h-60"
                             />
                           )}

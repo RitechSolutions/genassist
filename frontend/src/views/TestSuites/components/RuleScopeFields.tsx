@@ -173,7 +173,7 @@ export const RuleScopeFields: React.FC<Props> = ({
               )}
               {selectedTurns.length > 1 && (
                 <p className="text-xs text-muted-foreground">
-                  Checked on each turn separately — one result per turn.
+                  Checked on each turn separately: one result per turn.
                 </p>
               )}
             </div>

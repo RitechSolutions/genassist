@@ -40,6 +40,7 @@ import {
   Group,
   BotMessageSquare,
   Signpost,
+  Repeat,
   Filter,
 } from "lucide-react";
 import SlackLogo from "@/assets/slack-logo.png";
@@ -91,6 +92,7 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
     ),
   },
   Signpost: { type: "lucide", source: Signpost },
+  Repeat: { type: "lucide", source: Repeat },
   Filter: { type: "lucide", source: Filter },
   Send: { type: "lucide", source: Send },
   ArrowRightFromLine: { type: "lucide", source: ArrowRightFromLine },

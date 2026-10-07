@@ -11,7 +11,6 @@ The output is written to app/db/seed/knowledge/node_specs.md.
 Hand-authored descriptions and use cases are merged in from NODE_DESCRIPTIONS below.
 """
 
-import os
 from pathlib import Path
 
 from app.schemas.dynamic_form_schemas.nodes import (
@@ -125,6 +124,16 @@ NODE_DESCRIPTIONS = {
             "Continue only for records whose status is active",
             "Only escalate when a confidence or urgency score is above a threshold",
             "Stop before calling an agent or API when required information is missing",
+        ],
+    },
+    "loopNode": {
+        "category": "Control Flow",
+        "description": "Repeats a body of nodes. mode 'forEach' runs the body once per item of a list (items); mode 'repeatUntil' repeats until the stop condition (stopField / stopOperator / stopValue) holds or maxIterations is reached. The body starts at output_loop and its last node connects back to input_loop; output_done continues after the loop with {results, last, count, iterations, errors, stopped_reason}.",
+        "when_to_use": "When the same steps must run for every element of a list, or when a step should be retried until its result is good enough. It is the only way to revisit a node.",
+        "example_use_cases": [
+            "Summarising or classifying each ticket returned by an API call",
+            "Draft, critique and rewrite an answer until the critic approves it",
+            "Sending one message per recipient in a list",
         ],
     },
     "switchNode": {
@@ -363,27 +372,27 @@ NODE_DESCRIPTIONS = {
     },
     "trainDataSourceNode": {
         "category": "ML",
-        "description": "Loads training data from a configured data source (CSV file, database query, etc.) for ML model training pipelines.",
+        "description": "Loads training data from a database query or uploaded file for ML model training pipelines.",
         "when_to_use": "When setting up an ML training pipeline and you need to load the training dataset.",
         "example_use_cases": [
-            "Loading a CSV dataset for model training",
+            "Loading an uploaded dataset for model training",
             "Querying a database for training data",
             "Fetching data from a data source for preprocessing",
         ],
     },
     "preprocessingNode": {
         "category": "ML",
-        "description": "Preprocesses data for ML model training. Applies transformations using custom Python code on the loaded dataset.",
-        "when_to_use": "When training data needs cleaning, transformation, or feature engineering before model training.",
+        "description": "Cleans the dataset before model training: column filter, remove duplicate rows, remove columns/rows, remove mostly-empty columns, change column data types, plus custom Python code on the loaded dataset.",
+        "when_to_use": "When the raw training data needs cleaning (rows, columns, data types) before model training. Missing values, outliers, encoding, feature engineering and scaling are configured on the Train Model node instead, where they are fit on the training split only.",
         "example_use_cases": [
-            "Cleaning and normalizing training data",
-            "Feature engineering before model training",
-            "Handling missing values and outliers",
+            "Removing duplicate rows and unneeded columns",
+            "Fixing column data types (int, float, text, boolean, date, category)",
+            "Dropping mostly-empty columns",
         ],
     },
     "trainModelNode": {
         "category": "ML",
-        "description": "Trains an ML model on preprocessed data. Configure model type, target column, feature columns, and validation split.",
+        "description": "Trains an ML model on preprocessed data. Configure model type, target column, feature columns, and validation split, plus (fit on the training split only) missing-value handling, outlier handling, categorical encoding, feature engineering (custom_expression, bin_numeric, polynomial, log_transform, quantile_transform, power_transform, pca) and scaling method.",
         "when_to_use": "When you need to train a custom ML model within the platform.",
         "example_use_cases": [
             "Training a classification model on labeled data",

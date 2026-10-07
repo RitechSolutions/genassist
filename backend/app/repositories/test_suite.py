@@ -3,7 +3,9 @@ from typing import List, Optional, Tuple
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import and_, delete, exists, func, or_, select, update
+from sqlalchemy import and_, delete, exists, func, literal, or_, select, update
+from sqlalchemy import case as sa_case
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
@@ -141,6 +143,11 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
             await self.db.refresh(case)
         return cases
 
+    async def add_many(self, cases: List[TestCaseModel]) -> None:
+        """Insert cases in one flush without reading them back, for large imports."""
+        self.db.add_all(cases)
+        await self.db.flush()
+
 
 @inject
 class TestRunRepository(DbRepository[TestRunModel]):
@@ -185,6 +192,7 @@ class TestRunRepository(DbRepository[TestRunModel]):
         waiting_ids: List[str],
         running_before: datetime,
         error_message: str,
+        waiting_error_message: Optional[str] = None,
     ) -> int:
         """Fail queued runs whose job left the broker and runs past the max run age."""
         conditions = [
@@ -197,10 +205,17 @@ class TestRunRepository(DbRepository[TestRunModel]):
             conditions.append(
                 and_(TestRunModel.status == "queued", TestRunModel.id.in_(waiting_ids))
             )
+        summary = {"error": error_message}
+        if waiting_error_message:
+            # A queued run never started, so it gets its own reason (SET sees the old status).
+            summary = sa_case(
+                (TestRunModel.status == "queued", literal({"error": waiting_error_message}, JSONB)),
+                else_=literal(summary, JSONB),
+            )
         stmt = (
             update(TestRunModel)
             .where(TestRunModel.is_deleted == 0, or_(*conditions))
-            .values(status="failed", summary_metrics={"error": error_message})
+            .values(status="failed", summary_metrics=summary)
             .execution_options(synchronize_session=False)
         )
         result = await self.db.execute(stmt)

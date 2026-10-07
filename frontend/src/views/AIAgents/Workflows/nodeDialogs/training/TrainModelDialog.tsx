@@ -973,14 +973,17 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                       features: values.featureEngineering,
                     }}
                     analysisResult={values.analysisResult}
+                    targetColumn={values.targetColumn}
                     onChange={(config: FeatureEngineeringConfig) =>
                       setField("featureEngineering", config.features)
                     }
                   />
                   <p className="text-xs text-muted-foreground">
-                    Bin edges and normalize/standardize statistics are fit on
-                    the training split only, so validation rows never
-                    influence a derived feature's definition.
+                    Bin edges, polynomial features, quantiles, power-transform
+                    parameters and PCA components are fit on the training split
+                    only, so validation rows never influence a derived feature's
+                    definition. Missing values are filled before these run. To
+                    rescale numeric features, use Scaling Method.
                   </p>
                 </div>
               )}

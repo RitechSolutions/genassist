@@ -11,15 +11,23 @@ from typing import Any, Dict, List, Literal, Optional
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
+from app.core.exceptions.error_messages import ErrorKey, get_error_message
+from app.core.exceptions.error_policy import (
+    client_safe_error_detail,
+    exception_location,
+    sanitize_error_detail,
+)
+from app.core.exceptions.exception_classes import AppException
 from app.core.observability.otel import (
     is_otel_runtime_enabled,
     record_workflow_node_duration,
 )
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
+from app.modules.workflow.engine.entry_nodes import is_entry_node_type
+from app.modules.workflow.engine.loops import LOOP_BODY_HANDLE
 from app.modules.workflow.engine.node_result import is_node_failure, node_failure
 from app.modules.workflow.engine.utils import describe_exception, extract_code_params, replace_config_vars
-from app.modules.workflow.engine.entry_nodes import is_entry_node_type
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -35,6 +43,11 @@ class BaseNode(ABC):
     - Execution tracking
     - Input/output processing
     """
+
+    # Subclasses may opt into publishing only explicitly approved exception
+    # details in workflow-test results. Most nodes retain their existing error
+    # behavior until they are migrated deliberately.
+    client_safe_failure_messages = False
 
     def __init__(self, node_id: str, node_config: Dict[str, Any], state: WorkflowState):
         """
@@ -55,6 +68,9 @@ class BaseNode(ABC):
         self.execution_end_time: Optional[float] = None
         self.code_params: Dict[str, Any] = {}
         self.direct_input: Any = None
+        # Set by the engine when it builds the node for a run; None when the node
+        # is built as an agent tool. Lets a node run part of the graph (Loop).
+        self.engine: Any = None
 
         # Validate configuration
         self._validate_config()
@@ -125,6 +141,14 @@ class BaseNode(ABC):
         JSONB column, so it is persisted with the workflow.
         """
         return bool(self.node_data.get("deactivated", False))
+
+    def get_bypass_next_nodes(self) -> Optional[List[str]]:
+        """Nodes to continue with when this node is deactivated.
+
+        ``None`` (the default) means every connected node. A node whose outputs
+        are not all "what comes next" (a Loop's body) overrides this.
+        """
+        return None
 
     def get_node_config(self, node_id: str):
         """Get the node config and type."""
@@ -207,6 +231,22 @@ class BaseNode(ABC):
         logger.debug(f"Found {len(source_nodes)} source nodes for next node {self.node_id}: {source_nodes}")
         return source_nodes
 
+    def is_source_ready(self, source_id: str) -> bool:
+        """Whether a source node has finished, so its output is there to read.
+
+        A Loop keeps the pass context in its output while it iterates. That is
+        for its body only: to every other node the loop has no output until it
+        has finished, however long a parallel branch has been waiting for it.
+        """
+        if self.state.get_node_output(source_id) is None:
+            return False
+        if source_id not in self.state.active_loops:
+            return True
+        return any(
+            edge.get("source") == source_id and edge.get("sourceHandle") == LOOP_BODY_HANDLE
+            for edge in self.state.target_edges.get(self.node_id, [])
+        )
+
     def check_if_requirement_satisfied(self) -> bool:
         """
         Check if all requirements for this node are satisfied.
@@ -221,8 +261,7 @@ class BaseNode(ABC):
 
         # Check if all source nodes have outputs
         for source_id in source_nodes:
-            source_output = self.state.get_node_output(source_id)
-            if source_output is None:
+            if not self.is_source_ready(source_id):
                 logger.debug(f"Source node {source_id} not ready for next node {self.node_id}")
                 return False
 
@@ -449,7 +488,8 @@ class BaseNode(ABC):
                     failure = is_node_failure(result)
                     if failure is not None:
                         if span is not None and span.is_recording():
-                            span.set_status(Status(StatusCode.ERROR, str(failure.get("error"))))
+                            reason = truncate_for_log(redact_sensitive_substrings(str(failure.get("error"))), 500)
+                            span.set_status(Status(StatusCode.ERROR, reason))
                         flow_output = failure.get("output")
                         if flow_output is not None:
                             self.set_node_output(flow_output)
@@ -468,11 +508,61 @@ class BaseNode(ABC):
                     return result
 
                 except Exception as e:
+                    safe_location = None
+                    if self.client_safe_failure_messages:
+                        if isinstance(e, AppException):
+                            error_reason = client_safe_error_detail(e)
+                            if not error_reason and e.error_key != ErrorKey.INTERNAL_ERROR:
+                                error_reason = get_error_message(
+                                    e.error_key,
+                                    error_variables=e.error_variables,
+                                )
+                        else:
+                            error_reason = None
+                        error_reason = error_reason or get_error_message(ErrorKey.ML_EXTRACT_FAILED)
+                        log_reason = sanitize_error_detail(
+                            str(redact_sensitive_substrings(describe_exception(e))),
+                            max_len=2_000,
+                        ) or type(e).__name__
+                        safe_location = exception_location(e)
+                    else:
+                        # Masked and capped: this text reaches the run status, the trace and the agent
+                        error_reason = truncate_for_log(redact_sensitive_substrings(describe_exception(e)), 500)
+                        log_reason = error_reason
+
                     if span is not None and span.is_recording():
-                        span.record_exception(e)
-                        span.set_status(Status(StatusCode.ERROR, str(e)))
-                    error_msg = f"Error executing node {self.node_id}: {describe_exception(e)}"
-                    logger.error(error_msg, exc_info=True)
+                        if self.client_safe_failure_messages:
+                            span.add_event(
+                                "exception",
+                                {
+                                    "exception.type": type(e).__name__,
+                                    "exception.message": log_reason,
+                                    "genassist.exception.location": safe_location,
+                                },
+                            )
+                            span.set_status(Status(StatusCode.ERROR, log_reason))
+                        else:
+                            span.record_exception(e)
+                            span.set_status(Status(StatusCode.ERROR, log_reason))
+
+                    error_msg = f"Error executing node {self.node_id}: {error_reason}"
+                    if self.client_safe_failure_messages:
+                        # Full tracebacks repeat the raw exception message and
+                        # may include driver credentials. Keep a safe diagnostic
+                        # plus the exception type and innermost code location.
+                        logger.error(
+                            "Error executing node %s: %s (%s)",
+                            self.node_id,
+                            log_reason,
+                            safe_location,
+                        )
+                    else:
+                        logger.error(
+                            "Error executing node %s: %s",
+                            self.node_id,
+                            log_reason,
+                            exc_info=True,
+                        )
                     self.complete_execution(error=error_msg)
                     # Return a detectable failure envelope (not None) so a caller using
                     # this node as a tool learns it failed. Downstream engine flow is

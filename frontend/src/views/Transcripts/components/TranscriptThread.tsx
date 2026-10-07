@@ -125,9 +125,11 @@ type TranscriptThreadProps = {
   /**
    * The date header and the "Conversation Finalized" banner. Turn these off where the
    * surrounding UI already states the date and status, so the thread does not repeat them.
-   * Takeover markers are unaffected: those are events inside the conversation.
+   * Takeover markers have their own switch, below.
    */
   showConversationMarkers?: boolean;
+  /** "Supervisor took over" markers. Off where only the messages matter. */
+  showTakeoverMarkers?: boolean;
   showCosts?: boolean;
   costsByMessageId?: Record<string, AgentResponseLogSummary>;
   onMessageFeedback?: (messageId: string, feedback: 'good' | 'bad') => void;
@@ -150,6 +152,7 @@ export function TranscriptThread({
   variant = 'full',
   highlightMessageId = null,
   showConversationMarkers = true,
+  showTakeoverMarkers = true,
   showCosts = false,
   costsByMessageId,
   onMessageFeedback,
@@ -204,6 +207,7 @@ export function TranscriptThread({
             entryType === 'takeover' ||
             (entryObj.speaker === 'Unknown' && entryObj.text === '' && entryObj.start_time === 0)
           ) {
+            if (!showTakeoverMarkers) return null;
             return (
               <div className="flex justify-center my-3" key={`takeover-${index}-${entryObj.create_time || index}`}>
                 <div className="px-3 py-1.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-400 text-xs font-medium flex items-center">

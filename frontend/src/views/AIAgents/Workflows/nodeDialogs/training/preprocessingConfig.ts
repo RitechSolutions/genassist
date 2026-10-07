@@ -58,7 +58,7 @@ export interface DropHighNullColumnsStepConfig {
 }
 
 // Change Column Data Type Step
-export type ChangeDtypeTarget = "int" | "float" | "string" | "bool" | "datetime";
+export type ChangeDtypeTarget = "int" | "float" | "string" | "bool" | "datetime" | "category";
 
 export interface ChangeDtypeItem {
   columnName: string;
@@ -77,6 +77,7 @@ const DTYPE_TO_PANDAS: Record<Exclude<ChangeDtypeTarget, "datetime" | "bool">, s
   int: "Int64",
   float: "float64",
   string: "str",
+  category: "category",
 };
 
 // Also accepts the older "int64"/"bool" forms so code saved before this
@@ -87,6 +88,7 @@ const PANDAS_TO_DTYPE: Record<string, Exclude<ChangeDtypeTarget, "datetime">> = 
   float64: "float",
   str: "string",
   bool: "bool",
+  category: "category",
 };
 
 // Text values (case-insensitive, trimmed) accepted as booleans. Anything else
@@ -398,7 +400,17 @@ function generateChangeDtypeCode(
     // the comment and inject a line of code.
     lines.push(`    # Change data type of column ${col}`);
     if (item.dtype === "datetime") {
-      lines.push(`    df[${col}] = pd.to_datetime(df[${col}], errors="coerce")`);
+      // format="mixed" parses each value on its own - no "Could not infer
+      // format" warning on mixed date formats. A value that still can't be
+      // read fails the run with the values that failed, instead of silently
+      // becoming NaT (empty).
+      lines.push(`    _parsed_dates = pd.to_datetime(df[${col}], errors="coerce", format="mixed")`);
+      lines.push(`    _unparsed = df[${col}].notna() & _parsed_dates.isna()`);
+      lines.push(`    if _unparsed.any():`);
+      lines.push(
+        `        raise ValueError("Change Column Data Type: %d value(s) in column %s could not be read as dates, e.g. %s" % (int(_unparsed.sum()), ${pyStr(JSON.stringify(column))}, df.loc[_unparsed, ${col}].head(3).tolist()))`
+      );
+      lines.push(`    df[${col}] = _parsed_dates`);
     } else if (item.dtype === "bool") {
       lines.push(
         `    df[${col}] = df[${col}].map(lambda v: v if pd.isna(v) else ${PYTHON_BOOL_MAP}.get(str(v).strip().lower(), v)).astype("boolean")`
@@ -585,14 +597,21 @@ function parseChangeDtypeStep(code: string): ChangeDtypeStepConfig | null {
   // conversions in a single step are collected in the order they were
   // generated in.
   const col = String.raw`df\[(${PY_STR_SOURCE})\]\s*=\s*`;
-  const datetimeRe = new RegExp(String.raw`^\s*${col}pd\.to_datetime\(df\[\1\]`);
+  // Current form (_parsed_dates = pd.to_datetime(df[col], ...)) and the
+  // older one-line form (df[col] = pd.to_datetime(df[col], ...)).
+  const datetimeRe = new RegExp(
+    String.raw`^\s*(?:_parsed_dates\s*=\s*pd\.to_datetime\(df\[(${PY_STR_SOURCE})\]|${col}pd\.to_datetime\(df\[\2\])`
+  );
   const boolRe = new RegExp(String.raw`^\s*${col}df\[\1\]\.map\(.*\)\.astype\("boolean"\)\s*$`);
   const astypeRe = new RegExp(String.raw`^\s*${col}df\[\1\]\.astype\("([^"]+)"\)\s*$`);
 
   for (const line of code.split("\n")) {
     const datetimeMatch = line.match(datetimeRe);
     if (datetimeMatch) {
-      conversions.push({ columnName: unquotePyStr(datetimeMatch[1]), dtype: "datetime" });
+      conversions.push({
+        columnName: unquotePyStr(datetimeMatch[1] ?? datetimeMatch[2]),
+        dtype: "datetime",
+      });
       continue;
     }
 

@@ -12,17 +12,33 @@ import {
 } from "@/services/testSuites";
 import { TestCase, TestSuite } from "@/interfaces/testSuite.interface";
 import { Button } from "@/components/button";
-import { ChevronLeft, Import, MessagesSquare, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
+import {
+  ChevronDown,
+  ChevronLeft,
+  FileJson,
+  MessagesSquare,
+  Plus,
+  Upload,
+} from "lucide-react";
 import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { PageListSkeleton } from "@/components/skeletons";
 import { ConversationRecordGroup } from "../components/ConversationRecordGroup";
 import { ImportFromConversationDialog } from "../components/ImportFromConversationDialog";
+import { ImportFromFilesDialog } from "../components/ImportFromFilesDialog";
 import { RecordDialog, RecordPayload } from "../components/RecordDialog";
 import {
+  conversationLabels,
   countConversations,
   groupCasesByConversation,
+  searchConversations,
   type ConversationGroup,
 } from "../helpers/datasetConversations";
 
@@ -41,6 +57,7 @@ const DatasetDetailPage: React.FC = () => {
     nextTurn: number;
   } | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isFileImportDialogOpen, setIsFileImportDialogOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [caseToDelete, setCaseToDelete] = useState<TestCase | null>(null);
@@ -155,7 +172,7 @@ const DatasetDetailPage: React.FC = () => {
       setCases((prev) =>
         prev.filter((c) => c.source_conversation_id !== conversationToRemove.id),
       );
-      toast.success(`${conversationToRemove.label} removed.`);
+      toast.success(`"${conversationToRemove.label}" removed.`);
       setConversationToRemove(null);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
@@ -167,15 +184,10 @@ const DatasetDetailPage: React.FC = () => {
     }
   };
 
-  const filteredCases = cases.filter((entry) => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return true;
-    const inputText = JSON.stringify(entry.input_data ?? {}).toLowerCase();
-    const expectedText = JSON.stringify(entry.expected_output ?? {}).toLowerCase();
-    return inputText.includes(query) || expectedText.includes(query);
-  });
-
-  const conversationGroups = groupCasesByConversation(filteredCases);
+  // Grouped before searching, so a matching turn keeps its number and label.
+  const allGroups = groupCasesByConversation(cases);
+  const labels = conversationLabels(allGroups);
+  const conversationMatches = searchConversations(allGroups, searchQuery);
   // The header counts describe the dataset, so they ignore the search filter.
   const conversationCount = countConversations(cases);
   const countLabel = `${conversationCount} conversation${
@@ -249,15 +261,32 @@ const DatasetDetailPage: React.FC = () => {
             value={searchQuery}
             onChange={setSearchQuery}
           />
-          <Button
-            variant="outline"
-            className="w-full justify-center rounded-full sm:w-auto"
-            icon={<Import className="h-4 w-4" />}
-            disabled={!suite}
-            onClick={() => setIsImportDialogOpen(true)}
-          >
-            Import conversations
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="w-full justify-center rounded-full sm:w-auto"
+                icon={<Upload className="h-4 w-4" />}
+                disabled={!suite}
+              >
+                Import
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem className="gap-2" onSelect={() => setIsImportDialogOpen(true)}>
+                <MessagesSquare className="h-4 w-4 text-muted-foreground" />
+                From conversations
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="gap-2"
+                onSelect={() => setIsFileImportDialogOpen(true)}
+              >
+                <FileJson className="h-4 w-4 text-muted-foreground" />
+                From files
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             className="w-full justify-center rounded-full sm:w-auto"
             icon={<Plus className="h-4 w-4" />}
@@ -271,7 +300,7 @@ const DatasetDetailPage: React.FC = () => {
         </div>
       </div>
 
-      {isLoading || conversationGroups.length === 0 ? (
+      {isLoading || conversationMatches.length === 0 ? (
         <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
           {isLoading ? <PageListSkeleton bordered={false} /> : null}
           {!isLoading && (
@@ -283,7 +312,7 @@ const DatasetDetailPage: React.FC = () => {
               description={
                 isSearching
                   ? "No conversations match your search. Try adjusting your query."
-                  : "A dataset holds the conversations you evaluate an agent against. Import one from a real transcript, or write your own."
+                  : "A dataset holds the conversations you evaluate an agent against. Import them from real transcripts or from files, or write your own."
               }
               action={
                 isSearching ? undefined : (
@@ -305,10 +334,12 @@ const DatasetDetailPage: React.FC = () => {
       ) : (
         // Each conversation is its own card, so they read as separate threads.
         <div className="space-y-3">
-          {conversationGroups.map((group) => (
+          {conversationMatches.map(({ group, turns }) => (
             <ConversationRecordGroup
               key={group.key}
               group={group}
+              label={labels.get(group.key) ?? ""}
+              turns={turns}
               isCollapsed={!expandedGroups.has(group.key)}
               onToggleCollapse={() => toggleGroupExpansion(group.key)}
               expandedRecords={expandedRecords}
@@ -361,6 +392,13 @@ const DatasetDetailPage: React.FC = () => {
         onDatasetChanged={(_suiteId, records) => setCases(records)}
       />
 
+      <ImportFromFilesDialog
+        open={isFileImportDialogOpen}
+        onOpenChange={setIsFileImportDialogOpen}
+        suite={suite}
+        onDatasetChanged={(_suiteId, records) => setCases(records)}
+      />
+
       <ConfirmDialog
         isOpen={!!conversationToRemove}
         onOpenChange={(open) => {
@@ -368,10 +406,12 @@ const DatasetDetailPage: React.FC = () => {
         }}
         onConfirm={handleRemoveConversation}
         isInProgress={isRemovingConversation}
-        title={`Remove ${conversationToRemove?.label ?? "conversation"}?`}
-        description={`This will permanently delete its ${conversationToRemove?.turns ?? 0} turn${
-          conversationToRemove?.turns === 1 ? "" : "s"
-        }. Everything else in "${suite?.name ?? ""}" is kept.`}
+        title="Remove this conversation?"
+        description={
+          `This will permanently delete "${conversationToRemove?.label ?? ""}" and its ` +
+          `${conversationToRemove?.turns ?? 0} turn${conversationToRemove?.turns === 1 ? "" : "s"}. ` +
+          `Everything else in "${suite?.name ?? ""}" is kept.`
+        }
         primaryButtonText="Remove"
       />
 

@@ -90,6 +90,38 @@ export interface WorkflowTestResponse {
   [key: string]: any;
 }
 
+export const TRAIN_DATA_SOURCE_NODE_TYPE = "trainDataSourceNode";
+export const TRAIN_DATA_SOURCE_TEST_FALLBACK =
+  "Train Data Source could not complete the test. Check its configuration and try again.";
+
+const stripEngineNodePrefix = (error: string): string =>
+  error.replace(/^Error executing node [^:]+:\s*/, "").trim();
+
+/** Format a failed node consistently in both workflow-test surfaces. */
+export const getFailedNodeDisplayMessage = (failedNode: FailedNode): string => {
+  const error = failedNode.error?.trim() ?? "";
+  if (failedNode.type !== TRAIN_DATA_SOURCE_NODE_TYPE) return error;
+
+  return stripEngineNodePrefix(error) || TRAIN_DATA_SOURCE_TEST_FALLBACK;
+};
+
+/**
+ * Return the client-safe failure reported by a Train Data Source node test.
+ * Other node failures are deliberately ignored so this behavior stays scoped
+ * to the Train Data Source dialog.
+ */
+export const getTrainDataSourceTestFailureMessage = (
+  response: WorkflowTestResponse | null
+): string | null => {
+  const failedNode = response?.failed_nodes?.find(
+    (node) => node.type === TRAIN_DATA_SOURCE_NODE_TYPE
+  );
+
+  if (!failedNode) return null;
+
+  return getFailedNodeDisplayMessage(failedNode);
+};
+
 export interface NodeTestPayload {
   input_data: Record<string, any>;
   node_type: string;

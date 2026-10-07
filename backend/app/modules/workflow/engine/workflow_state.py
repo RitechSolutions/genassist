@@ -125,6 +125,10 @@ class WorkflowState:
         self.node_execution_status: dict[str, Any] = {}
         self.execution_path: list[str] = []
         self.execution_history: list[str] = []
+        # Loop nodes currently iterating (outermost first) and the iterations this
+        # run has spent across all of them; see engine/nodes/loop_node.py
+        self.active_loops: list[str] = []
+        self.loop_iterations_total = 0
         # The single store for prompt-caching diagnostics: this run's own nodes plus any
         # propagated in from sub-agent child runs. Kept out of node_execution_status so
         # no metric, analytics or failure consumer ever sees them
@@ -512,17 +516,37 @@ class WorkflowState:
         next_index = max(indices, default=-1) + 1
         return f"{node_id}_{next_index}"
 
+    def trim_archived_node_runs(self, node_id: str, keep: int) -> None:
+        """Drop all but the ``keep`` most recent archived runs of a node (``node_id_<n>``).
+
+        A node inside a loop is archived once per iteration; without a bound the
+        run trace grows with the number of items.
+        """
+        prefix = f"{node_id}_"
+        indices = sorted(
+            int(key[len(prefix):])
+            for key in self.node_execution_status
+            if key.startswith(prefix) and key[len(prefix):].isdigit()
+        )
+        for index in indices[: max(len(indices) - keep, 0)]:
+            del self.node_execution_status[f"{prefix}{index}"]
+
     def start_node_execution(self, node_id: str) -> None:
         """Start execution of a specific node. If the node was run before, the previous run
         is kept under a prefixed key (e.g. node_id_0, node_id_1); only the latest run stays as node_id.
         """
+        run = 1
         if node_id in self.node_execution_status:
+            run = self.node_execution_status[node_id].get("run", 1) + 1
             archived_key = self._next_archived_node_key(node_id)
             self.node_execution_status[archived_key] = self.node_execution_status.pop(
                 node_id
             )
         start_time = int(time.time() * 1000)
         self.node_execution_status[node_id] = {
+            # How many times the node has run (only present from the second run,
+            # e.g. inside a loop); archived runs may have been trimmed.
+            **({"run": run} if run > 1 else {}),
             "type": self.get_node_config(node_id).get("type", ""),
             "name": self.get_node_config_data(node_id).get("name", ""),
             "status": "running",

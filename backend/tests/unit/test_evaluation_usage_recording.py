@@ -314,6 +314,7 @@ class TestFlush:
         class FakeRecorder:
             async def record_evaluation_calls(self, execution_id, entries, *, workflow_id=None, agent_id=None, **_):
                 recorded.append((execution_id, entries, workflow_id, agent_id))
+                return "recorded"
 
         monkeypatch.setattr(recorder_module, "LlmUsageRecorder", FakeRecorder)
         return recorded
@@ -556,7 +557,7 @@ class TestRunAttribution:
         service = _service()
         spy = EvaluatorSpy()
         service.evaluators = spy
-        service.run_repo = SimpleNamespace(update=_accept)
+        service.run_repo = SimpleNamespace(update=_accept, db=SimpleNamespace(commit=_accept))
         service.result_repo = SimpleNamespace(create=_accept)
         case = SimpleNamespace(
             id=uuid4(),
@@ -587,7 +588,7 @@ class TestRunAttribution:
         service = _service()
         spy = EvaluatorSpy()
         service.evaluators = spy
-        service.run_repo = SimpleNamespace(update=_accept)
+        service.run_repo = SimpleNamespace(update=_accept, db=SimpleNamespace(commit=_accept))
         service.result_repo = SimpleNamespace(create=_accept)
         case = SimpleNamespace(
             id=uuid4(),

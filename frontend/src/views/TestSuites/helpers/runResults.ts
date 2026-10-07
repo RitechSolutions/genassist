@@ -30,6 +30,9 @@ export const groupByTechnique = (
 export const isTurnScope = (scope: string): boolean =>
   scope === "every_turn" || scope === "specific_turn";
 
+// Shown wherever a method's accuracy is null: nothing could be checked.
+export const NOT_EVALUATED = "Not evaluated";
+
 const countLabel = (count: number, noun: string): string =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -42,7 +45,6 @@ export const ruleCheckSummary = (
   const passed = results.filter((result) => result.status === "passed").length;
   const failed = results.filter((result) => result.status === "failed").length;
   const evaluated = passed + failed;
-  const rate = evaluated ? Math.round((passed / evaluated) * 100) : 0;
 
   const ruleCount = new Set(results.map((result) => result.rule_id)).size;
   const turnChecks = results.filter((result) => isTurnScope(result.scope)).length;
@@ -52,8 +54,12 @@ export const ruleCheckSummary = (
   if (turnChecks) parts.push(countLabel(turnChecks, "turn check"));
   if (conversationChecks) parts.push(countLabel(conversationChecks, "conversation check"));
 
+  // Nothing checked has no pass rate, so it must not read as 0%.
+  if (!evaluated) return { headline: NOT_EVALUATED, subline: parts.join(" · ") };
+
+  const rate = Math.round((passed / evaluated) * 100);
   return {
-    headline: `${passed} of ${evaluated || results.length} checks passed · ${rate}% pass rate`,
+    headline: `${passed} of ${evaluated} checks passed · ${rate}% pass rate`,
     subline: parts.join(" · "),
   };
 };
@@ -98,13 +104,93 @@ export const caseStatusFor = (
   return "not_scored";
 };
 
-export const runAvgAccuracy = (run: TestRun): number | null => {
-  const summaryMetrics = run.summary_metrics as
-    | Record<string, { accuracy?: number }>
-    | undefined;
-  const scored = Object.values(summaryMetrics ?? {}).filter(
-    (m) => typeof m.accuracy === "number",
+export interface TechniqueSummary {
+  accuracy?: number | null;
+  avg_score?: number | null;
+  cases?: number;
+}
+
+// Run-level entries stored beside the methods: "_totals", a failed run's "error".
+const isTechniqueKey = (key: string): boolean => key !== "error" && !key.startsWith("_");
+
+// A run's per-method summaries, without the run-level entries.
+export const techniqueSummaries = (
+  run: TestRun | null | undefined,
+): [string, TechniqueSummary][] =>
+  Object.entries(run?.summary_metrics ?? {}).filter(
+    (entry): entry is [string, TechniqueSummary] =>
+      isTechniqueKey(entry[0]) && Boolean(entry[1]) && typeof entry[1] === "object",
   );
-  if (!scored.length) return null;
-  return scored.reduce((sum, m, _, arr) => sum + (m.accuracy ?? 0) / arr.length, 0);
+
+export const techniqueAccuracy = (summary: TechniqueSummary | undefined): number | null =>
+  typeof summary?.accuracy === "number" ? summary.accuracy : null;
+
+// The mean of each method's pass rate, shown as "Avg score". Not turns passed.
+export const runAvgAccuracy = (run: TestRun): number | null => {
+  const accuracies = techniqueSummaries(run)
+    .map(([, summary]) => techniqueAccuracy(summary))
+    .filter((accuracy): accuracy is number => accuracy !== null);
+  if (!accuracies.length) return null;
+  return accuracies.reduce((sum, accuracy) => sum + accuracy, 0) / accuracies.length;
+};
+
+// Turn-scoped rule results keyed by the case they graded.
+const turnRulesByCase = (
+  ruleResults: TestToolRuleResult[],
+): Map<string, TestToolRuleResult[]> => {
+  const byCase = new Map<string, TestToolRuleResult[]>();
+  for (const rule of ruleResults) {
+    if (!isTurnScope(rule.scope) || !rule.case_id) continue;
+    byCase.set(rule.case_id, [...(byCase.get(rule.case_id) ?? []), rule]);
+  }
+  return byCase;
+};
+
+// Turns passed in a run, by the same per-case status the run details show.
+export const turnsPassed = (
+  results: TestResult[],
+  ruleResults: TestToolRuleResult[],
+): { passed: number; total: number } => {
+  const rulesByCase = turnRulesByCase(ruleResults);
+  const passed = results.filter(
+    (result) => caseStatusFor(result, rulesByCase.get(result.case_id) ?? []) === "passed",
+  ).length;
+  return { passed, total: results.length };
+};
+
+export const isRunInProgress = (run: Pick<TestRun, "status"> | null | undefined): boolean =>
+  run?.status === "queued" || run?.status === "running";
+
+const RUN_STATUS_LABELS: Record<string, string> = {
+  queued: "Queued",
+  running: "Running",
+  completed: "Completed",
+  failed: "Failed",
+};
+
+export const runStatusLabel = (status: string): string => RUN_STATUS_LABELS[status] ?? status;
+
+// Older runs stored the raw exception after this prefix, which can name internal systems.
+const UNEXPECTED_FAILURE_PREFIX = "Run failed unexpectedly";
+const UNEXPECTED_FAILURE_TEXT = "Run failed unexpectedly. Details are in the server logs.";
+
+const FAILURE_TEXTS: Record<string, string> = {
+  "No test cases in suite": "The dataset has no conversations.",
+};
+
+// Why a failed run failed, from the error the backend stores in its summary.
+export const runFailureReason = (run: TestRun | null | undefined): string | null => {
+  if (run?.status !== "failed") return null;
+  const error = (run.summary_metrics as Record<string, unknown> | undefined)?.error;
+  if (typeof error !== "string" || !error.trim()) return null;
+  const text = error.trim();
+  if (text.startsWith(UNEXPECTED_FAILURE_PREFIX)) return UNEXPECTED_FAILURE_TEXT;
+  return FAILURE_TEXTS[text] ?? text;
+};
+
+// The failure line under a run; a reason that already opens with "Run" reads on its own.
+export const runFailureText = (run: TestRun): string => {
+  const reason = runFailureReason(run);
+  if (!reason) return "Run failed.";
+  return /^run\b/i.test(reason) ? reason : `Run failed: ${reason}`;
 };

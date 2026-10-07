@@ -67,6 +67,7 @@ const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: str
 const ALL = ALL_FILTER_VALUE;
 const KPI_SUB_CLASS = "text-sm font-medium text-muted-foreground";
 const COVERAGE_NOTICE = "llm-unpriced-coverage";
+const MIN_UNPRICED_TOKEN_PCT = 0.1;
 const FALLBACK_NOTICE = "llm-fallback-rates";
 const PARTIAL_COST_HELP =
   "Some calls here ran on a model with no configured rate. " +
@@ -262,7 +263,8 @@ function LlmUsagePage() {
   const dimensionLabel = activeDimension?.label ?? "Model";
   const dimensionHeading = activeDimension?.heading ?? dimensionLabel;
   const costFor = (key: string) => sourceItems.find((i) => i.key === key)?.cost_usd ?? 0;
-  const unpricedTokenPct = 100 - (summary?.priced_token_coverage_pct ?? 100);
+  // Gated on the rounded figure the notice prints, so it never reads "0.0%"
+  const unpricedTokenPct = Number((100 - (summary?.priced_token_coverage_pct ?? 100)).toFixed(1));
   const totalItemCost = items.reduce((sum, i) => sum + i.cost_usd, 0);
   const previous = hasCompare ? compare.data : undefined;
   const hasPartialCost = items.some((i) => i.cost_is_partial);
@@ -440,7 +442,7 @@ function LlmUsagePage() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
-        {summary && summary.unpriced_calls > 0 && coverageNotice.visible && (
+        {summary && summary.unpriced_calls > 0 && unpricedTokenPct >= MIN_UNPRICED_TOKEN_PCT && coverageNotice.visible && (
           <div className="flex items-center gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>
