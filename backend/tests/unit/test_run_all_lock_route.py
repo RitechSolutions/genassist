@@ -43,7 +43,7 @@ async def test_lock_contention_returns_409_without_starting(monkeypatch):
     service = _service()
 
     with pytest.raises(HTTPException) as exc:
-        await route_mod.run_workflow_evaluations(uuid4(), service)
+        await route_mod.run_workflow_evaluations(uuid4(), service=service)
 
     assert exc.value.status_code == 409
     service.start_workflow_evaluations.assert_not_awaited()
@@ -59,7 +59,7 @@ async def test_already_running_returns_409_and_releases_own_lock(monkeypatch):
     service = _service(active=True)
 
     with pytest.raises(HTTPException) as exc:
-        await route_mod.run_workflow_evaluations(uuid4(), service)
+        await route_mod.run_workflow_evaluations(uuid4(), service=service)
 
     assert exc.value.status_code == 409
     service.start_workflow_evaluations.assert_not_awaited()
@@ -80,7 +80,7 @@ async def test_happy_path_starts_then_releases(monkeypatch):
     started = [SimpleNamespace(evaluation_id=uuid4())]
     service = _service(active=False, started=started)
 
-    result = await route_mod.run_workflow_evaluations(uuid4(), service)
+    result = await route_mod.run_workflow_evaluations(uuid4(), service=service)
 
     assert result is started
     service.start_workflow_evaluations.assert_awaited_once()
@@ -95,6 +95,6 @@ async def test_release_failure_does_not_mask_response(monkeypatch):
     started = [SimpleNamespace(evaluation_id=uuid4())]
     service = _service(active=False, started=started)
 
-    result = await route_mod.run_workflow_evaluations(uuid4(), service)
+    result = await route_mod.run_workflow_evaluations(uuid4(), service=service)
 
     assert result is started  # successful start still returned despite release error

@@ -75,9 +75,21 @@ def run_async_in_celery(
             )
             raise
         finally:
+            # Before the pools go: sending a notification still needs Redis.
+            await flush_pending_notifications()
             await disconnect_async_redis_pools()
 
     return asyncio.run(_runner())
+
+
+async def flush_pending_notifications() -> None:
+    """Let notifications emitted by the task finish; asyncio.run would cancel them on exit."""
+    from app.services.realtime_notifications import flush_notifications
+
+    try:
+        await flush_notifications()
+    except Exception as exc:  # cleanup must never fail the task
+        logger.debug("Notification flush skipped: %s", exc)
 
 
 def _async_redis_clients() -> List[Any]:

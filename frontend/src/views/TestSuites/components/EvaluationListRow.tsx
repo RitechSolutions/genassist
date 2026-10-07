@@ -74,8 +74,9 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
             <span className={`text-xs font-medium ${accuracyColorClass(avgAccuracy)}`}>
               {Math.round(avgAccuracy * 100)}% avg score
             </span>
+            {/* The score is the last run's, so the count must not read as an average over runs. */}
             <span className="text-xs text-muted-foreground">
-              ({evaluation.run_ids.length} run{evaluation.run_ids.length !== 1 ? "s" : ""})
+              {evaluation.run_ids.length === 1 ? "(1 run)" : `(last of ${evaluation.run_ids.length} runs)`}
             </span>
           </div>
         ) : (
