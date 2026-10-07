@@ -25,6 +25,15 @@ CONTINUATION_TASK_CAP = 2000
 CONTINUATION_RESULT_CAP = 8000
 SUB_AGENT_TRACE_STEPS_CAP = 30
 
+# Customer-facing fallbacks; the technical detail stays in "error" and the logs
+AGENT_ERROR_MESSAGE = "Sorry, I couldn't complete your request. Please try again."
+AGENT_NO_RESPONSE_MESSAGE = "Sorry, I couldn't prepare a response. Please try again."
+
+
+def _error_output(error_detail: str, **extra: Any) -> Dict[str, Any]:
+    """Agent output for a failed run, without exposing the technical detail"""
+    return {"message": AGENT_ERROR_MESSAGE, "error": error_detail, **extra}
+
 
 def _frame_snapshot(value: Any) -> Any:
     """JSON-safe copy for a persisted frame"""
@@ -326,6 +335,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
             completion = orchestrator.child_completion(child_state)
             message = orchestrator.child_message(child_state)
+            if isinstance(child_output, dict) and child_output.get("error"):
+                message = messages.child_failed()
             if mode == "single_turn" or completion is not None:
                 status = "completed"
                 if completion and isinstance(completion.get("result"), str):
@@ -561,15 +572,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         if run.status == "error":
             error_detail = run.error or "an unknown error occurred"
             logger.error("Agent returned an error: %s", error_detail)
-            return {
-                "message": f"The agent could not complete your request: {error_detail}",
-                "error": error_detail,
-                "steps": steps,
-                "tools_used": tools_used,
-            }
+            return _error_output(error_detail, steps=steps, tools_used=tools_used)
         response = run.response
         if response is None:
-            response = "The agent did not return a response. Please try again or review the agent configuration."
+            response = AGENT_NO_RESPONSE_MESSAGE
         return {"message": response, "steps": steps, "tools_used": tools_used}
 
     @staticmethod
@@ -622,7 +628,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         try:
             delegation_tools, delegation_map = self._build_delegation_tools(config)
         except SubAgentTopologyError as e:
-            return {"message": f"The agent could not complete your request: {e}", "error": str(e)}
+            logger.error("Invalid sub-agent topology for agent node %s: %s", self.node_id, e)
+            return _error_output(str(e))
         all_tools = tools + delegation_tools if delegation_tools else tools
 
         # If PII masking is on, wrap every tool
@@ -692,19 +699,14 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 # so the user still gets a reply and downstream nodes still run
                 return node_failure(
                     error_detail,
-                    output={
-                        "message": f"The agent could not complete your request: {error_detail}",
-                        "error": error_detail,
-                        "steps": run.steps,
-                        "tools_used": run.tools_used,
-                    },
+                    output=_error_output(error_detail, steps=run.steps, tools_used=run.tools_used),
                 )
 
             # Prepare output
             response = run.response
             if response is None:
                 logger.warning("Agent '%s' returned no response. Result: %s", agent_type, run.raw)
-                response = "The agent did not return a response. Please try again or review the agent configuration."
+                response = AGENT_NO_RESPONSE_MESSAGE
 
             output = {
                 "message": response,
@@ -717,10 +719,4 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         except Exception as e:
             logger.exception("Error processing agent node")
             error_message = str(e)
-            return node_failure(
-                error_message,
-                output={
-                    "message": f"The agent could not complete your request: {error_message}",
-                    "error": error_message,
-                },
-            )
+            return node_failure(error_message, output=_error_output(error_message))
