@@ -71,9 +71,13 @@ export function FallbackChainDialog({
   });
 
   const providers = providerData ?? [];
+  // apiRequest resolves null on a 403 instead of throwing. A later failed
+  // refetch keeps that null, so it only means "forbidden" while there is no error.
+  const isProvidersForbidden = providerData === null && !isProvidersError;
   // A failed background refetch keeps the cached list, so only treat it as a
   // load failure when there are no providers to pick from at all.
-  const providersLoadFailed = isProvidersError && !providerData;
+  const providersLoadFailed =
+    (isProvidersError && !providerData) || isProvidersForbidden;
 
   const providerName = (id: string) =>
     providers.find((p) => p.id === id)?.name ?? id;
@@ -296,12 +300,24 @@ export function FallbackChainDialog({
                 <div className="rounded-md border">
                   <ListErrorState
                     compact
-                    title="Couldn't load providers"
-                    message={extractErrorMessage(
-                      providersError,
-                      "Failed to fetch LLM providers."
-                    )}
-                    onRetry={() => void refetchProviders()}
+                    title={
+                      isProvidersForbidden
+                        ? "No access to LLM providers"
+                        : "Couldn't load providers"
+                    }
+                    message={
+                      isProvidersForbidden
+                        ? "You don't have permission to view LLM providers."
+                        : extractErrorMessage(
+                            providersError,
+                            "Failed to fetch LLM providers."
+                          )
+                    }
+                    onRetry={
+                      isProvidersForbidden
+                        ? undefined
+                        : () => void refetchProviders()
+                    }
                   />
                 </div>
               ) : (

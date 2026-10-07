@@ -107,9 +107,12 @@ export function AudioProviderDialog({
   });
 
   const formSchemas = data ?? {};
+  // apiRequest resolves null on a 403 instead of throwing. A later failed
+  // refetch keeps that null, so it only means "forbidden" while there is no error.
+  const isConfigForbidden = data === null && !isConfigError;
   // A failed background refetch keeps the cached schemas, so only treat it as a
   // load failure when there is nothing to render the form from.
-  const configLoadFailed = isConfigError && !data;
+  const configLoadFailed = (isConfigError && !data) || isConfigForbidden;
 
   useEffect(() => {
     if (isOpen) {
@@ -289,12 +292,22 @@ export function AudioProviderDialog({
               <div className="rounded-md border">
                 <ListErrorState
                   compact
-                  title="Couldn't load provider types"
-                  message={extractErrorMessage(
-                    configError,
-                    "Failed to fetch audio provider types."
-                  )}
-                  onRetry={() => void refetchConfig()}
+                  title={
+                    isConfigForbidden
+                      ? "No access to provider types"
+                      : "Couldn't load provider types"
+                  }
+                  message={
+                    isConfigForbidden
+                      ? "You don't have permission to view audio provider types."
+                      : extractErrorMessage(
+                          configError,
+                          "Failed to fetch audio provider types."
+                        )
+                  }
+                  onRetry={
+                    isConfigForbidden ? undefined : () => void refetchConfig()
+                  }
                 />
               </div>
             ) : (
