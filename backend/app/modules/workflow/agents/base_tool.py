@@ -5,6 +5,19 @@ from typing import Any, Callable, Protocol
 
 logger = logging.getLogger(__name__)
 
+# String values that carry no real content: blank, or the placeholders the
+# engine and models emit for a value they do not have.
+EMPTY_VALUE_MARKERS = {"", "null", "none"}
+
+
+def is_empty_parameter_value(value: Any) -> bool:
+    """Whether a tool argument should count as not provided."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in EMPTY_VALUE_MARKERS
+    return False
+
 
 def to_snake_case(not_snake_case):
     final = ''
@@ -79,10 +92,18 @@ class BaseTool(Tool):
         observation instead of the raw ``None``/error dict, so the agent does not
         silently treat the failure as success (e.g. claim a Zendesk ticket was
         created when it never was). Successful results pass through unchanged.
+
+        A call whose required parameters are missing or empty is refused before
+        the function runs, so the agent is told to collect the values instead of
+        the node acting on blanks.
         """
         # Imported lazily to avoid any import-time coupling with the engine package.
         from app.modules.workflow.engine.node_result import is_node_failure
         from app.modules.workflow.engine.workflow_state import WorkflowPausedException
+
+        missing_parameters = self._missing_required_parameters(kwargs)
+        if missing_parameters:
+            return self._refuse_missing_parameters(kwargs, missing_parameters)
 
         try:
             result = self.function({"parameters": kwargs})
@@ -110,6 +131,33 @@ class BaseTool(Tool):
             )
         self._record_event(kwargs, result, status="succeeded", error=None)
         return result
+
+    def _missing_required_parameters(self, arguments: dict) -> list:
+        """Names of required parameters that were not given a usable value.
+
+        Skipped for return_direct tools: their result ends the agent loop, so the
+        model could never act on a refusal.
+        """
+        if self.return_direct:
+            return []
+        missing = []
+        for name, info in self.parameters.items():
+            is_required = isinstance(info, dict) and bool(info.get("required", False))
+            if is_required and is_empty_parameter_value(arguments.get(name)):
+                missing.append(name)
+        return missing
+
+    def _refuse_missing_parameters(self, arguments: dict, missing: list) -> str:
+        """Record the refused call and tell the agent what it still needs."""
+        fields = ", ".join(missing)
+        reason = f"required parameters are missing or empty: {fields}"
+        logger.warning("Tool '%s' (node %s) not run: %s", self.name, self.node_id, reason)
+        self._record_event(arguments, None, status="failed", error=reason)
+        return (
+            f"ERROR: the '{self.name}' tool was not run and no action was taken. "
+            f"Required parameters are missing or empty: {fields}. Collect these values "
+            f"(ask the user if you do not have them), then call the tool again."
+        )
 
     def _record_event(self, arguments: dict, result: Any, *, status: str, error: str = None) -> None:
         """Record this call on the workflow state; never let telemetry break execution."""
