@@ -5,6 +5,7 @@ from .chat_output_schema import CHAT_OUTPUT_NODE_DIALOG_SCHEMA
 from .router_schema import ROUTER_NODE_DIALOG_SCHEMA
 from .switch_schema import SWITCH_NODE_DIALOG_SCHEMA
 from .filter_schema import FILTER_NODE_DIALOG_SCHEMA
+from .loop_schema import LOOP_NODE_DIALOG_SCHEMA
 from .agent_schema import AGENT_NODE_DIALOG_SCHEMA
 from .api_tool_schema import API_TOOL_NODE_DIALOG_SCHEMA
 from .open_api_schema import OPEN_API_NODE_DIALOG_SCHEMA
@@ -47,6 +48,7 @@ NODE_TYPE_LABELS: Dict[str, str] = {
     "routerNode": "Router",
     "switchNode": "Switch",
     "filterNode": "Filter",
+    "loopNode": "Loop",
     "agentNode": "Agent",
     "apiToolNode": "API Tool",
     "openApiNode": "Open API",
@@ -90,6 +92,7 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "routerNode": ROUTER_NODE_DIALOG_SCHEMA,
     "switchNode": SWITCH_NODE_DIALOG_SCHEMA,
     "filterNode": FILTER_NODE_DIALOG_SCHEMA,
+    "loopNode": LOOP_NODE_DIALOG_SCHEMA,
     "agentNode": AGENT_NODE_DIALOG_SCHEMA,
     "apiToolNode": API_TOOL_NODE_DIALOG_SCHEMA,
     "openApiNode": OPEN_API_NODE_DIALOG_SCHEMA,
@@ -251,6 +254,15 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
   "filterNode": [
     { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
     { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  # The body starts at output_loop and its last node wires back into input_loop;
+  # output_done continues once the loop has finished.
+  "loopNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "input_loop", "type": "target", "position": "bottom", "compatibility": "any" },
+    { "id": "output_loop", "type": "source", "position": "right", "compatibility": "any" },
+    { "id": "output_done", "type": "source", "position": "right", "compatibility": "any" }
   ],
 
   "aggregatorNode": [
