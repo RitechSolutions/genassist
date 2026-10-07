@@ -502,6 +502,17 @@ def test_summary_from_planned_results_reports_coverage():
     assert summary["accuracy"] == 0.5
 
 
+def test_summary_is_empty_not_zero_when_nothing_was_evaluated():
+    rule = ToolUsageRule(id="r", tool_ids=["a"], operator="all", scope="every_turn", agent_id="ag")
+    # No turn produced a trace, so every check is not_evaluated.
+    planned = plan_tool_rule_results([rule], [_turn("t1"), _turn("t2")], [["t1", "t2"]], {}, {})
+    summary = summarize_planned_results(planned)
+    assert summary["not_evaluated"] == 2
+    assert summary["cases"] == 0
+    assert summary["accuracy"] is None
+    assert summary["avg_score"] is None
+
+
 # ---- call counts -----------------------------------------------------------
 
 def test_result_records_call_counts():

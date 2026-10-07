@@ -5,14 +5,16 @@ import type {
 } from "@/interfaces/testEvaluation.interface";
 import { methodLabel } from "../helpers/methodLabels";
 import { groupByTechnique, ruleCheckSummary } from "../helpers/runResults";
+import type { ConversationIndex } from "../helpers/datasetConversations";
 import { RuleResultCard } from "./RuleResultCard";
 
 interface SectionProps {
   technique: RuleTechnique;
   results: TestToolRuleResult[];
+  labels?: ConversationIndex;
 }
 
-const RuleTechniqueSection: React.FC<SectionProps> = ({ technique, results }) => {
+const RuleTechniqueSection: React.FC<SectionProps> = ({ technique, results, labels }) => {
   const conversationResults = results.filter((r) => r.scope === "conversation");
   const notEvaluated = results.filter((r) => r.status === "not_evaluated").length;
   const { headline, subline } = ruleCheckSummary(results);
@@ -33,7 +35,7 @@ const RuleTechniqueSection: React.FC<SectionProps> = ({ technique, results }) =>
       {conversationResults.length > 0 && (
         <div className="space-y-2 p-3">
           {conversationResults.map((result) => (
-            <RuleResultCard key={result.id} result={result} />
+            <RuleResultCard key={result.id} result={result} labels={labels} />
           ))}
         </div>
       )}
@@ -44,9 +46,10 @@ const RuleTechniqueSection: React.FC<SectionProps> = ({ technique, results }) =>
 interface Props {
   // All rule results for the run; the page fetches once and passes them in.
   results: TestToolRuleResult[];
+  labels?: ConversationIndex;
 }
 
-export const RuleResults: React.FC<Props> = ({ results }) => {
+export const RuleResults: React.FC<Props> = ({ results, labels }) => {
   if (results.length === 0) return null;
 
   // Said once for the whole group rather than inside every section that happens
@@ -60,6 +63,7 @@ export const RuleResults: React.FC<Props> = ({ results }) => {
           key={technique}
           technique={technique}
           results={techniqueResults}
+          labels={labels}
         />
       ))}
       {hasTurnChecks && (

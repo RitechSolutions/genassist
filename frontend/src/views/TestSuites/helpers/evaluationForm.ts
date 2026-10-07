@@ -1,4 +1,4 @@
-import {
+import type {
   EvaluationWizardData,
   GradingSourceSelection,
 } from "../components/EvaluationWizard";
@@ -288,6 +288,15 @@ const forbiddenPhrasesToText = (config: Record<string, unknown> | undefined): st
   if (Array.isArray(phrases)) return phrases.join("\n");
   return (config?.text as string) ?? "";
 };
+
+// Starting values for a new evaluation, shared by the wizard's reset.
+export const newEvaluationDefaults = (
+  lockedWorkflowId?: string,
+): Pick<EvaluationWizardData, "workflowId" | "metrics" | "useMemory"> => ({
+  workflowId: lockedWorkflowId ?? "",
+  metrics: [],
+  useMemory: true,
+});
 
 // Parse the wizard's metadata textarea and fold in the "use memory" flag.
 export const wizardMetadata = (

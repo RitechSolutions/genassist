@@ -20,6 +20,7 @@ Every rule result is one of three states, so incomplete runs never look healthy:
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -41,6 +42,8 @@ from app.services.rule_scopes import (
 
 ROUTER_NODE_TYPE = "routerNode"
 SWITCH_NODE_TYPE = "switchNode"
+# The switch's reserved fallback route (switch_node.DEFAULT_ROUTE).
+SWITCH_DEFAULT_ROUTE = "default"
 # Node types whose output records the branch they took as ``route``.
 ROUTING_NODE_TYPES = (ROUTER_NODE_TYPE, SWITCH_NODE_TYPE)
 
@@ -166,17 +169,20 @@ def _rule_dicts(
 def route_observations(trace: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The routing nodes (routers and switches) one turn executed, with the branch each took."""
     nodes_by_type = (trace or {}).get("nodes_by_type") or {}
-    routers = [router for node_type in ROUTING_NODE_TYPES for router in nodes_by_type.get(node_type) or []]
     observations = []
-    for router in routers:
-        output = router.get("output")
-        observations.append(
-            {
+    for node_type in ROUTING_NODE_TYPES:
+        for router in nodes_by_type.get(node_type) or []:
+            output = router.get("output")
+            output = output if isinstance(output, dict) else {}
+            observation = {
                 "id": router.get("id"),
                 "label": router.get("label"),
-                "route": (output or {}).get("route") if isinstance(output, dict) else None,
+                "route": output.get("route"),
             }
-        )
+            # A switch's route is a case id; its case label is what a reader knows.
+            if node_type == SWITCH_NODE_TYPE and output.get("label"):
+                observation["route_label"] = output["label"]
+            observations.append(observation)
     return observations
 
 
@@ -241,17 +247,39 @@ def _turns_phrase(hits: int, total: int) -> str:
     return f"{hits} of {total} turn{'s' if total != 1 else ''}"
 
 
+def _took_route(observation: Dict[str, Any], expected: str, route_ids: Iterable[str] = ()) -> bool:
+    """Match by route id, then by switch case label, the way the switch resolves a route."""
+    if names_equal(observation.get("route"), expected):
+        return True
+    # "default" and a known case id name one branch, never a case label.
+    if names_equal(expected, SWITCH_DEFAULT_ROUTE) or any(names_equal(expected, rid) for rid in route_ids):
+        return False
+    label = observation.get("route_label")
+    return bool(label and names_equal(label, expected))
+
+
+def _branch_label(observation: Dict[str, Any], graph_names: Dict[str, str]) -> Optional[str]:
+    """A switch branch's case label, from the trace or the graph; None for a router."""
+    route = normalize_text(observation.get("route"))
+    return normalize_text(observation.get("route_label")) or graph_names.get(route) or None
+
+
 def grade_route_rule(
     rule: RouteRule,
     scope_slice: ScopeSlice,
     node_labels: Dict[str, str],
     rule_number: int,
+    branch_labels: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     """Grade one route rule over its scope slice."""
     selector = rule.router
     expected = normalize_text(rule.expected)
+    # Case labels of the selected switch, for a branch the trace never took.
+    graph_names = (branch_labels or {}).get(selector, {}) if selector else {}
 
     routes_taken: List[str] = []
+    route_names: List[str] = []
+    expected_name: Optional[str] = None
     hit_turns = 0
     router_ran = False
     trace_label: Optional[str] = None
@@ -261,10 +289,15 @@ def grade_route_rule(
         trace_label = trace_label or next(
             (obs.get("label") for obs in matched if obs.get("label")), None
         )
-        turn_routes = [normalize_text(obs.get("route")) for obs in matched]
-        if any(names_equal(route, expected) for route in turn_routes):
+        hits = [obs for obs in matched if _took_route(obs, expected, graph_names)]
+        if hits:
             hit_turns += 1
-        routes_taken.extend(route for route in turn_routes if route)
+            expected_name = expected_name or _branch_label(hits[0], graph_names)
+        for obs in matched:
+            route = normalize_text(obs.get("route"))
+            if route:
+                routes_taken.append(route)
+                route_names.append(_branch_label(obs, graph_names) or route)
 
     # Prefer the name the trace recorded; fall back to the graph's label for a
     # router that never ran.
@@ -287,10 +320,10 @@ def grade_route_rule(
         "passed": passed,
         "comment": _route_comment(
             passed=passed,
-            expected=expected,
+            expected=expected_name or graph_names.get(expected) or expected,
             router_name=router_name,
             router_ran=router_ran or not selector,
-            routes=unique_routes,
+            routes=list(dict.fromkeys(route_names)),
             hit_turns=hit_turns,
             scope_slice=scope_slice,
         ),
@@ -434,22 +467,33 @@ def _action_comment(
 # ---- human-readable description --------------------------------------------
 
 
-def describe_route_rule(rule: RouteRule, node_labels: Optional[Dict[str, str]] = None) -> str:
+def describe_route_rule(
+    rule: RouteRule,
+    node_labels: Optional[Dict[str, str]] = None,
+    branch_labels: Optional[Dict[str, Dict[str, str]]] = None,
+    turn_positions: Optional[Dict[int, int]] = None,
+) -> str:
     """A plain-language sentence for a route rule, using human labels where available.
 
     Captured at evaluation time so a later rename never rewrites past results.
     """
-    phrase = scope_phrase(rule)
+    phrase = scope_phrase(rule, turn_positions)
     expected = normalize_text(rule.expected)
     if not rule.router:
         return f'Route "{expected}" must be taken {phrase}.'
     name = display_name(rule.router, node_labels or {}, fallback="Unknown router")
+    # A switch case reads as its label rather than its id.
+    expected = (branch_labels or {}).get(rule.router, {}).get(expected, expected)
     return f'Router "{name}" must take route "{expected}" {phrase}.'
 
 
-def describe_action_rule(rule: ActionRule, node_labels: Optional[Dict[str, str]] = None) -> str:
+def describe_action_rule(
+    rule: ActionRule,
+    node_labels: Optional[Dict[str, str]] = None,
+    turn_positions: Optional[Dict[int, int]] = None,
+) -> str:
     """A plain-language sentence for an action rule, using human labels where available."""
-    phrase = scope_phrase(rule)
+    phrase = scope_phrase(rule, turn_positions)
     name = display_name(
         rule.node or rule.node_type, node_labels or {}, fallback="Unknown node"
     )
@@ -467,9 +511,11 @@ def plan_route_results(
     conversation_groups: List[List[str]],
     observations_by_turn: Dict[str, List[Dict[str, Any]]],
     node_labels: Dict[str, str],
+    branch_labels: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> List[Dict[str, Any]]:
     """Grade every route rule over its scope and return placed results."""
-    return _plan(rules, turns, conversation_groups, observations_by_turn, node_labels, grade_route_rule)
+    grade = partial(grade_route_rule, branch_labels=branch_labels)
+    return _plan(rules, turns, conversation_groups, observations_by_turn, node_labels, grade)
 
 
 def plan_action_results(
