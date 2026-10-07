@@ -1,6 +1,6 @@
 import { isEntryNodeType, WEBHOOK_TRIGGER_NODE_TYPE } from "../utils/entryNodes";
 import { sampleTriggerOutput } from "../nodeTypes/triggers/webhookTriggerMapping";
-import type { WebhookTriggerNodeData } from "../types/nodes";
+import type { LoopNodeData, WebhookTriggerNodeData } from "../types/nodes";
 import React, {
   createContext,
   useContext,
@@ -11,6 +11,14 @@ import React, {
 } from "react";
 import { Node, Edge } from "reactflow";
 import { generateSampleOutput, NodeSchema } from "../types/schemas";
+import {
+  isLoopBackEdge,
+  loopBody,
+  loopItemSample,
+  LOOP_ITERATION_SAMPLE,
+  LOOP_NODE_TYPE,
+  LOOP_RESULT_SAMPLE,
+} from "../utils/loopGraph";
 
 // Types for workflow execution state
 export interface NodeExecutionResult {
@@ -374,7 +382,8 @@ export const WorkflowExecutionProvider: React.FC<
       // Find only direct predecessors (immediate sources)
       const currentNode = getNodeById(nodeId);
       const directPredecessors = edges
-        .filter((edge) => edge.target === nodeId)
+        // A loop body's back-edge is not the Loop's input: {{source}} is its upstream node.
+        .filter((edge) => edge.target === nodeId && !isLoopBackEdge(edge))
         .map((edge) => edge.source)
         .filter((predecessorId) => {
           if (currentNode?.type === "agentNode") {
@@ -399,10 +408,38 @@ export const WorkflowExecutionProvider: React.FC<
         return filtered;
       };
 
+      // A Loop publishes the current pass to its body and the collected results on Done, so
+      // what a node can read from it depends on which side of the loop the node sits.
+      const outputFor = (predecessorId: string): unknown => {
+        if (getNodeById(predecessorId)?.type !== LOOP_NODE_TYPE) {
+          return getNodeOutputData(predecessorId);
+        }
+        if (loopBody(predecessorId, edges).has(nodeId)) {
+          // Show the real shape of an item when the Loop's list is known at design time.
+          const loopData = getNodeById(predecessorId)?.data as LoopNodeData | undefined;
+          const upstream = edges
+            .filter((edge) => edge.target === predecessorId && !isLoopBackEdge(edge))
+            .map((edge) => edge.source);
+          const item = loopItemSample(
+            loopData?.items,
+            {
+              session: resolveSessionData(),
+              source: upstream.length === 1 ? getNodeOutputData(upstream[0]) : undefined,
+              node_outputs: Object.fromEntries(
+                nodes.map((n) => [n.id, getNodeOutputData(n.id)])
+              ),
+            },
+            loopData?.batchSize
+          );
+          return item === undefined ? LOOP_ITERATION_SAMPLE : { ...LOOP_ITERATION_SAMPLE, item };
+        }
+        return getNodeOutputData(predecessorId) ?? LOOP_RESULT_SAMPLE;
+      };
+
       // Build node outputs object with all predecessor outputs
       const nodeOutputs = {};
       predecessorIds.forEach((predecessorId) => {
-        const output = getNodeOutputData(predecessorId);
+        const output = outputFor(predecessorId);
         if (output) {
           nodeOutputs[predecessorId] = filterOutput(output);
         }
@@ -411,13 +448,13 @@ export const WorkflowExecutionProvider: React.FC<
       // Build source object with only direct predecessors
       let source = {};
       if (directPredecessors.length === 1) {
-        const output = getNodeOutputData(directPredecessors[0]);
+        const output = outputFor(directPredecessors[0]);
         if (output) {
           source = filterOutput(output);
         }
       } else {
         directPredecessors.forEach((predecessorId) => {
-          const output = getNodeOutputData(predecessorId);
+          const output = outputFor(predecessorId);
           if (output) {
             source[predecessorId] = filterOutput(output);
           }

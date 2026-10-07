@@ -39,37 +39,13 @@ import type {
 import { WorkflowVersionPicker } from "./WorkflowVersionPicker";
 import { getEvaluationToolCatalog } from "@/services/testEvaluations";
 import { listTestCases } from "@/services/testSuites";
-import type { TestCase } from "@/interfaces/testSuite.interface";
 import { ToolUsageRuleBuilder, newToolRule } from "./ToolUsageRuleBuilder";
 import { scopeTargetIncomplete } from "../helpers/ruleScope";
+import { ruleConversations } from "../helpers/datasetConversations";
+import { newEvaluationDefaults } from "../helpers/evaluationForm";
 import { RouteRulesBuilder, newRouteRule } from "./RouteRulesBuilder";
 import { ActionRulesBuilder, newActionRule } from "./ActionRulesBuilder";
 import { JudgeRulesBuilder, newJudgeRule } from "./JudgeRulesBuilder";
-
-// Group imported multi-turn cases into conversations for specific-turn targeting.
-const deriveConversations = (cases: TestCase[]): RuleConversation[] => {
-  const groups = new Map<string, TestCase[]>();
-  for (const testCase of cases) {
-    if (!testCase.source_conversation_id) continue;
-    const group = groups.get(testCase.source_conversation_id) ?? [];
-    group.push(testCase);
-    groups.set(testCase.source_conversation_id, group);
-  }
-  return Array.from(groups.entries()).map(([id, turns]) => {
-    const sorted = [...turns].sort((a, b) => (a.turn_index ?? 0) - (b.turn_index ?? 0));
-    return {
-      id,
-      label: `Conversation ${id.slice(0, 8)} (${sorted.length} turns)`,
-      // Labelled by position to match the dataset page; the targeted value is
-      // still the stored turn_index.
-      turns: sorted.map((turn, position) => ({
-        caseId: turn.id,
-        turnIndex: turn.turn_index ?? 0,
-        label: `Turn ${position + 1}`,
-      })),
-    };
-  });
-};
 
 // Case-insensitive name/label/id -> id map, keeping only unambiguous keys (a name
 // shared by two tools is left unmapped, mirroring the backend, so it can't silently
@@ -258,7 +234,7 @@ const GradingSourceSelect: React.FC<{
       <SelectValue placeholder="Select source" />
     </SelectTrigger>
     <SelectContent>
-      {allowRubricOnly && <SelectItem value="none">No source — rubric only</SelectItem>}
+      {allowRubricOnly && <SelectItem value="none">No source: rubric only</SelectItem>}
       {GRADING_SOURCE_OPTIONS.map((source) => (
         <SelectItem key={source.value} value={source.value}>
           {source.label}
@@ -375,16 +351,17 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   // by default so the list stays short).
 
   // Form state
+  const defaults = newEvaluationDefaults(lockedWorkflowId);
   const [name, setName] = useState(initialData?.name ?? "");
   const [description, setDescription] = useState(initialData?.description ?? "");
   const [suiteId, setSuiteId] = useState(initialData?.suiteId ?? "none");
   const [workflowId, setWorkflowId] = useState(
-    lockedWorkflowId ?? initialData?.workflowId ?? "none",
+    lockedWorkflowId ?? initialData?.workflowId ?? defaults.workflowId,
   );
-  const [metrics, setMetrics] = useState<string[]>(initialData?.metrics ?? ["exact_match"]);
+  const [metrics, setMetrics] = useState<string[]>(initialData?.metrics ?? defaults.metrics);
   const [inputMetadataText, setInputMetadataText] = useState(initialData?.inputMetadataText ?? "{}");
   const [isMetadataValid, setIsMetadataValid] = useState(true);
-  const [useMemory, setUseMemory] = useState(initialData?.useMemory ?? false);
+  const [useMemory, setUseMemory] = useState(initialData?.useMemory ?? defaults.useMemory);
 
   // NLI config
   const [nliModelName, setNliModelName] = useState(
@@ -447,6 +424,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const selectedSuite = suites.find((s) => s.id === suiteId);
   const effectiveWorkflowId =
     workflowId && workflowId !== "none" ? workflowId : selectedSuite?.workflow_id;
+  // Only edits of an evaluation saved without a workflow keep the dataset-default option.
+  const offersDatasetDefault = mode === "edit" && initialData?.workflowId === "none";
+  const missingWorkflow = workflowId === "none" && !selectedSuite?.workflow_id;
 
   useEffect(() => {
     if (!needsCatalog || !effectiveWorkflowId) {
@@ -486,7 +466,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     let cancelled = false;
     listTestCases(suiteId)
       .then((cases) => {
-        if (!cancelled) setConversations(deriveConversations(cases));
+        if (!cancelled) setConversations(ruleConversations(cases ?? []));
       })
       .catch(() => {
         if (!cancelled) setConversations([]);
@@ -617,11 +597,11 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const canProceed = (): boolean => {
     switch (step) {
       case "workflow":
-        return workflowId.length > 0;
+        return workflowId.length > 0 && !missingWorkflow;
       case "basics":
         return name.trim().length > 0;
       case "data":
-        return suiteId !== "none" && isMetadataValid;
+        return suiteId !== "none" && isMetadataValid && !missingWorkflow;
       case "validation":
         return metrics.length > 0;
       case "configure":
@@ -691,11 +671,11 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setName("");
     setDescription("");
     setSuiteId("none");
-    setWorkflowId(lockedWorkflowId ?? "none");
-    setMetrics(["exact_match"]);
+    setWorkflowId(defaults.workflowId);
+    setMetrics(defaults.metrics);
     setInputMetadataText("{}");
     setIsMetadataValid(true);
-    setUseMemory(false);
+    setUseMemory(defaults.useMemory);
     setNliModelName("cross-encoder/nli-deberta-v3-base");
     setNliMinEntailScore("0.5");
     setNliFailOnContradiction(false);
@@ -750,22 +730,29 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 selectedWorkflowId={workflowId}
                 onSelect={setWorkflowId}
                 leadingOption={
-                  <button
-                    type="button"
-                    onClick={() => setWorkflowId("none")}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
-                      workflowId === "none"
-                        ? "bg-primary/10 font-semibold text-primary"
-                        : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
-                    )}
-                  >
-                    <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate">Use dataset's default workflow</span>
-                    {workflowId === "none" && <Check className="ml-auto h-4 w-4 shrink-0" />}
-                  </button>
+                  offersDatasetDefault ? (
+                    <button
+                      type="button"
+                      onClick={() => setWorkflowId("none")}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+                        workflowId === "none"
+                          ? "bg-primary/10 font-semibold text-primary"
+                          : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+                      )}
+                    >
+                      <Database className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <span className="truncate">Use dataset's default workflow</span>
+                      {workflowId === "none" && <Check className="ml-auto h-4 w-4 shrink-0" />}
+                    </button>
+                  ) : undefined
                 }
               />
+            )}
+            {missingWorkflow && (
+              <p className="text-xs text-destructive">
+                This evaluation's dataset has no default workflow. Choose a workflow to continue.
+              </p>
             )}
           </div>
         );
@@ -821,6 +808,11 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
               <p className="text-xs text-muted-foreground mt-1">
                 Choose the dataset containing your test cases
               </p>
+              {suiteId !== "none" && missingWorkflow && (
+                <p className="text-xs text-destructive mt-1">
+                  This dataset has no default workflow. Go back to the Workflow step and choose one.
+                </p>
+              )}
             </div>
             <JsonInput
               value={inputMetadataText}
@@ -834,9 +826,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
             />
             <div className="flex items-center justify-between rounded-lg border px-4 py-3">
               <div>
-                <div className="text-sm font-medium">Use Memory</div>
+                <div className="text-sm font-medium">Replay conversations with memory</div>
                 <div className="text-xs text-muted-foreground">
-                  Generate unique thread ID per run for conversation memory
+                  Later turns see earlier ones. Turn this off to run every turn on its own.
                 </div>
               </div>
               <Switch checked={useMemory} onCheckedChange={setUseMemory} />
@@ -1065,7 +1057,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 </p>
                 {!effectiveWorkflowId ? (
                   <p className="text-sm text-muted-foreground">
-                    Select a workflow in the Data Source step to load its agents and tools.
+                    Pick a workflow in the Workflow step to load its agents and tools.
                   </p>
                 ) : (
                   <ToolUsageRuleBuilder

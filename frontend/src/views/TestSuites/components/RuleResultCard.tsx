@@ -8,6 +8,7 @@ import type {
 } from "@/interfaces/testEvaluation.interface";
 import { cn } from "@/helpers/utils";
 import { times, toolActualText, toolExpectedText } from "../helpers/toolRuleText";
+import { ruleTargetLabel, type ConversationIndex } from "../helpers/datasetConversations";
 
 const STATUS_META = {
   passed: { icon: CheckCircle2, className: "text-emerald-600", border: "border-l-emerald-500", label: "Passed" },
@@ -47,14 +48,16 @@ const actualText = (
 
 interface Props {
   result: TestToolRuleResult;
+  /** The dataset's names for turns and conversations, preferred over the stored label. */
+  labels?: ConversationIndex;
 }
 
-export const RuleResultCard: React.FC<Props> = ({ result }) => {
+export const RuleResultCard: React.FC<Props> = ({ result, labels }) => {
   const details = (result.details ?? {}) as ToolRuleResultDetails;
   const technique = result.technique ?? "tool_used";
   const meta = STATUS_META[result.status] ?? STATUS_META.not_evaluated;
   const Icon = meta.icon;
-  const target = targetLine(details);
+  const target = (labels && ruleTargetLabel(result, labels)) ?? targetLine(details);
 
   return (
     <div className={cn("rounded-lg border border-l-2 bg-card p-3 space-y-2", meta.border)}>

@@ -1,5 +1,6 @@
 from typing import List
-from ..base import FieldSchema
+
+from ..base import ConditionalField, FieldSchema
 
 TRAIN_DATA_SOURCE_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
     FieldSchema(
@@ -12,30 +13,52 @@ TRAIN_DATA_SOURCE_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         name="sourceType",
         type="select",
         label="Source Type",
-        required=True
-    ),
-    FieldSchema(
-        name="dataSourceType",
-        type="select",
-        label="Data Source Type",
-        required=False
+        required=True,
+        options=[
+            {"label": "Database", "value": "datasource"},
+            {"label": "Uploaded File", "value": "csv"},
+        ],
     ),
     FieldSchema(
         name="dataSourceId",
         type="text",
         label="Data Source",
-        required=False
+        required=False,
+        conditional=ConditionalField(field="sourceType", value="datasource"),
     ),
     FieldSchema(
         name="query",
         type="text",
         label="Query",
-        required=False
+        required=False,
+        conditional=ConditionalField(field="sourceType", value="datasource"),
     ),
     FieldSchema(
-        name="csvFile",
+        name="csvFileName",
         type="text",
-        label="CSV File",
-        required=False
-    )
+        label="Uploaded File Name",
+        required=False,
+        conditional=ConditionalField(field="sourceType", value="csv"),
+    ),
+    FieldSchema(
+        name="csvFilePath",
+        type="text",
+        label="Uploaded File Path",
+        required=False,
+        conditional=ConditionalField(field="sourceType", value="csv"),
+    ),
+    FieldSchema(
+        name="csvFileId",
+        type="text",
+        label="Uploaded File ID",
+        required=False,
+        conditional=ConditionalField(field="sourceType", value="csv"),
+    ),
+    FieldSchema(
+        name="csvFileUrl",
+        type="text",
+        label="Uploaded File URL",
+        required=False,
+        conditional=ConditionalField(field="sourceType", value="csv"),
+    ),
 ]

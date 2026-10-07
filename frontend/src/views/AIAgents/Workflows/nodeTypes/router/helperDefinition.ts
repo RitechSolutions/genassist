@@ -124,6 +124,54 @@ export const FILTER_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const LOOP_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Loop node repeats a set of nodes: once for every item of a list, or again and again until a condition is met. It is the only way to run a node more than once in a workflow.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Loop node when you need to:",
+      bullets: [
+        "Process every item of a list, e.g. summarise each ticket an API returned",
+        "Send one message per recipient",
+        "Draft, review and rewrite an answer until the reviewer approves it",
+        "Retry a step until its output is valid, with a limit on attempts",
+      ],
+    },
+    {
+      title: "Connecting the loop",
+      body: "The Loop has two outputs and two inputs. Connect \"Loop body\" (the upper output) to the first node that should repeat. Connect the last repeated node back to \"Loop back\" (the input at the bottom): its output is the result of that pass. Connect \"Done\" (the lower output) to whatever should run once the loop has finished. Nodes after the loop must be connected from Done only.",
+    },
+    {
+      title: "What the nodes can read",
+      body: "Inside the loop, the first node reads the current pass from the Loop: {{source.item}}, {{source.index}}, {{source.iteration}}, {{source.total}}, {{source.is_first}}, {{source.is_last}}, {{source.previous}} (the previous pass's result) and {{source.input}} (what the Loop received). After the loop, the node on Done reads {{source.results}} (one entry per pass), {{source.last}}, {{source.count}}, {{source.errors}} and {{source.stopped_reason}}.",
+    },
+    {
+      title: "Stopping and limits",
+      body: "The stop condition is checked after every pass and usually looks at the output of a node inside the loop. In \"For each item\" it is an optional early exit; in \"Repeat until\" it is what ends the loop. Maximum iterations always applies, so a loop can never run forever. A Filter inside the loop skips the current item. Passes run one at a time, and a Human in the Loop node cannot be used inside a loop. Optionally, a wait between passes (doubling after each one if you want to back off) and a time limit after which no new pass starts.",
+    },
+    {
+      title: "Batches and results",
+      body: "With a Batch size above 1, each pass receives that many items as a list in {{source.item}}. Items can also be a number (repeat that many times) or plain text split on lines or commas. A pass in which a node failed is listed in errors and never counted as a result. \"Results to keep\" controls what Done receives: every pass, only the last one, or none.",
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "The Configure Loop dialog will open.",
+        "Enter the Node Name.",
+        "Choose the Mode: For each item, or Repeat until.",
+        "For each item: set Items to the list to go through, usually a variable from an upstream node.",
+        "Set Maximum iterations.",
+        "Optionally (or, for Repeat until, as the exit) set the Stop when condition.",
+        "Choose what happens when a pass fails.",
+        "Optionally set a wait between passes, a time limit and which results to keep.",
+        "Save the node configuration.",
+      ],
+    },
+  ],
+};
+
 export const RESULT_MERGER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The Result Merger node combines outputs from multiple workflow branches into a single result. It is useful for collecting parallel outputs and preparing them for later steps.",
