@@ -1,51 +1,43 @@
-import React, { useState, useEffect } from "react";
-import { TrainDataSourceNodeData } from "../../types/nodes";
-import { Button } from "@/components/button";
-import { RichInput } from "@/components/richInput";
-import { Label } from "@/components/label";
+import React, { useState, useEffect } from 'react';
+import { TrainDataSourceNodeData } from '../../types/nodes';
+import { Button } from '@/components/button';
+import { RichInput } from '@/components/richInput';
+import { Label } from '@/components/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/select';
+import { DataSource } from '@/interfaces/dataSource.interface';
+import { getAllDataSources } from '@/services/dataSources';
+import { useToast } from '@/components/use-toast';
+import { Save, BarChart3, Eye } from 'lucide-react';
+import { NodeConfigPanel } from '../../components/NodeConfigPanel';
+import { BaseNodeDialogProps } from '../base';
+import { DraggableTextArea } from '../../components/custom/DraggableTextArea';
+import { FileUploader } from '@/components/FileUploader';
+import { CSVAnalysisDisplay } from './components/CSVAnalysisDisplay';
+import { analyzeCSV, CSVAnalysisResult, previewQuery, profileData } from '@/services/mlModels';
+import { useNodeDialogState } from '../useNodeDialogState';
+import { buildProfileDataRequest, getProfileDataAvailability } from './trainDataSourceProfile';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
-import { DataSource } from "@/interfaces/dataSource.interface";
-import { getAllDataSources } from "@/services/dataSources";
-import { useToast } from "@/components/use-toast";
-import { Save, BarChart3 } from "lucide-react";
-import { NodeConfigPanel } from "../../components/NodeConfigPanel";
-import { BaseNodeDialogProps } from "../base";
-import { DraggableTextArea } from "../../components/custom/DraggableTextArea";
-import { FileUploader } from "@/components/FileUploader";
-import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
-import { analyzeCSV, profileData } from "@/services/mlModels";
-import { useNodeDialogState } from "../useNodeDialogState";
-import {
-  buildProfileDataRequest,
-  getProfileDataAvailability,
-} from "./trainDataSourceProfile";
-import {
+  applyTrainDataSourceType,
   getTrainDataSourceSelection,
+  getTrainDataSourceVisibleFields,
   isTrainingDatabaseSource,
-} from "../../utils/trainDataSource";
+  TRAIN_DATA_SOURCE_TYPE_OPTIONS,
+  TRAINING_FILE_EXTENSIONS,
+  TrainDataSourceDialogValues,
+  TrainDataSourceType,
+  validateTrainDataSource,
+} from '../../utils/trainDataSource';
 
-type TrainDataSourceDialogProps = BaseNodeDialogProps<
-  TrainDataSourceNodeData,
-  TrainDataSourceNodeData
->;
+type TrainDataSourceDialogProps = BaseNodeDialogProps<TrainDataSourceNodeData, TrainDataSourceNodeData>;
 
-export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
-  props
-) => {
+export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (props) => {
   const { isOpen, onClose, data, onUpdate } = props;
-  const initialSelection = getTrainDataSourceSelection(data);
 
   const { values, setField, setValues, merged } = useNodeDialogState(
     props,
-    () => ({
-      name: data.name || "Train Data Source",
-      sourceType: initialSelection.sourceType,
+    (): TrainDataSourceDialogValues => ({
+      name: data.name || 'Train Data Source',
+      sourceType: getTrainDataSourceSelection(data).sourceType,
       dataSourceId: data.dataSourceId ?? null,
       query: data.query ?? null,
       csvFileName: data.csvFileName ?? null,
@@ -67,61 +59,60 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
     })
   );
 
-  // selectedSource tracks what's selected in the dropdown (datasource ID or "csv")
-  const [selectedSource, setSelectedSource] = useState<string>(
-    initialSelection.selectedSource
-  );
-  const [isCsvUploading, setIsCsvUploading] = useState(false);
+  const [isFileUploading, setIsFileUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isPreviewingQuery, setIsPreviewingQuery] = useState(false);
+  const [queryPreviewResult, setQueryPreviewResult] = useState<CSVAnalysisResult | null>(null);
   const [isProfiling, setIsProfiling] = useState(false);
-  const [availableDataSources, setAvailableDataSources] = useState<
-    DataSource[]
-  >([]);
+  const [availableDataSources, setAvailableDataSources] = useState<DataSource[]>([]);
   const { toast } = useToast();
 
   useEffect(() => {
-    if (isOpen) {
-      setSelectedSource(getTrainDataSourceSelection(data).selectedSource);
+    if (!isOpen) {
+      setQueryPreviewResult(null);
+      setIsPreviewingQuery(false);
+    }
+  }, [isOpen]);
 
+  useEffect(() => {
+    if (isOpen && values.sourceType === 'datasource') {
       const loadDataSources = async () => {
         try {
           const dataSources = await getAllDataSources();
 
-          const trainingDataSources = dataSources.filter(
-            isTrainingDatabaseSource
-          );
+          const trainingDataSources = dataSources.filter(isTrainingDatabaseSource);
           setAvailableDataSources(trainingDataSources);
         } catch (err) {
           toast({
-            title: "Error",
-            description: "Failed to load data sources",
-            variant: "destructive",
+            title: 'Unable to Load Data Sources',
+            description: "We couldn't load the available database sources. Please try again.",
+            variant: 'destructive',
           });
         }
       };
 
       loadDataSources();
     }
-  }, [isOpen, data, toast]);
+  }, [isOpen, values.sourceType, toast]);
 
   const handleAnalyzeFile = async (fileUrl: string, fileName: string) => {
     // The backend preview endpoint only supports CSV files today.
-    if (!fileName.toLowerCase().endsWith(".csv")) {
-      setField("analysisResult", null);
+    if (!fileName.toLowerCase().endsWith('.csv')) {
+      setField('analysisResult', null);
       return;
     }
 
     try {
       setIsAnalyzing(true);
       const result = await analyzeCSV(fileUrl);
-      setField("analysisResult", result);
+      setField('analysisResult', result);
     } catch (err) {
       console.error(err);
+      setField('analysisResult', null);
       toast({
-        title: "Preview Failed",
-        description:
-          err instanceof Error ? err.message : "Failed to preview the file",
-        variant: "destructive",
+        title: 'Unable to Generate Preview',
+        description: err instanceof Error ? err.message : 'The file preview could not be generated. Please try again.',
+        variant: 'destructive',
       });
     } finally {
       setIsAnalyzing(false);
@@ -134,85 +125,85 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
 
     try {
       setIsProfiling(true);
-      if (request.source_type === "datasource") {
-        await profileData(request, "query_profile.html");
+      if (request.source_type === 'datasource') {
+        await profileData(request, 'query_profile.html');
       } else {
-        const baseName = (values.csvFileName || "data").replace(
-          /\.[^./]+$/,
-          "",
-        );
+        const baseName = (values.csvFileName || 'data').replace(/\.[^./]+$/, '');
         await profileData(request, `${baseName}_profile.html`);
       }
     } catch (err) {
       console.error(err);
       toast({
-        title: "Profiling Failed",
-        description:
-          err instanceof Error ? err.message : "Failed to generate data profile",
-        variant: "destructive",
+        title: 'Unable to Generate Profile',
+        description: err instanceof Error ? err.message : 'The data profile could not be generated. Please try again.',
+        variant: 'destructive',
       });
     } finally {
       setIsProfiling(false);
     }
   };
 
-  const handleSourceChange = (value: string) => {
-    setSelectedSource(value);
+  const handlePreviewQuery = async () => {
+    const dataSourceId = values.dataSourceId;
+    const query = values.query?.trim();
+    if (!dataSourceId || !query) return;
 
-    // If value is "csv", switch to CSV mode
-    if (value === "csv") {
-      setValues((v) => ({
-        ...v,
-        sourceType: "csv",
-        dataSourceId: null,
-        // Clear query when switching to CSV mode
-        query: null,
-      }));
-    } else {
-      // Otherwise, it's a datasource ID - switch to datasource mode
-      setValues((v) => ({
-        ...v,
-        sourceType: "datasource",
-        dataSourceId: value,
-        // Preserve existing query if we're switching between datasources
-        // Only clear if we were previously in CSV mode
-        query: v.sourceType === "csv" ? null : v.query,
-      }));
+    try {
+      setIsPreviewingQuery(true);
+      const result = await previewQuery({
+        data_source_id: dataSourceId,
+        query,
+      });
+      setQueryPreviewResult(result);
+    } catch (err) {
+      console.error(err);
+      setQueryPreviewResult(null);
+      toast({
+        title: 'Unable to Generate Preview',
+        description: err instanceof Error ? err.message : 'The query preview could not be generated. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsPreviewingQuery(false);
     }
   };
 
+  const handlePreviewData = () => {
+    if (values.sourceType === 'datasource') {
+      return handlePreviewQuery();
+    }
+
+    const previewTarget = values.csvFilePath || values.csvFileUrl;
+    if (previewTarget && values.csvFileName) {
+      return handleAnalyzeFile(previewTarget, values.csvFileName);
+    }
+  };
+
+  const handleSourceTypeChange = (value: string) => {
+    // Switching type drops the other type's values so they are never saved.
+    setQueryPreviewResult(null);
+    setValues((v) => applyTrainDataSourceType(v, value as TrainDataSourceType));
+  };
+
   const handleSave = async () => {
-    // Validate based on source type
-    if (values.sourceType === "datasource") {
-      if (!values.dataSourceId || !values.query || !values.query.trim()) {
-        toast({
-          title: "Validation Error",
-          description: "Please select a data source and provide a query",
-          variant: "destructive",
-        });
-        return;
-      }
-    } else if (values.sourceType === "csv") {
-      if (
-        !values.csvFileName &&
-        !values.csvFilePath &&
-        !values.csvFileId &&
-        !values.csvFileUrl
-      ) {
-        toast({
-          title: "Validation Error",
-          description: "Please upload a CSV file",
-          variant: "destructive",
-        });
-        return;
-      }
+    const validationError = validateTrainDataSource(values);
+    if (validationError) {
+      toast({
+        title: 'Complete Required Fields',
+        description: validationError,
+        variant: 'destructive',
+      });
+      return;
     }
 
     onUpdate(merged);
     onClose();
   };
 
+  const visibleFields = getTrainDataSourceVisibleFields(values.sourceType);
   const profileAvailability = getProfileDataAvailability(values);
+  const isPreviewingData = values.sourceType === 'datasource' ? isPreviewingQuery : isAnalyzing;
+  const hasPreviewData = values.sourceType === 'datasource' ? Boolean(queryPreviewResult) : Boolean(values.analysisResult);
 
   return (
     <NodeConfigPanel
@@ -223,11 +214,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={handleSave}
-            loading={isCsvUploading}
-            icon={<Save className="h-4 w-4" />}
-          >
+          <Button onClick={handleSave} loading={isFileUploading} icon={<Save className="h-4 w-4" />}>
             Save Changes
           </Button>
         </>
@@ -242,63 +229,84 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
           <RichInput
             id="name"
             value={values.name}
-            onChange={(e) => setField("name", e.target.value)}
+            onChange={(e) => setField('name', e.target.value)}
             placeholder="Enter the name of this node"
             className="w-full"
           />
         </div>
 
-        {/* Data Source Selection */}
+        {/* Source Type */}
         <div className="space-y-2">
-          <Label htmlFor="datasource">Select Data Source *</Label>
-          <Select value={selectedSource} onValueChange={handleSourceChange}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select a data source" />
+          <Label htmlFor="sourceType">Source Type *</Label>
+          <Select value={values.sourceType} onValueChange={handleSourceTypeChange}>
+            <SelectTrigger id="sourceType" className="w-full">
+              <SelectValue placeholder="Select a source type" />
             </SelectTrigger>
             <SelectContent>
-              {availableDataSources.map((dataSource) => (
-                <SelectItem key={dataSource.id} value={dataSource.id!}>
-                  {dataSource.name} ({dataSource.source_type})
+              {TRAIN_DATA_SOURCE_TYPE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
                 </SelectItem>
               ))}
-              <SelectItem value="csv">CSV Upload</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Select a TimeDB, Snowflake, or other database source, or upload a
-            CSV file
-          </p>
         </div>
 
-        {/* Data Source Configuration */}
-        {values.sourceType === "datasource" && (
+        {/* Database Configuration */}
+        {visibleFields.dataSource && (
+          <div className="space-y-2">
+            <Label htmlFor="dataSourceId">Data Source *</Label>
+            <Select
+              value={values.dataSourceId ?? ''}
+              onValueChange={(value) => {
+                setField('dataSourceId', value);
+                setQueryPreviewResult(null);
+              }}
+            >
+              <SelectTrigger id="dataSourceId" className="w-full">
+                <SelectValue placeholder="Select a data source" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableDataSources.map((dataSource) => (
+                  <SelectItem key={dataSource.id} value={dataSource.id!}>
+                    {dataSource.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {visibleFields.query && (
           <div className="space-y-2">
             <Label htmlFor="query">Query *</Label>
             <DraggableTextArea
               id="query"
               size="code"
-              value={values.query ?? ""}
-              onChange={(e) => setField("query", e.target.value || null)}
-              placeholder="SELECT * FROM training_data WHERE ..."
+              value={values.query ?? ''}
+              onChange={(e) => {
+                setField('query', e.target.value || null);
+                setQueryPreviewResult(null);
+              }}
+              placeholder="SELECT column_1, column_2 FROM table_name"
               className="w-full font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              {"Variables like {{chat.input}} are sent to the database as values, "}
-              so they are safe to use in WHERE and LIMIT. They cannot replace
-              table or column names.
+              {'Workflow variables, such as {{chat.input}}, can be used only '}
+              where the query expects a value, for example in WHERE or LIMIT clauses. They cannot be used as table or
+              column names.
             </p>
           </div>
         )}
 
-        {/* CSV Upload Configuration */}
-        {values.sourceType === "csv" && (
+        {/* Uploaded File Configuration */}
+        {visibleFields.trainingFile && (
           <FileUploader
-            label="Training File"
-            acceptedFileTypes={[".csv"]}
-            initialServerFilePath={values.csvFilePath ?? ""}
-            initialServerFileUrl={values.csvFileUrl ?? ""}
-            initialOriginalFileName={values.csvFileName ?? ""}
-            onUploadingChange={setIsCsvUploading}
+            label="Training File *"
+            acceptedFileTypes={[...TRAINING_FILE_EXTENSIONS]}
+            initialServerFilePath={values.csvFilePath ?? ''}
+            initialServerFileUrl={values.csvFileUrl ?? ''}
+            initialOriginalFileName={values.csvFileName ?? ''}
+            onUploadingChange={setIsFileUploading}
             onUploadComplete={(result) => {
               setValues((v) => ({
                 ...v,
@@ -308,15 +316,6 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
                 csvFileUrl: result.file_url,
                 analysisResult: null,
               }));
-              // Prefer the raw server file_path: analyze-csv resolves it directly.
-              // file_url (when file-manager storage is enabled) points at an
-              // authenticated /file-manager/files/{id}/source endpoint that the
-              // backend's own internal downloader hits without credentials, so it
-              // 400s there — file_path avoids that round-trip entirely.
-              const previewTarget = result.file_path || result.file_url;
-              if (previewTarget) {
-                handleAnalyzeFile(previewTarget, result.original_filename);
-              }
             }}
             onRemove={() => {
               setValues((v) => ({
@@ -328,35 +327,60 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
                 analysisResult: null,
               }));
             }}
-            placeholder="Select a CSV file to upload"
+            placeholder="Select a training file to upload"
           />
         )}
-        {values.sourceType === "csv" && isAnalyzing && (
+        {visibleFields.trainingFile && (
           <p className="text-xs text-muted-foreground">
-            Generating data preview...
+            Upload a CSV file to use as training data. CSV files can be previewed and profiled.
           </p>
         )}
-        {values.sourceType === "csv" && values.analysisResult && (
+        {visibleFields.trainingFile && isAnalyzing && (
+          <p className="text-xs text-muted-foreground">Generating data preview...</p>
+        )}
+        {visibleFields.trainingFile && values.analysisResult && (
           <CSVAnalysisDisplay analysisResult={values.analysisResult} />
+        )}
+        {values.sourceType === 'datasource' && isPreviewingQuery && (
+          <p className="text-xs text-muted-foreground">Generating data preview...</p>
+        )}
+        {values.sourceType === 'datasource' && queryPreviewResult && (
+          <CSVAnalysisDisplay analysisResult={queryPreviewResult} source="query" />
         )}
         {profileAvailability.visible && (
           <div className="space-y-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleProfileData}
-              loading={isProfiling}
-              disabled={isProfiling || !profileAvailability.enabled}
-              icon={<BarChart3 className="h-4 w-4" />}
-              className="w-fit"
-            >
-              {isProfiling ? "Generating profile..." : "Profile Data"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handlePreviewData}
+                loading={isPreviewingData}
+                disabled={isPreviewingData || !profileAvailability.enabled}
+                icon={<Eye className="h-4 w-4" />}
+                className="w-fit"
+              >
+                {isPreviewingData
+                  ? 'Generating preview...'
+                  : hasPreviewData
+                    ? 'Refresh Preview'
+                    : 'Preview Data'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleProfileData}
+                loading={isProfiling}
+                disabled={isProfiling || !profileAvailability.enabled}
+                icon={<BarChart3 className="h-4 w-4" />}
+                className="w-fit"
+              >
+                {isProfiling ? 'Generating profile...' : 'Profile Data'}
+              </Button>
+            </div>
             {profileAvailability.reason && (
-              <p className="text-xs text-muted-foreground">
-                {profileAvailability.reason}
-              </p>
+              <p className="text-xs text-muted-foreground">{profileAvailability.reason}</p>
             )}
           </div>
         )}

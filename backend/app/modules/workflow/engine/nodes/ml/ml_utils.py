@@ -23,8 +23,10 @@ import numpy as np
 import pandas as pd
 
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,57 @@ _STREAM_SOURCE_DETAILS = {
 
 # Distinct values listed per categorical column in a CSV analysis.
 _MAX_ANALYSIS_CATEGORIES = 100
+
+_QUERY_REASON_PATTERNS = (
+    r"no such (?:column|table): [\w.\"`]+",
+    r"(?:column|relation|table) \"[^\"]+\" does not exist",
+    r"syntax error at or near \"[^\"]*\"",
+    r"Unknown column '[^']+'(?: in '[^']+')?",
+    r"Table '[^']+' doesn't exist",
+    r"You have an error in your SQL syntax.*?near '[^']{0,80}'",
+    r"Invalid (?:column|object) name '[^']+'",
+    r"invalid identifier '[^']+'",
+    r"near [\"'][^\"']{0,80}[\"']: syntax error",
+)
+_QUERY_REASON_RE = re.compile(
+    "|".join(f"(?:{pattern})" for pattern in _QUERY_REASON_PATTERNS),
+    re.IGNORECASE,
+)
+
+
+def sanitized_database_diagnostic(error: Any) -> str:
+    """Return a bounded, redacted database diagnostic suitable for logs."""
+    redacted = redact_sensitive_substrings(str(error))
+    return sanitize_error_detail(str(redacted), max_len=2_000)
+
+
+def client_safe_database_error(
+    error: Any,
+    *,
+    has_bound_parameters: bool,
+) -> str:
+    """Return an actionable database error without exposing driver details."""
+    if has_bound_parameters:
+        return (
+            "Database query failed. Check that each workflow variable's "
+            "value matches the column it is compared with."
+        )
+
+    # Driver errors may contain codes, hosts, credentials and the full SQL.
+    # Publish only a recognized correction phrase and its identifier.
+    match = _QUERY_REASON_RE.search(str(error))
+    if match:
+        safe_reason = sanitize_error_detail(
+            str(redact_sensitive_substrings(match.group(0))),
+            max_len=300,
+        )
+        if safe_reason:
+            return f"Database query failed: {safe_reason}"
+
+    return (
+        "Could not run the query on the selected data source. "
+        "Check the query and connection settings."
+    )
 
 
 # Model types that only support one task type, regardless of the target variable

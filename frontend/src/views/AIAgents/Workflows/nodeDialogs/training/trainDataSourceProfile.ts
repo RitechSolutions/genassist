@@ -1,7 +1,7 @@
 import type { ProfileDataRequest } from '@/services/mlModels';
 
 export interface TrainDataSourceProfileValues {
-  sourceType: 'datasource' | 'csv';
+  sourceType: '' | 'datasource' | 'csv';
   dataSourceId?: string | null;
   query?: string | null;
   csvFileName?: string | null;
@@ -19,7 +19,7 @@ export interface ProfileDataAvailability {
 const WORKFLOW_VARIABLE_PATTERN = /{{[^\s{}]+}}/;
 
 export const WORKFLOW_VARIABLE_PROFILE_REASON =
-  'Replace workflow variables like {{chat.input}} with sample values to profile.';
+  'Replace workflow variables like {{chat.input}} with sample values to preview or profile.';
 
 export function getProfileDataAvailability(values: TrainDataSourceProfileValues): ProfileDataAvailability {
   if (values.sourceType === 'datasource') {
@@ -35,6 +35,10 @@ export function getProfileDataAvailability(values: TrainDataSourceProfileValues)
       };
     }
     return { visible: true, enabled: true };
+  }
+
+  if (values.sourceType !== 'csv') {
+    return { visible: false, enabled: false };
   }
 
   const hasFile = Boolean(values.csvFileId || values.csvFilePath || values.csvFileUrl);

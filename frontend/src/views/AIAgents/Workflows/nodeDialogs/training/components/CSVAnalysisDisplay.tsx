@@ -15,15 +15,28 @@ import {
 } from "@/components/collapsible";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { CSVAnalysisResult } from "@/services/mlModels";
+import {
+  getPreviewEdgeItems,
+  getPreviewRows,
+  PREVIEW_ELLIPSIS,
+  type PreviewSource,
+} from "../trainDataSourcePreview";
 
 interface CSVAnalysisDisplayProps {
   analysisResult: CSVAnalysisResult;
+  source?: PreviewSource;
 }
 
 export const CSVAnalysisDisplay: React.FC<CSVAnalysisDisplayProps> = ({
   analysisResult,
+  source = "file",
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const previewColumns = getPreviewEdgeItems(analysisResult.column_names, 5);
+  const previewRows = getPreviewRows(analysisResult.sample_data || [], source);
+  const columnsAreLimited = analysisResult.column_names.length > 10;
+  const rowsAreLimited = source === "file" && (analysisResult.sample_data?.length || 0) > 4;
+  const rowLabel = analysisResult.row_count === 1 ? "row" : "rows";
 
   return (
     <div className="space-y-2">
@@ -31,7 +44,9 @@ export const CSVAnalysisDisplay: React.FC<CSVAnalysisDisplayProps> = ({
         <CollapsibleTrigger asChild>
           <div className="text-xs text-muted-foreground bg-muted p-2 rounded border cursor-pointer hover:bg-muted transition-colors flex items-center justify-between">
             <p>
-              <strong>{analysisResult.row_count}</strong> rows,{" "}
+              {source === "query" && "Showing "}
+              <strong>{analysisResult.row_count}</strong>{" "}
+              {source === "query" ? `preview ${rowLabel}` : rowLabel},{" "}
               <strong>{analysisResult.column_count}</strong> columns
               {analysisResult.column_names.length > 0 && (
                 <>: {analysisResult.column_names.slice(0, 5).join(", ")}
@@ -55,38 +70,77 @@ export const CSVAnalysisDisplay: React.FC<CSVAnalysisDisplayProps> = ({
             <div className="border rounded-lg overflow-hidden mt-2">
               <div className="bg-muted px-3 py-2 border-b">
                 <Label className="text-sm font-medium">Sample Data</Label>
+                {(columnsAreLimited || rowsAreLimited) && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {columnsAreLimited && "Showing the first 5 and last 5 columns"}
+                    {columnsAreLimited && rowsAreLimited && ", and "}
+                    {rowsAreLimited && "the first 2 and last 2 sample rows"}.
+                  </p>
+                )}
               </div>
               <div className="max-h-64 overflow-auto">
                 <Table className="min-w-full">
                   <TableHeader className="sticky top-0 bg-card z-10">
                     <TableRow>
-                      {analysisResult.column_names.map((columnName) => (
-                        <TableHead
-                          key={columnName}
-                          className="text-xs font-medium bg-muted"
-                        >
-                          {columnName}
-                        </TableHead>
+                      {previewColumns.map((columnName) => (
+                        columnName === PREVIEW_ELLIPSIS ? (
+                          <TableHead
+                            key="omitted-columns"
+                            aria-label="Omitted columns"
+                            className="text-center text-xs font-medium bg-muted"
+                          >
+                            ...
+                          </TableHead>
+                        ) : (
+                          <TableHead
+                            key={columnName}
+                            className="text-xs font-medium bg-muted"
+                          >
+                            {columnName}
+                          </TableHead>
+                        )
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {analysisResult.sample_data.map((row, rowIndex) => (
-                      <TableRow key={rowIndex}>
-                        {analysisResult.column_names.map((columnName) => (
-                          <TableCell key={columnName} className="text-xs">
-                            {row[columnName] !== null &&
-                            row[columnName] !== undefined
-                              ? String(row[columnName])
-                              : (
-                                  <span className="text-muted-foreground italic">
-                                    null
-                                  </span>
-                                )}
+                    {previewRows.map((row, rowIndex) =>
+                      row === PREVIEW_ELLIPSIS ? (
+                        <TableRow key="omitted-rows">
+                          <TableCell
+                            colSpan={previewColumns.length}
+                            aria-label="Omitted rows"
+                            className="text-center text-xs text-muted-foreground"
+                          >
+                            ...
                           </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
+                        </TableRow>
+                      ) : (
+                        <TableRow key={rowIndex}>
+                          {previewColumns.map((columnName) =>
+                            columnName === PREVIEW_ELLIPSIS ? (
+                              <TableCell
+                                key="omitted-columns"
+                                aria-label="Omitted columns"
+                                className="text-center text-xs text-muted-foreground"
+                              >
+                                ...
+                              </TableCell>
+                            ) : (
+                              <TableCell key={columnName} className="text-xs">
+                                {row[columnName] !== null &&
+                                row[columnName] !== undefined
+                                  ? String(row[columnName])
+                                  : (
+                                      <span className="text-muted-foreground italic">
+                                        null
+                                      </span>
+                                    )}
+                              </TableCell>
+                            )
+                          )}
+                        </TableRow>
+                      )
+                    )}
                   </TableBody>
                 </Table>
               </div>
@@ -97,4 +151,3 @@ export const CSVAnalysisDisplay: React.FC<CSVAnalysisDisplayProps> = ({
     </div>
   );
 };
-

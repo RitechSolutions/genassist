@@ -23,14 +23,14 @@ TRAIN_DATA_SOURCE_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         name="dataSourceId",
         type="text",
         label="Data Source",
-        required=False,
+        required=True,
         conditional=ConditionalField(field="sourceType", value="datasource"),
     ),
     FieldSchema(
         name="query",
         type="text",
         label="Query",
-        required=False,
+        required=True,
         conditional=ConditionalField(field="sourceType", value="datasource"),
     ),
     FieldSchema(
@@ -43,8 +43,9 @@ TRAIN_DATA_SOURCE_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
     FieldSchema(
         name="csvFilePath",
         type="text",
-        label="Uploaded File Path",
-        required=False,
+        label="Training File",
+        required=True,
+        alternative_names=["csvFileId"],
         conditional=ConditionalField(field="sourceType", value="csv"),
     ),
     FieldSchema(
