@@ -711,14 +711,21 @@ class DatabaseManager:
                             ):
                                 try:
                                     # Get distinct values for categorical columns
+                                    quoted_column = (
+                                        self.engine.dialect.identifier_preparer.quote(
+                                            column[0]
+                                        )
+                                    )
                                     query = f"""
-                                        SELECT DISTINCT `{column[0]}`
-                                        FROM `{table}`
-                                        WHERE `{column[0]}` IS NOT NULL
-                                        ORDER BY `{column[0]}`
-                                        LIMIT {max_categorical_values}
+                                        SELECT DISTINCT {quoted_column}
+                                        FROM {quoted_table}
+                                        WHERE {quoted_column} IS NOT NULL
+                                        ORDER BY {quoted_column}
+                                        LIMIT :limit
                                     """
-                                    result = await conn.execute(text(query))
+                                    result = await conn.execute(
+                                        text(query), {"limit": max_categorical_values}
+                                    )
 
                                     distinct_values = [
                                         row[0] for row in result.fetchall()
@@ -728,9 +735,9 @@ class DatabaseManager:
                                     # Get count of distinct values
                                     result = await conn.execute(
                                         text(f"""
-                                        SELECT COUNT(DISTINCT `{column[0]}`)
-                                        FROM `{table}`
-                                        WHERE `{column[0]}` IS NOT NULL
+                                        SELECT COUNT(DISTINCT {quoted_column})
+                                        FROM {quoted_table}
+                                        WHERE {quoted_column} IS NOT NULL
                                     """)
                                     )
                                     total_distinct = result.fetchone()[0]
@@ -753,8 +760,8 @@ class DatabaseManager:
                         # Add sample data if requested
                         if include_samples and sample_size > 0:
                             try:
-                                # Get sample rows
-                                sample_query = f"SELECT * FROM `{table}` LIMIT :limit"
+                                # Get sample rows, reusing the dialect-quoted name
+                                sample_query = f"SELECT * FROM {quoted_table} LIMIT :limit"
                                 result = await conn.execute(
                                     text(sample_query), {"limit": sample_size}
                                 )
