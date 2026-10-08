@@ -778,6 +778,11 @@ class ConversationService:
                 self._redact_file_transcript_message_text(message)
             elif message.text:
                 message.text = redact_sensitive_substrings(message.text)
+        notes = await self.transcript_message_repo.get_issue_notes_by_conversation_id(
+            conversation_id
+        )
+        for note in notes:
+            note.body = redact_sensitive_substrings(note.body)
 
         conversation.custom_attributes = scrubbed_attrs
         conversation.pii_redacted_at = datetime.now(timezone.utc)
