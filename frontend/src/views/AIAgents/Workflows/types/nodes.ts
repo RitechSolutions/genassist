@@ -678,6 +678,8 @@ export interface FeatureEngineeringItem {
   sourceColumns?: string[];
   numBins?: number;
   binColumn?: string;
+  // "uniform" = equal-width bins (default), "quantile" = equal-frequency
+  binStrategy?: "uniform" | "quantile";
   polynomialDegree?: number;
   polynomialColumns?: string[];
   // Column transforms (log/quantile/power/PCA) read sourceColumns, plus:
