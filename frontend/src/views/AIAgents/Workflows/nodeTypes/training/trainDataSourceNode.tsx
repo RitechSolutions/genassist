@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { NodeProps } from "reactflow";
 import { TrainDataSourceNodeData } from "@/views/AIAgents/Workflows/types/nodes";
 import { getNodeColor } from "../../utils/nodeColors";
@@ -8,7 +8,13 @@ import { DataSource } from "@/interfaces/dataSource.interface";
 import { getAllDataSources } from "@/services/dataSources";
 import nodeRegistry from "../../registry/nodeRegistry";
 import { NodeContentRow } from "../nodeContent";
-import { isTrainingDatabaseSource } from "../../utils/trainDataSource";
+import {
+  getTrainDataSourceShape,
+  getTrainDataSourceSummary,
+  hasTrainDataSourceConfigurationChanged,
+  isTrainingDatabaseSource,
+} from "../../utils/trainDataSource";
+import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 
 export const TRAIN_DATA_SOURCE_NODE_TYPE = "trainDataSourceNode";
 
@@ -22,6 +28,9 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
   const [availableDataSources, setAvailableDataSources] = useState<
     DataSource[]
   >([]);
+  const { clearNodeOutput, getNodeOutput } = useWorkflowExecution();
+  const outputTimestampWhenDialogOpened = useRef<number | undefined>();
+  const dialogWasSaved = useRef(false);
 
   const color = getNodeColor(nodeDefinition.category);
 
@@ -47,8 +56,36 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
         ...data,
         ...updatedData,
       };
+      const currentOutputTimestamp = getNodeOutput(id)?.timestamp;
+      const testedSinceDialogOpened =
+        currentOutputTimestamp !== undefined &&
+        currentOutputTimestamp !== outputTimestampWhenDialogOpened.current;
+      if (
+        hasTrainDataSourceConfigurationChanged(data, updatedData) &&
+        !testedSinceDialogOpened
+      ) {
+        clearNodeOutput(id);
+      }
+      dialogWasSaved.current = true;
       data.updateNodeData(id, dataToUpdate);
     }
+  };
+
+  const handleOpenSettings = () => {
+    outputTimestampWhenDialogOpened.current = getNodeOutput(id)?.timestamp;
+    dialogWasSaved.current = false;
+    setIsEditDialogOpen(true);
+  };
+
+  const handleCloseSettings = () => {
+    const currentOutputTimestamp = getNodeOutput(id)?.timestamp;
+    const testedWhileDialogWasOpen =
+      currentOutputTimestamp !== undefined &&
+      currentOutputTimestamp !== outputTimestampWhenDialogOpened.current;
+    if (!dialogWasSaved.current && testedWhileDialogWasOpen) {
+      clearNodeOutput(id);
+    }
+    setIsEditDialogOpen(false);
   };
 
   // Find the name of selected data source
@@ -56,19 +93,21 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
     (ds) => ds.id === data.dataSourceId
   );
 
-  const getDataSourceInfo = () => {
-    if (data.sourceType === "csv") {
-      return data.csvFileName || (data.csvFilePath ? "Uploaded file" : "");
-    }
-    return selectedDataSource
-      ? `${selectedDataSource.name} (${selectedDataSource.source_type})`
-      : "";
-  };
+  const summary = getTrainDataSourceSummary(data, selectedDataSource);
+  const shape = getTrainDataSourceShape(data, getNodeOutput(id)?.output);
+  const hasSourceType = summary.sourceTypeLabel !== "Not configured";
 
   const nodeContent: NodeContentRow[] = [
-    { label: "Source Type", value: data.sourceType, isSelection: true },
-    { label: "Data Source", value: getDataSourceInfo() },
-    { label: "Query", value: data.query },
+    {
+      label: "Source Type",
+      value: hasSourceType ? summary.sourceTypeLabel : "",
+      isSelection: true,
+    },
+    {
+      label: summary.sourceFieldLabel,
+      value: summary.sourceLabel,
+    },
+    { label: "Shape", value: shape },
   ];
 
   return (
@@ -79,17 +118,17 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
         selected={selected}
         iconName="database"
         title={data.name || "Train Data Source"}
-        subtitle="Fetch training data"
+        subtitle="Load training data"
         color={color}
         nodeType={TRAIN_DATA_SOURCE_NODE_TYPE}
         nodeContent={nodeContent}
-        onSettings={() => setIsEditDialogOpen(true)}
+        onSettings={handleOpenSettings}
       />
 
       {/* Edit Dialog */}
       <TrainDataSourceDialog
         isOpen={isEditDialogOpen}
-        onClose={() => setIsEditDialogOpen(false)}
+        onClose={handleCloseSettings}
         data={data}
         onUpdate={onUpdate}
         nodeId={id}

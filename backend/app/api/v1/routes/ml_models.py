@@ -59,6 +59,16 @@ class ProfileDataRequest(BaseModel):
     query: Optional[str] = None
 
 
+class QueryPreviewRequest(BaseModel):
+    """Input for previewing a database query result."""
+
+    data_source_id: UUID
+    query: str
+
+
+QUERY_PREVIEW_ROWS = 6
+
+
 _require_data_source_read = permissions(P.DataSource.READ)
 
 
@@ -458,6 +468,57 @@ def _normalize_profile_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 
+def _limit_read_query(query: str, db_type: str, row_limit: int) -> str:
+    """Validate and cap a read-only query without increasing a smaller limit."""
+    validation = validate_read_only_sql(query, db_type)
+    if not validation.is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=read_only_sql_blocked_message(validation),
+        )
+
+    dialect = SQLGLOT_DIALECTS[db_type.strip().lower()]
+    statement = sqlglot.parse_one(query, read=dialect)
+    existing_limit = statement.args.get("limit")
+    effective_limit = row_limit
+    existing_count = None
+    if isinstance(existing_limit, exp.Limit):
+        existing_count = existing_limit.expression
+    elif isinstance(existing_limit, exp.Fetch):
+        existing_count = existing_limit.args.get("count")
+    if isinstance(existing_count, exp.Literal):
+        try:
+            effective_limit = min(effective_limit, int(existing_count.this))
+        except (TypeError, ValueError):
+            pass
+
+    limited_query = statement.limit(effective_limit, copy=True).sql(dialect=dialect)
+    limited_validation = validate_read_only_sql(limited_query, db_type)
+    if not limited_validation.is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=read_only_sql_blocked_message(limited_validation),
+        )
+    return limited_query
+
+
+async def _collect_query_preview(
+    manager,
+    query: str,
+) -> tuple[list[str], list[tuple]]:
+    """Collect the bounded preview while retaining columns for empty results."""
+    columns: list[str] = []
+    rows: list[tuple] = []
+    async for chunk_columns, chunk_rows in manager.stream_query(
+        query,
+        chunk_size=QUERY_PREVIEW_ROWS,
+    ):
+        if not columns:
+            columns = chunk_columns
+        rows.extend(chunk_rows)
+    return columns, rows
+
+
 def _build_dataframe_profile_report_html(
     df: pd.DataFrame,
     *,
@@ -565,36 +626,11 @@ async def _load_query_profile_dataframe(
             ),
         )
 
-    db_type = manager.get_db_type()
-    validation = validate_read_only_sql(query, db_type)
-    if not validation.is_valid:
-        raise HTTPException(
-            status_code=400,
-            detail=read_only_sql_blocked_message(validation),
-        )
-
-    dialect = SQLGLOT_DIALECTS[db_type.strip().lower()]
-    statement = sqlglot.parse_one(query, read=dialect)
-    existing_limit = statement.args.get("limit")
-    row_limit = settings.ML_PROFILE_MAX_ROWS
-    existing_count = None
-    if isinstance(existing_limit, exp.Limit):
-        existing_count = existing_limit.expression
-    elif isinstance(existing_limit, exp.Fetch):
-        existing_count = existing_limit.args.get("count")
-    if isinstance(existing_count, exp.Literal):
-        try:
-            row_limit = min(row_limit, int(existing_count.this))
-        except (TypeError, ValueError):
-            pass
-    profile_query = statement.limit(row_limit, copy=True).sql(dialect=dialect)
-
-    limited_validation = validate_read_only_sql(profile_query, db_type)
-    if not limited_validation.is_valid:
-        raise HTTPException(
-            status_code=400,
-            detail=read_only_sql_blocked_message(limited_validation),
-        )
+    profile_query = _limit_read_query(
+        query,
+        manager.get_db_type(),
+        settings.ML_PROFILE_MAX_ROWS,
+    )
 
     try:
         rows, error = await asyncio.wait_for(
@@ -608,11 +644,15 @@ async def _load_query_profile_dataframe(
         ) from exc
 
     if error:
-        logger.error("Data profiling query failed: %s", error)
+        logger.error(
+            "Data profiling query failed: %s",
+            ml_utils.sanitized_database_diagnostic(error),
+        )
         raise HTTPException(
             status_code=400,
-            detail=(
-                "The profiling query failed. Check the selected columns and data source."
+            detail=ml_utils.client_safe_database_error(
+                error,
+                has_bound_parameters=False,
             ),
         )
 
@@ -620,6 +660,74 @@ async def _load_query_profile_dataframe(
     if dataframe.empty:
         raise HTTPException(status_code=400, detail="The query returned no rows.")
     return dataframe
+
+
+@router.post("/preview-query", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.READ))
+])
+async def preview_query(
+    preview_request: QueryPreviewRequest,
+    request: Request,
+):
+    """Return a bounded, read-only preview of a database query."""
+    await _require_data_source_read(request)
+
+    query = preview_request.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="A query is required for preview.")
+    if has_volatile_template_vars(query):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Preview cannot resolve workflow variables. Replace {{...}} "
+                "with sample values before previewing."
+            ),
+        )
+
+    provider = DBProviderManager.get_instance()
+    manager = await provider.get_database_manager(str(preview_request.data_source_id))
+    if manager is None:
+        raise HTTPException(status_code=404, detail="Data source not found.")
+
+    limited_query = _limit_read_query(
+        query,
+        manager.get_db_type(),
+        QUERY_PREVIEW_ROWS,
+    )
+    try:
+        columns, rows = await asyncio.wait_for(
+            _collect_query_preview(manager, limited_query),
+            timeout=settings.ML_EXTRACT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=408,
+            detail="The preview query timed out.",
+        ) from exc
+    except Exception as exc:
+        logger.error(
+            "Data preview query failed: %s",
+            ml_utils.sanitized_database_diagnostic(exc),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ml_utils.client_safe_database_error(
+                exc,
+                has_bound_parameters=False,
+            ),
+        ) from exc
+
+    preview_rows = [dict(zip(columns, row)) for row in rows[:QUERY_PREVIEW_ROWS]]
+    return ml_utils.sanitize_for_json(
+        {
+            "row_count": len(preview_rows),
+            "column_count": len(columns),
+            "column_names": columns,
+            "sample_data": preview_rows,
+            "columns_info": [],
+        }
+    )
 
 
 @router.post("/profile-data", dependencies=[

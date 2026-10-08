@@ -151,6 +151,12 @@ def test_dialog_schema_lists_source_fields():
         {"label": "Database", "value": "datasource"},
         {"label": "Uploaded File", "value": "csv"},
     ]
+    assert fields["sourceType"].label == "Source Type"
+    assert fields["dataSourceId"].required is True
+    assert fields["query"].required is True
+    assert fields["csvFilePath"].required is True
+    assert fields["csvFilePath"].label == "Training File"
+    assert fields["csvFilePath"].alternative_names == ["csvFileId"]
     assert fields["dataSourceId"].conditional.model_dump() == {
         "field": "sourceType",
         "value": "datasource",

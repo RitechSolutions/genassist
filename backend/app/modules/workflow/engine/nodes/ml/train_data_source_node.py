@@ -7,7 +7,6 @@ This node fetches training data from databases or uploaded files for ML model tr
 import asyncio
 import logging
 import os
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,10 +14,9 @@ from typing import Any, Callable, Dict, TypeVar
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
-from app.core.utils.sensitive_data_utils import redact_bound_values, redact_sensitive_substrings
+from app.core.utils.sensitive_data_utils import redact_bound_values
 from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.database.provider_manager import DBProviderManager
 from app.modules.integration.database.query_validator import AdvancedQueryValidator
@@ -39,23 +37,6 @@ from app.modules.workflow.engine.utils import (
 logger = logging.getLogger(__name__)
 
 NumericLimit = TypeVar("NumericLimit", int, float)
-
-_QUERY_REASON_PATTERNS = (
-    r"no such (?:column|table): [\w.\"`]+",
-    r"(?:column|relation|table) \"[^\"]+\" does not exist",
-    r"syntax error at or near \"[^\"]*\"",
-    r"Unknown column '[^']+'(?: in '[^']+')?",
-    r"Table '[^']+' doesn't exist",
-    r"You have an error in your SQL syntax.*?near '[^']{0,80}'",
-    r"Invalid (?:column|object) name '[^']+'",
-    r"invalid identifier '[^']+'",
-    r"near [\"'][^\"']{0,80}[\"']: syntax error",
-)
-_QUERY_REASON_RE = re.compile(
-    "|".join(f"(?:{pattern})" for pattern in _QUERY_REASON_PATTERNS),
-    re.IGNORECASE,
-)
-
 
 @dataclass(frozen=True)
 class ExtractionLimits:
@@ -600,8 +581,7 @@ class TrainDataSourceNode(BaseNode):
 
     @staticmethod
     def _sanitized_diagnostic(error: Any) -> str:
-        redacted = redact_sensitive_substrings(str(error))
-        return sanitize_error_detail(str(redacted), max_len=2_000)
+        return ml_utils.sanitized_database_diagnostic(error)
 
     @staticmethod
     def _client_safe_database_error(
@@ -609,27 +589,9 @@ class TrainDataSourceNode(BaseNode):
         *,
         has_bound_parameters: bool,
     ) -> str:
-        if has_bound_parameters:
-            return (
-                "Database query failed. Check that each workflow variable's "
-                "value matches the column it is compared with."
-            )
-
-        # Driver errors may include class names, codes, hosts and the full SQL.
-        # Search the complete message but expose only a recognized correction
-        # phrase and its identifier.
-        match = _QUERY_REASON_RE.search(str(error))
-        if match:
-            safe_reason = sanitize_error_detail(
-                str(redact_sensitive_substrings(match.group(0))),
-                max_len=300,
-            )
-            if safe_reason:
-                return f"Database query failed: {safe_reason}"
-
-        return (
-            "Could not run the query on the selected data source. "
-            "Check the query and connection settings."
+        return ml_utils.client_safe_database_error(
+            error,
+            has_bound_parameters=has_bound_parameters,
         )
 
     @staticmethod

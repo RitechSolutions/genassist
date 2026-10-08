@@ -19,6 +19,7 @@ import {
   updateMLModel,
   deleteMLModel,
   analyzeCSV,
+  previewQuery,
   profileData,
 } from "@/services/mlModels";
 
@@ -133,6 +134,84 @@ describe("analyzeCSV", () => {
     mockApiRequest.mockRejectedValue(new Error("boom"));
     await expect(analyzeCSV("http://x/file.csv")).rejects.toThrow("boom");
   });
+
+  it("surfaces the safe backend detail when file preview fails", async () => {
+    mockApiRequest.mockRejectedValue({
+      message: "Request failed with status code 400",
+      response: { data: { detail: "The CSV file could not be decoded as UTF-8." } },
+    });
+
+    await expect(analyzeCSV("http://x/file.csv")).rejects.toThrow(
+      "The CSV file could not be decoded as UTF-8.",
+    );
+  });
+});
+
+describe("previewQuery", () => {
+  it("requests a bounded SQL query preview", async () => {
+    const result = {
+      row_count: 1,
+      column_count: 1,
+      column_names: ["id"],
+      sample_data: [{ id: 1 }],
+      columns_info: [],
+    };
+    mockApiRequest.mockResolvedValue(result as never);
+
+    await expect(
+      previewQuery({
+        data_source_id: "datasource-1",
+        query: "SELECT id FROM users",
+      }),
+    ).resolves.toBe(result);
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "ml-models/preview-query",
+      {
+        data_source_id: "datasource-1",
+        query: "SELECT id FROM users",
+      },
+      { timeout: API_PREPROCESSING_TIMEOUT_MS },
+    );
+  });
+
+  it("throws when the preview response is empty", async () => {
+    mockApiRequest.mockResolvedValue(null as never);
+
+    await expect(
+      previewQuery({
+        data_source_id: "datasource-1",
+        query: "SELECT id FROM users",
+      }),
+    ).rejects.toThrow("Failed to preview query");
+  });
+
+  it("surfaces the safe backend detail when query preview fails", async () => {
+    mockApiRequest.mockRejectedValue({
+      message: "Request failed with status code 400",
+      response: { data: { detail: "Database query failed: column \"name\" does not exist" } },
+    });
+
+    await expect(
+      previewQuery({
+        data_source_id: "datasource-1",
+        query: "SELECT name FROM users",
+      }),
+    ).rejects.toThrow('Database query failed: column "name" does not exist');
+  });
+
+  it("uses a clear fallback when the backend provides no safe detail", async () => {
+    mockApiRequest.mockRejectedValue(
+      new Error("Request failed with status code 500"),
+    );
+
+    await expect(
+      previewQuery({
+        data_source_id: "datasource-1",
+        query: "SELECT id FROM users",
+      }),
+    ).rejects.toThrow("The query preview could not be generated. Please try again.");
+  });
 });
 
 describe("profileData", () => {
@@ -215,5 +294,27 @@ describe("profileData", () => {
         "data_profile.html",
       ),
     ).rejects.toThrow("Failed to generate data profile");
+  });
+
+  it("decodes a safe backend detail from a failed profile blob", async () => {
+    mockApiRequest.mockRejectedValue({
+      message: "Request failed with status code 400",
+      response: {
+        data: new Blob([
+          JSON.stringify({ detail: "The query returned no rows." }),
+        ], { type: "application/json" }),
+      },
+    });
+
+    await expect(
+      profileData(
+        {
+          source_type: "datasource",
+          data_source_id: "datasource-1",
+          query: "SELECT * FROM users WHERE 1 = 0",
+        },
+        "query_profile.html",
+      ),
+    ).rejects.toThrow("The query returned no rows.");
   });
 });

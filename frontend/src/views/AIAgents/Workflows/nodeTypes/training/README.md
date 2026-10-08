@@ -9,7 +9,7 @@ Fetches training data from databases or uploaded files.
 
 **Features:**
 - **Data Source Method**: Query TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB
-- **File Upload Method**: Upload CSV, Excel (.xlsx), JSON, or Parquet files directly to server
+- **File Upload Method**: Upload CSV files directly to the server
 - **Bound Query Variables**: Use `{{variable}}` for SQL values; values are sent to the database separately from the query text
 - **File Management**: Server-side file storage and validation
 
@@ -64,7 +64,7 @@ Trains machine learning models on preprocessed data.
 TrainDataSource → PreprocessingNode → TrainModelNode
 ```
 
-1. **TrainDataSource**: Fetch data from database or CSV
+1. **TrainDataSource**: Fetch data from a database or uploaded training file
 2. **PreprocessingNode**: Clean and transform the data
 3. **TrainModelNode**: Train ML model on processed data
 

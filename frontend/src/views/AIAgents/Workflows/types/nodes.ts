@@ -535,13 +535,13 @@ export interface MLModelInferenceNodeData extends BaseNodeData {
 
 // Train Data Source Node Data
 export interface TrainDataSourceNodeData extends BaseNodeData {
-  sourceType: "datasource" | "csv"; // Type of data source
+  sourceType: "" | "datasource" | "csv"; // Empty until a training source is selected
   dataSourceId?: string; // ID of the database data source
   query?: string; // SQL query to fetch data
-  csvFileName?: string; // Name of the uploaded CSV file
-  csvFilePath?: string; // Server path to the uploaded CSV file
-  csvFileId?: string; // ID of the uploaded CSV file
-  csvFileUrl?: string; // URL of the uploaded CSV file
+  csvFileName?: string; // Name of the uploaded training file
+  csvFilePath?: string; // Server path to the uploaded training file
+  csvFileId?: string; // ID of the uploaded training file
+  csvFileUrl?: string; // URL of the uploaded training file
   analysisResult?: CSVAnalysisResult; // Preview/analysis of the uploaded file
 }
 

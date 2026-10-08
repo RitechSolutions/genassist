@@ -42,6 +42,12 @@ def _request(*granted_permissions: str) -> Request:
     return request
 
 
+async def _query_preview_chunks(columns, rows):
+    yield columns, []
+    if rows:
+        yield columns, rows
+
+
 @pytest.mark.asyncio
 async def test_profile_data_uses_existing_local_csv(monkeypatch, tmp_path):
     source = tmp_path / "local.csv"
@@ -207,6 +213,172 @@ async def test_profile_data_profiles_read_only_sql_results(monkeypatch):
             f"(up to {ml_models.settings.ML_PROFILE_MAX_ROWS:,} rows)"
         )
     }
+
+
+@pytest.mark.asyncio
+async def test_preview_query_returns_six_bounded_rows(monkeypatch):
+    rows = [(index, f"user-{index}") for index in range(1, 7)]
+    database_manager = MagicMock()
+    database_manager.get_db_type.return_value = "postgresql"
+    database_manager.stream_query = MagicMock(
+        return_value=_query_preview_chunks(["id", "username"], rows)
+    )
+    provider = MagicMock()
+    provider.get_database_manager = AsyncMock(return_value=database_manager)
+    monkeypatch.setattr(
+        ml_models.DBProviderManager,
+        "get_instance",
+        MagicMock(return_value=provider),
+    )
+    source_id = uuid4()
+
+    result = await ml_models.preview_query(
+        ml_models.QueryPreviewRequest(
+            data_source_id=source_id,
+            query="SELECT id, username FROM users",
+        ),
+        _request(P.DataSource.READ),
+    )
+
+    assert result == {
+        "row_count": 6,
+        "column_count": 2,
+        "column_names": ["id", "username"],
+        "sample_data": [
+            {"id": index, "username": f"user-{index}"}
+            for index in range(1, 7)
+        ],
+        "columns_info": [],
+    }
+    provider.get_database_manager.assert_awaited_once_with(str(source_id))
+    database_manager.stream_query.assert_called_once_with(
+        "SELECT id, username FROM users LIMIT 6",
+        chunk_size=6,
+    )
+
+
+@pytest.mark.asyncio
+async def test_preview_query_preserves_columns_for_empty_results(monkeypatch):
+    database_manager = MagicMock()
+    database_manager.get_db_type.return_value = "sqlite"
+    database_manager.stream_query = MagicMock(
+        return_value=_query_preview_chunks(["id", "name"], [])
+    )
+    provider = MagicMock()
+    provider.get_database_manager = AsyncMock(return_value=database_manager)
+    monkeypatch.setattr(
+        ml_models.DBProviderManager,
+        "get_instance",
+        MagicMock(return_value=provider),
+    )
+
+    result = await ml_models.preview_query(
+        ml_models.QueryPreviewRequest(
+            data_source_id=uuid4(),
+            query="SELECT id, name FROM people WHERE 1 = 0",
+        ),
+        _request(P.DataSource.READ),
+    )
+
+    assert result["row_count"] == 0
+    assert result["column_count"] == 2
+    assert result["column_names"] == ["id", "name"]
+    assert result["sample_data"] == []
+
+
+@pytest.mark.asyncio
+async def test_preview_query_rejects_write_sql(monkeypatch):
+    database_manager = MagicMock()
+    database_manager.get_db_type.return_value = "postgresql"
+    database_manager.stream_query = MagicMock()
+    provider = MagicMock()
+    provider.get_database_manager = AsyncMock(return_value=database_manager)
+    monkeypatch.setattr(
+        ml_models.DBProviderManager,
+        "get_instance",
+        MagicMock(return_value=provider),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.preview_query(
+            ml_models.QueryPreviewRequest(
+                data_source_id=uuid4(),
+                query="DELETE FROM users",
+            ),
+            _request(P.DataSource.READ),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "SQL execution blocked" in exc_info.value.detail
+    database_manager.stream_query.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_preview_query_returns_safe_database_error(monkeypatch):
+    async def failed_stream():
+        raise RuntimeError('column "secret_column" does not exist')
+        yield
+
+    database_manager = MagicMock()
+    database_manager.get_db_type.return_value = "postgresql"
+    database_manager.stream_query = MagicMock(return_value=failed_stream())
+    provider = MagicMock()
+    provider.get_database_manager = AsyncMock(return_value=database_manager)
+    monkeypatch.setattr(
+        ml_models.DBProviderManager,
+        "get_instance",
+        MagicMock(return_value=provider),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.preview_query(
+            ml_models.QueryPreviewRequest(
+                data_source_id=uuid4(),
+                query="SELECT missing FROM users",
+            ),
+            _request(P.DataSource.READ),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == (
+        'Database query failed: column "secret_column" does not exist'
+    )
+
+
+@pytest.mark.asyncio
+async def test_preview_query_hides_connection_details(monkeypatch):
+    async def failed_stream():
+        raise RuntimeError(
+            'connection to server at "db.internal" failed: password authentication failed'
+        )
+        yield
+
+    database_manager = MagicMock()
+    database_manager.get_db_type.return_value = "postgresql"
+    database_manager.stream_query = MagicMock(return_value=failed_stream())
+    provider = MagicMock()
+    provider.get_database_manager = AsyncMock(return_value=database_manager)
+    monkeypatch.setattr(
+        ml_models.DBProviderManager,
+        "get_instance",
+        MagicMock(return_value=provider),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.preview_query(
+            ml_models.QueryPreviewRequest(
+                data_source_id=uuid4(),
+                query="SELECT * FROM users",
+            ),
+            _request(P.DataSource.READ),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == (
+        "Could not run the query on the selected data source. "
+        "Check the query and connection settings."
+    )
+    assert "db.internal" not in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -505,9 +677,8 @@ async def test_profile_data_returns_safe_query_error(monkeypatch):
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == (
-        "The profiling query failed. Check the selected columns and data source."
+        'Database query failed: column "secret_column" does not exist'
     )
-    assert "secret_column" not in exc_info.value.detail
 
 
 @pytest.mark.asyncio

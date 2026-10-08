@@ -1,4 +1,5 @@
 import { apiRequest, getApiUrl, API_PREPROCESSING_TIMEOUT_MS } from "@/config/api";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { MLModel, MLModelFormData } from "@/interfaces/ml-model.interface";
 
 const BASE = "ml-models";
@@ -143,7 +144,78 @@ export const analyzeCSV = async (
     return response;
   } catch (error) {
     console.error("Error analyzing CSV:", error);
-    throw error;
+    throw await actionableApiError(
+      error,
+      "The file preview could not be generated. Please try again.",
+    );
+  }
+};
+
+export type QueryPreviewRequest = {
+  data_source_id: string;
+  query: string;
+};
+
+type ApiResponseError = {
+  message?: unknown;
+  response?: {
+    data?: unknown;
+  };
+};
+
+function actionableMessage(error: unknown, fallback: string): string {
+  const message = extractErrorMessage(error, fallback);
+  return /^Request failed with status code \d+$/i.test(message)
+    ? fallback
+    : message;
+}
+
+async function actionableApiError(
+  error: unknown,
+  fallback: string,
+): Promise<Error> {
+  const responseError = error as ApiResponseError;
+  const responseData = responseError.response?.data;
+
+  if (typeof Blob !== "undefined" && responseData instanceof Blob) {
+    try {
+      const text = await responseData.text();
+      const parsed = JSON.parse(text) as unknown;
+      return new Error(
+        actionableMessage(
+          {
+            ...responseError,
+            response: { ...responseError.response, data: parsed },
+          },
+          fallback,
+        ),
+      );
+    } catch {
+      return new Error(fallback);
+    }
+  }
+
+  return new Error(actionableMessage(error, fallback));
+}
+
+/** Returns a bounded preview for a read-only database query. */
+export const previewQuery = async (
+  request: QueryPreviewRequest,
+): Promise<CSVAnalysisResult> => {
+  try {
+    const response = await apiRequest<CSVAnalysisResult>(
+      "POST",
+      `${BASE}/preview-query`,
+      request,
+      { timeout: API_PREPROCESSING_TIMEOUT_MS },
+    );
+    if (!response) throw new Error("Failed to preview query");
+    return response;
+  } catch (error) {
+    throw await actionableApiError(
+      error,
+      "The query preview could not be generated. Please try again.",
+    );
   }
 };
 
@@ -165,13 +237,21 @@ export const profileData = async (
   request: ProfileDataRequest,
   downloadFilename: string,
 ): Promise<void> => {
-  const blob = await apiRequest<Blob>(
-    "POST",
-    `${BASE}/profile-data`,
-    request,
-    { timeout: API_PREPROCESSING_TIMEOUT_MS, responseType: "blob" },
-  );
-  if (!blob) throw new Error("Failed to generate data profile");
+  let blob: Blob | null;
+  try {
+    blob = await apiRequest<Blob>(
+      "POST",
+      `${BASE}/profile-data`,
+      request,
+      { timeout: API_PREPROCESSING_TIMEOUT_MS, responseType: "blob" },
+    );
+    if (!blob) throw new Error("Failed to generate data profile");
+  } catch (error) {
+    throw await actionableApiError(
+      error,
+      "The data profile could not be generated. Please try again.",
+    );
+  }
 
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");

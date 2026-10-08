@@ -20,13 +20,13 @@ export const TRAIN_DATA_SOURCE_NODE_DEFINITION: NodeTypeDefinition<TrainDataSour
   {
     type: "trainDataSourceNode",
     label: "Train Data Source",
-    description: "Fetch training data from datasources or upload CSV, Excel, JSON, or Parquet files",
+    description: "Load training data from a database or uploaded file",
     helpContent: TRAIN_DATA_SOURCE_HELP_CONTENT,
     category: "training",
     icon: "Database",
     defaultData: {
       name: "Train Data Source",
-      sourceType: "datasource",
+      sourceType: "",
       dataSourceId: "",
       query: "",
       csvFileName: "",
