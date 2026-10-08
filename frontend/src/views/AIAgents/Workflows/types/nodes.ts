@@ -552,6 +552,7 @@ export interface PreprocessingNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the file for preprocessing
   analysisResult?: CSVAnalysisResult; // Initial CSV analysis result (for backward compatibility)
   stepAnalysisResults?: Record<string, CSVAnalysisResult>; // Analysis results for each step (keyed by step ID or "initial")
+  analyzedFileUrl?: string; // Resolved file the analysis results were made from; a different current file means they're stale
   // The configured steps, stored as data - the dialog's source of truth.
   // pythonCode is generated from it. Missing on nodes saved before this was
   // added; those are read from pythonCode once and gain it on their next save.
