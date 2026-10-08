@@ -144,6 +144,10 @@ def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budg
         return sanitize_for_json(obj.to_dict("records"), _seen, _depth + 1, _budget)
     elif pd.isna(obj):
         return None
+    elif isinstance(obj, datetime):
+        # pd.Timestamp subclasses datetime. Without this it falls through to
+        # the __dict__ branch below and serializes as an empty {}.
+        return obj.isoformat()
     elif isinstance(obj, (str, int, bool, type(None))):
         # Basic JSON-serializable types
         return obj
