@@ -269,3 +269,60 @@ async def test_drop_column_is_removed_from_saved_feature_columns(tmp_path, patch
     )
     assert result["status"] == "success"
     assert result["prediction"][0] == pytest.approx(30.0, abs=0.5)
+
+
+@pytest.mark.asyncio
+async def test_feature_engineering_uses_ordinal_codes_at_train_and_inference(
+    tmp_path, patch_ml_models_service
+):
+    # Categorical encoding now runs before feature engineering, so a derived
+    # feature can be built from the encoded numbers. Before, size was still
+    # "Low"/"High" text when size * price ran, and the step was skipped.
+    order = {"Low": 0, "Medium": 1, "High": 2}
+    rows = []
+    for size, price in [("Low", 5.0), ("Medium", 7.0), ("High", 3.0), ("Low", 9.0),
+                        ("High", 8.0), ("Medium", 2.0), ("High", 6.0), ("Low", 4.0),
+                        ("Low", 3.0)]:
+        rows.append({"size": size, "price": price, "y": 3.0 * order[size] * price})
+    # A missing size is filled with the mode ("Low" -> 0) before it is
+    # encoded, at training and again at inference.
+    rows.append({"size": None, "price": 6.0, "y": 0.0})
+
+    csv_path = tmp_path / "train_data.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+
+    train_result = await _make_node(TrainModelNode).process(
+        {
+            "name": f"e2e-ordinal-fe-{uuid.uuid4().hex[:8]}",
+            "modelType": "linear_regression",
+            "fileUrl": str(csv_path),
+            "targetColumn": "y",
+            "featureColumns": ["size", "price"],
+            "missingValueHandling": [{"columnName": "size", "strategy": "impute_mode"}],
+            "categoricalEncoding": [
+                {"columnName": "size", "strategy": "ordinal", "ordinalMapping": order}
+            ],
+            "featureEngineering": [
+                {"newColumnName": "size_x_price", "strategy": "custom_expression",
+                 "expression": "size * price"}
+            ],
+            "validationSplit": 0.0,
+            "scalingMethod": "none",
+        }
+    )
+    assert train_result["success"] is True
+
+    with open(train_result["model_file_path"], "rb") as f:
+        metadata = pickle.load(f)["metadata"]
+    assert "size_x_price" in metadata["model_input_columns"]
+    assert metadata["encoding_before_feature_engineering"] is True
+
+    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "price"])
+    patch_ml_models_service(ml_model)
+    result = await _make_node(MLModelInferenceNode).process(
+        {"modelId": str(ml_model.id),
+         "inferenceInputs": {"size": ["High", "Medium"], "price": [10, 4]}}
+    )
+    assert result["status"] == "success"
+    assert result["prediction"][0] == pytest.approx(3.0 * 2 * 10, abs=0.5)
+    assert result["prediction"][1] == pytest.approx(3.0 * 1 * 4, abs=0.5)

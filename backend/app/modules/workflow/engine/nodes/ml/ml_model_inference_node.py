@@ -678,15 +678,39 @@ class MLModelInferenceNode(BaseNode):
                     legacy_order = list(feature_names)
 
                 # Recompute any engineered features (bin_numeric, normalize,
-                # standardize, polynomial, custom_expression) from the raw
-                # inputs, using the exact fitted parameters captured at
+                # standardize, polynomial, custom_expression) from the inputs, using the exact fitted parameters captured at
                 # training time (TrainModelNode._engineer_features). No-op
                 # for models with no feature engineering or legacy models
                 # that predate this metadata.
                 feature_engineering_steps = metadata.get("feature_engineering_steps") or []
                 if feature_engineering_steps:
+                    fe_inputs: Dict[str, List[Any]] = normalized_inputs
+                    fe_fills: Dict[str, Any] = missing_value_fills
+                    mapped_columns = label_columns + ordinal_columns
+                    if metadata.get("encoding_before_feature_engineering") and mapped_columns:
+                        # These models built their derived features from the
+                        # label/ordinal codes, so replay them from codes too.
+                        # Same order as training: fill missing values, then
+                        # encode - the fills hold raw categories, so they're
+                        # applied before encoding and not passed on again.
+                        filled = _with_training_fills(normalized_inputs, missing_value_fills, batch_size)
+                        fe_inputs = dict(normalized_inputs)
+                        if label_columns:
+                            codes = _mapped_transform(
+                                filled, label_columns, label_encodings, batch_size, unseen_value=-1
+                            )
+                            for i, col in enumerate(label_columns):
+                                fe_inputs[col] = codes[:, i].tolist()
+                        if ordinal_columns:
+                            codes = _mapped_transform(
+                                filled, ordinal_columns, ordinal_encodings, batch_size,
+                                unseen_value=np.nan, normalize_keys=True,
+                            )
+                            for i, col in enumerate(ordinal_columns):
+                                fe_inputs[col] = codes[:, i].tolist()
+                        fe_fills = {k: v for k, v in missing_value_fills.items() if k not in mapped_columns}
                     engineered = _replay_feature_engineering(
-                        normalized_inputs, feature_engineering_steps, batch_size, missing_value_fills
+                        fe_inputs, feature_engineering_steps, batch_size, fe_fills
                     )
                     column_arrays.update(engineered)
                     legacy_order += [c for c in engineered if c not in legacy_order]
