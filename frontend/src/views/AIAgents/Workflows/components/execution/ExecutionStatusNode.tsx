@@ -19,6 +19,8 @@ export interface ExecutionStatusNodeData {
   status: ExecutionNodeStatus;
   durationMs?: number;
   order?: number;
+  /** How many times the node ran (set when more than once, i.e. inside a loop). */
+  runCount?: number;
   isSlowest?: boolean;
   isSelected?: boolean;
 }
@@ -72,6 +74,14 @@ const ExecutionStatusNodeComponent: React.FC<NodeProps<ExecutionStatusNodeData>>
         >
           {style.label}
         </span>
+        {data.runCount !== undefined && data.runCount > 1 && (
+          <span
+            className="text-[10px] font-medium tabular-nums text-muted-foreground"
+            title={`Ran ${data.runCount} times; showing the last run`}
+          >
+            ×{data.runCount}
+          </span>
+        )}
         {data.durationMs !== undefined && (
           <span
             className={cn('text-[10px] tabular-nums text-muted-foreground', data.isSlowest && 'font-semibold text-amber-600 dark:text-amber-400')}
