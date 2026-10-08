@@ -11,11 +11,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.db.models.ml_model_pipeline import PipelineRunStatus as PipelineRunStatusEnum
-from app.schemas.ml_model_pipeline import MLModelPipelineRunPromote
+from app.schemas.ml_model_pipeline import (
+    MLModelPipelineRunPromote,
+    PipelineRunPromoteResponse,
+)
 from app.services.ml_model_pipeline import MLModelPipelineRunService
 
 
-def _make_service(execution_output: dict):
+def _make_service(execution_output: dict, inference_params=None, features=None):
     model_id = uuid.uuid4()
     run_id = uuid.uuid4()
     config_id = uuid.uuid4()
@@ -38,8 +41,12 @@ def _make_service(execution_output: dict):
     config_repository.unset_default_for_model = AsyncMock()
     config_repository.update = AsyncMock(return_value=config)
 
+    model = MagicMock()
+    model.inference_params = inference_params
+    model.features = features or ["x"]
+    model.target_variable = "existing_target"
     model_repository = MagicMock()
-    model_repository.get_by_id = AsyncMock(return_value=MagicMock())
+    model_repository.get_by_id = AsyncMock(return_value=model)
     model_repository.update = AsyncMock()
 
     workflow_repository = MagicMock()
@@ -55,12 +62,18 @@ def _make_service(execution_output: dict):
 
 @pytest.mark.asyncio
 async def test_promote_surfaces_ratio_baseline_column_as_inference_params():
-    service, model_repository, model_id, run_id = _make_service({
-        "model_file_path": "/tmp/model.pkl",
-        "target_column": "y",
-        "feature_columns": ["x"],
-        "target_transform": {"type": "ratio", "baselineColumn": "base"},
-    })
+    service, model_repository, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/tmp/model.pkl",
+            "target_column": "y",
+            "feature_columns": ["x"],
+            "target_transform": {"type": "ratio", "baselineColumn": "base"},
+        },
+        inference_params={
+            "featureDefaults": {"x": 1, "removed": 2},
+            "ratioBaselineColumn": "old_base",
+        },
+    )
 
     await service.promote_run(
         model_id=model_id,
@@ -70,11 +83,39 @@ async def test_promote_surfaces_ratio_baseline_column_as_inference_params():
 
     assert model_repository.update.await_count == 1
     _, update_dict = model_repository.update.await_args.args
-    assert update_dict["inference_params"] == {"ratioBaselineColumn": "base"}
+    assert update_dict["inference_params"] == {
+        "featureDefaults": {"x": 1},
+        "ratioBaselineColumn": "base",
+    }
 
 
 @pytest.mark.asyncio
-async def test_promote_without_ratio_target_sets_inference_params_none():
+async def test_promote_without_ratio_target_preserves_feature_defaults():
+    service, model_repository, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/tmp/model.pkl",
+            "target_column": "y",
+            "feature_columns": ["x"],
+        },
+        inference_params={
+            "featureDefaults": {"x": 1},
+            "ratioBaselineColumn": "old_base",
+        },
+    )
+
+    await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
+    )
+
+    assert model_repository.update.await_count == 1
+    _, update_dict = model_repository.update.await_args.args
+    assert update_dict["inference_params"] == {"featureDefaults": {"x": 1}}
+
+
+@pytest.mark.asyncio
+async def test_promote_without_existing_inference_params_keeps_none():
     service, model_repository, model_id, run_id = _make_service({
         "model_file_path": "/tmp/model.pkl",
         "target_column": "y",
@@ -87,6 +128,67 @@ async def test_promote_without_ratio_target_sets_inference_params_none():
         promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
     )
 
-    assert model_repository.update.await_count == 1
     _, update_dict = model_repository.update.await_args.args
     assert update_dict["inference_params"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("feature_columns", [None, []])
+async def test_promote_without_usable_feature_columns_preserves_model_contract(
+    feature_columns,
+):
+    service, model_repository, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/tmp/model.pkl",
+            "feature_columns": feature_columns,
+        },
+        inference_params={
+            "featureDefaults": {"x": 1},
+            "ratioBaselineColumn": "existing_base",
+        },
+        features=["x"],
+    )
+
+    await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
+    )
+
+    _, update_dict = model_repository.update.await_args.args
+    assert update_dict == {"pkl_file": "/tmp/model.pkl"}
+
+
+@pytest.mark.asyncio
+async def test_promote_warns_when_retained_default_is_not_a_fitted_category():
+    service, model_repository, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/tmp/model.pkl",
+            "target_column": "y",
+            "feature_columns": ["kind"],
+            "warnings": [
+                "Feature default(s) no longer match categories fitted by this run: "
+                "kind. Update or remove these defaults before relying on them during "
+                "inference."
+            ],
+        },
+        inference_params={"featureDefaults": {"kind": "removed"}},
+        features=["kind"],
+    )
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
+    )
+
+    _, update_dict = model_repository.update.await_args.args
+    assert update_dict["inference_params"] == {
+        "featureDefaults": {"kind": "removed"}
+    }
+    assert "kind" in result["warnings"][0]
+    assert "no longer match categories" in result["warnings"][0]
+
+    response = PipelineRunPromoteResponse(**result)
+    assert response.warnings == result["warnings"]
+    assert response.model_dump()["warnings"] == result["warnings"]

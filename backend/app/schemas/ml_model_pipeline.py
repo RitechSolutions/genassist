@@ -1,8 +1,9 @@
-from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.workflow import Workflow
 
@@ -142,3 +143,4 @@ class PipelineRunPromoteResponse(BaseModel):
     message: str
     model_updated: bool
     default_config_id: UUID
+    warnings: list[str] = Field(default_factory=list)

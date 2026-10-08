@@ -1,17 +1,110 @@
-from uuid import UUID
-from injector import inject
-import os
 import logging
-from typing import Optional
+import os
+from typing import Any, Optional, Sequence
+from uuid import UUID
 
-from app.db.models.ml_model import MLModel
-from app.repositories.ml_models import MLModelsRepository
-from app.schemas.ml_model import MLModelCreate, MLModelUpdate
+import numpy as np
+from injector import inject
+
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.file import FileModel
+from app.db.models.ml_model import MLModel
+from app.repositories.ml_models import MLModelsRepository
+from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM, MLModelCreate, MLModelUpdate
 
 logger = logging.getLogger(__name__)
+
+_RATIO_BASELINE_PARAM = "ratioBaselineColumn"
+STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX = (
+    "Feature default(s) no longer match categories fitted by this run"
+)
+
+
+def _category_key(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, bool):
+        return ("bool", value)
+    return value
+
+
+def stale_categorical_defaults(inference_params, categorical_contracts) -> list[str]:
+    if not isinstance(inference_params, dict) or not isinstance(categorical_contracts, dict):
+        return []
+    defaults = inference_params.get(FEATURE_DEFAULTS_PARAM)
+    if not isinstance(defaults, dict):
+        return []
+
+    stale_defaults = []
+    for name, default in defaults.items():
+        contract = categorical_contracts.get(name)
+        if not isinstance(contract, dict) or not isinstance(contract.get("values"), list):
+            continue
+        values = contract["values"]
+        if contract.get("normalize_keys"):
+            from app.modules.workflow.engine.nodes.ml.ml_utils import ordinal_key
+
+            matches = ordinal_key(default) in {ordinal_key(value) for value in values}
+        else:
+            matches = _category_key(default) in {
+                _category_key(value) for value in values
+            }
+        if not matches:
+            stale_defaults.append(name)
+    return sorted(stale_defaults)
+
+
+def merge_model_inference_params(
+    existing_params: Any,
+    feature_names: Sequence[str],
+    ratio_baseline_column: Optional[str],
+) -> Optional[dict]:
+    """Preserve model-owned inference settings while refreshing trained metadata."""
+    merged = dict(existing_params) if isinstance(existing_params, dict) else {}
+    feature_set = set(feature_names)
+    existing_defaults = merged.get(FEATURE_DEFAULTS_PARAM)
+
+    if isinstance(existing_defaults, dict):
+        retained_defaults = {
+            name: value for name, value in existing_defaults.items() if name in feature_set
+        }
+        if retained_defaults:
+            merged[FEATURE_DEFAULTS_PARAM] = retained_defaults
+        else:
+            merged.pop(FEATURE_DEFAULTS_PARAM, None)
+    else:
+        merged.pop(FEATURE_DEFAULTS_PARAM, None)
+
+    if ratio_baseline_column:
+        merged[_RATIO_BASELINE_PARAM] = ratio_baseline_column
+    else:
+        merged.pop(_RATIO_BASELINE_PARAM, None)
+
+    return merged or None
+
+
+def validate_model_inference_params(
+    feature_names: Optional[Sequence[str]],
+    inference_params: Any,
+) -> None:
+    if not isinstance(inference_params, dict):
+        return
+
+    feature_defaults = inference_params.get(FEATURE_DEFAULTS_PARAM)
+    if not isinstance(feature_defaults, dict):
+        return
+
+    feature_set = set(feature_names or [])
+    unknown_defaults = sorted(name for name in feature_defaults if name not in feature_set)
+    if unknown_defaults:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "Feature defaults reference unknown model feature(s): "
+                f"{', '.join(unknown_defaults)}."
+            ),
+        )
 
 
 @inject
@@ -23,6 +116,8 @@ class MLModelsService:
 
     async def create(self, ml_model: MLModelCreate) -> MLModel:
         """Create a new ML model."""
+        validate_model_inference_params(ml_model.features, ml_model.inference_params)
+
         # Check if a model with the same name already exists
         existing_model = await self.repository.get_by_name(ml_model.name)
         if existing_model:
@@ -51,6 +146,14 @@ class MLModelsService:
         """Update an existing ML model."""
         update_data = ml_model_update.model_dump(exclude_unset=True)
 
+        if "features" in update_data or "inference_params" in update_data:
+            existing_model = await self.repository.get_by_id(ml_model_id)
+            feature_names = update_data.get("features", existing_model.features)
+            inference_params = update_data.get(
+                "inference_params", existing_model.inference_params
+            )
+            validate_model_inference_params(feature_names, inference_params)
+
         # If name is being updated, check for uniqueness
         if 'name' in update_data:
             existing_model = await self.repository.get_by_name(update_data['name'])
@@ -75,7 +178,7 @@ class MLModelsService:
             except OSError as e:
                 logger.error(f"Error deleting pkl file {ml_model.pkl_file}: {str(e)}")
                 # Continue with soft delete even if file deletion fails
-        
+
         # if there's a pkl_file_id, delete the file from the file manager service
         if ml_model.pkl_file_id:
             from app.dependencies.injector import injector

@@ -618,9 +618,9 @@ class TrainModelNode(BaseNode):
             # Apply per-column missing-value overrides (drop_column/drop_rows/
             # impute_*). Fill values are computed from the training split
             # only, then applied to validation - see _handle_missing_values.
-            # Captured into missing_value_fills so inference can reproduce the
-            # exact same fill for any feature it doesn't receive a value for
-            # (see the "missing_value_fills" metadata key saved below).
+            # Captured so later training stages can consistently reuse the
+            # same fitted values. Inference defaults are configured explicitly
+            # per model and never inferred from training-time imputation.
             missing_value_fills: Dict[str, Any] = {}
             if missing_value_handling:
                 X_train, y_train, X_val, y_val, baseline_train, baseline_val, missing_value_fills = (
@@ -670,6 +670,13 @@ class TrainModelNode(BaseNode):
                             f"{fill_kind} ({fill_value!r}) of the training data. Set Missing Value Handling "
                             "for this column to choose how instead."
                         )
+
+            if missing_value_fills:
+                auto_fill_warnings.append(
+                    "Training-time missing-value fills are not used automatically during inference. "
+                    "Configure Feature Defaults on the registered model for any feature that callers "
+                    "may omit or send as null."
+                )
 
             # A "drop_column" missing-value strategy above removes the column
             # from X_train entirely, but feature_columns (saved to metadata
@@ -891,7 +898,6 @@ class TrainModelNode(BaseNode):
                     ),
                     **({"label_encodings": label_encodings} if label_encodings else {}),
                     **({"ordinal_encodings": ordinal_encodings} if ordinal_encodings else {}),
-                    **({"missing_value_fills": missing_value_fills} if missing_value_fills else {}),
                     **({"target_transform": target_transform} if target_transform is not None else {}),
                 },
             )
@@ -906,15 +912,54 @@ class TrainModelNode(BaseNode):
             # of looking one up by the node's own display name, which is
             # usually just the generic "Train Model" label and would silently
             # register the pkl against the wrong (or a stray new) model row.
+            categorical_feature_contracts = {
+                name: {
+                    "values": ml_utils.sanitize_for_json(list(mapping)),
+                    "normalize_keys": False,
+                }
+                for name, mapping in label_encodings.items()
+            }
+            categorical_feature_contracts.update(
+                {
+                    name: {
+                        "values": ml_utils.sanitize_for_json(list(mapping)),
+                        "normalize_keys": True,
+                    }
+                    for name, mapping in ordinal_encodings.items()
+                }
+            )
+            if encoder is not None:
+                categorical_feature_contracts.update(
+                    {
+                        name: {
+                            "values": ml_utils.sanitize_for_json(values.tolist()),
+                            "normalize_keys": False,
+                        }
+                        for name, values in zip(categorical_columns, encoder.categories_)
+                    }
+                )
+            if encoder_no_drop is not None:
+                categorical_feature_contracts.update(
+                    {
+                        name: {
+                            "values": ml_utils.sanitize_for_json(values.tolist()),
+                            "normalize_keys": False,
+                        }
+                        for name, values in zip(no_drop_columns, encoder_no_drop.categories_)
+                    }
+                )
             target_model_id = (self.state.initial_values or {}).get("model_id")
-            ml_model_id, registration_error = await self._register_trained_model(
-                name=name,
-                model_type=model_type,
-                feature_columns=feature_columns,
-                target_column=target_column,
-                local_pkl_path=model_artifact["model_file_path"],
-                target_model_id=target_model_id,
-                target_transform=target_transform,
+            ml_model_id, registration_error, registration_warnings = (
+                await self._register_trained_model(
+                    name=name,
+                    model_type=model_type,
+                    feature_columns=feature_columns,
+                    target_column=target_column,
+                    local_pkl_path=model_artifact["model_file_path"],
+                    target_model_id=target_model_id,
+                    target_transform=target_transform,
+                    categorical_feature_contracts=categorical_feature_contracts,
+                )
             )
 
             # Retired strategies still run (so saved workflows and their models
@@ -929,7 +974,9 @@ class TrainModelNode(BaseNode):
                 for item in feature_engineering
                 if item.get("strategy") in _RETIRED_FE_STRATEGIES
             ]
-            training_warnings = auto_fill_warnings + training_warnings
+            training_warnings = (
+                auto_fill_warnings + training_warnings + registration_warnings
+            )
             for warning in training_warnings:
                 logger.warning(warning)
 
@@ -2128,7 +2175,8 @@ class TrainModelNode(BaseNode):
         local_pkl_path: str,
         target_model_id: Optional[str] = None,
         target_transform: Optional[dict] = None,
-    ) -> tuple[Optional[str], Optional[str]]:
+        categorical_feature_contracts: Optional[Dict[str, Any]] = None,
+    ) -> tuple[Optional[str], Optional[str], List[str]]:
         """
         Upload the trained .pkl through the file manager and create/update the
         matching ``ml_models`` row, so an ML Model Inference node can find it
@@ -2144,14 +2192,19 @@ class TrainModelNode(BaseNode):
                 Model") for ad-hoc/test-node runs with no pipeline context.
 
         Returns:
-            Tuple of (ml_model_id or None, error message or None). Never
+            Tuple of (ml_model_id or None, error message or None, warnings). Never
             raises — a registration failure shouldn't fail a training run
             that already produced a valid .pkl on disk.
         """
         try:
             from app.schemas.ml_model import MLModelCreate, MLModelUpdate
             from app.dependencies.injector import injector
-            from app.services.ml_models import MLModelsService
+            from app.services.ml_models import (
+                MLModelsService,
+                STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX,
+                merge_model_inference_params,
+                stale_categorical_defaults,
+            )
             from app.core.config.settings import file_storage_settings
             from app.schemas.file import FileBase
             from app.services.app_settings import AppSettingsService
@@ -2193,24 +2246,12 @@ class TrainModelNode(BaseNode):
                 f"Trained by workflow Train Model node (thread {self.state.thread_id}) "
                 f"{node_marker}"
             )
-            # A ratio-target model needs the baseline column's raw value at
-            # inference time to reconstruct a real-unit prediction, even
-            # though it was never one of the model's actual training
-            # features (see MLModelInferenceNode's reconstruction of it).
-            # Recorded here so the inference UI knows to ask for it alongside
-            # the regular feature inputs.
-            inference_params = (
-                {"ratioBaselineColumn": target_transform.get("baselineColumn")}
-                if target_transform else None
-            )
-
             model_fields = {
                 "description": description,
                 "model_type": model_type,
                 "features": feature_columns,
                 "target_variable": target_column,
                 "pkl_file_id": resolved_pkl_file_id,
-                "inference_params": inference_params,
                 # The uploaded file is now the source of truth; a stale local
                 # path from a previous run shouldn't be preferred over it.
                 "pkl_file": None,
@@ -2234,14 +2275,29 @@ class TrainModelNode(BaseNode):
                 if by_name and node_marker in (by_name.description or ""):
                     existing = by_name
 
+            model_fields["inference_params"] = merge_model_inference_params(
+                getattr(existing, "inference_params", None),
+                feature_columns,
+                target_transform.get("baselineColumn") if target_transform else None,
+            )
+            stale_defaults = stale_categorical_defaults(
+                model_fields["inference_params"], categorical_feature_contracts
+            )
+            registration_warnings = []
+            if stale_defaults:
+                registration_warnings.append(
+                    f"{STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX}: "
+                    f"{', '.join(stale_defaults)}. Update or remove these defaults before "
+                    "relying on them during inference."
+                )
+
             if existing:
                 updated = await ml_service.update(existing.id, MLModelUpdate(**model_fields))
-                return str(updated.id), None
+                return str(updated.id), None, registration_warnings
 
             created = await ml_service.create(MLModelCreate(name=name, **model_fields))
-            return str(created.id), None
+            return str(created.id), None, registration_warnings
 
         except Exception as e:
             logger.error(f"Failed to register trained model '{name}': {str(e)}", exc_info=True)
-            return None, str(e)
-
+            return None, str(e), []
