@@ -180,7 +180,9 @@ class TrainModelNode(BaseNode):
                             ("custom_expression", "bin_numeric", "polynomial",
                             "log_transform", "quantile_transform",
                             "power_transform", or "pca"), plus strategy-specific
-                            fields (expression / binColumn+numBins /
+                            fields (expression / binColumn+numBins+binStrategy
+                            ("uniform" equal-width, default, or "quantile"
+                            equal-frequency) /
                             polynomialColumns+polynomialDegree / sourceColumns,
                             with quantileOutputDistribution+nQuantiles,
                             powerMethod, pcaComponents+pcaStandardize, and
@@ -426,6 +428,11 @@ class TrainModelNode(BaseNode):
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"featureEngineering entry '{item.get('newColumnName')}' has strategy 'bin_numeric' but is missing binColumn or numBins",
+                    )
+                if strategy == "bin_numeric" and item.get("binStrategy", "uniform") not in ("uniform", "quantile"):
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"featureEngineering entry '{item.get('newColumnName')}' has invalid binStrategy: {item.get('binStrategy')}. Must be one of: uniform, quantile",
                     )
                 if strategy in ("normalize", "standardize") and not item.get("sourceColumns"):
                     raise AppException(
@@ -1306,10 +1313,20 @@ class TrainModelNode(BaseNode):
             elif strategy == "bin_numeric":
                 bin_column = item.get("binColumn")
                 num_bins = item.get("numBins")
+                bin_strategy = item.get("binStrategy", "uniform")
                 if bin_column not in X_train.columns or not pd.api.types.is_numeric_dtype(X_train[bin_column]):
                     logger.warning(f"Skipping bin_numeric for '{new_col}': column '{bin_column}' not found or not numeric")
                     continue
-                _, bin_edges = pd.cut(X_train[bin_column], bins=num_bins, retbins=True, duplicates="drop")
+                if bin_strategy == "quantile":
+                    # Equal-frequency edges from train percentiles. Heavily
+                    # repeated values (e.g. many zeros) collapse duplicate
+                    # edges, leaving fewer bins than requested.
+                    _, bin_edges = pd.qcut(X_train[bin_column], q=num_bins, retbins=True, duplicates="drop")
+                    if len(bin_edges) < 2:
+                        logger.warning(f"Skipping bin_numeric for '{new_col}': column '{bin_column}' has too few distinct values for quantile bins")
+                        continue
+                else:
+                    _, bin_edges = pd.cut(X_train[bin_column], bins=num_bins, retbins=True, duplicates="drop")
                 X_train[new_col] = pd.cut(
                     X_train[bin_column], bins=bin_edges, labels=False, include_lowest=True
                 )
@@ -1322,6 +1339,7 @@ class TrainModelNode(BaseNode):
                     "strategy": "bin_numeric",
                     "new_col": new_col,
                     "bin_column": bin_column,
+                    "bin_strategy": bin_strategy,
                     "bin_edges": list(bin_edges),
                 })
 
