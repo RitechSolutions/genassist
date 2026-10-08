@@ -76,17 +76,27 @@ def _ordered_unique(values: Iterable[Any]) -> List[Any]:
     return list(dict.fromkeys(value for value in values if value is not None))
 
 
-def scope_phrase(rule: ScopedRule) -> str:
+def scope_phrase(rule: ScopedRule, turn_positions: Optional[Dict[int, int]] = None) -> str:
     """The "when" half of a rule's plain-language description."""
     if rule.scope == "conversation":
         return "during the conversation"
     if rule.scope == "specific_turn":
-        turns = rule.targeted_turn_indexes
-        if len(turns) == 1:
-            return f"on turn {turns[0] + 1}"
-        if turns:
-            return f"on turns {', '.join(str(turn + 1) for turn in turns)}"
-        return "on the selected turns"
+        indexes = rule.targeted_turn_indexes
+        if turn_positions is None:
+            numbers, removed = [index + 1 for index in indexes], 0
+        else:
+            # Numbered by position in the run, like the dataset page. A turn missing from
+            # the run is called removed, never given a number another turn now holds.
+            numbers = [turn_positions[index] + 1 for index in indexes if index in turn_positions]
+            removed = len(indexes) - len(numbers)
+        parts = []
+        if len(numbers) == 1:
+            parts.append(f"turn {numbers[0]}")
+        elif numbers:
+            parts.append(f"turns {', '.join(str(number) for number in numbers)}")
+        if removed:
+            parts.append("a removed turn" if removed == 1 else f"{removed} removed turns")
+        return f"on {' plus '.join(parts)}" if parts else "on the selected turns"
     return "on every turn"
 
 
@@ -218,7 +228,8 @@ def summarize_planned_results(planned: List[Dict[str, Any]]) -> Dict[str, Any]:
     failed = statuses.count(RULE_FAILED)
     not_evaluated = statuses.count(RULE_NOT_EVALUATED)
     evaluated = passed + failed
-    accuracy = (passed / evaluated) if evaluated else 0.0
+    # Nothing graded is unknown, not 0%, so health and pass rates skip it.
+    accuracy = (passed / evaluated) if evaluated else None
 
     # How many checks ran at each scope, so the card can say e.g.
     # "2 conversation checks · 13 turn checks".

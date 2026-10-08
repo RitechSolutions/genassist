@@ -279,7 +279,7 @@ const MLModelEvaluationsPage: React.FC = () => {
           <div className="px-6 py-4 text-sm text-destructive">Couldn't load rankings: {rankingsError}</div>
         ) : rankings.length === 0 ? (
           <div className="px-6 py-4 text-sm text-muted-foreground">
-            No models with a completed training run yet — rankings appear once at least one model has trained
+            No models with a completed training run yet. Rankings appear once at least one model has trained
             successfully.
           </div>
         ) : (
@@ -458,7 +458,7 @@ const MLModelEvaluationsPage: React.FC = () => {
 
           {result.taskType === null && (
             <div className="px-6 py-4 text-sm text-muted-foreground">
-              No training metrics available for this model — it has no completed training pipeline run yet.
+              No training metrics available for this model. It has no completed training pipeline run yet.
             </div>
           )}
         </div>

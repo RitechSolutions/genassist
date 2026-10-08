@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { buildTechniqueConfigs, getEditInitialData } from "@/views/TestSuites/helpers/evaluationForm";
+import {
+  buildTechniqueConfigs,
+  getEditInitialData,
+  newEvaluationDefaults,
+  wizardMetadata,
+} from "@/views/TestSuites/helpers/evaluationForm";
 import type { EvaluationWizardData } from "@/views/TestSuites/components/EvaluationWizard";
 import type { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
 
@@ -463,5 +468,37 @@ describe("route_taken and action_taken multi-rule configs", () => {
         },
       ],
     });
+  });
+});
+
+describe("newEvaluationDefaults", () => {
+  it("ticks no method and replays conversations with memory", () => {
+    const defaults = newEvaluationDefaults();
+    expect(defaults.metrics).toEqual([]);
+    expect(defaults.useMemory).toBe(true);
+  });
+
+  it("starts without a workflow, so one must be picked, unless it is locked", () => {
+    expect(newEvaluationDefaults().workflowId).toBe("");
+    expect(newEvaluationDefaults("wf-1").workflowId).toBe("wf-1");
+  });
+
+  it("saves memory on by default", () => {
+    const data = { ...newEvaluationDefaults(), inputMetadataText: "{}" } as EvaluationWizardData;
+    expect(wizardMetadata(data)).toEqual({ use_memory: true });
+  });
+
+  it("keeps memory off for an existing evaluation saved without it", () => {
+    const evaluation = {
+      id: "e9",
+      name: "old",
+      suite_id: "s1",
+      techniques: ["exact_match"],
+      input_metadata: {},
+      run_ids: [],
+      created_at: "",
+      updated_at: "",
+    } as TestEvaluationConfig;
+    expect(getEditInitialData(evaluation, []).useMemory).toBe(false);
   });
 });

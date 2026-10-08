@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.services.test_suite import TestSuiteService as EvalService
+from app.services.test_suite import UNEXPECTED_RUN_FAILURE_ERROR, TestSuiteService as EvalService
 
 
 def _service() -> EvalService:
@@ -53,7 +53,9 @@ class TestTerminalState:
                 await service._execute_run(MagicMock(), MagicMock(), run)
 
         assert run.status == "failed"
-        assert "kaboom" in run.summary_metrics["error"]
+        # Users see a fixed sentence; the exception text stays in the logs.
+        assert run.summary_metrics["error"] == UNEXPECTED_RUN_FAILURE_ERROR
+        assert "kaboom" not in run.summary_metrics["error"]
 
     @pytest.mark.asyncio
     async def test_execute_run_does_not_overwrite_terminal_status(self):
@@ -619,6 +621,113 @@ class TestPausedConversationExecution:
         assert run.summary_metrics["_totals"]["skipped"] == 1
 
 
+class TestCommitPerConversation:
+    @pytest.mark.asyncio
+    async def test_each_finished_conversation_is_committed(self):
+        """Results are committed as each conversation ends, so a crash keeps them."""
+        service = _service()
+        suite_id, first_conversation, second_conversation = uuid4(), uuid4(), uuid4()
+        cases = [
+            TestPausedConversationExecution._case(
+                suite_id=suite_id, conversation_id=first_conversation, turn_index=0, message="A1"
+            ),
+            TestPausedConversationExecution._case(
+                suite_id=suite_id, conversation_id=first_conversation, turn_index=1, message="A2"
+            ),
+            TestPausedConversationExecution._case(
+                suite_id=suite_id, conversation_id=second_conversation, turn_index=0, message="B1"
+            ),
+        ]
+        service.case_repo.get_all_for_suite.return_value = cases
+        events = []
+
+        async def record_result(result):
+            events.append(next(case.input_data["message"] for case in cases if case.id == result.case_id))
+
+        async def record_commit():
+            events.append("commit")
+
+        service.result_repo.create = AsyncMock(side_effect=record_result)
+        service.run_repo.db.commit = AsyncMock(side_effect=record_commit)
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(
+            return_value=TestPausedConversationExecution._state("answer")
+        )
+        run = SimpleNamespace(
+            id=uuid4(), techniques=["no_errors"], status="queued", summary_metrics=None
+        )
+
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine):
+            await service._execute_run(
+                SimpleNamespace(id=suite_id, default_input_metadata=None),
+                SimpleNamespace(id=uuid4(), nodes=[], edges=[]),
+                run,
+            )
+
+        # The first commit is the running marker; then one per conversation.
+        assert events == ["commit", "A1", "A2", "commit", "B1", "commit"]
+        assert run.status == "completed"
+
+
+class TestTurnLabelsByPosition:
+    @pytest.mark.asyncio
+    async def test_turns_are_labelled_by_position_after_a_turn_was_deleted(self):
+        """Stored indexes 0 and 2 (turn 1 deleted) read as turns 1 and 2, as on the dataset page."""
+        service = _service()
+        suite_id, conversation_id = uuid4(), uuid4()
+        first = TestConversationScopedRules._case(
+            suite_id=suite_id, conversation_id=conversation_id, turn_index=0
+        )
+        third = TestConversationScopedRules._case(
+            suite_id=suite_id, conversation_id=conversation_id, turn_index=2
+        )
+        service.case_repo.get_all_for_suite.return_value = [first, third]
+        ticket = str(uuid4())
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(
+            return_value=TestConversationScopedRules._state(
+                {ticket: {"type": "httpNode", "name": "Create Ticket", "status": "success"}}
+            )
+        )
+        run = SimpleNamespace(
+            id=uuid4(), techniques=["action_taken"], status="queued", summary_metrics=None
+        )
+
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine):
+            await service._execute_run(
+                SimpleNamespace(id=suite_id, default_input_metadata=None),
+                SimpleNamespace(
+                    id=uuid4(),
+                    nodes=[{"id": ticket, "type": "httpNode", "data": {"name": "Create Ticket"}}],
+                    edges=[],
+                ),
+                run,
+                technique_configs={
+                    "action_taken": {
+                        "rules": [
+                            {"id": "every", "node": ticket},
+                            {
+                                "id": "third",
+                                "node": ticket,
+                                "scope": "specific_turn",
+                                "target_source_conversation_id": str(conversation_id),
+                                "target_turn_indexes": [2],
+                            },
+                        ]
+                    }
+                },
+            )
+
+        rows = service.tool_rule_result_repo.create_many.call_args[0][0]
+        every_turn = [row for row in rows if row.rule_id == "every"]
+        (specific,) = [row for row in rows if row.rule_id == "third"]
+        assert [row.details["target"]["label"] for row in every_turn] == ["Turn 1", "Turn 2"]
+        # The stored index is kept for targeting; only the label is positional.
+        assert [row.details["turn_index"] for row in every_turn] == [0, 2]
+        assert specific.details["target"]["label"] == "Turn 2"
+        assert specific.details["rule_summary"] == '"Create Ticket" must complete on turn 2.'
+
+
 class TestRunPickupGuard:
     """A redelivered message must not re-run a finished run, and must fail a lost one."""
 
@@ -737,7 +846,7 @@ class TestFailureIsPersisted:
 
         service.run_repo.db.rollback.assert_awaited_once()
         service.run_repo.db.refresh.assert_awaited_once_with(run)
-        service._fail_run.assert_awaited_once_with(run, "Run failed unexpectedly: kaboom")
+        service._fail_run.assert_awaited_once_with(run, UNEXPECTED_RUN_FAILURE_ERROR)
         service.run_repo.db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -770,3 +879,26 @@ class TestFailureIsPersisted:
         assert run.status == "failed"
         assert run.summary_metrics == {"error": "Run failed unexpectedly: judge down"}
         service.run_repo.db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_deleted_workflow_version_fails_the_run_with_a_clear_reason(self):
+        from app.core.exceptions.error_messages import ErrorKey
+        from app.core.exceptions.exception_classes import AppException
+        from app.tasks.test_suite_tasks import _execute_test_suite_run_async
+
+        run = SimpleNamespace(
+            id=uuid4(), status="queued", summary_metrics=None, suite_id=uuid4(), workflow_id=uuid4()
+        )
+        service = _failing_service(run, RuntimeError("never reached"))
+        service.workflow_service.get_by_id = AsyncMock(
+            side_effect=AppException(error_key=ErrorKey.WORKFLOW_NOT_FOUND, status_code=404)
+        )
+
+        with patch("app.dependencies.injector.injector") as injector:
+            injector.get.return_value = service
+            await _execute_test_suite_run_async(uuid4(), None, None)
+
+        service._fail_run.assert_awaited_once_with(
+            run, "The workflow version for this run no longer exists."
+        )
+        service._execute_run.assert_not_awaited()

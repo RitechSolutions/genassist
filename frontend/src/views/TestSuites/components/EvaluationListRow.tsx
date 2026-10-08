@@ -56,7 +56,10 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
         ) : lastRunStatus === "failed" ? (
           <div className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">Last run failed</div>
         ) : avgAccuracy !== null ? (
-          <div className="flex items-center gap-2 mt-2">
+          <div
+            className="flex items-center gap-2 mt-2"
+            title="Avg score: the average of each method's pass rate in the last run"
+          >
             <Progress
               value={avgAccuracy * 100}
               className={cn(
@@ -69,7 +72,7 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
               )}
             />
             <span className={`text-xs font-medium ${accuracyColorClass(avgAccuracy)}`}>
-              {Math.round(avgAccuracy * 100)}% accuracy
+              {Math.round(avgAccuracy * 100)}% avg score
             </span>
             <span className="text-xs text-muted-foreground">
               ({evaluation.run_ids.length} run{evaluation.run_ids.length !== 1 ? "s" : ""})

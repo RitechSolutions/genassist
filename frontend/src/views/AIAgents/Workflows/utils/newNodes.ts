@@ -5,6 +5,7 @@
  * node's display label, for readability.
  */
 export const NEW_NODE_TYPES = new Set<string>([
+  "loopNode", // Loop
   "filterNode", // Filter
   "switchNode", // Switch
   "nlpNode", // Text Analysis

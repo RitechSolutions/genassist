@@ -119,6 +119,20 @@ def test_route_observations_include_switch_nodes():
     ]
 
 
+def test_route_observations_keep_the_switch_case_label():
+    trace = {"nodes_by_type": {
+        # A router never records a branch label, whatever its output holds.
+        "routerNode": [{"id": "router-1", "label": "Escalation Router",
+                        "output": {"route": "true", "label": "ignored"}}],
+        "switchNode": [{"id": "switch-1", "label": "Intent Switch",
+                        "output": {"route": "case_2", "label": "Billing"}}],
+    }}
+    assert route_observations(trace) == [
+        {"id": "router-1", "label": "Escalation Router", "route": "true"},
+        {"id": "switch-1", "label": "Intent Switch", "route": "case_2", "route_label": "Billing"},
+    ]
+
+
 def test_action_observations_keep_status_and_error():
     trace = {"nodes": {"n1": {"id": "n1", "label": "Create Ticket", "type": "httpNode",
                              "status": "failed", "error": "boom", "output": {"big": "payload"}}}}
@@ -181,6 +195,65 @@ def test_route_without_a_router_matches_any_router():
     rule = RouteRule(id="r", expected="escalate")
     result = grade_route_rule(rule, _slice([_router("escalate", node_id="other")]), {}, 1)
     assert result["status"] == RULE_PASSED
+
+
+def _switch(route, route_label, *, node_id="switch-1", label="Intent Switch"):
+    return {"id": node_id, "label": label, "route": route, "route_label": route_label}
+
+
+_SWITCH_BRANCHES = {"switch-1": {"case_1": "Billing", "case_2": "Support", "default": "Default"}}
+
+
+def test_switch_rule_written_with_the_case_label_passes():
+    rule = RouteRule(id="r", router="switch-1", expected="billing")
+    result = grade_route_rule(rule, _slice([_switch("case_1", "Billing")]), {}, 1)
+    assert result["status"] == RULE_PASSED
+    assert result["comment"] == "Router 'Intent Switch' took route 'Billing'."
+    # The stored observed value keeps the raw route.
+    assert result["observed"] == "case_1"
+
+
+def test_switch_rule_written_with_the_case_id_still_passes_and_reads_as_the_label():
+    rule = RouteRule(id="r", router="switch-1", expected="case_1")
+    result = grade_route_rule(rule, _slice([_switch("case_1", "Billing")]), {}, 1)
+    assert result["status"] == RULE_PASSED
+    assert result["comment"] == "Router 'Intent Switch' took route 'Billing'."
+
+
+def test_default_never_matches_a_case_labelled_default():
+    # "default" is the switch's reserved fallback route, even when a case is labelled "Default".
+    rule = RouteRule(id="r", router="switch-1", expected="default")
+    result = grade_route_rule(rule, _slice([_switch("case_3", "Default")]), {}, 1)
+    assert result["status"] == RULE_FAILED
+
+
+def test_a_known_case_id_never_matches_another_cases_label():
+    # case_1 names one branch; a different case that happens to be labelled "case_1" is not it.
+    rule = RouteRule(id="r", router="switch-1", expected="case_1")
+    result = grade_route_rule(
+        rule, _slice([_switch("case_2", "case_1")]), {}, 1, branch_labels=_SWITCH_BRANCHES
+    )
+    assert result["status"] == RULE_FAILED
+
+
+def test_switch_failure_names_both_branches_by_label():
+    rule = RouteRule(id="r", router="switch-1", expected="case_1")
+    result = grade_route_rule(
+        rule, _slice([_switch("case_2", "Support")]), {}, 1, branch_labels=_SWITCH_BRANCHES
+    )
+    assert result["status"] == RULE_FAILED
+    assert result["comment"] == "Expected route 'Billing' on router 'Intent Switch', took 'Support'."
+    assert result["expected"] == "case_1"
+    assert result["observed"] == "case_2"
+
+
+def test_router_routes_are_unaffected_by_branch_labels():
+    rule = RouteRule(id="r", router="router-1", expected="TRUE")
+    passing = grade_route_rule(rule, _slice([_router("true")]), {}, 1, branch_labels=_SWITCH_BRANCHES)
+    failing = grade_route_rule(rule, _slice([_router("false")]), {}, 1, branch_labels=_SWITCH_BRANCHES)
+    assert passing["status"] == RULE_PASSED
+    assert passing["comment"] == "Router 'Escalation Router' took route 'TRUE'."
+    assert failing["comment"] == "Expected route 'TRUE' on router 'Escalation Router', took 'false'."
 
 
 def test_route_not_evaluated_when_no_turn_in_scope_produced_a_trace():
@@ -261,6 +334,17 @@ _TURNS = [
     {"id": "case-2", "source_conversation_id": "conv-1", "turn_index": 1},
 ]
 _GROUPS = [["case-1", "case-2"]]
+
+
+def test_route_plan_passes_branch_labels_to_grading():
+    rule = RouteRule(id="r", router="switch-1", expected="case_1")
+    planned = plan_route_results(
+        [rule], _TURNS, _GROUPS, {"case-1": [_switch("case_2", "Support")]}, {},
+        branch_labels=_SWITCH_BRANCHES,
+    )
+    assert planned[0]["result"]["comment"] == (
+        "Expected route 'Billing' on router 'Intent Switch', took 'Support'."
+    )
 
 
 def test_every_turn_rule_is_graded_once_per_turn():
@@ -402,6 +486,38 @@ def test_route_description_uses_labels_and_scope():
     rule = RouteRule(id="r", router="router-1", expected="escalate", scope="conversation")
     assert describe_route_rule(rule, {"router-1": "Escalation Router"}) == (
         'Router "Escalation Router" must take route "escalate" during the conversation.'
+    )
+
+
+def test_route_description_names_a_switch_case_by_label():
+    rule = RouteRule(id="r", router="switch-1", expected="case_2")
+    assert describe_route_rule(rule, {"switch-1": "Intent Switch"}, _SWITCH_BRANCHES) == (
+        'Router "Intent Switch" must take route "Support" on every turn.'
+    )
+
+
+def test_description_numbers_turns_by_position_in_the_run():
+    rule = ActionRule(
+        id="a", node="zendesk-1", scope="specific_turn",
+        target_source_conversation_id="conv-1", target_turn_indexes=[2, 4],
+    )
+    # Index 2 sits second in the run; index 4 is not in it, so it reads as removed.
+    assert describe_action_rule(rule, {"zendesk-1": "Create Ticket"}, turn_positions={0: 0, 2: 1}) == (
+        '"Create Ticket" must complete on turn 2 plus a removed turn.'
+    )
+
+
+def test_a_removed_target_never_takes_another_turns_number():
+    rule = ActionRule(
+        id="a", node="zendesk-1", scope="specific_turn",
+        target_source_conversation_id="conv-1", target_turn_indexes=[0, 1],
+    )
+    # Index 0 was deleted, so index 1 is now the first turn; index 0 must not also read "turn 1".
+    assert describe_action_rule(rule, {"zendesk-1": "Create Ticket"}, turn_positions={1: 0}) == (
+        '"Create Ticket" must complete on turn 1 plus a removed turn.'
+    )
+    assert describe_action_rule(rule, {"zendesk-1": "Create Ticket"}, turn_positions={5: 0}) == (
+        '"Create Ticket" must complete on 2 removed turns.'
     )
 
 
