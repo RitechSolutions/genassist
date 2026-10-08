@@ -1,5 +1,5 @@
 import React from 'react';
-import { cn } from '@/helpers/utils';
+import { cn, formatDateTime } from '@/helpers/utils';
 import { ExecutionViewModel } from '@/interfaces/workflow-execution.interface';
 import { formatDuration } from '../../utils/executionView';
 import { STATUS_STYLES, SUMMARY_STATUS_ORDER } from './statusStyles';
@@ -16,15 +16,21 @@ interface ExecutionSummaryProps {
 const Metric: React.FC<{ label: string; value: React.ReactNode; title?: string }> = ({ label, value, title }) => (
   <span className="flex items-center gap-1 whitespace-nowrap" title={title}>
     <span className="text-muted-foreground">{label}</span>
-    <span className="max-w-[140px] truncate font-semibold tabular-nums text-foreground">{value}</span>
+    <span className="max-w-[180px] truncate font-semibold tabular-nums text-foreground">{value}</span>
   </span>
 );
 
 const ExecutionSummary: React.FC<ExecutionSummaryProps> = ({ model }) => {
   const slowest = model.slowestNodeId ? model.byId[model.slowestNodeId] : undefined;
+  // Epoch ms; fall back to the earliest node start when the run-level stamp is absent.
+  const nodeStarts = model.nodes.map((n) => n.startTime).filter((n): n is number => n !== undefined);
+  const startedAt = model.executionStartTime ?? (nodeStarts.length ? Math.min(...nodeStarts) : undefined);
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-border bg-muted/70 px-3 py-1.5 text-xs">
+      {startedAt !== undefined && (
+        <Metric label="Started" value={formatDateTime(new Date(startedAt).toISOString())} />
+      )}
       <Metric label="Nodes" value={model.totalNodes} />
       <Metric label="Steps" value={model.totalSteps ?? '—'} />
       <Metric label="Duration" value={formatDuration(model.overallDurationMs)} />
