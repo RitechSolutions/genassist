@@ -21,6 +21,8 @@ from app.tasks.base import (
     should_execute_run,
     was_abandoned_by_worker,
 )
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.tenant_scope import get_tenant_context
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
@@ -28,12 +30,17 @@ from app.services.realtime_notifications import emit_notification, notification_
 
 logger = logging.getLogger(__name__)
 
+MISSING_WORKFLOW_VERSION_ERROR = "The workflow version for this run no longer exists."
+
+
 async def _persist_failure(service, run, exc: Exception) -> None:
     """Commit the failed status on its own; the task wrapper rolls back on raise."""
+    from app.services.test_suite import UNEXPECTED_RUN_FAILURE_ERROR
+
     session = service.run_repo.db
     # The service may already have failed the run in memory and notified the user
     already_notified = run.status in TERMINAL_RUN_STATUSES
-    error = (run.summary_metrics or {}).get("error") or f"Run failed unexpectedly: {exc}"
+    error = (run.summary_metrics or {}).get("error") or UNEXPECTED_RUN_FAILURE_ERROR
     try:
         await session.rollback()
         await session.refresh(run)
@@ -97,7 +104,15 @@ async def _execute_test_suite_run_async(
         return
 
     try:
-        workflow = await service.workflow_service.get_by_id(UUID(str(run.workflow_id)))
+        try:
+            workflow = await service.workflow_service.get_by_id(UUID(str(run.workflow_id)))
+        except AppException as exc:
+            if exc.error_key != ErrorKey.WORKFLOW_NOT_FOUND:
+                raise
+            # The version was deleted after the run was queued.
+            logger.warning("Workflow %s of test run %s no longer exists", run.workflow_id, run_id)
+            await service._fail_run(run, MISSING_WORKFLOW_VERSION_ERROR)
+            return
         await service._execute_run(
             suite,
             workflow,

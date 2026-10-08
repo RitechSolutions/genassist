@@ -166,12 +166,12 @@ const EvaluationsPage: React.FC = () => {
   const renderRow = (row: WorkflowRow) => {
     const healthTooltip = row.anyRunning
       ? row.health !== null
-        ? "Evaluations running; accuracy shown is from the previous completed runs."
+        ? "Evaluations running. The avg score shown is from the previous completed runs."
         : "Evaluations are running…"
       : row.health !== null
-        ? `Accuracy from ${row.finishedCount} of ${row.count} evaluation${
-            row.count !== 1 ? "s" : ""
-          } (failed runs count as 0%)`
+        ? `Avg score: the average of each method's pass rate, across ${row.finishedCount} of ${
+            row.count
+          } evaluation${row.count !== 1 ? "s" : ""}. Failed runs count as 0%.`
         : "No evaluations scored yet";
     return (
       <tr
@@ -270,7 +270,7 @@ const EvaluationsPage: React.FC = () => {
               <thead>
                 <tr className="border-b bg-muted text-left text-xs font-medium text-muted-foreground">
                   <th className="px-6 py-3 font-medium">Workflow</th>
-                  <th className="px-6 py-3 font-medium">Accuracy</th>
+                  <th className="px-6 py-3 font-medium">Avg score</th>
                   <th className="px-6 py-3 font-medium">Evaluations</th>
                 </tr>
               </thead>

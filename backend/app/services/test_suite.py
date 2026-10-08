@@ -3,13 +3,14 @@ import dataclasses
 import logging
 import json
 import math
+from functools import partial
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID, uuid4
 
 from injector import inject
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.error_messages import ErrorKey, get_error_message
 from app.core.exceptions.exception_classes import AppException
 from app.dependencies.injector import injector
 from app.db.models.test_suite import (
@@ -23,6 +24,7 @@ from app.db.models.test_suite import (
 from app.services.evaluation_text import (
     display_name as _display_name,
     normalize_text as _normalize_text,
+    reply_text as _reply_text,
 )
 from app.services.route_action_rules import action_observations, route_observations
 from app.services.dataset_file import (
@@ -39,6 +41,7 @@ from app.services.evaluation_nli import (
     NLI_MAX_ANSWER_CLAIMS,
     evaluation_nli_model,
 )
+from app.modules.workflow.agents.memory import ConversationMemory
 from app.modules.workflow.engine.workflow_engine import (
     MemoryPersistenceError,
     WorkflowEngine,
@@ -115,8 +118,19 @@ _IMPORT_FAILURE_DETAILS = {
     ErrorKey.TRANSCRIPT_EMPTY: "No question and answer turns to import.",
 }
 
+
+def _start_failure_detail(exc: Exception) -> str:
+    """Why one evaluation of a Run all did not start; other causes stay generic."""
+    if isinstance(exc, AppException) and exc.error_key == ErrorKey.EVALUATION_WORKFLOW_REQUIRED:
+        return get_error_message(ErrorKey.EVALUATION_WORKFLOW_REQUIRED)
+    return "Failed to start evaluation."
+
+
 # Reserved key holding run-level counts alongside the per-technique metrics.
 RUN_TOTALS_KEY = "_totals"
+
+# Shown to users; the exception itself goes to the logs, never the stored summary.
+UNEXPECTED_RUN_FAILURE_ERROR = "Run failed unexpectedly. Details are in the server logs."
 
 # Rule-based techniques are graded per scope (turn or whole conversation) from
 # what the run observed, not per case, and are stored as one row per rule check.
@@ -268,6 +282,14 @@ def _resolve_selector_value(
     return selector
 
 
+def _answer_text(config: Dict[str, Any], payload: Dict[str, Any], outputs: Any) -> str:
+    """The answer a check grades: its configured answer_field, else the agent's reply."""
+    selector = config.get("answer_field")
+    if selector is None:
+        return _reply_text(outputs)
+    return _normalize_text(_resolve_selector_value(selector, payload=payload, default=outputs))
+
+
 # Stable source presets grounding evaluators can compare against, decoupling the
 # UI ("Knowledge-base passages retrieved during the run") from the trace shape.
 GRADING_SOURCE_TYPES = (
@@ -288,7 +310,7 @@ def _source_text(source_type: str, payload: Dict[str, Any]) -> str:
     if source_type == "expected_output":
         return _normalize_text(payload.get("reference_outputs"))
     if source_type == "output":
-        return _normalize_text(payload.get("outputs"))
+        return _reply_text(payload.get("outputs"))
     if source_type == "kb_retrievals":
         return _serialize_judge_source(trace.get("retrievals"))
     if source_type == "conversation_context":
@@ -313,6 +335,9 @@ def _resolve_grading_source(
         return _source_text(source_type, payload)
     legacy = config.get(legacy_field_key)
     if isinstance(legacy, str):
+        # A legacy "outputs" field is the reply, read like the "output" source.
+        if legacy == "outputs":
+            return _source_text("output", payload)
         return _normalize_text(_read_path(payload, legacy))
     return _source_text("expected_output", payload)
 
@@ -610,11 +635,21 @@ def _conversation_groups(conversations: List[List[TestCaseInDB]]) -> List[List[s
     return [[str(case.id) for case in group] for group in conversations]
 
 
+def _turn_positions(conversations: List[List[TestCaseInDB]]) -> Dict[str, Dict[int, int]]:
+    """Per conversation, each stored turn index's 0-based position in this run."""
+    positions: Dict[str, Dict[int, int]] = {}
+    for group in conversations:
+        for position, case in enumerate(group):
+            if case.source_conversation_id is not None and case.turn_index is not None:
+                positions.setdefault(str(case.source_conversation_id), {})[case.turn_index] = position
+    return positions
+
+
 def _invalid_rule_config_summary(exc: Exception) -> Dict[str, Any]:
     """Summary for a rule config that could not be parsed, so the run still completes
     and says why instead of failing silently."""
     return {
-        "avg_score": 0.0, "accuracy": 0.0, "cases": 0, "error": str(exc),
+        "avg_score": None, "accuracy": None, "cases": 0, "error": str(exc),
         "coverage": {"passed": 0, "failed": 0, "not_evaluated": 0, "evaluated": 0, "total": 0},
     }
 
@@ -902,7 +937,7 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
         config: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
     ) -> Dict[str, Any]:
-        actual = _normalize_text(outputs)
+        actual = _reply_text(outputs)
         expected = _normalize_text(reference_outputs)
         passed = bool(actual and expected and actual == expected)
         return {
@@ -921,7 +956,7 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
         config: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
     ) -> Dict[str, Any]:
-        actual = _normalize_text(outputs)
+        actual = _reply_text(outputs)
         expected = _normalize_text(reference_outputs)
         passed = bool(actual and expected and expected.casefold() in actual.casefold())
         return {
@@ -949,7 +984,7 @@ class SimpleEvaluatorRegistry:
                 "passed": False,
                 "comment": "No forbidden phrases configured.",
             }
-        actual = _normalize_text(outputs).casefold()
+        actual = _reply_text(outputs).casefold()
         found = [phrase for phrase in phrases if phrase.casefold() in actual]
         passed = not found
         return {
@@ -998,10 +1033,9 @@ class SimpleEvaluatorRegistry:
     ) -> Dict[str, Any]:
         """Exact-match a value read from the run (dot-path ``field``) vs expected."""
         field = config.get("field")
-        actual_value = _read_path(payload, field) if field else outputs
         expected_value = config.get("expected", reference_outputs)
 
-        actual = _normalize_text(actual_value)
+        actual = _normalize_text(_read_path(payload, field)) if field else _reply_text(outputs)
         expected = _normalize_text(expected_value)
         passed = bool(actual and expected and actual == expected)
 
@@ -1210,11 +1244,7 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        answer = _normalize_text(
-            _resolve_selector_value(
-                config.get("answer_field"), payload=payload, default=outputs
-            )
-        )
+        answer = _answer_text(config, payload, outputs)
         evidence = _resolve_grading_source(
             config,
             source_key="evidence_source",
@@ -1374,11 +1404,7 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        answer = _normalize_text(
-            _resolve_selector_value(
-                config.get("answer_field"), payload=payload, default=outputs
-            )
-        )
+        answer = _answer_text(config, payload, outputs)
         context_text = _resolve_grading_source(
             config,
             source_key="context_source",
@@ -1592,14 +1618,13 @@ class SimpleEvaluatorRegistry:
                 "comment": "No rubric configured for llm_judge.",
             }
 
-        answer = _resolve_selector_value(config.get("answer_field"), payload=payload, default=outputs)
         # Auto-provide the user's turn as the QUESTION so the wizard only needs a
         # rubric; a configured question_field still overrides it.
         default_question = inputs.get("message") if isinstance(inputs, dict) else ""
         question = _resolve_selector_value(
             config.get("question_field"), payload=payload, default=default_question
         )
-        answer_text = _normalize_text(answer)
+        answer_text = _answer_text(config, payload, outputs)
         question_text = _normalize_text(question)
         provider_id = config.get("llm_provider_id")
 
@@ -1648,7 +1673,11 @@ class SimpleEvaluatorRegistry:
             source_text = _source_text(source_type, payload)
         elif isinstance(source_field, str) and source_field:
             source_required = True
-            source_text = _serialize_judge_source(_read_path(payload, source_field))
+            # A legacy "outputs" field is the reply, read like the "output" source.
+            if source_field == "outputs":
+                source_text = _source_text("output", payload)
+            else:
+                source_text = _serialize_judge_source(_read_path(payload, source_field))
         else:
             source_text = ""
 
@@ -1892,7 +1921,8 @@ class TestSuiteService:
         case = await self.case_repo.get_by_id(case_id)
         if not case:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
-        await self.case_repo.delete(case)
+        # Soft, like removing a conversation: past results still reference the turn.
+        await self.case_repo.soft_delete(case)
 
     async def _import_conversations(
         self,
@@ -2363,7 +2393,7 @@ class TestSuiteService:
         except Exception as exc:  # pylint: disable=broad-except
             logger.exception("Test run %s failed unexpectedly: %s", run.id, exc)
             if run.status not in ("completed", "failed"):
-                await self._fail_run(run, f"Run failed unexpectedly: {exc}")
+                await self._fail_run(run, UNEXPECTED_RUN_FAILURE_ERROR)
             raise
 
     async def _execute_run_inner(
@@ -2434,6 +2464,8 @@ class TestSuiteService:
             merged_input: Dict[str, Any] = {}
             if run_input_metadata:
                 merged_input.update(run_input_metadata)
+                # use_memory configures the run; it is not a workflow input.
+                merged_input.pop("use_memory", None)
             if suite.default_input_metadata:
                 merged_input.update(suite.default_input_metadata)
             merged_input.update(case.input_data or {})
@@ -2444,13 +2476,15 @@ class TestSuiteService:
                 merged_input["thread_id"] = thread_id
             else:
                 merged_input.pop("thread_id", None)
+            # A threadless turn runs on a throwaway thread whose cached memory is dropped below.
+            run_thread_id = thread_id or str(uuid4())
             # Execution and scoring fail differently: a turn that never ran or never
             # reached memory breaks the thread, while a scoring error does not.
             try:
                 state = await asyncio.wait_for(
                     engine.execute_from_node(
                         input_data=merged_input,
-                        thread_id=thread_id,
+                        thread_id=run_thread_id,
                         persist=bool(thread_id),
                         await_persist=bool(thread_id),
                         usage_context=WorkflowUsageContext(
@@ -2481,6 +2515,9 @@ class TestSuiteService:
                     case, f"Execution failed: {exc}", ResultStatus.EXECUTION_FAILED
                 )
                 return "failed"
+            finally:
+                if not thread_id:
+                    ConversationMemory.discard(run_thread_id)
 
             # The engine reports some failures on the state instead of raising, and
             # a failed run is never written to memory.
@@ -2614,6 +2651,12 @@ class TestSuiteService:
                         ResultStatus.SKIPPED,
                     )
                 break
+
+            # The thread is never reused, so its cached memory can go.
+            if thread_id:
+                ConversationMemory.discard(thread_id)
+            # Commit each finished conversation so a crash or timeout keeps earlier results.
+            await self.run_repo.db.commit()
 
         # Aggregate metrics. A metric can be scored, an evaluator error, or not
         # evaluated (no source). Only scored metrics count toward pass/fail; the
@@ -2754,7 +2797,7 @@ class TestSuiteService:
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("%s evaluation failed for run %s: %s", label, run.id, exc)
                 summaries[technique] = {
-                    "avg_score": 0.0, "accuracy": 0.0, "cases": 0,
+                    "avg_score": None, "accuracy": None, "cases": 0,
                     "error": f"{label} evaluation failed or timed out.",
                 }
         return summaries
@@ -2827,8 +2870,16 @@ class TestSuiteService:
         )
 
         rule_by_id = {rule.id: rule for rule in parsed.rules}
+        turn_positions = _turn_positions(conversations)
         rule_snapshot_by_id = {
-            rule.id: self._rule_snapshot(rule, index, agent_labels, tool_labels, describe_tool_rule)
+            rule.id: self._rule_snapshot(
+                rule,
+                index,
+                agent_labels,
+                tool_labels,
+                describe_tool_rule,
+                turn_positions.get(rule.target_source_conversation_id),
+            )
             for index, rule in enumerate(parsed.rules)
         }
 
@@ -2874,7 +2925,7 @@ class TestSuiteService:
             plan_action_results,
             plan_route_results,
         )
-        from app.services.tool_catalog import resolve_node_labels
+        from app.services.tool_catalog import resolve_branch_labels, resolve_node_labels
 
         config = (technique_configs or {}).get(technique)
         if not config:
@@ -2896,6 +2947,11 @@ class TestSuiteService:
         # Labels are snapshotted per result, so a later node rename never rewrites
         # what a past run reported.
         node_labels = resolve_node_labels(workflow) if workflow is not None else {}
+        if is_route and workflow is not None:
+            # Switch case labels, so results name a branch rather than its case id.
+            branch_labels = resolve_branch_labels(workflow)
+            plan = partial(plan, branch_labels=branch_labels)
+            describe = partial(describe, branch_labels=branch_labels)
         planned = plan(
             rules,
             _turn_descriptors(cases),
@@ -2905,12 +2961,17 @@ class TestSuiteService:
         )
 
         rule_by_id = {rule.id: rule for rule in rules}
+        turn_positions = _turn_positions(conversations)
 
         def extra_details(entry: Dict[str, Any]) -> Dict[str, Any]:
             rule = rule_by_id[entry["rule_id"]]
             return {
                 "rule": rule.model_dump(mode="json"),
-                "rule_summary": describe(rule, node_labels),
+                "rule_summary": describe(
+                    rule,
+                    node_labels,
+                    turn_positions=turn_positions.get(rule.target_source_conversation_id),
+                ),
             }
 
         await self._persist_rule_results(
@@ -2936,6 +2997,10 @@ class TestSuiteService:
         """Store one row per rule check, each carrying what it graded and why."""
         # Turn index per case so a per-turn result can name the turn it graded.
         turn_index_by_case = {str(case.id): case.turn_index for case in cases}
+        # Labels use the turn's position in its conversation, as the dataset page does.
+        position_by_case = {
+            str(case.id): position for group in conversations for position, case in enumerate(group)
+        }
         turn_count_by_conv, conv_number_by_id = self._conversation_index(conversations)
 
         rows = [
@@ -2952,7 +3017,7 @@ class TestSuiteService:
                     **entry["result"],
                     "turn_index": turn_index_by_case.get(entry["case_id"]),
                     "target": self._target_snapshot(
-                        entry, turn_index_by_case, turn_count_by_conv, conv_number_by_id
+                        entry, position_by_case, turn_count_by_conv, conv_number_by_id
                     ),
                     **extra_details(entry),
                 },
@@ -2962,7 +3027,9 @@ class TestSuiteService:
         await self.tool_rule_result_repo.create_many(rows)
 
     @staticmethod
-    def _rule_snapshot(rule, index, agent_labels, tool_labels, describe_tool_rule) -> Dict[str, Any]:
+    def _rule_snapshot(
+        rule, index, agent_labels, tool_labels, describe_tool_rule, turn_positions=None
+    ) -> Dict[str, Any]:
         """Readable, rename-proof snapshot of a rule stored with every result.
 
         Tool labels are attached per-result by ``_entry_tool_labels`` (which also
@@ -2975,7 +3042,7 @@ class TestSuiteService:
         )
         return {
             "rule_number": index + 1,
-            "rule_summary": describe_tool_rule(rule, agent_labels, tool_labels),
+            "rule_summary": describe_tool_rule(rule, agent_labels, tool_labels, turn_positions),
             "agent": agent,
         }
 
@@ -3005,7 +3072,7 @@ class TestSuiteService:
         return turn_count_by_conv, conv_number_by_id
 
     @staticmethod
-    def _target_snapshot(entry, turn_index_by_case, turn_count_by_conv, conv_number_by_id) -> Dict[str, Any]:
+    def _target_snapshot(entry, position_by_case, turn_count_by_conv, conv_number_by_id) -> Dict[str, Any]:
         """What this result graded: a whole conversation, or a single turn."""
         if entry["scope"] == "conversation":
             conv_id = entry.get("source_conversation_id")
@@ -3015,10 +3082,10 @@ class TestSuiteService:
                 "label": f"Conversation {number}" if number else "Conversation",
                 "turn_count": turn_count_by_conv.get(conv_id, 1),
             }
-        turn_index = turn_index_by_case.get(entry["case_id"])
+        position = position_by_case.get(entry["case_id"])
         return {
             "type": "turn",
-            "label": f"Turn {turn_index + 1}" if turn_index is not None else "Turn",
+            "label": f"Turn {position + 1}" if position is not None else "Turn",
         }
 
     @staticmethod
@@ -3104,10 +3171,15 @@ class TestSuiteService:
             try:
                 parse(config)
             except ValueError as exc:
+                # Raw pydantic text stays in the logs; the client gets a fixed sentence.
+                logger.warning("Invalid %s config: %s", technique, exc)
                 raise AppException(
                     error_key=ErrorKey.RULE_CONFIG_INVALID,
                     status_code=400,
-                    error_detail=f"{_RULE_TECHNIQUE_LABELS[technique]}: {exc}",
+                    error_detail=(
+                        f"{_RULE_TECHNIQUE_LABELS[technique]} rules are not valid. "
+                        "Check each rule's settings and selected turns."
+                    ),
                 ) from exc
 
     async def _canonicalize_tool_used_configs(
@@ -3129,10 +3201,15 @@ class TestSuiteService:
                 all_tool_ids=all_tool_ids,
             )
         except ValueError as exc:
+            # Raw pydantic text stays in the logs; the client gets a fixed sentence.
+            logger.warning("Tool usage config could not be canonicalized: %s", exc)
             raise AppException(
                 error_key=ErrorKey.TOOL_USAGE_CONFIG_INVALID,
                 status_code=400,
-                error_detail=str(exc),
+                error_detail=(
+                    "Tool usage rules do not match this workflow. "
+                    "Check each rule's agent and tools."
+                ),
             ) from exc
         return {**technique_configs, TOOL_USED_TECHNIQUE: canonical}
 
@@ -3246,7 +3323,7 @@ class TestSuiteService:
                         status=run.status,
                     )
                 )
-            except Exception:
+            except Exception as exc:
                 logger.exception(
                     "Failed to start evaluation %s for workflow %s", ev.id, workflow_id
                 )
@@ -3254,7 +3331,7 @@ class TestSuiteService:
                     StartedEvaluationRun(
                         evaluation_id=ev.id,
                         status="failed_to_start",
-                        error="Failed to start evaluation.",
+                        error=_start_failure_detail(exc),
                     )
                 )
         return results
@@ -3538,6 +3615,11 @@ class TestSuiteService:
         resolved_workflow_id = (
             target_workflow_id or await self._default_run_workflow_id(ev)
         )
+        # Neither the evaluation nor its dataset names a workflow.
+        if not resolved_workflow_id:
+            raise AppException(
+                status_code=400, error_key=ErrorKey.EVALUATION_WORKFLOW_REQUIRED
+            )
         data = TestRunCreate(
             techniques=list(ev.techniques or []),
             technique_configs=ev.technique_configs or None,

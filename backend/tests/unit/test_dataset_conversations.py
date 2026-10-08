@@ -170,7 +170,9 @@ class TestThreadIsolation:
 
         calls = await self._run(_service(), cases, use_memory=False)
 
-        assert all(call["thread_id"] is None for call in calls)
+        # Each turn gets its own throwaway thread and nothing is persisted.
+        threads = [call["thread_id"] for call in calls]
+        assert all(threads) and len(set(threads)) == len(threads)
         assert all(call["persist"] is False for call in calls)
 
     @pytest.mark.asyncio
@@ -192,6 +194,111 @@ class TestThreadIsolation:
 
         assert calls[0]["thread_id"] != "injected-thread"
         assert calls[0]["input_data"]["thread_id"] == calls[0]["thread_id"]
+
+    @pytest.mark.asyncio
+    async def test_use_memory_is_not_passed_to_the_workflow(self):
+        service = _service()
+        service.case_repo.get_all_for_suite.return_value = [_case()]
+        service.evaluators = MagicMock()
+        service.evaluators.evaluate = AsyncMock(return_value={})
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(
+            return_value=SimpleNamespace(output="out", format_state_as_response=lambda: {})
+        )
+        run = SimpleNamespace(
+            id=uuid4(), techniques=["no_errors"], status="queued", summary_metrics=None
+        )
+
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine):
+            await service._execute_run(
+                SimpleNamespace(id=uuid4(), default_input_metadata=None),
+                SimpleNamespace(id=uuid4(), nodes=[], edges=[]),
+                run,
+                run_input_metadata={"use_memory": True, "channel": "web"},
+            )
+
+        input_data = engine.execute_from_node.call_args.kwargs["input_data"]
+        assert "use_memory" not in input_data
+        assert input_data["channel"] == "web"
+        assert input_data["message"] == "hi"
+
+
+class TestMemoryCacheCleanup:
+    """Finished evaluation threads are dropped from the worker's memory cache."""
+
+    async def _run(self, cases, *, use_memory):
+        service = _service()
+        service.case_repo.get_all_for_suite.return_value = cases
+        service.evaluators = MagicMock()
+        service.evaluators.evaluate = AsyncMock(return_value={})
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(
+            side_effect=lambda **kwargs: SimpleNamespace(
+                output="out",
+                # Threadless runs get a throwaway thread from the engine.
+                thread_id=kwargs["thread_id"] or f"engine-{uuid4()}",
+                format_state_as_response=lambda: {},
+            )
+        )
+        run = SimpleNamespace(
+            id=uuid4(), techniques=["no_errors"], status="queued", summary_metrics=None
+        )
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine), patch(
+            "app.services.test_suite.ConversationMemory.discard"
+        ) as discard:
+            await service._execute_run(
+                SimpleNamespace(id=uuid4(), default_input_metadata=None),
+                SimpleNamespace(id=uuid4(), nodes=[], edges=[]),
+                run,
+                run_input_metadata={"use_memory": True} if use_memory else None,
+            )
+        return engine, discard
+
+    @pytest.mark.asyncio
+    async def test_each_conversation_thread_is_discarded_once(self):
+        first, second = uuid4(), uuid4()
+        cases = [
+            _case(conversation_id=first, turn_index=0),
+            _case(conversation_id=first, turn_index=1),
+            _case(conversation_id=second, turn_index=0),
+        ]
+
+        engine, discard = await self._run(cases, use_memory=True)
+
+        threads = [call.kwargs["thread_id"] for call in engine.execute_from_node.call_args_list]
+        assert [call.args[0] for call in discard.call_args_list] == list(dict.fromkeys(threads))
+
+    @pytest.mark.asyncio
+    async def test_threadless_turns_discard_their_throwaway_thread(self):
+        engine, discard = await self._run([_case(), _case()], use_memory=False)
+
+        threads = [call.kwargs["thread_id"] for call in engine.execute_from_node.call_args_list]
+        assert all(call.kwargs["persist"] is False for call in engine.execute_from_node.call_args_list)
+        assert [call.args[0] for call in discard.call_args_list] == threads
+        assert len(set(threads)) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_threadless_turn_that_raises_still_discards_its_thread(self):
+        service = _service()
+        service.case_repo.get_all_for_suite.return_value = [_case()]
+        service.evaluators = MagicMock()
+        service.evaluators.evaluate = AsyncMock(return_value={})
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(side_effect=RuntimeError("boom"))
+        run = SimpleNamespace(
+            id=uuid4(), techniques=["no_errors"], status="queued", summary_metrics=None
+        )
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine), patch(
+            "app.services.test_suite.ConversationMemory.discard"
+        ) as discard:
+            await service._execute_run(
+                SimpleNamespace(id=uuid4(), default_input_metadata=None),
+                SimpleNamespace(id=uuid4(), nodes=[], edges=[]),
+                run,
+            )
+
+        thread = engine.execute_from_node.call_args.kwargs["thread_id"]
+        discard.assert_called_once_with(thread)
 
 
 class TestPersistenceFailureHandling:
@@ -535,6 +642,30 @@ class TestRemoveConversationFromSuite:
             await service.remove_conversation_from_suite(uuid4(), uuid4())
 
         service.case_repo.soft_delete_for_conversation.assert_not_awaited()
+
+
+class TestDeleteCase:
+    @pytest.mark.asyncio
+    async def test_a_turn_is_soft_deleted_like_a_removed_conversation(self):
+        """Results reference the turn with no ON DELETE, so a hard delete would fail."""
+        service = _service()
+        case = _case(conversation_id=uuid4(), turn_index=1)
+        service.case_repo.get_by_id.return_value = case
+
+        await service.delete_case(case.id)
+
+        service.case_repo.soft_delete.assert_awaited_once_with(case)
+        service.case_repo.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unknown_turn_is_rejected(self):
+        service = _service()
+        service.case_repo.get_by_id.return_value = None
+
+        with pytest.raises(AppException):
+            await service.delete_case(uuid4())
+
+        service.case_repo.soft_delete.assert_not_awaited()
 
 
 class TestFailureReason:
