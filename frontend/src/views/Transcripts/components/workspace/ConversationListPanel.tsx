@@ -12,6 +12,7 @@ import { Button } from "@/components/button";
 import { PageListSkeleton } from "@/components/skeletons";
 import { cn } from "@/helpers/utils";
 import { Transcript } from "@/interfaces/transcript.interface";
+import { topicLabel } from "@/views/ReportedFeedback/helpers/triageDraft";
 
 import { getEffectiveSentiment, isLiveTranscript } from "../../helpers/formatting";
 import { SentimentBadge } from "../SentimentBadge";
@@ -152,7 +153,7 @@ export function ConversationListPanel({
                   </span>
                   {transcript?.metadata?.topic ? (
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {transcript.metadata.topic}
+                      {topicLabel(transcript.metadata.topic, transcript.metadata.subtopic ?? null)}
                     </span>
                   ) : null}
                   {preview ? (
