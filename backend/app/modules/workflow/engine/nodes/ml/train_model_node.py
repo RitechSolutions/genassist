@@ -724,6 +724,19 @@ class TrainModelNode(BaseNode):
                 y_train = y_train / baseline_train
                 logger.info(f"Training on ratio target: {target_column} / {baseline_column}")
 
+            # Apply per-column encoding overrides (label/ordinal) and note which
+            # columns asked for one-hot without dropping the first category.
+            # Mappings are fit on the training split only, then applied to
+            # validation - see _encode_categoricals. Runs BEFORE feature
+            # engineering so a derived feature can use the encoded numbers
+            # (e.g. size * price with size ordinal-encoded to 0/1/2); before,
+            # those steps saw the raw text and were skipped. One-hot still
+            # runs after, below, since it replaces the source column.
+            X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns = (
+                self._encode_categoricals(X_train, X_val, categorical_encoding)
+            )
+            mapped_columns = set(label_encodings) | set(ordinal_encodings)
+
             # Create derived features - bin edges and normalize/standardize
             # statistics are fit on the training split only, then applied to
             # validation - see _engineer_features. Runs before the numeric
@@ -736,16 +749,12 @@ class TrainModelNode(BaseNode):
 
             # Capture the numeric feature columns before one-hot encoding turns
             # categoricals into dummy columns, so scaling below only touches
-            # genuinely-numeric original features.
-            numeric_feature_columns = X_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
-
-            # Apply per-column encoding overrides (label/ordinal) and note which
-            # columns asked for one-hot without dropping the first category.
-            # Mappings are fit on the training split only, then applied to
-            # validation - see _encode_categoricals.
-            X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns = (
-                self._encode_categoricals(X_train, X_val, categorical_encoding)
-            )
+            # genuinely-numeric original features. Label/ordinal codes are
+            # numeric now but were never scaled, so keep them out.
+            numeric_feature_columns = [
+                c for c in X_train.select_dtypes(include=['int64', 'float64']).columns
+                if c not in mapped_columns
+            ]
 
             # One-hot encode whatever categorical columns are left - columns with
             # no explicit categoricalEncoding override, plus ones explicitly set
@@ -898,6 +907,11 @@ class TrainModelNode(BaseNode):
                     ),
                     **({"label_encodings": label_encodings} if label_encodings else {}),
                     **({"ordinal_encodings": ordinal_encodings} if ordinal_encodings else {}),
+                    # Tells inference to feed label/ordinal-encoded values (not
+                    # raw text) into the feature-engineering replay. Absent on
+                    # models trained before encoding moved ahead of feature
+                    # engineering, which keep replaying from raw inputs.
+                    "encoding_before_feature_engineering": True,
                     **({"missing_value_fills": missing_value_fills} if missing_value_fills else {}),
                     **({"target_transform": target_transform} if target_transform is not None else {}),
                 },
