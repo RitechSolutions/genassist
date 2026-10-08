@@ -14,13 +14,23 @@ interface UseReportedFeedbackOptions {
   from_date?: string;
   to_date?: string;
   workflow_id?: string;
+  topic?: string;
+  subtopic?: string;
 }
 
 export const useReportedFeedback = (
   options: UseReportedFeedbackOptions = {},
 ) => {
-  const { skip = 0, limit = 20, status = "all", from_date, to_date, workflow_id } =
-    options;
+  const {
+    skip = 0,
+    limit = 20,
+    status = "all",
+    from_date,
+    to_date,
+    workflow_id,
+    topic,
+    subtopic,
+  } = options;
 
   const [data, setData] = useState<ReportedFeedbackItem[]>([]);
   const [total, setTotal] = useState<number>(0);
@@ -39,6 +49,8 @@ export const useReportedFeedback = (
         from_date,
         to_date,
         workflow_id,
+        topic,
+        subtopic,
       });
       setData(items);
       setTotal(typeof backendTotal === "number" ? backendTotal : items.length);
@@ -54,7 +66,16 @@ export const useReportedFeedback = (
     } finally {
       setLoading(false);
     }
-  }, [skip, limit, status, from_date, to_date, workflow_id]);
+  }, [
+    skip,
+    limit,
+    status,
+    from_date,
+    to_date,
+    workflow_id,
+    topic,
+    subtopic,
+  ]);
 
   useEffect(() => {
     if (

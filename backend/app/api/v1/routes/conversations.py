@@ -1091,7 +1091,7 @@ async def update_message_issue(
 @router.patch(
     "/issues/{message_feedback_id}/status",
     response_model=MessageIssueRead,
-    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.UPDATE))],
 )
 async def update_message_issue_status(
     message_feedback_id: UUID,

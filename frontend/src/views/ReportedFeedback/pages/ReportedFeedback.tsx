@@ -1,43 +1,67 @@
 import { useEffect, useState } from "react";
 import { MessageSquareDot } from "lucide-react";
-import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import toast from "react-hot-toast";
 
 import { PageLayout } from "@/components/PageLayout";
 import { DataTable, Column } from "@/components/ui/data-table";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { PaginationBar } from "@/components/PaginationBar";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
+import { FilterMenu, type FilterMenuGroup } from "@/components/FilterMenu";
+import { TruncatedText } from "@/components/TruncatedText";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
+import { useTopicOptions } from "@/hooks/useTopicOptions";
+import { usePermissions } from "@/context/PermissionContext";
 import { getWorkflowsMinimal } from "@/services/workflows";
+import type { IssueCategory } from "@/services/issueStatuses";
+import { extractErrorMessage } from "@/helpers/apiError";
+import { subtopicsFor, withCurrentOption } from "@/helpers/topicOptions";
+import { toInclusiveDateParams } from "@/helpers/dateRange";
 
 import {
+  EMPTY_SUMMARY,
   FeedbackStatus,
+  fetchReportedFeedbackSummary,
+  IssuePatch,
   ReportedFeedbackItem,
-  updateFeedbackStatus,
+  updateFeedbackIssue,
 } from "@/services/reportedFeedback";
+import { StatsOverviewCard } from "@/views/Analytics/components/StatsOverviewCard";
 import { useReportedFeedback } from "../hooks/useReportedFeedback";
+import { useIssueStatuses } from "../hooks/useIssueStatuses";
 import { ReportedFeedbackDialog } from "../components/ReportedFeedbackDialog";
-import { StatusSelect } from "../components/StatusSelect";
-import { STATUS_META, STATUS_ORDER } from "../constants";
+import { StatusBadge, StatusSelect } from "../components/StatusSelect";
+import { CATEGORY_META } from "../constants";
+import {
+  categoryTotals,
+  statusMeta,
+  withCurrentStatus,
+} from "../helpers/issueStatuses";
+import {
+  applyIssuePatch,
+  IssueFields,
+  pickPatchedFields,
+} from "../helpers/issuePatch";
+import { topicLabel } from "../helpers/triageDraft";
 import { formatDateTime } from "@/helpers/utils";
 
 const PAGE_SIZE = 20;
 
 export default function ReportedFeedback() {
+  const queryClient = useQueryClient();
+  const permissions = usePermissions();
+  const canTriage =
+    permissions.includes("*") || permissions.includes("update:conversation");
   const [currentPage, setCurrentPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">(
-    "all",
-  );
+  const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">("all");
+  const [topicFilter, setTopicFilter] = useState<string>("all");
+  const [subtopicFilter, setSubtopicFilter] = useState<string>("all");
   const [workflowFilter, setWorkflowFilter] = useState<string>("all");
   // Shared global range (same component/store as the dashboard).
   const [dateRange, setDateRange] = usePersistedDateRange(undefined);
@@ -48,22 +72,59 @@ export default function ReportedFeedback() {
   });
   const workflows = workflowsData ?? [];
 
+  const {
+    data: statuses = [],
+    isLoading: statusesLoading,
+    isError: statusesError,
+  } = useIssueStatuses();
+  const { data: topicOptions = [] } = useTopicOptions();
+  const topicChoices = withCurrentOption(topicOptions, topicFilter);
+  const subtopicChoices = subtopicsFor(
+    topicChoices,
+    topicFilter === "all" ? null : topicFilter,
+    subtopicFilter,
+  );
+
   // Server-side time filter on the reported time (when the comment was added).
-  const fromDate = dateRange?.from
-    ? format(dateRange.from, "yyyy-MM-dd")
-    : undefined;
-  const toDate = dateRange?.to
-    ? format(dateRange.to, "yyyy-MM-dd 23:59:59")
-    : undefined;
+  const filters = {
+    workflow_id: workflowFilter !== "all" ? workflowFilter : undefined,
+    ...toInclusiveDateParams(dateRange),
+    topic: topicFilter !== "all" ? topicFilter : undefined,
+    subtopic: subtopicFilter !== "all" ? subtopicFilter : undefined,
+  };
 
   const { data, total, loading, error } = useReportedFeedback({
     skip: (currentPage - 1) * PAGE_SIZE,
     limit: PAGE_SIZE,
     status: statusFilter,
-    from_date: fromDate,
-    to_date: toDate,
-    workflow_id: workflowFilter !== "all" ? workflowFilter : undefined,
+    ...filters,
   });
+
+  const {
+    data: summary = EMPTY_SUMMARY,
+    isLoading: summaryLoading,
+    isError: summaryError,
+  } = useQuery({
+    queryKey: ["reported-feedback", "summary", filters],
+    queryFn: () => fetchReportedFeedbackSummary(filters),
+    placeholderData: keepPreviousData,
+  });
+
+  const categoryCounts = categoryTotals(summary, statuses);
+  const statusMetrics = [
+    {
+      label: "Total reported",
+      value: summary.total.toLocaleString(),
+      change: 0,
+      changeType: "neutral" as const,
+    },
+    ...(Object.keys(CATEGORY_META) as IssueCategory[]).map((category) => ({
+      label: CATEGORY_META[category].label,
+      value: categoryCounts[category].toLocaleString(),
+      change: 0,
+      changeType: "neutral" as const,
+    })),
+  ];
 
   // Local mirror so status changes update the row instantly (optimistic).
   const [rows, setRows] = useState<ReportedFeedbackItem[]>([]);
@@ -96,38 +157,62 @@ export default function ReportedFeedback() {
     openInNewTab(`/ai-agents/workflow/${agentId}`);
   };
 
-  const handleStatusChange = async (
+  const applyFields = (feedbackId: string, fields: IssueFields) => {
+    setRows((rs) => applyIssuePatch(rs, feedbackId, fields));
+    setSelectedIssue((current) =>
+      current && current.feedback_id === feedbackId
+        ? { ...current, ...fields }
+        : current,
+    );
+  };
+
+  const handleIssuePatch = async (
+    issue: ReportedFeedbackItem,
+    patch: IssuePatch,
+    errorFallback = "Failed to update feedback",
+  ): Promise<ReportedFeedbackItem | null> => {
+    const rollback = pickPatchedFields(issue, patch);
+    applyFields(issue.feedback_id, patch);
+    try {
+      const saved = await updateFeedbackIssue(issue.feedback_id, patch);
+      const reconciled = pickPatchedFields(saved, patch);
+      applyFields(issue.feedback_id, reconciled);
+      void queryClient.invalidateQueries({
+        queryKey: ["reported-feedback", "summary"],
+      });
+      return { ...issue, ...reconciled };
+    } catch (err) {
+      applyFields(issue.feedback_id, rollback);
+      toast.error(extractErrorMessage(err, errorFallback));
+      return null;
+    }
+  };
+
+  const handleStatusChange = (
     issue: ReportedFeedbackItem,
     next: FeedbackStatus,
   ) => {
     if (next === issue.status) return;
-    const previous = issue.status;
-
-    const apply = (status: FeedbackStatus) => {
-      setRows((rs) =>
-        rs.map((r) =>
-          r.feedback_id === issue.feedback_id ? { ...r, status } : r,
-        ),
-      );
-      setSelectedIssue((current) =>
-        current && current.feedback_id === issue.feedback_id
-          ? { ...current, status }
-          : current,
-      );
-    };
-
-    apply(next);
-    try {
-      await updateFeedbackStatus(issue.feedback_id, next);
-      toast.success(`Marked as ${STATUS_META[next].label}`);
-    } catch {
-      apply(previous);
-      toast.error("Failed to update status");
-    }
+    void handleIssuePatch(issue, { status: next }, "Failed to update status").then(
+      (saved) => {
+        if (saved) toast.success(`Marked as ${statusMeta(statuses, next).label}`);
+      },
+    );
   };
 
   const handleFilterChange = (value: string) => {
     setStatusFilter(value as FeedbackStatus | "all");
+    setCurrentPage(1);
+  };
+
+  const handleTopicChange = (value: string) => {
+    setTopicFilter(value);
+    setSubtopicFilter("all");
+    setCurrentPage(1);
+  };
+
+  const handleSubtopicChange = (value: string) => {
+    setSubtopicFilter(value);
     setCurrentPage(1);
   };
 
@@ -178,6 +263,19 @@ export default function ReportedFeedback() {
       ),
     },
     {
+      header: "Topic",
+      key: "topic",
+      headerClassName: "w-[170px]",
+      cell: (item) =>
+        item.conversation_topic ? (
+          <TruncatedText className="max-w-[160px] text-sm">
+            {topicLabel(item.conversation_topic, item.conversation_subtopic)}
+          </TruncatedText>
+        ) : (
+          <span className="text-sm italic text-muted-foreground">—</span>
+        ),
+    },
+    {
       header: "Reported",
       key: "reported_at",
       headerClassName: "w-[160px]",
@@ -189,22 +287,78 @@ export default function ReportedFeedback() {
       key: "status",
       headerClassName: "w-[160px]",
       // Editable inline; stop row-click so the dropdown doesn't open the dialog.
-      cell: (item) => (
-        <div onClick={(e) => e.stopPropagation()}>
-          <StatusSelect
-            value={item.status}
-            onChange={(next) => handleStatusChange(item, next)}
-          />
-        </div>
-      ),
+      cell: (item) =>
+        canTriage ? (
+          <div onClick={(e) => e.stopPropagation()}>
+            <StatusSelect
+              value={item.status}
+              statuses={statuses}
+              onChange={(next) => handleStatusChange(item, next)}
+            />
+          </div>
+        ) : (
+          <StatusBadge value={item.status} statuses={statuses} />
+        ),
     },
   ];
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
 
+  const filterGroups: FilterMenuGroup[] = [
+    {
+      key: "workflow",
+      label: "Workflow",
+      allLabel: "All workflows",
+      value: workflowFilter,
+      options: workflows.map((wf) => ({ value: wf.id, label: wf.name })),
+      onChange: handleWorkflowChange,
+    },
+    {
+      key: "topic",
+      label: "Topic",
+      allLabel: "All topics",
+      value: topicFilter,
+      options: topicChoices.map((topic) => ({
+        value: topic.name,
+        label: topic.name,
+      })),
+      onChange: handleTopicChange,
+    },
+    ...(subtopicChoices.length > 0
+      ? [
+          {
+            key: "subtopic",
+            label: "Sub-topic",
+            allLabel: "All sub-topics",
+            value: subtopicFilter,
+            options: subtopicChoices.map((subtopic) => ({
+              value: subtopic,
+              label: subtopic,
+            })),
+            onChange: handleSubtopicChange,
+          },
+        ]
+      : []),
+    {
+      key: "status",
+      label: "Status",
+      allLabel: "All statuses",
+      value: statusFilter,
+      options: withCurrentStatus(statuses, statusFilter, {
+        includeRetired: true,
+      }).map((status) => ({
+        value: status,
+        label: statusMeta(statuses, status).label,
+      })),
+      onChange: handleFilterChange,
+    },
+  ];
+
   const hasActiveFilters =
     statusFilter !== "all" ||
+    topicFilter !== "all" ||
+    subtopicFilter !== "all" ||
     workflowFilter !== "all" ||
     Boolean(dateRange?.from || dateRange?.to);
 
@@ -225,34 +379,19 @@ export default function ReportedFeedback() {
             onChange={handleDateRangeChange}
             disableFutureDates
           />
-          <Select value={workflowFilter} onValueChange={handleWorkflowChange}>
-            <SelectTrigger className="h-9 w-[200px] rounded-full">
-              <SelectValue placeholder="Filter by workflow" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All workflows</SelectItem>
-              {workflows.map((wf) => (
-                <SelectItem key={wf.id} value={wf.id}>
-                  {wf.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={handleFilterChange}>
-            <SelectTrigger className="h-9 w-[180px] rounded-full">
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {STATUS_ORDER.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {STATUS_META[status].label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <FilterMenu groups={filterGroups} className="h-10 text-sm" />
         </div>
       </div>
+
+      <StatsOverviewCard
+        metrics={statusMetrics}
+        loading={statusesLoading || summaryLoading}
+        error={
+          statusesError || summaryError
+            ? "Couldn't load the status counts."
+            : null
+        }
+      />
 
       <DataTable
         data={rows}
@@ -294,7 +433,10 @@ export default function ReportedFeedback() {
           setIsDialogOpen(open);
           if (!open) setSelectedIssue(null);
         }}
+        statuses={statuses}
+        canTriage={canTriage}
         onStatusChange={handleStatusChange}
+        onIssuePatch={handleIssuePatch}
         onOpenConversation={openConversation}
         onOpenWorkflow={openWorkflow}
       />

@@ -1,6 +1,6 @@
 import { apiRequest } from "@/config/api";
 
-export type FeedbackStatus = "open" | "in_progress" | "resolved" | "wont_fix";
+export type FeedbackStatus = string;
 
 /** A message an admin/supervisor commented on, with its tracked resolution status. */
 export interface ReportedFeedbackItem {
@@ -17,7 +17,10 @@ export interface ReportedFeedbackItem {
   reported_by: string | null;
   reported_at: string;
   conversation_topic: string | null;
+  conversation_subtopic: string | null;
   conversation_date: string | null;
+  fix_version: string | null;
+  target_rollout_date: string | null;
 }
 
 export interface ReportedFeedbackResult {
@@ -36,6 +39,8 @@ export interface FetchReportedFeedbackParams {
   from_date?: string;
   to_date?: string;
   workflow_id?: string;
+  topic?: string;
+  subtopic?: string;
 }
 
 const MAX_BACKEND_LIMIT = 100;
@@ -51,7 +56,16 @@ const EMPTY_RESULT: ReportedFeedbackResult = {
 export const fetchReportedFeedback = async (
   params: FetchReportedFeedbackParams = {},
 ): Promise<ReportedFeedbackResult> => {
-  const { skip = 0, limit = 20, status, from_date, to_date, workflow_id } = params;
+  const {
+    skip = 0,
+    limit = 20,
+    status,
+    from_date,
+    to_date,
+    workflow_id,
+    topic,
+    subtopic,
+  } = params;
   const safeLimit = limit > 0 ? Math.min(limit, MAX_BACKEND_LIMIT) : 20;
 
   const queryParams = new URLSearchParams();
@@ -61,6 +75,8 @@ export const fetchReportedFeedback = async (
   if (from_date) queryParams.append("from_date", from_date);
   if (to_date) queryParams.append("to_date", to_date);
   if (workflow_id) queryParams.append("workflow_id", workflow_id);
+  if (topic) queryParams.append("topic", topic);
+  if (subtopic) queryParams.append("subtopic", subtopic);
 
   const response = await apiRequest<ReportedFeedbackResult>(
     "GET",
@@ -70,11 +86,102 @@ export const fetchReportedFeedback = async (
   return response ?? EMPTY_RESULT;
 };
 
-export const updateFeedbackStatus = async (
+export interface FeedbackSummaryParams {
+  workflow_id?: string;
+  from_date?: string;
+  to_date?: string;
+  topic?: string;
+  subtopic?: string;
+}
+
+/** Issue counts per status key, zero-filled over the configured statuses. */
+export interface FeedbackStatusSummary {
+  total: number;
+  by_status: Partial<Record<FeedbackStatus, number>>;
+}
+
+export const EMPTY_SUMMARY: FeedbackStatusSummary = { total: 0, by_status: {} };
+
+export const fetchReportedFeedbackSummary = async (
+  params: FeedbackSummaryParams = {},
+): Promise<FeedbackStatusSummary> => {
+  const queryParams = new URLSearchParams();
+  for (const key of [
+    "workflow_id",
+    "from_date",
+    "to_date",
+    "topic",
+    "subtopic",
+  ] as const) {
+    const value = params[key];
+    if (value) queryParams.append(key, value);
+  }
+  const query = queryParams.toString();
+
+  const response = await apiRequest<FeedbackStatusSummary>(
+    "GET",
+    `conversations/issues/summary${query ? `?${query}` : ""}`,
+  );
+  return response ?? EMPTY_SUMMARY;
+};
+
+/** Partial issue update: an omitted field is kept, an explicit null clears it. */
+export interface IssuePatch {
+  status?: FeedbackStatus;
+  fix_version?: string | null;
+  target_rollout_date?: string | null;
+}
+
+export interface MessageIssueRow {
+  id: string;
+  message_feedback_id: string;
+  status: FeedbackStatus;
+  fix_version: string | null;
+  target_rollout_date: string | null;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  updated_at: string | null;
+}
+
+export const updateFeedbackIssue = async (
   feedbackId: string,
-  status: FeedbackStatus,
-): Promise<void> => {
-  await apiRequest("PATCH", `conversations/issues/${feedbackId}/status`, {
-    status,
-  });
+  patch: IssuePatch,
+): Promise<MessageIssueRow> => {
+  const row = await apiRequest<MessageIssueRow>(
+    "PATCH",
+    `conversations/issues/${feedbackId}`,
+    patch as Record<string, unknown>,
+  );
+  if (!row) throw new Error("You don't have permission to update this feedback");
+  return row;
+};
+
+export interface IssueNote {
+  id: string;
+  message_feedback_id: string;
+  author_user_id: string;
+  author_username: string | null;
+  body: string;
+  created_at: string;
+}
+
+export const fetchIssueNotes = async (feedbackId: string): Promise<IssueNote[]> => {
+  const notes = await apiRequest<IssueNote[]>(
+    "GET",
+    `conversations/issues/${feedbackId}/notes`,
+  );
+  return Array.isArray(notes) ? notes : [];
+};
+
+export const addIssueNote = async (
+  feedbackId: string,
+  body: string,
+): Promise<IssueNote> => {
+  const note = await apiRequest<IssueNote>(
+    "POST",
+    `conversations/issues/${feedbackId}/notes`,
+    { body },
+  );
+  if (!note) throw new Error("You don't have permission to add a note");
+  return note;
 };
