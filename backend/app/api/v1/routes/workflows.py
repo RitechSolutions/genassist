@@ -37,6 +37,7 @@ SUPPORTED_NODE_TYPES = [
     "routerNode",
     "switchNode",
     "filterNode",
+    "loopNode",
     "agentNode",
     "subAgentNode",
     "apiToolNode",

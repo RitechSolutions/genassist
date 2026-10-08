@@ -21,6 +21,7 @@ from .human_in_the_loop_node import HumanInTheLoopNode
 from .jira_node import JiraNode
 from .knowledge_tool_node import KnowledgeToolNode
 from .llm_model_node import LLMModelNode
+from .loop_node import LoopNode
 from .mcp_node import MCPNode
 from .ml import (
     MLModelInferenceNode,
@@ -59,6 +60,7 @@ __all__ = [
     "RouterNode",
     "SwitchNode",
     "FilterNode",
+    "LoopNode",
     "AgentNode",
     "ApiToolNode",
     "OpenAPINode",

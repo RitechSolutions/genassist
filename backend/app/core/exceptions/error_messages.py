@@ -99,6 +99,7 @@ class ErrorKey(Enum):
     SUB_AGENT_SESSION_STALE = "SUB_AGENT_SESSION_STALE"
     SUB_AGENT_INVALID_TOPOLOGY = "SUB_AGENT_INVALID_TOPOLOGY"
     SUB_AGENT_INVALID_CONFIG = "SUB_AGENT_INVALID_CONFIG"
+    LOOP_INVALID_TOPOLOGY = "LOOP_INVALID_TOPOLOGY"
     OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING"
     CREATE_USER_TYPE_IN_MENU = "CREATE_USER_TYPE_IN_MENU"
     LOGIN_ERROR_CONSOLE_USER = "LOGIN_ERROR_CONSOLE_USER"
@@ -400,6 +401,7 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
+        ErrorKey.LOOP_INVALID_TOPOLOGY: "A loop in this workflow is not connected correctly: {0}",
         ErrorKey.PROMPT_CONTEXT_INVALID: "The prompt context is not valid for this workflow.",
         ErrorKey.PROMPT_FIELD_NOT_SUPPORTED: "This node has no editable prompt field with that name.",
         ErrorKey.PROMPT_VERSION_CONFLICT: "Another save completed first. Try again.",
@@ -439,6 +441,7 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "Les connexions de sous-agents de ce workflow sont invalides : {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "Un sous-agent de ce workflow est mal configuré : {0}",
+        ErrorKey.LOOP_INVALID_TOPOLOGY: "Une boucle de ce workflow n'est pas connectée correctement : {0}",
         ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "L'assistant est occupé pour le moment. Veuillez réessayer dans un instant.",
         ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED: "La demande a été abandonnée avant que l'assistant puisse répondre.",
     },

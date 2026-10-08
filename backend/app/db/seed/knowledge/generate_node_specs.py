@@ -126,6 +126,16 @@ NODE_DESCRIPTIONS = {
             "Stop before calling an agent or API when required information is missing",
         ],
     },
+    "loopNode": {
+        "category": "Control Flow",
+        "description": "Repeats a body of nodes. mode 'forEach' runs the body once per item of a list (items); mode 'repeatUntil' repeats until the stop condition (stopField / stopOperator / stopValue) holds or maxIterations is reached. The body starts at output_loop and its last node connects back to input_loop; output_done continues after the loop with {results, last, count, iterations, errors, stopped_reason}.",
+        "when_to_use": "When the same steps must run for every element of a list, or when a step should be retried until its result is good enough. It is the only way to revisit a node.",
+        "example_use_cases": [
+            "Summarising or classifying each ticket returned by an API call",
+            "Draft, critique and rewrite an answer until the critic approves it",
+            "Sending one message per recipient in a list",
+        ],
+    },
     "switchNode": {
         "category": "Control Flow",
         "description": "Deterministic multi-way branching. Compares switchValue against an ordered list of cases (each {id, label, value}); the first match routes to output_<case id>, no match routes to output_default. Match modes: equal, contains, starts_with, ends_with, regex.",
