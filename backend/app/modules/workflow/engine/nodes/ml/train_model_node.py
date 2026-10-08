@@ -180,7 +180,9 @@ class TrainModelNode(BaseNode):
                             ("custom_expression", "bin_numeric", "polynomial",
                             "log_transform", "quantile_transform",
                             "power_transform", or "pca"), plus strategy-specific
-                            fields (expression / binColumn+numBins /
+                            fields (expression / binColumn+numBins+binStrategy
+                            ("uniform" equal-width, default, or "quantile"
+                            equal-frequency) /
                             polynomialColumns+polynomialDegree / sourceColumns,
                             with quantileOutputDistribution+nQuantiles,
                             powerMethod, pcaComponents+pcaStandardize, and
@@ -426,6 +428,11 @@ class TrainModelNode(BaseNode):
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"featureEngineering entry '{item.get('newColumnName')}' has strategy 'bin_numeric' but is missing binColumn or numBins",
+                    )
+                if strategy == "bin_numeric" and item.get("binStrategy", "uniform") not in ("uniform", "quantile"):
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"featureEngineering entry '{item.get('newColumnName')}' has invalid binStrategy: {item.get('binStrategy')}. Must be one of: uniform, quantile",
                     )
                 if strategy in ("normalize", "standardize") and not item.get("sourceColumns"):
                     raise AppException(
@@ -717,6 +724,19 @@ class TrainModelNode(BaseNode):
                 y_train = y_train / baseline_train
                 logger.info(f"Training on ratio target: {target_column} / {baseline_column}")
 
+            # Apply per-column encoding overrides (label/ordinal) and note which
+            # columns asked for one-hot without dropping the first category.
+            # Mappings are fit on the training split only, then applied to
+            # validation - see _encode_categoricals. Runs BEFORE feature
+            # engineering so a derived feature can use the encoded numbers
+            # (e.g. size * price with size ordinal-encoded to 0/1/2); before,
+            # those steps saw the raw text and were skipped. One-hot still
+            # runs after, below, since it replaces the source column.
+            X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns = (
+                self._encode_categoricals(X_train, X_val, categorical_encoding)
+            )
+            mapped_columns = set(label_encodings) | set(ordinal_encodings)
+
             # Create derived features - bin edges and normalize/standardize
             # statistics are fit on the training split only, then applied to
             # validation - see _engineer_features. Runs before the numeric
@@ -729,16 +749,12 @@ class TrainModelNode(BaseNode):
 
             # Capture the numeric feature columns before one-hot encoding turns
             # categoricals into dummy columns, so scaling below only touches
-            # genuinely-numeric original features.
-            numeric_feature_columns = X_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
-
-            # Apply per-column encoding overrides (label/ordinal) and note which
-            # columns asked for one-hot without dropping the first category.
-            # Mappings are fit on the training split only, then applied to
-            # validation - see _encode_categoricals.
-            X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns = (
-                self._encode_categoricals(X_train, X_val, categorical_encoding)
-            )
+            # genuinely-numeric original features. Label/ordinal codes are
+            # numeric now but were never scaled, so keep them out.
+            numeric_feature_columns = [
+                c for c in X_train.select_dtypes(include=['int64', 'float64']).columns
+                if c not in mapped_columns
+            ]
 
             # One-hot encode whatever categorical columns are left - columns with
             # no explicit categoricalEncoding override, plus ones explicitly set
@@ -891,6 +907,11 @@ class TrainModelNode(BaseNode):
                     ),
                     **({"label_encodings": label_encodings} if label_encodings else {}),
                     **({"ordinal_encodings": ordinal_encodings} if ordinal_encodings else {}),
+                    # Tells inference to feed label/ordinal-encoded values (not
+                    # raw text) into the feature-engineering replay. Absent on
+                    # models trained before encoding moved ahead of feature
+                    # engineering, which keep replaying from raw inputs.
+                    "encoding_before_feature_engineering": True,
                     **({"missing_value_fills": missing_value_fills} if missing_value_fills else {}),
                     **({"target_transform": target_transform} if target_transform is not None else {}),
                 },
@@ -1306,10 +1327,20 @@ class TrainModelNode(BaseNode):
             elif strategy == "bin_numeric":
                 bin_column = item.get("binColumn")
                 num_bins = item.get("numBins")
+                bin_strategy = item.get("binStrategy", "uniform")
                 if bin_column not in X_train.columns or not pd.api.types.is_numeric_dtype(X_train[bin_column]):
                     logger.warning(f"Skipping bin_numeric for '{new_col}': column '{bin_column}' not found or not numeric")
                     continue
-                _, bin_edges = pd.cut(X_train[bin_column], bins=num_bins, retbins=True, duplicates="drop")
+                if bin_strategy == "quantile":
+                    # Equal-frequency edges from train percentiles. Heavily
+                    # repeated values (e.g. many zeros) collapse duplicate
+                    # edges, leaving fewer bins than requested.
+                    _, bin_edges = pd.qcut(X_train[bin_column], q=num_bins, retbins=True, duplicates="drop")
+                    if len(bin_edges) < 2:
+                        logger.warning(f"Skipping bin_numeric for '{new_col}': column '{bin_column}' has too few distinct values for quantile bins")
+                        continue
+                else:
+                    _, bin_edges = pd.cut(X_train[bin_column], bins=num_bins, retbins=True, duplicates="drop")
                 X_train[new_col] = pd.cut(
                     X_train[bin_column], bins=bin_edges, labels=False, include_lowest=True
                 )
@@ -1322,6 +1353,7 @@ class TrainModelNode(BaseNode):
                     "strategy": "bin_numeric",
                     "new_col": new_col,
                     "bin_column": bin_column,
+                    "bin_strategy": bin_strategy,
                     "bin_edges": list(bin_edges),
                 })
 

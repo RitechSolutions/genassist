@@ -72,20 +72,22 @@ export interface ChangeDtypeStepConfig {
 // "bool" isn't here: astype("bool") turns any non-empty string (including
 // "false") into True, so bool conversion gets its own generated code.
 // "Int64" (capital I) is pandas' nullable integer type - "int64" fails
-// outright on any column with a missing value.
+// outright on any column with a missing value. Likewise "string" keeps a
+// missing value missing; "str" turns it into the literal text "nan".
 const DTYPE_TO_PANDAS: Record<Exclude<ChangeDtypeTarget, "datetime" | "bool">, string> = {
   int: "Int64",
   float: "float64",
-  string: "str",
+  string: "string",
   category: "category",
 };
 
-// Also accepts the older "int64"/"bool" forms so code saved before this
-// change still parses back into the dialog.
+// Also accepts the older "int64"/"bool"/"str" forms so code saved before
+// this change still parses back into the dialog.
 const PANDAS_TO_DTYPE: Record<string, Exclude<ChangeDtypeTarget, "datetime">> = {
   Int64: "int",
   int64: "int",
   float64: "float",
+  string: "string",
   str: "string",
   bool: "bool",
   category: "category",
