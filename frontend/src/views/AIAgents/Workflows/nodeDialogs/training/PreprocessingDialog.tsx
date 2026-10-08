@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useEdges, useNodes } from "reactflow";
 import { Textarea } from "@/components/ui/textarea";
-import { PreprocessingNodeData } from "../../types/nodes";
+import { PreprocessingNodeData, TrainDataSourceNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
@@ -75,6 +76,9 @@ type PreprocessingDialogProps = BaseNodeDialogProps<
   PreprocessingNodeData
 >;
 
+const SOURCE_DATA_PATH = "{{source.data_path}}";
+const isUnresolvedVariable = (url: string) => /{{[^}]+}}/.test(url);
+
 export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   props
 ) => {
@@ -94,6 +98,10 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     Record<string, CSVAnalysisResult>
   >({});
   const [runningStepId, setRunningStepId] = useState<string | null>(null);
+  // The resolved file the current analysis results were made from
+  const [analyzedFileUrl, setAnalyzedFileUrl] = useState("");
+  const nodes = useNodes();
+  const edges = useEdges();
   // The generated function in the code was edited by hand, so regenerating it
   // from the steps would overwrite those edits - see generatedSectionMatchesConfig.
   const [hasHandEdits, setHasHandEdits] = useState(false);
@@ -161,15 +169,27 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       const newFileUrl = data.fileUrl || "";
       setFileUrl(newFileUrl);
 
-      // Initialize analysis results - restore from persisted data
-      if (data.stepAnalysisResults) {
-        // Use stepAnalysisResults if available (new format)
-        setAnalysisResults(data.stepAnalysisResults);
-      } else if (data.analysisResult) {
-        // Fallback to old format for backward compatibility
-        setAnalysisResults({ initial: data.analysisResult });
-      } else {
+      // Initialize analysis results - restore from persisted data, unless
+      // they were made from a different file than the one this node now
+      // reads (e.g. the CSV in the upstream Train Data Source was swapped).
+      // Then drop them and re-analyze the current file.
+      const currentFileUrl = newFileUrl ? resolveFileUrl(newFileUrl) : "";
+      const savedResults =
+        data.stepAnalysisResults ??
+        (data.analysisResult ? { initial: data.analysisResult } : {});
+      const datasetChanged =
+        Object.keys(savedResults).length > 0 &&
+        !!currentFileUrl &&
+        !isUnresolvedVariable(currentFileUrl) &&
+        currentFileUrl !== data.analyzedFileUrl;
+
+      if (datasetChanged) {
         setAnalysisResults({});
+        setAnalyzedFileUrl("");
+        void analyzeChangedDataset(currentFileUrl);
+      } else {
+        setAnalysisResults(savedResults);
+        setAnalyzedFileUrl(data.analyzedFileUrl || "");
       }
 
       // Stored steps if the node has them; older nodes are read from their
@@ -193,6 +213,9 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     } else {
       isInitializingRef.current = true;
     }
+    // Only (re)initialize when the dialog opens or the node data changes -
+    // the resolver/analyzer helpers are recreated every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, data]);
 
   useEffect(() => {
@@ -201,6 +224,73 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       setAnalysisResults({});
     }
   }, [fileUrl]);
+
+  // Resolve {{...}} variables in a file URL. The default "{{source.data_path}}"
+  // is normally filled from the upstream node's LAST RUN output, which keeps
+  // pointing at the previous file after the CSV in a Train Data Source is
+  // swapped until the workflow is re-run. When the upstream node is a CSV
+  // Train Data Source, use the file currently selected there instead.
+  const resolveFileUrl = (url: string): string => {
+    if (url.trim() === SOURCE_DATA_PATH && nodeId) {
+      const upstream = edges
+        .filter((edge) => edge.target === nodeId)
+        .map((edge) => nodes.find((n) => n.id === edge.source));
+      const source = upstream.length === 1 ? upstream[0] : undefined;
+      if (source?.type === "trainDataSourceNode") {
+        const sourceData = source.data as TrainDataSourceNodeData;
+        const selectedFile = sourceData.csvFilePath || sourceData.csvFileUrl;
+        if (sourceData.sourceType === "csv" && selectedFile) return selectedFile;
+      }
+    }
+
+    let resolvedFileUrl = url;
+    const variables = extractDynamicVariables(url);
+    if (variables.size > 0 && nodeId) {
+      const availableData = getAvailableDataForNode(nodeId);
+      if (availableData) {
+        variables.forEach((variable) => {
+          const value = getValueFromPath(availableData, variable);
+          if (value !== undefined) {
+            const stringValue =
+              typeof value === "string"
+                ? value
+                : typeof value === "object"
+                ? JSON.stringify(value)
+                : String(value);
+            resolvedFileUrl = resolvedFileUrl.replace(
+              new RegExp(`{{${variable}}}`, "g"),
+              stringValue
+            );
+          }
+        });
+      }
+    }
+    return resolvedFileUrl;
+  };
+
+  // Analyze the node's input file from scratch (used when the dialog opens
+  // and the saved analysis belongs to a different file).
+  const analyzeChangedDataset = async (resolvedFileUrl: string) => {
+    try {
+      setIsAnalyzing(true);
+      const result = await analyzeCSV(resolvedFileUrl);
+      setAnalysisResults({ initial: result });
+      setAnalyzedFileUrl(resolvedFileUrl);
+      toast({
+        title: "Dataset changed",
+        description: `Re-analyzed the current file: ${result.column_count} columns and ${result.row_count} rows. Run each step again to refresh its results.`,
+      });
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Dataset changed",
+        description: "The input file changed. Click Analyze to load the new dataset.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const handleSave = () => {
     if (!pythonCode.trim()) {
@@ -225,6 +315,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       analysisResult: analysisResults.initial || undefined, // For backward compatibility
       stepAnalysisResults:
         Object.keys(analysisResults).length > 0 ? analysisResults : undefined,
+      analyzedFileUrl: analyzedFileUrl || undefined,
     });
     onClose();
   };
@@ -257,35 +348,11 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     try {
       setIsAnalyzing(true);
 
-      let resolvedFileUrl = fileUrl;
-      const variables = extractDynamicVariables(fileUrl);
-
-      if (variables.size > 0 && nodeId) {
-        const availableData = getAvailableDataForNode(nodeId);
-
-        if (availableData) {
-          variables.forEach((variable) => {
-            const value = getValueFromPath(availableData, variable);
-            if (value !== undefined) {
-              const stringValue =
-                typeof value === "string"
-                  ? value
-                  : typeof value === "object"
-                  ? JSON.stringify(value)
-                  : String(value);
-
-              resolvedFileUrl = resolvedFileUrl.replace(
-                new RegExp(`{{${variable}}}`, "g"),
-                stringValue
-              );
-            }
-          });
-        }
-      }
-
+      const resolvedFileUrl = resolveFileUrl(fileUrl);
       const result = await analyzeCSV(resolvedFileUrl);
       // Store initial analysis result
       setAnalysisResults({ initial: result });
+      setAnalyzedFileUrl(resolvedFileUrl);
 
       toast({
         title: "Analysis Complete",
@@ -337,33 +404,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       // Generate code up to this step
       const stepCode = generateCodeUpToStep(stepId);
 
-      // Resolve file URL variables
-      let resolvedFileUrl = fileUrl;
-      const variables = extractDynamicVariables(fileUrl);
-
-      if (variables.size > 0 && nodeId) {
-        const availableData = getAvailableDataForNode(nodeId);
-
-        if (availableData) {
-          variables.forEach((variable) => {
-            const value = getValueFromPath(availableData, variable);
-            if (value !== undefined) {
-              const stringValue =
-                typeof value === "string"
-                  ? value
-                  : typeof value === "object"
-                  ? JSON.stringify(value)
-                  : String(value);
-
-              resolvedFileUrl = resolvedFileUrl.replace(
-                new RegExp(`{{${variable}}}`, "g"),
-                stringValue
-              );
-            }
-          });
-        }
-      }
-
+      const resolvedFileUrl = resolveFileUrl(fileUrl);
       const result = await analyzeCSV(resolvedFileUrl, stepCode);
       // Store result for this specific step
       setAnalysisResults((prev) => ({
