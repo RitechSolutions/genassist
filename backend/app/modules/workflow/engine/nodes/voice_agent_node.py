@@ -23,8 +23,8 @@ from app.modules.workflow.audio.gemini_live import (
     history_text,
     history_to_live_turns,
 )
-from app.modules.workflow.engine.nodes.agent_node import AgentNode
 from app.modules.workflow.engine.node_result import node_failure
+from app.modules.workflow.engine.nodes.agent_node import AGENT_ERROR_MESSAGE, AgentNode
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +115,7 @@ class VoiceAgentNode(AgentNode):
         except Exception as e:
             logger.exception("Error processing voice agent node")
             detail = explain_live_error(str(e))
-            return _error(f"The voice agent could not complete your request: {detail}", detail)
+            return _error(AGENT_ERROR_MESSAGE, detail)
 
         transcript = result.get("transcript")
         if transcript:

@@ -10,11 +10,15 @@ import pytest
 
 from app.modules.workflow.agents.agent_runtime import AgentRunResult
 from app.modules.workflow.agents.memory import InMemoryConversationMemory
-from app.modules.workflow.agents.sub_agents import orchestrator
+from app.modules.workflow.agents.sub_agents import messages, orchestrator
 from app.modules.workflow.agents.sub_agents import session as sub_session
 from app.modules.workflow.agents.sub_agents.models import SubAgentFrame, SubAgentStack
 from app.modules.workflow.engine.node_result import is_node_failure
-from app.modules.workflow.engine.nodes.agent_node import AgentNode
+from app.modules.workflow.engine.nodes.agent_node import (
+    AGENT_ERROR_MESSAGE,
+    AGENT_NO_RESPONSE_MESSAGE,
+    AgentNode,
+)
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
 
 _RUNTIME = "app.modules.workflow.agents.agent_runtime"
@@ -76,7 +80,7 @@ async def test_agent_internal_error_shape():
     assert failure is not None
     assert failure["error"] == "boom"
     assert failure["output"] == {
-        "message": "The agent could not complete your request: boom",
+        "message": AGENT_ERROR_MESSAGE,
         "error": "boom",
         "steps": [],
         "tools_used": [],
@@ -94,7 +98,7 @@ async def test_raised_exception_shape():
     assert failure is not None
     assert failure["error"] == "kaboom"
     assert failure["output"] == {
-        "message": "The agent could not complete your request: kaboom",
+        "message": AGENT_ERROR_MESSAGE,
         "error": "kaboom",
     }
 
@@ -107,7 +111,7 @@ async def test_no_response_shape():
         output = await node.process(dict(_CONFIG))
 
     assert output == {
-        "message": "The agent did not return a response. Please try again or review the agent configuration.",
+        "message": AGENT_NO_RESPONSE_MESSAGE,
         "steps": [],
         "tools_used": [],
     }
@@ -564,6 +568,21 @@ async def test_delegation_folds_only_child_output_not_session_or_path():
     assert parent.execution_path == []
     assert "child_only_key" not in parent.get_session()
     assert orchestrator.parse_envelope(result)["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_failed_child_reports_failure_to_parent_not_the_generic_apology():
+    node = _parent_node()
+    child = WorkflowState(workflow={"nodes": [], "edges": []}, thread_id="t-child", initial_values={})
+    child.set_node_output("child", {"message": AGENT_ERROR_MESSAGE, "error": "boom", "steps": [], "tools_used": []})
+    fn = node._make_delegation_function(child_id="child", mode="single_turn", timeout_seconds=120)
+    with patch(_ORCH_RUN, AsyncMock(return_value=child)):
+        result = await fn({"parameters": {"task": "do x"}})
+
+    envelope = orchestrator.parse_envelope(result)
+    assert envelope["status"] == "completed"
+    assert envelope["message"] == messages.child_failed()
+    assert "boom" not in envelope["message"]
 
 
 @pytest.mark.asyncio
