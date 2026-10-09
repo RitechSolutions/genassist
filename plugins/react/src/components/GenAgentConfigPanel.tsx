@@ -176,6 +176,7 @@ const defaultFeatureFlags: FeatureFlags = {
   useWs: false,
   usePoll: false,
   quickInput: false,
+  readReceipts: false,
 };
 
 function objectToParams(obj: Record<string, any> | undefined): MetadataParam[] {
@@ -732,6 +733,15 @@ export const GenAgentConfigPanel: React.FC<GenAgentConfigPanelProps> = ({
                   type="checkbox"
                   checked={!!featureFlags.usePoll}
                   onChange={(e) => handleFeatureFlagChange('usePoll', e.target.checked)}
+                  style={{ width: 20, height: 20, cursor: 'pointer' }}
+                />
+              </div>
+              <div style={formGroupStyle}>
+                <label style={labelStyle}>Read Receipts</label>
+                <input
+                  type="checkbox"
+                  checked={!!featureFlags.readReceipts}
+                  onChange={(e) => handleFeatureFlagChange('readReceipts', e.target.checked)}
                   style={{ width: 20, height: 20, cursor: 'pointer' }}
                 />
               </div>
