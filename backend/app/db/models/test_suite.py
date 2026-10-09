@@ -137,6 +137,12 @@ class TestRunModel(Base):
     # Aggregated metrics for the run, keyed by technique
     summary_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # The configuration the run executes with, fixed when it is queued
+    config_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    # Conversations and turns finished so far, updated as the run goes
+    progress: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     suite = relationship("TestSuiteModel", back_populates="runs")
     workflow = relationship("WorkflowModel")
     results: Mapped[List["TestResultModel"]] = relationship(
