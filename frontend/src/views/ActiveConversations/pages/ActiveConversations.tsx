@@ -288,6 +288,8 @@ export const ActiveConversations = () => {
     let isCancelled = false;
 
     const fetchData = async () => {
+      // Hidden tabs skip the refresh so they do not keep the login alive in the background
+      if (document.visibilityState === "hidden") return;
       try {
         const response = await fetchDashboardConversations(30, 1, DASHBOARD_LIMIT);
         if (!isCancelled && response) {
@@ -305,10 +307,15 @@ export const ActiveConversations = () => {
       }
     };
 
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void fetchData();
+    };
     const interval = setInterval(fetchData, 25000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       isCancelled = true;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, []);
 
