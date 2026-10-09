@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MessageSquareDot } from "lucide-react";
+import { MessageSquareDot, Settings } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import {
   keepPreviousData,
@@ -7,8 +7,10 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
+import { Link } from "react-router-dom";
 
 import { PageLayout } from "@/components/PageLayout";
+import { buttonVariants } from "@/components/button";
 import { DataTable, Column } from "@/components/ui/data-table";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { PaginationBar } from "@/components/PaginationBar";
@@ -58,6 +60,8 @@ export default function ReportedFeedback() {
   const permissions = usePermissions();
   const canTriage =
     permissions.includes("*") || permissions.includes("update:conversation");
+  const canManageStatuses =
+    permissions.includes("*") || permissions.includes("write:app_settings");
   const [currentPage, setCurrentPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">("all");
   const [topicFilter, setTopicFilter] = useState<string>("all");
@@ -380,6 +384,15 @@ export default function ReportedFeedback() {
             disableFutureDates
           />
           <FilterMenu groups={filterGroups} className="h-10 text-sm" />
+          {canManageStatuses && (
+            <Link
+              to="/settings?tab=feedback-statuses"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              <Settings />
+              Manage statuses
+            </Link>
+          )}
         </div>
       </div>
 
