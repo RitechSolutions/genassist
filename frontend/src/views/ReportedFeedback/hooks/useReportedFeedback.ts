@@ -68,17 +68,31 @@ export const useIssuePatch = () => {
   return useMutation({
     mutationFn: (vars: { issue: ReportedFeedbackItem; patch: IssuePatch }) =>
       updateFeedbackIssue(vars.issue.feedback_id, vars.patch),
-    onMutate: ({ issue, patch }) => {
+    onMutate: async ({ issue, patch }) => {
+      const interrupted = queryClient.getQueryCache().findAll({
+        queryKey: ["reported-feedback", "list"],
+        fetchStatus: "fetching",
+      });
+      await queryClient.cancelQueries({
+        queryKey: ["reported-feedback", "list"],
+      });
       patchRows(issue.feedback_id, patch);
-      return pickPatchedFields(issue, patch);
+      return { rollback: pickPatchedFields(issue, patch), interrupted };
     },
-    onError: (_err, { issue }, rollback) => {
-      if (rollback) patchRows(issue.feedback_id, rollback);
+    onError: (_err, { issue }, context) => {
+      if (context) patchRows(issue.feedback_id, context.rollback);
     },
     onSuccess: (saved, { issue, patch }) => {
       patchRows(issue.feedback_id, pickPatchedFields(saved, patch));
       void queryClient.invalidateQueries({
         queryKey: ["reported-feedback", "summary"],
+      });
+    },
+    onSettled: (_saved, _err, _vars, context) => {
+      if (!context?.interrupted.length) return;
+      void queryClient.refetchQueries({
+        queryKey: ["reported-feedback", "list"],
+        predicate: (query) => context.interrupted.includes(query),
       });
     },
   });
