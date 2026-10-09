@@ -292,6 +292,16 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         return [(status, count) for status, count in (await self.db.execute(query)).all()]
 
 
+    async def get_issue(self, message_feedback_id: UUID) -> Optional[MessageIssueModel]:
+        return (
+                await self.db.execute(
+                        select(MessageIssueModel).where(
+                                MessageIssueModel.message_feedback_id == message_feedback_id
+                                )
+                        )
+                ).scalars().first()
+
+
     async def upsert_issue(
             self, message_feedback_id: UUID, values: dict
             ) -> MessageIssueModel:
@@ -300,13 +310,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         exist."""
         await self._require_feedback(message_feedback_id)
 
-        issue = (
-                await self.db.execute(
-                        select(MessageIssueModel).where(
-                                MessageIssueModel.message_feedback_id == message_feedback_id
-                                )
-                        )
-                ).scalars().first()
+        issue = await self.get_issue(message_feedback_id)
 
         if issue:
             for key, value in values.items():

@@ -23,6 +23,7 @@ export interface Recording {
 export interface Analysis {
   conversation_id: number;
   topic: string;
+  subtopic?: string | null;
   transcription: string;
   summary: string;
   negative_sentiment: number;
@@ -97,6 +98,7 @@ export interface TranscriptMetadata {
   duration: number;
   title: string;
   topic: string;
+  subtopic?: string;
   customer_speaker?: string;
 }
 

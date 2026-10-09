@@ -1,43 +1,54 @@
-import { useEffect, useState } from "react";
-import { MessageSquareDot } from "lucide-react";
-import { format } from "date-fns";
+import { useState } from "react";
+import { MessageSquareDot, Settings } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 import { useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
+import { Link } from "react-router-dom";
 
 import { PageLayout } from "@/components/PageLayout";
+import { buttonVariants } from "@/components/button";
 import { DataTable, Column } from "@/components/ui/data-table";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { PaginationBar } from "@/components/PaginationBar";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
+import { FilterMenu, type FilterMenuGroup } from "@/components/FilterMenu";
+import { TruncatedText } from "@/components/TruncatedText";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
+import { useTopicFilter } from "@/hooks/useTopicFilter";
+import { usePermissions } from "@/context/PermissionContext";
 import { getWorkflowsMinimal } from "@/services/workflows";
+import type { IssueCategory } from "@/services/issueStatuses";
+import { extractErrorMessage } from "@/helpers/apiError";
+import { toInclusiveDateParams } from "@/helpers/dateRange";
 
 import {
   FeedbackStatus,
   ReportedFeedbackItem,
-  updateFeedbackStatus,
 } from "@/services/reportedFeedback";
-import { useReportedFeedback } from "../hooks/useReportedFeedback";
+import { StatsOverviewCard } from "@/views/Analytics/components/StatsOverviewCard";
+import {
+  useFeedbackSummary,
+  useIssuePatch,
+  useReportedFeedback,
+} from "../hooks/useReportedFeedback";
+import { useIssueStatuses } from "../hooks/useIssueStatuses";
 import { ReportedFeedbackDialog } from "../components/ReportedFeedbackDialog";
-import { StatusSelect } from "../components/StatusSelect";
-import { STATUS_META, STATUS_ORDER } from "../constants";
+import { StatusBadge, StatusSelect } from "../components/StatusSelect";
+import { CATEGORY_META } from "../constants";
+import { statusMeta, withCurrentStatus } from "../helpers/issueStatuses";
+import { topicLabel } from "../helpers/triageDraft";
 import { formatDateTime } from "@/helpers/utils";
 
 const PAGE_SIZE = 20;
 
 export default function ReportedFeedback() {
+  const permissions = usePermissions();
+  const canTriage =
+    permissions.includes("*") || permissions.includes("update:conversation");
+  const canManageStatuses =
+    permissions.includes("*") || permissions.includes("write:app_settings");
   const [currentPage, setCurrentPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">(
-    "all",
-  );
+  const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">("all");
   const [workflowFilter, setWorkflowFilter] = useState<string>("all");
   // Shared global range (same component/store as the dashboard).
   const [dateRange, setDateRange] = usePersistedDateRange(undefined);
@@ -48,31 +59,62 @@ export default function ReportedFeedback() {
   });
   const workflows = workflowsData ?? [];
 
-  // Server-side time filter on the reported time (when the comment was added).
-  const fromDate = dateRange?.from
-    ? format(dateRange.from, "yyyy-MM-dd")
-    : undefined;
-  const toDate = dateRange?.to
-    ? format(dateRange.to, "yyyy-MM-dd 23:59:59")
-    : undefined;
+  const { data: statuses = [] } = useIssueStatuses();
+  const {
+    topic: topicFilter,
+    subtopic: subtopicFilter,
+    topicChoices,
+    subtopicChoices,
+    changeTopic,
+    changeSubtopic,
+  } = useTopicFilter();
 
-  const { data, total, loading, error } = useReportedFeedback({
+  // Server-side time filter on the reported time (when the comment was added).
+  const filters = {
+    workflow_id: workflowFilter !== "all" ? workflowFilter : undefined,
+    ...toInclusiveDateParams(dateRange),
+    topic: topicFilter !== "all" ? topicFilter : undefined,
+    subtopic: subtopicFilter !== "all" ? subtopicFilter : undefined,
+  };
+
+  const {
+    data: list,
+    isFetching: loading,
+    error,
+  } = useReportedFeedback({
     skip: (currentPage - 1) * PAGE_SIZE,
     limit: PAGE_SIZE,
     status: statusFilter,
-    from_date: fromDate,
-    to_date: toDate,
-    workflow_id: workflowFilter !== "all" ? workflowFilter : undefined,
+    ...filters,
   });
+  const rows = list?.items ?? [];
+  const total = list?.total ?? 0;
 
-  // Local mirror so status changes update the row instantly (optimistic).
-  const [rows, setRows] = useState<ReportedFeedbackItem[]>([]);
-  useEffect(() => setRows(data), [data]);
+  const summary = useFeedbackSummary(filters);
+  const statusMetrics = [
+    {
+      label: "Total reported",
+      value: summary.total.toLocaleString(),
+      change: 0,
+      changeType: "neutral" as const,
+    },
+    ...(Object.keys(CATEGORY_META) as IssueCategory[]).map((category) => ({
+      label: CATEGORY_META[category].label,
+      value: summary.totals[category].toLocaleString(),
+      change: 0,
+      changeType: "neutral" as const,
+    })),
+  ];
 
   const [selectedIssue, setSelectedIssue] = useState<ReportedFeedbackItem | null>(
     null,
   );
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  // Follows the cached row, and keeps the last copy if a range change in another tab drops it
+  const listedIssue = rows.find(
+    (row) => row.feedback_id === selectedIssue?.feedback_id,
+  );
+  if (listedIssue && listedIssue !== selectedIssue) setSelectedIssue(listedIssue);
 
   const openDialog = (issue: ReportedFeedbackItem) => {
     setSelectedIssue(issue);
@@ -96,38 +138,31 @@ export default function ReportedFeedback() {
     openInNewTab(`/ai-agents/workflow/${agentId}`);
   };
 
-  const handleStatusChange = async (
+  const patchIssue = useIssuePatch();
+
+  const handleStatusChange = (
     issue: ReportedFeedbackItem,
     next: FeedbackStatus,
   ) => {
     if (next === issue.status) return;
-    const previous = issue.status;
-
-    const apply = (status: FeedbackStatus) => {
-      setRows((rs) =>
-        rs.map((r) =>
-          r.feedback_id === issue.feedback_id ? { ...r, status } : r,
-        ),
-      );
-      setSelectedIssue((current) =>
-        current && current.feedback_id === issue.feedback_id
-          ? { ...current, status }
-          : current,
-      );
-    };
-
-    apply(next);
-    try {
-      await updateFeedbackStatus(issue.feedback_id, next);
-      toast.success(`Marked as ${STATUS_META[next].label}`);
-    } catch {
-      apply(previous);
-      toast.error("Failed to update status");
-    }
+    void patchIssue.mutateAsync({ issue, patch: { status: next } }).then(
+      () => toast.success(`Marked as ${statusMeta(statuses, next).label}`),
+      (err) => toast.error(extractErrorMessage(err, "Failed to update status")),
+    );
   };
 
   const handleFilterChange = (value: string) => {
-    setStatusFilter(value as FeedbackStatus | "all");
+    setStatusFilter(value);
+    setCurrentPage(1);
+  };
+
+  const handleTopicChange = (value: string) => {
+    changeTopic(value);
+    setCurrentPage(1);
+  };
+
+  const handleSubtopicChange = (value: string) => {
+    changeSubtopic(value);
     setCurrentPage(1);
   };
 
@@ -178,6 +213,19 @@ export default function ReportedFeedback() {
       ),
     },
     {
+      header: "Topic",
+      key: "topic",
+      headerClassName: "w-[170px]",
+      cell: (item) =>
+        item.conversation_topic ? (
+          <TruncatedText className="max-w-[160px] text-sm">
+            {topicLabel(item.conversation_topic, item.conversation_subtopic)}
+          </TruncatedText>
+        ) : (
+          <span className="text-sm italic text-muted-foreground">—</span>
+        ),
+    },
+    {
       header: "Reported",
       key: "reported_at",
       headerClassName: "w-[160px]",
@@ -189,22 +237,78 @@ export default function ReportedFeedback() {
       key: "status",
       headerClassName: "w-[160px]",
       // Editable inline; stop row-click so the dropdown doesn't open the dialog.
-      cell: (item) => (
-        <div onClick={(e) => e.stopPropagation()}>
-          <StatusSelect
-            value={item.status}
-            onChange={(next) => handleStatusChange(item, next)}
-          />
-        </div>
-      ),
+      cell: (item) =>
+        canTriage ? (
+          <div onClick={(e) => e.stopPropagation()}>
+            <StatusSelect
+              value={item.status}
+              statuses={statuses}
+              onChange={(next) => handleStatusChange(item, next)}
+            />
+          </div>
+        ) : (
+          <StatusBadge value={item.status} statuses={statuses} />
+        ),
     },
   ];
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
 
+  const filterGroups: FilterMenuGroup[] = [
+    {
+      key: "workflow",
+      label: "Workflow",
+      allLabel: "All workflows",
+      value: workflowFilter,
+      options: workflows.map((wf) => ({ value: wf.id, label: wf.name })),
+      onChange: handleWorkflowChange,
+    },
+    {
+      key: "topic",
+      label: "Topic",
+      allLabel: "All topics",
+      value: topicFilter,
+      options: topicChoices.map((topic) => ({
+        value: topic.name,
+        label: topic.name,
+      })),
+      onChange: handleTopicChange,
+    },
+    ...(subtopicChoices.length > 0
+      ? [
+          {
+            key: "subtopic",
+            label: "Sub-topic",
+            allLabel: "All sub-topics",
+            value: subtopicFilter,
+            options: subtopicChoices.map((subtopic) => ({
+              value: subtopic,
+              label: subtopic,
+            })),
+            onChange: handleSubtopicChange,
+          },
+        ]
+      : []),
+    {
+      key: "status",
+      label: "Status",
+      allLabel: "All statuses",
+      value: statusFilter,
+      options: withCurrentStatus(statuses, statusFilter, {
+        includeRetired: true,
+      }).map((status) => ({
+        value: status,
+        label: statusMeta(statuses, status).label,
+      })),
+      onChange: handleFilterChange,
+    },
+  ];
+
   const hasActiveFilters =
     statusFilter !== "all" ||
+    topicFilter !== "all" ||
+    subtopicFilter !== "all" ||
     workflowFilter !== "all" ||
     Boolean(dateRange?.from || dateRange?.to);
 
@@ -225,34 +329,24 @@ export default function ReportedFeedback() {
             onChange={handleDateRangeChange}
             disableFutureDates
           />
-          <Select value={workflowFilter} onValueChange={handleWorkflowChange}>
-            <SelectTrigger className="h-9 w-[200px] rounded-full">
-              <SelectValue placeholder="Filter by workflow" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All workflows</SelectItem>
-              {workflows.map((wf) => (
-                <SelectItem key={wf.id} value={wf.id}>
-                  {wf.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={handleFilterChange}>
-            <SelectTrigger className="h-9 w-[180px] rounded-full">
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {STATUS_ORDER.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {STATUS_META[status].label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <FilterMenu groups={filterGroups} className="h-10 text-sm" />
+          {canManageStatuses && (
+            <Link
+              to="/settings?tab=feedback-statuses"
+              className={buttonVariants({ variant: "outline" })}
+            >
+              <Settings />
+              Manage statuses
+            </Link>
+          )}
         </div>
       </div>
+
+      <StatsOverviewCard
+        metrics={statusMetrics}
+        loading={summary.isLoading}
+        error={summary.isError ? "Couldn't load the status counts." : null}
+      />
 
       <DataTable
         data={rows}
@@ -294,6 +388,8 @@ export default function ReportedFeedback() {
           setIsDialogOpen(open);
           if (!open) setSelectedIssue(null);
         }}
+        statuses={statuses}
+        canTriage={canTriage}
         onStatusChange={handleStatusChange}
         onOpenConversation={openConversation}
         onOpenWorkflow={openWorkflow}

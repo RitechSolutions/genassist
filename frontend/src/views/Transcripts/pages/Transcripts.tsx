@@ -59,7 +59,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixToolt
 import { useAgentsList } from "@/views/Analytics/hooks/useAgentsList";
 import { DateRangePicker } from "@/components/date-range-picker";
 import type { DateRange } from "react-day-picker";
-import { format, subDays } from "date-fns";
+import { subDays } from "date-fns";
+import { toInclusiveDateParams } from "@/helpers/dateRange";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
@@ -74,11 +75,17 @@ import {
   readConversationsViewMode,
   type ConversationsViewMode,
 } from "../helpers/conversationsView";
+import { useTopicFilter } from "@/hooks/useTopicFilter";
+import { topicLabel } from "@/views/ReportedFeedback/helpers/triageDraft";
 
 const ITEMS_PER_PAGE = 10;
 // Minimum characters required before a search is sent to the backend. Short
 // queries (1-2 chars) match nearly everything and are extremely slow server-side.
 const MIN_SEARCH_LENGTH = 3;
+
+// Old links carry "Billing Question" from the former fixed topic list
+const topicFromParam = (value: string | null) =>
+  value === "Billing Question" ? "Billing Questions" : value || "all";
 
 type QualityFilterKey = "customer_satisfaction" | "quality_of_service" | "resolution_rate" | "efficiency";
 type QualityLevel = "all" | "low" | "medium" | "high";
@@ -135,7 +142,19 @@ const Transcripts = () => {
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   const [activeTab, setActiveTab] = useState(searchParams.get("sentiment") || "all");
-  const [supportType, setSupportType] = useState(searchParams.get("type") || "all");
+  const {
+    topic: supportType,
+    subtopic: subtopicFilter,
+    topicChoices,
+    subtopicChoices,
+    setFilter: setTopicFilter,
+    changeTopic,
+    changeSubtopic,
+    matches: matchesTopic,
+  } = useTopicFilter(
+    topicFromParam(searchParams.get("type")),
+    searchParams.get("subtype") || "all",
+  );
   const [searchQuery, setSearchQuery] = useState(searchParams.get("query") || "");
   // The value actually sent to the backend. Only updated when the user submits
   // the search (Enter / button) so we never query on partial input.
@@ -227,12 +246,13 @@ const Transcripts = () => {
     hostility_positive_max: hostilityParams.hostility_positive_max,
     hostility_neutral_max: hostilityParams.hostility_neutral_max,
     conversation_status: conversationStatus,
+    conversation_topics: supportType !== "all" ? [supportType] : undefined,
+    conversation_subtopics: subtopicFilter !== "all" ? [subtopicFilter] : undefined,
     order_by: orderBy || undefined,
     sort_direction: orderBy ? sortDirection : undefined,
     agent_id: selectedAgentId !== "all" ? selectedAgentId : undefined,
     scoreFilters,
-    from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
-    to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd 23:59:59") : undefined,
+    ...toInclusiveDateParams(dateRange),
     exclude_empty: hideEmpty || undefined,
     custom_attributes: activeCustomAttrCount > 0 ? customAttrFilters : undefined,
     search: committedSearch.trim() || undefined,
@@ -250,12 +270,12 @@ const Transcripts = () => {
     setRowUpdates({});
   }, [data]);
 
+  const isLiveFeed =
+    statusFilter === "live" && Array.isArray(wsConversations) && wsConversations.length > 0;
+
   // When statusFilter is "live", use WebSocket dashboard data for real-time updates
   const transcripts = useMemo(() => {
-    const base =
-      statusFilter !== "live" || !Array.isArray(wsConversations) || wsConversations.length === 0
-        ? apiTranscripts
-        : wsConversations.map(enrichConversationItem);
+    const base = isLiveFeed ? wsConversations.map(enrichConversationItem) : apiTranscripts;
 
     if (locallyFinalizedIds.length === 0 && Object.keys(rowUpdates).length === 0) return base;
 
@@ -266,7 +286,7 @@ const Transcripts = () => {
       const update = rowUpdates[transcript.id];
       return update ? applyConversationUpdate(transcript, update) : transcript;
     });
-  }, [statusFilter, wsConversations, apiTranscripts, locallyFinalizedIds, rowUpdates]);
+  }, [isLiveFeed, wsConversations, apiTranscripts, locallyFinalizedIds, rowUpdates]);
 
   // Read by the websocket effects below, which must fire per event rather than per render.
   const transcriptsRef = useRef(transcripts);
@@ -299,10 +319,7 @@ const Transcripts = () => {
     void refetchRef.current({ silent: true });
   }, [lastConversationUpdate]);
 
-  const totalCount =
-    statusFilter === "live" && Array.isArray(wsConversations) && wsConversations.length > 0
-      ? wsConversations.length
-      : apiTotal;
+  const totalCount = isLiveFeed ? wsConversations.length : apiTotal;
 
   const updateUrlParams = (params: Record<string, string | number | string[] | null>) => {
     const newSearchParams = new URLSearchParams(location.search);
@@ -418,7 +435,10 @@ const Transcripts = () => {
 
     // Update filter states based on URL
     setActiveTab(params.get("sentiment") || "all");
-    setSupportType(params.get("type") || "all");
+    setTopicFilter({
+      topic: topicFromParam(params.get("type")),
+      subtopic: params.get("subtype") || "all",
+    });
     setSearchQuery(params.get("query") || "");
     setCurrentPage(
       Math.max(1, parseInt(params.get("page") || "1", 10) || 1)
@@ -435,7 +455,7 @@ const Transcripts = () => {
     }
 
     setViewMode(readConversationsViewMode(params));
-  }, [location.search]);
+  }, [location.search, setTopicFilter]);
 
   // Refetch when dashboard WebSocket suggests resync (e.g. finalize with missing ID). Keyed on
   // the hint alone: `refetch` changes with every filter, which already fetches on its own.
@@ -488,8 +508,15 @@ const Transcripts = () => {
   };
 
   const handleSupportTypeChange = (value: string) => {
-    setSupportType(value);
-    updateUrlParams({ type: value === "all" ? null : value, page: 1 });
+    changeTopic(value);
+    setCurrentPage(1);
+    updateUrlParams({ type: value === "all" ? null : value, subtype: null, page: 1 });
+  };
+
+  const handleSubTypeChange = (value: string) => {
+    changeSubtopic(value);
+    setCurrentPage(1);
+    updateUrlParams({ subtype: value === "all" ? null : value, page: 1 });
   };
 
   const handleAgentChange = (value: string) => {
@@ -601,14 +628,9 @@ const Transcripts = () => {
     });
   };
 
-  const filteredTranscripts = transcripts.filter((transcript) => {
-    const topic = transcript?.metadata?.topic?.toLowerCase() || "";
-
-    const matchesSupportType =
-      supportType === "all" || topic.includes(supportType.toLowerCase());
-
-    return matchesSupportType;
-  });
+  const filteredTranscripts = isLiveFeed
+    ? transcripts.filter((transcript) => matchesTopic(transcript?.metadata))
+    : transcripts;
 
   const pagination = getPaginationMeta(
     totalCount,
@@ -832,16 +854,32 @@ const Transcripts = () => {
                   </Select>
                   <Select value={supportType} onValueChange={handleSupportTypeChange}>
                     <SelectTrigger className="w-[130px] bg-card h-8 rounded-full text-xs">
-                      <SelectValue placeholder="Support Type" />
+                      <SelectValue placeholder="Topic" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="Product Inquiry">Product Inquiry</SelectItem>
-                      <SelectItem value="Technical Support">Technical Support</SelectItem>
-                      <SelectItem value="Billing Question">Billing Questions</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
+                      <SelectItem value="all">All Topics</SelectItem>
+                      {topicChoices.map((option) => (
+                        <SelectItem key={option.name} value={option.name}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  {subtopicChoices.length > 0 && (
+                    <Select value={subtopicFilter} onValueChange={handleSubTypeChange}>
+                      <SelectTrigger className="w-[130px] bg-card h-8 rounded-full text-xs">
+                        <SelectValue placeholder="Sub-topic" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sub-topics</SelectItem>
+                        {subtopicChoices.map((subtopic) => (
+                          <SelectItem key={subtopic} value={subtopic}>
+                            {subtopic}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {/* Quality filter dropdown */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -1202,7 +1240,10 @@ const Transcripts = () => {
                             <h3 className="font-semibold">
                               {isCallTranscript(transcript) ? "Call" : "Chat"} #
                               {(transcript?.metadata?.title ?? "----").slice(-4) || "Untitled"}{" - "}
-                              {transcript?.metadata?.topic}
+                              {topicLabel(
+                                transcript?.metadata?.topic ?? "",
+                                transcript?.metadata?.subtopic ?? null,
+                              )}
                             </h3>
                             {isLiveTranscript(transcript) && (
                               <Badge variant="outline" className="bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/30 flex items-center gap-1 animate-pulse">

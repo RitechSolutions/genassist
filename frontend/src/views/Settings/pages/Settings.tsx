@@ -13,6 +13,7 @@ import { SecuritySettingsCard } from '../components/SecuritySettingsCard';
 import { FeatureFlagsPanel } from '../panels/FeatureFlagsPanel';
 import { TranslationsPanel } from '../panels/TranslationsPanel';
 import { LanguagesPanel } from '../panels/LanguagesPanel';
+import { FeedbackStatusesPanel } from '../panels/FeedbackStatusesPanel';
 import { NotificationsPanel } from '../panels/NotificationsPanel';
 import { MaintenancePanel } from '../panels/MaintenancePanel';
 import { ThemeToggle } from '@/components/ThemeToggle';
@@ -24,6 +25,7 @@ type TabKey =
   | 'feature-flags'
   | 'translations'
   | 'languages'
+  | 'feedback-statuses'
   | 'file-manager'
   | 'security'
   | 'maintenance';
@@ -100,6 +102,7 @@ const SettingsPage = () => {
           { key: 'feature-flags', label: 'Feature Flags', show: hasPermission('read:feature_flag') },
           { key: 'translations', label: 'Translations', show: hasPermission('read:app_setting') },
           { key: 'languages', label: 'Languages', show: hasPermission('read:app_setting') },
+          { key: 'feedback-statuses', label: 'Feedback Status', show: hasPermission('write:app_settings') },
           { key: 'file-manager', label: 'File Manager', show: hasPermission('write:app_settings') },
           { key: 'security', label: 'Security', show: hasPermission('write:app_settings') },
           { key: 'maintenance', label: 'Maintenance', show: hasPermission('write:app_settings') },
@@ -178,6 +181,12 @@ const SettingsPage = () => {
             {hasPermission('read:app_setting') && (
               <TabsContent value="languages" className="mt-0">
                 <LanguagesPanel variant="tab" />
+              </TabsContent>
+            )}
+
+            {hasPermission('write:app_settings') && (
+              <TabsContent value="feedback-statuses" className="mt-0">
+                <FeedbackStatusesPanel />
               </TabsContent>
             )}
 

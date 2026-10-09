@@ -154,6 +154,7 @@ describe("transformTranscript - rich input with messages", () => {
         neutral_sentiment: 2,
         tone: "happy",
         topic: "Billing",
+        subtopic: "Refund",
         customer_satisfaction: 4,
         quality_of_service: 3,
         resolution_rate: 0.9,
@@ -212,6 +213,7 @@ describe("transformTranscript - rich input with messages", () => {
     expect(result.metrics.wordCount).toBe(100);
     expect(result.metrics.in_progress_hostility_score).toBe(30);
     expect(result.metadata.topic).toBe("Billing");
+    expect(result.metadata.subtopic).toBe("Refund");
   });
 
   it("maps messages, filling defaults and parsing per-message feedback", () => {

@@ -157,6 +157,7 @@ export function transformTranscript(backendData: BackendTranscript): Transcript 
         duration: durationInSeconds,
         title: `Conversation ${backendData.id}`,
         topic: analysis.topic || "Unknown",
+        subtopic: analysis.subtopic || undefined,
       },
       messages: transcriptArray,
       metrics: {

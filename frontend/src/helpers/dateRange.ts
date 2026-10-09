@@ -1,3 +1,4 @@
+import { format, subDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
 
 /** A picker range with both ends resolved. */
@@ -67,4 +68,19 @@ export function toUtcBucketDateParams(
     from_date: utcDateString(interval.start),
     to_date: utcDateString(new Date(interval.endExclusive.getTime() - 1)),
   };
+}
+
+/** Calendar days in local time for BaseFilterModel filters, last day included */
+export function toInclusiveDateParams(range: DateRange | undefined): {
+  from_date?: string;
+  to_date?: string;
+} {
+  const params: { from_date?: string; to_date?: string } = {};
+  if (range?.from) params.from_date = format(range.from, "yyyy-MM-dd");
+  if (range?.to) params.to_date = format(range.to, "yyyy-MM-dd 23:59:59");
+  return params;
+}
+
+export function dashboardDefaultDateRange(): DateRange {
+  return { from: subDays(new Date(), 30), to: new Date() };
 }

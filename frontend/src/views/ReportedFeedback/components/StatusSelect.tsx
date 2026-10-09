@@ -5,29 +5,49 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
+import { Badge } from "@/components/badge";
 
 import { FeedbackStatus } from "@/services/reportedFeedback";
-import { STATUS_META, STATUS_ORDER } from "../constants";
+import { IssueStatus } from "@/services/issueStatuses";
+import { statusMeta, withCurrentStatus } from "../helpers/issueStatuses";
 
 type StatusSelectProps = {
   value: FeedbackStatus;
   onChange: (status: FeedbackStatus) => void;
+  statuses: IssueStatus[];
   className?: string;
 };
 
-/** A pill-styled status dropdown shared by the table rows and the detail dialog. */
-export function StatusSelect({ value, onChange, className }: StatusSelectProps) {
+export function StatusBadge({
+  value,
+  statuses,
+}: Pick<StatusSelectProps, "value" | "statuses">) {
+  const meta = statusMeta(statuses, value);
   return (
-    <Select value={value} onValueChange={(v) => onChange(v as FeedbackStatus)}>
+    <Badge variant="outline" className={meta.className}>
+      {meta.label}
+    </Badge>
+  );
+}
+
+/** A pill-styled status dropdown shared by the table rows and the detail dialog. */
+export function StatusSelect({
+  value,
+  onChange,
+  statuses,
+  className,
+}: StatusSelectProps) {
+  return (
+    <Select value={value} onValueChange={onChange}>
       <SelectTrigger
-        className={`h-8 w-[150px] rounded-full border text-xs font-medium ${STATUS_META[value].className} ${className ?? ""}`}
+        className={`h-8 w-[150px] rounded-full border text-xs font-medium ${statusMeta(statuses, value).className} ${className ?? ""}`}
       >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {STATUS_ORDER.map((status) => (
-          <SelectItem key={status} value={status}>
-            {STATUS_META[status].label}
+        {withCurrentStatus(statuses, value).map((key) => (
+          <SelectItem key={key} value={key}>
+            {statusMeta(statuses, key).label}
           </SelectItem>
         ))}
       </SelectContent>
