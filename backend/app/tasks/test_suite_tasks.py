@@ -89,6 +89,14 @@ async def _fail_on_new_session(run_id: UUID, error: str, *, notify: bool) -> Non
         )
 
 
+def _run_config(run, input_metadata, technique_configs):
+    """The run's own snapshot; the task arguments only for runs queued before snapshots."""
+    snapshot = getattr(run, "config_snapshot", None)
+    if not isinstance(snapshot, dict):
+        return input_metadata, technique_configs
+    return snapshot.get("input_metadata"), snapshot.get("technique_configs")
+
+
 async def _execute_test_suite_run_async(
     run_id: UUID,
     input_metadata: Dict[str, Any] | None,
@@ -129,6 +137,7 @@ async def _execute_test_suite_run_async(
             logger.warning("Workflow %s of test run %s no longer exists", run.workflow_id, run_id)
             await service._fail_run(run, MISSING_WORKFLOW_VERSION_ERROR)
             return
+        input_metadata, technique_configs = _run_config(run, input_metadata, technique_configs)
         await service._execute_run(
             suite,
             workflow,

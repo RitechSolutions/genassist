@@ -2773,3 +2773,59 @@ class TestPromptCachingDiagnosticsAreInvisibleToGrading:
         }
 
         assert _build_grading_context(annotated) == _build_grading_context(trace)
+
+
+class TestNoExpectedReply:
+    """A turn without an expected reply is not graded by the methods that compare against one."""
+
+    def setup_method(self):
+        self.registry = SimpleEvaluatorRegistry()
+
+    async def _metric(self, technique, *, outputs="The reply.", reference=None, config=None):
+        metrics = await self.registry.evaluate(
+            [technique],
+            inputs={"message": "Hi"},
+            outputs=outputs,
+            reference_outputs=reference,
+            technique_configs={technique: config or {}},
+        )
+        return metrics[technique]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("technique", ["exact_match", "contains", "json_match", "field_equals"])
+    async def test_a_missing_expected_reply_is_not_evaluated(self, technique):
+        metric = await self._metric(technique, reference=None)
+
+        assert metric["not_evaluated"] is True
+        assert metric["score"] is None
+        assert metric["comment"] == "Not evaluated: this turn has no expected reply."
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("technique", ["exact_match", "contains"])
+    async def test_a_blank_expected_reply_is_not_evaluated(self, technique):
+        metric = await self._metric(technique, reference={"value": ""})
+
+        assert metric["not_evaluated"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("technique", ["exact_match", "contains"])
+    async def test_a_present_expected_reply_is_still_graded(self, technique):
+        metric = await self._metric(technique, reference={"value": "Something else"})
+
+        assert metric.get("not_evaluated") is None
+        assert metric["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_an_empty_object_stays_a_real_json_expectation(self):
+        """The Prompt Editor asks models for {} on purpose."""
+        metric = await self._metric("json_match", outputs={}, reference={})
+
+        assert metric["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_field_equals_with_a_configured_value_ignores_the_reply(self):
+        metric = await self._metric(
+            "field_equals", outputs="refund", reference=None, config={"expected": "refund"}
+        )
+
+        assert metric["passed"] is True
