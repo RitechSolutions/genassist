@@ -62,12 +62,18 @@ from app.schemas.conversation_transcript import (
     TranscriptSegmentFeedback,
 )
 from app.schemas.common import PaginatedResponse
-from app.schemas.filter import ConversationFilter, MessageIssueFilter
+from app.schemas.filter import ConversationFilter, MessageIssueFilter, MessageIssueSummaryFilter
 from app.schemas.message_issue import (
+    IssueNoteCreate,
+    IssueNoteRead,
+    IssueStatusSummary,
     IssueStatusUpdate,
+    IssueUpdate,
+    MessageIssueRead,
     ReportedIssueRead,
 )
 from app.schemas.socket_principal import SocketPrincipal
+from app.schemas.topic_options import TopicOptionsRead
 from app.services.agent_config import AgentConfigService
 from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import (
@@ -79,6 +85,7 @@ from app.services.auth import AuthService
 from app.services.conversations import ConversationService
 from app.services.dashboard import DashboardService
 from app.services.file_manager import FileManagerService
+from app.services.llm_analysts import LlmAnalystService
 from app.services.realtime_notifications import (
     emit_notification,
     conversation_started_notification_description,
@@ -335,6 +342,32 @@ async def get_message_issues(
     issues), newest first, with conversation + agent/workflow context and the
     tracked resolution status. Group-scoped; all filters applied server-side."""
     return await transcript_message_service.get_message_issues(filter_obj)
+
+
+@router.get(
+    "/issues/summary",
+    response_model=IssueStatusSummary,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def get_message_issue_summary(
+    filter_obj: MessageIssueSummaryFilter = Depends(),
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    """Reported issues counted per status, with the list's filters and group scope."""
+    return await transcript_message_service.get_issue_status_summary(filter_obj)
+
+
+@router.get(
+    "/topic-options",
+    response_model=TopicOptionsRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def get_topic_options(
+    llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService),
+):
+    return await llm_analyst_service.get_topic_options()
 
 
 @router.get(
@@ -1040,7 +1073,24 @@ async def get_conversation_count(
 
 
 @router.patch(
+    "/issues/{message_feedback_id}",
+    response_model=MessageIssueRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.UPDATE))],
+)
+async def update_message_issue(
+    message_feedback_id: UUID,
+    payload: IssueUpdate,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    """Partially update a reported issue: omitted fields are kept, null clears."""
+    return await transcript_message_service.update_issue(message_feedback_id, payload)
+
+
+@router.patch(
     "/issues/{message_feedback_id}/status",
+    response_model=MessageIssueRead,
     dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
 )
 async def update_message_issue_status(
@@ -1051,10 +1101,39 @@ async def update_message_issue_status(
     ),
 ):
     """Set the resolution status of a reported issue (a message comment)."""
-    issue = await transcript_message_service.set_issue_status(
+    return await transcript_message_service.set_issue_status(
         message_feedback_id, payload.status
     )
-    return {"message_feedback_id": str(message_feedback_id), "status": issue.status}
+
+
+@router.get(
+    "/issues/{message_feedback_id}/notes",
+    response_model=list[IssueNoteRead],
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def list_message_issue_notes(
+    message_feedback_id: UUID,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    return await transcript_message_service.list_issue_notes(message_feedback_id)
+
+
+@router.post(
+    "/issues/{message_feedback_id}/notes",
+    response_model=IssueNoteRead,
+    status_code=201,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.UPDATE))],
+)
+async def add_message_issue_note(
+    message_feedback_id: UUID,
+    payload: IssueNoteCreate,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    return await transcript_message_service.add_issue_note(message_feedback_id, payload)
 
 
 @router.delete(

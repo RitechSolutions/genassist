@@ -8,9 +8,25 @@ import logging
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
 from app.modules.data.manager import AgentRAGServiceManager
+from app.modules.data.providers import SearchResult
+from app.modules.data.utils.doc import format_search_results
 from app.services.agent_knowledge import KnowledgeBaseService
 
 logger = logging.getLogger(__name__)
+
+
+def summarize_sources(results: List[SearchResult]) -> List[Dict[str, Any]]:
+    """Article references for the response log, the content is left out"""
+    return [
+        {
+            "id": result.id,
+            "title": result.metadata.get("name") or None,
+            "score": result.score,
+            "source": result.source,
+            "kb_id": result.metadata.get("kb_id"),
+        }
+        for result in results
+    ]
 
 
 class KnowledgeToolNode(BaseNode):
@@ -56,7 +72,9 @@ class KnowledgeToolNode(BaseNode):
             knowledge_configs = await knowledge_service.get_by_ids(base_ids)
 
             # Search using simplified manager
-            results = await rag_manager.search(knowledge_configs, query, limit=limit, format_results=True, force_limit=force_limit)
+            search_results = await rag_manager.search(knowledge_configs, query, limit=limit, format_results=False, force_limit=force_limit)
+            self.state.annotate_node_execution(self.node_id, sources=summarize_sources(search_results))
+            results = format_search_results(search_results, include_metadata=False)
 
             if results:
                 return results
