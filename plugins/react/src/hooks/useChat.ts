@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { ChatService } from "../services/chatService";
 import { useChatWebSocket } from "./useChatWebSocket";
+import { useVisibilityReturn } from "./useVisibilityReturn";
 import {
   ChatMessage,
   Attachment,
@@ -8,7 +9,20 @@ import {
   InProgressPollMessage,
   FormNodeLocale,
   ReadReceiptState,
+  SendMessageOutcome,
+  ConversationAvailability,
 } from "../types";
+import {
+  ConversationGoneError,
+  isConversationFinalizedError,
+  isConversationUnavailableError,
+} from "../utils/conversationErrors";
+import { createSingleFlight } from "../utils/singleFlight";
+import {
+  buildMessagesStorageKey,
+  buildReadStateStorageKey,
+  removeStoredConversationData,
+} from "../utils/conversationStorage";
 
 /**
  * Merge two read-state snapshots, keeping the furthest (monotonic) marker per role
@@ -79,6 +93,36 @@ export function getNextHeartbeatInterval(currentIntervalMs: number | undefined):
     (currentIntervalMs || HEARTBEAT_INITIAL_INTERVAL_MS) + HEARTBEAT_INTERVAL_STEP_MS,
     HEARTBEAT_MAX_INTERVAL_MS,
   );
+}
+
+/** Minimum time between availability checks triggered by the visitor returning to the chat. */
+export const RETURN_CHECK_MIN_INTERVAL_MS = 60 * 1000;
+/** A message sent after this long without confirmed activity first checks the conversation is still open. */
+export const QUIET_CONVERSATION_RECHECK_MS = 5 * 60 * 1000;
+
+/** Stored history of a restored conversation plus messages sent while it was being checked. */
+export function mergeRestoredMessages(stored: ChatMessage[], current: ChatMessage[]): ChatMessage[] {
+  const isAlreadyStored = (message: ChatMessage) =>
+    stored.some(
+      (storedMessage) =>
+        (Boolean(message.message_id) && storedMessage.message_id === message.message_id) ||
+        (Boolean(message.client_id) && storedMessage.client_id === message.client_id),
+    );
+  return [...stored, ...current.filter((message) => !isAlreadyStored(message))];
+}
+
+/** True when the availability check says the conversation can no longer be continued. */
+export function isConversationGone(availability: ConversationAvailability): boolean {
+  return availability === "finalized" || availability === "unavailable";
+}
+
+/** True when at least `thresholdMs` has passed since the conversation was last confirmed open. */
+export function hasBeenQuietFor(
+  lastConfirmedOpenAtMs: number,
+  thresholdMs: number,
+  nowMs: number = Date.now(),
+): boolean {
+  return nowMs - lastConfirmedOpenAtMs >= thresholdMs;
 }
 
 export interface UseChatProps {
@@ -175,6 +219,17 @@ export const useChat = ({
   const [isTakenOver, setIsTakenOver] = useState<boolean>(false);
   const [isFinalized, setIsFinalized] = useState<boolean>(false);
   const [readState, setReadState] = useState<ReadReceiptState | null>(null);
+  // True while a saved conversation is being checked with the server before it is shown.
+  const [isRestoringConversation, setIsRestoringConversation] = useState<boolean>(false);
+  const isRestoringRef = useRef<boolean>(false);
+  const restoreInFlightRef = useRef<Promise<void> | null>(null);
+  const justRestoredConversationIdRef = useRef<string | null>(null);
+  const runOpenCheckOnce = useRef(createSingleFlight<boolean>()).current;
+  const runRestartOnce = useRef(createSingleFlight<void>()).current;
+  const lastConfirmedOpenAtRef = useRef<number>(0);
+  const markConfirmedOpenIfAvailable = useCallback((availability: ConversationAvailability) => {
+    if (availability === "available") lastConfirmedOpenAtRef.current = Date.now();
+  }, []);
 
   const languageRef = useRef(language);
   languageRef.current = language;
@@ -196,24 +251,21 @@ export const useChat = ({
     onMessage: onWsMessage,
     onConnectionState: setConnectionState,
     reconnect: true,
+    isGuestTokenExpired: () => chatServiceRef.current?.hasExpiredGuestToken() ?? false,
+    onGuestTokenExpired: () =>
+      conversationGoneRef.current(chatServiceRef.current?.getConversationId() ?? null, "unavailable"),
   });
 
   // Scoped messages key for apiKey, conversatioId
   const buildMessagesKey = useCallback(
-    (apiKeyVal: string, convId: string | null) => {
-      if (!convId) return null;
-      return `genassist_conversation_messages:${apiKeyVal}:${convId}`;
-    },
+    (apiKeyVal: string, convId: string | null) => buildMessagesStorageKey(apiKeyVal, convId),
     [],
   );
 
   // Scoped read-receipt state key, so Seen/Delivered survive reloads (WS mode has
   // no read_state backfill on connect — the last known state is restored here).
   const buildReadStateKey = useCallback(
-    (apiKeyVal: string, convId: string | null) => {
-      if (!convId) return null;
-      return `genassist_conversation_read_state:${apiKeyVal}:${convId}`;
-    },
+    (apiKeyVal: string, convId: string | null) => buildReadStateStorageKey(apiKeyVal, convId),
     [],
   );
 
@@ -226,18 +278,6 @@ export const useChat = ({
     },
     [setIsTakenOver, setIsFinalized],
   );
-
-  // Check if an error is a token expiration error (401 + "Token has expired.")
-  const isTokenExpiredError = useCallback((error: any): boolean => {
-    return !!(
-      error?.response?.status === 401 &&
-      error?.response?.data &&
-      (error.response.data.error === "Token has expired." ||
-        error.response.data.message === "Token has expired." ||
-        (typeof error.response.data === "string" &&
-          error.response.data.includes("Token has expired")))
-    );
-  }, []);
 
   // Reset conversation state to initial (e.g. after token expiration)
   const resetToInitialState = useCallback(() => {
@@ -274,6 +314,17 @@ export const useChat = ({
       }
     }
   }, [apiKey, conversationId, buildMessagesKey, buildReadStateKey]);
+
+  // Drops a conversation that can no longer be continued, returning the widget to a fresh start.
+  const discardConversation = useCallback(
+    (staleConversationId: string | null) => {
+      chatServiceRef.current?.resetChatConversation();
+      removeStoredConversationData(apiKey, staleConversationId);
+      setPreloadedAttachments([]);
+      resetToInitialState();
+    },
+    [apiKey, resetToInitialState],
+  );
 
   // Deep compare metadata to prevent unnecessary re-initializations
   // Only re-initialize if metadata actually changes (by value, not reference)
@@ -314,6 +365,19 @@ export const useChat = ({
   useEffect(() => {
     onFinalizeRef.current = onFinalize;
   }, [onFinalize]);
+
+  // Tells the host page when the server turns out to have finalized the visitor's conversation.
+  const notifyHostIfFinalized = useCallback((availability: ConversationAvailability) => {
+    if (availability === "finalized") onFinalizeRef.current?.();
+  }, []);
+
+  // Keeps the widget in step when a request shows the conversation can no longer be continued
+  const handleConversationGone = (goneConversationId: string | null, availability: ConversationAvailability) => {
+    notifyHostIfFinalized(availability);
+    discardConversation(goneConversationId);
+  };
+  const conversationGoneRef = useRef(handleConversationGone);
+  conversationGoneRef.current = handleConversationGone;
 
   useEffect(() => {
     onConfigLoadedRef.current = onConfigLoaded;
@@ -356,7 +420,12 @@ export const useChat = ({
         chatServiceRef.current.setConnectionStateHandler(() => {});
         chatServiceRef.current.disconnect();
         chatServiceRef.current.setWelcomeDataHandler(null);
+        chatServiceRef.current.setConversationGoneHandler(null);
       }
+      // A restore started by the previous service no longer applies
+      isRestoringRef.current = false;
+      restoreInFlightRef.current = null;
+      setIsRestoringConversation(false);
 
       chatServiceRef.current = new ChatService(
         baseUrl,
@@ -404,6 +473,10 @@ export const useChat = ({
         ) {
           setIsAgentTyping(false);
         }
+        // An agent reply shows the conversation is still open on the server
+        if (normalizedMessage.speaker === "agent") {
+          lastConfirmedOpenAtRef.current = Date.now();
+        }
       });
 
       chatServiceRef.current.setTakeoverHandler(() => {
@@ -413,6 +486,10 @@ export const useChat = ({
           onTakeoverRef.current();
         }
       });
+
+      chatServiceRef.current.setConversationGoneHandler((goneConversationId, availability) =>
+        conversationGoneRef.current(goneConversationId, availability),
+      );
 
       chatServiceRef.current.setFinalizedHandler(() => {
         setIsFinalized(true);
@@ -514,16 +591,42 @@ export const useChat = ({
         }
       })();
 
-      // Check for a saved conversation
-      const convId = chatServiceRef.current.getConversationId();
-      if (convId) {
-        setConversationId(convId);
-        setGuestToken(chatServiceRef.current.getGuestToken());
-        if (chatServiceRef.current.isConversationFinalized()) {
-          setIsFinalized(true);
-        } else if (!useWs) {
-          setConnectionState("connected");
+      // Show a saved conversation only after the server confirms it is still open; drop it quietly otherwise
+      const restoreSavedConversation = async (
+        service: ChatService,
+        savedConversationId: string,
+      ) => {
+        isRestoringRef.current = true;
+        setIsRestoringConversation(true);
+        const availability = await service.checkConversationAvailability();
+        const isStillCurrent =
+          service === chatServiceRef.current &&
+          service.getConversationId() === savedConversationId;
+        if (isStillCurrent && isConversationGone(availability)) {
+          discardConversation(savedConversationId);
+        } else if (isStillCurrent) {
+          markConfirmedOpenIfAvailable(availability);
+          justRestoredConversationIdRef.current = savedConversationId;
+          setConversationId(savedConversationId);
+          setGuestToken(service.getGuestToken());
+          if (!useWs) setConnectionState("connected");
         }
+        const isCurrentRestore = service === chatServiceRef.current;
+        if (isCurrentRestore) {
+          isRestoringRef.current = false;
+          setIsRestoringConversation(false);
+        }
+      };
+
+      const savedConversationId = chatServiceRef.current.getConversationId();
+      if (savedConversationId) {
+        const restore: Promise<void> = restoreSavedConversation(
+          chatServiceRef.current,
+          savedConversationId,
+        ).finally(() => {
+          if (restoreInFlightRef.current === restore) restoreInFlightRef.current = null;
+        });
+        restoreInFlightRef.current = restore;
       }
       // Pull initial static data
       if (chatServiceRef.current) {
@@ -619,7 +722,10 @@ export const useChat = ({
       const stored = localStorage.getItem(key);
       const parsed: ChatMessage[] = stored ? JSON.parse(stored) : [];
 
-      setMessages(parsed);
+      // Keep messages sent while this restored conversation was still being checked
+      const isJustRestored = justRestoredConversationIdRef.current === conversationId;
+      justRestoredConversationIdRef.current = null;
+      setMessages((current) => (isJustRestored ? mergeRestoredMessages(parsed, current) : parsed));
       // Initialize last seen create_time from cached messages
       if (parsed.length) {
         const maxCreateTime = Math.max(
@@ -707,6 +813,9 @@ export const useChat = ({
 
         // Reset failure counter on success
         heartbeatFailureCountRef.current = 0;
+        if (status !== "finalized") {
+          lastConfirmedOpenAtRef.current = Date.now();
+        }
 
         // Fold in the read markers from the poll (heartbeat has no WS "read" event)
         if (polledReadState) {
@@ -807,8 +916,16 @@ export const useChat = ({
         const nextInterval = getNextHeartbeatInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = nextInterval;
         scheduleNext(nextInterval);
-      } catch {
+      } catch (error) {
         if (cancelled) return;
+        // A refusal saying the conversation is gone ends polling; ConversationGoneError was handled already
+        if (isConversationUnavailableError(error)) {
+          if (!(error instanceof ConversationGoneError)) {
+            const availability = isConversationFinalizedError(error) ? "finalized" : "unavailable";
+            conversationGoneRef.current(conversationId, availability);
+          }
+          return;
+        }
         // Increment failure counter and stop after 5 consecutive failures
         heartbeatFailureCountRef.current += 1;
         if (heartbeatFailureCountRef.current >= 5) {
@@ -879,6 +996,7 @@ export const useChat = ({
         setConversationId(convId);
         setGuestToken(chatServiceRef.current.getGuestToken());
         setConnectionState("connected");
+        lastConfirmedOpenAtRef.current = Date.now();
 
         // Get possible queries from API response
         if (chatServiceRef.current.getPossibleQueries) {
@@ -932,186 +1050,16 @@ export const useChat = ({
     [],
   );
 
-  const uploadFile = useCallback(
-    async (file: File): Promise<Attachment | null> => {
-      const conversationId = chatServiceRef.current?.getConversationId();
-      if (!conversationId) {
-        return null;
-      }
-
-      try {
-        const uploadResult = await chatServiceRef.current?.uploadFile(
-          conversationId,
-          file,
-        );
-
-        // construct the file url with the base url
-        const file_url = new URL(uploadResult!.file_url!, baseUrl).href;
-
-        const attachment: Attachment = {
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          url: file_url,
-          file_id: uploadResult?.file_id,
-        };
-
-        setPreloadedAttachments((prev) => [...prev, attachment]);
-        return attachment;
-      } catch (error: any) {
-        if (isTokenExpiredError(error)) {
-          resetToInitialState();
-        }
-        if (onErrorRef.current) {
-          onErrorRef.current(error as Error);
-        }
-        return null;
-      }
-    },
-    [
-      apiKey,
-      conversationId,
-      buildMessagesKey,
-      isTokenExpiredError,
-      resetToInitialState,
-    ],
-  );
-
-  // Send message
-  const sendMessage = useCallback(
-    async (
-      text: string,
-      files: File[] = [],
-      extraMetadata?: Record<string, any>,
-      reCaptchaToken?: string,
-    ) => {
-      if (!chatServiceRef.current) {
-        throw new Error("Chat service not initialized");
-      }
-
-      try {
-        setIsLoading(true);
-
-        const newAttachments: Attachment[] = [];
-
-        if (files.length > 0) {
-          const uploadedFiles = files
-            .map((f) =>
-              preloadedAttachments.find(
-                (pa) => pa.name === f.name && pa.size === f.size,
-              ),
-            )
-            .filter(Boolean) as Attachment[];
-          newAttachments.push(...uploadedFiles);
-        }
-
-        // Start typing immediately when user sends, unless conversation is taken over by a human
-        if (!isTakenOver) {
-          setIsAgentTyping(true);
-        }
-
-        await chatServiceRef.current.sendMessage(
-          text,
-          newAttachments,
-          extraMetadata,
-          reCaptchaToken,
-        );
-
-        setPreloadedAttachments([]);
-      } catch (error: any) {
-        setIsAgentTyping(false);
-        if (isTokenExpiredError(error)) {
-          resetToInitialState();
-        } else if (isNetworkOrServerError(error)) {
-          // Show custom server-unavailable message
-          const now = Date.now() / 1000;
-          const createTime =
-            chatServiceRef.current?.getConversationCreateTime();
-          const startTime = createTime != null ? now - createTime : 0;
-          const endTime = startTime + 0.01;
-          const specialMessage: ChatMessage = {
-            create_time: now,
-            start_time: startTime,
-            end_time: endTime,
-            speaker: "special",
-            text:
-              serverUnavailableMessage ?? DEFAULT_SERVER_UNAVAILABLE_MESSAGE,
-            ...(serverUnavailableContactUrl && {
-              linkUrl: serverUnavailableContactUrl,
-              linkLabel:
-                serverUnavailableContactLabel ??
-                DEFAULT_SERVER_UNAVAILABLE_CONTACT_LABEL,
-            }),
-          };
-
-          setMessages((prev) => [...prev, specialMessage]);
-          // Don't call onError so the user only sees our custom message
-        } else if (onErrorRef.current && error instanceof Error) {
-          onErrorRef.current(error);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [
-      preloadedAttachments,
-      isTakenOver,
-      isTokenExpiredError,
-      resetToInitialState,
-      serverUnavailableMessage,
-      serverUnavailableContactUrl,
-      serverUnavailableContactLabel,
-    ],
-  );
-
-  const sendAudioMessage = useCallback(
-    async (audioBlob: Blob, audioFormat: string) => {
-      if (!chatServiceRef.current) {
-        throw new Error("Chat service not initialized");
-      }
-
-      try {
-        setIsLoading(true);
-        if (!isTakenOver) {
-          setIsAgentTyping(true);
-        }
-        await chatServiceRef.current.sendAudioMessage(audioBlob, audioFormat);
-      } catch (error: any) {
-        setIsAgentTyping(false);
-        if (isTokenExpiredError(error)) {
-          resetToInitialState();
-        } else if (onErrorRef.current && error instanceof Error) {
-          onErrorRef.current(error);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [isTakenOver, isTokenExpiredError, resetToInitialState],
-  );
-
-  // Invisible trigger that runs the workflow as the conversation opens so a Human In The
-  // Loop form (show_on_start, wired after Start) appears without a first user message.
-  const triggerStartForm = useCallback(async (reCaptchaToken?: string | undefined) => {
-    if (!chatServiceRef.current) return;
-    try {
-      if (!isTakenOver) {
-        setIsAgentTyping(true);
-      }
-      await chatServiceRef.current.sendStartFormTrigger(reCaptchaToken);
-    } catch (error: any) {
-      setIsAgentTyping(false);
-      if (isTokenExpiredError(error)) {
-        resetToInitialState();
-      }
-      // Best-effort: if it fails the visitor can still type normally.
-    }
-  }, [isTakenOver, isTokenExpiredError, resetToInitialState]);
-
   const startConversation = useCallback(
     async (reCaptchaToken?: string | undefined) => {
       if (!chatServiceRef.current) {
         return;
+      }
+      // While a saved conversation is still being checked, wait for the result rather than replace it
+      if (restoreInFlightRef.current) {
+        await restoreInFlightRef.current;
+        const isSavedConversationKept = Boolean(chatServiceRef.current?.getConversationId());
+        if (isSavedConversationKept) return;
       }
       try {
         setConnectionState("connecting");
@@ -1141,6 +1089,7 @@ export const useChat = ({
         setConversationId(convId);
         setGuestToken(chatServiceRef.current.getGuestToken());
         setConnectionState("connected");
+        lastConfirmedOpenAtRef.current = Date.now();
 
         if (chatServiceRef.current.getPossibleQueries) {
           const queries = chatServiceRef.current.getPossibleQueries();
@@ -1185,6 +1134,268 @@ export const useChat = ({
     },
     [],
   );
+
+  // Replaces a conversation that can no longer be continued with a new one.
+  const restartConversation = useCallback(
+    (staleConversationId: string | null, reCaptchaToken?: string): Promise<void> =>
+      runRestartOnce(async () => {
+        // Another restart may already have replaced the stale conversation
+        const activeConversationId = chatServiceRef.current?.getConversationId() ?? null;
+        const isAlreadyReplaced = activeConversationId !== null && activeConversationId !== staleConversationId;
+        if (isAlreadyReplaced) return;
+        discardConversation(staleConversationId);
+        await startConversation(reCaptchaToken);
+      }),
+    [runRestartOnce, discardConversation, startConversation],
+  );
+
+  // Confirms a quiet conversation is still open; returns false after replacing one that is not.
+  const confirmOpenOrRestart = useCallback(
+    async (reCaptchaToken?: string): Promise<boolean> => {
+      const service = chatServiceRef.current;
+      const activeConversationId = service?.getConversationId() ?? null;
+      const isRecheckDue = hasBeenQuietFor(
+        lastConfirmedOpenAtRef.current,
+        QUIET_CONVERSATION_RECHECK_MS,
+      );
+      if (!service || !activeConversationId || !isRecheckDue) return true;
+
+      const availability = await service.checkConversationAvailability();
+      markConfirmedOpenIfAvailable(availability);
+      if (!isConversationGone(availability)) return true;
+
+      notifyHostIfFinalized(availability);
+      await restartConversation(activeConversationId, reCaptchaToken);
+      return false;
+    },
+    [restartConversation, markConfirmedOpenIfAvailable, notifyHostIfFinalized],
+  );
+
+  // Confirms a quiet conversation is still open before sending; overlapping sends share one check
+  const ensureConversationIsOpen = useCallback(
+    (reCaptchaToken?: string): Promise<boolean> =>
+      runOpenCheckOnce(() => confirmOpenOrRestart(reCaptchaToken)),
+    [runOpenCheckOnce, confirmOpenOrRestart],
+  );
+
+  // When the visitor comes back to the chat, drop it if it can no longer be continued.
+  const verifyConversationOnReturn = useCallback(async () => {
+    const service = chatServiceRef.current;
+    const activeConversationId = service?.getConversationId() ?? null;
+    const isCheckDue = hasBeenQuietFor(
+      lastConfirmedOpenAtRef.current,
+      RETURN_CHECK_MIN_INTERVAL_MS,
+    );
+    const shouldCheck =
+      Boolean(service && activeConversationId) &&
+      !isFinalized &&
+      !isRestoringRef.current &&
+      isCheckDue;
+    if (!service || !shouldCheck) return;
+
+    const availability = await service.checkConversationAvailability();
+    markConfirmedOpenIfAvailable(availability);
+    const isStillActive = service.getConversationId() === activeConversationId;
+    if (isConversationGone(availability) && isStillActive) {
+      notifyHostIfFinalized(availability);
+      discardConversation(activeConversationId);
+    }
+  }, [isFinalized, discardConversation, markConfirmedOpenIfAvailable, notifyHostIfFinalized]);
+
+  useVisibilityReturn(() => {
+    void verifyConversationOnReturn();
+  });
+
+  const uploadFile = useCallback(
+    async (file: File): Promise<Attachment | null> => {
+      const conversationId = chatServiceRef.current?.getConversationId();
+      if (!conversationId) {
+        return null;
+      }
+
+      try {
+        const uploadResult = await chatServiceRef.current?.uploadFile(
+          conversationId,
+          file,
+        );
+
+        // construct the file url with the base url
+        const file_url = new URL(uploadResult!.file_url!, baseUrl).href;
+
+        const attachment: Attachment = {
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          url: file_url,
+          file_id: uploadResult?.file_id,
+        };
+
+        setPreloadedAttachments((prev) => [...prev, attachment]);
+        return attachment;
+      } catch (error: any) {
+        // The chat service has already reset the widget when the conversation is gone
+        const isConversationGone = isConversationUnavailableError(error);
+        if (!isConversationGone && onErrorRef.current) {
+          onErrorRef.current(error as Error);
+        }
+        return null;
+      }
+    },
+    [baseUrl],
+  );
+
+  // Send message
+  const sendMessage = useCallback(
+    async (
+      text: string,
+      files: File[] = [],
+      extraMetadata?: Record<string, any>,
+      reCaptchaToken?: string,
+    ): Promise<SendMessageOutcome> => {
+      if (!chatServiceRef.current) {
+        throw new Error("Chat service not initialized");
+      }
+      const staleConversationId = chatServiceRef.current.getConversationId();
+
+      try {
+        setIsLoading(true);
+
+        const isConversationOpen = await ensureConversationIsOpen(reCaptchaToken);
+        if (!isConversationOpen) return "conversation_restarted";
+
+        const newAttachments: Attachment[] = [];
+
+        if (files.length > 0) {
+          const uploadedFiles = files
+            .map((f) =>
+              preloadedAttachments.find(
+                (pa) => pa.name === f.name && pa.size === f.size,
+              ),
+            )
+            .filter(Boolean) as Attachment[];
+          newAttachments.push(...uploadedFiles);
+        }
+
+        // Start typing immediately when user sends, unless conversation is taken over by a human
+        if (!isTakenOver) {
+          setIsAgentTyping(true);
+        }
+
+        await chatServiceRef.current.sendMessage(
+          text,
+          newAttachments,
+          extraMetadata,
+          reCaptchaToken,
+        );
+
+        lastConfirmedOpenAtRef.current = Date.now();
+        setPreloadedAttachments([]);
+        return "sent";
+      } catch (error: any) {
+        setIsAgentTyping(false);
+        if (isConversationUnavailableError(error)) {
+          if (isConversationFinalizedError(error)) notifyHostIfFinalized("finalized");
+          await restartConversation(staleConversationId, reCaptchaToken);
+          return "conversation_restarted";
+        }
+        if (isNetworkOrServerError(error)) {
+          // Show custom server-unavailable message
+          const now = Date.now() / 1000;
+          const createTime =
+            chatServiceRef.current?.getConversationCreateTime();
+          const startTime = createTime != null ? now - createTime : 0;
+          const endTime = startTime + 0.01;
+          const specialMessage: ChatMessage = {
+            create_time: now,
+            start_time: startTime,
+            end_time: endTime,
+            speaker: "special",
+            text:
+              serverUnavailableMessage ?? DEFAULT_SERVER_UNAVAILABLE_MESSAGE,
+            ...(serverUnavailableContactUrl && {
+              linkUrl: serverUnavailableContactUrl,
+              linkLabel:
+                serverUnavailableContactLabel ??
+                DEFAULT_SERVER_UNAVAILABLE_CONTACT_LABEL,
+            }),
+          };
+
+          setMessages((prev) => [...prev, specialMessage]);
+          // Don't call onError so the user only sees our custom message
+        } else if (onErrorRef.current && error instanceof Error) {
+          onErrorRef.current(error);
+        }
+        return "failed";
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [
+      preloadedAttachments,
+      isTakenOver,
+      ensureConversationIsOpen,
+      restartConversation,
+      notifyHostIfFinalized,
+      serverUnavailableMessage,
+      serverUnavailableContactUrl,
+      serverUnavailableContactLabel,
+    ],
+  );
+
+  const sendAudioMessage = useCallback(
+    async (audioBlob: Blob, audioFormat: string): Promise<SendMessageOutcome> => {
+      if (!chatServiceRef.current) {
+        throw new Error("Chat service not initialized");
+      }
+      const staleConversationId = chatServiceRef.current.getConversationId();
+
+      try {
+        setIsLoading(true);
+        const isConversationOpen = await ensureConversationIsOpen();
+        if (!isConversationOpen) return "conversation_restarted";
+
+        if (!isTakenOver) {
+          setIsAgentTyping(true);
+        }
+        await chatServiceRef.current.sendAudioMessage(audioBlob, audioFormat);
+        lastConfirmedOpenAtRef.current = Date.now();
+        return "sent";
+      } catch (error: any) {
+        setIsAgentTyping(false);
+        if (isConversationUnavailableError(error)) {
+          if (isConversationFinalizedError(error)) notifyHostIfFinalized("finalized");
+          await restartConversation(staleConversationId);
+          return "conversation_restarted";
+        }
+        if (onErrorRef.current && error instanceof Error) {
+          onErrorRef.current(error);
+        }
+        return "failed";
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [isTakenOver, ensureConversationIsOpen, restartConversation, notifyHostIfFinalized],
+  );
+
+  // Invisible trigger that runs the workflow as the conversation opens so a Human In The
+  // Loop form (show_on_start, wired after Start) appears without a first user message.
+  const triggerStartForm = useCallback(async (reCaptchaToken?: string | undefined) => {
+    if (!chatServiceRef.current) return;
+    const staleConversationId = chatServiceRef.current.getConversationId();
+    try {
+      if (!isTakenOver) {
+        setIsAgentTyping(true);
+      }
+      await chatServiceRef.current.sendStartFormTrigger(reCaptchaToken);
+    } catch (error: any) {
+      setIsAgentTyping(false);
+      if (isConversationUnavailableError(error)) {
+        discardConversation(staleConversationId);
+      }
+      // Best-effort: if it fails the visitor can still type normally.
+    }
+  }, [isTakenOver, discardConversation]);
 
   // Add feedback to an agent message
   const addFeedback = useCallback(
@@ -1260,6 +1471,8 @@ export const useChat = ({
     addFeedback,
     readState,
     markRead,
+    isRestoringConversation,
+    verifyConversationOnReturn,
     welcomeTitle,
     welcomeImageUrl,
     welcomeMessage,
