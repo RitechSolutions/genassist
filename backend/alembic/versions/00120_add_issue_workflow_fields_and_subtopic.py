@@ -16,6 +16,8 @@ down_revision: Union[str, None] = "c263cbb56ca5"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+_INDEX = "ix_conversation_analysis_topic_subtopic"
+
 SEED_STATUSES = [
     ("open", "Open", "todo", 0, "amber"),
     ("in_progress", "In Progress", "in_progress", 1, "blue"),
@@ -37,12 +39,26 @@ def _audit_columns() -> list[sa.Column]:
 
 
 def upgrade() -> None:
+    with op.get_context().autocommit_block():
+        op.add_column(
+            "conversation_analysis", sa.Column("subtopic", sa.String(length=255), nullable=True), if_not_exists=True
+        )
+        left_invalid = op.get_bind().scalar(
+            sa.text("SELECT NOT indisvalid FROM pg_index WHERE indexrelid = to_regclass(:name)"),
+            {"name": _INDEX},
+        )
+        if left_invalid:
+            op.execute(f"DROP INDEX CONCURRENTLY IF EXISTS {_INDEX}")
+
+        op.execute(
+            f"""
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS {_INDEX}
+            ON conversation_analysis (topic, subtopic, is_deleted)
+            """
+        )
+
     op.add_column("message_issues", sa.Column("fix_version", sa.String(length=100), nullable=True))
     op.add_column("message_issues", sa.Column("target_rollout_date", sa.Date(), nullable=True))
-    op.add_column("conversation_analysis", sa.Column("subtopic", sa.String(length=255), nullable=True))
-    op.create_index(
-        "ix_conversation_analysis_topic_subtopic", "conversation_analysis", ["topic", "subtopic", "is_deleted"]
-    )
 
     op.create_table(
         "issue_statuses",
@@ -83,7 +99,7 @@ def downgrade() -> None:
     op.drop_index("ix_message_issue_notes_message_feedback_id", table_name="message_issue_notes")
     op.drop_table("message_issue_notes")
     op.drop_table("issue_statuses")
-    op.drop_index("ix_conversation_analysis_topic_subtopic", table_name="conversation_analysis")
+    op.drop_index(_INDEX, table_name="conversation_analysis")
     op.drop_column("conversation_analysis", "subtopic")
     op.drop_column("message_issues", "target_rollout_date")
     op.drop_column("message_issues", "fix_version")
