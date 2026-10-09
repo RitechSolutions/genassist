@@ -296,8 +296,8 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
             self, message_feedback_id: UUID, values: dict
             ) -> MessageIssueModel:
         """Create or update the tracked issue row for a comment (message_feedback
-        row) with ``values`` as given. Raises if the referenced comment does not
-        exist."""
+        row) with ``values``, keeping resolved_by/resolved_at when the status is
+        unchanged. Raises if the referenced comment does not exist."""
         await self._require_feedback(message_feedback_id)
 
         issue = (
@@ -309,6 +309,8 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                 ).scalars().first()
 
         if issue:
+            if values.get("status") == issue.status:
+                values = {key: value for key, value in values.items() if key not in ("resolved_at", "resolved_by")}
             for key, value in values.items():
                 setattr(issue, key, value)
         else:
