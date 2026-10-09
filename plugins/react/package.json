@@ -1,6 +1,6 @@
 {
   "name": "genassist-chat-react",
-  "version": "1.0.42",
+  "version": "1.0.44",
   "description": "React chat component for GenAssist",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -63,7 +63,7 @@
     "esbuild": "^0.25.8",
     "typescript": "^5.0.0",
     "vite": "^7.3.5",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "react": false,
