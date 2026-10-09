@@ -9,7 +9,7 @@ export function subtopicsFor(
   topic: string | null,
   current: string | null = null,
 ): string[] {
-  if (!topic) return [];
+  if (!topic || topic === "all") return [];
   const subtopics = options.find((option) => option.name === topic)?.subtopics ?? [];
   if (!current || current === "all" || subtopics.includes(current)) return subtopics;
   return [...subtopics, current];

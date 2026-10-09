@@ -31,10 +31,7 @@ export interface ReportedFeedbackResult {
   total_pages: number;
 }
 
-export interface FetchReportedFeedbackParams {
-  skip?: number;
-  limit?: number;
-  status?: FeedbackStatus | "all";
+export interface FeedbackFilters {
   /** Filter by when the comment was added (reported time). */
   from_date?: string;
   to_date?: string;
@@ -43,7 +40,26 @@ export interface FetchReportedFeedbackParams {
   subtopic?: string;
 }
 
+export interface FetchReportedFeedbackParams extends FeedbackFilters {
+  skip?: number;
+  limit?: number;
+  status?: FeedbackStatus | "all";
+}
+
 const MAX_BACKEND_LIMIT = 100;
+
+const appendFilters = (query: URLSearchParams, filters: FeedbackFilters) => {
+  for (const key of [
+    "from_date",
+    "to_date",
+    "workflow_id",
+    "topic",
+    "subtopic",
+  ] as const) {
+    const value = filters[key];
+    if (value) query.append(key, value);
+  }
+};
 
 const EMPTY_RESULT: ReportedFeedbackResult = {
   items: [],
@@ -56,27 +72,14 @@ const EMPTY_RESULT: ReportedFeedbackResult = {
 export const fetchReportedFeedback = async (
   params: FetchReportedFeedbackParams = {},
 ): Promise<ReportedFeedbackResult> => {
-  const {
-    skip = 0,
-    limit = 20,
-    status,
-    from_date,
-    to_date,
-    workflow_id,
-    topic,
-    subtopic,
-  } = params;
+  const { skip = 0, limit = 20, status } = params;
   const safeLimit = limit > 0 ? Math.min(limit, MAX_BACKEND_LIMIT) : 20;
 
   const queryParams = new URLSearchParams();
   if (skip) queryParams.append("skip", String(skip));
   queryParams.append("limit", String(safeLimit));
   if (status && status !== "all") queryParams.append("status", status);
-  if (from_date) queryParams.append("from_date", from_date);
-  if (to_date) queryParams.append("to_date", to_date);
-  if (workflow_id) queryParams.append("workflow_id", workflow_id);
-  if (topic) queryParams.append("topic", topic);
-  if (subtopic) queryParams.append("subtopic", subtopic);
+  appendFilters(queryParams, params);
 
   const response = await apiRequest<ReportedFeedbackResult>(
     "GET",
@@ -85,14 +88,6 @@ export const fetchReportedFeedback = async (
 
   return response ?? EMPTY_RESULT;
 };
-
-export interface FeedbackSummaryParams {
-  workflow_id?: string;
-  from_date?: string;
-  to_date?: string;
-  topic?: string;
-  subtopic?: string;
-}
 
 /** Issue counts per status key, zero-filled over the configured statuses. */
 export interface FeedbackStatusSummary {
@@ -103,19 +98,10 @@ export interface FeedbackStatusSummary {
 export const EMPTY_SUMMARY: FeedbackStatusSummary = { total: 0, by_status: {} };
 
 export const fetchReportedFeedbackSummary = async (
-  params: FeedbackSummaryParams = {},
+  params: FeedbackFilters = {},
 ): Promise<FeedbackStatusSummary> => {
   const queryParams = new URLSearchParams();
-  for (const key of [
-    "workflow_id",
-    "from_date",
-    "to_date",
-    "topic",
-    "subtopic",
-  ] as const) {
-    const value = params[key];
-    if (value) queryParams.append(key, value);
-  }
+  appendFilters(queryParams, params);
   const query = queryParams.toString();
 
   const response = await apiRequest<FeedbackStatusSummary>(
@@ -126,11 +112,11 @@ export const fetchReportedFeedbackSummary = async (
 };
 
 /** Partial issue update: an omitted field is kept, an explicit null clears it. */
-export interface IssuePatch {
+export type IssuePatch = {
   status?: FeedbackStatus;
   fix_version?: string | null;
   target_rollout_date?: string | null;
-}
+};
 
 export interface MessageIssueRow {
   id: string;
@@ -150,7 +136,7 @@ export const updateFeedbackIssue = async (
   const row = await apiRequest<MessageIssueRow>(
     "PATCH",
     `conversations/issues/${feedbackId}`,
-    patch as Record<string, unknown>,
+    patch,
   );
   if (!row) throw new Error("You don't have permission to update this feedback");
   return row;

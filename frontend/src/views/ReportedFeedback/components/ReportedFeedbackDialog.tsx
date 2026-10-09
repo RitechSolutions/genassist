@@ -1,4 +1,4 @@
-import { ComponentType, ReactNode, useEffect, useState } from "react";
+import { ComponentType, Fragment, ReactNode, useEffect, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -38,7 +38,6 @@ import {
   addIssueNote,
   FeedbackStatus,
   fetchIssueNotes,
-  IssuePatch,
   ReportedFeedbackItem,
 } from "@/services/reportedFeedback";
 import { IssueStatus } from "@/services/issueStatuses";
@@ -53,6 +52,7 @@ import {
   topicLabel,
   TriageDraft,
 } from "../helpers/triageDraft";
+import { useIssuePatch } from "../hooks/useReportedFeedback";
 import { StatusBadge, StatusSelect } from "./StatusSelect";
 import { ConversationPanel } from "./ConversationPanel";
 
@@ -63,11 +63,6 @@ type ReportedFeedbackDialogProps = {
   statuses: IssueStatus[];
   canTriage: boolean;
   onStatusChange: (issue: ReportedFeedbackItem, next: FeedbackStatus) => void;
-  /** Saves a partial update; resolves to the saved issue, or null after a failure it already reported. */
-  onIssuePatch: (
-    issue: ReportedFeedbackItem,
-    patch: IssuePatch,
-  ) => Promise<ReportedFeedbackItem | null>;
   /** Escape hatch to the full Transcripts view — the dialog embeds the thread itself. */
   onOpenConversation: (conversationId: string) => void;
   onOpenWorkflow: (agentId: string | null) => void;
@@ -112,6 +107,224 @@ function Meta({
   );
 }
 
+function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
+  const [draft, setDraft] = useState<TriageDraft>(() => toDraft(issue));
+  const saveTriage = useIssuePatch();
+  const triageDirty = isDraftDirty(issue, draft);
+
+  const save = () => {
+    const submitted = draft;
+    void saveTriage.mutateAsync({ issue, patch: draftToPatch(issue, draft) }).then(
+      (saved) => {
+        setDraft((current) => (current === submitted ? toDraft(saved) : current));
+        toast.success("Triage saved");
+      },
+      (err) => toast.error(extractErrorMessage(err, "Failed to update feedback")),
+    );
+  };
+
+  return (
+    <section>
+      <SectionLabel icon={Wrench}>Triage</SectionLabel>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="feedback-fix-version" className="text-xs">
+            Fix version
+          </Label>
+          <Input
+            id="feedback-fix-version"
+            className="h-9"
+            maxLength={100}
+            placeholder="e.g. 2.4.1"
+            value={draft.fix_version}
+            onChange={(e) =>
+              setDraft((current) => ({
+                ...current,
+                fix_version: e.target.value,
+              }))
+            }
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Target rollout date</Label>
+          <div className="flex items-center gap-1">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 flex-1 justify-start gap-2 rounded-full font-normal"
+                >
+                  <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                  {draft.target_rollout_date ? (
+                    formatDateOnly(draft.target_rollout_date)
+                  ) : (
+                    <span className="text-muted-foreground">
+                      Pick a date
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              {/* Above DialogContent (z-[1300]). */}
+              <PopoverContent
+                className="z-[1400] w-auto p-0"
+                align="start"
+              >
+                <Calendar
+                  mode="single"
+                  required
+                  selected={
+                    draft.target_rollout_date
+                      ? parseISO(draft.target_rollout_date)
+                      : undefined
+                  }
+                  defaultMonth={
+                    draft.target_rollout_date
+                      ? parseISO(draft.target_rollout_date)
+                      : undefined
+                  }
+                  onSelect={(day) =>
+                    setDraft((current) => ({
+                      ...current,
+                      target_rollout_date: day
+                        ? toDateOnly(day)
+                        : null,
+                    }))
+                  }
+                  initialFocus
+                />
+              </PopoverContent>
+            </Popover>
+            {draft.target_rollout_date && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0 rounded-full"
+                title="Clear the target rollout date"
+                aria-label="Clear the target rollout date"
+                onClick={() =>
+                  setDraft((current) => ({
+                    ...current,
+                    target_rollout_date: null,
+                  }))
+                }
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end">
+        <Button
+          type="button"
+          size="sm"
+          className="rounded-full"
+          disabled={!triageDirty || saveTriage.isPending}
+          onClick={save}
+        >
+          {saveTriage.isPending ? "Saving..." : "Save"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function NotesSection({
+  feedbackId,
+  canTriage,
+}: {
+  feedbackId: string;
+  canTriage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [noteDraft, setNoteDraft] = useState("");
+
+  const {
+    data: notes = [],
+    isLoading: notesLoading,
+    isError: notesError,
+  } = useQuery({
+    queryKey: ["reported-feedback", "notes", feedbackId],
+    queryFn: () => fetchIssueNotes(feedbackId),
+  });
+
+  const addNote = useMutation({
+    mutationFn: (body: string) => addIssueNote(feedbackId, body),
+    onSuccess: (_note, body) => {
+      setNoteDraft((current) => (current.trim() === body ? "" : current));
+      void queryClient.invalidateQueries({
+        queryKey: ["reported-feedback", "notes", feedbackId],
+      });
+      toast.success("Note added");
+    },
+    onError: (err) => toast.error(extractErrorMessage(err, "Failed to add note")),
+  });
+
+  const submitNote = () => {
+    const body = noteDraft.trim();
+    if (!body || addNote.isPending) return;
+    addNote.mutate(body);
+  };
+
+  return (
+    <section>
+      <SectionLabel icon={NotebookPen}>Notes</SectionLabel>
+      {notesLoading ? (
+        <p className="text-sm text-muted-foreground">Loading notes...</p>
+      ) : notesError ? (
+        <p className="text-sm text-red-600 dark:text-red-400">
+          Couldn't load the notes.
+        </p>
+      ) : notes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No notes yet</p>
+      ) : (
+        <ol className="space-y-2">
+          {notes.map((note) => (
+            <li key={note.id} className="rounded-lg border bg-muted/40 p-3">
+              <div className="mb-1 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  {note.author_username ?? "Unknown user"}
+                </span>
+                {" · "}
+                {format(parseISO(note.created_at), "d MMM yyyy HH:mm")}
+              </div>
+              <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                {note.body}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+      {canTriage && (
+        <div className="mt-3 space-y-2">
+          <Textarea
+            rows={2}
+            maxLength={5000}
+            placeholder="Add a note about what was changed and how"
+            aria-label="New note"
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+          />
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="rounded-full"
+              disabled={!noteDraft.trim() || addNote.isPending}
+              onClick={submitNote}
+            >
+              {addNote.isPending ? "Adding..." : "Add note"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function ReportedFeedbackDialog({
   issue,
   isOpen,
@@ -119,73 +332,24 @@ export function ReportedFeedbackDialog({
   statuses,
   canTriage,
   onStatusChange,
-  onIssuePatch,
   onOpenConversation,
   onOpenWorkflow,
 }: ReportedFeedbackDialogProps) {
-  const queryClient = useQueryClient();
   // The conversation expands the dialog in place rather than navigating, so reviewers
   // keep their page, filters and scroll position in the list behind it.
   const [showConversation, setShowConversation] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
-  const [draft, setDraft] = useState<TriageDraft>(() =>
-    toDraft(issue ?? { fix_version: null, target_rollout_date: null }),
-  );
-  const [savingTriage, setSavingTriage] = useState(false);
-  const [noteDraft, setNoteDraft] = useState("");
 
   const issueId = issue?.feedback_id;
   useEffect(() => {
     setShowConversation(false);
     setDebugOpen(false);
-    setNoteDraft("");
-    if (issue) setDraft(toDraft(issue));
   }, [issueId]);
-
-  const {
-    data: notes = [],
-    isLoading: notesLoading,
-    isError: notesError,
-  } = useQuery({
-    queryKey: ["reported-feedback", "notes", issueId],
-    queryFn: () => fetchIssueNotes(issueId as string),
-    enabled: isOpen && Boolean(issueId),
-  });
-
-  const addNote = useMutation({
-    mutationFn: (vars: { feedbackId: string; body: string }) =>
-      addIssueNote(vars.feedbackId, vars.body),
-    onSuccess: (_note, vars) => {
-      setNoteDraft((current) => (current.trim() === vars.body ? "" : current));
-      void queryClient.invalidateQueries({
-        queryKey: ["reported-feedback", "notes", vars.feedbackId],
-      });
-      toast.success("Note added");
-    },
-    onError: (err) => toast.error(extractErrorMessage(err, "Failed to add note")),
-  });
 
   if (!issue) return null;
 
   const canOpenConversation = Boolean(issue.conversation_id);
   const isAgentMessage = ["Agent", "agent"].includes(issue.speaker);
-  const triageDirty = isDraftDirty(issue, draft);
-
-  const saveTriage = async () => {
-    const submitted = draft;
-    setSavingTriage(true);
-    const saved = await onIssuePatch(issue, draftToPatch(issue, draft));
-    setSavingTriage(false);
-    if (!saved) return;
-    setDraft((current) => (current === submitted ? toDraft(saved) : current));
-    toast.success("Triage saved");
-  };
-
-  const submitNote = () => {
-    const body = noteDraft.trim();
-    if (!body || addNote.isPending) return;
-    addNote.mutate({ feedbackId: issue.feedback_id, body });
-  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -253,166 +417,14 @@ export function ReportedFeedbackDialog({
               )}
             </div>
 
-            {canTriage && (
-              <section>
-                <SectionLabel icon={Wrench}>Triage</SectionLabel>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="feedback-fix-version" className="text-xs">
-                      Fix version
-                    </Label>
-                    <Input
-                      id="feedback-fix-version"
-                      className="h-9"
-                      maxLength={100}
-                      placeholder="e.g. 2.4.1"
-                      value={draft.fix_version}
-                      onChange={(e) =>
-                        setDraft((current) => ({
-                          ...current,
-                          fix_version: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Target rollout date</Label>
-                    <div className="flex items-center gap-1">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="h-9 flex-1 justify-start gap-2 rounded-full font-normal"
-                          >
-                            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                            {draft.target_rollout_date ? (
-                              formatDateOnly(draft.target_rollout_date)
-                            ) : (
-                              <span className="text-muted-foreground">
-                                Pick a date
-                              </span>
-                            )}
-                          </Button>
-                        </PopoverTrigger>
-                        {/* Above DialogContent (z-[1300]). */}
-                        <PopoverContent
-                          className="z-[1400] w-auto p-0"
-                          align="start"
-                        >
-                          <Calendar
-                            mode="single"
-                            required
-                            selected={
-                              draft.target_rollout_date
-                                ? parseISO(draft.target_rollout_date)
-                                : undefined
-                            }
-                            defaultMonth={
-                              draft.target_rollout_date
-                                ? parseISO(draft.target_rollout_date)
-                                : undefined
-                            }
-                            onSelect={(day) =>
-                              setDraft((current) => ({
-                                ...current,
-                                target_rollout_date: day
-                                  ? toDateOnly(day)
-                                  : null,
-                              }))
-                            }
-                            initialFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      {draft.target_rollout_date && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-9 shrink-0 rounded-full"
-                          title="Clear the target rollout date"
-                          aria-label="Clear the target rollout date"
-                          onClick={() =>
-                            setDraft((current) => ({
-                              ...current,
-                              target_rollout_date: null,
-                            }))
-                          }
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-3 flex justify-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="rounded-full"
-                    disabled={!triageDirty || savingTriage}
-                    onClick={saveTriage}
-                  >
-                    {savingTriage ? "Saving..." : "Save"}
-                  </Button>
-                </div>
-              </section>
-            )}
+            <Fragment key={issue.feedback_id}>
+              {canTriage && <TriageSection issue={issue} />}
 
-            <section>
-              <SectionLabel icon={NotebookPen}>Notes</SectionLabel>
-              {notesLoading ? (
-                <p className="text-sm text-muted-foreground">Loading notes...</p>
-              ) : notesError ? (
-                <p className="text-sm text-red-600 dark:text-red-400">
-                  Couldn't load the notes.
-                </p>
-              ) : notes.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No notes yet</p>
-              ) : (
-                <ol className="space-y-2">
-                  {notes.map((note) => (
-                    <li key={note.id} className="rounded-lg border bg-muted/40 p-3">
-                      <div className="mb-1 text-xs text-muted-foreground">
-                        <span className="font-medium text-foreground">
-                          {note.author_username ?? "Unknown user"}
-                        </span>
-                        {" · "}
-                        {format(parseISO(note.created_at), "d MMM yyyy HH:mm")}
-                      </div>
-                      <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                        {note.body}
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-              {canTriage && (
-                <div className="mt-3 space-y-2">
-                  <Textarea
-                    rows={2}
-                    maxLength={5000}
-                    placeholder="Add a note about what was changed and how"
-                    aria-label="New note"
-                    value={noteDraft}
-                    onChange={(e) => setNoteDraft(e.target.value)}
-                  />
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="rounded-full"
-                      disabled={!noteDraft.trim() || addNote.isPending}
-                      onClick={submitNote}
-                    >
-                      {addNote.isPending ? "Adding..." : "Add note"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </section>
+              <NotesSection
+                feedbackId={issue.feedback_id}
+                canTriage={canTriage}
+              />
+            </Fragment>
 
             <section>
               <SectionLabel icon={Quote}>Comment</SectionLabel>

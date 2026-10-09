@@ -38,7 +38,7 @@ export function StatusSelect({
   className,
 }: StatusSelectProps) {
   return (
-    <Select value={value} onValueChange={(v) => onChange(v as FeedbackStatus)}>
+    <Select value={value} onValueChange={onChange}>
       <SelectTrigger
         className={`h-8 w-[150px] rounded-full border text-xs font-medium ${statusMeta(statuses, value).className} ${className ?? ""}`}
       >

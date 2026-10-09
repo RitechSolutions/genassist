@@ -123,9 +123,11 @@ class TranscriptMessageService:
             status = await self.issue_status_repo.get_by_key(changes["status"])
             if status is None or not status.is_active:
                 raise AppException(ErrorKey.ISSUE_STATUS_NOT_FOUND, status_code=422)
-            is_done = status.category == IssueStatusCategory.DONE.value
-            changes["resolved_at"] = datetime.now(timezone.utc) if is_done else None
-            changes["resolved_by"] = get_current_user_id() if is_done else None
+            stored = await self.transcript_message_repo.get_issue(message_feedback_id)
+            if stored is None or stored.status != status.key:
+                is_done = status.category == IssueStatusCategory.DONE.value
+                changes["resolved_at"] = datetime.now(timezone.utc) if is_done else None
+                changes["resolved_by"] = get_current_user_id() if is_done else None
 
         issue = await self.transcript_message_repo.upsert_issue(
             message_feedback_id, changes

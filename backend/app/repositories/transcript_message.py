@@ -292,15 +292,8 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         return [(status, count) for status, count in (await self.db.execute(query)).all()]
 
 
-    async def upsert_issue(
-            self, message_feedback_id: UUID, values: dict
-            ) -> MessageIssueModel:
-        """Create or update the tracked issue row for a comment (message_feedback
-        row) with ``values``, keeping resolved_by/resolved_at when the status is
-        unchanged. Raises if the referenced comment does not exist."""
-        await self._require_feedback(message_feedback_id)
-
-        issue = (
+    async def get_issue(self, message_feedback_id: UUID) -> Optional[MessageIssueModel]:
+        return (
                 await self.db.execute(
                         select(MessageIssueModel).where(
                                 MessageIssueModel.message_feedback_id == message_feedback_id
@@ -308,9 +301,18 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                         )
                 ).scalars().first()
 
+
+    async def upsert_issue(
+            self, message_feedback_id: UUID, values: dict
+            ) -> MessageIssueModel:
+        """Create or update the tracked issue row for a comment (message_feedback
+        row) with ``values`` as given. Raises if the referenced comment does not
+        exist."""
+        await self._require_feedback(message_feedback_id)
+
+        issue = await self.get_issue(message_feedback_id)
+
         if issue:
-            if values.get("status") == issue.status:
-                values = {key: value for key, value in values.items() if key not in ("resolved_at", "resolved_by")}
             for key, value in values.items():
                 setattr(issue, key, value)
         else:

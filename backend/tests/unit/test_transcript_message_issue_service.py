@@ -20,9 +20,13 @@ STATUSES = [
 
 
 class FakeRepo:
-    def __init__(self, counts=()):
+    def __init__(self, counts=(), issue=None):
         self.values = None
         self.counts = list(counts)
+        self.issue = issue
+
+    async def get_issue(self, message_feedback_id):
+        return self.issue
 
     async def upsert_issue(self, message_feedback_id, values):
         self.values = values
@@ -77,6 +81,25 @@ async def test_status_outside_done_clears_resolution(status):
     repo = FakeRepo()
     await _service(repo).update_issue(uuid4(), IssueUpdate(status=status))
     assert repo.values == {"status": status, "resolved_at": None, "resolved_by": None}
+
+
+@pytest.mark.asyncio
+async def test_unchanged_status_keeps_the_original_resolution():
+    repo = FakeRepo(issue=SimpleNamespace(status="resolved"))
+    await _service(repo).update_issue(uuid4(), IssueUpdate(status="resolved"))
+    assert repo.values == {"status": "resolved"}
+
+
+@pytest.mark.asyncio
+async def test_changed_status_restamps_the_resolution():
+    repo = FakeRepo(issue=SimpleNamespace(status="resolved"))
+    user_id = uuid4()
+    with request_cycle_context():
+        context["user_id"] = user_id
+        await _service(repo).update_issue(uuid4(), IssueUpdate(status="wont_fix"))
+
+    assert repo.values["status"] == "wont_fix"
+    assert repo.values["resolved_by"] == user_id
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,6 @@
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
 import { useNavigate } from "react-router-dom";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   CircleCheckBig,
   CircleDashed,
@@ -18,10 +17,8 @@ import {
 } from "@/helpers/dateRange";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import type { IssueCategory } from "@/services/issueStatuses";
-import { EMPTY_SUMMARY, fetchReportedFeedbackSummary } from "@/services/reportedFeedback";
 import { CATEGORY_META } from "@/views/ReportedFeedback/constants";
-import { useIssueStatuses } from "@/views/ReportedFeedback/hooks/useIssueStatuses";
-import { categoryTotals } from "@/views/ReportedFeedback/helpers/issueStatuses";
+import { useFeedbackSummary } from "@/views/ReportedFeedback/hooks/useReportedFeedback";
 
 interface CountRowProps {
   icon: LucideIcon;
@@ -83,23 +80,9 @@ function CountRow({ icon: Icon, title, description, count, bgColor, iconColor }:
 export function ReportedFeedbackCard({ className }: { className?: string }) {
   const navigate = useNavigate();
   const [dateRange] = usePersistedDateRange(dashboardDefaultDateRange());
-  const params = toInclusiveDateParams(dateRange);
-
-  const {
-    data: statuses = [],
-    isLoading: statusesLoading,
-    isError: statusesError,
-  } = useIssueStatuses();
-  const {
-    data: summary = EMPTY_SUMMARY,
-    isLoading: summaryLoading,
-    isError: summaryError,
-  } = useQuery({
-    queryKey: ["reported-feedback", "summary", params],
-    queryFn: () => fetchReportedFeedbackSummary(params),
-    placeholderData: keepPreviousData,
-  });
-  const totals = categoryTotals(summary, statuses);
+  const { total, totals, isLoading, isError } = useFeedbackSummary(
+    toInclusiveDateParams(dateRange),
+  );
 
   return (
     <Card
@@ -121,9 +104,9 @@ export function ReportedFeedbackCard({ className }: { className?: string }) {
       </div>
 
       <div className="flex flex-col gap-2 px-4 pb-4">
-        {statusesLoading || summaryLoading ? (
+        {isLoading ? (
           <PageListSkeleton variant="dashboard-integration" rows={4} bordered={false} />
-        ) : statusesError || summaryError ? (
+        ) : isError ? (
           <div className="text-center py-8 text-muted-foreground">
             <p>Couldn't load the status counts.</p>
           </div>
@@ -133,7 +116,7 @@ export function ReportedFeedbackCard({ className }: { className?: string }) {
               icon={Flag}
               title="Total reported"
               description={formatPeriod(dateRange)}
-              count={summary.total}
+              count={total}
               bgColor="bg-amber-100 dark:bg-amber-500/15"
               iconColor="text-amber-700 dark:text-amber-400"
             />

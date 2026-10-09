@@ -1,9 +1,8 @@
 """Unit tests asserting the SQL shape of the reported-issue reads without needing a database"""
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
 from types import SimpleNamespace
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -180,24 +179,3 @@ async def test_upsert_updates_the_existing_issue_in_place():
     issue = await TranscriptMessageRepository(db).upsert_issue(uuid4(), {"status": "resolved", "fix_version": None})
     assert issue is existing and db.added == []
     assert (existing.status, existing.fix_version) == ("resolved", None)
-
-
-FIRST_RESOLUTION = {
-    "resolved_by": UUID("11111111-1111-1111-1111-111111111111"),
-    "resolved_at": datetime(2026, 10, 1, tzinfo=timezone.utc),
-}
-LATER_RESOLUTION = {
-    "resolved_by": UUID("22222222-2222-2222-2222-222222222222"),
-    "resolved_at": datetime(2026, 10, 9, tzinfo=timezone.utc),
-}
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("status, resolution", [("resolved", FIRST_RESOLUTION), ("wont_fix", LATER_RESOLUTION)])
-async def test_upsert_restamps_the_resolution_only_when_the_status_changes(status, resolution):
-    existing = MessageIssueModel(status="resolved", **FIRST_RESOLUTION)
-    issue = await TranscriptMessageRepository(UpsertDb(issue=existing)).upsert_issue(
-        uuid4(), {"status": status, **LATER_RESOLUTION}
-    )
-    assert issue.status == status
-    assert {"resolved_by": issue.resolved_by, "resolved_at": issue.resolved_at} == resolution

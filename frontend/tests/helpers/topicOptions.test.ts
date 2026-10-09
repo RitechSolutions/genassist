@@ -14,6 +14,7 @@ describe("subtopicsFor", () => {
   it("returns none for no topic, 'all' or a topic that is not configured", () => {
     expect(subtopicsFor(OPTIONS, null)).toEqual([]);
     expect(subtopicsFor(OPTIONS, "all")).toEqual([]);
+    expect(subtopicsFor(OPTIONS, "all", "Wrong plate")).toEqual([]);
     expect(subtopicsFor(OPTIONS, "refund")).toEqual([]);
   });
 

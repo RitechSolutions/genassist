@@ -75,8 +75,7 @@ import {
   readConversationsViewMode,
   type ConversationsViewMode,
 } from "../helpers/conversationsView";
-import { useTopicOptions } from "@/hooks/useTopicOptions";
-import { subtopicsFor, withCurrentOption } from "@/helpers/topicOptions";
+import { useTopicFilter } from "@/hooks/useTopicFilter";
 import { topicLabel } from "@/views/ReportedFeedback/helpers/triageDraft";
 
 const ITEMS_PER_PAGE = 10;
@@ -87,9 +86,6 @@ const MIN_SEARCH_LENGTH = 3;
 // Old links carry "Billing Question" from the former fixed topic list
 const topicFromParam = (value: string | null) =>
   value === "Billing Question" ? "Billing Questions" : value || "all";
-
-const sameTopic = (value: string | null | undefined, selected: string) =>
-  (value ?? "").trim().toLowerCase() === selected.trim().toLowerCase();
 
 type QualityFilterKey = "customer_satisfaction" | "quality_of_service" | "resolution_rate" | "efficiency";
 type QualityLevel = "all" | "low" | "medium" | "high";
@@ -146,8 +142,19 @@ const Transcripts = () => {
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
   const [activeTab, setActiveTab] = useState(searchParams.get("sentiment") || "all");
-  const [supportType, setSupportType] = useState(topicFromParam(searchParams.get("type")));
-  const [subType, setSubType] = useState(searchParams.get("subtype") || "all");
+  const {
+    topic: supportType,
+    subtopic: subtopicFilter,
+    topicChoices,
+    subtopicChoices,
+    setFilter: setTopicFilter,
+    changeTopic,
+    changeSubtopic,
+    matches: matchesTopic,
+  } = useTopicFilter(
+    topicFromParam(searchParams.get("type")),
+    searchParams.get("subtype") || "all",
+  );
   const [searchQuery, setSearchQuery] = useState(searchParams.get("query") || "");
   // The value actually sent to the backend. Only updated when the user submits
   // the search (Enter / button) so we never query on partial input.
@@ -231,15 +238,6 @@ const Transcripts = () => {
     resyncHint,
     lastConversationUpdate,
   } = useWebSocketDashboardContext();
-
-  const { data: topicOptions = [] } = useTopicOptions();
-  const topicChoices = withCurrentOption(topicOptions, supportType);
-  const subtopicFilter = supportType === "all" ? "all" : subType;
-  const subtopicChoices = subtopicsFor(
-    topicChoices,
-    supportType === "all" ? null : supportType,
-    subtopicFilter,
-  );
 
   const { data, total, loading, error, refetch } = useTranscriptData({
     limit: ITEMS_PER_PAGE,
@@ -437,8 +435,10 @@ const Transcripts = () => {
 
     // Update filter states based on URL
     setActiveTab(params.get("sentiment") || "all");
-    setSupportType(topicFromParam(params.get("type")));
-    setSubType(params.get("subtype") || "all");
+    setTopicFilter({
+      topic: topicFromParam(params.get("type")),
+      subtopic: params.get("subtype") || "all",
+    });
     setSearchQuery(params.get("query") || "");
     setCurrentPage(
       Math.max(1, parseInt(params.get("page") || "1", 10) || 1)
@@ -455,7 +455,7 @@ const Transcripts = () => {
     }
 
     setViewMode(readConversationsViewMode(params));
-  }, [location.search]);
+  }, [location.search, setTopicFilter]);
 
   // Refetch when dashboard WebSocket suggests resync (e.g. finalize with missing ID). Keyed on
   // the hint alone: `refetch` changes with every filter, which already fetches on its own.
@@ -508,14 +508,13 @@ const Transcripts = () => {
   };
 
   const handleSupportTypeChange = (value: string) => {
-    setSupportType(value);
-    setSubType("all");
+    changeTopic(value);
     setCurrentPage(1);
     updateUrlParams({ type: value === "all" ? null : value, subtype: null, page: 1 });
   };
 
   const handleSubTypeChange = (value: string) => {
-    setSubType(value);
+    changeSubtopic(value);
     setCurrentPage(1);
     updateUrlParams({ subtype: value === "all" ? null : value, page: 1 });
   };
@@ -630,11 +629,7 @@ const Transcripts = () => {
   };
 
   const filteredTranscripts = isLiveFeed
-    ? transcripts.filter(
-        (transcript) =>
-          (supportType === "all" || sameTopic(transcript?.metadata?.topic, supportType)) &&
-          (subtopicFilter === "all" || sameTopic(transcript?.metadata?.subtopic, subtopicFilter)),
-      )
+    ? transcripts.filter((transcript) => matchesTopic(transcript?.metadata))
     : transcripts;
 
   const pagination = getPaginationMeta(
