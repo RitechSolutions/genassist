@@ -35,8 +35,8 @@ def _patch_dependencies(monkeypatch, ml_service: MagicMock):
     app_settings_service = MagicMock()
     app_settings_service.get_by_type_and_name = AsyncMock(return_value=MagicMock())
 
-    from app.services.file_manager import FileManagerService
     from app.services.app_settings import AppSettingsService
+    from app.services.file_manager import FileManagerService
     from app.services.ml_models import MLModelsService
 
     def _get(cls):
@@ -59,7 +59,7 @@ async def test_ratio_target_surfaces_baseline_column_as_inference_params(monkeyp
     _patch_dependencies(monkeypatch, ml_service)
 
     node = _make_node()
-    ml_model_id, error = await node._register_trained_model(
+    ml_model_id, error, warnings = await node._register_trained_model(
         name="my-model",
         model_type="linear_regression",
         feature_columns=["x"],
@@ -69,6 +69,7 @@ async def test_ratio_target_surfaces_baseline_column_as_inference_params(monkeyp
     )
 
     assert error is None
+    assert warnings == []
     assert ml_model_id == str(created.id)
     ml_service.create.assert_awaited_once()
     create_arg = ml_service.create.await_args.args[0]
@@ -95,3 +96,72 @@ async def test_without_ratio_target_inference_params_is_none(monkeypatch):
 
     create_arg = ml_service.create.await_args.args[0]
     assert create_arg.inference_params is None
+
+
+@pytest.mark.asyncio
+async def test_retrain_preserves_valid_feature_defaults(monkeypatch):
+    existing = MagicMock()
+    existing.id = uuid.uuid4()
+    existing.inference_params = {
+        "featureDefaults": {"x": 1, "removed": 2},
+        "ratioBaselineColumn": "old_base",
+    }
+
+    ml_service = MagicMock()
+    ml_service.get_by_id = AsyncMock(return_value=existing)
+    updated = MagicMock()
+    updated.id = existing.id
+    ml_service.update = AsyncMock(return_value=updated)
+    _patch_dependencies(monkeypatch, ml_service)
+
+    node = _make_node()
+    ml_model_id, error, warnings = await node._register_trained_model(
+        name="my-model",
+        model_type="linear_regression",
+        feature_columns=["x"],
+        target_column="y",
+        local_pkl_path="/tmp/model.pkl",
+        target_model_id=str(existing.id),
+        target_transform={"type": "ratio", "baselineColumn": "base"},
+    )
+
+    assert error is None
+    assert warnings == []
+    assert ml_model_id == str(existing.id)
+    update_arg = ml_service.update.await_args.args[1]
+    assert update_arg.inference_params == {
+        "featureDefaults": {"x": 1},
+        "ratioBaselineColumn": "base",
+    }
+
+
+@pytest.mark.asyncio
+async def test_retrain_warns_when_retained_default_is_not_a_fitted_category(monkeypatch):
+    existing = MagicMock()
+    existing.id = uuid.uuid4()
+    existing.inference_params = {"featureDefaults": {"kind": "removed"}}
+
+    ml_service = MagicMock()
+    ml_service.get_by_id = AsyncMock(return_value=existing)
+    updated = MagicMock()
+    updated.id = existing.id
+    ml_service.update = AsyncMock(return_value=updated)
+    _patch_dependencies(monkeypatch, ml_service)
+
+    node = _make_node()
+    _, error, warnings = await node._register_trained_model(
+        name="my-model",
+        model_type="linear_regression",
+        feature_columns=["kind"],
+        target_column="y",
+        local_pkl_path="/tmp/model.pkl",
+        target_model_id=str(existing.id),
+        categorical_feature_contracts={
+            "kind": {"values": ["current"], "normalize_keys": False}
+        },
+    )
+
+    assert error is None
+    assert len(warnings) == 1
+    assert "kind" in warnings[0]
+    assert "no longer match categories" in warnings[0]

@@ -5,7 +5,7 @@ Transformer and PCA.
 Each must be fit on the training split only, be replayed identically at
 inference, fail clearly on inputs it can't take, and work when the user set
 no Missing Value Handling (missing values are always filled before feature
-engineering - at training and, now, at inference too).
+engineering during training; inference requires an explicit model default).
 """
 
 import pickle
@@ -16,7 +16,10 @@ import pandas as pd
 import pytest
 
 from app.core.exceptions.exception_classes import AppException
-from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import _replay_feature_engineering
+from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
+    _prepare_inference_inputs,
+    _replay_feature_engineering,
+)
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -217,21 +220,28 @@ class TestInputChecks:
 
 
 class TestMissingValuesAtInference:
-    def test_missing_and_null_inputs_get_the_training_fill_before_replay(self, node):
+    def test_explicit_defaults_fill_missing_and_null_inputs_before_replay(self, node):
         X_train, X_val = _splits()
         _, _, steps = _fe(node, X_train.copy(), X_val.copy(), {
             "newColumnName": "pc", "strategy": "pca", "sourceColumns": ["a", "b"], "pcaComponents": 1,
         })
-        fills = {"a": 50.0, "b": 5.0}
-        full = _replay_feature_engineering({"a": [50.0], "b": [5.0]}, steps, 1, fills)
-        absent = _replay_feature_engineering({"a": [50.0]}, steps, 1, fills)  # b not sent
-        null = _replay_feature_engineering({"a": [50.0], "b": [None]}, steps, 1, fills)  # b sent as null
+        defaults = {"a": 50.0, "b": 5.0}
+        full = _replay_feature_engineering({"a": [50.0], "b": [5.0]}, steps, 1)
+        absent_inputs, _ = _prepare_inference_inputs(
+            {"a": [50.0]}, ["a", "b"], defaults=defaults
+        )
+        null_inputs, _ = _prepare_inference_inputs(
+            {"a": [50.0], "b": [None]}, ["a", "b"], defaults=defaults
+        )
+        absent = _replay_feature_engineering(absent_inputs, steps, 1)
+        null = _replay_feature_engineering(null_inputs, steps, 1)
         assert np.allclose(absent["pc_1"], full["pc_1"])
         assert np.allclose(null["pc_1"], full["pc_1"])
 
     def test_existing_strategies_also_rebuild_with_a_missing_input(self):
         steps = [{"strategy": "custom_expression", "new_col": "double", "expression": "count * 2"}]
-        assert _replay_feature_engineering({}, steps, 1, {"count": 24.0})["double"].tolist() == [48.0]
+        prepared, _ = _prepare_inference_inputs({}, ["count"], defaults={"count": 24.0})
+        assert _replay_feature_engineering(prepared, steps, 1)["double"].tolist() == [48.0]
 
 
 async def _train(tmp_path, feature_engineering, with_gaps=False):
@@ -270,12 +280,22 @@ async def test_each_strategy_trains_end_to_end_with_gaps_and_no_missing_value_se
     assert result["success"] is True
     # The automatic fill is reported instead of silent.
     assert any("Column 'a'" in w and "filled automatically" in w for w in result["warnings"])
+    assert any(
+        "Training-time missing-value fills are not used automatically during inference" in warning
+        for warning in result["warnings"]
+    )
     with open(result["model_file_path"], "rb") as f:
         metadata = pickle.load(f)["metadata"]
     steps = metadata["feature_engineering_steps"]
     assert steps[0]["strategy"] == item["strategy"]
-    # A prediction with "a" missing still rebuilds the feature from the training fill.
-    replayed = _replay_feature_engineering({"b": [5.0], "c": [0.1]}, steps, 1, metadata["missing_value_fills"])
+    assert "missing_value_fills" not in metadata
+    # A model owner may configure a deliberate inference default independently.
+    prepared, _ = _prepare_inference_inputs(
+        {"b": [5.0], "c": [0.1]},
+        ["a", "b", "c"],
+        defaults={"a": 50.0},
+    )
+    replayed = _replay_feature_engineering(prepared, steps, 1)
     assert all(np.isfinite(v).all() for v in replayed.values())
 
 

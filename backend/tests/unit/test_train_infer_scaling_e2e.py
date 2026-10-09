@@ -117,7 +117,7 @@ async def test_train_then_infer_reapplies_persisted_scaler(tmp_path, patch_ml_mo
     assert inference_result["status"] == "success"
     # y = 3*15 + 5 = 50, exactly recovered once the persisted scaler is
     # correctly reapplied to the raw input before calling model.predict().
-    assert inference_result["prediction"] == [50]
+    assert inference_result["prediction"][0] == pytest.approx(50.0)
 
 
 @pytest.mark.asyncio

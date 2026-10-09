@@ -1,8 +1,12 @@
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
 from datetime import datetime
 from enum import Enum
+from math import isfinite
+
+
+FEATURE_DEFAULTS_PARAM = "featureDefaults"
 
 
 class ModelType(str, Enum):
@@ -34,16 +38,49 @@ class MLModelBase(BaseModel):
     inference_params: Optional[dict] = Field(
         None,
         description=(
-            "Extra inputs an inference caller must supply beyond `features` - e.g. "
-            "{'ratioBaselineColumn': '<name>'} when the model was trained on a ratio "
-            "target, since reconstructing the real-unit prediction needs that column's "
-            "raw value at inference time even though it was never one of the model's "
-            "actual training features."
+            "Per-model inference configuration. `ratioBaselineColumn` identifies an extra "
+            "caller input needed to reconstruct ratio-target predictions. `featureDefaults` "
+            "maps model feature names to deliberate fallback values for omitted or null inputs."
         ),
     )
 
 
-class MLModelCreate(MLModelBase):
+class MLModelWriteBase(MLModelBase):
+    @field_validator("inference_params")
+    @classmethod
+    def validate_inference_params(cls, value):
+        if value is None:
+            return value
+
+        feature_defaults = value.get(FEATURE_DEFAULTS_PARAM)
+        if feature_defaults is not None:
+            if not isinstance(feature_defaults, dict):
+                raise ValueError(f"{FEATURE_DEFAULTS_PARAM} must be an object")
+            invalid_defaults = [
+                name
+                for name, default in feature_defaults.items()
+                if not isinstance(name, str)
+                or not name.strip()
+                or isinstance(default, (dict, list))
+                or default is None
+                or (isinstance(default, float) and not isfinite(default))
+            ]
+            if invalid_defaults:
+                raise ValueError(
+                    f"{FEATURE_DEFAULTS_PARAM} values must be non-null JSON scalars for: "
+                    + ", ".join(str(name) for name in invalid_defaults)
+                )
+
+        ratio_baseline = value.get("ratioBaselineColumn")
+        if ratio_baseline is not None and (
+            not isinstance(ratio_baseline, str) or not ratio_baseline.strip()
+        ):
+            raise ValueError("ratioBaselineColumn must be a non-empty string")
+
+        return value
+
+
+class MLModelCreate(MLModelWriteBase):
     name: str = Field(..., max_length=255, description="Unique name for the ML model")
     description: str = Field(..., description="Description of what the model does")
     model_type: ModelType = Field(..., description="Type of machine learning model")
@@ -58,7 +95,7 @@ class MLModelCreate(MLModelBase):
         return v
 
 
-class MLModelUpdate(MLModelBase):
+class MLModelUpdate(MLModelWriteBase):
     """Update schema - all fields are optional"""
 
 
@@ -70,4 +107,3 @@ class MLModelRead(MLModelBase):
     model_config = ConfigDict(
         from_attributes=True,
     )
-
