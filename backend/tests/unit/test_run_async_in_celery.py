@@ -1,5 +1,6 @@
 """Each Celery task runs on a fresh event loop; pooled async Redis connections must not outlive it."""
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -76,3 +77,48 @@ class TestRunAsyncInCelery:
             base.run_async_in_celery(work())
 
         assert seen["drop"] is seen["task"]
+
+    def test_notifications_in_flight_finish_before_the_pools_go(self):
+        """asyncio.run cancels leftover tasks, which used to drop every run-failed notification."""
+        from app.services.realtime_notifications import emit_notification
+
+        events = []
+
+        async def broadcast(**kwargs):
+            await asyncio.sleep(0.01)
+            events.append(("sent", kwargs["payload"]["title"]))
+
+        async def drop():
+            events.append(("dropped", None))
+
+        async def work():
+            # No type_key, so the notification is only broadcast, never stored.
+            emit_notification(
+                socket_connection_manager=SimpleNamespace(broadcast=broadcast),
+                tenant_id=None,
+                payload={"title": "Run failed"},
+            )
+
+        with patch.object(base, "disconnect_async_redis_pools", drop):
+            base.run_async_in_celery(work())
+
+        assert events == [("sent", "Run failed"), ("dropped", None)]
+
+
+class TestFlushNotifications:
+    @pytest.mark.asyncio
+    async def test_a_notification_that_never_finishes_does_not_hold_the_task(self):
+        from app.services.realtime_notifications import emit_notification, flush_notifications
+
+        never = asyncio.Event()
+
+        async def broadcast(**_):
+            await never.wait()
+
+        emit_notification(
+            socket_connection_manager=SimpleNamespace(broadcast=broadcast),
+            tenant_id=None,
+            payload={"title": "stuck"},
+        )
+        await asyncio.wait_for(flush_notifications(timeout=0.05), timeout=1)
+        never.set()

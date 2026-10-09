@@ -262,6 +262,17 @@ def test_background_tasks_keep_reading_from_the_writer(created_engines, restore_
     assert TENANT not in manager._read_engines
 
 
+def test_background_tasks_get_their_own_session_factory(created_engines, restore_manager_caches):
+    """A factory first made outside a background task used to hand background tasks the pooled engine"""
+    manager = restore_manager_caches
+    foreground = manager.get_tenant_session_factory(TENANT)
+    with background_task_context():
+        background = manager.get_tenant_session_factory(TENANT)
+    assert background is not foreground
+    assert background.kw["bind"].kwargs.get("poolclass") is mts.NullPool
+    assert "poolclass" not in foreground.kw["bind"].kwargs
+
+
 def test_read_caches_cannot_be_poisoned_by_a_look_alike_tenant_string(created_engines, restore_manager_caches):
     """A request carrying x-tenant-id '<tenant>_read' must never alias the real tenant's read engine"""
     manager = restore_manager_caches

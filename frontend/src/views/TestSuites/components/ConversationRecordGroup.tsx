@@ -81,11 +81,7 @@ const RecordBody: React.FC<{ entry: TestCase }> = ({ entry }) => {
         rawLabel="Expected Output"
         text={plain ? answerOf(entry.expected_output) : null}
         raw={entry.expected_output}
-        emptyText={
-          hasExpected(entry.expected_output)
-            ? undefined
-            : "No expected reply. This turn scores as a failure."
-        }
+        emptyText={hasExpected(entry.expected_output) ? undefined : 'No expected reply.'}
       />
     </div>
   );

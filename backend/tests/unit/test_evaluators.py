@@ -1,5 +1,6 @@
 """Unit tests for trace-aware grading (process evaluation)."""
 
+import asyncio
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -1677,6 +1678,67 @@ class TestLlmJudge:
         assert m["passed"] is False
         assert m["score"] is None
         assert "Broken" in m["comment"]
+
+    async def _peak_concurrent_rubrics(self, **evaluate_kwargs) -> int:
+        active = peak = 0
+
+        async def fake_judge(**_):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0)
+            active -= 1
+            return 0.9, "fine"
+
+        self.registry._invoke_json_judge = fake_judge
+        metrics = await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={},
+            outputs="Answer.",
+            reference_outputs=None,
+            technique_configs={
+                "llm_judge": {
+                    "rules": [
+                        {"label": "Tone", "rubric": "Is it polite?", "min_score": 0.5},
+                        {"label": "Scope", "rubric": "Does it stay on topic?", "min_score": 0.5},
+                    ]
+                }
+            },
+            **evaluate_kwargs,
+        )
+        assert metrics["llm_judge"]["passed"] is True
+        return peak
+
+    @pytest.mark.asyncio
+    async def test_multiple_rules_grade_in_turn_without_a_shared_model(self):
+        """Each rubric builds its own model from the run's one DB session, so they must not overlap."""
+        assert await self._peak_concurrent_rubrics() == 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_rules_grade_in_parallel_with_a_shared_model(self):
+        assert await self._peak_concurrent_rubrics(judge_model=object()) == 2
+
+    @pytest.mark.asyncio
+    async def test_rubric_is_graded_inside_a_frame_that_defines_the_score(self):
+        """A bare rubric left the score's meaning to the judge, which then contradicted its reasons."""
+        prompts = []
+
+        async def fake_judge(*, system_prompt, **_):
+            prompts.append(system_prompt)
+            return 1.0, "fine"
+
+        self.registry._invoke_json_judge = fake_judge
+        await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={"message": "Hi"},
+            outputs="Hello!",
+            reference_outputs=None,
+            technique_configs={"llm_judge": {"rules": [{"rubric": "Is the reply polite?"}]}},
+        )
+        assert "CRITERION:\nIs the reply polite?" in prompts[0]
+        assert "Score 1.0 when the reply fully meets it" in prompts[0]
+        assert "is met when this reply is not one of them" in prompts[0]
+        assert '{"score": 0.0-1.0, "reason": "short explanation"}' in prompts[0]
 
     @pytest.mark.asyncio
     async def test_source_field_feeds_kb_content_to_judge(self):
