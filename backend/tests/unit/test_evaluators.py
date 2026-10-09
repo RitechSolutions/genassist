@@ -1,5 +1,6 @@
 """Unit tests for trace-aware grading (process evaluation)."""
 
+import asyncio
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -1678,6 +1679,67 @@ class TestLlmJudge:
         assert m["score"] is None
         assert "Broken" in m["comment"]
 
+    async def _peak_concurrent_rubrics(self, **evaluate_kwargs) -> int:
+        active = peak = 0
+
+        async def fake_judge(**_):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0)
+            active -= 1
+            return 0.9, "fine"
+
+        self.registry._invoke_json_judge = fake_judge
+        metrics = await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={},
+            outputs="Answer.",
+            reference_outputs=None,
+            technique_configs={
+                "llm_judge": {
+                    "rules": [
+                        {"label": "Tone", "rubric": "Is it polite?", "min_score": 0.5},
+                        {"label": "Scope", "rubric": "Does it stay on topic?", "min_score": 0.5},
+                    ]
+                }
+            },
+            **evaluate_kwargs,
+        )
+        assert metrics["llm_judge"]["passed"] is True
+        return peak
+
+    @pytest.mark.asyncio
+    async def test_multiple_rules_grade_in_turn_without_a_shared_model(self):
+        """Each rubric builds its own model from the run's one DB session, so they must not overlap."""
+        assert await self._peak_concurrent_rubrics() == 1
+
+    @pytest.mark.asyncio
+    async def test_multiple_rules_grade_in_parallel_with_a_shared_model(self):
+        assert await self._peak_concurrent_rubrics(judge_model=object()) == 2
+
+    @pytest.mark.asyncio
+    async def test_rubric_is_graded_inside_a_frame_that_defines_the_score(self):
+        """A bare rubric left the score's meaning to the judge, which then contradicted its reasons."""
+        prompts = []
+
+        async def fake_judge(*, system_prompt, **_):
+            prompts.append(system_prompt)
+            return 1.0, "fine"
+
+        self.registry._invoke_json_judge = fake_judge
+        await self.registry.evaluate(
+            ["llm_judge"],
+            inputs={"message": "Hi"},
+            outputs="Hello!",
+            reference_outputs=None,
+            technique_configs={"llm_judge": {"rules": [{"rubric": "Is the reply polite?"}]}},
+        )
+        assert "CRITERION:\nIs the reply polite?" in prompts[0]
+        assert "Score 1.0 when the reply fully meets it" in prompts[0]
+        assert "is met when this reply is not one of them" in prompts[0]
+        assert '{"score": 0.0-1.0, "reason": "short explanation"}' in prompts[0]
+
     @pytest.mark.asyncio
     async def test_source_field_feeds_kb_content_to_judge(self):
         captured = {}
@@ -2711,3 +2773,59 @@ class TestPromptCachingDiagnosticsAreInvisibleToGrading:
         }
 
         assert _build_grading_context(annotated) == _build_grading_context(trace)
+
+
+class TestNoExpectedReply:
+    """A turn without an expected reply is not graded by the methods that compare against one."""
+
+    def setup_method(self):
+        self.registry = SimpleEvaluatorRegistry()
+
+    async def _metric(self, technique, *, outputs="The reply.", reference=None, config=None):
+        metrics = await self.registry.evaluate(
+            [technique],
+            inputs={"message": "Hi"},
+            outputs=outputs,
+            reference_outputs=reference,
+            technique_configs={technique: config or {}},
+        )
+        return metrics[technique]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("technique", ["exact_match", "contains", "json_match", "field_equals"])
+    async def test_a_missing_expected_reply_is_not_evaluated(self, technique):
+        metric = await self._metric(technique, reference=None)
+
+        assert metric["not_evaluated"] is True
+        assert metric["score"] is None
+        assert metric["comment"] == "Not evaluated: this turn has no expected reply."
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("technique", ["exact_match", "contains"])
+    async def test_a_blank_expected_reply_is_not_evaluated(self, technique):
+        metric = await self._metric(technique, reference={"value": ""})
+
+        assert metric["not_evaluated"] is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("technique", ["exact_match", "contains"])
+    async def test_a_present_expected_reply_is_still_graded(self, technique):
+        metric = await self._metric(technique, reference={"value": "Something else"})
+
+        assert metric.get("not_evaluated") is None
+        assert metric["passed"] is False
+
+    @pytest.mark.asyncio
+    async def test_an_empty_object_stays_a_real_json_expectation(self):
+        """The Prompt Editor asks models for {} on purpose."""
+        metric = await self._metric("json_match", outputs={}, reference={})
+
+        assert metric["passed"] is True
+
+    @pytest.mark.asyncio
+    async def test_field_equals_with_a_configured_value_ignores_the_reply(self):
+        metric = await self._metric(
+            "field_equals", outputs="refund", reference=None, config={"expected": "refund"}
+        )
+
+        assert metric["passed"] is True

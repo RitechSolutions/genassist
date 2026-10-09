@@ -55,16 +55,15 @@ import { MetricRuleBreakdown } from "./MetricRuleBreakdown";
 import { methodLabel } from "../helpers/methodLabels";
 import {
   NOT_EVALUATED,
+  caseStatusFor,
   groupByTechnique,
   isRuleTechnique,
-  isResultFailed,
   isRunInProgress,
   isTurnScope,
-  isResultNotScored,
-  isResultPassed,
   notScoredLabel,
   runAvgAccuracy,
   runFailureText,
+  runProgressText,
   runStatusLabel,
   techniqueAccuracy,
   techniqueSummaries,
@@ -383,21 +382,14 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   const caseTools = (result: TestResult): TestToolRuleResult[] =>
     result.case_id ? ruleResultsByCaseId.get(result.case_id) ?? [] : [];
 
-  const casePassed = (result: TestResult): boolean => {
-    const tools = caseTools(result);
-    const toolFailed = tools.some((t) => t.status === "failed");
-    const toolPassed = tools.some((t) => t.status === "passed");
-    if (toolFailed) return false;
-    return isResultPassed(result) || (isResultNotScored(result) && toolPassed);
-  };
+  const casePassed = (result: TestResult): boolean =>
+    caseStatusFor(result, caseTools(result)) === "passed";
 
-  const caseFailed = (result: TestResult): boolean => {
-    const toolFailed = caseTools(result).some((t) => t.status === "failed");
-    return toolFailed || (!casePassed(result) && isResultFailed(result));
-  };
+  const caseFailed = (result: TestResult): boolean =>
+    caseStatusFor(result, caseTools(result)) === "failed";
 
   const caseNotScored = (result: TestResult): boolean =>
-    !casePassed(result) && !caseFailed(result);
+    caseStatusFor(result, caseTools(result)) === "not_scored";
 
   const filterResults = () => {
     if (resultFilter === "passed") return selectedRunResults.filter(casePassed);
@@ -780,6 +772,10 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
                 </div>
               ) : lastRun.status === "completed" && !lastRunResults ? (
                 <Skeleton className="h-5 w-40" />
+              ) : lastRunTurns && lastRunTurns.total === 0 && lastRunTurns.notEvaluated > 0 ? (
+                <div className="text-sm text-muted-foreground">
+                  No turn could be graded · {lastRunTurns.notEvaluated} not evaluated
+                </div>
               ) : lastRunTurns && lastRunTurns.total > 0 ? (
                 <div className="flex items-center gap-2">
                   <Progress
@@ -796,11 +792,19 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
                     )}
                   >
                     {lastRunTurns.passed} of {lastRunTurns.total} turns passed
+                    {lastRunTurns.notEvaluated > 0 && (
+                      <span className="font-normal text-muted-foreground">
+                        {" "}
+                        · {lastRunTurns.notEvaluated} not evaluated
+                      </span>
+                    )}
                   </span>
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground">
-                  {lastRun.status === "completed" ? "No score" : "Not scored yet"}
+                  {lastRun.status === "completed"
+                    ? "No score"
+                    : runProgressText(lastRun) ?? "Not scored yet"}
                 </div>
               )}
               {lastRunTotals && (

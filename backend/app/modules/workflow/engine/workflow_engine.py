@@ -314,6 +314,7 @@ class WorkflowEngine:
         await_persist: bool = False,
         usage_context: Optional[WorkflowUsageContext] = None,
         usage_sink: Optional[list] = None,
+        state_sink: Optional[list] = None,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -332,6 +333,8 @@ class WorkflowEngine:
             usage_sink: Nested runs pass a parent list to append their usage into, so
                 a child's usage survives even when the child raises. Mutually exclusive
                 with usage_context; when neither is set, behavior is unchanged.
+            state_sink: Receives the execution state as soon as it exists, so a caller
+                can still read a run that raised or was cancelled.
 
         Returns:
             WorkflowState with execution results
@@ -379,6 +382,8 @@ class WorkflowEngine:
                 initial_values=initial_values,
                 registry_managed=registry_managed,
             )
+            if state_sink is not None:
+                state_sink.append(state)
             # A run that starts at an entry node (Chat Input / Webhook Trigger)
             # must not wait on, or read from, the workflow's *other* entry nodes.
             _, start_node_type = self.get_node_config(start_node_id)

@@ -20,6 +20,8 @@ interface EvaluationListRowProps {
   avgAccuracy: number | null;
   isRunning: boolean;
   lastRunStatus?: string;
+  /** e.g. "12 of 40 turns done" while the last run is going. */
+  progressText?: string | null;
   onOpen: () => void;
   onEdit: () => void;
   onExport: () => void;
@@ -32,6 +34,7 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
   avgAccuracy,
   isRunning,
   lastRunStatus,
+  progressText,
   onOpen,
   onEdit,
   onExport,
@@ -51,7 +54,11 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
         {isRunning ? (
           <div className="mt-2 flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
             <Loader2 className="h-3 w-3 animate-spin" />
-            {lastRunStatus === "queued" ? "Queued" : "Running…"}
+            {lastRunStatus === "queued"
+              ? "Queued"
+              : progressText
+                ? `Running… ${progressText}`
+                : "Running…"}
           </div>
         ) : lastRunStatus === "failed" ? (
           <div className="mt-2 text-xs font-medium text-red-600 dark:text-red-400">Last run failed</div>
@@ -74,8 +81,9 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
             <span className={`text-xs font-medium ${accuracyColorClass(avgAccuracy)}`}>
               {Math.round(avgAccuracy * 100)}% avg score
             </span>
+            {/* The score is the last run's, so the count must not read as an average over runs. */}
             <span className="text-xs text-muted-foreground">
-              ({evaluation.run_ids.length} run{evaluation.run_ids.length !== 1 ? "s" : ""})
+              {evaluation.run_ids.length === 1 ? "(1 run)" : `(last of ${evaluation.run_ids.length} runs)`}
             </span>
           </div>
         ) : (

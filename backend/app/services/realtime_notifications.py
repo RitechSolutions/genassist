@@ -11,7 +11,11 @@ from app.repositories.notification import NotificationRepository, PersistedNotif
 from app.services.notification_orchestrator import NotificationOrchestratorService
 
 SYSTEM_USER_ID = UUID(int=0)
+NOTIFICATION_FLUSH_SECONDS = 5
 logger = logging.getLogger(__name__)
+
+# Held so a notification still being stored or sent is neither garbage collected nor lost.
+_in_flight: set[asyncio.Task] = set()
 
 
 def transcript_conversation_notification_url(conversation_id: UUID | str) -> str:
@@ -63,6 +67,20 @@ def notification_payload(
     if metadata is not None:
         payload["metadata"] = metadata
     return payload
+
+
+def evaluation_run_failed_notification(run_id: UUID | str) -> dict:
+    """Payload telling users an evaluation run failed; one event per run."""
+    return notification_payload(
+        notification_id=f"workflow_failed:test:{run_id}",
+        title="Workflow Run Failed",
+        description=f"Test run {str(run_id)[:8]}... failed.",
+        level="error",
+        action_url="/tests/evaluations",
+        entity_kind="test_run",
+        entity_id=run_id,
+        event_key=f"workflow_failed:test:{run_id}",
+    )
 
 
 def emit_notification(
@@ -125,4 +143,14 @@ def emit_notification(
             tenant_id=tenant_id,
         )
 
-    _ = asyncio.create_task(_persist_and_broadcast())
+    task = asyncio.create_task(_persist_and_broadcast())
+    _in_flight.add(task)
+    task.add_done_callback(_in_flight.discard)
+
+
+async def flush_notifications(timeout: float = NOTIFICATION_FLUSH_SECONDS) -> None:
+    """Wait for this loop's notifications in flight; closing the loop would cancel them."""
+    loop = asyncio.get_running_loop()
+    pending = [task for task in _in_flight if task.get_loop() is loop]
+    if pending:
+        await asyncio.wait(pending, timeout=timeout)

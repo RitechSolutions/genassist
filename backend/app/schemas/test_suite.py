@@ -296,6 +296,13 @@ class TestRunBase(BaseModel):
         description="Identifiers of selected evaluation techniques.",
     )
     summary_metrics: Optional[Dict[str, Any]] = None
+    progress: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "conversations_done, conversations_total, turns_done and turns_total, "
+            "updated after each turn. Null until the run starts."
+        ),
+    )
 
 
 class TestRunCreate(BaseModel):
