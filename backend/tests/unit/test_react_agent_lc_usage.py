@@ -1,11 +1,12 @@
 """Unit tests for ReActAgentLC token-usage capture"""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from langgraph.errors import GraphRecursionError
 
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.llm.prompt_caching_chat_model import (
@@ -18,14 +19,21 @@ _STABLE = "You are a helpful agent with a long stable prefix."
 _SUFFIX = " Current time: 2026-08-17 12:00:00"
 
 
-def _build_agent(fake_result, system_prompt="you are a helpful agent"):
+def _build_agent(fake_result, system_prompt="you are a helpful agent", error=None):
     with patch(_CREATE_AGENT, return_value=MagicMock()):
         agent = ReActAgentLC(
             llm_model=MagicMock(),
             system_prompt=system_prompt,
             tools=[],
         )
-    agent.agent_executor.ainvoke = AsyncMock(return_value=fake_result)
+
+    async def _astream(input_data, config=None, **kwargs):
+        if fake_result is not None:
+            yield fake_result
+        if error is not None:
+            raise error
+
+    agent.agent_executor.astream = _astream
     return agent
 
 
@@ -63,6 +71,46 @@ async def test_no_llm_usage_key_when_no_usage_reported():
 
     assert result["status"] == "success"
     assert "llm_usage" not in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fake_result, error, expected_usage",
+    [
+        (
+            {
+                "messages": [
+                    HumanMessage(content="hi"),
+                    AIMessage(
+                        content="",
+                        tool_calls=[{"name": "search", "args": {}, "id": "call_1", "type": "tool_call"}],
+                        usage_metadata={"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+                    ),
+                    ToolMessage(content="tool output", tool_call_id="call_1"),
+                    AIMessage(
+                        content="",
+                        tool_calls=[{"name": "search", "args": {}, "id": "call_2", "type": "tool_call"}],
+                        usage_metadata={"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
+                    ),
+                ]
+            },
+            GraphRecursionError("Recursion limit of 11 reached"),
+            [
+                {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+                {"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
+            ],
+        ),
+        (None, RuntimeError("boom"), None),
+    ],
+    ids=["raise_mid_loop", "raise_before_any_state"],
+)
+async def test_a_run_that_raises_still_reports_the_calls_it_made(fake_result, error, expected_usage):
+    agent = _build_agent(fake_result, error=error)
+    result = await agent.invoke("hi")
+
+    assert result["status"] == "error"
+    assert result["error"] == str(error)
+    assert result.get("llm_usage") == expected_usage
 
 
 @pytest.mark.parametrize(
