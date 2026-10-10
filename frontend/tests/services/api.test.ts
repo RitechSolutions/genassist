@@ -288,6 +288,51 @@ describe("knowledge base endpoints", () => {
     );
   });
 
+  it("getKnowledgeItemsList passes a trimmed search term", async () => {
+    mockApiRequest.mockResolvedValue({ items: [] });
+
+    await getKnowledgeItemsList(1, 10, "  faq  ");
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/knowledge/list?skip=0&limit=10&search=faq"
+    );
+  });
+
+  it("getKnowledgeItemsList omits a blank search term", async () => {
+    mockApiRequest.mockResolvedValue({ items: [] });
+
+    await getKnowledgeItemsList(1, 10, "   ");
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/knowledge/list?skip=0&limit=10"
+    );
+  });
+
+  it("getKnowledgeItemsList passes the type filter", async () => {
+    mockApiRequest.mockResolvedValue({ items: [] });
+
+    await getKnowledgeItemsList(2, 10, undefined, "url");
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/knowledge/list?skip=10&limit=10&type=url"
+    );
+  });
+
+  it("getKnowledgeItemsList returns an empty page when the request is forbidden", async () => {
+    mockApiRequest.mockResolvedValue(null);
+
+    await expect(getKnowledgeItemsList(1, 10)).resolves.toEqual({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 10,
+      total_pages: 0,
+    });
+  });
+
   it("getKnowledgeItem GETs a single item by id", async () => {
     mockApiRequest.mockResolvedValue({ id: "k1" });
 

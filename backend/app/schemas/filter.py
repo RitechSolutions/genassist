@@ -130,6 +130,14 @@ class ApiKeyListFilter(BaseModel):
     search: Optional[str] = Field(None, description="Case-insensitive substring match on API key name")
 
 
+class KnowledgeBaseListFilter(BaseModel):
+    """Query params for the paginated knowledge base list"""
+    skip: int = Field(0, ge=0, description="The number of rows to skip before returning results")
+    limit: int = Field(20, ge=1, le=100, description="The number of rows to return per page")
+    search: Optional[str] = Field(None, description="Case-insensitive substring match on name or description")
+    type: Optional[str] = Field(None, description="Exact knowledge base type, e.g. file or url")
+
+
 class AgentResponseLogFilter(BaseModel):
     conversation_id: UUID
     node_type: Optional[str] = Field(None, description="Filter by node type found in state.nodeExecutionStatus[*].type")

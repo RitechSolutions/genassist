@@ -238,13 +238,20 @@ export async function getAllKnowledgeItems() {
 
 export async function getKnowledgeItemsList(
   page: number = 1,
-  pageSize: number = 20
+  pageSize: number = 20,
+  search?: string,
+  type?: string
 ): Promise<PaginatedResponse<KBListItem>> {
   const skip = (page - 1) * pageSize;
-  return apiRequest<PaginatedResponse<KBListItem>>(
+  const params = new URLSearchParams({ skip: String(skip), limit: String(pageSize) });
+  const trimmed = search?.trim();
+  if (trimmed) params.set("search", trimmed);
+  if (type) params.set("type", type);
+  const response = await apiRequest<PaginatedResponse<KBListItem>>(
     "GET",
-    `genagent/knowledge/list?skip=${skip}&limit=${pageSize}`
+    `genagent/knowledge/list?${params.toString()}`
   );
+  return response ?? { items: [], total: 0, page: 1, page_size: pageSize, total_pages: 0 };
 }
 
 export async function getKnowledgeItem(id: string) {

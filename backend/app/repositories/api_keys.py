@@ -134,12 +134,7 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
 
     def _search_condition(self, search: Optional[str]):
         """Case-insensitive substring match on the key name"""
-        if not search or not search.strip():
-            return None
-
-        term = search.strip()
-        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        return ApiKeyModel.name.ilike(f"%{escaped}%", escape="\\")
+        return self._contains_condition(search, ApiKeyModel.name)
 
 
     async def get_list_paginated(self, filter_obj: ApiKeyListFilter) -> tuple[list[ApiKeyModel], int]:

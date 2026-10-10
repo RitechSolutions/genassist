@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import contains_eager, joinedload
@@ -99,16 +99,7 @@ class OperatorRepository(DbRepository[OperatorModel]):
 
     def _search_condition(self, search: Optional[str]):
         """Case-insensitive substring match on first or last name"""
-        if not search or not search.strip():
-            return None
-
-        term = search.strip()
-        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"%{escaped}%"
-        return or_(
-            OperatorModel.first_name.ilike(pattern, escape="\\"),
-            OperatorModel.last_name.ilike(pattern, escape="\\"),
-        )
+        return self._contains_condition(search, OperatorModel.first_name, OperatorModel.last_name)
 
     async def get_list_paginated(self, filter_obj: OperatorListFilter) -> Tuple[List[OperatorModel], int]:
         """Return one page of operators plus the unpaginated total"""

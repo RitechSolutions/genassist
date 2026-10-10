@@ -2,7 +2,7 @@ import logging
 from typing import Generic, List, Optional, Sequence, Type, TypeVar
 from uuid import UUID
 
-from sqlalchemy import asc, desc, select, update
+from sqlalchemy import asc, desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Load, selectinload
 
@@ -81,6 +81,13 @@ class DbRepository(Generic[OrmModelT]):
     def _apply_pagination(self, stmt, filter_obj):
         """Apply offset and limit for pagination"""
         return stmt.offset(filter_obj.skip).limit(filter_obj.limit)
+
+    def _contains_condition(self, search: Optional[str], *columns):
+        if not search or not search.strip():
+            return None
+
+        escaped = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        return or_(*(column.ilike(f"%{escaped}%", escape="\\") for column in columns))
 
 
     # ───────────── READ methods ────────────────
