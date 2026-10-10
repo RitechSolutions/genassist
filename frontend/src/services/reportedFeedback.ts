@@ -21,6 +21,7 @@ export interface ReportedFeedbackItem {
   conversation_date: string | null;
   fix_version: string | null;
   target_rollout_date: string | null;
+  matched_note: string | null;
 }
 
 export interface ReportedFeedbackResult {
@@ -38,6 +39,7 @@ export interface FeedbackFilters {
   workflow_id?: string;
   topic?: string;
   subtopic?: string;
+  search?: string;
 }
 
 export interface FetchReportedFeedbackParams extends FeedbackFilters {
@@ -55,6 +57,7 @@ const appendFilters = (query: URLSearchParams, filters: FeedbackFilters) => {
     "workflow_id",
     "topic",
     "subtopic",
+    "search",
   ] as const) {
     const value = filters[key];
     if (value) query.append(key, value);

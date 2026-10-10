@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Iterable, List, Optional
 from uuid import UUID
 from injector import inject
-from sqlalchemy import case, func
+from sqlalchemy import case, func, null, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import defer, load_only, selectinload
@@ -209,6 +209,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
             workflow_id: Optional[UUID] = None,
             topic: Optional[str] = None,
             subtopic: Optional[str] = None,
+            search: Optional[str] = None,
             ) -> tuple[list, int]:
         """List messages that carry an admin/supervisor comment (a reported
         "issue"), newest first, with the context needed to act on them.
@@ -216,18 +217,19 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         Returns ``(rows, total)`` where each row is the tuple
         ``(MessageFeedbackModel, TranscriptMessageModel, ConversationModel,
         reported_by_username, workflow_name, agent_id, status, issue, topic,
-        subtopic)``. ``status`` defaults to 'open' for comments that have no
-        tracked issue row yet, in which case ``issue`` is None. The agent id /
-        workflow name are resolved through the conversation's operator -> agent
-        -> workflow chain (left-joined). ``topic``/``subtopic`` follow the
-        Conversations page: the final analysis once finalized, the live topic
-        before. All filters (``status``, ``from_date``/``to_date`` on when the
-        comment was added, ``workflow_id``, ``topic`` and ``subtopic``) are
-        applied server-side. The query is group-scoped to the requesting user
-        via the conversation.
+        subtopic, matched_note)``. ``status`` defaults to 'open' for comments
+        that have no tracked issue row yet, in which case ``issue`` is None.
+        ``matched_note`` is the newest note matching ``search``, else None.
+        The agent id / workflow name are resolved through the conversation's
+        operator -> agent -> workflow chain (left-joined). ``topic``/``subtopic``
+        follow the Conversations page: the final analysis once finalized, the
+        live topic before. All filters (``status``, ``from_date``/``to_date`` on
+        when the comment was added, ``workflow_id``, ``topic``, ``subtopic`` and
+        ``search`` on the comment or any of its notes) are applied server-side.
+        The query is group-scoped to the requesting user via the conversation.
         """
         status_col = _issue_status_col()
-        base_filters = _issue_filters(status, from_date, to_date, workflow_id, topic, subtopic)
+        base_filters = _issue_filters(status, from_date, to_date, workflow_id, topic, subtopic, search)
 
         rows_query = (
                 _issue_joins(
@@ -242,6 +244,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                                 MessageIssueModel,
                                 _issue_topic_col(),
                                 _issue_subtopic_col(),
+                                _matched_note_col(search),
                                 )
                         )
                 .outerjoin(
@@ -279,13 +282,14 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
             workflow_id: Optional[UUID] = None,
             topic: Optional[str] = None,
             subtopic: Optional[str] = None,
+            search: Optional[str] = None,
             ) -> list[tuple[str, int]]:
         """``(status, count)`` pairs over the same rows, filters and group scope
         as ``get_message_issues``."""
         status_col = _issue_status_col()
         query = (
                 _issue_joins(select(status_col, func.count()).select_from(MessageFeedbackModel))
-                .where(*_issue_filters(None, from_date, to_date, workflow_id, topic, subtopic))
+                .where(*_issue_filters(None, from_date, to_date, workflow_id, topic, subtopic, search))
                 .group_by(status_col)
                 .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
                 )
@@ -403,6 +407,25 @@ def _issue_subtopic_col():
             )
 
 
+def _matching_notes(search: str):
+    return select(MessageIssueNoteModel.body).where(
+            MessageIssueNoteModel.message_feedback_id == MessageFeedbackModel.id,
+            MessageIssueNoteModel.body.icontains(search, autoescape=True),
+            )
+
+
+def _matched_note_col(search: Optional[str]):
+    if not search:
+        return null().label("matched_note")
+    return (
+            _matching_notes(search)
+            .order_by(MessageIssueNoteModel.created_at.desc(), MessageIssueNoteModel.id.desc())
+            .limit(1)
+            .scalar_subquery()
+            .label("matched_note")
+            )
+
+
 def _issue_filters(
         status: Optional[str] = None,
         from_date: Optional[date] = None,
@@ -410,6 +433,7 @@ def _issue_filters(
         workflow_id: Optional[UUID] = None,
         topic: Optional[str] = None,
         subtopic: Optional[str] = None,
+        search: Optional[str] = None,
         ) -> list:
     filters = [
             MessageFeedbackModel.feedback_message.isnot(None),
@@ -428,6 +452,11 @@ def _issue_filters(
         filters.append(func.lower(func.trim(_issue_topic_col())) == topic.strip().lower())
     if subtopic:
         filters.append(func.lower(func.trim(_issue_subtopic_col())) == subtopic.strip().lower())
+    if search:
+        filters.append(or_(
+                MessageFeedbackModel.feedback_message.icontains(search, autoescape=True),
+                _matching_notes(search).exists(),
+                ))
 
     group_clause = get_group_scope_clause(ConversationModel)
     if group_clause is not None:

@@ -27,6 +27,7 @@ class ReportedIssueRead(BaseModel):
     conversation_date: Optional[datetime] = None
     fix_version: Optional[str] = None
     target_rollout_date: Optional[date] = None
+    matched_note: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

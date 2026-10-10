@@ -60,6 +60,7 @@ type ReportedFeedbackDialogProps = {
   issue: ReportedFeedbackItem | null;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
+  onCloseAutoFocus?: (event: Event) => void;
   statuses: IssueStatus[];
   canTriage: boolean;
   onStatusChange: (issue: ReportedFeedbackItem, next: FeedbackStatus) => void;
@@ -329,6 +330,7 @@ export function ReportedFeedbackDialog({
   issue,
   isOpen,
   onOpenChange,
+  onCloseAutoFocus,
   statuses,
   canTriage,
   onStatusChange,
@@ -358,6 +360,7 @@ export function ReportedFeedbackDialog({
           "flex flex-col gap-0 overflow-hidden p-0 transition-[max-width] duration-300 ease-out",
           showConversation ? "h-[85vh] max-w-6xl" : "max-w-2xl",
         )}
+        onCloseAutoFocus={onCloseAutoFocus}
       >
         <DialogHeader className="shrink-0 space-y-0 border-b px-6 py-4">
           <div className="flex items-center gap-3">

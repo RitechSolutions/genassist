@@ -3,6 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
+from app.schemas.filter import MessageIssueFilter, MessageIssueSummaryFilter
 from app.schemas.message_issue import IssueNoteCreate, IssueUpdate
 
 
@@ -19,3 +20,8 @@ def test_note_body_is_trimmed_and_cannot_be_blank():
     assert IssueNoteCreate(body="  Fixed in 2.4.1 ").body == "Fixed in 2.4.1"
     with pytest.raises(ValidationError):
         IssueNoteCreate(body="   ")
+
+
+def test_search_is_trimmed_and_blank_becomes_null():
+    assert MessageIssueFilter(search="  timeout ").search == "timeout"
+    assert MessageIssueSummaryFilter(search="   ").search is None

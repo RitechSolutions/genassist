@@ -63,6 +63,7 @@ class TranscriptMessageService:
             workflow_id=filter_obj.workflow_id,
             topic=filter_obj.topic,
             subtopic=filter_obj.subtopic,
+            search=filter_obj.search,
         )
 
         items = [
@@ -84,6 +85,7 @@ class TranscriptMessageService:
                 conversation_date=conversation.conversation_date,
                 fix_version=issue.fix_version if issue else None,
                 target_rollout_date=issue.target_rollout_date if issue else None,
+                matched_note=matched_note,
             )
             for (
                 feedback,
@@ -96,6 +98,7 @@ class TranscriptMessageService:
                 issue,
                 topic,
                 subtopic,
+                matched_note,
             ) in rows
         ]
         return PaginatedResponse.from_filter(items, total, filter_obj)
@@ -110,6 +113,7 @@ class TranscriptMessageService:
             workflow_id=filter_obj.workflow_id,
             topic=filter_obj.topic,
             subtopic=filter_obj.subtopic,
+            search=filter_obj.search,
         )
         by_status = {s.key: 0 for s in await self.issue_status_repo.list_ordered()}
         by_status.update(dict(rows))

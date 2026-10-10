@@ -129,6 +129,40 @@ async def test_topic_filters_follow_the_conversations_page():
 
 
 @pytest.mark.asyncio
+async def test_search_matches_the_comment_or_any_note():
+    statements = [*await _list_statements(search="timeout"), await _summary_statement(search="timeout")]
+
+    for stmt in statements:
+        sql = _sql(stmt)
+        assert "message_feedback.feedback_message ILIKE" in sql
+        assert "EXISTS (SELECT message_issue_notes.body" in sql
+        assert "message_issue_notes.message_feedback_id = message_feedback.id" in sql
+        assert "ESCAPE '/'" in sql
+
+
+@pytest.mark.asyncio
+async def test_list_returns_the_newest_matching_note():
+    rows, _ = await _list_statements(search="timeout")
+    sql = _sql(rows)
+    assert "ORDER BY message_issue_notes.created_at DESC, message_issue_notes.id DESC" in sql
+    assert "AS matched_note" in sql
+
+    rows, _ = await _list_statements()
+    assert "NULL AS matched_note" in _sql(rows)
+
+
+@pytest.mark.asyncio
+async def test_search_escapes_like_wildcards():
+    statements = [*await _list_statements(search="50%_off"), await _summary_statement(search="50%_off")]
+
+    for stmt in statements:
+        params = stmt.compile(dialect=postgresql.dialect()).params
+        searched = {name: value for name, value in params.items() if name.startswith(("feedback_message_", "body_"))}
+        assert {name.rsplit("_", 1)[0] for name in searched} == {"feedback_message", "body"}
+        assert set(searched.values()) == {"50/%/_off"}
+
+
+@pytest.mark.asyncio
 async def test_triage_writes_need_an_issue_the_list_shows():
     sql = _sql(await _feedback_check_statement())
     assert "trim(message_feedback.feedback_message) != ''" in sql

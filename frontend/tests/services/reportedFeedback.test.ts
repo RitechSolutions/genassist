@@ -70,6 +70,15 @@ describe("fetchReportedFeedback", () => {
     );
   });
 
+  it("appends the search last, encoded", async () => {
+    mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
+    await fetchReportedFeedback({ status: "open", topic: "Refund", search: "50% off" });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "conversations/issues?limit=20&status=open&topic=Refund&search=50%25+off"
+    );
+  });
+
   it("omits the status param when status is 'all'", async () => {
     mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
     await fetchReportedFeedback({ status: "all" });
@@ -109,10 +118,11 @@ describe("fetchReportedFeedbackSummary", () => {
       to_date: "2026-10-06 23:59:59",
       topic: "",
       subtopic: "Wrong plate",
+      search: "timeout",
     });
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
-      "conversations/issues/summary?from_date=2026-10-01&to_date=2026-10-06+23%3A59%3A59&subtopic=Wrong+plate"
+      "conversations/issues/summary?from_date=2026-10-01&to_date=2026-10-06+23%3A59%3A59&subtopic=Wrong+plate&search=timeout"
     );
   });
 
