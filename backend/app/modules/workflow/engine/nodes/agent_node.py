@@ -304,6 +304,12 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
             invocation_id = uuid.uuid4().hex
             root_thread_id = state.get_thread_id()
+
+            def _release_child() -> None:
+                if persistent:
+                    state.sub_agent_persistent_claimed = False
+                orchestrator.discard_child_memory(root_thread_id, child_id, invocation_id)
+
             try:
                 child_state = await orchestrator.run_child_turn(
                     workflow=state.workflow,
@@ -317,14 +323,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     usage_sink=state.llm_usage,
                 )
             except asyncio.TimeoutError:
-                if persistent:
-                    state.sub_agent_persistent_claimed = False
-                orchestrator.discard_child_memory(root_thread_id, child_id, invocation_id)
+                _release_child()
                 return messages.child_timeout(timeout_seconds)
             except Exception:
-                if persistent:
-                    state.sub_agent_persistent_claimed = False
-                orchestrator.discard_child_memory(root_thread_id, child_id, invocation_id)
+                _release_child()
                 logger.exception("Sub-agent delegation to %s failed", child_id)
                 return messages.child_failed()
 
@@ -334,9 +336,15 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             orchestrator.propagate_prompt_cache_diagnostics(child_state, state)
 
             completion = orchestrator.child_completion(child_state)
+            child_error = child_output.get("error") if isinstance(child_output, dict) else None
+            child_returned_error = completion is None and bool(child_error)
+            if child_returned_error:
+                # Same outcome as a raised error: the parent answers, no frame is kept
+                _release_child()
+                logger.error("Sub-agent %s returned an error: %s", child_id, child_error)
+                return messages.child_failed()
+
             message = orchestrator.child_message(child_state)
-            if isinstance(child_output, dict) and child_output.get("error"):
-                message = messages.child_failed()
             if mode == "single_turn" or completion is not None:
                 status = "completed"
                 if completion and isinstance(completion.get("result"), str):

@@ -571,18 +571,23 @@ async def test_delegation_folds_only_child_output_not_session_or_path():
 
 
 @pytest.mark.asyncio
-async def test_failed_child_reports_failure_to_parent_not_the_generic_apology():
-    node = _parent_node()
+@pytest.mark.parametrize("mode", ["single_turn", "task", "chat"])
+async def test_child_returning_an_error_is_handled_like_a_raised_failure(mode, caplog):
+    node = _parent_node(thread_id=f"t-child-error-{mode}", mode=mode)
     child = WorkflowState(workflow={"nodes": [], "edges": []}, thread_id="t-child", initial_values={})
     child.set_node_output("child", {"message": AGENT_ERROR_MESSAGE, "error": "boom", "steps": [], "tools_used": []})
-    fn = node._make_delegation_function(child_id="child", mode="single_turn", timeout_seconds=120)
-    with patch(_ORCH_RUN, AsyncMock(return_value=child)):
+    fn = node._make_delegation_function(child_id="child", mode=mode, timeout_seconds=120)
+    with (
+        patch(_ORCH_RUN, AsyncMock(return_value=child)),
+        patch(_ORCH_DISCARD) as discard,
+    ):
         result = await fn({"parameters": {"task": "do x"}})
 
-    envelope = orchestrator.parse_envelope(result)
-    assert envelope["status"] == "completed"
-    assert envelope["message"] == messages.child_failed()
-    assert "boom" not in envelope["message"]
+    assert result == messages.child_failed()
+    assert orchestrator.parse_envelope(result) is None
+    assert node.get_state().sub_agent_persistent_claimed is False
+    discard.assert_called_once()
+    assert "boom" in caplog.text
 
 
 @pytest.mark.asyncio
