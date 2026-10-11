@@ -9,9 +9,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
-from app.core.utils.enums.conversation_topic_enum import ConversationTopic
 from app.core.utils.enums.negative_conversation_reason import NegativeConversationReason
 from app.core.utils.gpt_utils import clean_markdown, check_and_raise_if_non_retryable
+from app.core.utils.topic_settings import normalize_topic_verdict, parse_topic_settings, topics_csv
 from app.modules.workflow.llm.provider import LLMProvider
 from app.schemas.conversation_analysis import KPI_METRIC_KEYS, AnalysisResult
 from app.schemas.conversation_transcript import TranscriptSegment
@@ -145,6 +145,7 @@ class GptKpiAnalyzer:
 
         system_prompt = self._build_system_prompt(llm_analyst.prompt, llm_analyst)
         system_msg = SystemMessage(content=system_prompt)
+        topic_specs = parse_topic_settings(llm_analyst.settings)
 
         enrichment_context = await agent_logs_service.build_enrichment_context(conversation_id,
                 llm_analyst.context_enrichments or [])
@@ -186,6 +187,8 @@ class GptKpiAnalyzer:
                 metrics = self._extract_metrics(response_text)
 
                 if (summary and title and isinstance(metrics, dict) and metrics):
+                    title, metrics["Subtopic"] = normalize_topic_verdict(
+                        title, str(metrics.get("Subtopic") or ""), topic_specs)
                     return AnalysisResult(summary=summary, title=title, kpi_metrics=metrics, )
 
                 raise AppException(ErrorKey.TRANSCRIPT_PARSE_ERROR,
@@ -257,23 +260,27 @@ class GptKpiAnalyzer:
 
 
     def _get_topics_csv(self, llm_analyst: LlmAnalyst) -> str:
-        """Return topics CSV from llm_analyst settings, falling back to the default enum."""
-        topics = (llm_analyst.settings or {}).get("topics")
-        if topics and isinstance(topics, list):
-            return ", ".join(str(t) for t in topics)
-        return ConversationTopic.as_csv()
+        """Return the top-level topic names as CSV, falling back to the default enum."""
+        return topics_csv(parse_topic_settings(llm_analyst.settings))
 
 
     def _build_system_prompt(self, base_prompt: str, llm_analyst: LlmAnalyst) -> str:
         """Combine the tenant-configured base prompt with the fixed analysis format instructions."""
-        topics_csv = self._get_topics_csv(llm_analyst)
+        specs = parse_topic_settings(llm_analyst.settings)
+        topic_names = topics_csv(specs)
+        subtopic_list, subtopic_key = "", ""
+        if any(spec.subtopics for spec in specs):
+            subtopic_list = f"Titles and their sub-topics: {topics_csv(specs, include_subtopics=True)}\n\n"
+            subtopic_key = (
+                '    "Subtopic": "(one of the sub-topics listed for the chosen title, or \\"\\" if none apply)",\n'
+            )
         return f"""{base_prompt}
 
 You are a customer experience expert specializing in call center analysis.
 
-Always respond in exactly this format:
+{subtopic_list}Always respond in exactly this format:
 
-**A) Title:** <one from: {topics_csv}>
+**A) Title:** <one from: {topic_names}>
 
 **B) Summary:**
 - Operator performance assessment
@@ -291,7 +298,7 @@ Provide the following KPI metrics, overall tone, and sentiment percentages as a 
     "Efficiency": (integer 0-10),
     "Resolution Rate": (integer 0-10),
     "Operator Knowledge": (integer 0-10),
-    "Tone": "(choose one from: Hostile, Frustrated, Friendly, Polite, Neutral, Professional)",
+{subtopic_key}    "Tone": "(choose one from: Hostile, Frustrated, Friendly, Polite, Neutral, Professional)",
     "Sentiment": {{
         "positive": (float between 0-100),
         "neutral": (float between 0-100),
@@ -378,6 +385,9 @@ Please make sure your response strictly follows the requested format and especia
             if (
                     "topic" in analysis_data and "hostile_score" in analysis_data and "negative_reason" in analysis_data and isinstance(
                     analysis_data["hostile_score"], int)):
+                if isinstance(analysis_data["topic"], str):
+                    analysis_data["topic"], _ = normalize_topic_verdict(
+                        analysis_data["topic"], "", parse_topic_settings(llm_analyst.settings))
                 return analysis_data
 
             # If the JSON doesn't match the expected structure

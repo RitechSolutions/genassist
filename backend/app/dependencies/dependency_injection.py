@@ -42,6 +42,7 @@ from app.repositories.datasources import DataSourcesRepository
 from app.repositories.feature_flag import FeatureFlagRepository
 from app.repositories.file_manager import FileManagerRepository
 from app.repositories.file_upload_session import FileUploadSessionRepository
+from app.repositories.issue_status import IssueStatusRepository
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.repositories.llm_analysts import LlmAnalystRepository
 from app.repositories.llm_cost_rates import LlmCostRateRepository
@@ -89,6 +90,7 @@ from app.services.file_upload_session import FileUploadSessionService
 from app.services.gpt_kpi_analyzer import GptKpiAnalyzer
 from app.services.gpt_questions import QuestionAnswerer
 from app.services.gpt_speaker_separator import SpeakerSeparator
+from app.services.issue_status import IssueStatusService
 from app.services.llm_analysts import LlmAnalystService
 from app.services.llm_cost_rates import LlmCostRateService
 from app.services.llm_model_catalog import LlmModelCatalogService
@@ -309,6 +311,9 @@ class Dependencies(Module):
 
         binder.bind(FeatureFlagService, scope=request_scope)
         binder.bind(FeatureFlagRepository, scope=request_scope)
+
+        binder.bind(IssueStatusService, scope=request_scope)
+        binder.bind(IssueStatusRepository, scope=request_scope)
 
         binder.bind(LlmProviderService, scope=request_scope)
         binder.bind(LlmProviderRepository, scope=request_scope)

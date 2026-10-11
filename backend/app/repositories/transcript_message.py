@@ -2,19 +2,20 @@ from datetime import date, datetime
 from typing import Iterable, List, Optional
 from uuid import UUID
 from injector import inject
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import defer, selectinload
+from sqlalchemy.orm import defer, load_only, selectinload
 
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.enums.issue_status_enum import IssueStatus, TERMINAL_ISSUE_STATUSES
+from app.core.utils.enums.conversation_status_enum import ConversationStatus
+from app.core.utils.enums.issue_status_enum import DEFAULT_ISSUE_STATUS_KEY
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models.agent import AgentModel
-from app.db.models.conversation import ConversationModel
-from app.db.models.message_issue import MessageIssueModel
+from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
+from app.db.models.message_issue import MessageIssueModel, MessageIssueNoteModel
 from app.db.models.message_model import MessageFeedbackModel, TranscriptMessageModel
 from app.db.models.operator import OperatorModel
 from app.db.models.user import UserModel
@@ -206,76 +207,30 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
             from_date: Optional[date] = None,
             to_date: Optional[datetime] = None,
             workflow_id: Optional[UUID] = None,
+            topic: Optional[str] = None,
+            subtopic: Optional[str] = None,
             ) -> tuple[list, int]:
         """List messages that carry an admin/supervisor comment (a reported
         "issue"), newest first, with the context needed to act on them.
 
         Returns ``(rows, total)`` where each row is the tuple
         ``(MessageFeedbackModel, TranscriptMessageModel, ConversationModel,
-        reported_by_username, workflow_name, agent_id, status)``. ``status``
-        defaults to 'open' for comments that have no tracked issue row yet. The
-        agent id / workflow name are resolved through the conversation's
-        operator -> agent -> workflow chain (left-joined). All filters
-        (``status``, ``from_date``/``to_date`` on when the comment was added, and
-        ``workflow_id``) are applied server-side. The query is group-scoped to
-        the requesting user via the conversation.
+        reported_by_username, workflow_name, agent_id, status, issue, topic,
+        subtopic)``. ``status`` defaults to 'open' for comments that have no
+        tracked issue row yet, in which case ``issue`` is None. The agent id /
+        workflow name are resolved through the conversation's operator -> agent
+        -> workflow chain (left-joined). ``topic``/``subtopic`` follow the
+        Conversations page: the final analysis once finalized, the live topic
+        before. All filters (``status``, ``from_date``/``to_date`` on when the
+        comment was added, ``workflow_id``, ``topic`` and ``subtopic``) are
+        applied server-side. The query is group-scoped to the requesting user
+        via the conversation.
         """
-        status_col = func.coalesce(
-                MessageIssueModel.status, IssueStatus.OPEN.value
-                )
-
-        base_filters = [
-                MessageFeedbackModel.feedback_message.isnot(None),
-                func.trim(MessageFeedbackModel.feedback_message) != "",
-                ConversationModel.is_deleted == 0,
-                ]
-        if status:
-            base_filters.append(status_col == status)
-        # Time range filters the moment the comment was added (reported time).
-        if from_date:
-            base_filters.append(MessageFeedbackModel.feedback_timestamp >= from_date)
-        if to_date:
-            base_filters.append(MessageFeedbackModel.feedback_timestamp <= to_date)
-        if workflow_id:
-            base_filters.append(AgentModel.workflow_id == workflow_id)
-
-        # Apply conversation group-scoping explicitly and bypass the implicit
-        # do_orm_execute listener (see app/db/events/group_scope.py) so the joins
-        # used only to resolve display fields are not themselves group-filtered.
-        group_clause = get_group_scope_clause(ConversationModel)
-        if group_clause is not None:
-            base_filters.append(group_clause)
-
-        def _core_joins(stmt):
-            """Joins shared by the rows and count queries (drive filtering).
-
-            Operator/Agent are left-joined here (not just in the rows query) so the
-            ``workflow_id`` filter applies to the count too. They stay one-to-one
-            per feedback row, so the count is unaffected when no filter is set.
-            """
-            return (
-                    stmt
-                    .join(
-                            TranscriptMessageModel,
-                            TranscriptMessageModel.id == MessageFeedbackModel.message_id,
-                            )
-                    .join(
-                            ConversationModel,
-                            ConversationModel.id == TranscriptMessageModel.conversation_id,
-                            )
-                    .outerjoin(
-                            MessageIssueModel,
-                            MessageIssueModel.message_feedback_id == MessageFeedbackModel.id,
-                            )
-                    .outerjoin(
-                            OperatorModel,
-                            OperatorModel.id == ConversationModel.operator_id,
-                            )
-                    .outerjoin(AgentModel, AgentModel.operator_id == OperatorModel.id)
-                    )
+        status_col = _issue_status_col()
+        base_filters = _issue_filters(status, from_date, to_date, workflow_id, topic, subtopic)
 
         rows_query = (
-                _core_joins(
+                _issue_joins(
                         select(
                                 MessageFeedbackModel,
                                 TranscriptMessageModel,
@@ -284,6 +239,9 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                                 WorkflowModel.name,
                                 AgentModel.id,
                                 status_col,
+                                MessageIssueModel,
+                                _issue_topic_col(),
+                                _issue_subtopic_col(),
                                 )
                         )
                 .outerjoin(
@@ -293,6 +251,10 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                         WorkflowModel, WorkflowModel.id == AgentModel.workflow_id
                         )
                 .where(*base_filters)
+                .options(
+                        load_only(TranscriptMessageModel.text, TranscriptMessageModel.speaker),
+                        load_only(ConversationModel.conversation_date),
+                        )
                 .order_by(MessageFeedbackModel.feedback_timestamp.desc())
                 .offset(skip)
                 .limit(limit)
@@ -301,7 +263,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         rows = (await self.db.execute(rows_query)).all()
 
         count_query = (
-                _core_joins(select(func.count()).select_from(MessageFeedbackModel))
+                _issue_joins(select(func.count()).select_from(MessageFeedbackModel))
                 .where(*base_filters)
                 .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
                 )
@@ -310,29 +272,35 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         return list(rows), total
 
 
-    async def set_issue_status(
-            self, message_feedback_id: UUID, status: str
+    async def count_message_issues_by_status(
+            self,
+            from_date: Optional[date] = None,
+            to_date: Optional[datetime] = None,
+            workflow_id: Optional[UUID] = None,
+            topic: Optional[str] = None,
+            subtopic: Optional[str] = None,
+            ) -> list[tuple[str, int]]:
+        """``(status, count)`` pairs over the same rows, filters and group scope
+        as ``get_message_issues``."""
+        status_col = _issue_status_col()
+        query = (
+                _issue_joins(select(status_col, func.count()).select_from(MessageFeedbackModel))
+                .where(*_issue_filters(None, from_date, to_date, workflow_id, topic, subtopic))
+                .group_by(status_col)
+                .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+                )
+        return [(status, count) for status, count in (await self.db.execute(query)).all()]
+
+
+    async def upsert_issue(
+            self, message_feedback_id: UUID, values: dict
             ) -> MessageIssueModel:
-        """Upsert the tracked resolution status for a comment (message_feedback
-        row). Stamps resolved_by/resolved_at on terminal statuses and clears them
-        otherwise. Raises if the referenced comment does not exist."""
-        from datetime import datetime, timezone
+        """Create or update the tracked issue row for a comment (message_feedback
+        row) with ``values`` as given. Raises if the referenced comment does not
+        exist."""
+        await self._require_feedback(message_feedback_id)
 
-        feedback = (
-                await self.db.execute(
-                        select(MessageFeedbackModel).where(
-                                MessageFeedbackModel.id == message_feedback_id
-                                )
-                        )
-                ).scalars().first()
-        if not feedback:
-            raise AppException(ErrorKey.MESSAGE_NOT_FOUND)
-
-        is_terminal = status in {s.value for s in TERMINAL_ISSUE_STATUSES}
-        resolved_at = datetime.now(timezone.utc) if is_terminal else None
-        resolved_by = get_current_user_id() if is_terminal else None
-
-        existing = (
+        issue = (
                 await self.db.execute(
                         select(MessageIssueModel).where(
                                 MessageIssueModel.message_feedback_id == message_feedback_id
@@ -340,20 +308,151 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                         )
                 ).scalars().first()
 
-        if existing:
-            existing.status = status
-            existing.resolved_at = resolved_at
-            existing.resolved_by = resolved_by
-            issue = existing
+        if issue:
+            for key, value in values.items():
+                setattr(issue, key, value)
         else:
             issue = MessageIssueModel(
                     message_feedback_id=message_feedback_id,
-                    status=status,
-                    resolved_at=resolved_at,
-                    resolved_by=resolved_by,
+                    **{"status": DEFAULT_ISSUE_STATUS_KEY, **values},
                     )
             self.db.add(issue)
 
         await self.db.flush()
         await self.db.refresh(issue)
         return issue
+
+
+    async def list_issue_notes(
+            self, message_feedback_id: UUID
+            ) -> list[tuple[MessageIssueNoteModel, Optional[str]]]:
+        await self._require_feedback(message_feedback_id)
+        query = (
+                select(MessageIssueNoteModel, UserModel.username)
+                .outerjoin(UserModel, UserModel.id == MessageIssueNoteModel.author_user_id)
+                .where(MessageIssueNoteModel.message_feedback_id == message_feedback_id)
+                .order_by(MessageIssueNoteModel.created_at.asc(), MessageIssueNoteModel.id.asc())
+                )
+        return [(note, username) for note, username in (await self.db.execute(query)).all()]
+
+
+    async def get_issue_notes_by_conversation_id(self, conversation_id: UUID) -> list[MessageIssueNoteModel]:
+        query = (
+                select(MessageIssueNoteModel)
+                .join(MessageFeedbackModel, MessageFeedbackModel.id == MessageIssueNoteModel.message_feedback_id)
+                .join(TranscriptMessageModel, TranscriptMessageModel.id == MessageFeedbackModel.message_id)
+                .where(TranscriptMessageModel.conversation_id == conversation_id)
+                )
+        return list((await self.db.execute(query)).scalars().all())
+
+
+    async def add_issue_note(
+            self, message_feedback_id: UUID, author_user_id: UUID, body: str
+            ) -> tuple[MessageIssueNoteModel, Optional[str]]:
+        await self._require_feedback(message_feedback_id)
+        note = MessageIssueNoteModel(
+                message_feedback_id=message_feedback_id,
+                author_user_id=author_user_id,
+                body=body,
+                )
+        self.db.add(note)
+        await self.db.flush()
+        await self.db.refresh(note)
+        username = await self.db.scalar(select(UserModel.username).where(UserModel.id == author_user_id))
+        return note, username
+
+
+    async def _require_feedback(self, message_feedback_id: UUID) -> None:
+        feedback_id = (
+                await self.db.execute(
+                        select(MessageFeedbackModel.id)
+                        .join(
+                                TranscriptMessageModel,
+                                TranscriptMessageModel.id == MessageFeedbackModel.message_id,
+                                )
+                        .join(
+                                ConversationModel,
+                                ConversationModel.id == TranscriptMessageModel.conversation_id,
+                                )
+                        .where(MessageFeedbackModel.id == message_feedback_id, *_issue_filters())
+                        .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
+                        )
+                ).scalars().first()
+        if not feedback_id:
+            raise AppException(ErrorKey.MESSAGE_NOT_FOUND)
+
+
+def _issue_status_col():
+    return func.coalesce(MessageIssueModel.status, DEFAULT_ISSUE_STATUS_KEY)
+
+
+def _issue_topic_col():
+    return case(
+            (ConversationModel.status == ConversationStatus.FINALIZED.value, ConversationAnalysisModel.topic),
+            else_=ConversationModel.topic,
+            )
+
+
+def _issue_subtopic_col():
+    return case(
+            (ConversationModel.status == ConversationStatus.FINALIZED.value, ConversationAnalysisModel.subtopic),
+            )
+
+
+def _issue_filters(
+        status: Optional[str] = None,
+        from_date: Optional[date] = None,
+        to_date: Optional[datetime] = None,
+        workflow_id: Optional[UUID] = None,
+        topic: Optional[str] = None,
+        subtopic: Optional[str] = None,
+        ) -> list:
+    filters = [
+            MessageFeedbackModel.feedback_message.isnot(None),
+            func.trim(MessageFeedbackModel.feedback_message) != "",
+            ConversationModel.is_deleted == 0,
+            ]
+    if status:
+        filters.append(_issue_status_col() == status)
+    if from_date:
+        filters.append(MessageFeedbackModel.feedback_timestamp >= from_date)
+    if to_date:
+        filters.append(MessageFeedbackModel.feedback_timestamp <= to_date)
+    if workflow_id:
+        filters.append(AgentModel.workflow_id == workflow_id)
+    if topic:
+        filters.append(func.lower(func.trim(_issue_topic_col())) == topic.strip().lower())
+    if subtopic:
+        filters.append(func.lower(func.trim(_issue_subtopic_col())) == subtopic.strip().lower())
+
+    group_clause = get_group_scope_clause(ConversationModel)
+    if group_clause is not None:
+        filters.append(group_clause)
+    return filters
+
+
+def _issue_joins(stmt):
+    return (
+            stmt
+            .join(
+                    TranscriptMessageModel,
+                    TranscriptMessageModel.id == MessageFeedbackModel.message_id,
+                    )
+            .join(
+                    ConversationModel,
+                    ConversationModel.id == TranscriptMessageModel.conversation_id,
+                    )
+            .outerjoin(
+                    MessageIssueModel,
+                    MessageIssueModel.message_feedback_id == MessageFeedbackModel.id,
+                    )
+            .outerjoin(
+                    OperatorModel,
+                    OperatorModel.id == ConversationModel.operator_id,
+                    )
+            .outerjoin(AgentModel, AgentModel.operator_id == OperatorModel.id)
+            .outerjoin(
+                    ConversationAnalysisModel,
+                    ConversationAnalysisModel.conversation_id == ConversationModel.id,
+                    )
+            )

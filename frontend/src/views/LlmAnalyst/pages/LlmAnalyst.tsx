@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { getAllLLMAnalysts, deleteLLMAnalyst } from "@/services/llmAnalyst";
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -8,6 +9,7 @@ import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
 import toast from "react-hot-toast";
 
 export default function LLMAnalysts() {
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -59,6 +61,7 @@ export default function LLMAnalysts() {
     try {
       await deleteLLMAnalyst(id);
       //toast.success("LLM analyst deleted successfully.");
+      queryClient.invalidateQueries({ queryKey: ["topic-options"] });
       setRefreshKey((prev) => prev + 1);
     } catch (error) {
       toast.error("Failed to delete LLM analyst.");
