@@ -153,7 +153,7 @@ export function ConversationListPanel({
                   </span>
                   {transcript?.metadata?.topic ? (
                     <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                      {topicLabel(transcript.metadata.topic, transcript.metadata.subtopic ?? null)}
+                      {topicLabel(transcript.metadata.topic, transcript.metadata.subtopic)}
                     </span>
                   ) : null}
                   {preview ? (

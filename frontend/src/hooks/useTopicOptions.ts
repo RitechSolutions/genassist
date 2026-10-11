@@ -7,5 +7,4 @@ export const useTopicOptions = () =>
   useQuery({
     queryKey: ["topic-options"],
     queryFn: fetchTopicOptions,
-    staleTime: 5 * 60_000,
   });

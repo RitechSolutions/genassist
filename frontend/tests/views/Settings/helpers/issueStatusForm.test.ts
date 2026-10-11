@@ -84,14 +84,6 @@ describe("moveStatus", () => {
     expect(moveStatus(list, "open", 1)).toEqual(["blocked", "open", "done"]);
   });
 
-  it("follows position order, not array order", () => {
-    expect(moveStatus([...list].reverse(), "done", -1)).toEqual([
-      "open",
-      "done",
-      "blocked",
-    ]);
-  });
-
   it("returns null at either end and for a retired status", () => {
     expect(moveStatus(list, "open", -1)).toBeNull();
     expect(moveStatus(list, "done", 1)).toBeNull();

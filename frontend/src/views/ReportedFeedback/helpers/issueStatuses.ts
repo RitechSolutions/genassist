@@ -5,26 +5,21 @@ import { STATUS_COLOR_CLASSES } from "../constants";
 export interface StatusMeta {
   label: string;
   className: string;
-  retired: boolean;
 }
 
 const FALLBACK_COLOR = STATUS_COLOR_CLASSES.zinc;
 
-const byPosition = (a: IssueStatus, b: IssueStatus) =>
-  a.position - b.position || a.key.localeCompare(b.key);
-
 export function activeStatuses(list: IssueStatus[]): IssueStatus[] {
-  return list.filter((status) => status.is_active === 1).sort(byPosition);
+  return list.filter((status) => status.is_active === 1);
 }
 
 /** Label and classes for a key; unknown keys still render, labelled by the key. */
 export function statusMeta(list: IssueStatus[], key: string): StatusMeta {
   const status = list.find((s) => s.key === key);
-  if (!status) return { label: key, className: FALLBACK_COLOR, retired: true };
+  if (!status) return { label: key, className: FALLBACK_COLOR };
   return {
     label: status.label,
     className: STATUS_COLOR_CLASSES[status.color] ?? FALLBACK_COLOR,
-    retired: status.is_active !== 1,
   };
 }
 
@@ -38,7 +33,7 @@ export function withCurrentStatus(
   { includeRetired = false }: { includeRetired?: boolean } = {},
 ): string[] {
   const retired = includeRetired
-    ? list.filter((status) => status.is_active !== 1).sort(byPosition)
+    ? list.filter((status) => status.is_active !== 1)
     : [];
   const keys = [...activeStatuses(list), ...retired].map((status) => status.key);
   if (!current || current === "all" || keys.includes(current)) return keys;

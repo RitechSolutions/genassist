@@ -13,11 +13,12 @@ import { PageListSkeleton } from "@/components/skeletons";
 import { cn } from "@/helpers/utils";
 import {
   dashboardDefaultDateRange,
+  formatDateRangeLabel,
   toInclusiveDateParams,
 } from "@/helpers/dateRange";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
-import type { IssueCategory } from "@/services/issueStatuses";
-import { CATEGORY_META } from "@/views/ReportedFeedback/constants";
+import { ISSUE_CATEGORIES, type IssueCategory } from "@/services/issueStatuses";
+import { CATEGORY_LABELS } from "@/views/ReportedFeedback/constants";
 import { useFeedbackSummary } from "@/views/ReportedFeedback/hooks/useReportedFeedback";
 
 interface CountRowProps {
@@ -29,34 +30,31 @@ interface CountRowProps {
   iconColor: string;
 }
 
-const CATEGORY_ROWS: Array<Omit<CountRowProps, "title" | "count"> & { category: IssueCategory }> = [
-  {
-    category: "todo",
+const CATEGORY_ROWS: Record<IssueCategory, Omit<CountRowProps, "title" | "count">> = {
+  todo: {
     icon: CircleDashed,
     description: "Not started yet",
     bgColor: "bg-zinc-100 dark:bg-zinc-500/15",
     iconColor: "text-zinc-600 dark:text-zinc-400",
   },
-  {
-    category: "in_progress",
+  in_progress: {
     icon: CircleDotDashed,
     description: "Being worked on",
     bgColor: "bg-blue-100 dark:bg-blue-500/15",
     iconColor: "text-blue-700 dark:text-blue-400",
   },
-  {
-    category: "done",
+  done: {
     icon: CircleCheckBig,
     description: "Resolved or closed",
     bgColor: "bg-green-100 dark:bg-green-500/15",
     iconColor: "text-green-700 dark:text-green-400",
   },
-];
+};
 
 const formatPeriod = (range: DateRange | undefined): string => {
   if (!range?.from) return range?.to ? `Until ${format(range.to, "MMM d, yyyy")}` : "All time";
   if (!range.to) return `Since ${format(range.from, "MMM d, yyyy")}`;
-  return `${format(range.from, "MMM d")} – ${format(range.to, "MMM d, yyyy")}`;
+  return formatDateRangeLabel(range.from, range.to);
 };
 
 function CountRow({ icon: Icon, title, description, count, bgColor, iconColor }: CountRowProps) {
@@ -120,11 +118,11 @@ export function ReportedFeedbackCard({ className }: { className?: string }) {
               bgColor="bg-amber-100 dark:bg-amber-500/15"
               iconColor="text-amber-700 dark:text-amber-400"
             />
-            {CATEGORY_ROWS.map(({ category, ...row }) => (
+            {ISSUE_CATEGORIES.map((category) => (
               <CountRow
                 key={category}
-                {...row}
-                title={CATEGORY_META[category].label}
+                {...CATEGORY_ROWS[category]}
+                title={CATEGORY_LABELS[category]}
                 count={totals[category]}
               />
             ))}

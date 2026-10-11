@@ -22,7 +22,7 @@ import {
   reorderIssueStatuses,
   updateIssueStatus,
 } from "@/services/issueStatuses";
-import { CATEGORY_META } from "@/views/ReportedFeedback/constants";
+import { CATEGORY_LABELS } from "@/views/ReportedFeedback/constants";
 import { useIssueStatuses } from "@/views/ReportedFeedback/hooks/useIssueStatuses";
 import {
   activeStatuses,
@@ -141,7 +141,7 @@ export function FeedbackStatusesCard({
                     <code className="text-xs">{status.key}</code>
                   </TableCell>
                   <TableCell>
-                    {CATEGORY_META[status.category]?.label ?? status.category}
+                    {CATEGORY_LABELS[status.category] ?? status.category}
                   </TableCell>
                   <TableCell>
                     <span

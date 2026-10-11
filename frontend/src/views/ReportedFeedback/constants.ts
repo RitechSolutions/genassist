@@ -16,8 +16,8 @@ export const STATUS_COLOR_CLASSES: Record<string, string> = {
   pink: "border-pink-300 bg-pink-50 text-pink-700",
 };
 
-export const CATEGORY_META: Record<IssueCategory, { label: string }> = {
-  todo: { label: "To Do" },
-  in_progress: { label: "In Progress" },
-  done: { label: "Done" },
+export const CATEGORY_LABELS: Record<IssueCategory, string> = {
+  todo: "To Do",
+  in_progress: "In Progress",
+  done: "Done",
 };

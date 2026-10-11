@@ -292,8 +292,13 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         return [(status, count) for status, count in (await self.db.execute(query)).all()]
 
 
-    async def get_issue(self, message_feedback_id: UUID) -> Optional[MessageIssueModel]:
-        return (
+    async def get_or_add_issue(self, message_feedback_id: UUID) -> MessageIssueModel:
+        """The tracked issue row for a comment (message_feedback row), added in the
+        default status when it has none yet. Raises if the referenced comment does
+        not exist."""
+        await self._require_feedback(message_feedback_id)
+
+        issue = (
                 await self.db.execute(
                         select(MessageIssueModel).where(
                                 MessageIssueModel.message_feedback_id == message_feedback_id
@@ -301,29 +306,12 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                         )
                 ).scalars().first()
 
-
-    async def upsert_issue(
-            self, message_feedback_id: UUID, values: dict
-            ) -> MessageIssueModel:
-        """Create or update the tracked issue row for a comment (message_feedback
-        row) with ``values`` as given. Raises if the referenced comment does not
-        exist."""
-        await self._require_feedback(message_feedback_id)
-
-        issue = await self.get_issue(message_feedback_id)
-
-        if issue:
-            for key, value in values.items():
-                setattr(issue, key, value)
-        else:
+        if issue is None:
             issue = MessageIssueModel(
                     message_feedback_id=message_feedback_id,
-                    **{"status": DEFAULT_ISSUE_STATUS_KEY, **values},
+                    status=DEFAULT_ISSUE_STATUS_KEY,
                     )
             self.db.add(issue)
-
-        await self.db.flush()
-        await self.db.refresh(issue)
         return issue
 
 

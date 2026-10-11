@@ -18,14 +18,14 @@ const status = (over: Partial<IssueStatus> & Pick<IssueStatus, "key">): IssueSta
 });
 
 const LIST: IssueStatus[] = [
-  status({ key: "resolved", label: "Resolved", category: "done", position: 4, color: "emerald" }),
   status({ key: "open", label: "Open", position: 0 }),
-  status({ key: "blocked", label: "Blocked", category: "in_progress", position: 2, color: "red", is_active: 0 }),
   status({ key: "in_progress", label: "In Progress", category: "in_progress", position: 1, color: "blue" }),
+  status({ key: "blocked", label: "Blocked", category: "in_progress", position: 2, color: "red", is_active: 0 }),
+  status({ key: "resolved", label: "Resolved", category: "done", position: 4, color: "emerald" }),
 ];
 
 describe("activeStatuses", () => {
-  it("drops retired statuses and sorts by position", () => {
+  it("drops retired statuses, keeping the API's position order", () => {
     expect(activeStatuses(LIST).map((s) => s.key)).toEqual(["open", "in_progress", "resolved"]);
   });
 });
@@ -35,19 +35,17 @@ describe("statusMeta", () => {
     expect(statusMeta(LIST, "in_progress")).toEqual({
       label: "In Progress",
       className: "border-blue-300 bg-blue-50 text-blue-700",
-      retired: false,
     });
   });
 
-  it("marks a retired status but keeps its label", () => {
-    expect(statusMeta(LIST, "blocked")).toMatchObject({ label: "Blocked", retired: true });
+  it("keeps a retired status's label", () => {
+    expect(statusMeta(LIST, "blocked").label).toBe("Blocked");
   });
 
   it("falls back to the key and neutral classes for an unknown key or colour", () => {
     expect(statusMeta(LIST, "legacy_key")).toMatchObject({
       label: "legacy_key",
       className: "border-zinc-300 bg-zinc-100 text-zinc-600",
-      retired: true,
     });
     expect(statusMeta([status({ key: "x", color: "magenta" })], "x").className).toBe(
       "border-zinc-300 bg-zinc-100 text-zinc-600",

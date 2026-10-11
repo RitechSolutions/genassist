@@ -84,3 +84,7 @@ export function toInclusiveDateParams(range: DateRange | undefined): {
 export function dashboardDefaultDateRange(): DateRange {
   return { from: subDays(new Date(), 30), to: new Date() };
 }
+
+export function formatDateRangeLabel(from: Date, to: Date): string {
+  return `${format(from, "MMM d")} – ${format(to, "MMM d, yyyy")}`;
+}

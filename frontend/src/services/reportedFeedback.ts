@@ -1,7 +1,5 @@
 import { apiRequest } from "@/config/api";
 
-export type FeedbackStatus = string;
-
 /** A message an admin/supervisor commented on, with its tracked resolution status. */
 export interface ReportedFeedbackItem {
   feedback_id: string;
@@ -13,7 +11,7 @@ export interface ReportedFeedbackItem {
   speaker: string;
   comment: string;
   rating: string | null;
-  status: FeedbackStatus;
+  status: string;
   reported_by: string | null;
   reported_at: string;
   conversation_topic: string | null;
@@ -43,20 +41,13 @@ export interface FeedbackFilters {
 export interface FetchReportedFeedbackParams extends FeedbackFilters {
   skip?: number;
   limit?: number;
-  status?: FeedbackStatus | "all";
+  status?: string;
 }
 
 const MAX_BACKEND_LIMIT = 100;
 
 const appendFilters = (query: URLSearchParams, filters: FeedbackFilters) => {
-  for (const key of [
-    "from_date",
-    "to_date",
-    "workflow_id",
-    "topic",
-    "subtopic",
-  ] as const) {
-    const value = filters[key];
+  for (const [key, value] of Object.entries(filters)) {
     if (value) query.append(key, value);
   }
 };
@@ -72,14 +63,14 @@ const EMPTY_RESULT: ReportedFeedbackResult = {
 export const fetchReportedFeedback = async (
   params: FetchReportedFeedbackParams = {},
 ): Promise<ReportedFeedbackResult> => {
-  const { skip = 0, limit = 20, status } = params;
+  const { skip = 0, limit = 20, status, ...filters } = params;
   const safeLimit = limit > 0 ? Math.min(limit, MAX_BACKEND_LIMIT) : 20;
 
   const queryParams = new URLSearchParams();
   if (skip) queryParams.append("skip", String(skip));
   queryParams.append("limit", String(safeLimit));
   if (status && status !== "all") queryParams.append("status", status);
-  appendFilters(queryParams, params);
+  appendFilters(queryParams, filters);
 
   const response = await apiRequest<ReportedFeedbackResult>(
     "GET",
@@ -92,7 +83,7 @@ export const fetchReportedFeedback = async (
 /** Issue counts per status key, zero-filled over the configured statuses. */
 export interface FeedbackStatusSummary {
   total: number;
-  by_status: Partial<Record<FeedbackStatus, number>>;
+  by_status: Partial<Record<string, number>>;
 }
 
 export const EMPTY_SUMMARY: FeedbackStatusSummary = { total: 0, by_status: {} };
@@ -113,7 +104,7 @@ export const fetchReportedFeedbackSummary = async (
 
 /** Partial issue update: an omitted field is kept, an explicit null clears it. */
 export type IssuePatch = {
-  status?: FeedbackStatus;
+  status?: string;
   fix_version?: string | null;
   target_rollout_date?: string | null;
 };
@@ -121,7 +112,7 @@ export type IssuePatch = {
 export interface MessageIssueRow {
   id: string;
   message_feedback_id: string;
-  status: FeedbackStatus;
+  status: string;
   fix_version: string | null;
   target_rollout_date: string | null;
   resolved_by: string | null;

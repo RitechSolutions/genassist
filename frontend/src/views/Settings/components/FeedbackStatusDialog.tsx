@@ -13,12 +13,13 @@ import { extractErrorMessage } from "@/helpers/apiError";
 import { cn } from "@/helpers/utils";
 import {
   createIssueStatus,
+  ISSUE_CATEGORIES,
   IssueCategory,
   IssueStatus,
   updateIssueStatus,
 } from "@/services/issueStatuses";
 import {
-  CATEGORY_META,
+  CATEGORY_LABELS,
   STATUS_COLOR_CLASSES,
 } from "@/views/ReportedFeedback/constants";
 import {
@@ -143,13 +144,11 @@ export function FeedbackStatusDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(Object.keys(CATEGORY_META) as IssueCategory[]).map(
-                  (category) => (
-                    <SelectItem key={category} value={category}>
-                      {CATEGORY_META[category].label}
-                    </SelectItem>
-                  ),
-                )}
+                {ISSUE_CATEGORIES.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    {CATEGORY_LABELS[category]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             {isDefault && (

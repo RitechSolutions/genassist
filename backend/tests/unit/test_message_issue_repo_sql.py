@@ -143,7 +143,7 @@ async def test_list_skips_the_heavy_message_and_conversation_columns():
         assert heavy not in sql
 
 
-class UpsertDb(CapturingDb):
+class IssueDb(CapturingDb):
     def __init__(self, issue):
         super().__init__()
         self.rows = [uuid4(), issue]
@@ -156,26 +156,18 @@ class UpsertDb(CapturingDb):
     def add(self, obj):
         self.added.append(obj)
 
-    async def flush(self):
-        pass
-
-    async def refresh(self, obj):
-        pass
-
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("values, status", [({"fix_version": "2.4.1"}, "open"), ({"status": "resolved"}, "resolved")])
-async def test_upsert_creates_the_issue_defaulting_to_open(values, status):
-    db, feedback_id = UpsertDb(issue=None), uuid4()
-    issue = await TranscriptMessageRepository(db).upsert_issue(feedback_id, values)
+async def test_get_or_add_adds_a_missing_issue_defaulting_to_open():
+    db, feedback_id = IssueDb(issue=None), uuid4()
+    issue = await TranscriptMessageRepository(db).get_or_add_issue(feedback_id)
     assert db.added == [issue]
-    assert (issue.message_feedback_id, issue.status) == (feedback_id, status)
+    assert (issue.message_feedback_id, issue.status) == (feedback_id, "open")
 
 
 @pytest.mark.asyncio
-async def test_upsert_updates_the_existing_issue_in_place():
-    existing = MessageIssueModel(status="open", fix_version="2.4.1")
-    db = UpsertDb(issue=existing)
-    issue = await TranscriptMessageRepository(db).upsert_issue(uuid4(), {"status": "resolved", "fix_version": None})
+async def test_get_or_add_returns_the_existing_issue():
+    existing = MessageIssueModel(status="resolved", fix_version="2.4.1")
+    db = IssueDb(issue=existing)
+    issue = await TranscriptMessageRepository(db).get_or_add_issue(uuid4())
     assert issue is existing and db.added == []
-    assert (existing.status, existing.fix_version) == ("resolved", None)
