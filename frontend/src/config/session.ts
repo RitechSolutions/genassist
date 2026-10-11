@@ -189,11 +189,18 @@ function handleRenewalFailure(error: unknown, staleAccessToken: string | null): 
   if (accessTokenFromOtherTab) return { status: "renewed", accessToken: accessTokenFromOtherTab };
 
   const status = error instanceof AxiosError ? error.response?.status : undefined;
-  const isRenewalRejected = status === 401 || status === 403;
-  if (!isRenewalRejected) return { status: "unavailable" };
+  if (isTemporaryRenewalFailure(status)) return { status: "unavailable" };
 
   endSession();
   return { status: "ended" };
+}
+
+/** No answer, a server error, a timeout or rate limiting may pass; any other refusal is final */
+function isTemporaryRenewalFailure(status: number | undefined): boolean {
+  const hasNoAnswer = status === undefined;
+  const isServerError = status !== undefined && status >= 500;
+  const isRetryLater = status === 408 || status === 429;
+  return hasNoAnswer || isServerError || isRetryLater;
 }
 
 /** The stored access token when another tab replaced the one this tab found unusable. */

@@ -191,6 +191,25 @@ describe("renewSession", () => {
     expect(assignPage).not.toHaveBeenCalled();
   });
 
+  it("ends the session when the server refuses the renewal for good with another status", async () => {
+    const accessToken = tokenExpiringIn(60 * 1000);
+    storeLogin(accessToken, tokenExpiringIn(ONE_HOUR));
+    mockedPost.mockRejectedValueOnce(rejectedWith(400));
+
+    await expect(session.renewSession(REFRESH_URL, accessToken)).resolves.toEqual({ status: "ended" });
+    expect(assignPage).toHaveBeenCalledWith("/login");
+  });
+
+  it("keeps the session when the server has a temporary failure", async () => {
+    const accessToken = tokenExpiringIn(60 * 1000);
+    storeLogin(accessToken, tokenExpiringIn(ONE_HOUR));
+    mockedPost.mockRejectedValueOnce(rejectedWith(503));
+
+    await expect(session.renewSession(REFRESH_URL, accessToken)).resolves.toEqual({ status: "unavailable" });
+    expect(storage.getItem("access_token")).toBe(accessToken);
+    expect(assignPage).not.toHaveBeenCalled();
+  });
+
   it("keeps the session when the server rate-limits the renewal", async () => {
     const accessToken = tokenExpiringIn(60 * 1000);
     storeLogin(accessToken, tokenExpiringIn(ONE_HOUR));
