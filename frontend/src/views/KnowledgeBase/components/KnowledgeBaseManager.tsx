@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import {
   getKnowledgeItemsList,
@@ -42,67 +43,43 @@ const KB_TYPE_OPTIONS = [
 
 const KnowledgeBaseManager: React.FC = () => {
   const navigate = useNavigate();
-  const [items, setItems] = useState<KBListItem[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [listParams, setListParams] = useState({ search: '', type: 'all', page: 1 });
   const [knowledgeBaseToDelete, setKnowledgeBaseToDelete] = useState<Partial<KBListItem> | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const debouncedSearch = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS).trim();
-  const requestSeqRef = useRef(0);
-  const lastResetSigRef = useRef(`${debouncedSearch}|${typeFilter}`);
-
-  const fetchItems = useCallback(async () => {
-    const seq = ++requestSeqRef.current;
-
-    const resetSig = `${debouncedSearch}|${typeFilter}`;
-    if (resetSig !== lastResetSigRef.current) {
-      lastResetSigRef.current = resetSig;
-      if (page !== 1) {
-        setPage(1);
-        return;
-      }
-    }
-
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await getKnowledgeItemsList(
-        page,
-        LIST_PAGE_SIZE,
-        debouncedSearch,
-        typeFilter === 'all' ? undefined : typeFilter
-      );
-      if (seq !== requestSeqRef.current) return;
-
-      const lastPage = Math.max(1, response.total_pages);
-      if (response.items.length === 0 && page > lastPage) {
-        setPage(lastPage);
-        return;
-      }
-
-      setItems(response.items);
-      setTotal(response.total);
-      setLoading(false);
-    } catch {
-      if (seq !== requestSeqRef.current) return;
-      setError('Failed to load knowledge base items');
-      setLoading(false);
-    }
-  }, [page, debouncedSearch, typeFilter]);
 
   useEffect(() => {
-    fetchItems();
-    return () => {
-      requestSeqRef.current += 1;
-    };
-  }, [fetchItems, refreshKey]);
+    setListParams((p) => (p.search === debouncedSearch ? p : { ...p, search: debouncedSearch, page: 1 }));
+  }, [debouncedSearch]);
+
+  const { data, isPending, isFetching, isError, refetch } = useQuery({
+    queryKey: ['knowledge-list', listParams],
+    queryFn: () =>
+      getKnowledgeItemsList({
+        page: listParams.page,
+        pageSize: LIST_PAGE_SIZE,
+        search: listParams.search,
+        type: listParams.type === 'all' ? undefined : listParams.type,
+      }),
+    // Create and edit happen on other routes, so the list refetches on every visit
+    staleTime: 0,
+    // A failed refetch on tab focus would swap a good list for the error panel
+    refetchOnWindowFocus: false,
+  });
+  const items = data?.items ?? [];
+
+  const lastPage = Math.max(1, data?.total_pages ?? 1);
+  const pastLastPage = !!data && data.items.length === 0 && listParams.page > lastPage;
+
+  useEffect(() => {
+    // A cached page can be out of date, so only step back once the fresh page is in
+    if (pastLastPage && !isFetching) setListParams((p) => ({ ...p, page: lastPage }));
+  }, [pastLastPage, isFetching, lastPage]);
+
+  const loading = isPending || pastLastPage;
 
   const handleDeleteClick = (id: string, name: string) => {
     setKnowledgeBaseToDelete({ id, name });
@@ -115,7 +92,7 @@ const KnowledgeBaseManager: React.FC = () => {
       setIsDeleting(true);
       await deleteKnowledgeItem(knowledgeBaseToDelete.id);
       toast.success('Knowledge base deleted successfully.');
-      setRefreshKey((k) => k + 1);
+      void refetch();
     } catch {
       toast.error('Failed to delete knowledge base.');
     } finally {
@@ -135,7 +112,7 @@ const KnowledgeBaseManager: React.FC = () => {
     return fileItem.original_file_name || fileItem.file_path;
   };
 
-  const isFiltering = debouncedSearch !== '' || typeFilter !== 'all';
+  const isFiltering = listParams.search !== '' || listParams.type !== 'all';
 
   return (
     <div className="flex flex-col gap-6">
@@ -146,7 +123,11 @@ const KnowledgeBaseManager: React.FC = () => {
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div className="relative">
-            <Select value={typeFilter} onValueChange={setTypeFilter} defaultValue="all">
+            <Select
+              value={listParams.type}
+              onValueChange={(type) => setListParams((p) => ({ ...p, type, page: 1 }))}
+              defaultValue="all"
+            >
               <SelectTrigger className="w-full sm:min-w-32 bg-card">
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
@@ -158,7 +139,7 @@ const KnowledgeBaseManager: React.FC = () => {
             </Select>
           </div>
           <SearchInput
-            placeholder="Search knowledge base..."
+            placeholder="Search knowledge base"
             className="w-full sm:min-w-64"
             value={searchQuery}
             onChange={setSearchQuery}
@@ -176,8 +157,8 @@ const KnowledgeBaseManager: React.FC = () => {
       <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
         {loading ? (
           <PageListSkeleton variant="rich" bordered={false} />
-        ) : error ? (
-          <ListErrorState message={error} onRetry={fetchItems} />
+        ) : isError ? (
+          <ListErrorState message="Failed to load knowledge base items" onRetry={() => void refetch()} />
         ) : items.length === 0 ? (
           <ListEmptyState
             icon={<BookText className="h-12 w-12 text-muted-foreground" />}
@@ -260,13 +241,13 @@ const KnowledgeBaseManager: React.FC = () => {
           </div>
         )}
       </div>
-      {!loading && !error && (
+      {!loading && !isError && (
         <PaginationBar
-          total={total}
-          currentPage={page}
+          total={data?.total ?? 0}
+          currentPage={listParams.page}
           pageSize={LIST_PAGE_SIZE}
           pageItemCount={items.length}
-          onPageChange={setPage}
+          onPageChange={(page) => setListParams((p) => ({ ...p, page }))}
         />
       )}
 

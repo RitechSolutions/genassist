@@ -16,15 +16,12 @@ class KnowledgeBaseRepository(DbRepository[KnowledgeBaseModel]):
 
     async def get_list_paginated(self, filter_obj: KnowledgeBaseListFilter) -> Tuple[list, int]:
         """One page of knowledge bases, newest first, plus the filtered total"""
-        conditions = [KnowledgeBaseModel.is_deleted == 0]
-        search_condition = self._contains_condition(
-            filter_obj.search, KnowledgeBaseModel.name, KnowledgeBaseModel.description
-        )
-        if search_condition is not None:
-            conditions.append(search_condition)
-        kb_type = (filter_obj.type or "").strip()
-        if kb_type:
-            conditions.append(KnowledgeBaseModel.type == kb_type)
+        conditions = [
+            KnowledgeBaseModel.is_deleted == 0,
+            self._contains_condition(filter_obj.search, KnowledgeBaseModel.name, KnowledgeBaseModel.description),
+        ]
+        if filter_obj.type:
+            conditions.append(KnowledgeBaseModel.type == filter_obj.type)
 
         count_stmt = select(func.count(KnowledgeBaseModel.id)).where(*conditions)
         total = (await self.db.execute(count_stmt)).scalar() or 0

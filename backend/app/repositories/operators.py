@@ -97,32 +97,23 @@ class OperatorRepository(DbRepository[OperatorModel]):
         #     result = await session.execute(query)
         #     return result.scalars().all()
 
-    def _search_condition(self, search: Optional[str]):
-        """Case-insensitive substring match on first or last name"""
-        return self._contains_condition(search, OperatorModel.first_name, OperatorModel.last_name)
-
     async def get_list_paginated(self, filter_obj: OperatorListFilter) -> Tuple[List[OperatorModel], int]:
         """Return one page of operators plus the unpaginated total"""
-        search_condition = self._search_condition(filter_obj.search)
+        search_condition = self._contains_condition(filter_obj.search, OperatorModel.first_name, OperatorModel.last_name)
 
         count_stmt = (
             select(func.count(OperatorModel.id))
             .join(OperatorModel.operator_statistics)
-            .where(OperatorModel.is_deleted == 0)
+            .where(OperatorModel.is_deleted == 0, search_condition)
         )
-        if search_condition is not None:
-            count_stmt = count_stmt.where(search_condition)
         total = (await self.db.execute(count_stmt)).scalar() or 0
 
         data_stmt = (
             select(OperatorModel)
             .join(OperatorModel.operator_statistics)
             .options(contains_eager(OperatorModel.operator_statistics))
-            .where(OperatorModel.is_deleted == 0)
+            .where(OperatorModel.is_deleted == 0, search_condition)
         )
-        if search_condition is not None:
-            data_stmt = data_stmt.where(search_condition)
-
         data_stmt = data_stmt.order_by(
             OperatorStatisticsModel.avg_positive_sentiment.desc(),
             OperatorStatisticsModel.score.desc(),

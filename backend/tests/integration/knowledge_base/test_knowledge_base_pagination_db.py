@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 import pytest_asyncio
+from pydantic import ValidationError
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -148,10 +149,16 @@ async def test_type_filter_returns_only_that_type(db_session, seeded_knowledge_b
 
 
 @pytest.mark.asyncio
-async def test_blank_search_and_type_are_treated_as_absent(db_session, seeded_knowledge_bases):
+async def test_blank_search_is_treated_as_no_search(db_session, seeded_knowledge_bases):
     repo = KnowledgeBaseRepository(db_session)
 
-    _, total_blank = await repo.get_list_paginated(KnowledgeBaseListFilter(skip=0, limit=1, search="   ", type="  "))
+    _, total_blank = await repo.get_list_paginated(KnowledgeBaseListFilter(skip=0, limit=1, search="   "))
     _, total_unset = await repo.get_list_paginated(KnowledgeBaseListFilter(skip=0, limit=1))
 
     assert total_blank == total_unset >= MATCHING_COUNT
+
+
+@pytest.mark.parametrize("kb_type", ["bogus", "URL", ""])
+def test_type_filter_rejects_types_that_would_match_nothing(kb_type):
+    with pytest.raises(ValidationError):
+        KnowledgeBaseListFilter(type=kb_type)

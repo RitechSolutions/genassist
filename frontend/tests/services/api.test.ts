@@ -280,7 +280,7 @@ describe("knowledge base endpoints", () => {
   it("getKnowledgeItemsList computes skip from page and pageSize", async () => {
     mockApiRequest.mockResolvedValue({ items: [] });
 
-    await getKnowledgeItemsList(4, 25);
+    await getKnowledgeItemsList({ page: 4, pageSize: 25 });
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
@@ -291,7 +291,7 @@ describe("knowledge base endpoints", () => {
   it("getKnowledgeItemsList passes a trimmed search term", async () => {
     mockApiRequest.mockResolvedValue({ items: [] });
 
-    await getKnowledgeItemsList(1, 10, "  faq  ");
+    await getKnowledgeItemsList({ pageSize: 10, search: "  faq  " });
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
@@ -302,7 +302,7 @@ describe("knowledge base endpoints", () => {
   it("getKnowledgeItemsList omits a blank search term", async () => {
     mockApiRequest.mockResolvedValue({ items: [] });
 
-    await getKnowledgeItemsList(1, 10, "   ");
+    await getKnowledgeItemsList({ pageSize: 10, search: "   " });
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
@@ -313,7 +313,7 @@ describe("knowledge base endpoints", () => {
   it("getKnowledgeItemsList passes the type filter", async () => {
     mockApiRequest.mockResolvedValue({ items: [] });
 
-    await getKnowledgeItemsList(2, 10, undefined, "url");
+    await getKnowledgeItemsList({ page: 2, pageSize: 10, type: "url" });
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
@@ -324,7 +324,7 @@ describe("knowledge base endpoints", () => {
   it("getKnowledgeItemsList returns an empty page when the request is forbidden", async () => {
     mockApiRequest.mockResolvedValue(null);
 
-    await expect(getKnowledgeItemsList(1, 10)).resolves.toEqual({
+    await expect(getKnowledgeItemsList({ pageSize: 10 })).resolves.toEqual({
       items: [],
       total: 0,
       page: 1,
