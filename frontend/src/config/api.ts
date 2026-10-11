@@ -3,6 +3,7 @@ import axios, { Method, AxiosRequestConfig, AxiosError, CanceledError, type Inte
 import { setServerDown, setServerUp } from "@/config/serverStatus";
 import {
   formatAuthorizationHeader,
+  isCredentialCheck,
   isPublicPath,
   readBearerToken,
   renewSession,
@@ -64,7 +65,8 @@ const ensureFreshAccessToken = async (): Promise<void> => {
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     const hasExplicitAuthorization = Boolean(config.headers.Authorization);
-    if (!hasExplicitAuthorization) await ensureFreshAccessToken();
+    const needsFreshLogin = !hasExplicitAuthorization && !isCredentialCheck(config.url);
+    if (needsFreshLogin) await ensureFreshAccessToken();
 
     const accessToken = localStorage.getItem("access_token");
     const tenantId = localStorage.getItem("tenant_id");
@@ -104,7 +106,10 @@ api.interceptors.response.use(
 
     // Safety net: a request refused for its login renews once and is retried
     const isFirstAuthFailure =
-      error.response?.status === 401 && Boolean(originalRequest) && !originalRequest._retry;
+      error.response?.status === 401 &&
+      Boolean(originalRequest) &&
+      !originalRequest._retry &&
+      !isCredentialCheck(originalRequest.url);
     if (!isFirstAuthFailure) return Promise.reject(error);
 
     originalRequest._retry = true;

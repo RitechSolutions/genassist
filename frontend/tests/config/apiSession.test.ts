@@ -201,6 +201,35 @@ describe("after a request is refused for its login", () => {
     expect(assignPage).not.toHaveBeenCalled();
   });
 
+  it("treats a wrong current password on a password change as wrong credentials, not an expired login", async () => {
+    vi.stubGlobal("window", { location: { pathname: "/change-password", assign: assignPage } });
+    storage.setItem("access_token", tokenExpiringIn(30 * 60 * 1000));
+    storage.setItem("refresh_token", tokenExpiringIn(ONE_HOUR));
+    storage.setItem("tenant_id", "acme");
+    const passwordChange = {
+      url: "auth/change-password",
+      headers: {},
+    } as unknown as InternalAxiosRequestConfig;
+    const wrongPassword = refusedForLogin(passwordChange);
+
+    await expect(runResponseErrorHook(wrongPassword)).rejects.toBe(wrongPassword);
+
+    expect(mockedPost).not.toHaveBeenCalled();
+    expect(client.instance).not.toHaveBeenCalled();
+    expect(storage.getItem("tenant_id")).toBe("acme");
+    expect(assignPage).not.toHaveBeenCalled();
+  });
+
+  it("does not renew the old session for a refused sign-in", async () => {
+    vi.stubGlobal("window", { location: { pathname: "/login", assign: assignPage } });
+    storage.setItem("refresh_token", tokenExpiringIn(ONE_HOUR));
+    const signIn = { url: "http://localhost/api/auth/token", headers: {} } as unknown as InternalAxiosRequestConfig;
+    const wrongPassword = refusedForLogin(signIn);
+
+    await expect(runResponseErrorHook(wrongPassword)).rejects.toBe(wrongPassword);
+    expect(mockedPost).not.toHaveBeenCalled();
+  });
+
   it("ignores refusals that are not about the login", async () => {
     const forbidden = new AxiosError("forbidden", "ERR_BAD_REQUEST", newRequest(), undefined, { status: 403 } as never);
 

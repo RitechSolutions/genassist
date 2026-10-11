@@ -19,6 +19,7 @@ export const AUTH_STORAGE_KEYS = [
 
 const LOGIN_PATH = "/login";
 const PUBLIC_PATHS = ["/login", "/register", "/privacy", "/unauthorized", "/onboarding"];
+const CREDENTIAL_CHECK_PATHS = ["auth/token", "auth/change-password", "auth/sso/microsoft/complete"];
 const RENEWAL_LOCK_NAME = "genassist-session-renewal";
 const RENEWAL_TIMEOUT_MS = 15_000;
 
@@ -70,6 +71,13 @@ export function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
+/** Requests that verify a password; their 401 means wrong credentials, not an expired login */
+export function isCredentialCheck(requestUrl: string | undefined): boolean {
+  if (!requestUrl) return false;
+  const path = requestUrl.split("?")[0].replace(/\/+$/, "");
+  return CREDENTIAL_CHECK_PATHS.some((checkPath) => path === checkPath || path.endsWith(`/${checkPath}`));
+}
+
 export function clearAuthStorage(): void {
   AUTH_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
 }
@@ -111,9 +119,15 @@ export function renewSession(refreshUrl: string, staleAccessToken: string | null
 async function withRenewalLock(renew: () => Promise<RenewalOutcome>): Promise<RenewalOutcome> {
   const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
   if (!locks) return renew();
+  let hasLock = false;
   try {
-    return await locks.request(RENEWAL_LOCK_NAME, renew);
-  } catch {
+    return await locks.request(RENEWAL_LOCK_NAME, () => {
+      hasLock = true;
+      return renew();
+    });
+  } catch (error) {
+    // A failed renewal must not run twice: the first attempt may already have rotated the token
+    if (hasLock) throw error;
     // The browser refused the lock (e.g. a sandboxed frame); renew without it
     return renew();
   }

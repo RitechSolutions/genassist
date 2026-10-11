@@ -241,6 +241,51 @@ describe("several tabs sharing one login", () => {
 
     expect(request).toHaveBeenCalledWith("genassist-session-renewal", expect.any(Function));
   });
+
+  it("renews without the lock when the browser refuses it", async () => {
+    vi.stubGlobal("navigator", { locks: { request: vi.fn(async () => { throw new Error("SecurityError"); }) } });
+    const staleToken = tokenExpiringIn(60 * 1000);
+    storeLogin(staleToken, tokenExpiringIn(ONE_HOUR));
+    const newAccessToken = tokenExpiringIn(ONE_HOUR, "new");
+    mockedPost.mockResolvedValueOnce({ data: { access_token: newAccessToken } });
+
+    await expect(session.renewSession(REFRESH_URL, staleToken)).resolves.toEqual({
+      status: "renewed",
+      accessToken: newAccessToken,
+    });
+    expect(mockedPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run the renewal a second time when it fails inside the lock", async () => {
+    vi.stubGlobal("navigator", { locks: { request: vi.fn((_name: string, task: () => Promise<unknown>) => task()) } });
+    const staleToken = tokenExpiringIn(60 * 1000);
+    storeLogin(staleToken, tokenExpiringIn(ONE_HOUR));
+    const readItem = storage.getItem.bind(storage);
+    const readStorage = vi.spyOn(storage, "getItem").mockImplementation((key: string) => {
+      if (key === "refresh_token") throw new Error("storage unavailable");
+      return readItem(key);
+    });
+
+    await expect(session.renewSession(REFRESH_URL, staleToken)).rejects.toThrow("storage unavailable");
+    const refreshTokenReads = readStorage.mock.calls.filter(([key]) => key === "refresh_token");
+    expect(refreshTokenReads).toHaveLength(1);
+  });
+});
+
+describe("isCredentialCheck", () => {
+  it("recognises the sign-in and password-change requests", () => {
+    expect(session.isCredentialCheck("auth/token")).toBe(true);
+    expect(session.isCredentialCheck("http://localhost/api/auth/change-password")).toBe(true);
+    expect(session.isCredentialCheck("/auth/token/")).toBe(true);
+    expect(session.isCredentialCheck("auth/sso/microsoft/complete")).toBe(true);
+  });
+
+  it("treats every other request as needing a valid login", () => {
+    expect(session.isCredentialCheck("auth/me")).toBe(false);
+    expect(session.isCredentialCheck("http://localhost/api/dashboard/notifications")).toBe(false);
+    expect(session.isCredentialCheck("auth/refresh_token")).toBe(false);
+    expect(session.isCredentialCheck(undefined)).toBe(false);
+  });
 });
 
 describe("a device with a wrong clock", () => {
