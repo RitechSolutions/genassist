@@ -7,8 +7,6 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
-from app.core.utils.enums.conversation_topic_enum import ConversationTopic
-from app.core.utils.enums.issue_status_enum import IssueStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
 from app.core.utils.enums.sort_direction_enum import SortDirection
 from app.core.utils.enums.sort_field_enum import SortField
@@ -30,11 +28,14 @@ class UserListFilter(BaseFilterModel):
 
 class ConversationFilter(BaseFilterModel):
     conversation_status: Optional[list[ConversationStatus]] = Field(Query(None, description="Conversation statuses"))
-    conversation_topics: Optional[list[ConversationTopic]] = Field(
+    conversation_topics: Optional[list[str]] = Field(
         Query(
             None,
         ),
         description="Conversation topics decided by llm",
+    )
+    conversation_subtopics: Optional[list[str]] = Field(
+        Query(None, description="Sub-topics decided by llm, only finalized conversations have one")
     )
     sentiment: Optional[Sentiment] = Field(None, description="Sentiment of the conversation")
     agent_id: Optional[UUID] = Field(None, description="Filter by agent ID")
@@ -95,9 +96,16 @@ class ConversationFilter(BaseFilterModel):
             return None
 
 
-class MessageIssueFilter(BaseFilterModel):
-    status: Optional[IssueStatus] = Field(None, description="Filter by tracked resolution status")
+class MessageIssueSummaryFilter(BaseModel):
+    from_date: Optional[date] = Field(None, description="Start date (YYYY-MM-DD)")
+    to_date: Optional[datetime] = Field(None, description="End datetime (YYYY-MM-DD 23:59)")
     workflow_id: Optional[UUID] = Field(None, description="Filter by the workflow used by the agent")
+    topic: Optional[str] = Field(None, description="Conversation topic, as shown in the list")
+    subtopic: Optional[str] = Field(None, description="Conversation sub-topic, as shown in the list")
+
+
+class MessageIssueFilter(BaseFilterModel, MessageIssueSummaryFilter):
+    status: Optional[str] = Field(None, max_length=50, description="Filter by tracked resolution status")
 
 
 class ApiKeysFilter(BaseFilterModel):
