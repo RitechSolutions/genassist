@@ -1,6 +1,8 @@
 import { apiRequest } from "@/config/api";
 
-export type IssueCategory = "todo" | "in_progress" | "done";
+export const ISSUE_CATEGORIES = ["todo", "in_progress", "done"] as const;
+
+export type IssueCategory = (typeof ISSUE_CATEGORIES)[number];
 
 export interface IssueStatus {
   id: string;

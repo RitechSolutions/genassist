@@ -7,5 +7,4 @@ export const useIssueStatuses = () =>
   useQuery({
     queryKey: ["issue-statuses"],
     queryFn: fetchIssueStatuses,
-    staleTime: 5 * 60_000,
   });

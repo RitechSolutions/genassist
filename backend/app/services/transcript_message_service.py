@@ -123,26 +123,21 @@ class TranscriptMessageService:
         self, message_feedback_id: UUID, update: IssueUpdate
     ) -> MessageIssueRead:
         changes = update.model_dump(exclude_unset=True)
+        status = None
         if "status" in changes:
             status = await self.issue_status_repo.get_by_key(changes["status"])
             if status is None or not status.is_active:
                 raise AppException(ErrorKey.ISSUE_STATUS_NOT_FOUND, status_code=422)
-            stored = await self.transcript_message_repo.get_issue(message_feedback_id)
-            if stored is None or stored.status != status.key:
-                is_done = status.category == IssueStatusCategory.DONE.value
-                changes["resolved_at"] = datetime.now(timezone.utc) if is_done else None
-                changes["resolved_by"] = get_current_user_id() if is_done else None
 
-        issue = await self.transcript_message_repo.upsert_issue(
-            message_feedback_id, changes
-        )
-        return MessageIssueRead.model_validate(issue)
+        issue = await self.transcript_message_repo.get_or_add_issue(message_feedback_id)
+        if status is not None and issue.status != status.key:
+            is_done = status.category == IssueStatusCategory.DONE.value
+            changes["resolved_at"] = datetime.now(timezone.utc) if is_done else None
+            changes["resolved_by"] = get_current_user_id() if is_done else None
 
-    async def set_issue_status(
-        self, message_feedback_id: UUID, status: str
-    ) -> MessageIssueRead:
-        """Set the resolution status of a reported issue (a message comment)."""
-        return await self.update_issue(message_feedback_id, IssueUpdate(status=status))
+        for key, value in changes.items():
+            setattr(issue, key, value)
+        return MessageIssueRead.model_validate(await self.transcript_message_repo.update(issue))
 
     async def list_issue_notes(self, message_feedback_id: UUID) -> list[IssueNoteRead]:
         rows = await self.transcript_message_repo.list_issue_notes(message_feedback_id)

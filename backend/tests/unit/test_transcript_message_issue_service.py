@@ -1,6 +1,6 @@
 """Unit tests for reported-issue updates and the status summary, with fake repositories"""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -19,28 +19,44 @@ STATUSES = [
 ] + [SimpleNamespace(key="escalated", category="in_progress", is_active=0)]
 
 
+STAMP = datetime(2026, 1, 1, tzinfo=timezone.utc)
+RESOLVER = uuid4()
+
+
+def _issue(**fields):
+    row = dict(
+        id=uuid4(),
+        message_feedback_id=uuid4(),
+        status="open",
+        fix_version=None,
+        target_rollout_date=None,
+        resolved_by=None,
+        resolved_at=None,
+        updated_at=None,
+    )
+    return SimpleNamespace(**{**row, **fields})
+
+
+def _resolved_issue(**fields):
+    return _issue(status="resolved", resolved_at=STAMP, resolved_by=RESOLVER, **fields)
+
+
 class FakeRepo:
     def __init__(self, counts=(), issue=None):
-        self.values = None
         self.counts = list(counts)
         self.issue = issue
+        self.saved = None
         self.list_kwargs = None
         self.count_kwargs = None
 
-    async def get_issue(self, message_feedback_id):
+    async def get_or_add_issue(self, message_feedback_id):
+        if self.issue is None:
+            self.issue = _issue(message_feedback_id=message_feedback_id)
         return self.issue
 
-    async def upsert_issue(self, message_feedback_id, values):
-        self.values = values
-        row = dict(
-            status="open",
-            fix_version=None,
-            target_rollout_date=None,
-            resolved_by=None,
-            resolved_at=None,
-            updated_at=None,
-        )
-        return SimpleNamespace(id=uuid4(), message_feedback_id=message_feedback_id, **{**row, **values})
+    async def update(self, issue):
+        self.saved = issue
+        return issue
 
     async def get_message_issues(self, **kwargs):
         self.list_kwargs = kwargs
@@ -63,9 +79,10 @@ def _service(repo):
 
 @pytest.mark.asyncio
 async def test_fix_version_only_patch_leaves_resolution_untouched():
-    repo = FakeRepo()
+    repo = FakeRepo(issue=_resolved_issue())
     await _service(repo).update_issue(uuid4(), IssueUpdate(fix_version="2.4.1"))
-    assert repo.values == {"fix_version": "2.4.1"}
+    assert repo.saved.fix_version == "2.4.1"
+    assert (repo.saved.status, repo.saved.resolved_at, repo.saved.resolved_by) == ("resolved", STAMP, RESOLVER)
 
 
 @pytest.mark.asyncio
@@ -74,39 +91,40 @@ async def test_done_status_stamps_resolution():
     user_id = uuid4()
     with request_cycle_context():
         context["user_id"] = user_id
-        issue = await _service(repo).set_issue_status(uuid4(), "resolved")
+        issue = await _service(repo).update_issue(uuid4(), IssueUpdate(status="resolved"))
 
-    assert repo.values["status"] == "resolved"
-    assert repo.values["resolved_by"] == user_id
-    assert isinstance(repo.values["resolved_at"], datetime)
+    assert repo.saved.status == "resolved"
+    assert repo.saved.resolved_by == user_id
+    assert isinstance(repo.saved.resolved_at, datetime)
     assert issue.resolved_by == user_id
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["open", "in_progress", "needs_help_desk_fix", "qa_approved"])
 async def test_status_outside_done_clears_resolution(status):
-    repo = FakeRepo()
+    repo = FakeRepo(issue=_resolved_issue())
     await _service(repo).update_issue(uuid4(), IssueUpdate(status=status))
-    assert repo.values == {"status": status, "resolved_at": None, "resolved_by": None}
+    assert (repo.saved.status, repo.saved.resolved_at, repo.saved.resolved_by) == (status, None, None)
 
 
 @pytest.mark.asyncio
 async def test_unchanged_status_keeps_the_original_resolution():
-    repo = FakeRepo(issue=SimpleNamespace(status="resolved"))
+    repo = FakeRepo(issue=_resolved_issue())
     await _service(repo).update_issue(uuid4(), IssueUpdate(status="resolved"))
-    assert repo.values == {"status": "resolved"}
+    assert (repo.saved.resolved_at, repo.saved.resolved_by) == (STAMP, RESOLVER)
 
 
 @pytest.mark.asyncio
 async def test_changed_status_restamps_the_resolution():
-    repo = FakeRepo(issue=SimpleNamespace(status="resolved"))
+    repo = FakeRepo(issue=_resolved_issue())
     user_id = uuid4()
     with request_cycle_context():
         context["user_id"] = user_id
         await _service(repo).update_issue(uuid4(), IssueUpdate(status="wont_fix"))
 
-    assert repo.values["status"] == "wont_fix"
-    assert repo.values["resolved_by"] == user_id
+    assert repo.saved.status == "wont_fix"
+    assert repo.saved.resolved_by == user_id
+    assert repo.saved.resolved_at != STAMP
 
 
 @pytest.mark.asyncio
@@ -118,14 +136,14 @@ async def test_unknown_or_retired_status_is_rejected(status):
 
     assert error.value.error_key == ErrorKey.ISSUE_STATUS_NOT_FOUND
     assert error.value.status_code == 422
-    assert repo.values is None
+    assert repo.saved is None
 
 
 @pytest.mark.asyncio
 async def test_explicit_null_is_passed_through():
-    repo = FakeRepo()
+    repo = FakeRepo(issue=_issue(fix_version="2.4.1"))
     await _service(repo).update_issue(uuid4(), IssueUpdate(fix_version=None))
-    assert repo.values == {"fix_version": None}
+    assert repo.saved.fix_version is None
 
 
 @pytest.mark.asyncio

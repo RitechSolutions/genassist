@@ -1242,7 +1242,7 @@ const Transcripts = () => {
                               {(transcript?.metadata?.title ?? "----").slice(-4) || "Untitled"}{" - "}
                               {topicLabel(
                                 transcript?.metadata?.topic ?? "",
-                                transcript?.metadata?.subtopic ?? null,
+                                transcript?.metadata?.subtopic,
                               )}
                             </h3>
                             {isLiveTranscript(transcript) && (

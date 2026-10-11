@@ -7,13 +7,12 @@ import {
 } from "@/components/select";
 import { Badge } from "@/components/badge";
 
-import { FeedbackStatus } from "@/services/reportedFeedback";
 import { IssueStatus } from "@/services/issueStatuses";
 import { statusMeta, withCurrentStatus } from "../helpers/issueStatuses";
 
 type StatusSelectProps = {
-  value: FeedbackStatus;
-  onChange: (status: FeedbackStatus) => void;
+  value: string;
+  onChange: (status: string) => void;
   statuses: IssueStatus[];
   className?: string;
 };

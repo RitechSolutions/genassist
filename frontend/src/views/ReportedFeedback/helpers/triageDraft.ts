@@ -44,6 +44,6 @@ export function toDateOnly(date: Date): string {
   return format(date, "yyyy-MM-dd");
 }
 
-export function topicLabel(topic: string, subtopic: string | null): string {
+export function topicLabel(topic: string, subtopic?: string | null): string {
   return subtopic ? `${topic} - ${subtopic}` : topic;
 }

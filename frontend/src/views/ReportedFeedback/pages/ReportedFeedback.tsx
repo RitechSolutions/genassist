@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { MessageSquareDot, NotebookPen, Settings } from "lucide-react";
-import type { DateRange } from "react-day-picker";
 import { useQuery } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
@@ -19,14 +18,11 @@ import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { useTopicFilter } from "@/hooks/useTopicFilter";
 import { usePermissions } from "@/context/PermissionContext";
 import { getWorkflowsMinimal } from "@/services/workflows";
-import type { IssueCategory } from "@/services/issueStatuses";
+import { ISSUE_CATEGORIES } from "@/services/issueStatuses";
 import { extractErrorMessage } from "@/helpers/apiError";
 import { toInclusiveDateParams } from "@/helpers/dateRange";
 
-import {
-  FeedbackStatus,
-  ReportedFeedbackItem,
-} from "@/services/reportedFeedback";
+import { ReportedFeedbackItem } from "@/services/reportedFeedback";
 import { StatsOverviewCard } from "@/views/Analytics/components/StatsOverviewCard";
 import {
   useFeedbackSummary,
@@ -36,7 +32,7 @@ import {
 import { useIssueStatuses } from "../hooks/useIssueStatuses";
 import { ReportedFeedbackDialog } from "../components/ReportedFeedbackDialog";
 import { StatusBadge, StatusSelect } from "../components/StatusSelect";
-import { CATEGORY_META } from "../constants";
+import { CATEGORY_LABELS } from "../constants";
 import { statusMeta, withCurrentStatus } from "../helpers/issueStatuses";
 import { topicLabel } from "../helpers/triageDraft";
 import { noteExcerpt } from "../helpers/noteExcerpt";
@@ -52,7 +48,7 @@ export default function ReportedFeedback() {
   const canManageStatuses =
     permissions.includes("*") || permissions.includes("write:app_settings");
   const [currentPage, setCurrentPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [workflowFilter, setWorkflowFilter] = useState<string>("all");
   // Shared global range (same component/store as the dashboard).
   const [dateRange, setDateRange] = usePersistedDateRange(undefined);
@@ -89,6 +85,13 @@ export default function ReportedFeedback() {
     search: search || undefined,
   };
 
+  const filterKey = JSON.stringify({ status: statusFilter, ...filters });
+  const [pagedFilterKey, setPagedFilterKey] = useState(filterKey);
+  if (filterKey !== pagedFilterKey) {
+    setPagedFilterKey(filterKey);
+    setCurrentPage(1);
+  }
+
   const {
     data: list,
     isFetching: loading,
@@ -104,17 +107,10 @@ export default function ReportedFeedback() {
 
   const summary = useFeedbackSummary(filters);
   const statusMetrics = [
-    {
-      label: "Total reported",
-      value: summary.total.toLocaleString(),
-      change: 0,
-      changeType: "neutral" as const,
-    },
-    ...(Object.keys(CATEGORY_META) as IssueCategory[]).map((category) => ({
-      label: CATEGORY_META[category].label,
+    { label: "Total reported", value: summary.total.toLocaleString() },
+    ...ISSUE_CATEGORIES.map((category) => ({
+      label: CATEGORY_LABELS[category],
       value: summary.totals[category].toLocaleString(),
-      change: 0,
-      changeType: "neutral" as const,
     })),
   ];
 
@@ -161,38 +157,13 @@ export default function ReportedFeedback() {
 
   const handleStatusChange = (
     issue: ReportedFeedbackItem,
-    next: FeedbackStatus,
+    next: string,
   ) => {
     if (next === issue.status) return;
     void patchIssue.mutateAsync({ issue, patch: { status: next } }).then(
       () => toast.success(`Marked as ${statusMeta(statuses, next).label}`),
       (err) => toast.error(extractErrorMessage(err, "Failed to update status")),
     );
-  };
-
-  const handleFilterChange = (value: string) => {
-    setStatusFilter(value);
-    setCurrentPage(1);
-  };
-
-  const handleTopicChange = (value: string) => {
-    changeTopic(value);
-    setCurrentPage(1);
-  };
-
-  const handleSubtopicChange = (value: string) => {
-    changeSubtopic(value);
-    setCurrentPage(1);
-  };
-
-  const handleWorkflowChange = (value: string) => {
-    setWorkflowFilter(value);
-    setCurrentPage(1);
-  };
-
-  const handleDateRangeChange = (range: DateRange | undefined) => {
-    setDateRange(range);
-    setCurrentPage(1);
   };
 
   const columns: Column<ReportedFeedbackItem>[] = [
@@ -292,7 +263,7 @@ export default function ReportedFeedback() {
       allLabel: "All workflows",
       value: workflowFilter,
       options: workflows.map((wf) => ({ value: wf.id, label: wf.name })),
-      onChange: handleWorkflowChange,
+      onChange: setWorkflowFilter,
     },
     {
       key: "topic",
@@ -303,7 +274,7 @@ export default function ReportedFeedback() {
         value: topic.name,
         label: topic.name,
       })),
-      onChange: handleTopicChange,
+      onChange: changeTopic,
     },
     ...(subtopicChoices.length > 0
       ? [
@@ -316,7 +287,7 @@ export default function ReportedFeedback() {
               value: subtopic,
               label: subtopic,
             })),
-            onChange: handleSubtopicChange,
+            onChange: changeSubtopic,
           },
         ]
       : []),
@@ -331,7 +302,7 @@ export default function ReportedFeedback() {
         value: status,
         label: statusMeta(statuses, status).label,
       })),
-      onChange: handleFilterChange,
+      onChange: setStatusFilter,
     },
   ];
 
@@ -357,7 +328,7 @@ export default function ReportedFeedback() {
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <DateRangePicker
             value={dateRange}
-            onChange={handleDateRangeChange}
+            onChange={setDateRange}
             disableFutureDates
           />
           <SearchInput
@@ -428,6 +399,7 @@ export default function ReportedFeedback() {
       )}
 
       <ReportedFeedbackDialog
+        key={selectedIssue?.feedback_id}
         issue={selectedIssue}
         isOpen={isDialogOpen}
         onOpenChange={(open) => {
