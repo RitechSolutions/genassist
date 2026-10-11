@@ -19,7 +19,7 @@ _STABLE = "You are a helpful agent with a long stable prefix."
 _SUFFIX = " Current time: 2026-08-17 12:00:00"
 
 
-def _build_agent(fake_result, system_prompt="you are a helpful agent", error=None):
+def _build_agent(fake_result=None, system_prompt="you are a helpful agent", error=None):
     with patch(_CREATE_AGENT, return_value=MagicMock()):
         agent = ReActAgentLC(
             llm_model=MagicMock(),
@@ -74,43 +74,39 @@ async def test_no_llm_usage_key_when_no_usage_reported():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "fake_result, error, expected_usage",
-    [
-        (
-            {
-                "messages": [
-                    HumanMessage(content="hi"),
-                    AIMessage(
-                        content="",
-                        tool_calls=[{"name": "search", "args": {}, "id": "call_1", "type": "tool_call"}],
-                        usage_metadata={"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
-                    ),
-                    ToolMessage(content="tool output", tool_call_id="call_1"),
-                    AIMessage(
-                        content="",
-                        tool_calls=[{"name": "search", "args": {}, "id": "call_2", "type": "tool_call"}],
-                        usage_metadata={"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
-                    ),
-                ]
-            },
-            GraphRecursionError("Recursion limit of 11 reached"),
-            [
-                {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
-                {"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
-            ],
-        ),
-        (None, RuntimeError("boom"), None),
-    ],
-    ids=["raise_mid_loop", "raise_before_any_state"],
-)
-async def test_a_run_that_raises_still_reports_the_calls_it_made(fake_result, error, expected_usage):
-    agent = _build_agent(fake_result, error=error)
+async def test_a_run_that_raises_mid_loop_still_reports_the_calls_it_made():
+    first_call = AIMessage(
+        content="",
+        tool_calls=[{"name": "search", "args": {}, "id": "call_1", "type": "tool_call"}],
+        usage_metadata={"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+    )
+    tool_msg = ToolMessage(content="tool output", tool_call_id="call_1")
+    second_call = AIMessage(
+        content="",
+        tool_calls=[{"name": "search", "args": {}, "id": "call_2", "type": "tool_call"}],
+        usage_metadata={"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
+    )
+    fake_result = {"messages": [HumanMessage(content="hi"), first_call, tool_msg, second_call]}
+
+    agent = _build_agent(fake_result, error=GraphRecursionError("Recursion limit of 11 reached"))
     result = await agent.invoke("hi")
 
     assert result["status"] == "error"
-    assert result["error"] == str(error)
-    assert result.get("llm_usage") == expected_usage
+    assert result["error"] == "Recursion limit of 11 reached"
+    assert result["llm_usage"] == [
+        {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+        {"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_run_that_raises_before_any_state_reports_no_usage():
+    agent = _build_agent(error=RuntimeError("boom"))
+    result = await agent.invoke("hi")
+
+    assert result["status"] == "error"
+    assert result["error"] == "boom"
+    assert "llm_usage" not in result
 
 
 @pytest.mark.parametrize(
@@ -161,6 +157,16 @@ class _CapturingModel(BaseChatModel):
 
 def _two_block_system_message() -> SystemMessage:
     return build_cacheable_system_message(_STABLE, _SUFFIX)
+
+
+@pytest.mark.asyncio
+async def test_a_real_graph_run_returns_the_model_reply():
+    agent = ReActAgentLC(llm_model=_CapturingModel(), system_prompt="sys", tools=[])
+
+    result = await agent.invoke("hi")
+
+    assert result["status"] == "success"
+    assert result["response"] == "the answer"
 
 
 @pytest.mark.asyncio
