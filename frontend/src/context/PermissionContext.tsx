@@ -8,7 +8,7 @@ import React, {
 import { apiRequest } from "@/config/api";
 import { isServerDown } from "@/config/serverStatus";
 import { applySentryUserFromMeResponse } from "@/plugins/sentryUserSync";
-import { AuthMeResponse, isAuthenticated, persistAuthMe } from "@/services/auth";
+import { AuthMeResponse, getPermissions, isAuthenticated, persistAuthMe } from "@/services/auth";
 
 interface PermissionContextType {
   permissions: string[];
@@ -27,7 +27,10 @@ const PermissionContext = createContext<PermissionContextType | undefined>(
 export const PermissionProvider: React.FC<PermissionProviderProps> = ({
   children,
 }) => {
-  const [permissions, setPermissions] = useState<string[]>([]);
+  // Start from the stored list so screens and services agree until /auth/me answers
+  const [permissions, setPermissions] = useState<string[]>(() =>
+    isAuthenticated() ? getPermissions() : []
+  );
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchPermissions = async () => {
@@ -45,10 +48,12 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({
     setIsLoading(true);
     try {
       const response = await apiRequest<AuthMeResponse>("GET", "/auth/me");
-      persistAuthMe(response ?? undefined);
-      applySentryUserFromMeResponse(response ?? undefined);
-      const userPermissions: string[] = response?.permissions || [];
-      setPermissions(userPermissions);
+      // No answer (e.g. a refused request) keeps the current list, matching what stays in storage
+      if (response) {
+        persistAuthMe(response);
+        applySentryUserFromMeResponse(response);
+        setPermissions(response.permissions || []);
+      }
     } catch (error) {
       // Quiet known down-state errors
       if ((error as Error)?.message !== 'SERVER_DOWN') {
