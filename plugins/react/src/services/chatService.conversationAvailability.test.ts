@@ -207,6 +207,21 @@ describe("sendMessage into a conversation that can no longer be continued", () =
 
     expect(service.getConversationId()).toBe(CONVERSATION_ID);
   });
+
+  it("keeps a newer chat when a message sent to the old one is refused late", async () => {
+    const service = createService();
+    let refuse: (reason: unknown) => void = () => {};
+    mockedAxios.patch.mockImplementationOnce(() => new Promise((_, reject) => { refuse = reject; }));
+
+    const lateSend = service.sendMessage("Hello again");
+    service.resetChatConversation();
+    mockedAxios.post.mockResolvedValueOnce({ data: { conversation_id: "conversation-2" } });
+    await service.startConversation();
+    refuse(httpError(400, "CONVERSATION_FINALIZED"));
+
+    await expect(lateSend).rejects.toBeTruthy();
+    expect(service.getConversationId()).toBe("conversation-2");
+  });
 });
 
 describe("agent-level lookups", () => {

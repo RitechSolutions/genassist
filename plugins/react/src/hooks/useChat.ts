@@ -116,6 +116,12 @@ export function isConversationGone(availability: ConversationAvailability): bool
   return availability === "finalized" || availability === "unavailable";
 }
 
+/** Reports an error to the host unless the chat service already recovered by resetting a gone conversation. */
+export function reportUnlessConversationGone(error: unknown, onError?: (error: Error) => void): void {
+  if (isConversationUnavailableError(error)) return;
+  onError?.(error as Error);
+}
+
 /** True when at least `thresholdMs` has passed since the conversation was last confirmed open. */
 export function hasBeenQuietFor(
   lastConfirmedOpenAtMs: number,
@@ -285,6 +291,7 @@ export const useChat = ({
     setGuestToken(null);
     setIsFinalized(false);
     setIsTakenOver(false);
+    setIsAgentTyping(false);
     setConnectionState("disconnected");
     setWelcomeTitle(null);
     setWelcomeImageUrl(null);
@@ -318,10 +325,17 @@ export const useChat = ({
   // Drops a conversation that can no longer be continued, returning the widget to a fresh start.
   const discardConversation = useCallback(
     (staleConversationId: string | null) => {
-      chatServiceRef.current?.resetChatConversation();
+      const service = chatServiceRef.current;
+      service?.resetChatConversation();
       removeStoredConversationData(apiKey, staleConversationId);
       setPreloadedAttachments([]);
       resetToInitialState();
+      // Show what a first-time visitor sees: the agent's welcome text, quick questions and thinking phrases
+      const applied = service?.applyLanguageFromLocales(languageRef.current || "en");
+      if (applied) {
+        setThinkingPhrases(applied.thinkingPhrases);
+        setThinkingDelayMs(applied.thinkingDelayMs);
+      }
     },
     [apiKey, resetToInitialState],
   );
@@ -1233,11 +1247,7 @@ export const useChat = ({
         setPreloadedAttachments((prev) => [...prev, attachment]);
         return attachment;
       } catch (error: any) {
-        // The chat service has already reset the widget when the conversation is gone
-        const isConversationGone = isConversationUnavailableError(error);
-        if (!isConversationGone && onErrorRef.current) {
-          onErrorRef.current(error as Error);
-        }
+        reportUnlessConversationGone(error, onErrorRef.current);
         return null;
       }
     },
@@ -1436,9 +1446,7 @@ export const useChat = ({
           }),
         );
       } catch (error) {
-        if (onErrorRef.current) {
-          onErrorRef.current(error as Error);
-        }
+        reportUnlessConversationGone(error, onErrorRef.current);
       }
     },
     [],

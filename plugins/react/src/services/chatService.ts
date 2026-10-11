@@ -295,6 +295,12 @@ export class ChatService {
     this.handleConversationGone(isConversationFinalizedError(error) ? "finalized" : "unavailable");
   }
 
+  /** Send paths restart the chat themselves, so only clear local state when the refusal is for the current chat */
+  private resetIfRefusedForCurrent(error: unknown, requestConversationId: string | null): void {
+    const isForCurrentConversation = requestConversationId === this.conversationId;
+    if (isForCurrentConversation && isConversationUnavailableError(error)) this.resetChatConversation();
+  }
+
   setReadStateHandler(handler: ((state: ReadReceiptState) => void) | null) {
     this.readStateHandler = handler;
   }
@@ -880,6 +886,7 @@ export class ChatService {
       throw new Error("Conversation not started");
     }
     this.assertGuestTokenUsable();
+    const requestConversationId = this.conversationId;
 
     // Scrub any payment card numbers (PCI) client-side before the text is
     // echoed into the user's bubble or put on the wire. The same redacted
@@ -1009,7 +1016,7 @@ export class ChatService {
       }
     } catch (error: any) {
       if (isConversationUnavailableError(error)) {
-        this.resetChatConversation();
+        this.resetIfRefusedForCurrent(error, requestConversationId);
         throw error;
       }
 
@@ -1067,6 +1074,7 @@ export class ChatService {
       throw new Error("Conversation not started");
     }
     this.assertGuestTokenUsable();
+    const requestConversationId = this.conversationId;
 
     const now = Date.now() / 1000;
     const chatMessage: ChatMessage = {
@@ -1143,9 +1151,7 @@ export class ChatService {
         }
       }
     } catch (error: any) {
-      if (isConversationUnavailableError(error)) {
-        this.resetChatConversation();
-      }
+      this.resetIfRefusedForCurrent(error, requestConversationId);
       throw error;
     }
   }
