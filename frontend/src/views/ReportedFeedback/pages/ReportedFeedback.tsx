@@ -35,7 +35,7 @@ import { StatusBadge, StatusSelect } from "../components/StatusSelect";
 import { CATEGORY_LABELS } from "../constants";
 import { statusMeta, withCurrentStatus } from "../helpers/issueStatuses";
 import { topicLabel } from "../helpers/triageDraft";
-import { noteExcerpt } from "../helpers/noteExcerpt";
+import { HighlightedExcerpt } from "../components/HighlightedExcerpt";
 import { formatDateTime } from "@/helpers/utils";
 
 const PAGE_SIZE = 20;
@@ -90,7 +90,8 @@ export default function ReportedFeedback() {
 
   const {
     data: list,
-    isFetching: loading,
+    isFetching,
+    isPending,
     error,
   } = useReportedFeedback({
     skip: (currentPage - 1) * PAGE_SIZE,
@@ -98,6 +99,8 @@ export default function ReportedFeedback() {
     status: statusFilter,
     ...filters,
   });
+  // A search keeps its last results up while the next ones load, so typing doesn't flash
+  const loading = search ? isPending : isFetching;
   const rows = list?.items ?? [];
   const total = list?.total ?? 0;
 
@@ -170,14 +173,14 @@ export default function ReportedFeedback() {
       cell: (item) => (
         <>
           <span className="block max-w-[280px] truncate text-sm">
-            {item.comment}
+            <HighlightedExcerpt text={item.comment} search={search} />
           </span>
           {item.matched_note && (
             <p className="mt-1 flex max-w-[280px] gap-1.5 text-xs text-muted-foreground">
               <NotebookPen className="mt-0.5 h-3 w-3 shrink-0" />
               <span className="sr-only">Matching note: </span>
               <span className="line-clamp-2 break-words">
-                {noteExcerpt(item.matched_note, search)}
+                <HighlightedExcerpt text={item.matched_note} search={search} />
               </span>
             </p>
           )}
@@ -359,14 +362,7 @@ export default function ReportedFeedback() {
         keyExtractor={(item) => item.feedback_id}
         onRowClick={openDialog}
         getRowProps={(item) =>
-          item.feedback_id === lastOpenedId
-            ? {
-                id: LAST_OPENED_ROW_ID,
-                "aria-current": true,
-                className:
-                  "outline outline-1 -outline-offset-1 outline-primary/50 focus-visible:outline-primary",
-              }
-            : undefined
+          item.feedback_id === lastOpenedId ? { id: LAST_OPENED_ROW_ID } : undefined
         }
         loading={loading}
         error={error ? error.message : null}

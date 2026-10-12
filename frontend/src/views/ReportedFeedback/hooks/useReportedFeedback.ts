@@ -123,6 +123,11 @@ export const useAddIssueNote = (feedbackId: string) => {
       void queryClient.invalidateQueries({
         queryKey: notesQueryKey(feedbackId),
       });
+      void queryClient.invalidateQueries({
+        queryKey: LIST_QUERY_KEY,
+        predicate: (query) =>
+          Boolean((query.queryKey[2] as FetchReportedFeedbackParams).search),
+      });
     },
   });
 };
