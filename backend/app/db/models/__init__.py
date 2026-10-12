@@ -49,9 +49,10 @@ from .fine_tuning import (
     FineTuningJobModel,
     OpenAIFileModel,
 )
+from .issue_status import IssueStatusModel
 from .knowledge_base import KnowledgeBaseModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
-from .message_issue import MessageIssueModel
+from .message_issue import MessageIssueModel, MessageIssueNoteModel
 from .ml_model import MLModel
 from .ml_model_pipeline import (
     ArtifactType,
@@ -151,6 +152,8 @@ __all__ = [
     "AudioProvidersModel",
     "FallbackChainModel",
     "MessageIssueModel",
+    "MessageIssueNoteModel",
+    "IssueStatusModel",
     "SupportTicketModel",
     "SupportTicketCommentModel",
     "SupportTicketEventModel",
@@ -214,6 +217,8 @@ models = [
     AudioProvidersModel,
     FallbackChainModel,
     MessageIssueModel,
+    MessageIssueNoteModel,
+    IssueStatusModel,
     SupportTicketModel,
     SupportTicketCommentModel,
     SupportTicketEventModel,

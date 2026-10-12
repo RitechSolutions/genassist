@@ -18,11 +18,13 @@ from app.auth.utils import hash_api_key
 from app.core.config.settings import settings
 from app.core.utils.date_time_utils import shift_datetime
 from app.core.utils.encryption_utils import encrypt_key
+from app.core.utils.enums.issue_status_enum import DEFAULT_ISSUE_STATUSES
 from app.db.models import AgentModel
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
+from app.db.models.issue_status import IssueStatusModel
 from app.db.models.llm import LlmAnalystModel, LlmProvidersModel
 from app.db.models.llm_usage import CONTROL_SINGLETON_KEY, LlmUsageControlModel
 from app.db.models.operator import OperatorModel, OperatorStatisticsModel
@@ -468,6 +470,7 @@ async def seed_data(session: AsyncSession, injector: Injector):
     await session.commit()
 
     await seed_llm_usage_control(session)
+    await seed_issue_statuses(session)
 
     # Seed tools
     # currency_tool = await seed_tools(session, admin.id, injector)
@@ -516,6 +519,16 @@ async def seed_llm_usage_control(session: AsyncSession):
         )
         .on_conflict_do_nothing(constraint="uq_llm_usage_control_singleton")
     )
+    await session.commit()
+
+
+async def seed_issue_statuses(session: AsyncSession):
+    for key, label, category, position, color in DEFAULT_ISSUE_STATUSES:
+        await session.execute(
+            pg_insert(IssueStatusModel)
+            .values(key=key, label=label, category=category, position=position, color=color, is_active=1)
+            .on_conflict_do_nothing(constraint="uq_issue_statuses_key")
+        )
     await session.commit()
 
 
