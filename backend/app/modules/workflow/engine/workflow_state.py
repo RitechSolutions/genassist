@@ -582,6 +582,12 @@ class WorkflowState:
 
             logger.debug(f"Node execution completed: {node_id}")
 
+    def annotate_node_execution(self, node_id: str, **extra: Any) -> None:
+        """Adds data to the node's execution entry, ignored before the node starts"""
+        entry = self.node_execution_status.get(node_id)
+        if isinstance(entry, dict):
+            entry.update(extra)
+
     def get_thread_id(self) -> str:
         """Get the thread ID for this workflow execution"""
         return self.thread_id
