@@ -210,10 +210,8 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         The agent id / workflow name are resolved through the conversation's
         operator -> agent -> workflow chain (left-joined). ``topic``/``subtopic``
         follow the Conversations page: the final analysis once finalized, the
-        live topic before. All filters (``status``, ``from_date``/``to_date`` on
-        when the comment was added, ``workflow_id``, ``topic``, ``subtopic`` and
-        ``search`` on the comment or any of its notes) are applied server-side.
-        The query is group-scoped to the requesting user via the conversation.
+        live topic before. The query is group-scoped to the requesting user via
+        the conversation.
         """
         base_filters = _issue_filters(filter_obj)
         if filter_obj.status:

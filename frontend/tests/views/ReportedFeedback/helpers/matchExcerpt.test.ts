@@ -32,15 +32,25 @@ describe("matchExcerpt", () => {
 });
 
 describe("splitMatches", () => {
-  it("puts every match at an odd index, whatever its case", () => {
-    expect(splitMatches("Shipping, then looping", "PIN")).toEqual(["Ship", "pin", "g, then loo", "pin", "g"]);
+  it("flags every match, whatever its case", () => {
+    expect(splitMatches("Shipping, then looping", "PIN")).toEqual([
+      { text: "Ship", match: false },
+      { text: "pin", match: true },
+      { text: "g, then loo", match: false },
+      { text: "pin", match: true },
+      { text: "g", match: false },
+    ]);
   });
 
   it("treats regex characters in the search as plain text", () => {
-    expect(splitMatches("We don't (yet). Ship now", "(yet).")).toEqual(["We don't ", "(yet).", " Ship now"]);
+    expect(splitMatches("We don't (yet). Ship now", "(yet).")).toEqual([
+      { text: "We don't ", match: false },
+      { text: "(yet).", match: true },
+      { text: " Ship now", match: false },
+    ]);
   });
 
   it("keeps the text whole when there is no search", () => {
-    expect(splitMatches("Shipping", "")).toEqual(["Shipping"]);
+    expect(splitMatches("Shipping", "")).toEqual([{ text: "Shipping", match: false }]);
   });
 });

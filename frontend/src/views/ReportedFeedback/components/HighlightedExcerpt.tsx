@@ -10,15 +10,15 @@ export function HighlightedExcerpt({
   return (
     <>
       {splitMatches(matchExcerpt(text, search), search).map((part, i) =>
-        i % 2 ? (
+        part.match ? (
           <mark
             key={i}
             className="rounded-sm bg-primary/15 text-foreground box-decoration-clone dark:bg-primary/30"
           >
-            {part}
+            {part.text}
           </mark>
         ) : (
-          part
+          part.text
         ),
       )}
     </>

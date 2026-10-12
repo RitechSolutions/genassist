@@ -1,10 +1,10 @@
 import json
 from datetime import date, datetime
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
@@ -102,14 +102,10 @@ class MessageIssueSummaryFilter(BaseModel):
     workflow_id: Optional[UUID] = Field(None, description="Filter by the workflow used by the agent")
     topic: Optional[str] = Field(None, description="Conversation topic, as shown in the list")
     subtopic: Optional[str] = Field(None, description="Conversation sub-topic, as shown in the list")
-    search: Optional[str] = Field(None, description="Case-insensitive match on the comment or any of its notes")
-
-    @field_validator("search", mode="before")
-    @classmethod
-    def blank_to_none(cls, value):
-        if isinstance(value, str):
-            return value.strip() or None
-        return value
+    search: Optional[Annotated[str, StringConstraints(strip_whitespace=True)]] = Field(
+        None,
+        description="Case-insensitive match on the comment or any of its notes",
+    )
 
 
 class MessageIssueFilter(BaseFilterModel, MessageIssueSummaryFilter):

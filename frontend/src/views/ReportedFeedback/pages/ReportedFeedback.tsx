@@ -55,6 +55,7 @@ export default function ReportedFeedback() {
   const [dateRange, setDateRange] = usePersistedDateRange(undefined);
   const [searchQuery, setSearchQuery] = useState("");
   const search = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS).trim();
+  const appliedRange = search ? undefined : dateRange;
 
   const { data: workflowsData } = useQuery({
     queryKey: ["workflows-minimal"],
@@ -75,7 +76,7 @@ export default function ReportedFeedback() {
   // Server-side time filter on the reported time (when the comment was added).
   const filters = {
     workflow_id: workflowFilter !== "all" ? workflowFilter : undefined,
-    ...(search ? {} : toInclusiveDateParams(dateRange)),
+    ...toInclusiveDateParams(appliedRange),
     topic: topicFilter !== "all" ? topicFilter : undefined,
     subtopic: subtopicFilter !== "all" ? subtopicFilter : undefined,
     search: search || undefined,
@@ -310,7 +311,7 @@ export default function ReportedFeedback() {
     topicFilter !== "all" ||
     subtopicFilter !== "all" ||
     workflowFilter !== "all" ||
-    Boolean(dateRange?.from || dateRange?.to) ||
+    Boolean(appliedRange?.from || appliedRange?.to) ||
     Boolean(search);
 
   return (
@@ -326,7 +327,7 @@ export default function ReportedFeedback() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <DateRangePicker
-            value={search ? undefined : dateRange}
+            value={appliedRange}
             onChange={setDateRange}
             placeholder={search ? "All dates" : undefined}
             disabled={Boolean(search)}

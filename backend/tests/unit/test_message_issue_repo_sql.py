@@ -143,6 +143,16 @@ async def test_search_matches_the_comment_or_any_note():
 
 
 @pytest.mark.asyncio
+async def test_blank_search_adds_no_filter():
+    rows, count = await _list_statements(search="   ")
+    summary = await _summary_statement(search="   ")
+
+    for stmt in (rows, count, summary):
+        assert "ILIKE" not in _sql(stmt)
+    assert "NULL AS matched_note" in _sql(rows)
+
+
+@pytest.mark.asyncio
 async def test_list_returns_the_newest_matching_note():
     rows, _ = await _list_statements(search="timeout")
     sql = _sql(rows)
@@ -164,10 +174,9 @@ async def test_search_escapes_like_wildcards():
     statements = [*await _list_statements(search="50%_off"), await _summary_statement(search="50%_off")]
 
     for stmt in statements:
-        params = stmt.compile(dialect=postgresql.dialect()).params
-        searched = {name: value for name, value in params.items() if name.startswith(("feedback_message_", "body_"))}
-        assert {name.rsplit("_", 1)[0] for name in searched} == {"feedback_message", "body"}
-        assert set(searched.values()) == {"50/%/_off"}
+        values = stmt.compile(dialect=postgresql.dialect()).params.values()
+        assert "50/%/_off" in values
+        assert "50%_off" not in values
 
 
 @pytest.mark.asyncio
