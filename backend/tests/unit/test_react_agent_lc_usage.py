@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.errors import GraphRecursionError
 
+from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.llm.prompt_caching_chat_model import (
     PromptCachingChatModel,
@@ -167,6 +168,41 @@ async def test_a_real_graph_run_returns_the_model_reply():
 
     assert result["status"] == "success"
     assert result["response"] == "the answer"
+
+
+class _AlwaysCallsToolModel(BaseChatModel):
+    @property
+    def _llm_type(self) -> str:
+        return "always-calls-tool"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        message = AIMessage(
+            content="",
+            tool_calls=[{"name": "search", "args": {}, "id": f"call_{len(messages)}", "type": "tool_call"}],
+            usage_metadata={"input_tokens": 10, "output_tokens": 1, "total_tokens": 11},
+        )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        return self._generate(messages, stop, run_manager, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_a_real_graph_run_that_hits_the_recursion_limit_reports_every_call():
+    async def search(_inp):
+        return "still pending"
+
+    tool = BaseTool(node_id="tool-1", name="search", description="d", parameters={}, function=search)
+    agent = ReActAgentLC(llm_model=_AlwaysCallsToolModel(), system_prompt="sys", tools=[tool], max_iterations=2)
+
+    result = await agent.invoke("hi")
+
+    assert result["status"] == "error"
+    assert result["error"].startswith("Recursion limit of 5 reached")
+    assert result["llm_usage"] == [{"input_tokens": 10, "output_tokens": 1, "total_tokens": 11}] * 3
 
 
 @pytest.mark.asyncio
