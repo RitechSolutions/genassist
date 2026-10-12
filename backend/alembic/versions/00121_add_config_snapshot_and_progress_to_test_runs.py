@@ -1,7 +1,7 @@
 """add config snapshot and progress to test runs
 
 Revision ID: 9a409e53648c
-Revises: c263cbb56ca5
+Revises: 835357fc69d8
 Create Date: 2026-10-09 09:57:16.500058
 
 """
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '9a409e53648c'
-down_revision: Union[str, None] = 'c263cbb56ca5'
+down_revision: Union[str, None] = '835357fc69d8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
