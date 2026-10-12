@@ -12,16 +12,20 @@ from app.modules.workflow.agents.agent_runtime import AgentRunResult
 from app.modules.workflow.agents.memory import InMemoryConversationMemory
 from app.modules.workflow.agents.sub_agents import messages, orchestrator
 from app.modules.workflow.agents.sub_agents import session as sub_session
+from app.modules.workflow.agents.sub_agents.graph import SubAgentTopologyError
 from app.modules.workflow.agents.sub_agents.models import SubAgentFrame, SubAgentStack
 from app.modules.workflow.engine.node_result import is_node_failure
 from app.modules.workflow.engine.nodes.agent_node import (
     AGENT_ERROR_MESSAGE,
     AGENT_NO_RESPONSE_MESSAGE,
     AgentNode,
+    agent_failure,
 )
+from app.modules.workflow.engine.nodes.sub_agent_node import SubAgentNode
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
 
 _RUNTIME = "app.modules.workflow.agents.agent_runtime"
+_SUB_AGENT_NODE = "app.modules.workflow.engine.nodes.sub_agent_node"
 _MERGE = "app.modules.workflow.engine.llm_usage_tracking.merge_llm_usage_from_result"
 
 
@@ -115,6 +119,21 @@ async def test_no_response_shape():
         "steps": [],
         "tools_used": [],
     }
+
+
+@pytest.mark.asyncio
+async def test_invalid_sub_agent_topology_is_a_recorded_failure():
+    node = _make_node()
+    with (
+        patch.object(AgentNode, "get_connected_nodes", return_value=[]),
+        patch.object(AgentNode, "_build_delegation_tools", side_effect=SubAgentTopologyError(["cycle"])),
+    ):
+        output = await node.process(dict(_CONFIG))
+
+    failure = is_node_failure(output)
+    assert failure is not None
+    assert failure["error"] == "cycle"
+    assert failure["output"] == {"message": AGENT_ERROR_MESSAGE, "error": "cycle"}
 
 
 @pytest.mark.asyncio
@@ -216,7 +235,7 @@ def _env(status, message, mode="single_turn", invocation_id="inv", task="do x"):
     )
 
 
-async def _run_loop(node, results, *, delegation_map=None, all_tools=None, config=None):
+async def _run_loop(node, results, *, delegation_map=None, all_tools=None, config=None, prompt="q"):
     delegation_map = delegation_map or {"request_task_child": {"child_node_id": "child", "mode": "single_turn"}}
     all_tools = all_tools or [_Tool("request_task_child")]
     with patch(_AGENT_ONCE, AsyncMock(side_effect=results)) as run_once:
@@ -226,7 +245,7 @@ async def _run_loop(node, results, *, delegation_map=None, all_tools=None, confi
             fallback_chain_id=None,
             agent_type="ToolSelector",
             system_prompt="s",
-            prompt="q",
+            prompt=prompt,
             all_tools=all_tools,
             delegation_map=delegation_map,
             max_iterations=7,
@@ -255,13 +274,92 @@ async def test_unparsable_envelope_feeds_model_and_strips_tool():
         _rr("The sub-agent could not complete the task.", return_direct=True, tool="request_task_child"),
         _rr("graceful model answer"),
     ]
-    out, run_once = await _run_loop(node, results)
+    out, run_once = await _run_loop(node, results, prompt="Where is my refund for order 42?")
     assert out["message"] == "graceful model answer"
     assert run_once.await_count == 2
     second_call = run_once.await_args_list[1].kwargs
     assert "request_task_child" not in {t.name for t in second_call["tools"]}
     assert "unavailable in this context" in second_call["user_prompt"]
     assert "could not complete the task" in second_call["user_prompt"]
+    assert "Where is my refund for order 42?" in second_call["user_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_retry_prompt_keeps_a_finished_sub_agent_result_and_appends_the_failure():
+    node = _parent_node()
+    dmap = {
+        "request_task_child": {"child_node_id": "child", "mode": "single_turn"},
+        "request_task_other": {"child_node_id": "other", "mode": "single_turn"},
+    }
+    tools = [_Tool("request_task_child"), _Tool("request_task_other")]
+    results = [
+        _rr(_env("completed", "Flight AB123 departs at 9:00."), return_direct=True, tool="request_task_child"),
+        _rr("The sub-agent could not complete the task.", return_direct=True, tool="request_task_other"),
+        _rr("final answer"),
+    ]
+    out, run_once = await _run_loop(node, results, delegation_map=dmap, all_tools=tools)
+
+    prompt_with_result = run_once.await_args_list[1].kwargs["user_prompt"]
+    retry_prompt = run_once.await_args_list[2].kwargs["user_prompt"]
+    assert out["message"] == "final answer"
+    assert "Flight AB123 departs at 9:00." in prompt_with_result
+    assert retry_prompt.startswith(prompt_with_result)
+    assert retry_prompt.endswith("answer the user yourself with what you have.")
+
+
+def test_agent_failure_redacts_caps_and_never_records_an_empty_detail():
+    redacted = agent_failure("provider rejected api_key=sk-live-123")
+    assert "sk-live-123" not in redacted["error"]
+    assert redacted["output"]["error"] == redacted["error"]
+
+    capped = agent_failure("x" * 2000)
+    assert len(capped["error"]) < 600
+
+    assert agent_failure("")["error"] == "unknown error"
+
+
+@pytest.mark.asyncio
+async def test_retry_prompt_on_a_resumed_turn_keeps_the_resumed_context():
+    resume = {
+        "node_outputs": {},
+        "node_execution_status": {},
+        "request_context": {},
+        "completed_count": 1,
+        "accumulated_steps": [],
+        "accumulated_tools_used": [],
+        "child_node_id": "child",
+        "mode": "task",
+        "child_task": "task B",
+        "child_result": "result B",
+        "user_prompt": "Where is my refund for order 42?",
+    }
+    node = _parent_node(
+        mode="task", initial_values={"message": "yes", "agent_id": "agentA", "__sub_agent_resume": resume}
+    )
+    dmap = {"request_task_other": {"child_node_id": "other", "mode": "single_turn"}}
+    results = [
+        _rr("The sub-agent could not complete the task.", return_direct=True, tool="request_task_other"),
+        _rr("final answer"),
+    ]
+    _, run_once = await _run_loop(
+        node, results, delegation_map=dmap, all_tools=[_Tool("request_task_other")], prompt="yes"
+    )
+
+    retry_prompt = run_once.await_args_list[1].kwargs["user_prompt"]
+    assert "Where is my refund for order 42?" in retry_prompt
+    assert "result B" in retry_prompt
+    assert "unavailable in this context" in retry_prompt
+
+
+@pytest.mark.asyncio
+async def test_agent_error_in_the_delegation_loop_is_a_recorded_failure():
+    node = _parent_node()
+    out, _ = await _run_loop(node, [_rr(None, status="error", error="boom")])
+
+    failure = is_node_failure(out)
+    assert failure is not None
+    assert failure["error"] == "boom"
+    assert failure["output"]["message"] == AGENT_ERROR_MESSAGE
 
 
 @pytest.mark.asyncio
@@ -513,6 +611,7 @@ async def test_completed_delegation_discards_child_memory():
     child_state = SimpleNamespace(
         get_node_output=lambda cid: None,
         get_last_node_output=lambda: {"message": "child answer"},
+        node_execution_status={},
         sub_agent_control=None,
     )
     fn = node._make_delegation_function(child_id="child", mode="single_turn", timeout_seconds=120)
@@ -570,12 +669,37 @@ async def test_delegation_folds_only_child_output_not_session_or_path():
     assert orchestrator.parse_envelope(result)["status"] == "completed"
 
 
+def _child_failure_setup(kind):
+    """Child node data and the patch that makes the sub-agent fail in the given way"""
+    data = {"name": "child", "providerId": "p"}
+    if kind == "returned_error":
+        failing_run = AsyncMock(return_value=_rr(None, status="error", error="boom"))
+        return data, patch(f"{_SUB_AGENT_NODE}.run_agent_once", failing_run)
+    if kind == "empty_error":
+        return data, patch(f"{_SUB_AGENT_NODE}.run_agent_once", AsyncMock(side_effect=TimeoutError()))
+    if kind == "crash_before_try":
+        return data, patch.object(SubAgentNode, "get_connected_nodes", side_effect=RuntimeError("wiring broke"))
+    return {"name": "child"}, ExitStack()
+
+
+async def _run_failing_child(kind, mode):
+    """Child state after the sub-agent really ran through the engine and failed"""
+    data, failure = _child_failure_setup(kind)
+    data = {**data, "mode": mode}
+    workflow = {"config": {"id": "wf1"}, "nodes": [{"id": "child", "type": "subAgentNode", "data": data}], "edges": []}
+    child = WorkflowState(workflow=workflow, thread_id=f"t-child-{kind}", initial_values={"message": "do x"})
+    child.memory = InMemoryConversationMemory(f"t-child-{kind}")
+    with failure:
+        await SubAgentNode("child", {"type": "subAgentNode", "data": data}, child).execute()
+    return child
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["single_turn", "task", "chat"])
-async def test_child_returning_an_error_is_handled_like_a_raised_failure(mode, caplog):
-    node = _parent_node(thread_id=f"t-child-error-{mode}", mode=mode)
-    child = WorkflowState(workflow={"nodes": [], "edges": []}, thread_id="t-child", initial_values={})
-    child.set_node_output("child", {"message": AGENT_ERROR_MESSAGE, "error": "boom", "steps": [], "tools_used": []})
+@pytest.mark.parametrize("kind", ["returned_error", "empty_error", "crash_before_try", "missing_provider"])
+async def test_failed_child_is_handled_like_a_raised_failure(kind, mode, caplog):
+    child = await _run_failing_child(kind, mode)
+    node = _parent_node(thread_id=f"t-failed-child-{kind}-{mode}", mode=mode)
     fn = node._make_delegation_function(child_id="child", mode=mode, timeout_seconds=120)
     with (
         patch(_ORCH_RUN, AsyncMock(return_value=child)),
@@ -587,7 +711,22 @@ async def test_child_returning_an_error_is_handled_like_a_raised_failure(mode, c
     assert orchestrator.parse_envelope(result) is None
     assert node.get_state().sub_agent_persistent_claimed is False
     discard.assert_called_once()
-    assert "boom" in caplog.text
+    assert "Sub-agent child failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_child_with_an_empty_error_is_recorded_as_failed():
+    child = await _run_failing_child("empty_error", "task")
+    assert child.node_execution_status["child"]["status"] == "failed"
+    assert child.node_execution_status["child"]["error"] == "TimeoutError"
+    assert child.get_node_output("child")["message"] == AGENT_ERROR_MESSAGE
+
+
+@pytest.mark.asyncio
+async def test_child_crash_before_its_own_handler_leaves_no_output_but_is_recorded_as_failed():
+    child = await _run_failing_child("crash_before_try", "task")
+    assert child.get_node_output("child") is None
+    assert child.node_execution_status["child"]["status"] == "failed"
 
 
 @pytest.mark.asyncio
