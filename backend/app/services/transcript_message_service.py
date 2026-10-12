@@ -54,67 +54,15 @@ class TranscriptMessageService:
     ) -> PaginatedResponse[ReportedIssueRead]:
         """Return a paginated list of commented messages (reported issues,
         newest first) with the context needed to act on them, for the review list."""
-        rows, total = await self.transcript_message_repo.get_message_issues(
-            skip=filter_obj.skip,
-            limit=filter_obj.limit,
-            status=filter_obj.status,
-            from_date=filter_obj.from_date,
-            to_date=filter_obj.to_date,
-            workflow_id=filter_obj.workflow_id,
-            topic=filter_obj.topic,
-            subtopic=filter_obj.subtopic,
-            search=filter_obj.search,
-        )
-
-        items = [
-            ReportedIssueRead(
-                feedback_id=feedback.id,
-                message_id=message.id,
-                conversation_id=conversation.id,
-                agent_id=agent_id,
-                workflow_name=workflow_name,
-                text=message.text,
-                speaker=message.speaker,
-                comment=feedback.feedback_message,
-                rating=feedback.feedback,
-                status=issue_status,
-                reported_by=username,
-                reported_at=feedback.feedback_timestamp,
-                conversation_topic=topic,
-                conversation_subtopic=subtopic,
-                conversation_date=conversation.conversation_date,
-                fix_version=issue.fix_version if issue else None,
-                target_rollout_date=issue.target_rollout_date if issue else None,
-                matched_note=matched_note,
-            )
-            for (
-                feedback,
-                message,
-                conversation,
-                username,
-                workflow_name,
-                agent_id,
-                issue_status,
-                issue,
-                topic,
-                subtopic,
-                matched_note,
-            ) in rows
-        ]
+        rows, total = await self.transcript_message_repo.get_message_issues(filter_obj)
+        items = [ReportedIssueRead.model_validate(row) for row in rows]
         return PaginatedResponse.from_filter(items, total, filter_obj)
 
     async def get_issue_status_summary(
         self, filter_obj: MessageIssueSummaryFilter
     ) -> IssueStatusSummary:
         """Reported issues counted per status, under the list's filters."""
-        rows = await self.transcript_message_repo.count_message_issues_by_status(
-            from_date=filter_obj.from_date,
-            to_date=filter_obj.to_date,
-            workflow_id=filter_obj.workflow_id,
-            topic=filter_obj.topic,
-            subtopic=filter_obj.subtopic,
-            search=filter_obj.search,
-        )
+        rows = await self.transcript_message_repo.count_message_issues_by_status(filter_obj)
         by_status = {s.key: 0 for s in await self.issue_status_repo.list_ordered()}
         by_status.update(dict(rows))
         return IssueStatusSummary(total=sum(by_status.values()), by_status=by_status)

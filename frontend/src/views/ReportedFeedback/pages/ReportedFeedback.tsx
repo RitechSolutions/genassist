@@ -40,6 +40,7 @@ import { formatDateTime } from "@/helpers/utils";
 
 const PAGE_SIZE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
+const LAST_OPENED_ROW_ID = "reported-feedback-last-opened";
 
 export default function ReportedFeedback() {
   const permissions = usePermissions();
@@ -54,11 +55,6 @@ export default function ReportedFeedback() {
   const [dateRange, setDateRange] = usePersistedDateRange(undefined);
   const [searchQuery, setSearchQuery] = useState("");
   const search = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS).trim();
-  const [searchedFor, setSearchedFor] = useState(search);
-  if (search !== searchedFor) {
-    setSearchedFor(search);
-    setCurrentPage(1);
-  }
 
   const { data: workflowsData } = useQuery({
     queryKey: ["workflows-minimal"],
@@ -133,7 +129,7 @@ export default function ReportedFeedback() {
 
   const focusLastOpenedRow = (event: Event) => {
     event.preventDefault();
-    document.querySelector<HTMLElement>('tr[aria-current="true"]')?.focus();
+    document.getElementById(LAST_OPENED_ROW_ID)?.focus();
   };
 
   // The dialog embeds the conversation itself; these are the "see everything" escape
@@ -327,8 +323,10 @@ export default function ReportedFeedback() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <DateRangePicker
-            value={dateRange}
+            value={search ? undefined : dateRange}
             onChange={setDateRange}
+            placeholder={search ? "All dates" : undefined}
+            disabled={Boolean(search)}
             disableFutureDates
           />
           <SearchInput
@@ -363,6 +361,7 @@ export default function ReportedFeedback() {
         getRowProps={(item) =>
           item.feedback_id === lastOpenedId
             ? {
+                id: LAST_OPENED_ROW_ID,
                 "aria-current": true,
                 className:
                   "outline outline-1 -outline-offset-1 outline-primary/50 focus-visible:outline-primary",

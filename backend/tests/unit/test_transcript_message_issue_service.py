@@ -10,7 +10,7 @@ from starlette_context import context, request_cycle_context
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.enums.issue_status_enum import DEFAULT_ISSUE_STATUSES
-from app.schemas.filter import MessageIssueFilter, MessageIssueSummaryFilter
+from app.schemas.filter import MessageIssueSummaryFilter
 from app.schemas.message_issue import IssueUpdate
 from app.services.transcript_message_service import TranscriptMessageService
 
@@ -46,8 +46,6 @@ class FakeRepo:
         self.counts = list(counts)
         self.issue = issue
         self.saved = None
-        self.list_kwargs = None
-        self.count_kwargs = None
 
     async def get_or_add_issue(self, message_feedback_id):
         if self.issue is None:
@@ -58,12 +56,7 @@ class FakeRepo:
         self.saved = issue
         return issue
 
-    async def get_message_issues(self, **kwargs):
-        self.list_kwargs = kwargs
-        return [], 0
-
-    async def count_message_issues_by_status(self, **kwargs):
-        self.count_kwargs = kwargs
+    async def count_message_issues_by_status(self, filter_obj):
         return self.counts
 
     async def list_ordered(self):
@@ -162,13 +155,3 @@ async def test_summary_zero_fills_the_configured_statuses_and_keeps_legacy_keys(
         ("legacy", 1),
     ]
     assert summary.total == 6
-
-
-@pytest.mark.asyncio
-async def test_list_and_summary_forward_the_search():
-    repo = FakeRepo()
-    await _service(repo).get_message_issues(MessageIssueFilter(search="timeout"))
-    await _service(repo).get_issue_status_summary(MessageIssueSummaryFilter(search="timeout"))
-
-    assert repo.list_kwargs["search"] == "timeout"
-    assert repo.count_kwargs["search"] == "timeout"

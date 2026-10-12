@@ -15,6 +15,8 @@ from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.message_issue import MessageIssueModel
 from app.repositories.conversation_analysis import ConversationAnalysisRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
+from app.schemas.filter import MessageIssueFilter, MessageIssueSummaryFilter
+from app.schemas.message_issue import ReportedIssueRead
 
 
 class _Result:
@@ -59,13 +61,13 @@ def _sql(stmt) -> str:
 
 async def _list_statements(**kwargs):
     db = CapturingDb()
-    await TranscriptMessageRepository(db).get_message_issues(**kwargs)
+    await TranscriptMessageRepository(db).get_message_issues(MessageIssueFilter(**kwargs))
     return db.statements
 
 
 async def _summary_statement(**kwargs):
     db = CapturingDb()
-    await TranscriptMessageRepository(db).count_message_issues_by_status(**kwargs)
+    await TranscriptMessageRepository(db).count_message_issues_by_status(MessageIssueSummaryFilter(**kwargs))
     return db.statements[0]
 
 
@@ -149,6 +151,12 @@ async def test_list_returns_the_newest_matching_note():
 
     rows, _ = await _list_statements()
     assert "NULL AS matched_note" in _sql(rows)
+
+
+@pytest.mark.asyncio
+async def test_list_rows_carry_every_reported_issue_field():
+    rows, _ = await _list_statements()
+    assert {column["name"] for column in rows.column_descriptions} == set(ReportedIssueRead.model_fields)
 
 
 @pytest.mark.asyncio
