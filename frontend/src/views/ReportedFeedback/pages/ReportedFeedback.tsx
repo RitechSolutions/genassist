@@ -92,7 +92,6 @@ export default function ReportedFeedback() {
   const {
     data: list,
     isFetching,
-    isPending,
     error,
   } = useReportedFeedback({
     skip: (currentPage - 1) * PAGE_SIZE,
@@ -100,10 +99,13 @@ export default function ReportedFeedback() {
     status: statusFilter,
     ...filters,
   });
-  // A search keeps its last results up while the next ones load, so typing doesn't flash
-  const loading = search ? isPending : isFetching;
   const rows = list?.items ?? [];
   const total = list?.total ?? 0;
+  // A new search term keeps the last rows up while it loads, so typing doesn't flash
+  const [listedSearch, setListedSearch] = useState(search);
+  if (!isFetching && listedSearch !== search) setListedSearch(search);
+  const keepRows = Boolean(search) && search !== listedSearch && rows.length > 0;
+  const loading = isFetching && !keepRows;
 
   const summary = useFeedbackSummary(filters);
   const statusMetrics = [
