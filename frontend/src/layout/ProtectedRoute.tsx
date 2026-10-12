@@ -6,7 +6,7 @@ import {
   useRefreshPermissions,
 } from "@/context/PermissionContext";
 import RouteLoadingFallback from "@/layout/RouteLoadingFallback";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useServerStatus } from "@/context/ServerStatusContext";
 
 interface ProtectedRouteProps {
@@ -25,21 +25,16 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const { status, isOffline } = useServerStatus();
   // Removed proactive refresh to avoid duplicate API calls when server is down
 
-  // One retry per mount: an empty answer must not re-trigger /auth/me on every render
-  const hasRequestedPermissionsRef = useRef(false);
+  const needsPermissions =
+    isAuthenticated() &&
+    permissions.length === 0 &&
+    !isLoading &&
+    !(status.down || isOffline);
 
+  // The permission loader spaces and limits the requests, so remounted guards cannot loop on /auth/me
   useEffect(() => {
-    const shouldRequestPermissions =
-      isAuthenticated() &&
-      permissions.length === 0 &&
-      !isLoading &&
-      !(status.down || isOffline) &&
-      !hasRequestedPermissionsRef.current;
-    if (shouldRequestPermissions) {
-      hasRequestedPermissionsRef.current = true;
-      refreshPermissions();
-    }
-  }, [permissions, isLoading, refreshPermissions, status.down, isOffline]);
+    if (needsPermissions) void refreshPermissions();
+  }, [needsPermissions, refreshPermissions]);
 
   if (!isAuthenticated()) {
     return <Navigate to="/login" state={{ from: location }} replace />;
