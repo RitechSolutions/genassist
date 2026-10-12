@@ -1,7 +1,7 @@
 """add issue workflow fields and subtopic
 
 Revision ID: 835357fc69d8
-Revises: c263cbb56ca5
+Revises: 9a409e53648c
 Create Date: 2026-10-06 09:19:26.680620
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "835357fc69d8"
-down_revision: Union[str, None] = "c263cbb56ca5"
+down_revision: Union[str, None] = "9a409e53648c"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
