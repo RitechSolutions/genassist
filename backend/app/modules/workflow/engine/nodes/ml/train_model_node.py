@@ -744,7 +744,7 @@ class TrainModelNode(BaseNode):
             feature_engineering_steps: List[Dict[str, Any]] = []
             if feature_engineering:
                 X_train, X_val, feature_engineering_steps = self._engineer_features(
-                    X_train, X_val, feature_engineering
+                    X_train, X_val, feature_engineering, label_encodings, ordinal_encodings
                 )
 
             # Capture the numeric feature columns before one-hot encoding turns
@@ -1271,7 +1271,9 @@ class TrainModelNode(BaseNode):
             filled = series.fillna(fill_value)
         return filled.infer_objects()
 
-    def _engineer_features(self, X_train, X_val, feature_engineering):
+    def _engineer_features(
+        self, X_train, X_val, feature_engineering, label_encodings=None, ordinal_encodings=None
+    ):
         """
         Create derived features from existing columns.
 
@@ -1287,6 +1289,10 @@ class TrainModelNode(BaseNode):
         bin edges / mean+std / PolynomialFeatures transformer, not just the
         config), since without it inference has no way to reconstruct columns
         the model was actually trained on.
+
+        label_encodings/ordinal_encodings are the mappings already applied to
+        those columns - a Custom Expression comparing one to text has the text
+        translated to its code (see translate_category_literals).
         """
         steps: List[Dict[str, Any]] = []
 
@@ -1302,6 +1308,17 @@ class TrainModelNode(BaseNode):
                 # Columns are referenced by name; the older df["col"] form is
                 # rewritten to that first (see normalize_feature_expression).
                 eval_expression = ml_utils.normalize_feature_expression(expression)
+                try:
+                    # Label/ordinal columns hold codes by now, so size == "High"
+                    # would be False on every row - compare against the code.
+                    eval_expression = ml_utils.translate_category_literals(
+                        eval_expression, label_encodings or {}, ordinal_encodings or {}
+                    )
+                except ValueError as e:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"Feature engineering '{new_col}': the expression `{expression}` {e}.",
+                    ) from e
                 try:
                     X_train[new_col] = X_train.eval(eval_expression)
                     if X_val is not None:

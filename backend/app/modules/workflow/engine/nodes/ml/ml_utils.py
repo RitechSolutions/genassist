@@ -494,6 +494,100 @@ def ordinal_key(value: Any) -> Optional[str]:
     return str(value).strip()
 
 
+
+_BACKTICK_NAME = re.compile(r"`([^`]*)`")
+
+
+def translate_category_literals(
+    expression: str,
+    label_encodings: Dict[str, Dict[Any, int]],
+    ordinal_encodings: Dict[str, Dict[Any, Any]],
+) -> str:
+    """Rewrite text compared against a label/ordinal column into its code.
+
+    Label/ordinal encoding runs before feature engineering, so in a Custom
+    Expression those columns hold codes, not categories - size == "High"
+    would compare numbers to a string and be False on every row. Each string
+    in a comparison with an encoded column (==, !=, <, >, in, not in, either
+    side) becomes that category's code, so the expression means what it
+    says. Numbers are left alone (they are already codes). Raises ValueError
+    for text that isn't one of the column's categories.
+
+    The result is what training evaluates and stores for inference, which
+    replays it on the same codes. Expressions with nothing to translate come
+    back unchanged.
+    """
+    if not expression or not (label_encodings or ordinal_encodings):
+        return expression
+
+    # `name with spaces` isn't valid Python - parse with placeholders instead.
+    backtick_names: Dict[str, str] = {}
+
+    def to_placeholder(match: "re.Match[str]") -> str:
+        placeholder = f"__col{len(backtick_names)}__"
+        backtick_names[placeholder] = match.group(1)
+        return placeholder
+
+    try:
+        tree = ast.parse(_BACKTICK_NAME.sub(to_placeholder, expression), mode="eval")
+    except SyntaxError:
+        return expression  # DataFrame.eval reports the real error
+
+    def column_of(node: ast.AST) -> Optional[str]:
+        if isinstance(node, ast.Name):
+            name = backtick_names.get(node.id, node.id)
+            if name in label_encodings or name in ordinal_encodings:
+                return name
+        return None
+
+    def to_code(column: str, value: str) -> Any:
+        if column in label_encodings:
+            mapping = label_encodings[column]
+            code = mapping.get(value, mapping.get(value.strip()))
+        else:
+            code = ordinal_encodings[column].get(ordinal_key(value))
+        if code is None:
+            known = list(label_encodings.get(column) or ordinal_encodings.get(column) or {})
+            raise ValueError(
+                f"compares '{column}' with '{value}', which is not one of its categories (known: {known[:10]}"
+                f"{' ...' if len(known) > 10 else ''})"
+            )
+        return code.item() if isinstance(code, np.generic) else code
+
+    translated_any = False
+
+    def translate(node: ast.AST, column: str) -> ast.AST:
+        nonlocal translated_any
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            translated_any = True
+            return ast.Constant(value=to_code(column, node.value))
+        if isinstance(node, (ast.List, ast.Tuple)):
+            node.elts = [translate(elt, column) for elt in node.elts]
+        return node
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        operands = [node.left] + node.comparators
+        for i, operand in enumerate(operands):
+            neighbours = operands[max(i - 1, 0):i] + operands[i + 1:i + 2]
+            column = next((c for c in map(column_of, neighbours) if c), None)
+            if column is None:
+                continue
+            translated = translate(operand, column)
+            if i == 0:
+                node.left = translated
+            else:
+                node.comparators[i - 1] = translated
+
+    if not translated_any:
+        return expression
+    result = ast.unparse(tree)
+    for placeholder, name in backtick_names.items():
+        result = re.sub(rf"\b{placeholder}\b", f"`{name}`", result)
+    return result
+
+
 async def save_data_to_csv(
     data: List[Dict[str, Any]],
     columns: List[str],
