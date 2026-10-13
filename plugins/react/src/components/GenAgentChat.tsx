@@ -7,7 +7,7 @@ import { useScrollManagement } from '../hooks/useScrollManagement';
 import { useThinkingAnimation } from '../hooks/useThinkingAnimation';
 import { useViewportManager } from '../hooks/useViewportManager';
 import { useFileAttachments } from '../hooks/useFileAttachments';
-import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
+import { ChatMessage, GenAgentChatProps, ScheduleItem, SendMessageOutcome } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { LiveCallControl } from './LiveCallControl';
 import { useLiveVoice as useLiveVoiceSession } from '../hooks/useLiveVoice';
@@ -78,6 +78,17 @@ type LiveTurn = { user: string; agent: string; createTime: number };
 
 /** Current time in epoch seconds (the timestamp format ChatMessage expects). */
 const nowSec = () => Math.floor(Date.now() / 1000);
+
+/** Whether the conversation is visible: floating and input-bar modes open on demand, other modes always show it. */
+const isChatSurfaceOpen = (
+  mode: GenAgentChatProps['mode'],
+  isFloatingOpen: boolean,
+  barPanelOpen: boolean,
+): boolean => {
+  if (mode === 'floating') return isFloatingOpen;
+  if (mode === 'inputbar') return barPanelOpen;
+  return true;
+};
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
@@ -230,6 +241,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     addFeedback,
     readState,
     markRead,
+    isRestoringConversation,
+    verifyConversationOnReturn,
     availableLanguages: agentAvailableLanguages,
     agentId,
     agentLiveVoiceEnabled,
@@ -276,6 +289,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     isFloatingOpen: mode === 'inputbar' ? barPanelOpen : isFloatingOpen,
     mode,
   });
+
+  // Opening the chat counts as a return visit, so a dead conversation is dropped
+  const isConversationVisible = isChatSurfaceOpen(mode, isFloatingOpen, barPanelOpen);
+  const verifyOnOpenRef = useRef(verifyConversationOnReturn);
+  verifyOnOpenRef.current = verifyConversationOnReturn;
+  useEffect(() => {
+    if (isConversationVisible) void verifyOnOpenRef.current();
+  }, [isConversationVisible]);
 
   // Report the visitor's read state upstream (so a supervisor sees when their reply
   // was read). Emits only while the chat surface is open, its bottom is on screen,
@@ -582,6 +603,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     if (barPanelOpen) closeBarPanel();
   }, [mode, isFinalized, barPanelOpen, closeBarPanel]);
 
+  // Puts an unsent message back in the input when its conversation had to be restarted.
+  const restoreDraftIfRestarted = (outcome: SendMessageOutcome, draftText: string) => {
+    if (outcome !== 'conversation_restarted') return;
+    setInputValue((current) => (current.trim() ? `${current}\n${draftText}` : draftText));
+  };
+
   const submitMessage = async () => {
     if (inputValue.trim() === '' && attachments.length === 0) return;
     if (isAgentTyping) return;
@@ -605,7 +632,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         extraMetadata.attachments = attachments.map(a => a.attachment);
       }
 
-      await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
+      const outcome = await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
+      restoreDraftIfRestarted(outcome, textToSend);
     } catch (error) {
       // ignore
     } finally {
@@ -942,7 +970,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       if (!conversationId) {
         await startConversation(reCaptchaTokenRef.current);
       }
-      await sendMessage(trimmed, [], undefined, reCaptchaTokenRef.current);
+      const outcome = await sendMessage(trimmed, [], undefined, reCaptchaTokenRef.current);
+      restoreDraftIfRestarted(outcome, trimmed);
     } catch (error) {
       // ignore
     }
@@ -1022,12 +1051,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       if (filesToUpload.length > 0) {
         extraMetadata.attachments = attachments.map(a => a.attachment);
       }
-      await sendMessage(
+      const outcome = await sendMessage(
         textToSend,
         filesToUpload,
         Object.keys(extraMetadata).length > 0 ? extraMetadata : undefined,
         reCaptchaTokenRef.current,
       );
+      restoreDraftIfRestarted(outcome, textToSend);
     } catch (error) {
       // ignore
     } finally {
@@ -1228,6 +1258,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [messages, submittedForms, localizeForm]);
 
   const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
+  // While a saved conversation is being checked, keep the (disabled) input instead of flashing the start button.
+  const hasNoConversationToContinue = !conversationId && !isRestoringConversation;
+  const shouldShowStartButton = hasNoConversationToContinue || isFinalized;
 
   const autoResizeTextArea = () => {
     const el = textAreaRef.current;
@@ -1783,7 +1816,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           </div>
         )}
 
-        {!conversationId || isFinalized ? (
+        {shouldShowStartButton ? (
           <div style={inputContainerStyle}>
             <button
               type="button"
