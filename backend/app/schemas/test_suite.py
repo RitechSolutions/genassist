@@ -470,6 +470,15 @@ class EvaluationActionNodeInfo(BaseModel):
     workflow_path: List[str] = Field(default_factory=list)
 
 
+class EvaluationStateKeyInfo(BaseModel):
+    """A value the workflow remembers: a stateful Chat Input field or a key Set State writes."""
+
+    key: str
+    source: str
+    node_label: str
+    workflow_path: List[str] = Field(default_factory=list)
+
+
 class EvaluationToolCatalog(BaseModel):
     """Agents/tools, routers and executable nodes for a workflow (incl. nested), for the UI."""
 
@@ -477,6 +486,7 @@ class EvaluationToolCatalog(BaseModel):
     agents: List[EvaluationAgentInfo] = Field(default_factory=list)
     routers: List[EvaluationRouterInfo] = Field(default_factory=list)
     action_nodes: List[EvaluationActionNodeInfo] = Field(default_factory=list)
+    state_keys: List[EvaluationStateKeyInfo] = Field(default_factory=list)
 
 
 class WorkflowEvaluationSummary(BaseModel):

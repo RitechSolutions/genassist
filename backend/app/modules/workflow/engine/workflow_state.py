@@ -7,6 +7,7 @@ import json
 import logging
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 # Cap the size of tool arguments/results stored on an event so a large tool
 # result cannot bloat the persisted trace.
 _MAX_EVENT_VALUE_CHARS = 8000
+
+# Set by an evaluation run to read real tool arguments by event id; never stored.
+RAW_TOOL_ARGUMENTS: ContextVar[Optional[Dict[str, Any]]] = ContextVar("raw_tool_arguments", default=None)
 
 
 def _bound_event_value(value: Any) -> Any:
@@ -45,6 +49,20 @@ def _bound_event_value(value: Any) -> Any:
         "chars": len(serialized),
         "preview": serialized[:_MAX_EVENT_VALUE_CHARS],
     }
+
+
+def _without_credentials(value: Any) -> Any:
+    """The value with credential-like keys hidden the way stored events hide them."""
+    from app.core.utils.sensitive_data_utils import is_sensitive_field_name
+
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if is_sensitive_field_name(str(key)) else _without_credentials(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_without_credentials(item) for item in value]
+    return value
 
 
 def _strip_live_tool_refs(node_execution_status: dict) -> dict:
@@ -333,8 +351,19 @@ class WorkflowState:
         """Record a single tool call. Arguments/result are redacted before storing."""
         from app.core.utils.sensitive_data_utils import redact_structure
 
+        event_id = str(uuid.uuid4())
+        raw_arguments = RAW_TOOL_ARGUMENTS.get()
+        if raw_arguments is not None:
+            # Credentials stay hidden, so a check can't confirm a guessed secret; other values stay real.
+            visible = _without_credentials(arguments)
+            # Bounded per argument, so one long argument does not hide the others from checks.
+            raw_arguments[event_id] = (
+                {key: _bound_event_value(value) for key, value in visible.items()}
+                if isinstance(visible, dict)
+                else _bound_event_value(visible)
+            )
         self.tool_events.append({
-            "event_id": str(uuid.uuid4()),
+            "event_id": event_id,
             "agent_id": agent_id,
             "tool_id": tool_id,
             "tool_name": tool_name,

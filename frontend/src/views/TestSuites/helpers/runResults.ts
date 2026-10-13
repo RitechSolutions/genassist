@@ -4,8 +4,8 @@ import type {
   TestToolRuleResult,
 } from "@/interfaces/testEvaluation.interface";
 
-// Order rule sections the way the wizard lists the techniques.
-const TECHNIQUE_ORDER: RuleTechnique[] = ["tool_used", "route_taken", "action_taken"];
+// Order rule sections the way the wizard lists the techniques, checks first.
+const TECHNIQUE_ORDER: RuleTechnique[] = ["checks", "tool_used", "route_taken", "action_taken"];
 
 // Rule-based techniques count rule checks (a rule per scope unit), not test cases.
 export const isRuleTechnique = (technique: string): boolean =>
@@ -28,7 +28,11 @@ export const groupByTechnique = (
 // A turn-scoped result belongs to one case, so it is shown with that case; a
 // conversation-scoped one has no single case to sit on.
 export const isTurnScope = (scope: string): boolean =>
-  scope === "every_turn" || scope === "specific_turn";
+  scope === "every_turn" || scope === "specific_turn" || scope === "turn";
+
+// A check for every conversation is graded once per conversation, like a conversation rule.
+export const isConversationScope = (scope: string): boolean =>
+  scope === "conversation" || scope === "every_conversation";
 
 // Shown wherever a method's accuracy is null: nothing could be checked.
 export const NOT_EVALUATED = "Not evaluated";
@@ -48,7 +52,7 @@ export const ruleCheckSummary = (
 
   const ruleCount = new Set(results.map((result) => result.rule_id)).size;
   const turnChecks = results.filter((result) => isTurnScope(result.scope)).length;
-  const conversationChecks = results.filter((result) => result.scope === "conversation").length;
+  const conversationChecks = results.filter((result) => isConversationScope(result.scope)).length;
 
   const parts = [countLabel(ruleCount, "rule")];
   if (turnChecks) parts.push(countLabel(turnChecks, "turn check"));
@@ -62,6 +66,19 @@ export const ruleCheckSummary = (
     headline: `${passed} of ${evaluated} checks passed · ${rate}% pass rate`,
     subline: parts.join(" · "),
   };
+};
+
+// Checks read by conversation; each one gives a result per conversation or turn it covers.
+export const checkResultsSummary = (
+  results: TestToolRuleResult[],
+  verdict: string | null,
+): { headline: string; subline: string } => {
+  const checks = new Set(results.map((result) => result.rule_id)).size;
+  const subline = `${countLabel(checks, "check")} · ${countLabel(results.length, "result")}`;
+  if (verdict) return { headline: verdict, subline };
+  const passed = results.filter((result) => result.status === "passed").length;
+  const evaluated = passed + results.filter((result) => result.status === "failed").length;
+  return { headline: evaluated ? `${passed} of ${evaluated} results passed` : NOT_EVALUATED, subline };
 };
 
 export type CaseStatus = "passed" | "failed" | "not_scored";
@@ -155,6 +172,41 @@ export const techniqueSummaries = (
     (entry): entry is [string, TechniqueSummary] =>
       isTechniqueKey(entry[0]) && Boolean(entry[1]) && typeof entry[1] === "object",
   );
+
+export interface ChecksConversations {
+  total: number;
+  passed: number;
+  failed: number;
+  not_evaluated: number;
+}
+
+/** A run's verdict by conversation, or null without checks. */
+export const checksConversations = (run: TestRun | null | undefined): ChecksConversations | null => {
+  const checks = (run?.summary_metrics as Record<string, unknown> | undefined)?.checks as
+    | { conversations?: ChecksConversations }
+    | undefined;
+  const conversations = checks?.conversations;
+  return conversations && conversations.total ? conversations : null;
+};
+
+/** True when a run also graded turns with an older method, beside its checks. */
+export const runGradesTurns = (run: Pick<TestRun, "techniques"> | null | undefined): boolean =>
+  (run?.techniques ?? []).some((technique) => technique !== "checks");
+
+/** "3 of 4 conversations passed · 1 failed" for a run with checks, or null. */
+export const checksVerdictText = (run: TestRun | null | undefined): string | null => {
+  const conversations = checksConversations(run);
+  if (!conversations) return null;
+  const graded = conversations.passed + conversations.failed;
+  const parts = [
+    graded
+      ? `${conversations.passed} of ${graded} conversation${graded === 1 ? "" : "s"} passed`
+      : "No conversation could be checked",
+  ];
+  if (conversations.failed) parts.push(`${conversations.failed} failed`);
+  if (conversations.not_evaluated) parts.push(`${conversations.not_evaluated} not checked`);
+  return parts.join(" · ");
+};
 
 export const techniqueAccuracy = (summary: TechniqueSummary | undefined): number | null =>
   typeof summary?.accuracy === "number" ? summary.accuracy : null;
