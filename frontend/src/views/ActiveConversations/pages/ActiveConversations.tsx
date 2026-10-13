@@ -16,6 +16,9 @@ import { LiveConversationsDialog } from "../components/LiveConversationsDialog";
 import { useWebSocketDashboard } from "../hooks/useWebSocketDashboard";
 import { YourAgentsCard } from "../components/YourAgentsCard";
 import { IntegrationsCard } from "../components/IntegrationsCard";
+import { ReportedFeedbackCard } from "../components/ReportedFeedbackCard";
+import { usePermissions } from "@/context/PermissionContext";
+import { cn } from "@/helpers/utils";
 import { DASHBOARD_REFRESH_INTERVAL_MS, isDashboardDataStale } from "../helpers/refresh";
 
 // Transform dashboard API response to ActiveConversation format
@@ -120,6 +123,9 @@ export const enrichConversationItem = (item: ActiveConversation): Transcript => 
 
 export const ActiveConversations = () => {
   const { toast } = useToast();
+  const permissions = usePermissions();
+  const canSeeFeedback =
+    permissions.includes("*") || permissions.includes("read:conversation");
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(
     null
@@ -525,10 +531,18 @@ export const ActiveConversations = () => {
         sentimentCounts={sentimentCounts}
       />
 
-      {/* Your Agents and Integrations Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+      {/* Your Agents, Integrations and Reported Feedback Cards */}
+      <div
+        className={cn(
+          "grid grid-cols-1 md:grid-cols-2 gap-5 mb-5",
+          canSeeFeedback && "xl:grid-cols-3",
+        )}
+      >
         <YourAgentsCard />
         <IntegrationsCard />
+        {canSeeFeedback && (
+          <ReportedFeedbackCard className="md:col-span-2 xl:col-span-1" />
+        )}
       </div>
 
       <LiveConversationsDialog

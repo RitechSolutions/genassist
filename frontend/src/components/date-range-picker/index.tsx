@@ -18,6 +18,7 @@ import { Button } from "@/components/button";
 import { Calendar } from "@/components/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
 import { cn } from "@/helpers/utils";
+import { formatDateRangeLabel } from "@/helpers/dateRange";
 
 export interface DatePreset {
   label: string;
@@ -111,7 +112,7 @@ export const DateRangePicker = ({
 
   const label = value?.from
     ? value.to
-      ? `${format(value.from, "MMM d")} – ${format(value.to, "MMM d, yyyy")}`
+      ? formatDateRangeLabel(value.from, value.to)
       : format(value.from, "MMM d, yyyy")
     : placeholder;
 

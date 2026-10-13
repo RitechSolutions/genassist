@@ -31,12 +31,6 @@ class ReportedIssueRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class IssueStatusUpdate(BaseModel):
-    """Body for changing a reported issue's status."""
-
-    status: str = Field(..., max_length=50)
-
-
 class IssueUpdate(BaseModel):
     status: Optional[str] = Field(None, max_length=50)
     fix_version: Optional[str] = Field(None, max_length=100)

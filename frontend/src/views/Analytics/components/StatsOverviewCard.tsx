@@ -5,8 +5,8 @@ import { getChangeBadgeColor, getChangeIconColor, getChangeTextColor } from "../
 interface StatMetric {
   label: string;
   value: string;
-  change: number;
-  changeType: "increase" | "decrease" | "neutral";
+  change?: number;
+  changeType?: "increase" | "decrease" | "neutral";
   description?: string;
 }
 
