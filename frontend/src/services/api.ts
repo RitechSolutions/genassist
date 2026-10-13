@@ -21,6 +21,7 @@ import {
 import { PaginatedResponse } from "@/interfaces/common.interface";
 import { KBListItem } from "@/views/KnowledgeBase/types/knowledgeBase";
 import { getApiKeys, revealApiKey } from "@/services/apiKeys";
+import { hasPermission } from "@/services/auth";
 import { AxiosError } from "axios";
 import { UploadFileResponse } from "@/interfaces/file-manager.interface";
 
@@ -304,6 +305,8 @@ const FILE_MANAGER_CAPS_TTL_MS = 60_000; // 1 minute
 export async function getFileManagerCaps(
   forceRefresh = false
 ): Promise<FileManagerCapabilities> {
+  // Without access to the settings, use the same fallback as a failed read (not cached)
+  if (!hasPermission("read:file")) return { directS3UploadEnabled: false };
   const now = Date.now();
   const stale = now - _fileManagerCapsCachedAt > FILE_MANAGER_CAPS_TTL_MS;
   if (!forceRefresh && _fileManagerCapsCache && !stale) {
