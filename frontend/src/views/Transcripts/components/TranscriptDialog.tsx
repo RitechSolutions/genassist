@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Database } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/dialog';
+import { Database, X } from 'lucide-react';
+import { Dialog, DialogClose, DialogContent, DialogHeader, DialogTitle } from '@/components/dialog';
 import { AgentResponseLogDialog } from '@/components/AgentResponseLogDialog';
 import { Button } from '@/components/button';
 import { Transcript } from '@/interfaces/transcript.interface';
@@ -36,28 +36,36 @@ export function TranscriptDialog({ transcript, isOpen, onOpenChange, agentName }
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl 2xl:max-w-[1120px] min-[1920px]:max-w-[1340px]">
+      {/* [&>button]:hidden drops the built-in corner X; the header row carries its own close. */}
+      <DialogContent className="max-w-5xl 2xl:max-w-[1120px] min-[1920px]:max-w-[1340px] [&>button]:hidden">
         <DialogHeader>
           <DialogTitle>
-            <TranscriptDetailTitle controller={controller} />
+            <TranscriptDetailTitle
+              controller={controller}
+              actions={
+                canAddToDataset && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    title="Add to dataset"
+                    aria-label="Add to dataset"
+                    onClick={() => setIsAddToDatasetOpen(true)}
+                  >
+                    <Database className="h-4 w-4" />
+                  </Button>
+                )
+              }
+              trailing={
+                <DialogClose asChild>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Close" aria-label="Close">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </DialogClose>
+              }
+            />
           </DialogTitle>
         </DialogHeader>
-
-        {/* Pinned to the corner beside the close X rather than placed in the
-            header, so nothing else shifts and the h2 the dialog is named by
-            stays free of button text. top-[10px] centres it on the X. */}
-        {canAddToDataset && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="absolute right-12 top-[10px] h-7 gap-1.5 px-2.5 text-xs font-normal"
-            title="Add this conversation to an evaluation dataset"
-            onClick={() => setIsAddToDatasetOpen(true)}
-          >
-            <Database className="h-3.5 w-3.5" />
-            Add to dataset
-          </Button>
-        )}
 
         <div className="grid grid-cols-1 md:grid-cols-[350px_1fr] gap-6 items-start">
           <TranscriptStatsPanel controller={controller} />
