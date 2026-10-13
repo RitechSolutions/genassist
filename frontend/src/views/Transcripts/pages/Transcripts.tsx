@@ -866,7 +866,10 @@ const Transcripts = () => {
                     </SelectContent>
                   </Select>
                   {subtopicChoices.length > 0 && (
-                    <Select value={subtopicFilter} onValueChange={handleSubTypeChange}>
+                    <Select
+                      value={isLiveFeed ? "all" : subtopicFilter}
+                      onValueChange={handleSubTypeChange}
+                    >
                       <SelectTrigger
                         className="w-[130px] bg-card h-8 rounded-full text-xs"
                         disabled={isLiveFeed}
