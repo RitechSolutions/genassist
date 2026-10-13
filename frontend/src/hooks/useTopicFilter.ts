@@ -28,8 +28,7 @@ export function useTopicFilter(initialTopic = "all", initialSubtopic = "all") {
     changeTopic: (value: string) => setFilter({ topic: value, subtopic: "all" }),
     changeSubtopic: (value: string) =>
       setFilter((current) => ({ ...current, subtopic: value })),
-    matches: (item?: { topic?: string | null; subtopic?: string | null }) =>
-      (topic === "all" || sameTopic(item?.topic, topic)) &&
-      (subtopic === "all" || sameTopic(item?.subtopic, subtopic)),
+    matchesTopic: (item?: { topic?: string | null }) =>
+      topic === "all" || sameTopic(item?.topic, topic),
   };
 }

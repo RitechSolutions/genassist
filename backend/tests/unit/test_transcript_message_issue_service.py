@@ -133,6 +133,13 @@ async def test_unknown_or_retired_status_is_rejected(status):
 
 
 @pytest.mark.asyncio
+async def test_unchanged_retired_status_still_saves_the_other_fields():
+    repo = FakeRepo(issue=_issue(status="escalated"))
+    await _service(repo).update_issue(uuid4(), IssueUpdate(status="escalated", fix_version="2.4.1"))
+    assert (repo.saved.status, repo.saved.fix_version) == ("escalated", "2.4.1")
+
+
+@pytest.mark.asyncio
 async def test_explicit_null_is_passed_through():
     repo = FakeRepo(issue=_issue(fix_version="2.4.1"))
     await _service(repo).update_issue(uuid4(), IssueUpdate(fix_version=None))

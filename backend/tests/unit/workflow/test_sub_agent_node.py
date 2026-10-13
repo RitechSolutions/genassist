@@ -7,6 +7,7 @@ import pytest
 from app.modules.workflow.agents.agent_runtime import AgentRunResult
 from app.modules.workflow.agents.memory import InMemoryConversationMemory
 from app.modules.workflow.agents.sub_agents.orchestrator import SUB_AGENT_CONTROL_ATTR
+from app.modules.workflow.engine.node_result import is_node_failure
 from app.modules.workflow.engine.nodes.sub_agent_node import SubAgentNode
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine, _sanitize_output_for_memory
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -59,6 +60,7 @@ async def test_missing_provider_returns_error():
     with patch.object(SubAgentNode, "get_connected_nodes", return_value=[]):
         output = await node.process({"mode": "single_turn"})
     assert output["error"] == "missing providerId"
+    assert is_node_failure(output) is not None
 
 
 @pytest.mark.asyncio

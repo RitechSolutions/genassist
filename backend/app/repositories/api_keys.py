@@ -132,33 +132,18 @@ class ApiKeysRepository(DbRepository[ApiKeyModel]):
         return result.scalars().all()
 
 
-    def _search_condition(self, search: Optional[str]):
-        """Case-insensitive substring match on the key name"""
-        if not search or not search.strip():
-            return None
-
-        term = search.strip()
-        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        return ApiKeyModel.name.ilike(f"%{escaped}%", escape="\\")
-
-
     async def get_list_paginated(self, filter_obj: ApiKeyListFilter) -> tuple[list[ApiKeyModel], int]:
         """Return one page of API keys, newest first, plus the unpaginated total"""
-        search_condition = self._search_condition(filter_obj.search)
+        search_condition = self._contains_condition(filter_obj.search, ApiKeyModel.name)
 
-        count_stmt = select(func.count(ApiKeyModel.id)).where(ApiKeyModel.is_deleted == 0)
-        if search_condition is not None:
-            count_stmt = count_stmt.where(search_condition)
+        count_stmt = select(func.count(ApiKeyModel.id)).where(ApiKeyModel.is_deleted == 0, search_condition)
         total = (await self.db.execute(count_stmt)).scalar() or 0
 
         data_stmt = (
             select(ApiKeyModel)
             .options(selectinload(ApiKeyModel.api_key_roles).selectinload(ApiKeyRoleModel.role))
-            .where(ApiKeyModel.is_deleted == 0)
+            .where(ApiKeyModel.is_deleted == 0, search_condition)
         )
-        if search_condition is not None:
-            data_stmt = data_stmt.where(search_condition)
-
         data_stmt = data_stmt.order_by(ApiKeyModel.created_at.desc(), ApiKeyModel.id.desc())
         data_stmt = self._apply_pagination(data_stmt, filter_obj)
 

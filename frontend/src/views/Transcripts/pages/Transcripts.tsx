@@ -62,6 +62,7 @@ import type { DateRange } from "react-day-picker";
 import { subDays } from "date-fns";
 import { toInclusiveDateParams } from "@/helpers/dateRange";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
+import { useHasPermission } from "@/hooks/useHasPermission";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
@@ -150,7 +151,7 @@ const Transcripts = () => {
     setFilter: setTopicFilter,
     changeTopic,
     changeSubtopic,
-    matches: matchesTopic,
+    matchesTopic,
   } = useTopicFilter(
     topicFromParam(searchParams.get("type")),
     searchParams.get("subtype") || "all",
@@ -177,6 +178,8 @@ const Transcripts = () => {
   // Custom attribute filters
   const [customAttrFilters, setCustomAttrFilters] = useState<Record<string, string>>({});
   const [availableAttrKeys, setAvailableAttrKeys] = useState<string[]>([]);
+  // Custom attribute keys are served by the analytics API
+  const canReadCustomAttributes = useHasPermission("read:dashboard");
 
   // Derive initial status filter from URL
   const initStatusFilter = (): StatusFilter => {
@@ -229,9 +232,20 @@ const Transcripts = () => {
 
   // Fetch available custom attribute keys when agent changes
   useEffect(() => {
+    if (!canReadCustomAttributes) {
+      setAvailableAttrKeys([]);
+      return;
+    }
+    // Drop the answer if the agent or access changed while the request was running
+    let isOutdated = false;
     const agentId = selectedAgentId !== "all" ? selectedAgentId : undefined;
-    fetchCustomAttributeKeys(agentId).then(setAvailableAttrKeys);
-  }, [selectedAgentId]);
+    fetchCustomAttributeKeys(agentId).then((keys) => {
+      if (!isOutdated) setAvailableAttrKeys(keys);
+    });
+    return () => {
+      isOutdated = true;
+    };
+  }, [selectedAgentId, canReadCustomAttributes]);
 
   const {
     conversations: wsConversations,
@@ -866,8 +880,14 @@ const Transcripts = () => {
                     </SelectContent>
                   </Select>
                   {subtopicChoices.length > 0 && (
-                    <Select value={subtopicFilter} onValueChange={handleSubTypeChange}>
-                      <SelectTrigger className="w-[130px] bg-card h-8 rounded-full text-xs">
+                    <Select
+                      value={isLiveFeed ? "all" : subtopicFilter}
+                      onValueChange={handleSubTypeChange}
+                    >
+                      <SelectTrigger
+                        className="w-[130px] bg-card h-8 rounded-full text-xs"
+                        disabled={isLiveFeed}
+                      >
                         <SelectValue placeholder="Sub-topic" />
                       </SelectTrigger>
                       <SelectContent>

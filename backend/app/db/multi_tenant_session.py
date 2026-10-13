@@ -35,7 +35,7 @@ class MultiTenantSessionManager:
     """Manages database sessions for multi-tenant applications"""
 
     _engines: Dict[str, AsyncEngine] = {}
-    _session_factories: Dict[str, async_sessionmaker] = {}
+    _session_factories: Dict[tuple[str, bool], async_sessionmaker] = {}
     # Read-replica caches are kept apart so a tenant string can never alias a read key.
     _read_engines: Dict[str, AsyncEngine] = {}
     _read_session_factories: Dict[str, async_sessionmaker] = {}
@@ -103,15 +103,18 @@ class MultiTenantSessionManager:
         """Get or create session factory for a specific tenant"""
         logger.debug(f"get_tenant_session_factory called with tenant: {tenant}")
 
-        if tenant not in self._session_factories:
+        # One per engine kind: a factory first made outside a background task would
+        # otherwise hand background tasks the pooled engine they must avoid.
+        key = (tenant, is_background_task())
+        if key not in self._session_factories:
             engine = self.get_tenant_engine(tenant)
-            self._session_factories[tenant] = async_sessionmaker(
+            self._session_factories[key] = async_sessionmaker(
                 bind=engine,
                 expire_on_commit=False,
             )
-            logger.info(f"Created session factory for tenant: {tenant}")
+            logger.info(f"Created session factory for tenant: {tenant} (background: {key[1]})")
 
-        return self._session_factories[tenant]
+        return self._session_factories[key]
 
     @staticmethod
     def _interactive_connect_args(read_only: bool = False) -> dict:

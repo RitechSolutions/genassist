@@ -109,15 +109,15 @@ const LoginPage = () => {
         }
 
         // No password update required - proceed with normal login flow
-        // Execute post-login actions sequentially to avoid race conditions
+        // Execute post-login actions sequentially; flags load only once permissions are known
         try {
-          await refreshFlags();
+          await fetchUserPermissions();
         } catch (error) {
           // ignore
         }
 
         try {
-          await fetchUserPermissions();
+          await refreshFlags();
         } catch (error) {
           // ignore
         }
