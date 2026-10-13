@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.errors import GraphRecursionError
 
+from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.llm.prompt_caching_chat_model import (
@@ -16,6 +17,7 @@ from app.modules.workflow.llm.prompt_caching_chat_model import (
 )
 
 _CREATE_AGENT = "app.modules.workflow.agents.react_agent_lc.create_agent"
+_EXTRACT_USAGE = "app.modules.workflow.agents.react_agent_lc.extract_usage_from_aimessage"
 _STABLE = "You are a helpful agent with a long stable prefix."
 _SUFFIX = " Current time: 2026-08-17 12:00:00"
 
@@ -72,6 +74,34 @@ async def test_no_llm_usage_key_when_no_usage_reported():
 
     assert result["status"] == "success"
     assert "llm_usage" not in result
+
+
+@pytest.mark.asyncio
+async def test_a_message_whose_usage_cannot_be_read_does_not_fail_the_run():
+    tool_call_msg = AIMessage(
+        content="",
+        tool_calls=[{"name": "search", "args": {"q": "x"}, "id": "call_1", "type": "tool_call"}],
+        usage_metadata={"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+    )
+    tool_msg = ToolMessage(content="tool output", tool_call_id="call_1")
+    final_msg = AIMessage(
+        content="the final answer",
+        usage_metadata={"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
+    )
+    fake_result = {"messages": [HumanMessage(content="hi"), tool_call_msg, tool_msg, final_msg]}
+
+    def read_usage(message):
+        if message is tool_call_msg:
+            raise ValueError("unreadable usage payload")
+        return extract_usage_from_aimessage(message)
+
+    agent = _build_agent(fake_result)
+    with patch(_EXTRACT_USAGE, side_effect=read_usage):
+        result = await agent.invoke("hi")
+
+    assert result["status"] == "success"
+    assert result["response"] == "the final answer"
+    assert result["llm_usage"] == [{"input_tokens": 30, "output_tokens": 5, "total_tokens": 35}]
 
 
 @pytest.mark.asyncio

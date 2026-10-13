@@ -37,7 +37,11 @@ def _collect_llm_usage(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
     entries = []
     for message in messages:
         if isinstance(message, AIMessage):
-            usage = extract_usage_from_aimessage(message)
+            try:
+                usage = extract_usage_from_aimessage(message)
+            except Exception:
+                logger.warning("Failed extracting LLM usage from a ReActAgentLC message", exc_info=True)
+                continue
             if usage:
                 entries.append(usage)
     return entries
