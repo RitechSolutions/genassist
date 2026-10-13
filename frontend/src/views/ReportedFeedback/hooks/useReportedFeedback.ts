@@ -1,71 +1,128 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  keepPreviousData,
+  mutationOptions,
+  QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import {
+  addIssueNote,
+  EMPTY_SUMMARY,
+  FeedbackFilters,
+  fetchIssueNotes,
   fetchReportedFeedback,
-  FeedbackStatus,
+  fetchReportedFeedbackSummary,
+  FetchReportedFeedbackParams,
+  IssuePatch,
   ReportedFeedbackItem,
+  ReportedFeedbackResult,
+  updateFeedbackIssue,
 } from "@/services/reportedFeedback";
-import { usePermissions } from "@/context/PermissionContext";
+import { categoryTotals } from "../helpers/issueStatuses";
+import {
+  applyIssuePatch,
+  IssueFields,
+  pickPatchedFields,
+} from "../helpers/issuePatch";
+import { useIssueStatuses } from "./useIssueStatuses";
 
-interface UseReportedFeedbackOptions {
-  skip?: number;
-  limit?: number;
-  status?: FeedbackStatus | "all";
-  from_date?: string;
-  to_date?: string;
-  workflow_id?: string;
-}
+const LIST_QUERY_KEY = ["reported-feedback", "list"] as const;
+const SUMMARY_QUERY_KEY = ["reported-feedback", "summary"] as const;
+const notesQueryKey = (feedbackId: string) =>
+  ["reported-feedback", "notes", feedbackId] as const;
 
-export const useReportedFeedback = (
-  options: UseReportedFeedbackOptions = {},
-) => {
-  const { skip = 0, limit = 20, status = "all", from_date, to_date, workflow_id } =
-    options;
+export const useReportedFeedback = (params: FetchReportedFeedbackParams) =>
+  useQuery({
+    queryKey: [...LIST_QUERY_KEY, params],
+    queryFn: () => fetchReportedFeedback(params),
+    placeholderData: keepPreviousData,
+    // Refetch on page or filter changes only, so an edited row and the open dialog stay put
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
 
-  const [data, setData] = useState<ReportedFeedbackItem[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<Error | null>(null);
+/** Total and per-category counts under the given filters */
+export const useFeedbackSummary = (filters: FeedbackFilters) => {
+  const statuses = useIssueStatuses();
+  const summary = useQuery({
+    queryKey: [...SUMMARY_QUERY_KEY, filters],
+    queryFn: () => fetchReportedFeedbackSummary(filters),
+    placeholderData: keepPreviousData,
+  });
+  const data = summary.data ?? EMPTY_SUMMARY;
+  return {
+    total: data.total,
+    totals: categoryTotals(data, statuses.data ?? []),
+    isLoading: statuses.isLoading || summary.isLoading,
+    isError: statuses.isError || summary.isError,
+  };
+};
 
-  const permissions = usePermissions();
+/** Saves a partial issue update, shown at once in every cached list page */
+export const issuePatchMutation = (queryClient: QueryClient) => {
+  const patchRows = (feedbackId: string, fields: IssueFields) =>
+    queryClient.setQueriesData<ReportedFeedbackResult>(
+      { queryKey: LIST_QUERY_KEY },
+      (result) =>
+        result && {
+          ...result,
+          items: applyIssuePatch(result.items, feedbackId, fields),
+        },
+    );
 
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const { items, total: backendTotal } = await fetchReportedFeedback({
-        skip,
-        limit,
-        status,
-        from_date,
-        to_date,
-        workflow_id,
+  return mutationOptions({
+    mutationFn: (vars: { issue: ReportedFeedbackItem; patch: IssuePatch }) =>
+      updateFeedbackIssue(vars.issue.feedback_id, vars.patch),
+    onMutate: async ({ issue, patch }) => {
+      const interrupted = queryClient.getQueryCache().findAll({
+        queryKey: LIST_QUERY_KEY,
+        fetchStatus: "fetching",
       });
-      setData(items);
-      setTotal(typeof backendTotal === "number" ? backendTotal : items.length);
-      setError(null);
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err
-          : new Error("Failed to fetch reported feedback"),
-      );
-      setData([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  }, [skip, limit, status, from_date, to_date, workflow_id]);
+      await queryClient.cancelQueries({ queryKey: LIST_QUERY_KEY });
+      patchRows(issue.feedback_id, patch);
+      return { rollback: pickPatchedFields(issue, patch), interrupted };
+    },
+    onError: (_err, { issue }, context) => {
+      if (context) patchRows(issue.feedback_id, context.rollback);
+    },
+    onSuccess: (saved, { issue, patch }) => {
+      patchRows(issue.feedback_id, pickPatchedFields(saved, patch));
+      if ("status" in patch) {
+        void queryClient.invalidateQueries({ queryKey: SUMMARY_QUERY_KEY });
+      }
+    },
+    onSettled: (_saved, _err, _vars, context) => {
+      if (!context?.interrupted.length) return;
+      void queryClient.refetchQueries({
+        queryKey: LIST_QUERY_KEY,
+        predicate: (query) => context.interrupted.includes(query),
+      });
+    },
+  });
+};
 
-  useEffect(() => {
-    if (
-      !permissions.includes("*") &&
-      !permissions.includes("read:conversation")
-    ) {
-      return;
-    }
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchData]);
+export const useIssuePatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation(issuePatchMutation(queryClient));
+};
 
-  return { data, total, loading, error, refetch: fetchData };
+export const useIssueNotes = (feedbackId: string) =>
+  useQuery({
+    queryKey: notesQueryKey(feedbackId),
+    queryFn: () => fetchIssueNotes(feedbackId),
+  });
+
+export const useAddIssueNote = (feedbackId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) => addIssueNote(feedbackId, body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: notesQueryKey(feedbackId),
+      });
+    },
+  });
 };

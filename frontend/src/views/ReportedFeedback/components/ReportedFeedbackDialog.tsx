@@ -1,4 +1,4 @@
-import { ComponentType, ReactNode, useEffect, useState } from "react";
+import { ComponentType, ReactNode, useState } from "react";
 import {
   Flag,
   Quote,
@@ -8,6 +8,9 @@ import {
   User,
   ChevronLeft,
   PanelRightClose,
+  CalendarDays,
+  Tag,
+  Bug,
 } from "lucide-react";
 
 import {
@@ -17,39 +20,30 @@ import {
   DialogTitle,
 } from "@/components/dialog";
 import { Button } from "@/components/button";
+import { AgentResponseLogDialog } from "@/components/AgentResponseLogDialog";
+import { TruncatedText } from "@/components/TruncatedText";
 
-import {
-  FeedbackStatus,
-  ReportedFeedbackItem,
-} from "@/services/reportedFeedback";
+import { ReportedFeedbackItem } from "@/services/reportedFeedback";
+import { IssueStatus } from "@/services/issueStatuses";
 import { cn, formatDateTime } from "@/helpers/utils";
-import { StatusSelect } from "./StatusSelect";
+import { formatDateOnly, topicLabel } from "../helpers/triageDraft";
+import { StatusBadge, StatusSelect } from "./StatusSelect";
 import { ConversationPanel } from "./ConversationPanel";
+import { SectionLabel } from "./SectionLabel";
+import { TriageSection } from "./TriageSection";
+import { NotesSection } from "./NotesSection";
 
 type ReportedFeedbackDialogProps = {
   issue: ReportedFeedbackItem | null;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  onStatusChange: (issue: ReportedFeedbackItem, next: FeedbackStatus) => void;
+  statuses: IssueStatus[];
+  canTriage: boolean;
+  onStatusChange: (issue: ReportedFeedbackItem, next: string) => void;
   /** Escape hatch to the full Transcripts view — the dialog embeds the thread itself. */
   onOpenConversation: (conversationId: string) => void;
   onOpenWorkflow: (agentId: string | null) => void;
 };
-
-function SectionLabel({
-  icon: Icon,
-  children,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  children: ReactNode;
-}) {
-  return (
-    <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-      <Icon className="h-3.5 w-3.5" />
-      {children}
-    </div>
-  );
-}
 
 function Meta({
   icon: Icon,
@@ -79,6 +73,8 @@ export function ReportedFeedbackDialog({
   issue,
   isOpen,
   onOpenChange,
+  statuses,
+  canTriage,
   onStatusChange,
   onOpenConversation,
   onOpenWorkflow,
@@ -86,15 +82,12 @@ export function ReportedFeedbackDialog({
   // The conversation expands the dialog in place rather than navigating, so reviewers
   // keep their page, filters and scroll position in the list behind it.
   const [showConversation, setShowConversation] = useState(false);
-
-  const issueId = issue?.feedback_id;
-  useEffect(() => {
-    setShowConversation(false);
-  }, [issueId]);
+  const [debugOpen, setDebugOpen] = useState(false);
 
   if (!issue) return null;
 
   const canOpenConversation = Boolean(issue.conversation_id);
+  const isAgentMessage = ["Agent", "agent"].includes(issue.speaker);
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -151,11 +144,23 @@ export function ReportedFeedbackDialog({
           >
             <div className="flex items-center justify-between gap-3">
               <SectionLabel icon={Flag}>Status</SectionLabel>
-              <StatusSelect
-                value={issue.status}
-                onChange={(next) => onStatusChange(issue, next)}
-              />
+              {canTriage ? (
+                <StatusSelect
+                  value={issue.status}
+                  statuses={statuses}
+                  onChange={(next) => onStatusChange(issue, next)}
+                />
+              ) : (
+                <StatusBadge value={issue.status} statuses={statuses} />
+              )}
             </div>
+
+            {canTriage && <TriageSection issue={issue} />}
+
+            <NotesSection
+              feedbackId={issue.feedback_id}
+              canTriage={canTriage}
+            />
 
             <section>
               <SectionLabel icon={Quote}>Comment</SectionLabel>
@@ -196,11 +201,27 @@ export function ReportedFeedbackDialog({
               />
               <Meta
                 icon={MessageCircle}
-                label="Conversation"
-                value={`${issue.conversation_topic || "Untitled"} · ${formatDateTime(
-                  issue.conversation_date,
-                )}`}
+                label="AI topic"
+                value={
+                  <TruncatedText>
+                    {`${
+                      issue.conversation_topic
+                        ? topicLabel(issue.conversation_topic, issue.conversation_subtopic)
+                        : "Untitled"
+                    } · ${formatDateTime(issue.conversation_date)}`}
+                  </TruncatedText>
+                }
               />
+              {issue.target_rollout_date && (
+                <Meta
+                  icon={CalendarDays}
+                  label="Target rollout"
+                  value={formatDateOnly(issue.target_rollout_date)}
+                />
+              )}
+              {issue.fix_version && (
+                <Meta icon={Tag} label="Fix version" value={issue.fix_version} />
+              )}
             </section>
           </div>
 
@@ -219,6 +240,20 @@ export function ReportedFeedbackDialog({
         </div>
 
         <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t bg-muted/30 px-6 py-4">
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-full"
+            disabled={!isAgentMessage}
+            title={
+              isAgentMessage
+                ? "Show the agent's response log for this message"
+                : "Only agent replies have a response log"
+            }
+            onClick={() => setDebugOpen(true)}
+          >
+            <Bug className="h-4 w-4" /> Debug response
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -257,6 +292,12 @@ export function ReportedFeedbackDialog({
             )}
           </Button>
         </div>
+
+        <AgentResponseLogDialog
+          isOpen={debugOpen}
+          onOpenChange={setDebugOpen}
+          messageId={issue.message_id}
+        />
       </DialogContent>
     </Dialog>
   );

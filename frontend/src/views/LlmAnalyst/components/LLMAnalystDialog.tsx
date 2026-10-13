@@ -59,8 +59,8 @@ type KeyedTopicRow = TopicRow & { key: number };
 
 const ANALYST_TABS = [
   { value: "general", label: "General" },
-  { value: "advanced", label: "Advanced" },
   { value: "topics", label: "Topics" },
+  { value: "advanced", label: "Advanced" },
 ];
 
 export function LLMAnalystDialog({
