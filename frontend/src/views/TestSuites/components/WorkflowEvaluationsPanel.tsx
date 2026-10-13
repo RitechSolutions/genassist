@@ -48,7 +48,7 @@ import { EvaluationListRow } from "./EvaluationListRow";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
 import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../helpers/evaluationForm";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
-import { runAvgAccuracy } from "../helpers/runResults";
+import { runAvgAccuracy, runProgressText } from "../helpers/runResults";
 import {
   apiErrorDetail,
   bundleFilename,
@@ -603,6 +603,9 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
                 isRunning={isEvaluationRunning(evaluation)}
                 lastRunStatus={
                   evaluation.id ? lastRunsByEvaluationId[evaluation.id]?.status : undefined
+                }
+                progressText={
+                  evaluation.id ? runProgressText(lastRunsByEvaluationId[evaluation.id]) : null
                 }
                 onOpen={() => evaluation.id && onOpenEvaluation(evaluation.id)}
                 onEdit={() => setEditingEvaluation(evaluation)}

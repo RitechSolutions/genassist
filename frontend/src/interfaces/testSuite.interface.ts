@@ -104,6 +104,13 @@ export interface AddConversationToDatasetsResult {
   failed: number;
 }
 
+export interface RunProgress {
+  conversations_done: number;
+  conversations_total: number;
+  turns_done: number;
+  turns_total: number;
+}
+
 export interface TestRun {
   id?: string;
   suite_id: string;
@@ -111,6 +118,8 @@ export interface TestRun {
   status: string;
   techniques: string[];
   summary_metrics?: Record<string, unknown>;
+  /** Null until the run starts; updated after each turn. */
+  progress?: RunProgress | null;
   workflow_name?: string | null;
   workflow_version?: string | null;
   created_at?: string;
