@@ -9,6 +9,8 @@ type TranscriptDetailTitleProps = {
   controller: TranscriptDetailController;
   /** Rendered before the conversation icon — used by the workspace for its back button. */
   leading?: ReactNode;
+  /** Rendered between the panel switch and the share button, e.g. the dialog's "Add to dataset" icon. */
+  actions?: ReactNode;
   /** Rendered after the share button, e.g. the workspace's "toggle stats" control. */
   trailing?: ReactNode;
   className?: string;
@@ -60,6 +62,7 @@ function PanelSwitch({
 export function TranscriptDetailTitle({
   controller,
   leading,
+  actions,
   trailing,
   className,
 }: TranscriptDetailTitleProps) {
@@ -100,6 +103,7 @@ export function TranscriptDetailTitle({
         <span className="ml-auto flex shrink-0 items-center gap-2">
           {/* Without the assistant there is nothing to switch between, so the control is dropped. */}
           {showAskGenAI && <PanelSwitch value={rightPanelTab} onChange={setActiveTab} />}
+          {actions}
           <Button
             variant="ghost"
             size="sm"
