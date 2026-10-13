@@ -95,7 +95,7 @@ from app.schemas.workflow import WorkflowInDB
 from app.services.workflow import WorkflowService
 from app.core.tenant_scope import get_tenant_context
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.services.realtime_notifications import emit_notification, notification_payload
+from app.services.realtime_notifications import emit_notification, evaluation_run_failed_notification
 
 
 logger = logging.getLogger(__name__)
@@ -1628,21 +1628,22 @@ class SimpleEvaluatorRegistry:
         question_text = _normalize_text(question)
         provider_id = config.get("llm_provider_id")
 
-        details = list(
-            await asyncio.gather(
-                *(
-                    self._grade_judge_rule(
-                        rule,
-                        rule_number=index,
-                        question_text=question_text,
-                        answer_text=answer_text,
-                        payload=payload,
-                        provider_id=provider_id,
-                    )
-                    for index, rule in enumerate(rules, start=1)
-                )
+        async def grade(index: int, rule: Dict[str, Any]) -> Dict[str, Any]:
+            return await self._grade_judge_rule(
+                rule,
+                rule_number=index,
+                question_text=question_text,
+                answer_text=answer_text,
+                payload=payload,
+                provider_id=provider_id,
             )
-        )
+
+        numbered = list(enumerate(rules, start=1))
+        if payload.get("_judge_model") is not None:
+            details = list(await asyncio.gather(*(grade(i, rule) for i, rule in numbered)))
+        else:
+            # Each rubric then builds its own model from the DB, and a session runs one query at a time.
+            details = [await grade(i, rule) for i, rule in numbered]
 
         if len(details) == 1:
             return self._single_judge_result(details[0])
@@ -1693,8 +1694,16 @@ class SimpleEvaluatorRegistry:
                 "comment": f"{label}: not evaluated — the grounding source was unavailable.",
             }
 
+        # Without the frame, judges guessed what the score meant and contradicted their own reasons.
         system_prompt = (
-            f"{rule['rubric']}\n\n"
+            "You grade one reply from an AI assistant against a single criterion. "
+            "QUESTION is what the user said, SOURCE (if present) is reference material, "
+            "and ANSWER is the reply to grade.\n\n"
+            f"CRITERION:\n{rule['rubric']}\n\n"
+            "Judge only this criterion, not the reply's overall quality or helpfulness. "
+            "Score 1.0 when the reply fully meets it, 0.0 when it clearly does not, and in "
+            "between only for partial compliance. A criterion that applies only in some "
+            "situations is met when this reply is not one of them.\n\n"
             "Return ONLY a compact JSON object in this exact format:\n"
             '{"score": 0.0-1.0, "reason": "short explanation"}\n'
             "Do not include any extra text or explanation."
@@ -2294,22 +2303,19 @@ class TestSuiteService:
 
     async def _fail_run(self, run: TestRunModel, error: str) -> None:
         """Move a run to the terminal failed state and notify the user."""
+        previous_status = run.status
         run.status = "failed"
         run.summary_metrics = {"error": error}
-        await self.run_repo.update(run)
+        try:
+            await self.run_repo.update(run)
+        except Exception:
+            # A failed status in memory tells callers the user was notified; they weren't.
+            run.status = previous_status
+            raise
         emit_notification(
             socket_connection_manager=injector.get(SocketConnectionManager),
             tenant_id=get_tenant_context(),
-            payload=notification_payload(
-                notification_id=f"workflow_failed:test:{run.id}",
-                title="Workflow Run Failed",
-                description=f"Test run {str(run.id)[:8]}... failed.",
-                level="error",
-                action_url="/tests/evaluations",
-                entity_kind="test_run",
-                entity_id=run.id,
-                event_key=f"workflow_failed:test:{run.id}",
-            ),
+            payload=evaluation_run_failed_notification(run.id),
         )
 
     async def _default_judge_provider_id(self) -> str | None:
@@ -2393,7 +2399,11 @@ class TestSuiteService:
         except Exception as exc:  # pylint: disable=broad-except
             logger.exception("Test run %s failed unexpectedly: %s", run.id, exc)
             if run.status not in ("completed", "failed"):
-                await self._fail_run(run, UNEXPECTED_RUN_FAILURE_ERROR)
+                try:
+                    await self._fail_run(run, UNEXPECTED_RUN_FAILURE_ERROR)
+                except Exception:  # pylint: disable=broad-except
+                    # The task retries this write; raising here would hide the real error.
+                    logger.exception("Could not mark test run %s failed", run.id)
             raise
 
     async def _execute_run_inner(
