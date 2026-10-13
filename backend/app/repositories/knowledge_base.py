@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import KnowledgeBaseModel
 from app.repositories.db_repository import DbRepository
-from app.schemas.filter import BaseFilterModel
+from app.schemas.filter import KnowledgeBaseListFilter
 
 
 @inject
@@ -14,8 +14,16 @@ class KnowledgeBaseRepository(DbRepository[KnowledgeBaseModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(KnowledgeBaseModel, db)
 
-    async def get_list_paginated(self, filter_obj: BaseFilterModel) -> Tuple[list, int]:
-        count_stmt = select(func.count(KnowledgeBaseModel.id))
+    async def get_list_paginated(self, filter_obj: KnowledgeBaseListFilter) -> Tuple[list, int]:
+        """One page of knowledge bases, newest first, plus the filtered total"""
+        conditions = [
+            KnowledgeBaseModel.is_deleted == 0,
+            self._contains_condition(filter_obj.search, KnowledgeBaseModel.name, KnowledgeBaseModel.description),
+        ]
+        if filter_obj.type:
+            conditions.append(KnowledgeBaseModel.type == filter_obj.type)
+
+        count_stmt = select(func.count(KnowledgeBaseModel.id)).where(*conditions)
         total = (await self.db.execute(count_stmt)).scalar() or 0
 
         data_stmt = select(
@@ -29,8 +37,7 @@ class KnowledgeBaseRepository(DbRepository[KnowledgeBaseModel]):
             KnowledgeBaseModel.sync_active,
             KnowledgeBaseModel.last_synced,
             KnowledgeBaseModel.last_sync_status,
-        )
-        data_stmt = self._apply_sorting(data_stmt, filter_obj)
+        ).where(*conditions).order_by(KnowledgeBaseModel.created_at.desc(), KnowledgeBaseModel.id.desc())
         data_stmt = self._apply_pagination(data_stmt, filter_obj)
         rows = (await self.db.execute(data_stmt)).all()
         return rows, total
