@@ -22,6 +22,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.nodes.ml import ml_model_inference_node as inference_module
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import MLModelInferenceNode
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
@@ -326,3 +327,125 @@ async def test_feature_engineering_uses_ordinal_codes_at_train_and_inference(
     assert result["status"] == "success"
     assert result["prediction"][0] == pytest.approx(3.0 * 2 * 10, abs=0.5)
     assert result["prediction"][1] == pytest.approx(3.0 * 1 * 4, abs=0.5)
+
+
+def _size_rows(target):
+    order = {"Low": 0, "Medium": 1, "High": 2}
+    rows = []
+    for size, price in [("Low", 5.0), ("Medium", 7.0), ("High", 3.0), ("Low", 9.0),
+                        ("High", 8.0), ("Medium", 2.0), ("High", 6.0), ("Low", 4.0),
+                        ("Low", 3.0), ("Medium", 6.0)]:
+        rows.append({"size": size, "price": price, "y": target(size, order[size], price)})
+    return order, rows
+
+
+@pytest.mark.asyncio
+async def test_custom_expression_comparing_encoded_column_to_text(
+    tmp_path, patch_ml_models_service
+):
+    # size is ordinal-encoded before feature engineering, so size == "High"
+    # used to compare 0/1/2 with "High" and be False on every row.
+    order, rows = _size_rows(lambda size, code, price: 10.0 * (size == "High") + price)
+    csv_path = tmp_path / "train_data.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+
+    train_result = await _make_node(TrainModelNode).process(
+        {
+            "name": f"e2e-text-compare-{uuid.uuid4().hex[:8]}",
+            "modelType": "linear_regression",
+            "fileUrl": str(csv_path),
+            "targetColumn": "y",
+            "featureColumns": ["size", "price"],
+            "categoricalEncoding": [
+                {"columnName": "size", "strategy": "ordinal", "ordinalMapping": order}
+            ],
+            "featureEngineering": [
+                {"newColumnName": "is_high", "strategy": "custom_expression",
+                 "expression": 'size == "High"'}
+            ],
+            "validationSplit": 0.0,
+            "scalingMethod": "none",
+        }
+    )
+    assert train_result["success"] is True
+
+    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "price"])
+    patch_ml_models_service(ml_model)
+    result = await _make_node(MLModelInferenceNode).process(
+        {"modelId": str(ml_model.id),
+         "inferenceInputs": {"size": ["High", "Low"], "price": [4, 4]}}
+    )
+    assert result["status"] == "success"
+    assert result["prediction"][0] == pytest.approx(14.0, abs=0.5)
+    assert result["prediction"][1] == pytest.approx(4.0, abs=0.5)
+
+
+@pytest.mark.asyncio
+async def test_custom_expression_with_unknown_category_fails_training(tmp_path):
+    order, rows = _size_rows(lambda size, code, price: price)
+    csv_path = tmp_path / "train_data.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+
+    with pytest.raises(AppException) as exc_info:
+        await _make_node(TrainModelNode).process(
+            {
+                "name": f"e2e-text-typo-{uuid.uuid4().hex[:8]}",
+                "modelType": "linear_regression",
+                "fileUrl": str(csv_path),
+                "targetColumn": "y",
+                "featureColumns": ["size", "price"],
+                "categoricalEncoding": [
+                    {"columnName": "size", "strategy": "ordinal", "ordinalMapping": order}
+                ],
+                "featureEngineering": [
+                    {"newColumnName": "is_high", "strategy": "custom_expression",
+                     "expression": 'size == "Hgh"'}
+                ],
+                "validationSplit": 0.0,
+                "scalingMethod": "none",
+            }
+        )
+    assert "'Hgh', which is not one of its categories" in str(exc_info.value.error_detail)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("strategy", ["ordinal", "label"])
+async def test_missing_encoded_value_uses_training_fill_at_inference(
+    tmp_path, patch_ml_models_service, strategy
+):
+    # Training fills a missing size with the mode before encoding it, so the
+    # model never sees a missing code. Inference encoded the raw input
+    # instead: a missing ordinal value became NaN and predict failed with
+    # "Input contains NaN"; a missing label value became -1.
+    order, rows = _size_rows(lambda size, code, price: 5.0 * code + price)
+    rows.append({"size": "Low", "price": 1.0, "y": 1.0})  # makes "Low" the mode
+    csv_path = tmp_path / "train_data.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+
+    encoding = {"columnName": "size", "strategy": strategy}
+    if strategy == "ordinal":
+        encoding["ordinalMapping"] = order
+    train_result = await _make_node(TrainModelNode).process(
+        {
+            "name": f"e2e-missing-{strategy}-{uuid.uuid4().hex[:8]}",
+            "modelType": "linear_regression",
+            "fileUrl": str(csv_path),
+            "targetColumn": "y",
+            "featureColumns": ["size", "price"],
+            "missingValueHandling": [{"columnName": "size", "strategy": "impute_mode"}],
+            "categoricalEncoding": [encoding],
+            "validationSplit": 0.0,
+            "scalingMethod": "none",
+        }
+    )
+    assert train_result["success"] is True
+
+    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "price"])
+    patch_ml_models_service(ml_model)
+    result = await _make_node(MLModelInferenceNode).process(
+        {"modelId": str(ml_model.id),
+         "inferenceInputs": {"size": [None, "Low"], "price": [6, 6]}}
+    )
+    assert result["status"] == "success"
+    # The missing size was filled with "Low", so both rows predict the same.
+    assert result["prediction"][0] == pytest.approx(result["prediction"][1])

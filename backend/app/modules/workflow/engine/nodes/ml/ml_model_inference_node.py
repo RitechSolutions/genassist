@@ -631,6 +631,12 @@ class MLModelInferenceNode(BaseNode):
                 # persisted order (not a hardcoded grouping) decide position.
                 column_arrays: Dict[str, np.ndarray] = {}
 
+                # Training fills missing values before encoding categories, so
+                # encode from filled inputs too - otherwise a missing ordinal
+                # value became NaN (predict failed with "Input contains NaN")
+                # and a missing label value became -1 instead of its fill's code.
+                filled_inputs = _with_training_fills(normalized_inputs, missing_value_fills, batch_size)
+
                 if encoded_feature_columns:
                     numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
                     numeric_data = (
@@ -644,7 +650,7 @@ class MLModelInferenceNode(BaseNode):
 
                     if label_columns:
                         label_data = _mapped_transform(
-                            normalized_inputs, label_columns, label_encodings, batch_size, unseen_value=-1
+                            filled_inputs, label_columns, label_encodings, batch_size, unseen_value=-1
                         )
                         for i, col in enumerate(label_columns):
                             column_arrays[col] = label_data[:, i]
@@ -652,7 +658,7 @@ class MLModelInferenceNode(BaseNode):
 
                     if ordinal_columns:
                         ordinal_data = _mapped_transform(
-                            normalized_inputs, ordinal_columns, ordinal_encodings, batch_size,
+                            filled_inputs, ordinal_columns, ordinal_encodings, batch_size,
                             unseen_value=np.nan, normalize_keys=True,
                         )
                         for i, col in enumerate(ordinal_columns):
@@ -660,14 +666,14 @@ class MLModelInferenceNode(BaseNode):
                         legacy_order += ordinal_columns
 
                     if encoder is not None and categorical_columns:
-                        encoded, encoded_columns = _one_hot_transform(normalized_inputs, categorical_columns, encoder)
+                        encoded, encoded_columns = _one_hot_transform(filled_inputs, categorical_columns, encoder)
                         for i, col in enumerate(encoded_columns):
                             column_arrays[col] = encoded[:, i]
                         legacy_order += encoded_columns
 
                     if encoder_no_drop is not None and categorical_columns_no_drop:
                         encoded_nd, encoded_nd_columns = _one_hot_transform(
-                            normalized_inputs, categorical_columns_no_drop, encoder_no_drop
+                            filled_inputs, categorical_columns_no_drop, encoder_no_drop
                         )
                         for i, col in enumerate(encoded_nd_columns):
                             column_arrays[col] = encoded_nd[:, i]
@@ -693,17 +699,16 @@ class MLModelInferenceNode(BaseNode):
                         # Same order as training: fill missing values, then
                         # encode - the fills hold raw categories, so they're
                         # applied before encoding and not passed on again.
-                        filled = _with_training_fills(normalized_inputs, missing_value_fills, batch_size)
                         fe_inputs = dict(normalized_inputs)
                         if label_columns:
                             codes = _mapped_transform(
-                                filled, label_columns, label_encodings, batch_size, unseen_value=-1
+                                filled_inputs, label_columns, label_encodings, batch_size, unseen_value=-1
                             )
                             for i, col in enumerate(label_columns):
                                 fe_inputs[col] = codes[:, i].tolist()
                         if ordinal_columns:
                             codes = _mapped_transform(
-                                filled, ordinal_columns, ordinal_encodings, batch_size,
+                                filled_inputs, ordinal_columns, ordinal_encodings, batch_size,
                                 unseen_value=np.nan, normalize_keys=True,
                             )
                             for i, col in enumerate(ordinal_columns):
