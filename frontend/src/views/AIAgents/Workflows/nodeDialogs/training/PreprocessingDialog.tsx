@@ -177,16 +177,26 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       const savedResults =
         data.stepAnalysisResults ??
         (data.analysisResult ? { initial: data.analysisResult } : {});
+      const hasSavedResults = Object.keys(savedResults).length > 0;
+      const hasResolvedFile = !!currentFileUrl && !isUnresolvedVariable(currentFileUrl);
+      // Nodes saved before analyzedFileUrl existed have no record of which
+      // file their results came from, so there's nothing to compare against -
+      // keep their results rather than treating every open as a dataset change.
       const datasetChanged =
-        Object.keys(savedResults).length > 0 &&
-        !!currentFileUrl &&
-        !isUnresolvedVariable(currentFileUrl) &&
+        hasSavedResults &&
+        hasResolvedFile &&
+        !!data.analyzedFileUrl &&
         currentFileUrl !== data.analyzedFileUrl;
 
       if (datasetChanged) {
         setAnalysisResults({});
         setAnalyzedFileUrl("");
         void analyzeChangedDataset(currentFileUrl);
+      } else if (hasSavedResults && !data.analyzedFileUrl && hasResolvedFile) {
+        // Legacy node: assume the results match the current file and record it,
+        // so the next save starts tracking dataset swaps.
+        setAnalysisResults(savedResults);
+        setAnalyzedFileUrl(currentFileUrl);
       } else {
         setAnalysisResults(savedResults);
         setAnalyzedFileUrl(data.analyzedFileUrl || "");
@@ -406,11 +416,16 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
 
       const resolvedFileUrl = resolveFileUrl(fileUrl);
       const result = await analyzeCSV(resolvedFileUrl, stepCode);
-      // Store result for this specific step
+      // Store result for this specific step. Results from a different file
+      // are stale, so they're dropped rather than mixed with this one.
+      const sameFile = !analyzedFileUrl || analyzedFileUrl === resolvedFileUrl;
       setAnalysisResults((prev) => ({
-        ...prev,
+        ...(sameFile ? prev : {}),
         [stepId]: result,
       }));
+      // Record the file, so the next open doesn't take these results for
+      // another dataset's and delete them.
+      setAnalyzedFileUrl(resolvedFileUrl);
 
       toast({
         title: "Step Execution Complete",
