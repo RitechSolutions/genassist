@@ -67,7 +67,6 @@ from app.schemas.message_issue import (
     IssueNoteCreate,
     IssueNoteRead,
     IssueStatusSummary,
-    IssueStatusUpdate,
     IssueUpdate,
     MessageIssueRead,
     ReportedIssueRead,
@@ -1086,24 +1085,6 @@ async def update_message_issue(
 ):
     """Partially update a reported issue: omitted fields are kept, null clears."""
     return await transcript_message_service.update_issue(message_feedback_id, payload)
-
-
-@router.patch(
-    "/issues/{message_feedback_id}/status",
-    response_model=MessageIssueRead,
-    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
-)
-async def update_message_issue_status(
-    message_feedback_id: UUID,
-    payload: IssueStatusUpdate,
-    transcript_message_service: TranscriptMessageService = Injected(
-        TranscriptMessageService
-    ),
-):
-    """Set the resolution status of a reported issue (a message comment)."""
-    return await transcript_message_service.set_issue_status(
-        message_feedback_id, payload.status
-    )
 
 
 @router.get(
