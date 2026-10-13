@@ -449,3 +449,48 @@ async def test_missing_encoded_value_uses_training_fill_at_inference(
     assert result["status"] == "success"
     # The missing size was filled with "Low", so both rows predict the same.
     assert result["prediction"][0] == pytest.approx(result["prediction"][1])
+
+
+@pytest.mark.asyncio
+async def test_ordinal_number_column_encoded_alongside_text_column(tmp_path, patch_ml_models_service):
+    # size (text) and priority (numbers 1/2/3) are both ordinal. Encoding
+    # them in one array turned every value into text, so a priority of 2.0 -
+    # e.g. its training-time fill - became "2.0", matched no position in the
+    # order, and predict failed with "Input contains NaN".
+    sizes = {"Low": 0, "Medium": 1, "High": 2}
+    rows = [
+        {"size": s, "priority": float(p), "y": 4.0 * sizes[s] + 2.0 * p}
+        for s in sizes for p in (1, 2, 3)
+    ] * 2
+    rows.append({"size": "Low", "priority": None, "y": 4.0})  # filled with the mode, 2.0
+    rows.append({"size": "Low", "priority": 2.0, "y": 4.0})
+    csv_path = tmp_path / "train_data.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+
+    train_result = await _make_node(TrainModelNode).process(
+        {
+            "name": f"e2e-mixed-ordinal-{uuid.uuid4().hex[:8]}",
+            "modelType": "linear_regression",
+            "fileUrl": str(csv_path),
+            "targetColumn": "y",
+            "featureColumns": ["size", "priority"],
+            "missingValueHandling": [{"columnName": "priority", "strategy": "impute_mode"}],
+            "categoricalEncoding": [
+                {"columnName": "size", "strategy": "ordinal", "ordinalMapping": sizes},
+                {"columnName": "priority", "strategy": "ordinal",
+                 "ordinalMapping": {"1": 0, "2": 1, "3": 2}},
+            ],
+            "validationSplit": 0.0,
+            "scalingMethod": "none",
+        }
+    )
+    assert train_result["success"] is True
+
+    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "priority"])
+    patch_ml_models_service(ml_model)
+    result = await _make_node(MLModelInferenceNode).process(
+        {"modelId": str(ml_model.id),
+         "inferenceInputs": {"size": ["High", "High", "High"], "priority": [None, 2.0, 2]}}
+    )
+    assert result["status"] == "success"
+    assert result["prediction"] == pytest.approx([12.0, 12.0, 12.0], abs=0.5)

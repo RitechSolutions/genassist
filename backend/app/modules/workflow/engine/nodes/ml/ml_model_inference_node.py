@@ -305,15 +305,18 @@ def _mapped_transform(
     """
     if not columns:
         return np.empty((batch_size, 0))
-    raw = _build_input_array(normalized_inputs, columns).astype(object)
-    out = np.empty(raw.shape, dtype=float)
+    out = np.empty((batch_size, len(columns)), dtype=float)
     for i, col in enumerate(columns):
+        # One column at a time: stacking a text column with a number column
+        # turns every value into text, so a 2.0 became "2.0" - which matches
+        # neither the ordinal key "2" nor the label category 2.
+        raw = _build_input_array(normalized_inputs, [col]).astype(object)[:, 0]
         mapping = mappings.get(col, {})
         if normalize_keys:
             mapping = {ordinal_key(k): v for k, v in mapping.items()}
-            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in raw[:, i]]
+            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in raw]
         else:
-            out[:, i] = [mapping.get(v, unseen_value) for v in raw[:, i]]
+            out[:, i] = [mapping.get(v, unseen_value) for v in raw]
     return out
 
 
