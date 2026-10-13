@@ -1,7 +1,7 @@
 """add audit log record id index
 
 Revision ID: 6afdf3640e70
-Revises: 835357fc69d8
+Revises: a416df487c31
 Create Date: 2026-10-13 08:03:50.807205
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "6afdf3640e70"
-down_revision: Union[str, None] = "835357fc69d8"
+down_revision: Union[str, None] = "a416df487c31"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -664,9 +664,15 @@ class TestCommitPerConversation:
                 run,
             )
 
-        # The first commit is the running marker; then one per conversation.
-        assert events == ["commit", "A1", "A2", "commit", "B1", "commit"]
+        # The running marker, the progress totals, then one per conversation.
+        assert events == ["commit", "commit", "A1", "A2", "commit", "B1", "commit"]
         assert run.status == "completed"
+        assert run.progress == {
+            "conversations_done": 2,
+            "conversations_total": 2,
+            "turns_done": 3,
+            "turns_total": 3,
+        }
 
 
 class TestTurnLabelsByPosition:

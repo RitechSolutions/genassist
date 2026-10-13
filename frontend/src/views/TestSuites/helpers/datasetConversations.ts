@@ -202,7 +202,7 @@ export const ruleTargetLabel = (
   result: TestToolRuleResult,
   index: ConversationIndex,
 ): string | null => {
-  if (result.scope === "conversation") {
+  if (result.scope === "conversation" || result.scope === "every_conversation") {
     const conversation = result.source_conversation_id
       ? index.conversations.get(result.source_conversation_id)
       : undefined;

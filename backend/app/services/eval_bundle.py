@@ -1057,6 +1057,9 @@ class EvalBundleService:
                     "choose a different target workflow."
                 ),
             )
+        if not techniques:
+            # A bundle exported with no methods ran the platform defaults; it keeps them, now by name.
+            techniques = self.suites.evaluators.default_techniques()
         self._validate_tool_config(configs, resolution["catalog"])
 
         reuse_suite_id = request.existing_suite_id

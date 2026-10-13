@@ -33,7 +33,13 @@ class WorkflowExecutorNode(BaseNode):
         """
         workflow_id_str = config.get("workflowId")
         params: Dict[str, Any] = config.get("inputParameters", {})
-        thread_id = params.get("threadId", config.get("threadId", str(uuid.uuid4())))
+        thread_id = params.get("threadId", config.get("threadId"))
+        if not thread_id:
+            from app.modules.workflow.agents.memory import ConversationMemory
+
+            # A thread for this call only; an evaluation deletes it along with its own thread.
+            thread_id = str(uuid.uuid4())
+            ConversationMemory.adopt(self.get_state().get_thread_id(), thread_id)
 
         if not workflow_id_str:
             error_msg = "workflowId is required for workflow executor node"
