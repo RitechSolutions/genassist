@@ -150,7 +150,7 @@ const Transcripts = () => {
     setFilter: setTopicFilter,
     changeTopic,
     changeSubtopic,
-    matches: matchesTopic,
+    matchesTopic,
   } = useTopicFilter(
     topicFromParam(searchParams.get("type")),
     searchParams.get("subtype") || "all",
@@ -867,7 +867,10 @@ const Transcripts = () => {
                   </Select>
                   {subtopicChoices.length > 0 && (
                     <Select value={subtopicFilter} onValueChange={handleSubTypeChange}>
-                      <SelectTrigger className="w-[130px] bg-card h-8 rounded-full text-xs">
+                      <SelectTrigger
+                        className="w-[130px] bg-card h-8 rounded-full text-xs"
+                        disabled={isLiveFeed}
+                      >
                         <SelectValue placeholder="Sub-topic" />
                       </SelectTrigger>
                       <SelectContent>
