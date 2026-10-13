@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MessageSquareDot, NotebookPen, Settings } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 
@@ -25,10 +25,13 @@ import { toInclusiveDateParams } from "@/helpers/dateRange";
 import { ReportedFeedbackItem } from "@/services/reportedFeedback";
 import { StatsOverviewCard } from "@/views/Analytics/components/StatsOverviewCard";
 import {
+  cacheIssue,
   useFeedbackSummary,
+  useIssue,
   useIssuePatch,
   useReportedFeedback,
 } from "../hooks/useReportedFeedback";
+import { useReportLink } from "../hooks/useReportLink";
 import { useIssueStatuses } from "../hooks/useIssueStatuses";
 import { ReportedFeedbackDialog } from "../components/ReportedFeedbackDialog";
 import { StatusBadge, StatusSelect } from "../components/StatusSelect";
@@ -116,22 +119,24 @@ export default function ReportedFeedback() {
     })),
   ];
 
-  const [selectedIssue, setSelectedIssue] = useState<ReportedFeedbackItem | null>(
-    null,
-  );
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = useIssue(selectedId);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [lastOpenedId, setLastOpenedId] = useState<string | null>(null);
-  // Follows the cached row, and keeps the last copy if a range change in another tab drops it
-  const listedIssue = rows.find(
-    (row) => row.feedback_id === selectedIssue?.feedback_id,
-  );
-  if (listedIssue && listedIssue !== selectedIssue) setSelectedIssue(listedIssue);
 
-  const openDialog = (issue: ReportedFeedbackItem) => {
-    setSelectedIssue(issue);
-    setLastOpenedId(issue.feedback_id);
+  const openDialog = (feedbackId: string) => {
+    setSelectedId(feedbackId);
+    setLastOpenedId(feedbackId);
     setIsDialogOpen(true);
   };
+
+  const openRow = (issue: ReportedFeedbackItem) => {
+    cacheIssue(queryClient, issue);
+    openDialog(issue.feedback_id);
+  };
+
+  const link = useReportLink(openDialog, !isDialogOpen);
 
   const focusLastOpenedRow = (event: Event) => {
     event.preventDefault();
@@ -363,7 +368,7 @@ export default function ReportedFeedback() {
         data={rows}
         columns={columns}
         keyExtractor={(item) => item.feedback_id}
-        onRowClick={openDialog}
+        onRowClick={openRow}
         getRowProps={(item) =>
           item.feedback_id === lastOpenedId ? { id: LAST_OPENED_ROW_ID } : undefined
         }
@@ -397,12 +402,15 @@ export default function ReportedFeedback() {
       )}
 
       <ReportedFeedbackDialog
-        key={selectedIssue?.feedback_id}
-        issue={selectedIssue}
+        key={selectedId}
+        issue={selected.data ?? null}
         isOpen={isDialogOpen}
         onOpenChange={(open) => {
           setIsDialogOpen(open);
-          if (!open) setSelectedIssue(null);
+          if (!open) {
+            setSelectedId(null);
+            link.clear();
+          }
         }}
         onCloseAutoFocus={focusLastOpenedRow}
         statuses={statuses}

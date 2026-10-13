@@ -1,12 +1,14 @@
 import logging
 from datetime import datetime, timezone
+from typing import get_args
 from injector import inject
 from sqlalchemy import UUID
 
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.enums.issue_status_enum import IssueStatusCategory
+from app.core.utils.enums.issue_status_enum import DEFAULT_ISSUE_STATUS_KEY, IssueStatusCategory
+from app.db.models.audit_log import field_changes
 from app.db.models.message_model import MessageFeedbackModel
 from app.repositories.issue_status import IssueStatusRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
@@ -14,6 +16,8 @@ from app.schemas.common import PaginatedResponse
 from app.schemas.conversation_transcript import (TranscriptSegmentFeedback)
 from app.schemas.filter import MessageIssueFilter, MessageIssueSummaryFilter
 from app.schemas.message_issue import (
+    IssueHistoryEvent,
+    IssueHistoryField,
     IssueNoteCreate,
     IssueNoteRead,
     IssueStatusSummary,
@@ -97,6 +101,29 @@ class TranscriptMessageService:
         )
         return _note_read(created, username)
 
+    async def list_issue_history(self, message_feedback_id: UUID) -> list[IssueHistoryEvent]:
+        rows = await self.transcript_message_repo.list_issue_history(message_feedback_id)
+        return [event for log, username in rows for event in _history_events(log, username)]
+
 
 def _note_read(note, username) -> IssueNoteRead:
     return IssueNoteRead.model_validate(note).model_copy(update={"author_username": username})
+
+
+_HISTORY_FIELDS = get_args(IssueHistoryField)
+_NEW_ISSUE_VALUES = {"status": DEFAULT_ISSUE_STATUS_KEY}
+
+
+def _history_events(log, username) -> list[IssueHistoryEvent]:
+    changes = field_changes(log)
+
+    def event(field, old=None, new=None):
+        return IssueHistoryEvent(at=log.modified_at, by=username, field=field, old=old, new=new)
+
+    if log.table_name == MessageFeedbackModel.__tablename__:
+        old_comment, _ = changes.get("feedback_message", (None, None))
+        return [event("comment")] if isinstance(old_comment, str) and old_comment.strip() else []
+    if log.action_name == "Insert":
+        changes = {field: (_NEW_ISSUE_VALUES.get(field), new) for field, (_, new) in changes.items()}
+    pairs = [(field, *changes[field]) for field in _HISTORY_FIELDS if field in changes]
+    return [event(field, old, new) for field, old, new in pairs if old != new]

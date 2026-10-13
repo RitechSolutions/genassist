@@ -44,6 +44,7 @@ export interface FetchReportedFeedbackParams extends FeedbackFilters {
   skip?: number;
   limit?: number;
   status?: string;
+  feedback_id?: string;
 }
 
 const MAX_BACKEND_LIMIT = 100;
@@ -163,4 +164,22 @@ export const addIssueNote = async (
   );
   if (!note) throw new Error("You don't have permission to add a note");
   return note;
+};
+
+export interface IssueHistoryEvent {
+  at: string;
+  by: string | null;
+  field: "status" | "fix_version" | "target_rollout_date" | "comment";
+  old: string | null;
+  new: string | null;
+}
+
+export const fetchIssueHistory = async (
+  feedbackId: string,
+): Promise<IssueHistoryEvent[]> => {
+  const events = await apiRequest<IssueHistoryEvent[]>(
+    "GET",
+    `conversations/issues/${feedbackId}/history`,
+  );
+  return Array.isArray(events) ? events : [];
 };

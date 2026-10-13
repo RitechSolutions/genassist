@@ -71,10 +71,10 @@ async def _summary_statement(**kwargs):
     return db.statements[0]
 
 
-async def _feedback_check_statement():
+async def _feedback_check_statement(read=TranscriptMessageRepository.list_issue_notes):
     db = CapturingDb()
     with pytest.raises(AppException):
-        await TranscriptMessageRepository(db).list_issue_notes(uuid4())
+        await read(TranscriptMessageRepository(db), uuid4())
     return db.statements[0]
 
 
@@ -96,7 +96,12 @@ async def test_list_status_filter_matches_the_defaulted_status():
 @pytest.mark.parametrize("roles, scoped", [(("operator",), True), (("admin",), False)])
 async def test_group_scope_is_applied_explicitly_to_every_query(roles, scoped):
     with caller(roles=roles):
-        statements = [*await _list_statements(), await _summary_statement(), await _feedback_check_statement()]
+        statements = [
+            *await _list_statements(),
+            await _summary_statement(),
+            await _feedback_check_statement(),
+            await _feedback_check_statement(TranscriptMessageRepository.list_issue_history),
+        ]
 
     for stmt in statements:
         where = _sql(stmt).split("WHERE", 1)[1]
@@ -113,6 +118,14 @@ async def test_stored_topic_options_only_come_from_conversations_the_caller_can_
 
     sql = _sql(db.statements[0])
     assert ("JOIN conversations" in sql and "conversations.group_id" in sql) is scoped
+
+
+@pytest.mark.asyncio
+async def test_feedback_id_narrows_the_list_to_one_report():
+    feedback_id = uuid4()
+    rows, count = await _list_statements(feedback_id=feedback_id)
+    for stmt in (rows, count):
+        assert f"message_feedback.id = '{feedback_id}'" in _sql(stmt)
 
 
 @pytest.mark.asyncio
@@ -222,3 +235,15 @@ async def test_get_or_add_returns_the_existing_issue():
     db = IssueDb(issue=existing)
     issue = await TranscriptMessageRepository(db).get_or_add_issue(uuid4())
     assert issue is existing and db.added == []
+
+
+@pytest.mark.asyncio
+async def test_history_reads_the_issue_and_comment_rows():
+    db = IssueDb(issue=None)
+    await TranscriptMessageRepository(db).list_issue_history(uuid4())
+
+    sql = _sql(db.statements[1])
+    assert "audit_log.table_name = 'message_issues' AND audit_log.record_id = (SELECT message_issues.id" in sql
+    assert "audit_log.table_name = 'message_feedback'" in sql
+    assert "LEFT OUTER JOIN users ON users.id = audit_log.modified_by" in sql
+    assert "ORDER BY audit_log.modified_at ASC, audit_log.id ASC" in sql

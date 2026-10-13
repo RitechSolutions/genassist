@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
@@ -83,3 +83,14 @@ class IssueNoteRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+IssueHistoryField = Literal["status", "fix_version", "target_rollout_date", "comment"]
+
+
+class IssueHistoryEvent(BaseModel):
+    at: datetime
+    by: Optional[str] = None
+    field: IssueHistoryField
+    old: Optional[str] = None
+    new: Optional[str] = None

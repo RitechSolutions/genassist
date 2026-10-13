@@ -1,7 +1,7 @@
 from typing import Iterable, List, Optional
 from uuid import UUID
 from injector import inject
-from sqlalchemy import case, func, null, or_
+from sqlalchemy import and_, case, func, null, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import defer, selectinload
@@ -13,6 +13,7 @@ from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.issue_status_enum import DEFAULT_ISSUE_STATUS_KEY
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models.agent import AgentModel
+from app.db.models.audit_log import AuditLogModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.message_issue import MessageIssueModel, MessageIssueNoteModel
 from app.db.models.message_model import MessageFeedbackModel, TranscriptMessageModel
@@ -216,6 +217,8 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         base_filters = _issue_filters(filter_obj)
         if filter_obj.status:
             base_filters.append(_issue_status_col() == filter_obj.status)
+        if filter_obj.feedback_id:
+            base_filters.append(MessageFeedbackModel.id == filter_obj.feedback_id)
 
         rows_query = (
                 _issue_joins(
@@ -313,6 +316,33 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                 .order_by(MessageIssueNoteModel.created_at.asc(), MessageIssueNoteModel.id.asc())
                 )
         return [(note, username) for note, username in (await self.db.execute(query)).all()]
+
+
+    async def list_issue_history(
+            self, message_feedback_id: UUID
+            ) -> list[tuple[AuditLogModel, Optional[str]]]:
+        await self._require_feedback(message_feedback_id)
+        issue_id = (
+                select(MessageIssueModel.id)
+                .where(MessageIssueModel.message_feedback_id == message_feedback_id)
+                .scalar_subquery()
+                )
+        query = (
+                select(AuditLogModel, UserModel.username)
+                .outerjoin(UserModel, UserModel.id == AuditLogModel.modified_by)
+                .where(or_(
+                        and_(
+                                AuditLogModel.table_name == MessageIssueModel.__tablename__,
+                                AuditLogModel.record_id == issue_id,
+                                ),
+                        and_(
+                                AuditLogModel.table_name == MessageFeedbackModel.__tablename__,
+                                AuditLogModel.record_id == message_feedback_id,
+                                ),
+                        ))
+                .order_by(AuditLogModel.modified_at.asc(), AuditLogModel.id.asc())
+                )
+        return [(log, username) for log, username in (await self.db.execute(query)).all()]
 
 
     async def get_issue_notes_by_conversation_id(self, conversation_id: UUID) -> list[MessageIssueNoteModel]:

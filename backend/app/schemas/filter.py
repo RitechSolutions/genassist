@@ -110,6 +110,7 @@ class MessageIssueSummaryFilter(BaseModel):
 
 class MessageIssueFilter(BaseFilterModel, MessageIssueSummaryFilter):
     status: Optional[str] = Field(None, max_length=50, description="Filter by tracked resolution status")
+    feedback_id: Optional[UUID] = Field(None, description="Only this comment, for a shared link")
 
 
 class ApiKeysFilter(BaseFilterModel):

@@ -1,7 +1,7 @@
-import { Check, MessageSquare, PlayCircle, Share2 } from 'lucide-react';
+import { MessageSquare, PlayCircle } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/button';
+import { CopyLinkButton } from '@/components/CopyLinkButton';
 import { cn } from '@/helpers/utils';
 import type { TranscriptDetailController, TranscriptRightPanelTab } from '../../hooks/useTranscriptDetail';
 
@@ -69,8 +69,6 @@ export function TranscriptDetailTitle({
     headerAgentName,
     supervisorId,
     supervisorDisplayName,
-    linkCopied,
-    copyShareLink,
     showAskGenAI,
     rightPanelTab,
     setActiveTab,
@@ -100,16 +98,10 @@ export function TranscriptDetailTitle({
         <span className="ml-auto flex shrink-0 items-center gap-2">
           {/* Without the assistant there is nothing to switch between, so the control is dropped. */}
           {showAskGenAI && <PanelSwitch value={rightPanelTab} onChange={setActiveTab} />}
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`h-7 w-7 p-0 transition-colors ${linkCopied ? 'text-green-600 dark:text-green-400' : ''}`}
-            title="Copy share link"
-            disabled={linkCopied}
-            onClick={copyShareLink}
-          >
-            {linkCopied ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-          </Button>
+          <CopyLinkButton
+            url={`${window.location.origin}/transcripts?conversation=${transcript.id}`}
+            description="Anyone with this link can open the conversation."
+          />
           {trailing}
         </span>
       </span>

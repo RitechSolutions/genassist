@@ -22,16 +22,19 @@ import {
 import { Button } from "@/components/button";
 import { AgentResponseLogDialog } from "@/components/AgentResponseLogDialog";
 import { TruncatedText } from "@/components/TruncatedText";
+import { CopyLinkButton } from "@/components/CopyLinkButton";
 
 import { ReportedFeedbackItem } from "@/services/reportedFeedback";
 import { IssueStatus } from "@/services/issueStatuses";
 import { cn, formatDateTime } from "@/helpers/utils";
 import { formatDateOnly, topicLabel } from "../helpers/triageDraft";
+import { reportLinkUrl } from "../hooks/useReportLink";
 import { StatusBadge, StatusSelect } from "./StatusSelect";
 import { ConversationPanel } from "./ConversationPanel";
 import { SectionLabel } from "./SectionLabel";
 import { TriageSection } from "./TriageSection";
 import { NotesSection } from "./NotesSection";
+import { HistorySection } from "./HistorySection";
 
 type ReportedFeedbackDialogProps = {
   issue: ReportedFeedbackItem | null;
@@ -100,7 +103,7 @@ export function ReportedFeedbackDialog({
         )}
         onCloseAutoFocus={onCloseAutoFocus}
       >
-        <DialogHeader className="shrink-0 space-y-0 border-b px-6 py-4">
+        <DialogHeader className="shrink-0 space-y-0 border-b px-6 py-4 pr-12">
           <div className="flex items-center gap-3">
             {showConversation && (
               <Button
@@ -124,6 +127,11 @@ export function ReportedFeedbackDialog({
                 Conversation #{(issue.conversation_id || "----").slice(-4)}
               </p>
             </div>
+            <CopyLinkButton
+              url={reportLinkUrl(issue.feedback_id)}
+              description="Anyone with this link can open the report."
+              className="ml-auto shrink-0"
+            />
           </div>
         </DialogHeader>
 
@@ -226,6 +234,11 @@ export function ReportedFeedbackDialog({
                 <Meta icon={Tag} label="Fix version" value={issue.fix_version} />
               )}
             </section>
+
+            <HistorySection
+              feedbackId={issue.feedback_id}
+              statuses={statuses}
+            />
           </div>
 
           {showConversation && canOpenConversation && (
