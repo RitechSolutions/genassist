@@ -1,7 +1,9 @@
 import { apiRequest } from "@/config/api";
 import { FeatureFlag, FeatureFlagFormData } from "@/interfaces/featureFlag.interface";
+import { hasPermission } from "@/services/auth";
 
 const API_ENDPOINT = "feature-flags";
+export const FEATURE_FLAG_READ_PERMISSION = "read:feature_flag";
 
 export const getFeatureFlags = async (): Promise<FeatureFlag[]> => {
   const response = await apiRequest<FeatureFlag[]>(
@@ -9,6 +11,12 @@ export const getFeatureFlags = async (): Promise<FeatureFlag[]> => {
     `${API_ENDPOINT}/`
   );
   return response || [];
+};
+
+/** Flags the signed-in user may read; users without the permission get none */
+export const getFeatureFlagsForCurrentUser = async (): Promise<FeatureFlag[]> => {
+  if (!hasPermission(FEATURE_FLAG_READ_PERMISSION)) return [];
+  return getFeatureFlags();
 };
 
 export const getFeatureFlag = async (id: string): Promise<FeatureFlag | null> => {

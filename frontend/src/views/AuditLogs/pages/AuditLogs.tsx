@@ -8,6 +8,7 @@ import { ALL_FILTER_VALUE, FilterMenu, type FilterMenuGroup } from "@/components
 import { format, startOfDay, subDays, endOfDay, addDays } from "date-fns";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
+import { useHasPermission } from "@/hooks/useHasPermission";
 import { PageHeader } from "@/components/PageHeader";
 import { Loader2, RefreshCcw } from "lucide-react";
 import { User } from "@/interfaces/user.interface";
@@ -39,6 +40,7 @@ export default function AuditLogs() {
   const [tableName, setTableName] = useState<string>("");
   const [debouncedTableName, setDebouncedTableName] = useState<string>("");
   const [users, setUsers] = useState<User[]>([]);
+  const canReadUsers = useHasPermission("read:user");
   const sentinelRef = useRef<HTMLDivElement>(null);
   // Bumped on every reset so a response for superseded filters is dropped.
   const requestIdRef = useRef(0);
@@ -139,16 +141,25 @@ export default function AuditLogs() {
   }, [auditLogs, searchQuery, dateRange?.from, dateRange?.to]);
 
   useEffect(() => {
+    if (!canReadUsers) {
+      setUsers([]);
+      return;
+    }
+    // Drop the answer if access changed while the request was running
+    let isOutdated = false;
     const fetchUsersData = async () => {
       try {
         const fetchedUsers = await fetchUsers();
-        setUsers(fetchedUsers);
+        if (!isOutdated) setUsers(fetchedUsers);
       } catch (error) {
         // ignore
       }
     };
     fetchUsersData();
-  }, []);
+    return () => {
+      isOutdated = true;
+    };
+  }, [canReadUsers]);
 
   const handleViewDetails = (logId: string) => {
     setSelectedAuditLogId(logId);

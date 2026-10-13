@@ -19,6 +19,7 @@ import { IntegrationsCard } from "../components/IntegrationsCard";
 import { ReportedFeedbackCard } from "../components/ReportedFeedbackCard";
 import { usePermissions } from "@/context/PermissionContext";
 import { cn } from "@/helpers/utils";
+import { DASHBOARD_REFRESH_INTERVAL_MS, isDashboardDataStale } from "../helpers/refresh";
 
 // Transform dashboard API response to ActiveConversation format
 const transformDashboardConversation = (item: ActiveConversationItem): ActiveConversation => ({
@@ -292,8 +293,12 @@ export const ActiveConversations = () => {
   // Poll dashboard API for updates
   useEffect(() => {
     let isCancelled = false;
+    let lastRequestedAtMs = 0;
 
     const fetchData = async () => {
+      // Hidden tabs skip the refresh so they do not keep the login alive in the background
+      if (document.visibilityState === "hidden") return;
+      lastRequestedAtMs = Date.now();
       try {
         const response = await fetchDashboardConversations(30, 1, DASHBOARD_LIMIT);
         if (!isCancelled && response) {
@@ -311,10 +316,17 @@ export const ActiveConversations = () => {
       }
     };
 
-    const interval = setInterval(fetchData, 25000);
+    const refreshWhenVisible = () => {
+      const isBackWithStaleData =
+        document.visibilityState === "visible" && isDashboardDataStale(lastRequestedAtMs);
+      if (isBackWithStaleData) void fetchData();
+    };
+    const interval = setInterval(fetchData, DASHBOARD_REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       isCancelled = true;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, []);
 
