@@ -14,6 +14,7 @@ import {
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
+import { CHECKS_TECHNIQUE, parseChecks, serializeChecks } from "./checks";
 
 const GRADING_SOURCES = new Set<GradingSourceSelection>([
   "expected_output",
@@ -393,6 +394,10 @@ export const buildTechniqueConfigs = (
     };
   }
 
+  if (data.metrics.includes(CHECKS_TECHNIQUE)) {
+    configs.checks = serializeChecks(data.checks ?? [], data.checksProviderId);
+  }
+
   if (data.metrics.includes("llm_judge")) {
     configs.llm_judge = {
       ...(data.judgeProviderId.trim() ? { llm_provider_id: data.judgeProviderId.trim() } : {}),
@@ -434,6 +439,7 @@ export const getEditInitialData = (
     "context_field",
     "expected_output",
   );
+  const savedChecks = parseChecks(evaluation.technique_configs?.[CHECKS_TECHNIQUE]);
   const metaWithoutMemory = evaluation.input_metadata
     ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
     : {};
@@ -468,5 +474,7 @@ export const getEditInitialData = (
     actionRules: parseActionRules(actionCfg),
     judgeRules: parseJudgeRules(judgeCfg),
     judgeProviderId: (judgeCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
+    checks: savedChecks.checks,
+    checksProviderId: savedChecks.providerId || providers[0]?.id || "",
   };
 };
