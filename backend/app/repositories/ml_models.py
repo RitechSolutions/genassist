@@ -34,6 +34,7 @@ class MLModelsRepository(DbRepository[MLModel]):
                 pkl_file_id=ml_model_data.pkl_file_id,
                 features=ml_model_data.features,
                 target_variable=ml_model_data.target_variable,
+                inference_params=ml_model_data.inference_params,
             )
             async with self.db.begin_nested():
                 self.db.add(new_ml_model)
@@ -111,5 +112,4 @@ class MLModelsRepository(DbRepository[MLModel]):
         ml_model.is_deleted = 1
         await self.db.flush()
         return ml_model
-
 
