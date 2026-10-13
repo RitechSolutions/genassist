@@ -122,6 +122,8 @@ export default function ReportedFeedback() {
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useIssue(selectedId);
+  const dialogIssue =
+    rows.find((row) => row.feedback_id === selectedId) ?? selected.data ?? null;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [lastOpenedId, setLastOpenedId] = useState<string | null>(null);
 
@@ -403,7 +405,7 @@ export default function ReportedFeedback() {
 
       <ReportedFeedbackDialog
         key={selectedId}
-        issue={selected.data ?? null}
+        issue={dialogIssue}
         isOpen={isDialogOpen}
         onOpenChange={(open) => {
           setIsDialogOpen(open);
