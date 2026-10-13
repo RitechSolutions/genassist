@@ -108,6 +108,10 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   const [isDiscardEditsDialogOpen, setIsDiscardEditsDialogOpen] = useState(false);
   const isGeneratingCodeRef = useRef(false);
   const isInitializingRef = useRef(true);
+  // Bumped when the dialog opens or closes and on Analyze. An analysis
+  // response that started before the latest bump is dropped, so a slow,
+  // older request can't overwrite newer results or a reopened dialog.
+  const analysisGenerationRef = useRef(0);
   const pythonCodeRef = useRef<string>("");
   // The code as loaded or last generated from the steps - edits to the
   // generated function are measured against this (see hasUnsavedHandEdits).
@@ -160,8 +164,11 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   }, [config, mode]);
 
   useEffect(() => {
+    analysisGenerationRef.current += 1;
     if (isOpen) {
       isInitializingRef.current = true;
+      setIsAnalyzing(false);
+      setRunningStepId(null);
       setName(data.name || "Data Preprocessing");
       const initialPythonCode = data.pythonCode || BASE_PYTHON_TEMPLATE;
       setPythonCode(initialPythonCode);
@@ -281,9 +288,11 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   // Analyze the node's input file from scratch (used when the dialog opens
   // and the saved analysis belongs to a different file).
   const analyzeChangedDataset = async (resolvedFileUrl: string) => {
+    const generation = analysisGenerationRef.current;
     try {
       setIsAnalyzing(true);
       const result = await analyzeCSV(resolvedFileUrl);
+      if (generation !== analysisGenerationRef.current) return;
       setAnalysisResults({ initial: result });
       setAnalyzedFileUrl(resolvedFileUrl);
       toast({
@@ -292,13 +301,14 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       });
     } catch (err) {
       console.error(err);
+      if (generation !== analysisGenerationRef.current) return;
       toast({
         title: "Dataset changed",
         description: "The input file changed. Click Analyze to load the new dataset.",
         variant: "destructive",
       });
     } finally {
-      setIsAnalyzing(false);
+      if (generation === analysisGenerationRef.current) setIsAnalyzing(false);
     }
   };
 
@@ -355,11 +365,15 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       return;
     }
 
+    // Analyze replaces all results, so anything still in flight is outdated.
+    const generation = ++analysisGenerationRef.current;
+    setRunningStepId(null);
     try {
       setIsAnalyzing(true);
 
       const resolvedFileUrl = resolveFileUrl(fileUrl);
       const result = await analyzeCSV(resolvedFileUrl);
+      if (generation !== analysisGenerationRef.current) return;
       // Store initial analysis result
       setAnalysisResults({ initial: result });
       setAnalyzedFileUrl(resolvedFileUrl);
@@ -370,6 +384,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       });
     } catch (err) {
       console.error(err);
+      if (generation !== analysisGenerationRef.current) return;
       toast({
         title: "Analysis Failed",
         description:
@@ -377,7 +392,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
         variant: "destructive",
       });
     } finally {
-      setIsAnalyzing(false);
+      if (generation === analysisGenerationRef.current) setIsAnalyzing(false);
     }
   };
 
@@ -408,6 +423,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       return;
     }
 
+    const generation = analysisGenerationRef.current;
     try {
       setRunningStepId(stepId);
 
@@ -416,6 +432,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
 
       const resolvedFileUrl = resolveFileUrl(fileUrl);
       const result = await analyzeCSV(resolvedFileUrl, stepCode);
+      if (generation !== analysisGenerationRef.current) return;
       // Store result for this specific step. Results from a different file
       // are stale, so they're dropped rather than mixed with this one.
       const sameFile = !analyzedFileUrl || analyzedFileUrl === resolvedFileUrl;
@@ -433,6 +450,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       });
     } catch (err) {
       console.error(err);
+      if (generation !== analysisGenerationRef.current) return;
       toast({
         title: "Step Execution Failed",
         description:
@@ -440,7 +458,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
         variant: "destructive",
       });
     } finally {
-      setRunningStepId(null);
+      if (generation === analysisGenerationRef.current) setRunningStepId(null);
     }
   };
 
@@ -631,7 +649,8 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button onClick={handleSave}>
+            {/* Saving mid-analysis would store results that are about to change */}
+            <Button onClick={handleSave} disabled={isAnalyzing}>
               <Save className="h-4 w-4 mr-2" />
               Save Changes
             </Button>
