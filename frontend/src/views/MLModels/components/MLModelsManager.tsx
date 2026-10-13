@@ -30,15 +30,22 @@ import {
   createMLModel,
   deleteMLModel,
   getAllMLModels,
+  getMLModel,
   updateMLModel,
   uploadModelFile,
 } from "@/services/mlModels";
 import { extractErrorMessage } from "@/helpers/apiError";
 import { MLModelType, MODEL_TYPE_OPTIONS, modelTypeLabel } from "../helpers/modelTypes";
 import { ModelFilePicker } from "./ModelFilePicker";
+import {
+  buildInferenceParams,
+  featureDefaultsUpdate,
+  latestInferenceParams,
+} from "./mlModelForm";
 
 const ALL_TYPES = "all";
 const MODELS_QUERY_KEY = ["ml-models"];
+type FeatureDefault = string | number | boolean;
 
 interface FormValues {
   name: string;
@@ -46,6 +53,7 @@ interface FormValues {
   model_type: MLModelType;
   target_variable: string;
   features: string[];
+  featureDefaultsJson: string;
   pkl_file: string | null;
   pkl_file_id: string | null;
   pendingFile: File | null;
@@ -53,12 +61,47 @@ interface FormValues {
 
 type FormErrors = Partial<Record<keyof FormValues, string>>;
 
+const parseFeatureDefaults = (
+  rawValue: string,
+  features: string[]
+): Record<string, FeatureDefault> => {
+  if (!rawValue.trim()) return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch {
+    throw new Error("Enter a valid JSON object.");
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Feature defaults must be a JSON object.");
+  }
+
+  const featureSet = new Set(features);
+  const defaults: Record<string, FeatureDefault> = {};
+  for (const [name, value] of Object.entries(parsed)) {
+    if (!featureSet.has(name)) {
+      throw new Error(`Default '${name}' is not one of the model features.`);
+    }
+    if (
+      value === null ||
+      !["string", "number", "boolean"].includes(typeof value)
+    ) {
+      throw new Error(`Default '${name}' must be a non-null JSON scalar.`);
+    }
+    defaults[name] = value as FeatureDefault;
+  }
+  return defaults;
+};
+
 const emptyForm = (): FormValues => ({
   name: "",
   description: "",
   model_type: "xgboost",
   target_variable: "",
   features: [],
+  featureDefaultsJson: "",
   pkl_file: null,
   pkl_file_id: null,
   pendingFile: null,
@@ -70,6 +113,10 @@ const formFromModel = (model: MLModel): FormValues => ({
   model_type: model.model_type,
   target_variable: model.target_variable ?? "",
   features: model.features ?? [],
+  featureDefaultsJson:
+    Object.keys(model.inference_params?.featureDefaults ?? {}).length > 0
+      ? JSON.stringify(model.inference_params?.featureDefaults, null, 2)
+      : "",
   pkl_file: model.pkl_file ?? null,
   pkl_file_id: model.pkl_file_id ?? null,
   pendingFile: null,
@@ -179,6 +226,12 @@ const MLModelsManager: React.FC = () => {
     if (!values.target_variable.trim())
       next.target_variable = "Target variable is required.";
     if (values.features.length === 0) next.features = "Add at least one feature.";
+    try {
+      parseFeatureDefaults(values.featureDefaultsJson, values.features);
+    } catch (error) {
+      next.featureDefaultsJson =
+        error instanceof Error ? error.message : "Enter a valid JSON object.";
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -199,6 +252,10 @@ const MLModelsManager: React.FC = () => {
         pklFileId = uploaded.file_id ?? null;
       }
 
+      const featureDefaults = parseFeatureDefaults(
+        values.featureDefaultsJson,
+        values.features
+      );
       const payload = {
         name: values.name.trim(),
         description: values.description.trim(),
@@ -208,13 +265,32 @@ const MLModelsManager: React.FC = () => {
         pkl_file: pklFile,
         pkl_file_id: pklFileId,
       };
+      let inferenceParams = buildInferenceParams(
+        editingItem?.inference_params,
+        featureDefaults
+      );
+      const inferenceParamsUpdate = editingItem
+        ? featureDefaultsUpdate(editingItem.inference_params, featureDefaults)
+        : undefined;
+      if (editingItem && inferenceParamsUpdate) {
+        const latestModel = await getMLModel(editingItem.id);
+        inferenceParams = buildInferenceParams(
+          latestInferenceParams(latestModel, editingItem.inference_params),
+          inferenceParamsUpdate.featureDefaults
+        );
+      }
+      const payloadWithInferenceParams = !editingItem
+        ? { ...payload, inference_params: inferenceParams }
+        : inferenceParamsUpdate
+          ? { ...payload, inference_params: inferenceParams }
+          : payload;
 
       if (editingItem) {
-        await updateMLModel(editingItem.id, payload);
+        await updateMLModel(editingItem.id, payloadWithInferenceParams);
         void queryClient.invalidateQueries({ queryKey: ["ml-model", editingItem.id] });
         toast.success(`ML model "${payload.name}" updated.`);
       } else {
-        await createMLModel({ ...payload, id: uuidv4() });
+        await createMLModel({ ...payloadWithInferenceParams, id: uuidv4() });
         toast.success(`ML model "${payload.name}" created.`);
       }
 
@@ -364,6 +440,28 @@ const MLModelsManager: React.FC = () => {
                           values.features.length !== 1 ? "s" : ""
                         } defined`
                       : "Press Enter or comma to add each feature. Paste a comma-separated list to add several at once."}
+                  </p>
+                </FormField>
+
+                <FormField
+                  id="feature_defaults"
+                  label="Feature Defaults (JSON)"
+                  error={errors.featureDefaultsJson}
+                  className="mt-6"
+                >
+                  <Textarea
+                    id="feature_defaults"
+                    value={values.featureDefaultsJson}
+                    onChange={(event) =>
+                      setField("featureDefaultsJson", event.target.value)
+                    }
+                    placeholder={'{"is_weekend": 0, "region": "unknown"}'}
+                    rows={5}
+                  />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Optional deliberate fallback values for missing inference inputs.
+                    Keys must match the model features and values must be JSON scalars.
+                    Enter numeric defaults as numbers without quotes.
                   </p>
                 </FormField>
               </div>
