@@ -305,9 +305,14 @@ export default function ReportedFeedback() {
       label: "Status",
       allLabel: "All statuses",
       value: statusFilter,
-      options: withCurrentStatus(statuses, statusFilter, {
-        includeRetired: true,
-      }).map((status) => ({
+      options: withCurrentStatus(
+        statuses.filter(
+          (status) =>
+            status.is_active === 1 || (summary.byStatus[status.key] ?? 0) > 0,
+        ),
+        statusFilter,
+        { includeRetired: true },
+      ).map((status) => ({
         value: status,
         label: statusMeta(statuses, status).label,
       })),

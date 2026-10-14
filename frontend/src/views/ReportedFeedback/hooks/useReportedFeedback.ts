@@ -87,6 +87,7 @@ export const useFeedbackSummary = (filters: FeedbackFilters) => {
   const data = summary.data ?? EMPTY_SUMMARY;
   return {
     total: data.total,
+    byStatus: data.by_status,
     totals: categoryTotals(data, statuses.data ?? []),
     isLoading: statuses.isLoading || summary.isLoading,
     isError: statuses.isError || summary.isError,
