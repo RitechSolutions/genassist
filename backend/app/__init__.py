@@ -318,14 +318,6 @@ def _long_task_time_limits() -> dict:
     }
 
 
-class _IgnoreResultCelery(Celery):
-    """Applies task_ignore_result to send_task too; Celery only applies it to Task.apply_async."""
-
-    def send_task(self, name, *args, **options):
-        options.setdefault("ignore_result", self.conf.task_ignore_result)
-        return super().send_task(name, *args, **options)
-
-
 def create_celery():
     """
     Create and configure the Celery application.
@@ -364,17 +356,17 @@ def create_celery():
     if settings.CELERY_INCLUDE_ML_TASKS:
         include += ML_TASK_MODULES
 
-    celery_app = _IgnoreResultCelery(
+    celery_app = Celery(
         "genassist_celery_tasks",
         broker=settings.REDIS_URL,
-        backend=settings.REDIS_URL,
         include=include,
     )
+    # Task results are never read; pinned so no CELERY_RESULT_BACKEND env var can enable them
+    celery_app.backend_cls = "disabled"
 
     # Configure Celery
     celery_app.conf.update(
         broker_url=settings.REDIS_URL,  # Explicitly set broker URL
-        result_backend=settings.REDIS_URL,  # Explicitly set result backend
         broker_connection_retry_on_startup=True,  # Retain pre-Celery 6.0 startup retry behavior
         broker_transport_options={
             "visibility_timeout": settings.CELERY_BROKER_VISIBILITY_TIMEOUT,
@@ -390,25 +382,11 @@ def create_celery():
             "retry_on_timeout": True,
             "health_check_interval": 30,
         },
-        result_backend_transport_options={
-            "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
-        },
-        # Same socket bounds for the result-backend client
-        redis_socket_timeout=settings.CELERY_REDIS_SOCKET_TIMEOUT,
-        redis_socket_connect_timeout=settings.CELERY_REDIS_SOCKET_CONNECT_TIMEOUT,
-        redis_socket_keepalive=True,
-        redis_retry_on_timeout=True,
-        redis_backend_health_check_interval=25,
-        redis_max_connections=settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit result backend connection pool
         worker_enable_mingle=False,  # Disable mingle to avoid cross-slot errors on startup
         task_serializer="json",
         accept_content=["json"],
-        result_serializer="json",
         timezone="UTC",
         enable_utc=True,
-        task_track_started=True,
-        # Nothing reads task results, so senders skip the result-channel subscription
-        task_ignore_result=True,
         # Ack after completion so a job survives a worker killed or moved mid-task.
         # A job whose child process dies is not requeued: that death is usually
         # deterministic for the job, and requeueing it would loop forever. A redelivered
@@ -421,8 +399,6 @@ def create_celery():
         task_time_limit=480,
         task_soft_time_limit=420,
         task_annotations=_long_task_time_limits(),
-        # Bound result-backend growth so a slow/wedged worker doesn't pile up Redis keys
-        result_expires=3600,
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
         worker_pool=settings.CELERY_WORKER_POOL,

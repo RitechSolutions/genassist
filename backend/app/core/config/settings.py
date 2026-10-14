@@ -39,8 +39,8 @@ class ProjectSettings(BaseSettings):
     # Each publish takes ~5ms, so connections are rapidly reused
 
     # Celery Redis connection pool settings
-    CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
-    # Socket bounds for Celery's broker/result-backend Redis connections; without
+    CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for the Celery broker
+    # Socket bounds for Celery's broker Redis connections; without
     # them a silently dead connection blocks the worker or beat indefinitely.
     CELERY_REDIS_SOCKET_TIMEOUT: int = 30
     CELERY_REDIS_SOCKET_CONNECT_TIMEOUT: int = 15

@@ -3,11 +3,15 @@
 import importlib
 import math
 import re
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from celery.backends.base import DisabledBackend
 from celery.beat import Scheduler
+from redis.client import PubSub
+from redis.connection import ConnectionPool
 
 import app
 from app import LONG_TASK_TIMEOUTS, create_celery
@@ -169,16 +173,16 @@ def test_solo_watchdog_fires_before_redelivery(celery_conf):
 
 @pytest.fixture
 def result_subscriptions(celery_app):
-    """Records result-channel subscriptions while sent messages go nowhere"""
-    with patch.object(type(celery_app.backend), "on_task_call") as on_task_call, patch.object(
-        celery_app.amqp, "send_task_message"
-    ):
-        yield on_task_call
+    """Records Redis pub/sub subscriptions while sent messages go nowhere"""
+    with patch.object(PubSub, "subscribe") as subscribe, patch.object(celery_app.amqp, "send_task_message"):
+        yield subscribe
 
 
-def test_task_results_are_not_stored(celery_conf):
-    """Nothing reads task results, so no sender needs a result subscription"""
-    assert celery_conf.task_ignore_result is True
+def test_task_results_are_never_stored(monkeypatch):
+    """Nothing reads task results, so no process may subscribe to or store them, whatever the env sets"""
+    monkeypatch.setenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+
+    assert isinstance(create_celery().backend, DisabledBackend)
 
 
 def test_beat_dispatch_never_subscribes_to_a_result(celery_app, result_subscriptions):
@@ -186,6 +190,8 @@ def test_beat_dispatch_never_subscribes_to_a_result(celery_app, result_subscript
     celery_app.loader.import_default_modules()
     scheduler = Scheduler(app=celery_app, lazy=True)
     scheduler.merge_inplace(celery_app.conf.beat_schedule)
+    # An unregistered task takes beat's send-by-name path, whatever the env flags enable
+    scheduler.merge_inplace({"unregistered-task": {"task": "app.tasks.nowhere.unregistered", "schedule": 60.0}})
 
     for entry in list(scheduler.schedule.values()):
         scheduler.apply_async(entry, producer=MagicMock(), advance=False)
@@ -194,8 +200,15 @@ def test_beat_dispatch_never_subscribes_to_a_result(celery_app, result_subscript
 
 
 def test_tasks_sent_by_name_never_subscribe_to_a_result(celery_app, result_subscriptions):
-    """Celery's send_task ignores task_ignore_result unless the app applies it"""
+    """Beat dispatches unregistered tasks by name through send_task, which must not subscribe either"""
     for name in RUN_TASKS:
         celery_app.send_task(name, args=["run-id"], producer=MagicMock())
 
     result_subscriptions.assert_not_called()
+
+
+def test_redis_pubsub_lock_is_reentrant():
+    """A pub/sub reconnect re-subscribes under the lock it already holds; before redis 6.4 that deadlocks"""
+    pubsub = PubSub(ConnectionPool())
+
+    assert isinstance(pubsub._lock, type(threading.RLock()))
