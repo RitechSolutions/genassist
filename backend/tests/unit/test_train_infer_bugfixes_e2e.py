@@ -490,7 +490,8 @@ async def test_ordinal_number_column_encoded_alongside_text_column(tmp_path, pat
     patch_ml_models_service(ml_model)
     result = await _make_node(MLModelInferenceNode).process(
         {"modelId": str(ml_model.id),
-         "inferenceInputs": {"size": ["High", "High", "High"], "priority": [None, 2.0, 2]}}
+         "inferenceInputs": {"size": ["High"] * 4, "priority": [None, 2.0, 2, "2"]}}
     )
     assert result["status"] == "success"
-    assert result["prediction"] == pytest.approx([12.0, 12.0, 12.0], abs=0.5)
+    # "2" (text) in the same batch used to turn the 2.0 fill into "2.0" too.
+    assert result["prediction"] == pytest.approx([12.0, 12.0, 12.0, 12.0], abs=0.5)

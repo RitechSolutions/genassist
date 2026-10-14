@@ -7,6 +7,7 @@ import { Badge } from "@/components/badge";
 import {
   ChevronLeft,
   GitBranch,
+  Pencil,
   GitCompareArrows,
   Play,
   CheckCircle2,
@@ -25,6 +26,7 @@ import {
   getTestEvaluationById,
   getToolRuleResults,
   runTestEvaluation,
+  updateTestEvaluation,
 } from "@/services/testEvaluations";
 import { TestCase, TestResult, TestRun, TestSuite } from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
@@ -40,7 +42,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/resizable";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/skeleton";
 import { Progress } from "@/components/progress";
 import { PaginationBar } from "@/components/PaginationBar";
@@ -55,16 +57,18 @@ import { MetricRuleBreakdown } from "./MetricRuleBreakdown";
 import { methodLabel } from "../helpers/methodLabels";
 import {
   NOT_EVALUATED,
+  caseStatusFor,
   groupByTechnique,
   isRuleTechnique,
-  isResultFailed,
   isRunInProgress,
   isTurnScope,
-  isResultNotScored,
-  isResultPassed,
   notScoredLabel,
+  checksConversations,
+  checksVerdictText,
   runAvgAccuracy,
+  runGradesTurns,
   runFailureText,
+  runProgressText,
   runStatusLabel,
   techniqueAccuracy,
   techniqueSummaries,
@@ -72,7 +76,18 @@ import {
 } from "../helpers/runResults";
 import { checkedAgainstLine, metricSourceLabel, usesExpectedOutput } from "../helpers/metricSources";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { caseLabel, indexConversations } from "../helpers/datasetConversations";
+import { checkConversations, parseChecks } from "../helpers/checks";
+import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../helpers/evaluationForm";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
+import { getLLMProvidersMinimal } from "@/services/llmProviders";
+import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
+import { ChecksList } from "./ChecksList";
+import { EvaluationEditor } from "./EvaluationEditor";
+import type { EvaluationWizardData } from "./EvaluationWizard";
+import { useEvaluationCatalog } from "../hooks/useEvaluationData";
 
 type ResultFilter = "all" | "passed" | "failed" | "not_scored";
 
@@ -168,8 +183,15 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     Record<string, Record<string, unknown> | undefined>
   >({});
   const [suiteCases, setSuiteCases] = useState<TestCase[]>([]);
+  const [suiteCasesFor, setSuiteCasesFor] = useState<string | null>(null);
   const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
   const [runsPage, setRunsPage] = useState(1);
+  const checksEnabled = useFeatureFlagVisible(FeatureFlags.EVALUATIONS.CHECKS);
+  const [pageTab, setPageTab] = useState<"results" | "checks" | "settings">("results");
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [allSuites, setAllSuites] = useState<TestSuite[]>([]);
+  const [allWorkflows, setAllWorkflows] = useState<WorkflowMinimal[]>([]);
+  const [providers, setProviders] = useState<LLMProviderMinimal[]>([]);
 
   const [evaluation, setEvaluation] = useState<
     Awaited<ReturnType<typeof getTestEvaluationById>>
@@ -202,6 +224,8 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
         listTestSuites(),
         getWorkflowsMinimal(),
       ]);
+      setAllSuites(suites ?? []);
+      setAllWorkflows(workflows ?? []);
       const suiteData = (suites ?? []).find((item) => item.id === evaluationSuiteId);
       setSuite(suiteData ?? null);
       const workflowData = (workflows ?? []).find(
@@ -224,6 +248,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
       }
       const cases = await listTestCases(evaluation.suite_id);
       setSuiteCases(cases ?? []);
+      setSuiteCasesFor(evaluation.suite_id);
       const expectedMapping: Record<string, Record<string, unknown> | undefined> = {};
       const inputMapping: Record<string, Record<string, unknown> | undefined> = {};
       (cases ?? []).forEach((testCase) => {
@@ -353,6 +378,44 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (!checksEnabled) return;
+    getLLMProvidersMinimal()
+      .then((loaded) => setProviders(loaded ?? []))
+      .catch(() => setProviders([]));
+  }, [checksEnabled]);
+
+  const checksWorkflowId = evaluation?.workflow_id ?? suite?.workflow_id ?? undefined;
+  const checksCatalog = useEvaluationCatalog(checksWorkflowId, checksEnabled && pageTab === "checks");
+  const savedChecks = useMemo(() => parseChecks(evaluation?.technique_configs?.checks).checks, [evaluation]);
+  const datasetConversations = useMemo(() => checkConversations(suiteCases), [suiteCases]);
+
+  const handleEditorSubmit = async (data: EvaluationWizardData, options?: { run?: boolean }) => {
+    if (!evaluationId) return;
+    try {
+      const updated = await updateTestEvaluation(evaluationId, {
+        name: data.name.trim(),
+        description: data.description.trim(),
+        suite_id: data.suiteId,
+        workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
+        techniques: data.metrics,
+        technique_configs: buildTechniqueConfigs(data),
+        input_metadata: wizardMetadata(data),
+      });
+      if (!updated) return;
+      setEvaluation(updated);
+      setIsEditorOpen(false);
+      toast.success("Evaluation updated");
+      if (options?.run) await handleRunEvaluation();
+    } catch (error) {
+      toast.error(
+        isRunConflict(error)
+          ? "This evaluation is running. Wait for it to finish before editing."
+          : extractErrorMessage(error, "Failed to update evaluation"),
+      );
+    }
+  };
+
   const openRun = (runId: string | undefined) => {
     if (!runId) return;
     setSelectedRunId(runId);
@@ -383,21 +446,14 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   const caseTools = (result: TestResult): TestToolRuleResult[] =>
     result.case_id ? ruleResultsByCaseId.get(result.case_id) ?? [] : [];
 
-  const casePassed = (result: TestResult): boolean => {
-    const tools = caseTools(result);
-    const toolFailed = tools.some((t) => t.status === "failed");
-    const toolPassed = tools.some((t) => t.status === "passed");
-    if (toolFailed) return false;
-    return isResultPassed(result) || (isResultNotScored(result) && toolPassed);
-  };
+  const casePassed = (result: TestResult): boolean =>
+    caseStatusFor(result, caseTools(result)) === "passed";
 
-  const caseFailed = (result: TestResult): boolean => {
-    const toolFailed = caseTools(result).some((t) => t.status === "failed");
-    return toolFailed || (!casePassed(result) && isResultFailed(result));
-  };
+  const caseFailed = (result: TestResult): boolean =>
+    caseStatusFor(result, caseTools(result)) === "failed";
 
   const caseNotScored = (result: TestResult): boolean =>
-    !casePassed(result) && !caseFailed(result);
+    caseStatusFor(result, caseTools(result)) === "not_scored";
 
   const filterResults = () => {
     if (resultFilter === "passed") return selectedRunResults.filter(casePassed);
@@ -443,6 +499,10 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   const lastRunTotals = (lastRun?.summary_metrics as Record<string, unknown> | undefined)?.[
     RUN_TOTALS_KEY
   ] as RunTotals | undefined;
+  // A run with only checks reads by conversation; turns are not graded one by one.
+  const lastRunVerdict = checksConversations(lastRun);
+  const verdictFirst = Boolean(lastRunVerdict) && !runGradesTurns(lastRun);
+  const verdictGraded = lastRunVerdict ? lastRunVerdict.passed + lastRunVerdict.failed : 0;
 
   if (!evaluation) {
     return (
@@ -646,6 +706,293 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     );
   };
 
+  const configurationCard = (
+    <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="min-w-0">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Dataset
+          </div>
+          <div className="mt-0.5 truncate text-sm font-medium">
+            {suite?.name ?? evaluation.suite_id}
+          </div>
+        </div>
+        <div className="min-w-0">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Workflow
+          </div>
+          <div className="mt-0.5 truncate text-sm font-medium">{workflowName}</div>
+        </div>
+        <div className="sm:col-span-2">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Metrics
+          </div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {evaluation.techniques.map((technique) => (
+              <Badge key={technique} variant="secondary">
+                {methodLabel(technique)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const lastRunCard = (
+    <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Last Run
+        </div>
+        {lastRun && (
+          <button
+            type="button"
+            onClick={() => openRun(lastRun.id)}
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            View details
+          </button>
+        )}
+      </div>
+      {isLoadingRuns ? (
+        <div className="space-y-2">
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-2 w-40" />
+        </div>
+      ) : !lastRun ? (
+        <div className="text-sm text-muted-foreground">No runs yet.</div>
+      ) : (
+        <div className="space-y-2">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">Run #{lastRun.id?.slice(-4)}</span>
+              {lastRun.workflow_version && (
+                <Badge variant="outline" className="text-[10px]">
+                  v{lastRun.workflow_version}
+                </Badge>
+              )}
+              <RunStatusBadge status={lastRun.status} />
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              {new Date(lastRun.created_at ?? "").toLocaleString()}
+            </div>
+          </div>
+          {lastRun.status === "failed" ? (
+            <div className="text-sm text-red-600 dark:text-red-400">
+              {runFailureText(lastRun)}
+            </div>
+          ) : lastRun.status === "completed" && verdictFirst && lastRunVerdict && verdictGraded > 0 ? (
+            <div className="flex items-center gap-2">
+              <Progress
+                value={(lastRunVerdict.passed / verdictGraded) * 100}
+                className={cn("h-2 w-40", accuracyBarClass(lastRunVerdict.passed / verdictGraded))}
+              />
+              <span
+                className={cn("text-sm font-semibold", accuracyTextClass(lastRunVerdict.passed / verdictGraded))}
+              >
+                {checksVerdictText(lastRun)}
+              </span>
+            </div>
+          ) : lastRun.status === "completed" && verdictFirst ? (
+            <div className="text-sm text-muted-foreground">{checksVerdictText(lastRun)}</div>
+          ) : lastRun.status === "completed" && !lastRunResults ? (
+            <Skeleton className="h-5 w-40" />
+          ) : lastRunTurns && lastRunTurns.total === 0 && lastRunTurns.notEvaluated > 0 ? (
+            <div className="text-sm text-muted-foreground">
+              No turn could be graded · {lastRunTurns.notEvaluated} not evaluated
+            </div>
+          ) : lastRunTurns && lastRunTurns.total > 0 ? (
+            <div className="flex items-center gap-2">
+              <Progress
+                value={(lastRunTurns.passed / lastRunTurns.total) * 100}
+                className={cn(
+                  "h-2 w-40",
+                  accuracyBarClass(lastRunTurns.passed / lastRunTurns.total),
+                )}
+              />
+              <span
+                className={cn(
+                  "text-sm font-semibold",
+                  accuracyTextClass(lastRunTurns.passed / lastRunTurns.total),
+                )}
+              >
+                {lastRunTurns.passed} of {lastRunTurns.total} turns passed
+                {lastRunTurns.notEvaluated > 0 && (
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    · {lastRunTurns.notEvaluated} not evaluated
+                  </span>
+                )}
+              </span>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              {lastRun.status === "completed"
+                ? "No score"
+                : runProgressText(lastRun) ?? "Not scored yet"}
+            </div>
+          )}
+          {!verdictFirst && checksVerdictText(lastRun) && (
+            <div className="text-xs font-medium">Checks: {checksVerdictText(lastRun)}</div>
+          )}
+          {lastRunTotals && !verdictFirst && (
+            <div className="text-xs text-muted-foreground">
+              {lastRunTotals.scored} of {lastRunTotals.cases} turns scored
+              {lastRunTotals.execution_failed > 0 &&
+                ` · ${lastRunTotals.execution_failed} failed to execute`}
+            </div>
+          )}
+          {lastRunTotals && verdictFirst && lastRunTotals.execution_failed > 0 && (
+            <div className="text-xs text-muted-foreground">
+              {lastRunTotals.execution_failed} of {lastRunTotals.cases} turns failed to run
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  const runsCard = (
+    <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Previous Executions</h2>
+        <div className="flex items-center gap-2">
+          {finishedRunCount >= 2 && (
+            <Button variant="outline" size="sm" onClick={() => setIsCompareOpen(true)}>
+              <GitCompareArrows className="mr-1.5 h-3.5 w-3.5" />
+              Compare
+            </Button>
+          )}
+          <Badge variant="secondary" className="text-xs">
+            {runs.length} run{runs.length !== 1 ? "s" : ""}
+          </Badge>
+        </div>
+      </div>
+
+      {isLoadingRuns ? (
+        <div className="space-y-2 max-h-72 overflow-y-auto">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="space-y-2 rounded-lg border p-3">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+              <Skeleton className="h-3 w-32" />
+              <div className="flex gap-1">
+                <Skeleton className="h-5 w-20 rounded-full" />
+                <Skeleton className="h-5 w-20 rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : runs.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <Play className="mb-2 h-10 w-10 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">No runs yet</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Click "Run" to execute your first run.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {pagedRuns.map((run) => {
+            const avgAccuracy = runAvgAccuracy(run);
+            const summaries = techniqueSummaries(run);
+            return (
+              <button
+                key={run.id}
+                type="button"
+                onClick={() => openRun(run.id)}
+                className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">Run #{run.id?.slice(-4)}</span>
+                    {run.workflow_version && (
+                      <Badge variant="outline" className="text-[10px]">
+                        v{run.workflow_version}
+                      </Badge>
+                    )}
+                    {avgAccuracy !== null && (
+                      <div className="flex items-center gap-1" title={AVG_SCORE_HINT}>
+                        <Progress
+                          value={avgAccuracy * 100}
+                          className={cn(
+                            "h-1.5 w-16",
+                            avgAccuracy >= 0.9
+                              ? "[&>div]:bg-success"
+                              : avgAccuracy >= 0.7
+                                ? "[&>div]:bg-warning"
+                                : "[&>div]:bg-destructive",
+                          )}
+                        />
+                        <span className={cn("text-xs font-medium", accuracyTextClass(avgAccuracy))}>
+                          {Math.round(avgAccuracy * 100)}%
+                        </span>
+                      </div>
+                    )}
+                    {avgAccuracy === null && run.status === "completed" && (
+                      <span className="text-xs text-muted-foreground">No score</span>
+                    )}
+                  </div>
+                  <RunStatusBadge status={run.status} />
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {new Date(run.created_at ?? "").toLocaleString()}
+                </div>
+                {run.status === "failed" && (
+                  <div className="mt-1 text-xs text-red-600 dark:text-red-400">
+                    {runFailureText(run)}
+                  </div>
+                )}
+                {summaries.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
+                    {summaries.map(([tech, summary]) => {
+                      const acc = techniqueAccuracy(summary);
+                      let colorClasses = "bg-muted text-muted-foreground border border-border";
+                      if (acc !== null) {
+                        if (acc >= 0.9) {
+                          colorClasses =
+                            "bg-green-50 text-green-700 border border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/30";
+                        } else if (acc >= 0.7) {
+                          colorClasses =
+                            "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/30";
+                        } else {
+                          colorClasses =
+                            "bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/30";
+                        }
+                      }
+                      return (
+                        <span
+                          key={tech}
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 ${colorClasses}`}
+                        >
+                          <span className="mr-1 font-semibold">{methodLabel(tech)}</span>
+                          <span>{acc !== null ? `${Math.round(acc * 100)}%` : NOT_EVALUATED}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {!isLoadingRuns && runs.length > RUNS_PAGE_SIZE && (
+        <PaginationBar
+          total={runs.length}
+          currentPage={runsSafePage}
+          pageSize={RUNS_PAGE_SIZE}
+          pageItemCount={pagedRuns.length}
+          onPageChange={setRunsPage}
+        />
+      )}
+    </div>
+  );
+
   return (
     <>
       {/* Header: back arrow + evaluation name + Run */}
@@ -686,6 +1033,16 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
               />
             </TooltipProvider>
           )}
+          {checksEnabled && (
+            <Button
+              variant="outline"
+              onClick={() => setIsEditorOpen(true)}
+              disabled={isRunning}
+              icon={<Pencil className="h-4 w-4" />}
+            >
+              Edit
+            </Button>
+          )}
           <Button
             onClick={() => handleRunEvaluation()}
             disabled={isRunning}
@@ -701,258 +1058,65 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
         </div>
       </div>
 
-      {/* Configuration + Last Run summary */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Configuration */}
-        <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="min-w-0">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Dataset
-              </div>
-              <div className="mt-0.5 truncate text-sm font-medium">
-                {suite?.name ?? evaluation.suite_id}
-              </div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Workflow
-              </div>
-              <div className="mt-0.5 truncate text-sm font-medium">{workflowName}</div>
-            </div>
-            <div className="sm:col-span-2">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Metrics
-              </div>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {evaluation.techniques.map((technique) => (
-                  <Badge key={technique} variant="secondary">
-                    {methodLabel(technique)}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Last Run Details */}
-        <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Last Run
-            </div>
-            {lastRun && (
-              <button
-                type="button"
-                onClick={() => openRun(lastRun.id)}
-                className="text-xs font-medium text-primary hover:underline"
-              >
-                View details
-              </button>
-            )}
-          </div>
-          {isLoadingRuns ? (
-            <div className="space-y-2">
-              <Skeleton className="h-5 w-32" />
-              <Skeleton className="h-2 w-40" />
-            </div>
-          ) : !lastRun ? (
-            <div className="text-sm text-muted-foreground">No runs yet.</div>
-          ) : (
-            <div className="space-y-2">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">Run #{lastRun.id?.slice(-4)}</span>
-                  {lastRun.workflow_version && (
-                    <Badge variant="outline" className="text-[10px]">
-                      v{lastRun.workflow_version}
-                    </Badge>
-                  )}
-                  <RunStatusBadge status={lastRun.status} />
-                </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {new Date(lastRun.created_at ?? "").toLocaleString()}
-                </div>
-              </div>
-              {lastRun.status === "failed" ? (
-                <div className="text-sm text-red-600 dark:text-red-400">
-                  {runFailureText(lastRun)}
-                </div>
-              ) : lastRun.status === "completed" && !lastRunResults ? (
-                <Skeleton className="h-5 w-40" />
-              ) : lastRunTurns && lastRunTurns.total > 0 ? (
-                <div className="flex items-center gap-2">
-                  <Progress
-                    value={(lastRunTurns.passed / lastRunTurns.total) * 100}
-                    className={cn(
-                      "h-2 w-40",
-                      accuracyBarClass(lastRunTurns.passed / lastRunTurns.total),
-                    )}
-                  />
-                  <span
-                    className={cn(
-                      "text-sm font-semibold",
-                      accuracyTextClass(lastRunTurns.passed / lastRunTurns.total),
-                    )}
-                  >
-                    {lastRunTurns.passed} of {lastRunTurns.total} turns passed
-                  </span>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  {lastRun.status === "completed" ? "No score" : "Not scored yet"}
-                </div>
-              )}
-              {lastRunTotals && (
-                <div className="text-xs text-muted-foreground">
-                  {lastRunTotals.scored} of {lastRunTotals.cases} turns scored
-                  {lastRunTotals.execution_failed > 0 &&
-                    ` · ${lastRunTotals.execution_failed} failed to execute`}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Runs as cards */}
-      <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Previous Executions</h2>
-          <div className="flex items-center gap-2">
-            {finishedRunCount >= 2 && (
-              <Button variant="outline" size="sm" onClick={() => setIsCompareOpen(true)}>
-                <GitCompareArrows className="mr-1.5 h-3.5 w-3.5" />
-                Compare
+      {checksEnabled ? (
+        <Tabs value={pageTab} onValueChange={(value) => setPageTab(value as typeof pageTab)} className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="results">Results</TabsTrigger>
+            <TabsTrigger value="checks">Checks{savedChecks.length ? ` (${savedChecks.length})` : ""}</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
+          </TabsList>
+          <TabsContent value="results" className="space-y-4">
+            {lastRunCard}
+            {runsCard}
+          </TabsContent>
+          <TabsContent value="checks" className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                What should and should not happen in this dataset's conversations.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => setIsEditorOpen(true)} disabled={isRunning}>
+                Edit checks
               </Button>
-            )}
-            <Badge variant="secondary" className="text-xs">
-              {runs.length} run{runs.length !== 1 ? "s" : ""}
-            </Badge>
-          </div>
-        </div>
-
-        {isLoadingRuns ? (
-          <div className="space-y-2 max-h-72 overflow-y-auto">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="space-y-2 rounded-lg border p-3">
-                <div className="flex items-center justify-between">
-                  <Skeleton className="h-5 w-24" />
-                  <Skeleton className="h-5 w-16 rounded-full" />
-                </div>
-                <Skeleton className="h-3 w-32" />
-                <div className="flex gap-1">
-                  <Skeleton className="h-5 w-20 rounded-full" />
-                  <Skeleton className="h-5 w-20 rounded-full" />
-                </div>
+            </div>
+            {savedChecks.length ? (
+              <ChecksList
+                checks={savedChecks}
+                conversations={datasetConversations}
+                conversationsReady={Boolean(evaluation?.suite_id) && suiteCasesFor === evaluation?.suite_id}
+                catalog={checksCatalog}
+              />
+            ) : (
+              <div className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+                This evaluation has no checks yet.
               </div>
-            ))}
+            )}
+          </TabsContent>
+          <TabsContent value="settings" className="space-y-3">
+            {configurationCard}
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {configurationCard}
+            {lastRunCard}
           </div>
-        ) : runs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center">
-            <Play className="mb-2 h-10 w-10 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">No runs yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Click "Run" to execute your first run.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {pagedRuns.map((run) => {
-              const avgAccuracy = runAvgAccuracy(run);
-              const summaries = techniqueSummaries(run);
-              return (
-                <button
-                  key={run.id}
-                  type="button"
-                  onClick={() => openRun(run.id)}
-                  className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">Run #{run.id?.slice(-4)}</span>
-                      {run.workflow_version && (
-                        <Badge variant="outline" className="text-[10px]">
-                          v{run.workflow_version}
-                        </Badge>
-                      )}
-                      {avgAccuracy !== null && (
-                        <div className="flex items-center gap-1" title={AVG_SCORE_HINT}>
-                          <Progress
-                            value={avgAccuracy * 100}
-                            className={cn(
-                              "h-1.5 w-16",
-                              avgAccuracy >= 0.9
-                                ? "[&>div]:bg-success"
-                                : avgAccuracy >= 0.7
-                                  ? "[&>div]:bg-warning"
-                                  : "[&>div]:bg-destructive",
-                            )}
-                          />
-                          <span className={cn("text-xs font-medium", accuracyTextClass(avgAccuracy))}>
-                            {Math.round(avgAccuracy * 100)}%
-                          </span>
-                        </div>
-                      )}
-                      {avgAccuracy === null && run.status === "completed" && (
-                        <span className="text-xs text-muted-foreground">No score</span>
-                      )}
-                    </div>
-                    <RunStatusBadge status={run.status} />
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {new Date(run.created_at ?? "").toLocaleString()}
-                  </div>
-                  {run.status === "failed" && (
-                    <div className="mt-1 text-xs text-red-600 dark:text-red-400">
-                      {runFailureText(run)}
-                    </div>
-                  )}
-                  {summaries.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
-                      {summaries.map(([tech, summary]) => {
-                        const acc = techniqueAccuracy(summary);
-                        let colorClasses = "bg-muted text-muted-foreground border border-border";
-                        if (acc !== null) {
-                          if (acc >= 0.9) {
-                            colorClasses =
-                              "bg-green-50 text-green-700 border border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/30";
-                          } else if (acc >= 0.7) {
-                            colorClasses =
-                              "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/30";
-                          } else {
-                            colorClasses =
-                              "bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/30";
-                          }
-                        }
-                        return (
-                          <span
-                            key={tech}
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 ${colorClasses}`}
-                          >
-                            <span className="mr-1 font-semibold">{methodLabel(tech)}</span>
-                            <span>{acc !== null ? `${Math.round(acc * 100)}%` : NOT_EVALUATED}</span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
+          {runsCard}
+        </>
+      )}
 
-        {!isLoadingRuns && runs.length > RUNS_PAGE_SIZE && (
-          <PaginationBar
-            total={runs.length}
-            currentPage={runsSafePage}
-            pageSize={RUNS_PAGE_SIZE}
-            pageItemCount={pagedRuns.length}
-            onPageChange={setRunsPage}
-          />
-        )}
-      </div>
+      {checksEnabled && isEditorOpen && (
+        <EvaluationEditor
+          isOpen={isEditorOpen}
+          onOpenChange={setIsEditorOpen}
+          onSubmit={handleEditorSubmit}
+          suites={allSuites}
+          workflows={allWorkflows}
+          providers={providers}
+          mode="edit"
+          initialData={getEditInitialData(evaluation, providers)}
+        />
+      )}
 
       {/* Run Details — big dialog with columns (Test Workflow style) */}
       <Dialog
@@ -1021,7 +1185,11 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
                                       <span className={cn("text-lg font-semibold", accuracyTextClass(acc))}>
                                         {Math.round(acc * 100)}%
                                       </span>
-                                      {typeof summary.cases === "number" && (
+                                      {tech === "checks" && checksConversations(selectedRun) ? (
+                                        <span className="text-xs text-muted-foreground">
+                                          {checksConversations(selectedRun)?.total} conversations
+                                        </span>
+                                      ) : typeof summary.cases === "number" && (
                                         <span className="text-xs text-muted-foreground">
                                           {summary.cases} {isRuleTechnique(tech) ? "checks" : "turns"}
                                         </span>
@@ -1091,7 +1259,11 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
                   </div>
                   <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
                     {selectedRunRuleResults.length > 0 && (
-                      <RuleResults results={selectedRunRuleResults} labels={conversationIndex} />
+                      <RuleResults
+                        results={selectedRunRuleResults}
+                        labels={conversationIndex}
+                        checksVerdict={checksVerdictText(selectedRun)}
+                      />
                     )}
 
                     {isLoadingResults ? (

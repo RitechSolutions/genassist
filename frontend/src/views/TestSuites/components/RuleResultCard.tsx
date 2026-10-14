@@ -16,12 +16,14 @@ const STATUS_META = {
   not_evaluated: { icon: MinusCircle, className: "text-muted-foreground", border: "border-l-muted", label: "Not evaluated" },
 } as const;
 
-const scopeLabel = (scope: string): string =>
-  scope === "conversation"
-    ? "Whole conversation"
-    : scope === "specific_turn"
-      ? "Specific turn"
-      : "Every turn";
+const SCOPE_LABELS: Record<string, string> = {
+  conversation: "Whole conversation",
+  every_conversation: "Every conversation",
+  specific_turn: "Specific turn",
+  turn: "One turn",
+};
+
+const scopeLabel = (scope: string): string => SCOPE_LABELS[scope] ?? "Every turn";
 
 const targetLine = (details: ToolRuleResultDetails): string | null => {
   const target = details.target;
