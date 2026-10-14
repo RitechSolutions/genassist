@@ -1,12 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getTranslationArray } from '../utils/i18n';
-import type { Translations } from '../types';
+import { getTranslationArray, getTranslationString } from '../utils/i18n';
+import type { ActivityKind, Translations } from '../types';
+
+const ACTIVITY_LABEL_FALLBACKS: Record<ActivityKind, string> = {
+  knowledge: 'Searching the knowledge base…',
+  tool: 'Working on your request…',
+};
 
 interface UseThinkingAnimationOptions {
   isAgentTyping: boolean;
   thinkingPhrases: string[] | undefined;
   thinkingDelayMs: number | undefined;
   translations: Translations;
+  activityKind: ActivityKind | undefined;
 }
 
 export function useThinkingAnimation({
@@ -14,6 +20,7 @@ export function useThinkingAnimation({
   thinkingPhrases,
   thinkingDelayMs,
   translations,
+  activityKind,
 }: UseThinkingAnimationOptions) {
   const DEFAULT_THINKING_MESSAGES = useMemo(
     () => getTranslationArray('thinking.messages', translations, [
@@ -67,8 +74,13 @@ export function useThinkingAnimation({
     };
   }, [isAgentTyping, thinkingPhrases, thinkingDelayMs]);
 
+  const activityLabel = activityKind
+    ? getTranslationString(`thinking.activity.${activityKind}`, translations, ACTIVITY_LABEL_FALLBACKS[activityKind])
+    : undefined;
+
   return {
     currentThinkingParts,
     currentThinkingPartIndex,
+    activityLabel,
   };
 }

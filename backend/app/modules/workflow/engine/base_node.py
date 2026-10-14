@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Literal, Optional
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
+from app.core import turn_stream
 from app.core.exceptions.error_messages import ErrorKey, get_error_message
 from app.core.exceptions.error_policy import (
     client_safe_error_detail,
@@ -438,6 +439,7 @@ class BaseNode(ABC):
             else nullcontext()
         )
 
+        turn_stream.emit_node_activity(self.get_type(), "start")
         try:
             with span_cm as span:
                 try:
@@ -571,6 +573,7 @@ class BaseNode(ABC):
                     return node_failure(error_msg, code=500)
         finally:
             record_workflow_node_duration(self.get_type(), time.perf_counter() - t0, success)
+            turn_stream.emit_node_activity(self.get_type(), "end")
 
     @abstractmethod
     async def process(self, config: Dict[str, Any]) -> Any:

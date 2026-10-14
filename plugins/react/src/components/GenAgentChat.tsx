@@ -238,6 +238,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     possibleQueries,
     isFinalized,
     isAgentTyping,
+    streaming,
     addFeedback,
     readState,
     markRead,
@@ -273,15 +274,17 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     onConfigLoaded,
   });
 
-  const { currentThinkingParts, currentThinkingPartIndex } = useThinkingAnimation({
+  const { currentThinkingParts, currentThinkingPartIndex, activityLabel } = useThinkingAnimation({
     isAgentTyping,
     thinkingPhrases,
     thinkingDelayMs,
     translations,
+    activityKind: streaming?.running[streaming.running.length - 1],
   });
 
   const { messagesEndRef, chatContainerRef, showScrollButton, scrollToLatest } = useScrollManagement({
     messages,
+    streamingText: streaming?.text,
     isAgentTyping,
     currentThinkingPartIndex,
     currentThinkingPartsLength: currentThinkingParts.length,
@@ -1488,9 +1491,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           );
         });
       })()}
+      {streaming?.text && renderLiveBubble('agent', streaming.text, streaming.createTime, '__streaming_reply__')}
       {isAgentTyping && currentThinkingParts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '80%' }}>
-          <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>{agentName || t('labels.agent')}</div>
+          {!streaming?.text && (
+            <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>{agentName || t('labels.agent')}</div>
+          )}
           <div style={{
             backgroundColor: 'transparent',
             padding: 0,
@@ -1498,7 +1504,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             maxWidth: '100%',
           }}>
             <div
-              key={`${currentThinkingPartIndex}-${currentThinkingParts.join('|')}`}
+              key={`${activityLabel ?? currentThinkingPartIndex}-${currentThinkingParts.join('|')}`}
               style={{
                 animation: 'ga-think-change 220ms ease',
                 willChange: 'transform, opacity',
@@ -1506,7 +1512,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 fontSize: '13px',
               }}
             >
-              {currentThinkingParts[currentThinkingPartIndex] || currentThinkingParts[currentThinkingParts.length - 1]}
+              {activityLabel ?? (currentThinkingParts[currentThinkingPartIndex] || currentThinkingParts[currentThinkingParts.length - 1])}
             </div>
           </div>
         </div>

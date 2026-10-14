@@ -3,6 +3,7 @@ import { ChatMessage } from '../types';
 
 interface UseScrollManagementOptions {
   messages: ChatMessage[];
+  streamingText?: string;
   isAgentTyping: boolean;
   currentThinkingPartIndex: number;
   currentThinkingPartsLength: number;
@@ -13,6 +14,7 @@ interface UseScrollManagementOptions {
 
 export function useScrollManagement({
   messages,
+  streamingText,
   isAgentTyping,
   currentThinkingPartIndex,
   currentThinkingPartsLength,
@@ -86,7 +88,7 @@ export function useScrollManagement({
     } else {
       anchorHistory();
     }
-  }, [messages]);
+  }, [messages, streamingText]);
 
   useLayoutEffect(() => {
     if (!isAgentTyping) return;
