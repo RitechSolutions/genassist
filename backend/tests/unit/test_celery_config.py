@@ -4,8 +4,10 @@ import importlib
 import math
 import re
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
+from celery.beat import Scheduler
 
 import app
 from app import LONG_TASK_TIMEOUTS, create_celery
@@ -163,3 +165,37 @@ def test_solo_watchdog_fires_before_redelivery(celery_conf):
     assert celery_conf.task_time_limit + GRACE_SECONDS < visibility_timeout
     for name, limits in celery_conf.task_annotations.items():
         assert limits["time_limit"] + GRACE_SECONDS < visibility_timeout, name
+
+
+@pytest.fixture
+def result_subscriptions(celery_app):
+    """Records result-channel subscriptions while sent messages go nowhere"""
+    with patch.object(type(celery_app.backend), "on_task_call") as on_task_call, patch.object(
+        celery_app.amqp, "send_task_message"
+    ):
+        yield on_task_call
+
+
+def test_task_results_are_not_stored(celery_conf):
+    """Nothing reads task results, so no sender needs a result subscription"""
+    assert celery_conf.task_ignore_result is True
+
+
+def test_beat_dispatch_never_subscribes_to_a_result(celery_app, result_subscriptions):
+    """Beat never reads its subscriptions, so their replies pile up until Redis drops the connection"""
+    celery_app.loader.import_default_modules()
+    scheduler = Scheduler(app=celery_app, lazy=True)
+    scheduler.merge_inplace(celery_app.conf.beat_schedule)
+
+    for entry in list(scheduler.schedule.values()):
+        scheduler.apply_async(entry, producer=MagicMock(), advance=False)
+
+    result_subscriptions.assert_not_called()
+
+
+def test_tasks_sent_by_name_never_subscribe_to_a_result(celery_app, result_subscriptions):
+    """Celery's send_task ignores task_ignore_result unless the app applies it"""
+    for name in RUN_TASKS:
+        celery_app.send_task(name, args=["run-id"], producer=MagicMock())
+
+    result_subscriptions.assert_not_called()

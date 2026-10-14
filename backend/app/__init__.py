@@ -318,6 +318,14 @@ def _long_task_time_limits() -> dict:
     }
 
 
+class _IgnoreResultCelery(Celery):
+    """Applies task_ignore_result to send_task too; Celery only applies it to Task.apply_async."""
+
+    def send_task(self, name, *args, **options):
+        options.setdefault("ignore_result", self.conf.task_ignore_result)
+        return super().send_task(name, *args, **options)
+
+
 def create_celery():
     """
     Create and configure the Celery application.
@@ -356,7 +364,7 @@ def create_celery():
     if settings.CELERY_INCLUDE_ML_TASKS:
         include += ML_TASK_MODULES
 
-    celery_app = Celery(
+    celery_app = _IgnoreResultCelery(
         "genassist_celery_tasks",
         broker=settings.REDIS_URL,
         backend=settings.REDIS_URL,
@@ -399,6 +407,8 @@ def create_celery():
         timezone="UTC",
         enable_utc=True,
         task_track_started=True,
+        # Nothing reads task results, so senders skip the result-channel subscription
+        task_ignore_result=True,
         # Ack after completion so a job survives a worker killed or moved mid-task.
         # A job whose child process dies is not requeued: that death is usually
         # deterministic for the job, and requeueing it would loop forever. A redelivered
