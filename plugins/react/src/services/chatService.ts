@@ -901,9 +901,11 @@ export class ChatService {
     * the saved conversation comes from the `done` frame, or from the JSON body if the backend doesn't stream.
   */
   private async updateConversation(requestBody: unknown): Promise<any> {
+    // Browsers that can't read a body as it arrives ask for the plain JSON reply instead.
+    const canReadStream = "body" in Response.prototype;
     const res = await fetch(`${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`, {
       method: "PATCH",
-      headers: { ...this.getHeaders(), Accept: "text/event-stream" },
+      headers: canReadStream ? { ...this.getHeaders(), Accept: "text/event-stream" } : this.getHeaders(),
       body: JSON.stringify(requestBody),
     });
     if (!res.ok) throw httpError(res.status, await readBody(res));

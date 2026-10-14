@@ -13,6 +13,7 @@ from uuid import UUID
 
 from fastapi import Request
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
 from app.core.exceptions.exception_handler import stream_error_body
 from app.core.utils.background_tasks import spawn
@@ -113,7 +114,7 @@ def stream_turn(request: Request, run_turn: Callable[[], Awaitable[dict]], conve
             stream.emit("done", conversation=payload)
         except Exception as e:
             body = stream_error_body(request, e)
-            outcome = body.get("error_key") or f"http_{body['error_code']}"
+            outcome = f"{body['error_code']} {body.get('error_key') or ''}".rstrip()
             stream.emit("error", **body)
         finally:
             stream.close()
@@ -124,9 +125,11 @@ def stream_turn(request: Request, run_turn: Callable[[], Awaitable[dict]], conve
                 conversation_id,
             )
 
-    spawn(run(), name=f"chat-turn:{conversation_id}")
+    task = spawn(run(), name=f"chat-turn:{conversation_id}")
     return StreamingResponse(
         stream.frames(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        # Holds the request open until the turn ends, even after a disconnect, so a graceful shutdown waits for it.
+        background=BackgroundTask(asyncio.wait, [task]),
     )

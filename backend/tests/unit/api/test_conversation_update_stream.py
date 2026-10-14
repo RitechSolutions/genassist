@@ -15,7 +15,6 @@ from app.api.v1.routes import conversations as route
 from app.core import turn_stream
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils import background_tasks
 from app.middlewares.rate_limit_middleware import limiter
 from app.middlewares.read_after_write_middleware import ReadAfterWriteMiddleware
 
@@ -152,7 +151,7 @@ def test_unexpected_failure_sends_a_generic_error_without_its_message(turn):
 
 
 @pytest.mark.asyncio
-async def test_turn_finishes_after_the_client_disconnects(turn):
+async def test_request_stays_open_until_the_turn_ends_after_a_disconnect(turn):
     app, state = turn
     pending = [{"type": "http.request", "body": json.dumps(BODY).encode(), "more_body": False}]
     sent = []
@@ -179,9 +178,6 @@ async def test_turn_finishes_after_the_client_disconnects(turn):
     }
 
     await app(scope, receive, send)
-    assert state.finished is False
-
-    await background_tasks.drain()
 
     assert state.finished is True
     assert state.calls[-1] == "remember"

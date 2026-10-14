@@ -470,6 +470,17 @@ describe("sendMessage over a streamed response", () => {
     expect(anchored).toEqual([{ client_id: shown[0].client_id, message_id: "m-3", sequence_number: 3 }]);
   });
 
+  it("asks for plain JSON when the browser cannot read a streamed body", async () => {
+    const json = new Response(JSON.stringify(savedTurn), { status: 200, headers: { "content-type": "application/json" } });
+    vi.stubGlobal("Response", class {});
+    const { shown, sending } = await send(json);
+
+    await sending;
+
+    expect(fetchMock.mock.calls[0][1].headers.Accept).toBeUndefined();
+    expect(shown.filter((message) => message.speaker === "agent").map((message) => message.text)).toEqual(["Hi there"]);
+  });
+
   it("turns an error frame into an error carrying the HTTP-style response", async () => {
     const { service, sending } = await send(
       streamResponse('event: error\ndata: {"error": "Service unavailable", "error_code": 503, "error_key": "SERVICE_BUSY"}\n\n'),
