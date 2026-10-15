@@ -1,4 +1,5 @@
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -9,6 +10,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.repositories.ml_models import MLModelsRepository
 from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate
+from app.services import ml_models as ml_models_module
 from app.services.ml_models import (
     MLModelsService,
     merge_model_inference_params,
@@ -162,3 +164,111 @@ async def test_service_rejects_feature_update_that_orphans_a_default():
     assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
     assert "lag_24" in exc.value.error_detail
     repository.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_service_rejects_create_when_artifact_contract_mismatches(monkeypatch):
+    repository = MagicMock()
+    repository.get_by_name = AsyncMock(return_value=None)
+    repository.create = AsyncMock()
+    validation_error = AppException(
+        error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+        error_detail="Model registry fields do not match the uploaded model artifact.",
+    )
+    validator = AsyncMock(side_effect=validation_error)
+    monkeypatch.setattr(
+        ml_models_module,
+        "validate_model_artifact_registration",
+        validator,
+    )
+    service = MLModelsService(repository)
+    model = MLModelCreate(
+        name="forecast",
+        description="Forecast model",
+        model_type="linear_regression",
+        features=["hour"],
+        target_variable="revenue",
+        pkl_file="model.pkl",
+    )
+
+    with pytest.raises(AppException) as exc:
+        await service.create(model)
+
+    assert exc.value is validation_error
+    validator.assert_awaited_once_with(
+        "model.pkl",
+        None,
+        ["hour"],
+        "revenue",
+    )
+    repository.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_service_validates_effective_fields_when_features_change(monkeypatch):
+    model_id = uuid4()
+    existing = SimpleNamespace(
+        features=["hour"],
+        target_variable="revenue",
+        pkl_file="model.pkl",
+        pkl_file_id=None,
+        inference_params=None,
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=existing)
+    repository.update = AsyncMock(return_value=existing)
+    validator = AsyncMock()
+    monkeypatch.setattr(
+        ml_models_module,
+        "validate_model_artifact_registration",
+        validator,
+    )
+    service = MLModelsService(repository)
+
+    await service.update(model_id, MLModelUpdate(features=["hour", "lag_24"]))
+
+    validator.assert_awaited_once_with(
+        "model.pkl",
+        None,
+        ["hour", "lag_24"],
+        "revenue",
+    )
+    repository.update.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_service_does_not_revalidate_unchanged_legacy_contract_fields(
+    monkeypatch,
+):
+    model_id = uuid4()
+    existing = SimpleNamespace(
+        features=["hour"],
+        target_variable="revenue",
+        pkl_file="legacy.pkl",
+        pkl_file_id=None,
+        inference_params=None,
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=existing)
+    repository.update = AsyncMock(return_value=existing)
+    validator = AsyncMock()
+    monkeypatch.setattr(
+        ml_models_module,
+        "validate_model_artifact_registration",
+        validator,
+    )
+    service = MLModelsService(repository)
+
+    await service.update(
+        model_id,
+        MLModelUpdate(
+            description="Updated description",
+            features=["hour"],
+            target_variable="revenue",
+            pkl_file="legacy.pkl",
+            pkl_file_id=None,
+        ),
+    )
+
+    validator.assert_not_awaited()
+    repository.update.assert_awaited_once()
