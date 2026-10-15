@@ -65,6 +65,8 @@ export interface DateRangePickerProps {
   triggerClassName?: string;
   /** When true, dates after today cannot be selected (default: false). */
   disableFutureDates?: boolean;
+  /** When true, the trigger is disabled and the picker cannot be opened (default: false). */
+  disabled?: boolean;
 }
 
 function clampRangeToToday(range: DateRange | undefined): DateRange | undefined {
@@ -91,6 +93,7 @@ export const DateRangePicker = ({
   numberOfMonths = 2,
   triggerClassName,
   disableFutureDates = false,
+  disabled = false,
 }: DateRangePickerProps) => {
   const presets = useMemo(() => customPresets ?? getDefaultPresets(), [customPresets]);
   const todayEnd = useMemo(() => endOfDay(new Date()), []);
@@ -122,6 +125,7 @@ export const DateRangePicker = ({
         <Button
           variant="outline"
           className={cn("gap-2 min-w-[200px] justify-start", triggerClassName)}
+          disabled={disabled}
         >
           <CalendarIcon className="h-4 w-4 text-muted-foreground" />
           <span>{label}</span>
