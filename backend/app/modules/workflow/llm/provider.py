@@ -114,6 +114,10 @@ async def build_chat_model(
     if provider in ("openai", "azure_openai"):
         model_kwargs["stream_usage"] = True
 
+    # langchain-aws 1.2.0 doesn't list Nova 2 Lite as streaming-capable and would answer streamed turns in one piece.
+    if original_provider == "bedrock" and "nova-2-lite" in str(model_name).lower():
+        model_kwargs["disable_streaming"] = False
+
     # Native Opik LLM tracing: attach the OpikTracer callback at construction so every
     # invocation of this model (including nested agent loops) is traced. No-op unless
     # USE_OPIK is enabled.
