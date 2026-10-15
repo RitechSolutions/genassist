@@ -12,6 +12,7 @@ from app.db.models.file import FileModel
 from app.db.models.ml_model import MLModel
 from app.repositories.ml_models import MLModelsRepository
 from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM, MLModelCreate, MLModelUpdate
+from app.services.ml_model_artifacts import validate_model_artifact_registration
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,13 @@ class MLModelsService:
                 error_key=ErrorKey.ML_MODEL_NAME_EXISTS
             )
 
+        await validate_model_artifact_registration(
+            ml_model.pkl_file,
+            ml_model.pkl_file_id,
+            ml_model.features,
+            ml_model.target_variable,
+        )
+
         db_ml_model = await self.repository.create(ml_model)
         return db_ml_model
 
@@ -147,14 +155,33 @@ class MLModelsService:
     async def update(self, ml_model_id: UUID, ml_model_update: MLModelUpdate) -> MLModel:
         """Update an existing ML model."""
         update_data = ml_model_update.model_dump(exclude_unset=True)
+        contract_fields = {"features", "target_variable", "pkl_file", "pkl_file_id"}
+        existing_model = None
+
+        if (
+            contract_fields.intersection(update_data)
+            or "inference_params" in update_data
+        ):
+            existing_model = await self.repository.get_by_id(ml_model_id)
 
         if "features" in update_data or "inference_params" in update_data:
-            existing_model = await self.repository.get_by_id(ml_model_id)
             feature_names = update_data.get("features", existing_model.features)
             inference_params = update_data.get(
                 "inference_params", existing_model.inference_params
             )
             validate_model_inference_params(feature_names, inference_params)
+
+        contract_changed = existing_model is not None and any(
+            update_data[field] != getattr(existing_model, field)
+            for field in contract_fields.intersection(update_data)
+        )
+        if contract_changed:
+            await validate_model_artifact_registration(
+                update_data.get("pkl_file", existing_model.pkl_file),
+                update_data.get("pkl_file_id", existing_model.pkl_file_id),
+                update_data.get("features", existing_model.features),
+                update_data.get("target_variable", existing_model.target_variable),
+            )
 
         # If name is being updated, check for uniqueness
         if 'name' in update_data:
