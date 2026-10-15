@@ -54,3 +54,77 @@ def test_first_activity_is_logged_once(caplog):
         stream.emit("done", conversation={})
 
     assert [record.getMessage().split(" after ")[0] for record in caplog.records] == ["First activity"]
+
+
+def test_reply_text_streams_while_envelopes_stay_muted():
+    stream = TurnStream("c1")
+    stream.delta("n1", "reply", "  ")
+    stream.delta("n1", "reply", "Hello")
+    stream.delta("n1", "envelope", ' {"message"')
+    stream.delta("n1", "reply", " there")
+    stream.delta("n1", "fence", "`")
+    stream.delta("n1", "fence", "``json")
+    stream.delta("n1", "envelope", ': "hi"}')
+
+    frames = [stream.queue.get_nowait() for _ in range(stream.queue.qsize())]
+    assert frames == [
+        'event: delta\ndata: {"call_id": "reply", "text": "Hello"}\n\n',
+        'event: delta\ndata: {"call_id": "reply", "text": " there"}\n\n',
+    ]
+    assert stream.shown_text() == "Hello there"
+
+
+def test_a_tool_start_clears_the_shown_reply_as_the_widget_does():
+    stream = TurnStream("c1")
+    token = current_stream.set(stream)
+    try:
+        stream.delta("n1", "scratch", "Let me check")
+        turn_stream.emit_activity("tool", "start")
+        shown_during_tool = stream.shown_text()
+        stream.delta("n1", "answer", "Done")
+    finally:
+        current_stream.reset(token)
+
+    assert shown_during_tool is None
+    assert stream.shown_text() == "Done"
+
+
+def test_a_final_reply_holds_off_activity_starts_until_new_text_streams():
+    stream = TurnStream("c1")
+    token = current_stream.set(stream)
+    try:
+        stream.delta("n1", "answer", "Done")
+        turn_stream.end_reply("n1")
+        turn_stream.emit_activity("tool", "start")
+        turn_stream.emit_activity("knowledge", "end")
+        stream.delta("n1", "next", "More")
+        turn_stream.emit_activity("tool", "start")
+    finally:
+        current_stream.reset(token)
+
+    assert [stream.queue.get_nowait() for _ in range(stream.queue.qsize())] == [
+        'event: delta\ndata: {"call_id": "answer", "text": "Done"}\n\n',
+        'event: activity\ndata: {"kind": "knowledge", "phase": "end"}\n\n',
+        'event: delta\ndata: {"call_id": "next", "text": "More"}\n\n',
+        'event: activity\ndata: {"kind": "tool", "phase": "start"}\n\n',
+    ]
+
+
+def test_a_second_node_cannot_interleave_with_the_reply_in_progress():
+    stream = TurnStream("c1")
+    stream.delta("a", "call-a", "Hello")
+    stream.delta("b", "call-b", "Other")
+    stream.end_reply("b")
+    stream.activity("tool", "start")
+    stream.delta("a", "call-a", " there")
+    stream.end_reply("a")
+    stream.delta("b", "call-b", " late")
+    stream.delta("b", "call-c", "Next")
+
+    assert [stream.queue.get_nowait() for _ in range(stream.queue.qsize())] == [
+        'event: delta\ndata: {"call_id": "call-a", "text": "Hello"}\n\n',
+        'event: activity\ndata: {"kind": "tool", "phase": "start"}\n\n',
+        'event: delta\ndata: {"call_id": "call-a", "text": " there"}\n\n',
+        'event: delta\ndata: {"call_id": "call-c", "text": "Next"}\n\n',
+    ]
+    assert stream.shown_text() == "Next"

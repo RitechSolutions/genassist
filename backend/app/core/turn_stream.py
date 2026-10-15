@@ -8,6 +8,7 @@ import json
 import logging
 import time
 from contextvars import ContextVar
+from functools import partial
 from typing import Any, AsyncIterator, Awaitable, Callable, Literal, Optional
 from uuid import UUID
 
@@ -27,6 +28,8 @@ KEEPALIVE_SECONDS = 15
 
 ActivityKind = Literal["knowledge", "tool"]
 ActivityPhase = Literal["start", "end"]
+# Called with (call_id, text) as one model call writes its reply.
+TokenSink = Callable[[str, str], None]
 
 # Node types whose work the chat widget may label. Only the coarse kind leaves the backend;
 # node names, ids and types never do, and unlisted types send nothing.
@@ -54,11 +57,54 @@ current_stream: ContextVar[Optional["TurnStream"]] = ContextVar("turn_stream", d
 
 
 class TurnStream:
+
     def __init__(self, conversation_id: str) -> None:
         self.conversation_id = conversation_id
         self.queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
         self.started = time.monotonic()
         self.first_seen: set[str] = set()
+        self._calls: dict[str, Optional[str]] = {}
+        self._shown_call: Optional[str] = None
+        self._reply_final = False
+        self._replying_node: Optional[str] = None
+        self._text_withheld = False
+
+    def withhold_text(self) -> None:
+        self._text_withheld = True
+
+    def text_sink(self, node_id: str) -> Optional[TokenSink]:
+        return None if self._text_withheld else partial(self.delta, node_id)
+
+    def delta(self, node_id: str, call_id: str, text: str) -> None:
+        """Stream reply text from one model call"""
+        if call_id not in self._calls:
+            head = text.lstrip()
+            if not head:
+                return
+            muted = head[0] in "{`" or self._replying_node not in (None, node_id)
+            self._calls[call_id] = None if muted else ""
+            if not muted:
+                self._replying_node = node_id
+        if self._calls[call_id] is not None:
+            self._calls[call_id] += text
+            self._shown_call = call_id
+            self._reply_final = False
+            self.emit("delta", call_id=call_id, text=text)
+
+    def activity(self, kind: ActivityKind, phase: ActivityPhase) -> None:
+        if phase == "start":
+            if self._reply_final:
+                return
+            self._shown_call = None
+        self.emit("activity", kind=kind, phase=phase)
+
+    def end_reply(self, node_id: str) -> None:
+        if node_id == self._replying_node:
+            self._replying_node = None
+            self._reply_final = self._shown_call is not None
+
+    def shown_text(self) -> Optional[str]:
+        return self._calls[self._shown_call] if self._shown_call else None
 
     def emit(self, event: str, **data: Any) -> None:
         if event in ("activity", "delta") and event not in self.first_seen:
@@ -89,7 +135,13 @@ class TurnStream:
 def emit_activity(kind: ActivityKind, phase: ActivityPhase) -> None:
     stream = current_stream.get()
     if stream is not None:
-        stream.emit("activity", kind=kind, phase=phase)
+        stream.activity(kind, phase)
+
+
+def end_reply(node_id: str) -> None:
+    stream = current_stream.get()
+    if stream is not None:
+        stream.end_reply(node_id)
 
 
 def emit_node_activity(node_type: str, phase: ActivityPhase) -> None:

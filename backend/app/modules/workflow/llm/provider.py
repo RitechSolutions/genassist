@@ -110,6 +110,10 @@ async def build_chat_model(
             )
         model_kwargs["provider"] = bedrock_model_provider
 
+    # langchain-openai leaves usage out of streamed replies whenever a base_url is set (vLLM, OpenRouter, Azure).
+    if provider in ("openai", "azure_openai"):
+        model_kwargs["stream_usage"] = True
+
     # Native Opik LLM tracing: attach the OpikTracer callback at construction so every
     # invocation of this model (including nested agent loops) is traced. No-op unless
     # USE_OPIK is enabled.

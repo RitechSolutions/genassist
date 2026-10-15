@@ -25,7 +25,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
-from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel, child_callback_config
+from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel, as_chunk, child_callback_config
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,7 @@ class PromptCachingChatModel(BaseChatModel):
         marked, invoke_kwargs = self._prepare(messages, stop, kwargs)
         config = child_callback_config(run_manager)
         async for chunk in self.inner.astream(marked, config=config, **invoke_kwargs):
-            yield ChatGenerationChunk(message=chunk)
+            yield ChatGenerationChunk(message=as_chunk(chunk))
 
     def _generate(
         self,
@@ -199,7 +199,7 @@ class PromptCachingChatModel(BaseChatModel):
         marked, invoke_kwargs = self._prepare(messages, stop, kwargs)
         config = child_callback_config(run_manager)
         for chunk in self.inner.stream(marked, config=config, **invoke_kwargs):
-            yield ChatGenerationChunk(message=chunk)
+            yield ChatGenerationChunk(message=as_chunk(chunk))
 
 
 def model_has_prompt_caching(model: Any) -> bool:

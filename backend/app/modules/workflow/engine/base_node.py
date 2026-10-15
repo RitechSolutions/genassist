@@ -574,6 +574,7 @@ class BaseNode(ABC):
         finally:
             record_workflow_node_duration(self.get_type(), time.perf_counter() - t0, success)
             turn_stream.emit_node_activity(self.get_type(), "end")
+            turn_stream.end_reply(self.node_id)
 
     @abstractmethod
     async def process(self, config: Dict[str, Any]) -> Any:
@@ -591,6 +592,17 @@ class BaseNode(ABC):
             The processed output from the node
         """
         raise NotImplementedError("Subclasses must implement the process method")
+
+    def chat_token_sink(self) -> Optional[turn_stream.TokenSink]:
+        """Where this node streams its reply text in a streamed chat turn, or None"""
+        stream = turn_stream.current_stream.get()
+        if stream is None or not self.state.registry_managed:
+            return None
+        types = {node["id"]: node.get("type") for node in self.state.workflow.get("nodes", [])}
+        feeds_output = any(
+            types.get(edge.get("target")) == "chatOutputNode" for edge in self.state.source_edges.get(self.node_id, [])
+        )
+        return stream.text_sink(self.node_id) if feeds_output else None
 
     def get_input_from_source(self) -> Any:
         """

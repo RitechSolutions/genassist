@@ -1,10 +1,10 @@
-from typing import List, Dict, Any, Optional, Union
+from typing import TYPE_CHECKING, AsyncIterator, List, Dict, Any, Optional, Union
 import logging
 import uuid
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages.base import BaseMessage
 from langchain_core.tools import StructuredTool
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, SystemMessage, ToolMessage
 from langchain.agents import create_agent
 from langchain.agents.middleware.types import AgentMiddleware
 from langgraph.types import Command
@@ -18,6 +18,8 @@ from app.modules.workflow.agents.agent_utils import (
 )
 import json
 
+if TYPE_CHECKING:
+    from app.core.turn_stream import TokenSink
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,7 @@ class ReActAgentLC(BaseToolAgent):
         tools: List[BaseTool],
         verbose: bool = False,
         max_iterations: int = 5,
+        on_token: Optional["TokenSink"] = None,
     ):
         """Initialize a LangGraph ReAct agent
 
@@ -70,6 +73,7 @@ class ReActAgentLC(BaseToolAgent):
             tools: List of tools the agent can use to take actions
             verbose: Whether to enable verbose logging of reasoning cycles
             max_iterations: Maximum number of reasoning/action cycles
+            on_token: Called with (model call id, text) as this agent's own model calls write
         """
         super().__init__(
             llm_model,
@@ -78,6 +82,7 @@ class ReActAgentLC(BaseToolAgent):
             verbose=verbose,
             max_iterations=max_iterations,
         )
+        self.on_token = on_token
 
         # Convert BaseTool instances to LangChain StructuredTool instances
         self.lc_tools = self._convert_tools_to_langchain(self.tools)
@@ -231,6 +236,22 @@ class ReActAgentLC(BaseToolAgent):
 
         return messages
 
+    async def _graph_states(self, input_data: Dict[str, Any], config: Dict[str, Any]) -> AsyncIterator[Dict[str, Any]]:
+        modes = ["values", "tasks", "messages"] if self.on_token else ["values"]
+        model_tasks: set[str] = set()
+        async for mode, payload in self.agent_executor.astream(input_data, config=config, stream_mode=modes):
+            if mode == "values":
+                yield payload
+            elif mode == "tasks":
+                if payload.get("name") == "model":
+                    model_tasks.add(payload["id"])
+            else:
+                # Only this graph's model tasks: an agent run inside a tool reports to the same handler.
+                chunk, metadata = payload
+                task_id = metadata.get("langgraph_checkpoint_ns", "").rpartition(":")[2]
+                if isinstance(chunk, AIMessageChunk) and task_id in model_tasks and chunk.text:
+                    self.on_token(task_id, chunk.text)
+
     async def invoke(
         self, query: str, chat_history: Optional[List] = None, **kwargs
     ) -> Dict[str, Any]:
@@ -271,7 +292,7 @@ class ReActAgentLC(BaseToolAgent):
                 logger.debug(f"Executing LangGraph ReAct agent with query: {query}")
 
             # ainvoke runs this same loop but discards the state when the graph raises
-            async for state in self.agent_executor.astream(input_data, config=config, stream_mode="values"):
+            async for state in self._graph_states(input_data, config):
                 result = state
 
             if self.verbose:
