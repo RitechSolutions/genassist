@@ -23,7 +23,7 @@ from app.modules.workflow.engine.nodes.ml.ml_utils import (
     normalize_feature_expression,
     ordinal_key,
 )
-from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM, MLModelBase
+from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM
 from app.services.ml_model_manager import download_pkl_file, get_ml_model_manager
 from app.services.ml_models import MLModelsService
 
@@ -1260,7 +1260,7 @@ class MLModelInferenceNode(BaseNode):
             destination_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{ml_model.name}_{ml_model.id}.pkl")
             pkl_file_path = await download_pkl_file(ml_model.pkl_file_id, destination_path)
             # Update the ml_model with the new pkl file path
-            await ml_service.update(ml_model.id, MLModelBase(pkl_file=str(pkl_file_path)))
+            await ml_service.record_local_pkl_file(ml_model.id, str(pkl_file_path))
             ml_model.pkl_file = str(pkl_file_path)
             return
 

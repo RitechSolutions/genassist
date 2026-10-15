@@ -79,13 +79,13 @@ describe('mlModelSaveErrorMessage', () => {
         {
           response: {
             data: {
-              error_key: 'ML_INFERENCE_INPUT_INVALID',
-              error_detail: 'Registered features do not match the uploaded artifact.',
+              error_key: 'ML_MODEL_ARTIFACT_INVALID',
+              error_detail: 'Registry fields do not match the model file. Missing features: lag_24.',
             },
           },
         },
         'update'
       )
-    ).toBe('Registered features do not match the uploaded artifact.');
+    ).toBe('Registry fields do not match the model file. Missing features: lag_24.');
   });
 });

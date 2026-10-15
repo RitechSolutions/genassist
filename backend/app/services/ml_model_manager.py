@@ -210,14 +210,6 @@ class MLModelManager:
         # Legacy: raw model pickled directly
         return {"model": loaded }
 
-    async def load_artifact(self, pkl_file: str) -> Dict[str, Any]:
-        """Safely load and normalize an artifact without adding it to the model cache."""
-        try:
-            loaded = await self._load_model_from_file(pkl_file)
-            return self._normalize_loaded_model(loaded)
-        finally:
-            self._validated_files.discard(pkl_file)
-
     async def _validate_model_safe(self, pkl_file: str) -> None:
         """
         Pre-validate model file by scanning pickle opcodes for disallowed modules.
