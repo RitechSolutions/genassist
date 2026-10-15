@@ -21,9 +21,10 @@ def _finite_float(value: str) -> float:
     return number
 
 
-def parse_json_object_reply(text: str) -> dict:
+def parse_json_object_reply(text: str, *, strict: bool = True) -> dict:
     """Extract one JSON object from a reply (optional Markdown fence).
     Nested objects and duplicate keys pass through as json.loads returns them.
+    ``strict=False`` admits raw control characters inside strings.
     Raises:
         ValueError: array, a scalar, prose,
             a second object, an unbalanced fence, a non-finite number, or
@@ -36,7 +37,7 @@ def parse_json_object_reply(text: str) -> dict:
 
     try:
         parsed = json.loads(
-            candidate, parse_constant=_reject_constant, parse_float=_finite_float
+            candidate, strict=strict, parse_constant=_reject_constant, parse_float=_finite_float
         )
     except (ValueError, RecursionError) as exc:
         raise ValueError("Reply is not a single JSON object.") from exc

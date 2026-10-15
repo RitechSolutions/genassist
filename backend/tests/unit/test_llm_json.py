@@ -68,3 +68,8 @@ class TestParseJsonObjectReply:
         with pytest.raises(ValueError):
             parse_json_object_reply("")
 
+    def test_a_raw_newline_inside_a_string_needs_the_lenient_mode(self):
+        reply = '{"a": "x\ny"}'
+        with pytest.raises(ValueError):
+            parse_json_object_reply(reply)
+        assert parse_json_object_reply(reply, strict=False) == {"a": "x\ny"}
