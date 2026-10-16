@@ -167,3 +167,21 @@ export const roundRunOf = (
       round.contextKey === contextKey &&
       round.suggestion === text,
   )?.run ?? null;
+
+export const attachKeptRun = (
+  rounds: Round[],
+  record: Omit<Round, "id"> | null,
+): Round[] => {
+  if (!record?.run || record.suggestion !== record.source.request.prompt)
+    return rounds;
+  const index = rounds.findIndex(
+    (round) => round.suggestion === record.suggestion,
+  );
+  if (index === -1 || rounds[index].run !== null) return rounds;
+  const { run, incomplete, counts, regressions, contextKey } = record;
+  return rounds.map((round, i) =>
+    i === index
+      ? { ...round, run, incomplete, counts, regressions, contextKey }
+      : round,
+  );
+};

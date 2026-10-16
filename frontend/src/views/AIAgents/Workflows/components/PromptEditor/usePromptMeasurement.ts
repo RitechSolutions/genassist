@@ -62,6 +62,7 @@ import {
   type ProviderFallback,
 } from "../../utils/promptEditorResults";
 import {
+  attachKeptRun,
   baselineOf,
   countsOf,
   MAX_ROUNDS,
@@ -706,8 +707,7 @@ export const usePromptMeasurement = ({
         ...request
       } = vars;
       if (token !== acceptTokenRef.current) return;
-      const outgoing = outgoingRoundRef.current();
-      if (outgoing) pushRound(outgoing);
+      leaveRoundRef.current();
       setChainOriginDraft((prev) => prev ?? draftAtSubmit);
       acceptTokenRef.current += 1;
       setOptimizeRun({ request, result: data });
@@ -936,8 +936,8 @@ export const usePromptMeasurement = ({
   const nextRoundId = () => (roundIdRef.current += 1);
 
   /** The round currently on screen, as a filing record. Null when there is no suggestion */
-  const outgoingRound = (): Omit<Round, "id"> | null =>
-    optimizeRun && suggestionOutcome === "changed"
+  const onScreenRound = (): Omit<Round, "id"> | null =>
+    optimizeRun
       ? {
           source: optimizeRun,
           suggestion,
@@ -948,23 +948,33 @@ export const usePromptMeasurement = ({
           contextKey,
         }
       : null;
-  const outgoingRoundRef = useRef(outgoingRound);
-  outgoingRoundRef.current = outgoingRound;
+  const outgoingRound = (): Omit<Round, "id"> | null =>
+    suggestionOutcome === "changed" ? onScreenRound() : null;
 
   const pushRound = (round: Omit<Round, "id">) => {
     const filed = { ...round, id: nextRoundId() };
     setRounds((prev) => [filed, ...prev].slice(0, MAX_ROUNDS));
   };
 
+  const leaveRound = () => {
+    const outgoing = outgoingRound();
+    const onScreen = onScreenRound();
+    if (outgoing) pushRound(outgoing);
+    else setRounds((prev) => attachKeptRun(prev, onScreen));
+  };
+  const leaveRoundRef = useRef(leaveRound);
+  leaveRoundRef.current = leaveRound;
+
   // Restores earlier round (saves current). Blocked if rewrite in-flight
   const restoreRound = (id: number) => {
-    const round = rounds.find((r) => r.id === id);
+    const onScreen = onScreenRound();
+    const round = attachKeptRun(rounds, onScreen).find((r) => r.id === id);
     if (!round || optimizeMutation.isPending) return;
     const outgoing = outgoingRound();
     const filed = outgoing ? { ...outgoing, id: nextRoundId() } : null;
     acceptTokenRef.current += 1;
     setRounds((prev) => {
-      const kept = prev.filter((r) => r.id !== id);
+      const kept = attachKeptRun(prev, onScreen).filter((r) => r.id !== id);
       return filed ? [filed, ...kept].slice(0, MAX_ROUNDS) : kept;
     });
     setOptimizeRun(round.source);
