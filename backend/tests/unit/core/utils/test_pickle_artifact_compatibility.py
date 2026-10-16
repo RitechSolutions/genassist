@@ -303,7 +303,6 @@ class TestNumPyCompatibility:
 
         np.testing.assert_array_equal(loaded, array)
 
-
     def test_numpy_1_masked_array_roundtrips(self, tmp_path):
         masked = np.ma.array([1.0, 2.0, 3.0], mask=[False, True, False])
 
@@ -428,9 +427,7 @@ class TestReviewedArtifactCompatibility:
         ],
     )
     def test_grid_search_with_stratified_cv_splitter_preserves_predictions(self, tmp_path, cv):
-        model = GridSearchCV(
-            LogisticRegression(max_iter=200), {"C": [0.1, 1.0]}, cv=cv()
-        ).fit(_X, _Y_CLASSIFICATION)
+        model = GridSearchCV(LogisticRegression(max_iter=200), {"C": [0.1, 1.0]}, cv=cv()).fit(_X, _Y_CLASSIFICATION)
 
         loaded = _validate_and_load(tmp_path, model)
 
@@ -509,6 +506,25 @@ class TestReviewedArtifactCompatibility:
 
         assert loaded is np.log1p
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "Categorical",
+            "CategoricalDtype",
+            "DataFrame",
+            "DatetimeIndex",
+            "DatetimeTZDtype",
+            "Index",
+            "RangeIndex",
+            "Series",
+            "StringDtype",
+        ],
+    )
+    def test_pandas_3_public_alias_resolves(self, tmp_path, name):
+        loaded = _validate_and_load_bytes(tmp_path, f"cpandas\n{name}\n.".encode())
+
+        assert loaded is getattr(pd, name)
+
     def test_v2_payload_with_common_metadata_roundtrips(self, tmp_path):
         random_generator = np.random.default_rng(66748)
         payload = {
@@ -518,7 +534,10 @@ class TestReviewedArtifactCompatibility:
                 "frame": _X_FRAME.head(2),
                 "groups": defaultdict(list, {"route": [101]}),
                 "random_generator": random_generator,
+                "series": pd.Series(["north", "south"], name="region"),
                 "timestamp": pd.Timestamp("2026-10-15T12:30:00Z"),
+                "timestamps": pd.date_range("2026-10-15", periods=2, tz="UTC"),
+                "categories": pd.Categorical(["hourly", "session"]),
             },
             "version": "v2.0",
         }
@@ -529,8 +548,12 @@ class TestReviewedArtifactCompatibility:
         assert loaded["metadata"]["created_at"] == payload["metadata"]["created_at"]
         assert loaded["metadata"]["groups"] == payload["metadata"]["groups"]
         assert loaded["metadata"]["timestamp"] == payload["metadata"]["timestamp"]
+        pd.testing.assert_series_equal(loaded["metadata"]["series"], payload["metadata"]["series"])
+        pd.testing.assert_index_equal(loaded["metadata"]["timestamps"], payload["metadata"]["timestamps"])
+        assert loaded["metadata"]["categories"].equals(payload["metadata"]["categories"])
         pd.testing.assert_frame_equal(loaded["metadata"]["frame"], payload["metadata"]["frame"])
         assert loaded["metadata"]["random_generator"].random() == random_generator.random()
+
 
 class TestModelManagerValidation:
     @pytest.mark.asyncio
