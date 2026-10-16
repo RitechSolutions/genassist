@@ -8,6 +8,7 @@ import type {
   PreviousAttemptPayload,
   PromptOptimizeResponse,
   PromptTechniqueConfigs,
+  SuggestionOutcome,
 } from "@/interfaces/promptEditor.interface";
 import type { PromptEditorCapabilities } from "../../utils/promptEditorCapabilities";
 import {
@@ -47,6 +48,7 @@ import {
   isOptimizeCurrent,
   measurementContextKeyOf,
   optimizeKeyOf,
+  passingCaseIdsOf,
   staleOf,
   type EvalRequest,
   type EvalRunState,
@@ -65,9 +67,11 @@ import {
   MAX_ROUNDS,
   optimizerHistoryOf,
   regressionsOf,
+  roundRunOf,
   type Baseline,
   type Round,
 } from "../../utils/promptEditorRounds";
+import { effectiveOutcomeOf } from "../../utils/promptEditorOutcome";
 import {
   bindingChangeNote,
   comparePromptBindings,
@@ -99,6 +103,7 @@ type HoldoutVars =
 
 type OptimizeVars = OptimizeRequest & {
   previousAttempts: PreviousAttemptPayload[];
+  passingCaseIds?: string[];
   token: number;
   draftAtSubmit: string;
 };
@@ -185,6 +190,7 @@ export interface PromptMeasurementState {
   /** Failures actually sent to the optimizer, against how many the run found */
   failedIncluded: number;
   failedTotal: number;
+  basePassed: number;
   optimizeResult: PromptOptimizeResponse | null;
   optimizeProviderFallback: ProviderFallback | undefined;
   optimizeStale: boolean;
@@ -201,6 +207,7 @@ export interface PromptMeasurementState {
    * Not live draft; drift flagged by `optimizeStale` */
   optimizedFrom: string;
   suggestionEdited: boolean;
+  suggestionOutcome: SuggestionOutcome | null;
   editSuggestion: (text: string) => void;
   /** Warns that the rewrite changed the draft's {{placeholders}} */
   placeholderNote: string | null;
@@ -444,8 +451,15 @@ export const usePromptMeasurement = ({
     staleOf(evalRun.key, buildEvalRequest(draft, evalCaseIds).key);
 
   const optimizeResult = optimizeRun?.result ?? null;
+  const optimizedFrom = optimizeRun?.request.prompt ?? "";
   const suggestion = suggestionEdit ?? optimizeResult?.suggested_prompt ?? "";
-  const base = suggestion !== "" ? suggestion : draft;
+  const suggestionOutcome = effectiveOutcomeOf(
+    optimizeResult,
+    optimizedFrom,
+    suggestion,
+  );
+  const chained = suggestion !== "" && suggestionOutcome === "changed";
+  const base = chained ? suggestion : optimizeRun ? optimizedFrom : draft;
 
   const caseSplit = useMemo(
     () =>
@@ -566,19 +580,23 @@ export const usePromptMeasurement = ({
       suggestedRunKey === null ||
       staleOf(suggestedEvalRun.key, suggestedRunKey));
 
-  const baseRun =
-    suggestion !== ""
-      ? suggestedEvalRun && !suggestedStale
-        ? suggestedEvalRun
-        : null
-      : evalRun && !evalStale
+  const baseRun = chained
+    ? suggestedEvalRun && !suggestedStale
+      ? suggestedEvalRun
+      : null
+    : base === draft
+      ? evalRun && !evalStale
         ? evalRun
-        : null;
+        : null
+      : roundRunOf(rounds, contextKey, base);
   const failedCases = useMemo(
     () => (baseRun ? failedCasesOf(baseRun.results.results) : []),
     [baseRun],
   );
   const failedTotal = baseRun ? failedCaseCount(baseRun.results.results) : 0;
+  const passingCaseIds = baseRun
+    ? passingCaseIdsOf(baseRun.results.results)
+    : undefined;
   // Requires matching context; model switch mid-chain leaves nothing to compare. Memoized to skip recomputation
   const baseline = useMemo(
     () => baselineOf(rounds, contextKey, evalRun, evalStale),
@@ -658,10 +676,12 @@ export const usePromptMeasurement = ({
           actual: c.actual,
           failed_metrics: c.failedMetrics,
           feedback: c.feedback ?? undefined,
+          judge_score: c.judgeScore ?? undefined,
         })),
         case_split: vars.caseSplit
           ? { holdout_case_ids: [...vars.caseSplit.holdoutIds] }
           : undefined,
+        passing_case_ids: vars.passingCaseIds,
         techniques: vars.techniques,
         technique_configs: vars.techniqueConfigs,
         previous_attempts:
@@ -672,7 +692,13 @@ export const usePromptMeasurement = ({
       return result;
     },
     onSuccess: (data, vars) => {
-      const { previousAttempts, token, draftAtSubmit, ...request } = vars;
+      const {
+        previousAttempts,
+        passingCaseIds,
+        token,
+        draftAtSubmit,
+        ...request
+      } = vars;
       if (token !== acceptTokenRef.current) return;
       const outgoing = outgoingRoundRef.current();
       if (outgoing) pushRound(outgoing);
@@ -840,6 +866,7 @@ export const usePromptMeasurement = ({
     content: suggestion,
     contentNoun: "suggested prompt",
     stale: optimizeStale,
+    outcome: suggestionOutcome,
   });
   const holdoutOff = !splitActive || holdoutCaseIds.length === 0;
   const validateHoldout: Gate = !evaluateSuggested.enabled
@@ -850,6 +877,7 @@ export const usePromptMeasurement = ({
   const accept = acceptGate(historyState, caps, suggestion, {
     pending: false,
     stale: optimizeStale,
+    outcome: suggestionOutcome,
   });
 
   const hasRuns =
@@ -898,15 +926,17 @@ export const usePromptMeasurement = ({
 
   /** The round currently on screen, as a filing record. Null when there is no suggestion */
   const outgoingRound = (): Omit<Round, "id"> | null =>
-    optimizeRun && {
-      source: optimizeRun,
-      suggestion,
-      run: suggestedStale ? null : suggestedEvalRun,
-      incomplete: comparison?.incomplete ?? null,
-      counts: comparison ? countsOf(comparison.comparison) : null,
-      regressions: comparison ? regressionsOf(comparison.comparison) : [],
-      contextKey,
-    };
+    optimizeRun && suggestionOutcome === "changed"
+      ? {
+          source: optimizeRun,
+          suggestion,
+          run: suggestedStale ? null : suggestedEvalRun,
+          incomplete: comparison?.incomplete ?? null,
+          counts: comparison ? countsOf(comparison.comparison) : null,
+          regressions: comparison ? regressionsOf(comparison.comparison) : [],
+          contextKey,
+        }
+      : null;
   const outgoingRoundRef = useRef(outgoingRound);
   outgoingRoundRef.current = outgoingRound;
 
@@ -1010,6 +1040,7 @@ export const usePromptMeasurement = ({
       techniques: selectedTechniques,
       techniqueConfigs: sentTechniqueConfigs,
       previousAttempts: optimizerHistoryOf(rounds, contextKey),
+      passingCaseIds,
       token: acceptTokenRef.current,
       draftAtSubmit: draft,
     });
@@ -1077,6 +1108,7 @@ export const usePromptMeasurement = ({
     evalStale,
     failedIncluded: failedCases.length,
     failedTotal,
+    basePassed: passingCaseIds?.length ?? 0,
     optimizeResult,
     optimizeProviderFallback: optimizeRun
       ? fallbackFor(optimizeRun.request.providerId)
@@ -1091,8 +1123,9 @@ export const usePromptMeasurement = ({
     restoreRound,
     restoreBlocked: optimizeMutation.isPending,
     suggestion,
-    optimizedFrom: optimizeRun?.request.prompt ?? "",
+    optimizedFrom,
     suggestionEdited: suggestion !== (optimizeResult?.suggested_prompt ?? ""),
+    suggestionOutcome,
     editSuggestion,
     placeholderNote,
     suggestedEvalRun,

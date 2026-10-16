@@ -15,6 +15,7 @@ import {
   optimizerHistoryOf,
   promptDiffSummary,
   regressionsOf,
+  roundRunOf,
   type Round,
   type RoundCounts,
 } from "@/views/AIAgents/Workflows/utils/promptEditorRounds";
@@ -72,7 +73,7 @@ const round = (overrides: Partial<Round> = {}): Round => ({
   id: 1,
   source: {
     request: { prompt: "before" },
-    result: { suggested_prompt: "after", explanation: "why" },
+    result: { suggested_prompt: "after", explanation: "why", outcome: "changed" },
   } as Round["source"],
   suggestion: "after",
   run: run("r"),
@@ -202,6 +203,38 @@ describe("optimizerHistoryOf", () => {
     expect(attempt.regressions).toEqual([
       { case_id: "c1", feedback: "contains: missing the link" },
     ]);
+  });
+
+  it("sends no explanation for a round whose suggestion the user edited, since the diff describes the user's text", () => {
+    const [attempt] = optimizerHistoryOf(
+      [round({ suggestion: "after, edited" })],
+      "ctx",
+    );
+
+    expect(attempt.explanation).toBe("");
+    expect(attempt.diff_summary).toContain("+ after, edited");
+  });
+});
+
+describe("roundRunOf", () => {
+  it("finds the scored run of a text at any position in the chain", () => {
+    const older = run("older");
+    const rounds = [
+      round({ id: 2, suggestion: "second" }),
+      round({ id: 1, suggestion: "first", run: older }),
+    ];
+
+    expect(roundRunOf(rounds, "ctx", "first")).toBe(older);
+  });
+
+  it("ignores a round scored under other settings or never scored", () => {
+    const rounds = [
+      round({ id: 2, suggestion: "text", contextKey: "other" }),
+      round({ id: 1, suggestion: "text", run: null }),
+    ];
+
+    expect(roundRunOf(rounds, "ctx", "text")).toBeNull();
+    expect(roundRunOf([round()], "ctx", "missing")).toBeNull();
   });
 });
 
