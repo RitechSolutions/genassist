@@ -49,7 +49,9 @@ def _repo():
 
 def _filter(**values) -> ConversationFilter:
     # The list fields default to FastAPI Query objects that only resolve under Depends().
-    return ConversationFilter(conversation_status=None, conversation_topics=None, **values)
+    return ConversationFilter(
+        **{"conversation_status": None, "conversation_topics": None, "conversation_subtopics": None, **values}
+    )
 
 
 async def _list(repo, conversation_filter):
@@ -122,3 +124,17 @@ async def test_search_alone_keeps_correlated_subqueries():
     assert "LEFT OUTER JOIN conversation_analysis" not in sql
     _assert_correlated_exists(sql, "conversation_analysis")
     _assert_correlated_exists(sql, "transcript_messages")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("repository_call", REPOSITORY_CALLS)
+async def test_topic_filters_match_free_strings(repository_call):
+    repo, db = _repo()
+
+    await repository_call(repo, _filter(conversation_topics=["Technical Support"], conversation_subtopics=["Login"]))
+
+    sql = str(db.statements[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "lower(trim(conversation_analysis.topic)) IN ('technical support')" in sql
+    assert "lower(trim(conversations.topic)) IN ('technical support')" in sql
+    assert "lower(trim(conversation_analysis.subtopic)) IN ('login')" in sql
+    assert "conversations.subtopic" not in sql

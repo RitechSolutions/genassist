@@ -14,6 +14,7 @@ class ErrorKey(Enum):
     RULE_CONFIG_INVALID = "rule_config_invalid"
     EVALUATION_TARGET_NOT_A_VERSION = "evaluation_target_not_a_version"
     EVALUATION_WORKFLOW_REQUIRED = "evaluation_workflow_required"
+    EVALUATION_TECHNIQUES_REQUIRED = "evaluation_techniques_required"
     EVALUATION_BUNDLE_INVALID = "evaluation_bundle_invalid"
     DATASET_FILE_IMPORT_INVALID = "dataset_file_import_invalid"
     NOT_FOUND = "not_found"
@@ -125,6 +126,10 @@ class ErrorKey(Enum):
     ERROR_CONNECTING_WHISPER_SERVICE = "ERROR_CONNECTING_WHISPER_SERVICE"
     ERROR_INSIDE_WHISPER_SERVICE = "ERROR_INSIDE_WHISPER_SERVICE"
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
+    ISSUE_STATUS_NOT_FOUND = "ISSUE_STATUS_NOT_FOUND"
+    ISSUE_STATUS_KEY_TAKEN = "ISSUE_STATUS_KEY_TAKEN"
+    ISSUE_STATUS_PROTECTED = "ISSUE_STATUS_PROTECTED"
+    ISSUE_STATUS_ORDER_INVALID = "ISSUE_STATUS_ORDER_INVALID"
     ERROR_EXTRACTING_FROM_FILE = "ERROR_EXTRACTING_FROM_FILE"
     ML_EXTRACT_CONFIGURATION_INVALID = "ML_EXTRACT_CONFIGURATION_INVALID"
     ML_EXTRACT_QUERY_FAILED = "ML_EXTRACT_QUERY_FAILED"
@@ -212,6 +217,7 @@ ERROR_MESSAGES = {
         ErrorKey.RULE_CONFIG_INVALID: "The evaluation rule configuration is not valid.",
         ErrorKey.EVALUATION_TARGET_NOT_A_VERSION: "The target workflow is not a version of the evaluation's workflow.",
         ErrorKey.EVALUATION_WORKFLOW_REQUIRED: "This evaluation has no workflow. Edit it and choose a workflow.",
+        ErrorKey.EVALUATION_TECHNIQUES_REQUIRED: "Add at least one check or method to the evaluation.",
         ErrorKey.EVALUATION_BUNDLE_INVALID: "The evaluation bundle is invalid or could not be imported.",
         ErrorKey.DATASET_FILE_IMPORT_INVALID: "The dataset files could not be imported.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
@@ -321,6 +327,10 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_CONNECTING_WHISPER_SERVICE: "Error connecting to transcription service.",
         ErrorKey.ERROR_INSIDE_WHISPER_SERVICE: "An error occurred in transcription service.",
         ErrorKey.MESSAGE_NOT_FOUND: "Message not found.",
+        ErrorKey.ISSUE_STATUS_NOT_FOUND: "Issue status not found or no longer active.",
+        ErrorKey.ISSUE_STATUS_KEY_TAKEN: "An issue status with this key already exists.",
+        ErrorKey.ISSUE_STATUS_PROTECTED: "The default issue status cannot be non-active or moved out of To Do.",
+        ErrorKey.ISSUE_STATUS_ORDER_INVALID: "The order must list every active issue status exactly once.",
         ErrorKey.ERROR_EXTRACTING_FROM_FILE: "Failed to extract text from file.",
         ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID: "Train Data Source configuration is incomplete.",
         ErrorKey.ML_EXTRACT_QUERY_FAILED: "Could not run the Train Data Source query.",

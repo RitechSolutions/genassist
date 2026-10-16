@@ -1,15 +1,18 @@
-import { ArrowLeft, PanelRightClose, PanelRightOpen } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { ArrowLeft, Database, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { AgentResponseLogDialog } from "@/components/AgentResponseLogDialog";
 import { Button } from "@/components/button";
 import { Card } from "@/components/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixTooltip";
+import { usePermissions } from "@/context/PermissionContext";
 import { Transcript } from "@/interfaces/transcript.interface";
 import { useActiveConversationDetail } from "@/views/ActiveConversations/hooks/useActiveConversationDetail";
 import { ActiveConversationStatsPanel } from "@/views/ActiveConversations/components/detail/ActiveConversationStatsPanel";
 import { ActiveConversationThreadPanel } from "@/views/ActiveConversations/components/detail/ActiveConversationThreadPanel";
 import { ActiveConversationTitle } from "@/views/ActiveConversations/components/detail/ActiveConversationTitle";
+import { AddToDatasetDialog } from "@/views/TestSuites/components/AddToDatasetDialog";
+import { canAddConversationToDataset } from "@/views/TestSuites/helpers/conversationDatasets";
 
 import { useTranscriptDetail } from "../../hooks/useTranscriptDetail";
 import { TranscriptConversationPanel } from "../detail/TranscriptConversationPanel";
@@ -120,7 +123,15 @@ function LiveConversationDetail({
           <ActiveConversationTitle
             controller={controller}
             leading={<BackButton onClick={onBack} />}
-            trailing={<StatsToggle showStats={showStats} onToggle={onToggleStats} />}
+            trailing={
+              <span className="flex items-center gap-2">
+                <AddToDatasetButton
+                  conversationId={transcript.id}
+                  conversationLabel={`Chat #${transcript.id.slice(-4)}`}
+                />
+                <StatsToggle showStats={showStats} onToggle={onToggleStats} />
+              </span>
+            }
           />
         }
       >
@@ -155,6 +166,12 @@ function FinalizedConversationDetail({
           <TranscriptDetailTitle
             controller={controller}
             leading={<BackButton onClick={onBack} />}
+            actions={
+              <AddToDatasetButton
+                conversationId={controller.transcript.id}
+                conversationLabel={`${controller.isCall ? "Call" : "Chat"} #${(controller.transcript.metadata?.title ?? "----").slice(-4)}`}
+              />
+            }
             trailing={<StatsToggle showStats={showStats} onToggle={onToggleStats} />}
           />
         }
@@ -208,6 +225,45 @@ function BackButton({ onClick }: { onClick: () => void }) {
     >
       <ArrowLeft className="h-4 w-4" />
     </Button>
+  );
+}
+
+/** Icon button + its dialog; renders nothing for users who cannot write to datasets. */
+function AddToDatasetButton({
+  conversationId,
+  conversationLabel,
+}: {
+  conversationId: string | null | undefined;
+  conversationLabel: string;
+}) {
+  const permissions = usePermissions();
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!canAddConversationToDataset(permissions, conversationId)) return null;
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0"
+            onClick={() => setIsOpen(true)}
+            aria-label="Add to dataset"
+          >
+            <Database className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>Add to dataset</TooltipContent>
+      </Tooltip>
+      <AddToDatasetDialog
+        open={isOpen}
+        onOpenChange={setIsOpen}
+        conversationId={conversationId ?? null}
+        conversationLabel={conversationLabel}
+      />
+    </>
   );
 }
 

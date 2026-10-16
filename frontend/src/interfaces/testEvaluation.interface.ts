@@ -77,11 +77,20 @@ export interface EvaluationActionNodeInfo {
   workflow_path: string[];
 }
 
+// A value the workflow remembers between turns: a stateful Chat Input field or a Set State key.
+export interface EvaluationStateKeyInfo {
+  key: string;
+  source: "chat_input" | "set_state" | string;
+  node_label: string;
+  workflow_path: string[];
+}
+
 export interface EvaluationToolCatalog {
   workflow_id: string;
   agents: EvaluationAgentInfo[];
   routers: EvaluationRouterInfo[];
   action_nodes: EvaluationActionNodeInfo[];
+  state_keys?: EvaluationStateKeyInfo[];
 }
 
 export type ToolUsageOperator = "all" | "any" | "none" | "only";
@@ -160,7 +169,49 @@ export interface ToolUsageRule extends RuleScopeTarget {
 }
 
 // Techniques graded per scope, stored as one result row per rule check.
-export type RuleTechnique = "tool_used" | "route_taken" | "action_taken";
+export type RuleTechnique = "tool_used" | "route_taken" | "action_taken" | "checks";
+
+// ---- Should / Should not checks ----
+
+export type CheckKind =
+  | "reply_mentions"
+  | "reply_meets"
+  | "tool_called"
+  | "step_runs"
+  | "route_taken"
+  | "state_equals";
+export type CheckLevel = "every_conversation" | "conversation" | "turn";
+export type CheckExpect = "should" | "should_not";
+// Every conversation only: hold on every turn, or at some point.
+export type CheckWhen = "every_turn" | "anywhere";
+
+// One expectation about a conversation. Names travel with ids so a check survives a copied workflow.
+export interface ScenarioCheck {
+  id: string;
+  expect: CheckExpect;
+  kind: CheckKind;
+  level: CheckLevel;
+  when: CheckWhen;
+  conversation_id?: string | null;
+  case_id?: string | null;
+  turn_index?: number | null;
+  turn_message?: string | null;
+  text?: string | null;
+  rubric?: string | null;
+  tool?: string | null;
+  tool_name?: string | null;
+  agent?: string | null;
+  agent_name?: string | null;
+  args?: Record<string, string>;
+  step?: string | null;
+  step_name?: string | null;
+  router?: string | null;
+  router_name?: string | null;
+  branch?: string | null;
+  branch_label?: string | null;
+  key?: string | null;
+  value?: string | null;
+}
 
 // The readable, rename-proof snapshot the backend stores with each result.
 export interface ToolRuleTargetInfo {

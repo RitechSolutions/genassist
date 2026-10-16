@@ -22,6 +22,7 @@ from app.api.v1.routes import (
     file_manager,
     gmail,
     internal,
+    issue_statuses,
     llm_analysts,
     llm_cost_rates,
     llm_model_catalog,
@@ -89,6 +90,9 @@ router.include_router(
 router.include_router(app_settings.router, prefix="/app-settings", tags=["AppSettings"])
 router.include_router(
     feature_flags.router, prefix="/feature-flags", tags=["FeatureFlags"]
+)
+router.include_router(
+    issue_statuses.router, prefix="/issue-statuses", tags=["IssueStatuses"]
 )
 router.include_router(
     translations.router, prefix="/translations", tags=["Translations"]

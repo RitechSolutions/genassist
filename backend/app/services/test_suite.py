@@ -27,6 +27,24 @@ from app.services.evaluation_text import (
     reply_text as _reply_text,
 )
 from app.services.route_action_rules import action_observations, route_observations
+from app.services.scenario_checks import (
+    CHECKS_TECHNIQUE,
+    UNREADABLE_TURN,
+    JudgeRequest,
+    JudgeVerdict,
+    TurnRecord,
+    conversation_verdicts,
+    describe_check,
+    grade_checks,
+    judge_expectation,
+    judge_requests,
+    parse_checks_config,
+    resolve_targets,
+    run_judge,
+    skip_reason,
+    tool_calls_from_events,
+    transcript as _transcript,
+)
 from app.services.dataset_file import (
     FILE_STATUS_FAILED,
     FILE_STATUS_OK,
@@ -46,10 +64,13 @@ from app.modules.workflow.engine.workflow_engine import (
     MemoryPersistenceError,
     WorkflowEngine,
 )
+from app.modules.workflow.engine.workflow_state import RAW_TOOL_ARGUMENTS
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.usage_context import WorkflowUsageContext
+from app.core.utils.custom_attributes import get_hidden_keys
 from app.core.utils.llm_json import parse_json_object_reply
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
+from app.core.utils.sensitive_data_utils import build_hidden_value_map, mask_hidden_values
 from app.core.utils.transcript_utils import extract_qa_pairs
 from app.core.utils.uuid_utils import coerce_uuid
 from app.repositories.conversations import ConversationRepository
@@ -95,7 +116,7 @@ from app.schemas.workflow import WorkflowInDB
 from app.services.workflow import WorkflowService
 from app.core.tenant_scope import get_tenant_context
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.services.realtime_notifications import emit_notification, notification_payload
+from app.services.realtime_notifications import emit_notification, evaluation_run_failed_notification
 
 
 logger = logging.getLogger(__name__)
@@ -137,12 +158,13 @@ UNEXPECTED_RUN_FAILURE_ERROR = "Run failed unexpectedly. Details are in the serv
 TOOL_USED_TECHNIQUE = "tool_used"
 ROUTE_TAKEN_TECHNIQUE = "route_taken"
 ACTION_TAKEN_TECHNIQUE = "action_taken"
-RULE_ROW_TECHNIQUES = (TOOL_USED_TECHNIQUE, ROUTE_TAKEN_TECHNIQUE, ACTION_TAKEN_TECHNIQUE)
+RULE_ROW_TECHNIQUES = (TOOL_USED_TECHNIQUE, ROUTE_TAKEN_TECHNIQUE, ACTION_TAKEN_TECHNIQUE, CHECKS_TECHNIQUE)
 
 _RULE_TECHNIQUE_LABELS = {
     TOOL_USED_TECHNIQUE: "Tool usage",
     ROUTE_TAKEN_TECHNIQUE: "Route taken",
     ACTION_TAKEN_TECHNIQUE: "Action taken",
+    CHECKS_TECHNIQUE: "Checks",
 }
 
 # Checks that cannot honestly run until the workflow has produced its final answer.
@@ -166,6 +188,14 @@ NLI_EVALUATION_TIMEOUT_SECONDS = 2 * 60
 # Rule grading runs after the cases; a bug or stuck DB call here must not leave
 # the run stuck in "running" forever.
 RULE_EVALUATION_TIMEOUT_SECONDS = 60
+# Checks can need many AI gradings, so they get a longer budget, and each grading its own.
+CHECKS_EVALUATION_TIMEOUT_SECONDS = 15 * 60
+CHECK_JUDGE_TIMEOUT_SECONDS = 90
+# AI grading stops here, so the other checks are still stored within the budget above.
+CHECKS_JUDGE_BUDGET_SECONDS = 12 * 60
+# The texts of a check's row and snapshot, which can quote a hidden value.
+_CHECK_RESULT_TEXTS = ("expected", "observed", "comment")
+_CHECK_RULE_TEXTS = ("text", "rubric", "value", "args", "turn_message")
 
 # Metering runs outside the scoring budget; one hung flush must not stall a long run.
 EVALUATION_USAGE_FLUSH_TIMEOUT_SECONDS = 30
@@ -424,6 +454,127 @@ def _serialize_judge_source(value: Any, max_length: int = 16000) -> str:
         return ""
     text = value if isinstance(value, str) else json.dumps(value, default=str)
     return text[:max_length].strip()
+
+
+def _run_config_snapshot(data: TestRunCreate) -> Dict[str, Any]:
+    """The evaluation settings a queued run executes with; its dataset is read when it starts."""
+    input_metadata = dict(data.input_metadata or {})
+    return {
+        "technique_configs": data.technique_configs,
+        # Holds use_memory when on; the evaluation form stores "off" by leaving the key out.
+        "input_metadata": input_metadata or None,
+    }
+
+
+# Inputs of one message; every other turn input carries forward, as live chat resends its metadata.
+PER_MESSAGE_INPUT_KEYS = frozenset(
+    {
+        "message",
+        "thread_id",
+        "conversation_history",
+        "attachments",
+        "audio_data",
+        "audio_format",
+        "start_form_trigger",
+        "human_in_the_loop_from_form",
+        "human_in_the_loop_node_id",
+        "human_in_the_loop_cancelled",
+    }
+)
+
+
+def _form_field_names(nodes: List[Dict[str, Any]]) -> set:
+    """Human-in-the-loop form fields; a turn that answers a form answers only that turn's."""
+    names = set()
+    for node in nodes or []:
+        if isinstance(node, dict) and node.get("type") == "humanInTheLoopNode":
+            for field in (node.get("data") or {}).get("form_fields") or []:
+                if isinstance(field, dict) and field.get("name"):
+                    names.add(field["name"])
+    return names
+
+
+def _carry_forward(
+    carried: Dict[str, Any], turn_input: Dict[str, Any], per_turn_keys: Iterable[str] = PER_MESSAGE_INPUT_KEYS
+) -> None:
+    """Add a turn's conversation-level inputs; a null drops one, so it falls back to the defaults."""
+    per_turn = set(per_turn_keys)
+    for key, value in turn_input.items():
+        if key in per_turn:
+            continue
+        if value is None:
+            carried.pop(key, None)
+        else:
+            carried[key] = value
+
+
+def _stateful_inputs(nodes: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    """Chat Input node id -> its inputs marked stateful, which persist across turns."""
+    stateful: Dict[str, List[str]] = {}
+    for node in nodes or []:
+        if not isinstance(node, dict) or node.get("type") != "chatInputNode":
+            continue
+        schema = (node.get("data") or {}).get("inputSchema") or {}
+        names = [name for name, spec in schema.items() if isinstance(spec, dict) and spec.get("stateful")]
+        if names:
+            stateful[str(node.get("id"))] = names
+    return stateful
+
+
+async def _stateful_values(
+    state: Any,
+    execution_trace: Dict[str, Any],
+    stateful_inputs: Dict[str, List[str]],
+    read_memory: bool = True,
+) -> Dict[str, Any]:
+    """Stateful inputs as the next turn starts with them: Set State's writes, else this turn's values."""
+    used: Dict[str, Any] = {}
+    statuses = (execution_trace.get("state") or {}).get("nodeExecutionStatus") or {}
+    for node_id, names in stateful_inputs.items():
+        output = (statuses.get(node_id) or {}).get("output")
+        if isinstance(output, dict):
+            used.update({name: output[name] for name in names if name in output})
+    get_memory = getattr(state, "get_memory", None)
+    if not read_memory or not callable(get_memory):
+        return used
+    try:
+        written = await get_memory().get_all_stateful_values()
+    except Exception:  # pylint: disable=broad-except
+        logger.warning("Could not read the stateful values of an evaluation turn", exc_info=True)
+        written = {}
+    return {**used, **(written or {})}
+
+
+async def _forget_thread(thread_id: str) -> None:
+    """Delete an evaluation thread's stored memory, which nothing reads after its conversation."""
+    try:
+        await ConversationMemory.forget(thread_id)
+    except Exception:  # pylint: disable=broad-except
+        logger.warning("Could not delete the memory of evaluation thread %s", thread_id, exc_info=True)
+
+
+def _hidden_value_map(hidden_keys: set, trace: Dict[str, Any] | None, inputs: Dict[str, Any]) -> Dict[str, str]:
+    """Real value -> [PARAM_NAME] for the turn's hidden Chat Input values, masked in what is stored."""
+    if not hidden_keys:
+        return {}
+    statuses = ((trace or {}).get("state") or {}).get("nodeExecutionStatus")
+    value_map = build_hidden_value_map(hidden_keys, node_statuses=statuses, fallback_values=inputs)
+    # Set State can overwrite a hidden value during the turn; its new value is masked too.
+    written = (trace or {}).get("stateful_values")
+    if isinstance(written, dict):
+        value_map.update(build_hidden_value_map(hidden_keys, fallback_values=written))
+    return value_map
+
+
+def _no_expected_reply(key: str) -> Dict[str, Any]:
+    """A turn with no expected reply has nothing to compare, so it is not graded."""
+    return {
+        "key": key,
+        "score": None,
+        "passed": False,
+        "not_evaluated": True,
+        "comment": "Not evaluated: this turn has no expected reply.",
+    }
 
 
 def _args_superset_match(args: Any, expected: Dict[str, Any]) -> bool:
@@ -939,7 +1090,9 @@ class SimpleEvaluatorRegistry:
     ) -> Dict[str, Any]:
         actual = _reply_text(outputs)
         expected = _normalize_text(reference_outputs)
-        passed = bool(actual and expected and actual == expected)
+        if not expected:
+            return _no_expected_reply("exact_match")
+        passed = bool(actual and actual == expected)
         return {
             "key": "exact_match",
             "score": passed,
@@ -958,7 +1111,9 @@ class SimpleEvaluatorRegistry:
     ) -> Dict[str, Any]:
         actual = _reply_text(outputs)
         expected = _normalize_text(reference_outputs)
-        passed = bool(actual and expected and expected.casefold() in actual.casefold())
+        if not expected:
+            return _no_expected_reply("contains")
+        passed = bool(actual and expected.casefold() in actual.casefold())
         return {
             "key": "contains",
             "score": passed,
@@ -1003,6 +1158,9 @@ class SimpleEvaluatorRegistry:
         payload: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
         config: Dict[str, Any],  # noqa: ARG002 - reserved for unified signature
     ) -> Dict[str, Any]:
+        # An empty object is a real expectation here; only a missing one is not.
+        if reference_outputs is None:
+            return _no_expected_reply("json_match")
         if not isinstance(outputs, dict) or not isinstance(reference_outputs, dict):
             return {
                 "key": "json_match",
@@ -1037,6 +1195,9 @@ class SimpleEvaluatorRegistry:
 
         actual = _normalize_text(_read_path(payload, field)) if field else _reply_text(outputs)
         expected = _normalize_text(expected_value)
+        # Only the turn's expected reply can be missing; a configured value is the user's call.
+        if not expected and "expected" not in config:
+            return _no_expected_reply("field_equals")
         passed = bool(actual and expected and actual == expected)
 
         return {
@@ -1628,21 +1789,22 @@ class SimpleEvaluatorRegistry:
         question_text = _normalize_text(question)
         provider_id = config.get("llm_provider_id")
 
-        details = list(
-            await asyncio.gather(
-                *(
-                    self._grade_judge_rule(
-                        rule,
-                        rule_number=index,
-                        question_text=question_text,
-                        answer_text=answer_text,
-                        payload=payload,
-                        provider_id=provider_id,
-                    )
-                    for index, rule in enumerate(rules, start=1)
-                )
+        async def grade(index: int, rule: Dict[str, Any]) -> Dict[str, Any]:
+            return await self._grade_judge_rule(
+                rule,
+                rule_number=index,
+                question_text=question_text,
+                answer_text=answer_text,
+                payload=payload,
+                provider_id=provider_id,
             )
-        )
+
+        numbered = list(enumerate(rules, start=1))
+        if payload.get("_judge_model") is not None:
+            details = list(await asyncio.gather(*(grade(i, rule) for i, rule in numbered)))
+        else:
+            # Each rubric then builds its own model from the DB, and a session runs one query at a time.
+            details = [await grade(i, rule) for i, rule in numbered]
 
         if len(details) == 1:
             return self._single_judge_result(details[0])
@@ -1693,8 +1855,16 @@ class SimpleEvaluatorRegistry:
                 "comment": f"{label}: not evaluated — the grounding source was unavailable.",
             }
 
+        # Without the frame, judges guessed what the score meant and contradicted their own reasons.
         system_prompt = (
-            f"{rule['rubric']}\n\n"
+            "You grade one reply from an AI assistant against a single criterion. "
+            "QUESTION is what the user said, SOURCE (if present) is reference material, "
+            "and ANSWER is the reply to grade.\n\n"
+            f"CRITERION:\n{rule['rubric']}\n\n"
+            "Judge only this criterion, not the reply's overall quality or helpfulness. "
+            "Score 1.0 when the reply fully meets it, 0.0 when it clearly does not, and in "
+            "between only for partial compliance. A criterion that applies only in some "
+            "situations is met when this reply is not one of them.\n\n"
             "Return ONLY a compact JSON object in this exact format:\n"
             '{"score": 0.0-1.0, "reason": "short explanation"}\n'
             "Do not include any extra text or explanation."
@@ -2285,6 +2455,7 @@ class TestSuiteService:
             status="queued",
             techniques=list(data.techniques),
             summary_metrics=None,
+            config_snapshot=_run_config_snapshot(data),
         )
 
         created = await self.run_repo.create(run)
@@ -2294,22 +2465,19 @@ class TestSuiteService:
 
     async def _fail_run(self, run: TestRunModel, error: str) -> None:
         """Move a run to the terminal failed state and notify the user."""
+        previous_status = run.status
         run.status = "failed"
         run.summary_metrics = {"error": error}
-        await self.run_repo.update(run)
+        try:
+            await self.run_repo.update(run)
+        except Exception:
+            # A failed status in memory tells callers the user was notified; they weren't.
+            run.status = previous_status
+            raise
         emit_notification(
             socket_connection_manager=injector.get(SocketConnectionManager),
             tenant_id=get_tenant_context(),
-            payload=notification_payload(
-                notification_id=f"workflow_failed:test:{run.id}",
-                title="Workflow Run Failed",
-                description=f"Test run {str(run.id)[:8]}... failed.",
-                level="error",
-                action_url="/tests/evaluations",
-                entity_kind="test_run",
-                entity_id=run.id,
-                event_key=f"workflow_failed:test:{run.id}",
-            ),
+            payload=evaluation_run_failed_notification(run.id),
         )
 
     async def _default_judge_provider_id(self) -> str | None:
@@ -2393,7 +2561,11 @@ class TestSuiteService:
         except Exception as exc:  # pylint: disable=broad-except
             logger.exception("Test run %s failed unexpectedly: %s", run.id, exc)
             if run.status not in ("completed", "failed"):
-                await self._fail_run(run, UNEXPECTED_RUN_FAILURE_ERROR)
+                try:
+                    await self._fail_run(run, UNEXPECTED_RUN_FAILURE_ERROR)
+                except Exception:  # pylint: disable=broad-except
+                    # The task retries this write; raising here would hide the real error.
+                    logger.exception("Could not mark test run %s failed", run.id)
             raise
 
     async def _execute_run_inner(
@@ -2441,26 +2613,143 @@ class TestSuiteService:
         case_executed_agents: Dict[str, set] = {}
         case_routes: Dict[str, List[Dict[str, Any]]] = {}
         case_actions: Dict[str, List[Dict[str, Any]]] = {}
+        checks_requested = CHECKS_TECHNIQUE in rule_keys
+        case_turns: Dict[str, TurnRecord] = {}
+        case_value_maps: Dict[str, Dict[str, str]] = {}
         provider_name_cache: Dict[str, Tuple[str, str]] = {}
         metering_state: Dict[str, Any] = {"timed_out": False}
+        stateful_inputs = _stateful_inputs(workflow.nodes or [])
+        hidden_keys = get_hidden_keys(workflow.nodes or [])
+        per_turn_keys = PER_MESSAGE_INPUT_KEYS | _form_field_names(workflow.nodes or [])
+        # State lives in memory only when something can write it.
+        keeps_state = bool(stateful_inputs) or any(
+            isinstance(n, dict) and n.get("type") in ("setStateNode", "workflowExecutorNode")
+            for n in workflow.nodes or []
+        )
+
+        def remember_turn(
+            case: TestCaseInDB,
+            trace: Dict[str, Any] | None,
+            inputs: Dict[str, Any],
+            raw_arguments: Dict[str, Any],
+            *,
+            crashed: bool = False,
+            error: str | None = None,
+            waiting_for_human: bool = False,
+            grading_context: Dict[str, Any] | None = None,
+        ) -> None:
+            """Keep what a turn did for the checks, which are graded once every turn has run."""
+            if not checks_requested:
+                return
+            try:
+                context = grading_context if grading_context is not None else _build_grading_context(trace or {})
+                case_turns[str(case.id)] = TurnRecord(
+                    case_id=str(case.id),
+                    conversation_key=str(case.source_conversation_id or case.id),
+                    turn_index=case.turn_index,
+                    position=0,
+                    message=_normalize_text((case.input_data or {}).get("message")),
+                    crashed=crashed,
+                    error=error,
+                    waiting_for_human=waiting_for_human,
+                    reply="" if crashed else _reply_text((trace or {}).get("output")),
+                    tool_calls=tool_calls_from_events((trace or {}).get("tool_events"), raw_arguments),
+                    steps=action_observations(context),
+                    routes=route_observations(context),
+                    state=dict((trace or {}).get("stateful_values") or {}),
+                )
+                case_value_maps[str(case.id)] = _hidden_value_map(hidden_keys, trace, inputs)
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("Could not keep evaluation case %s for its checks", case.id, exc_info=True)
+                remember_unreadable(case)
+
+        def remember_unreadable(case: TestCaseInDB) -> None:
+            """A turn that ran but whose trace could not be read is not checked, and says why."""
+            if checks_requested and str(case.id) not in case_turns:
+                case_turns[str(case.id)] = TurnRecord(
+                    case_id=str(case.id),
+                    conversation_key=str(case.source_conversation_id or case.id),
+                    turn_index=case.turn_index,
+                    position=0,
+                    message=_normalize_text((case.input_data or {}).get("message")),
+                    ran=False,
+                    skip_reason=UNREADABLE_TURN,
+                )
 
         async def record_case_error(
-            case: TestCaseInDB, error: str, status: str
+            case: TestCaseInDB,
+            error: str,
+            status: str,
+            execution_trace: Dict[str, Any] | None = None,
+            inputs: Dict[str, Any] | None = None,
         ) -> None:
             status_counts[status] = status_counts.get(status, 0) + 1
+            value_map = _hidden_value_map(hidden_keys, execution_trace, inputs or {})
+            # The last-resort write for a turn, so a trace that cannot be stored is dropped, not raised.
+            try:
+                stored_trace = mask_hidden_values(execution_trace, value_map)
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("Could not store the trace of evaluation case %s", case.id, exc_info=True)
+                stored_trace = None
             await self.result_repo.create(
                 TestResultModel(
                     run_id=run.id,
                     case_id=case.id,
                     actual_output=None,
+                    execution_trace=stored_trace,
                     metrics=None,
-                    error=error,
+                    error=mask_hidden_values(error, value_map),
                     status=status,
                 )
             )
 
-        async def execute_single(case: TestCaseInDB, thread_id: str | None) -> str:
+        async def failed_turn_trace(states: List[Any]) -> Dict[str, Any] | None:
+            """How far a failed turn got, so the step that broke can be seen."""
+            if not states:
+                return None
+            try:
+                trace = states[0].format_state_as_response()
+                trace["stateful_values"] = await _stateful_values(
+                    states[0], trace, stateful_inputs, read_memory=keeps_state
+                )
+                return trace
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("Could not read the trace of a failed evaluation turn", exc_info=True)
+                return None
+
+        async def fail_turn(
+            case: TestCaseInDB,
+            error: str,
+            states: List[Any],
+            inputs: Dict[str, Any],
+            raw_arguments: Dict[str, Any],
+        ) -> str:
+            """Store a turn that did not finish, with how far it got."""
+            trace = await failed_turn_trace(states)
+            remember_turn(case, trace, inputs, raw_arguments, crashed=True, error=error)
+            await record_case_error(case, error, ResultStatus.EXECUTION_FAILED, trace, inputs)
+            return "failed"
+
+        async def execute_single(
+            case: TestCaseInDB, thread_id: str | None, carried: Dict[str, Any]
+        ) -> str:
             """Run one turn and report whether it completed, failed, or paused."""
+            # A threadless turn runs on a throwaway thread, forgotten once the turn is graded.
+            run_thread_id = thread_id or str(uuid4())
+            if not thread_id:
+                ConversationMemory.track_children(run_thread_id)
+            try:
+                return await run_turn(case, thread_id, run_thread_id, carried)
+            finally:
+                if not thread_id:
+                    await _forget_thread(run_thread_id)
+
+        async def run_turn(
+            case: TestCaseInDB,
+            thread_id: str | None,
+            run_thread_id: str,
+            carried: Dict[str, Any],
+        ) -> str:
             merged_input: Dict[str, Any] = {}
             if run_input_metadata:
                 merged_input.update(run_input_metadata)
@@ -2468,7 +2757,11 @@ class TestSuiteService:
                 merged_input.pop("use_memory", None)
             if suite.default_input_metadata:
                 merged_input.update(suite.default_input_metadata)
-            merged_input.update(case.input_data or {})
+            # This turn's own conversation-level inputs are already in carried.
+            merged_input.update(carried)
+            merged_input.update(
+                {key: value for key, value in (case.input_data or {}).items() if key in per_turn_keys}
+            )
 
             # Applied last so stored run, suite or case metadata cannot point a
             # case at another conversation's memory thread.
@@ -2476,10 +2769,12 @@ class TestSuiteService:
                 merged_input["thread_id"] = thread_id
             else:
                 merged_input.pop("thread_id", None)
-            # A threadless turn runs on a throwaway thread whose cached memory is dropped below.
-            run_thread_id = thread_id or str(uuid4())
             # Execution and scoring fail differently: a turn that never ran or never
             # reached memory breaks the thread, while a scoring error does not.
+            states: List[Any] = []
+            raw_arguments: Dict[str, Any] = {}
+            # Checks compare real tool arguments, which the stored events redact.
+            raw_token = RAW_TOOL_ARGUMENTS.set(raw_arguments) if checks_requested else None
             try:
                 state = await asyncio.wait_for(
                     engine.execute_from_node(
@@ -2490,52 +2785,49 @@ class TestSuiteService:
                         usage_context=WorkflowUsageContext(
                             source="test_suite", workflow_id=coerce_uuid(engine.workflow_id)
                         ),
+                        state_sink=states,
                     ),
                     timeout=CASE_EXECUTION_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
                 logger.error("Test case %s timed out after %ss", case.id, CASE_EXECUTION_TIMEOUT_SECONDS)
-                await record_case_error(
+                return await fail_turn(
                     case,
                     f"Execution timed out after {CASE_EXECUTION_TIMEOUT_SECONDS}s",
-                    ResultStatus.EXECUTION_FAILED,
+                    states,
+                    merged_input,
+                    raw_arguments,
                 )
-                return "failed"
             except MemoryPersistenceError as exc:
                 logger.error("Memory write failed for test case %s: %s", case.id, exc)
-                await record_case_error(
-                    case,
-                    f"Memory write failed, later turns skipped: {exc}",
-                    ResultStatus.EXECUTION_FAILED,
+                return await fail_turn(
+                    case, f"Memory write failed, later turns skipped: {exc}", states, merged_input, raw_arguments
                 )
-                return "failed"
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Error executing test case %s: %s", case.id, exc)
-                await record_case_error(
-                    case, f"Execution failed: {exc}", ResultStatus.EXECUTION_FAILED
-                )
-                return "failed"
+                return await fail_turn(case, f"Execution failed: {exc}", states, merged_input, raw_arguments)
             finally:
-                if not thread_id:
-                    ConversationMemory.discard(run_thread_id)
+                if raw_token is not None:
+                    RAW_TOOL_ARGUMENTS.reset(raw_token)
 
             # The engine reports some failures on the state instead of raising, and
             # a failed run is never written to memory.
             if getattr(state, "status", None) == "failed":
                 reason = _failure_reason(state)
                 logger.error("Test case %s finished in a failed state: %s", case.id, reason)
-                await record_case_error(
-                    case, f"Execution failed: {reason}", ResultStatus.EXECUTION_FAILED
-                )
-                return "failed"
+                return await fail_turn(case, f"Execution failed: {reason}", [state], merged_input, raw_arguments)
 
             waiting_for_human = _is_waiting_for_human(state.output)
+            execution_trace: Dict[str, Any] | None = None
             try:
                 output = state.output
                 truncated_output = _truncate_output(output)
                 # Capture full workflow execution response in the same shape used
                 # elsewhere in the app.
                 execution_trace = state.format_state_as_response()
+                execution_trace["stateful_values"] = await _stateful_values(
+                    state, execution_trace, stateful_inputs, read_memory=keeps_state
+                )
                 if tool_usage_requested:
                     node_status = (execution_trace.get("state") or {}).get("nodeExecutionStatus") or {}
                     case_events[str(case.id)] = execution_trace.get("tool_events") or []
@@ -2546,6 +2838,14 @@ class TestSuiteService:
                 if route_or_action_requested:
                     case_routes[str(case.id)] = route_observations(grading_context)
                     case_actions[str(case.id)] = action_observations(grading_context)
+                remember_turn(
+                    case,
+                    execution_trace,
+                    merged_input,
+                    raw_arguments,
+                    waiting_for_human=waiting_for_human,
+                    grading_context=grading_context,
+                )
                 # The prefix keeps judge rows off the execution's own ledger key; without
                 # an execution id there is nothing to key on, so metering stays off
                 state_execution_id = getattr(state, "execution_id", None)
@@ -2577,14 +2877,17 @@ class TestSuiteService:
                     )
                 finally:
                     await self._flush_judge_usage(usage_ref, provider_name_cache, metering_state)
+                actual_output = (
+                    truncated_output if isinstance(truncated_output, dict) else {"value": truncated_output}
+                )
+                # Graded on the real values; stored masked.
+                value_map = _hidden_value_map(hidden_keys, execution_trace, merged_input)
                 result = TestResultModel(
                     run_id=run.id,
                     case_id=case.id,
-                    actual_output=truncated_output
-                    if isinstance(truncated_output, dict)
-                    else {"value": truncated_output},
-                    execution_trace=execution_trace,
-                    metrics=metrics,
+                    actual_output=mask_hidden_values(actual_output, value_map),
+                    execution_trace=mask_hidden_values(execution_trace, value_map),
+                    metrics=mask_hidden_values(metrics, value_map),
                     error=None,
                     status=ResultStatus.SCORED,
                 )
@@ -2595,68 +2898,105 @@ class TestSuiteService:
                 )
             except Exception as exc:  # pylint: disable=broad-except
                 logger.exception("Error scoring test case %s: %s", case.id, exc)
+                remember_unreadable(case)
                 await record_case_error(
-                    case, f"Scoring failed: {exc}", ResultStatus.SCORING_FAILED
+                    case,
+                    f"Scoring failed: {exc}",
+                    ResultStatus.SCORING_FAILED,
+                    execution_trace,
+                    merged_input,
                 )
             return "waiting_for_human" if waiting_for_human else "completed"
 
         use_memory = bool((run_input_metadata or {}).get("use_memory"))
         conversations = _group_cases_into_conversations(cases)
 
+        progress = {
+            "conversations_done": 0,
+            "conversations_total": len(conversations),
+            "turns_done": 0,
+            "turns_total": len(cases),
+        }
+
+        async def save_progress() -> None:
+            run.progress = dict(progress)
+            await self.run_repo.update(run)
+            await self.run_repo.db.commit()
+
+        async def publish_progress() -> None:
+            """Show turn progress at once; the turns' results commit with their conversation."""
+            try:
+                await self.run_repo.publish_progress(run.id, dict(progress))
+            except Exception:  # pylint: disable=broad-except
+                logger.warning("Could not publish the progress of test run %s", run.id, exc_info=True)
+
+        await save_progress()
+
         # A fresh thread per conversation per run isolates conversations from each
         # other and stops a run from reading a previous run's memory. Without memory
         # every case runs threadless, so the engine isolates each one.
         for conversation_cases in conversations:
             thread_id = str(uuid4()) if use_memory else None
+            if thread_id:
+                ConversationMemory.track_children(thread_id)
+            carried: Dict[str, Any] = {}
 
             # A turn only reaches memory when its input carries a message field.
             # Single-turn cases need no memory, so any input shape is valid there.
             is_multi_turn = bool(thread_id) and len(conversation_cases) > 1
 
-            for position, case in enumerate(conversation_cases):
-                # A turn with no message field cannot be written to memory, so every
-                # turn after it would replay without its context. An empty message is
-                # fine: the field exists and is persisted.
-                missing_message = is_multi_turn and "message" not in (case.input_data or {})
-                if missing_message:
-                    await record_case_error(
-                        case,
-                        "Skipped: turn has no 'message' field, so it cannot join "
-                        "the conversation's memory",
-                        ResultStatus.SKIPPED,
+            try:
+                for position, case in enumerate(conversation_cases):
+                    if position:
+                        await publish_progress()
+                    _carry_forward(carried, case.input_data or {}, per_turn_keys)
+                    # A turn with no message field cannot be written to memory, so every
+                    # turn after it would replay without its context. An empty message is
+                    # fine: the field exists and is persisted.
+                    missing_message = is_multi_turn and "message" not in (case.input_data or {})
+                    if missing_message:
+                        await record_case_error(
+                            case,
+                            "Skipped: turn has no 'message' field, so it cannot join "
+                            "the conversation's memory",
+                            ResultStatus.SKIPPED,
+                        )
+                        turn_outcome = "failed"
+                    else:
+                        turn_outcome = await execute_single(case, thread_id, carried)
+                    progress["turns_done"] += 1
+
+                    if turn_outcome == "completed":
+                        continue
+
+                    # Only a shared thread creates a dependency between turns. Without
+                    # memory an ordinary failure stops nothing. A HIL pause still stops
+                    # its conversation because later turns do not contain the requested
+                    # human answer.
+                    if turn_outcome != "waiting_for_human" and not thread_id:
+                        continue
+
+                    skip_reason = (
+                        "Skipped: an earlier turn is waiting for human input"
+                        if turn_outcome == "waiting_for_human"
+                        else "Skipped: an earlier turn was not persisted to memory"
                     )
-                    turn_outcome = "failed"
-                else:
-                    turn_outcome = await execute_single(case, thread_id)
+                    for skipped in conversation_cases[position + 1:]:
+                        await record_case_error(
+                            skipped,
+                            skip_reason,
+                            ResultStatus.SKIPPED,
+                        )
+                        progress["turns_done"] += 1
+                    break
+            finally:
+                # The thread is never reused, so its stored memory can go, even after a crash.
+                if thread_id:
+                    await _forget_thread(thread_id)
 
-                if turn_outcome == "completed":
-                    continue
-
-                # Only a shared thread creates a dependency between turns. Without
-                # memory an ordinary failure stops nothing. A HIL pause still stops
-                # its conversation because later turns do not contain the requested
-                # human answer.
-                if turn_outcome != "waiting_for_human" and not thread_id:
-                    continue
-
-                skip_reason = (
-                    "Skipped: an earlier turn is waiting for human input"
-                    if turn_outcome == "waiting_for_human"
-                    else "Skipped: an earlier turn was not persisted to memory"
-                )
-                for skipped in conversation_cases[position + 1:]:
-                    await record_case_error(
-                        skipped,
-                        skip_reason,
-                        ResultStatus.SKIPPED,
-                    )
-                break
-
-            # The thread is never reused, so its cached memory can go.
-            if thread_id:
-                ConversationMemory.discard(thread_id)
+            progress["conversations_done"] += 1
             # Commit each finished conversation so a crash or timeout keeps earlier results.
-            await self.run_repo.db.commit()
+            await save_progress()
 
         # Aggregate metrics. A metric can be scored, an evaluator error, or not
         # evaluated (no source). Only scored metrics count toward pass/fail; the
@@ -2713,6 +3053,10 @@ class TestSuiteService:
                 case_executed_agents=case_executed_agents,
                 case_routes=case_routes,
                 case_actions=case_actions,
+                case_turns=case_turns,
+                case_value_maps=case_value_maps,
+                provider_name_cache=provider_name_cache,
+                metering_state=metering_state,
             )
         )
 
@@ -2746,6 +3090,10 @@ class TestSuiteService:
         case_executed_agents: Dict[str, set],
         case_routes: Dict[str, List[Dict[str, Any]]],
         case_actions: Dict[str, List[Dict[str, Any]]],
+        case_turns: Dict[str, TurnRecord] | None = None,
+        case_value_maps: Dict[str, Dict[str, str]] | None = None,
+        provider_name_cache: Dict[str, Tuple[str, str]] | None = None,
+        metering_state: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Grade each requested rule-based technique across its scopes, persist the
         per-rule results, and return their summaries.
@@ -2781,6 +3129,17 @@ class TestSuiteService:
                 workflow=workflow,
                 observations_by_turn=case_actions,
             ),
+            CHECKS_TECHNIQUE: lambda: self._evaluate_checks(
+                run=run,
+                conversations=conversations,
+                cases=cases,
+                technique_configs=technique_configs,
+                workflow=workflow,
+                case_turns=case_turns or {},
+                case_value_maps=case_value_maps or {},
+                provider_name_cache=provider_name_cache if provider_name_cache is not None else {},
+                metering_state=metering_state if metering_state is not None else {"timed_out": False},
+            ),
         }
 
         summaries: Dict[str, Any] = {}
@@ -2789,9 +3148,12 @@ class TestSuiteService:
                 continue
             label = _RULE_TECHNIQUE_LABELS[technique]
             try:
-                summary = await asyncio.wait_for(
-                    graders[technique](), timeout=RULE_EVALUATION_TIMEOUT_SECONDS
+                timeout = (
+                    CHECKS_EVALUATION_TIMEOUT_SECONDS
+                    if technique == CHECKS_TECHNIQUE
+                    else RULE_EVALUATION_TIMEOUT_SECONDS
                 )
+                summary = await asyncio.wait_for(graders[technique](), timeout=timeout)
                 if summary is not None:
                     summaries[technique] = summary
             except Exception as exc:  # pylint: disable=broad-except
@@ -2984,6 +3346,193 @@ class TestSuiteService:
         )
         return summarize_planned_results(planned)
 
+    async def _evaluate_checks(
+        self,
+        *,
+        run: TestRunModel,
+        cases: List[TestCaseInDB],
+        conversations: List[List[TestCaseInDB]],
+        technique_configs: Dict[str, Dict[str, Any]] | None,
+        workflow: WorkflowInDB,
+        case_turns: Dict[str, TurnRecord],
+        case_value_maps: Dict[str, Dict[str, str]],
+        provider_name_cache: Dict[str, Tuple[str, str]],
+        metering_state: Dict[str, Any],
+    ) -> Dict[str, Any] | None:
+        """Grade the Should / Should not checks over every conversation and store one row each."""
+        from app.services.rule_scopes import summarize_planned_results
+
+        config = (technique_configs or {}).get(CHECKS_TECHNIQUE)
+        if not config:
+            return None
+        try:
+            parsed = parse_checks_config(config)
+        except ValueError as exc:
+            logger.exception("Invalid checks config for run %s: %s", run.id, exc)
+            return _invalid_rule_config_summary(exc)
+        if not parsed.checks:
+            return None
+
+        # Names resolve against the version that ran, so a copied workflow still matches.
+        try:
+            catalog = await self._walk_workflow_catalog(workflow.id)
+        except Exception:  # pylint: disable=broad-except
+            logger.warning("Could not load the catalog of workflow %s for checks", workflow.id, exc_info=True)
+            catalog = None
+        targets = {check.id: resolve_targets(check, catalog) for check in parsed.checks}
+
+        groups: List[List[TurnRecord]] = []
+        for group in conversations:
+            records = []
+            for position, case in enumerate(group):
+                record = case_turns.get(str(case.id)) or TurnRecord(
+                    case_id=str(case.id),
+                    conversation_key=str(case.source_conversation_id or case.id),
+                    turn_index=case.turn_index,
+                    position=position,
+                    message=_normalize_text((case.input_data or {}).get("message")),
+                    ran=False,
+                    skip_reason=skip_reason(records),
+                )
+                record.position = position
+                records.append(record)
+            groups.append(records)
+
+        requests = judge_requests(parsed.checks, groups, targets)
+        verdicts = (
+            await self._judge_checks(
+                requests,
+                parsed.llm_provider_id,
+                run=run,
+                workflow=workflow,
+                provider_name_cache=provider_name_cache,
+                metering_state=metering_state,
+            )
+            if requests
+            else {}
+        )
+        planned = grade_checks(parsed.checks, groups, targets, verdicts)
+        summary = summarize_planned_results(planned)
+        by_conversation = list(conversation_verdicts(planned, groups).values())
+
+        # A row can quote a hidden value, seen in a turn or typed into the check, so its texts are
+        # masked with every hidden value of the run. Statuses and fields the grading reads stay as they are.
+        value_map: Dict[str, str] = {}
+        for case_map in case_value_maps.values():
+            value_map.update(case_map)
+
+        def masked(values: Dict[str, Any], fields: Tuple[str, ...]) -> Dict[str, Any]:
+            if not value_map:
+                return values
+            return {
+                key: mask_hidden_values(value, value_map) if key in fields else value
+                for key, value in values.items()
+            }
+
+        for entry in planned:
+            entry["result"] = masked(entry["result"], _CHECK_RESULT_TEXTS)
+
+        check_by_id = {check.id: check for check in parsed.checks}
+
+        def check_details(entry: Dict[str, Any]) -> Dict[str, Any]:
+            check = check_by_id[entry["rule_id"]]
+            return {
+                "rule": masked(check.model_dump(mode="json"), _CHECK_RULE_TEXTS),
+                "rule_summary": mask_hidden_values(describe_check(check), value_map) if value_map else describe_check(check),
+            }
+
+        await self._persist_rule_results(
+            run=run,
+            technique=CHECKS_TECHNIQUE,
+            planned=planned,
+            cases=cases,
+            conversations=conversations,
+            extra_details=check_details,
+        )
+
+        passed = by_conversation.count("passed")
+        failed = by_conversation.count("failed")
+        summary["conversations"] = {
+            "total": len(by_conversation),
+            "passed": passed,
+            "failed": failed,
+            "not_evaluated": by_conversation.count("not_evaluated"),
+        }
+        # Checks report on conversations, so their pass rate is the conversations'.
+        summary["accuracy"] = summary["avg_score"] = passed / (passed + failed) if passed + failed else None
+        return summary
+
+    async def _judge_checks(
+        self,
+        requests: List[JudgeRequest],
+        provider_id: str | None,
+        *,
+        run: TestRunModel,
+        workflow: WorkflowInDB,
+        provider_name_cache: Dict[str, Tuple[str, str]],
+        metering_state: Dict[str, Any],
+    ) -> Dict[Any, JudgeVerdict]:
+        """AI-grade the checks that need it, sharing one model and metering the calls."""
+        try:
+            model = await injector.get(LLMProvider).get_model(provider_id)
+        except Exception:  # pylint: disable=broad-except
+            logger.warning("Could not load the judge model for the checks of run %s", run.id, exc_info=True)
+            failed = JudgeVerdict(error=True, reason="The AI grader could not be reached.")
+            return {request.key: failed for request in requests}
+
+        usage_ref = EvaluationUsageRef(
+            execution_id=f"eval-checks:{run.id}",
+            workflow_id=coerce_uuid(workflow.id),
+            agent_id=coerce_uuid(workflow.agent_id),
+        )
+        call_indexes = iter(range(len(requests)))
+
+        async def judge(request: JudgeRequest) -> JudgeVerdict:
+            whole = not request.check.per_turn
+            expectation = judge_expectation(request.check, whole)
+            if whole:
+                system_prompt = (
+                    "You grade a whole conversation between a user and an AI assistant against a "
+                    "single expectation. CONVERSATION lists every turn in order.\n\n"
+                    f"EXPECTATION:\n{expectation}\n\n"
+                )
+                user_content = f"CONVERSATION:\n{_transcript(request.turns)}"
+            else:
+                turn = request.turns[0]
+                system_prompt = (
+                    "You grade one reply from an AI assistant against a single expectation. "
+                    "QUESTION is what the user said and ANSWER is the reply to grade.\n\n"
+                    f"EXPECTATION:\n{expectation}\n\n"
+                )
+                user_content = f"QUESTION:\n{turn.message}\n\nANSWER:\n{turn.reply}"
+            system_prompt += (
+                "Judge only this expectation. Score 1.0 when it is fully met, 0.0 when it clearly "
+                "is not, and in between only for partial compliance.\n\n"
+                "Return ONLY a compact JSON object in this exact format:\n"
+                '{"score": 0.0-1.0, "reason": "short explanation"}\n'
+                "Do not include any extra text or explanation."
+            )
+            score, reason = await asyncio.wait_for(
+                self.evaluators._invoke_json_judge(
+                    system_prompt=system_prompt,
+                    user_content=user_content,
+                    provider_id=provider_id,
+                    usage_ref=usage_ref,
+                    purpose="checks_judge",
+                    call_index=next(call_indexes),
+                    model=model,
+                ),
+                timeout=CHECK_JUDGE_TIMEOUT_SECONDS,
+            )
+            if score is None:
+                return JudgeVerdict(error=True, reason=reason or "The AI grader did not give a usable score.")
+            return JudgeVerdict(score=score, reason=reason)
+
+        try:
+            return await run_judge(requests, judge, budget_seconds=CHECKS_JUDGE_BUDGET_SECONDS)
+        finally:
+            await self._flush_judge_usage(usage_ref, provider_name_cache, metering_state)
+
     async def _persist_rule_results(
         self,
         *,
@@ -3074,7 +3623,7 @@ class TestSuiteService:
     @staticmethod
     def _target_snapshot(entry, position_by_case, turn_count_by_conv, conv_number_by_id) -> Dict[str, Any]:
         """What this result graded: a whole conversation, or a single turn."""
-        if entry["scope"] == "conversation":
+        if entry["scope"] in ("conversation", "every_conversation"):
             conv_id = entry.get("source_conversation_id")
             number = conv_number_by_id.get(conv_id)
             return {
@@ -3152,7 +3701,39 @@ class TestSuiteService:
         """Validate and canonicalize rule configs before they are stored, so a
         config the run loop could not grade is refused at the API boundary."""
         self._validate_route_action_configs(technique_configs)
+        self._validate_checks_config(technique_configs)
         return await self._canonicalize_tool_used_configs(workflow_id, technique_configs)
+
+    @staticmethod
+    def _validate_checks_config(technique_configs: Dict[str, Any] | None) -> None:
+        """Reject checks the run could not grade, such as one missing its turn or its text."""
+        config = (technique_configs or {}).get(CHECKS_TECHNIQUE)
+        if not config:
+            return
+        try:
+            parse_checks_config(config)
+        except ValueError as exc:
+            logger.warning("Invalid checks config: %s", exc)
+            raise AppException(
+                error_key=ErrorKey.RULE_CONFIG_INVALID,
+                status_code=400,
+                error_detail="Some checks are not complete. Check what each one looks for and its turn.",
+            ) from exc
+
+    @staticmethod
+    def _require_techniques(
+        techniques: Optional[List[str]], technique_configs: Optional[Dict[str, Any]]
+    ) -> None:
+        """An empty list would silently run the default methods, and checks without a check grade nothing."""
+        if techniques is None:
+            return
+        has_checks = bool(((technique_configs or {}).get(CHECKS_TECHNIQUE) or {}).get("checks"))
+        if not any(technique != CHECKS_TECHNIQUE or has_checks for technique in techniques):
+            raise AppException(
+                error_key=ErrorKey.EVALUATION_TECHNIQUES_REQUIRED,
+                status_code=400,
+                error_detail="Add at least one check or method to the evaluation.",
+            )
 
     @staticmethod
     def _validate_route_action_configs(technique_configs: Dict[str, Any] | None) -> None:
@@ -3214,6 +3795,7 @@ class TestSuiteService:
         return {**technique_configs, TOOL_USED_TECHNIQUE: canonical}
 
     async def create_evaluation(self, data: TestEvaluationCreate) -> TestEvaluationInDB:
+        self._require_techniques(data.techniques, data.technique_configs)
         payload = data.model_dump()
         payload["run_ids"] = []
         workflow_id = await self._effective_workflow_id(
@@ -3243,6 +3825,10 @@ class TestSuiteService:
         if not row:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         updates = data.model_dump(exclude_none=True)
+        techniques = updates.get("techniques", row.techniques)
+        # An older evaluation saved with no methods keeps running the defaults when only its configs change.
+        if "techniques" in updates or ("technique_configs" in updates and techniques):
+            self._require_techniques(techniques, updates.get("technique_configs", row.technique_configs))
         if "technique_configs" in updates:
             # Resolve against the evaluation's *new* dataset/workflow when either is
             # being changed, so validation never uses the old dataset's workflow.
@@ -3406,11 +3992,13 @@ class TestSuiteService:
             resolve_action_nodes,
             resolve_agents,
             resolve_routers,
+            resolve_state_keys,
         )
 
         agents: List[Dict[str, Any]] = []
         routers: List[Dict[str, Any]] = []
         action_nodes: List[Dict[str, Any]] = []
+        state_keys: List[Dict[str, Any]] = []
         visited: set[str] = set()
 
         async def walk(current_id: str, path: List[str]) -> None:
@@ -3429,11 +4017,12 @@ class TestSuiteService:
             agents.extend(resolve_agents(graph, workflow_path=path))
             routers.extend(resolve_routers(graph, workflow_path=path))
             action_nodes.extend(resolve_action_nodes(graph, workflow_path=path))
+            state_keys.extend(resolve_state_keys(graph, workflow_path=path))
             for ref in nested_workflow_refs(graph):
                 await walk(ref["workflow_id"], path + [ref["label"]])
 
         await walk(str(workflow_id), [])
-        return {"agents": agents, "routers": routers, "action_nodes": action_nodes}
+        return {"agents": agents, "routers": routers, "action_nodes": action_nodes, "state_keys": state_keys}
 
     async def _full_agent_catalog(self, workflow_id: Any) -> List[Dict[str, Any]]:
         """Agents + tools for a workflow, expanding nested workflows (cycle-safe)."""
@@ -3449,6 +4038,7 @@ class TestSuiteService:
             agents=catalog["agents"],
             routers=catalog["routers"],
             action_nodes=catalog["action_nodes"],
+            state_keys=catalog["state_keys"],
         )
 
     async def get_workflow_evaluation_summaries(

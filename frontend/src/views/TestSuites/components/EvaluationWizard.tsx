@@ -4,7 +4,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/label";
 import { JsonInput } from "@/components/JsonInput";
-import { Checkbox } from "@/components/checkbox";
 import { Switch } from "@/components/switch";
 import {
   Select,
@@ -27,225 +26,24 @@ import type { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import type {
   ActionRuleDraft,
-  EvaluationActionNodeInfo,
-  EvaluationAgentInfo,
-  EvaluationRouterInfo,
   JudgeRuleDraft,
   RouteRuleDraft,
-  RuleConversation,
-  ToolUsagePerToolCheck,
+  ScenarioCheck,
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
 import { WorkflowVersionPicker } from "./WorkflowVersionPicker";
-import { getEvaluationToolCatalog } from "@/services/testEvaluations";
-import { listTestCases } from "@/services/testSuites";
-import { ToolUsageRuleBuilder, newToolRule } from "./ToolUsageRuleBuilder";
-import { scopeTargetIncomplete } from "../helpers/ruleScope";
-import { ruleConversations } from "../helpers/datasetConversations";
 import { newEvaluationDefaults } from "../helpers/evaluationForm";
-import { RouteRulesBuilder, newRouteRule } from "./RouteRulesBuilder";
-import { ActionRulesBuilder, newActionRule } from "./ActionRulesBuilder";
-import { JudgeRulesBuilder, newJudgeRule } from "./JudgeRulesBuilder";
+import {
+  methodDefaults,
+  methodSettingsComplete,
+  remapToolRuleNames,
+  type GradingSourceSelection,
+  type MethodSettingsValue,
+} from "../helpers/methodSettings";
+import { useDatasetCases, useEvaluationCatalog, useRuleConversations } from "../hooks/useEvaluationData";
+import { MethodPicker, MethodSettings } from "./LegacyMethodsPanel";
 
-// Case-insensitive name/label/id -> id map, keeping only unambiguous keys (a name
-// shared by two tools is left unmapped, mirroring the backend, so it can't silently
-// resolve to the wrong tool).
-const uniqueNameToId = (entries: { id: string; keys: (string | undefined)[] }[]): Map<string, string> => {
-  const idsByKey = new Map<string, Set<string>>();
-  for (const entry of entries) {
-    for (const key of entry.keys) {
-      if (!key) continue;
-      const normalized = key.toLowerCase();
-      const ids = idsByKey.get(normalized) ?? new Set<string>();
-      ids.add(entry.id);
-      idsByKey.set(normalized, ids);
-    }
-  }
-  const map = new Map<string, string>();
-  for (const [key, ids] of idsByKey) {
-    if (ids.size === 1) map.set(key, [...ids][0]);
-  }
-  return map;
-};
-
-const buildToolNameToId = (catalog: EvaluationAgentInfo[]): Map<string, string> =>
-  uniqueNameToId(
-    catalog.flatMap((agent) =>
-      agent.tools.map((tool) => ({ id: tool.id, keys: [tool.id, tool.name, tool.label] })),
-    ),
-  );
-
-const buildAgentNameToId = (catalog: EvaluationAgentInfo[]): Map<string, string> =>
-  uniqueNameToId(catalog.map((agent) => ({ id: agent.id, keys: [agent.id, agent.label] })));
-
-// Rewrite per_tool keys (legacy tool names) to canonical ids, matching tool_ids.
-const remapPerToolKeys = (
-  perTool: Record<string, ToolUsagePerToolCheck> | undefined,
-  toolMap: Map<string, string>,
-): Record<string, ToolUsagePerToolCheck> | undefined => {
-  if (!perTool || Object.keys(perTool).length === 0) return perTool;
-  let changed = false;
-  const remapped: Record<string, ToolUsagePerToolCheck> = {};
-  for (const [key, value] of Object.entries(perTool)) {
-    const mapped = toolMap.get(key.toLowerCase()) ?? key;
-    if (mapped !== key) changed = true;
-    remapped[mapped] = value;
-  }
-  return changed ? remapped : perTool;
-};
-
-interface MetricDef {
-  value: string;
-  label: string;
-  description: string;
-}
-
-const METRIC_GROUPS: { label: string; metrics: MetricDef[] }[] = [
-  {
-    label: "Output match",
-    metrics: [
-      { value: "exact_match", label: "Exact Match", description: "Output exactly equals the expected value" },
-      { value: "contains", label: "Contains", description: "Output contains the expected text" },
-      { value: "not_contains", label: "Does Not Contain", description: "Output must not contain the specified text" },
-      { value: "json_match", label: "JSON Match", description: "Output matches the expected JSON structure and values" },
-      { value: "field_equals", label: "Field Equals", description: "A specific field in the output equals an expected value" },
-    ],
-  },
-  {
-    label: "Agent process",
-    metrics: [
-      { value: "tool_used", label: "Tool Usage", description: "Define whether a tool should or should not be used" },
-      { value: "route_taken", label: "Route Taken", description: "Select the route the workflow is expected to take" },
-      { value: "action_taken", label: "Action Taken", description: "Define whether an action should or should not happen" },
-      { value: "no_errors", label: "No Errors", description: "The run completed without any node failures" },
-    ],
-  },
-  {
-    label: "Grounding & LLM judge",
-    metrics: [
-      { value: "nli_eval", label: "NLI Evaluation", description: "Natural Language Inference entailment check" },
-      { value: "provenance_eval", label: "Provenance Evaluation", description: "Verifies the answer is grounded in context" },
-      { value: "llm_judge", label: "LLM Judge", description: "Grades the answer against a custom rubric" },
-    ],
-  },
-];
-
-const CONFIG_METRICS = [
-  "not_contains",
-  "field_equals",
-  "nli_eval",
-  "provenance_eval",
-  "tool_used",
-  "route_taken",
-  "action_taken",
-  "llm_judge",
-];
-
-// A score field is valid when empty (a default applies) or a number in [0, 1].
-const isValidScore = (text: string): boolean => {
-  if (text.trim() === "") return true;
-  const value = Number(text);
-  return Number.isFinite(value) && value >= 0 && value <= 1;
-};
-
-const NLI_MODEL_OPTIONS = [
-  { value: "cross-encoder/nli-deberta-v3-base", label: "DeBERTa v3 Base (NLI)" },
-  { value: "cross-encoder/nli-roberta-base", label: "RoBERTa Base (NLI)" },
-];
-
-export type GradingSourceSelection =
-  | "expected_output"
-  | "kb_retrievals"
-  | "conversation_context"
-  | "tool_events"
-  | "none"
-  | "legacy";
-
-const GRADING_SOURCE_OPTIONS: {
-  value: Exclude<GradingSourceSelection, "none" | "legacy">;
-  label: string;
-}[] = [
-  { value: "kb_retrievals", label: "Retrieved context" },
-  { value: "expected_output", label: "Expected answer" },
-];
-
-// Ready-made rubrics: one click fills the rubric text and picks the matching
-// grading source. The user can still edit the text afterwards.
-// Anchors put "partial" at 0.4 so it lands under the default 0.5 threshold — a
-// partially satisfied criterion should not pass unless the user lowers the bar.
-const RUBRIC_PRESETS: {
-  key: string;
-  label: string;
-  rubric: string;
-  sourceType: GradingSourceSelection;
-}[] = [
-  {
-    key: "retrieval_relevance",
-    label: "Retrieval relevance",
-    rubric:
-      "Judge whether the SOURCE passages are relevant to answering the QUESTION. " +
-      "Ignore the answer itself. Score 1.0 when the passages contain the " +
-      "information needed to answer the question, 0.4 when they are only " +
-      "partially relevant, and 0.0 when they are unrelated to the question. " +
-      "Intermediate scores are allowed.",
-    sourceType: "kb_retrievals",
-  },
-  {
-    key: "completeness",
-    label: "Completeness",
-    rubric:
-      "Judge whether the ANSWER fully addresses every part of the QUESTION. " +
-      "Ignore style and tone. Score 1.0 when every part is answered, 0.4 when " +
-      "only some parts are answered, and 0.0 when the answer misses the point " +
-      "of the question. Intermediate scores are allowed.",
-    sourceType: "none",
-  },
-  {
-    key: "helpfulness",
-    label: "Helpfulness",
-    rubric:
-      "Judge whether the ANSWER moves the user toward resolving their request. " +
-      "Ignore length and formatting. Score 1.0 when it resolves the request or " +
-      "gives a clear, correct next step, 0.4 when it is on topic but leaves the " +
-      "user without a usable way forward, and 0.0 when it is unhelpful or " +
-      "off-topic. Intermediate scores are allowed.",
-    sourceType: "none",
-  },
-  {
-    key: "politeness",
-    label: "Politeness & tone",
-    rubric:
-      "Judge whether the ANSWER is polite, professional and helpful in tone. " +
-      "Ignore factual correctness. Score 1.0 when it is courteous and " +
-      "constructive, 0.4 when it is neutral or curt, and 0.0 when it is rude, " +
-      "dismissive or inappropriate. Intermediate scores are allowed.",
-    sourceType: "none",
-  },
-];
-
-const GradingSourceSelect: React.FC<{
-  value: GradingSourceSelection;
-  onChange: (value: GradingSourceSelection) => void;
-  allowRubricOnly?: boolean;
-  legacyField?: string;
-}> = ({ value, onChange, allowRubricOnly = false, legacyField }) => (
-  <Select value={value} onValueChange={(next) => onChange(next as GradingSourceSelection)}>
-    <SelectTrigger className="mt-1">
-      <SelectValue placeholder="Select source" />
-    </SelectTrigger>
-    <SelectContent>
-      {allowRubricOnly && <SelectItem value="none">No source: rubric only</SelectItem>}
-      {GRADING_SOURCE_OPTIONS.map((source) => (
-        <SelectItem key={source.value} value={source.value}>
-          {source.label}
-        </SelectItem>
-      ))}
-      {legacyField && (
-        <SelectItem value="legacy">Legacy configured source ({legacyField})</SelectItem>
-      )}
-    </SelectContent>
-  </Select>
-);
+export type { GradingSourceSelection } from "../helpers/methodSettings";
 
 type WizardStep = "workflow" | "basics" | "data" | "validation" | "configure";
 
@@ -257,34 +55,6 @@ const STEPS: { key: WizardStep; label: string; icon: React.ElementType }[] = [
   { key: "configure", label: "Configure", icon: SlidersHorizontal },
 ];
 
-
-const MetricOption: React.FC<{
-  metric: MetricDef;
-  selected: boolean;
-  onToggle: (checked: boolean) => void;
-}> = ({ metric, selected, onToggle }) => (
-  <div
-    className={cn(
-      "flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors",
-      selected ? "border-primary bg-primary/5" : "hover:border-gray-300"
-    )}
-    onClick={() => onToggle(!selected)}
-  >
-    <Checkbox
-      id={`metric-${metric.value}`}
-      checked={selected}
-      onClick={(e) => e.stopPropagation()}
-      onCheckedChange={(checked) => onToggle(Boolean(checked))}
-      className="mt-0.5"
-    />
-    <div className="flex-1">
-      <Label htmlFor={`metric-${metric.value}`} className="text-sm font-medium cursor-pointer">
-        {metric.label}
-      </Label>
-      <p className="text-xs text-muted-foreground mt-0.5">{metric.description}</p>
-    </div>
-  </div>
-);
 
 export interface EvaluationWizardData {
   name: string;
@@ -316,6 +86,9 @@ export interface EvaluationWizardData {
   actionRules: ActionRuleDraft[];
   judgeRules: JudgeRuleDraft[];
   judgeProviderId: string;
+  /** Edited in the evaluation editor; the wizard keeps them as they are. */
+  checks: ScenarioCheck[];
+  checksProviderId: string;
 }
 
 interface EvaluationWizardProps {
@@ -363,59 +136,14 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const [isMetadataValid, setIsMetadataValid] = useState(true);
   const [useMemory, setUseMemory] = useState(initialData?.useMemory ?? defaults.useMemory);
 
-  // NLI config
-  const [nliModelName, setNliModelName] = useState(
-    initialData?.nliModelName ?? "cross-encoder/nli-deberta-v3-base"
-  );
-  const [nliMinEntailScore, setNliMinEntailScore] = useState(initialData?.nliMinEntailScore ?? "0.5");
-  const [nliFailOnContradiction, setNliFailOnContradiction] = useState(
-    initialData?.nliFailOnContradiction ?? false
-  );
-  const [nliEvidenceSource, setNliEvidenceSource] = useState<GradingSourceSelection>(
-    initialData?.nliEvidenceSource ?? "expected_output"
-  );
-  const [nliEvidenceField] = useState(initialData?.nliEvidenceField ?? "");
+  const [methods, setMethods] = useState<MethodSettingsValue>(() => methodDefaults(initialData, providers));
+  const patchMethods = (patch: Partial<MethodSettingsValue>) =>
+    setMethods((previous) => ({ ...previous, ...patch }));
 
-  // Provenance config
-  const [provMode, setProvMode] = useState<"embeddings" | "llm">(initialData?.provMode ?? "embeddings");
-  const [provContextSource, setProvContextSource] = useState<GradingSourceSelection>(
-    initialData?.provContextSource ?? "kb_retrievals"
-  );
-  const [provContextField] = useState(initialData?.provContextField ?? "");
-  const [provEmbeddingType, setProvEmbeddingType] = useState<"openai" | "huggingface" | "bedrock">(
-    initialData?.provEmbeddingType ?? "huggingface"
-  );
-  const [provEmbeddingModelName, setProvEmbeddingModelName] = useState(
-    initialData?.provEmbeddingModelName ?? "all-MiniLM-L6-v2"
-  );
-  const [provMinScore, setProvMinScore] = useState(initialData?.provMinScore ?? "0.5");
-  const [provFailOnViolation, setProvFailOnViolation] = useState(
-    initialData?.provFailOnViolation ?? false
-  );
-  const [provLlmProviderId, setProvLlmProviderId] = useState(
-    initialData?.provLlmProviderId ?? providers[0]?.id ?? ""
-  );
-  const [provLlmJudgeSystemPromptSuffix, setProvLlmJudgeSystemPromptSuffix] = useState(
-    initialData?.provLlmJudgeSystemPromptSuffix ?? ""
-  );
-
-  // Tool Usage rules + workflow tool catalogue
-  // Every rule builder opens on one blank rule, so picking a technique always
-  // shows what there is to fill in rather than an empty panel.
-  const [toolRules, setToolRules] = useState<ToolUsageRule[]>(
-    initialData?.toolRules?.length ? initialData.toolRules : [newToolRule()],
-  );
-  const [toolCatalog, setToolCatalog] = useState<EvaluationAgentInfo[]>([]);
-  const [catalogRouters, setCatalogRouters] = useState<EvaluationRouterInfo[]>([]);
-  const [catalogActionNodes, setCatalogActionNodes] = useState<EvaluationActionNodeInfo[]>([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
-
-  const toolUsageSelected = metrics.includes("tool_used");
   // Tool Usage, Route and Action are all rule-based: they share the node catalogue
   // and the dataset's conversations for specific-turn targeting.
   const needsCatalog =
-    toolUsageSelected ||
+    metrics.includes("tool_used") ||
     metrics.includes("route_taken") ||
     metrics.includes("action_taken");
 
@@ -428,171 +156,18 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
   const offersDatasetDefault = mode === "edit" && initialData?.workflowId === "none";
   const missingWorkflow = workflowId === "none" && !selectedSuite?.workflow_id;
 
-  useEffect(() => {
-    if (!needsCatalog || !effectiveWorkflowId) {
-      setToolCatalog([]);
-      setCatalogRouters([]);
-      setCatalogActionNodes([]);
-      return;
-    }
-    let cancelled = false;
-    setCatalogLoading(true);
-    setCatalogError(null);
-    getEvaluationToolCatalog(effectiveWorkflowId)
-      .then((catalog) => {
-        if (cancelled) return;
-        setToolCatalog(catalog.agents ?? []);
-        setCatalogRouters(catalog.routers ?? []);
-        setCatalogActionNodes(catalog.action_nodes ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setCatalogError("Failed to load workflow nodes");
-      })
-      .finally(() => {
-        if (!cancelled) setCatalogLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [needsCatalog, effectiveWorkflowId]);
-
-  // Imported conversations for specific-turn targeting, derived from the suite's cases.
-  const [conversations, setConversations] = useState<RuleConversation[]>([]);
-  useEffect(() => {
-    if (!needsCatalog || !suiteId) {
-      setConversations([]);
-      return;
-    }
-    let cancelled = false;
-    listTestCases(suiteId)
-      .then((cases) => {
-        if (!cancelled) setConversations(ruleConversations(cases ?? []));
-      })
-      .catch(() => {
-        if (!cancelled) setConversations([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [needsCatalog, suiteId]);
+  const catalog = useEvaluationCatalog(effectiveWorkflowId, needsCatalog);
+  const conversations = useRuleConversations(useDatasetCases(suiteId, needsCatalog).cases);
 
   // When the catalogue loads, rewrite any legacy tool/agent NAMES (from an old
   // evaluation) to canonical ids so they aren't later saved as if they were ids.
   useEffect(() => {
-    if (toolCatalog.length === 0 || toolRules.length === 0) return;
-    const toolMap = buildToolNameToId(toolCatalog);
-    const agentMap = buildAgentNameToId(toolCatalog);
-    const allToolIds = [...new Set(toolCatalog.flatMap((a) => a.tools.map((t) => t.id)))];
-    let changed = false;
-    const remapped = toolRules.map((rule) => {
-      // A legacy "any tool" rule (any + no tools) expands to every workflow tool.
-      const isAnyToolMarker = rule.operator === "any" && rule.tool_ids.length === 0;
-      const tool_ids = isAnyToolMarker
-        ? allToolIds
-        : rule.tool_ids.map((id) => toolMap.get(id.toLowerCase()) ?? id);
-      const agent_id = rule.agent_id
-        ? agentMap.get(rule.agent_id.toLowerCase()) ?? rule.agent_id
-        : rule.agent_id;
-      const per_tool = remapPerToolKeys(rule.per_tool, toolMap);
-      if (
-        tool_ids.some((id, i) => id !== rule.tool_ids[i]) ||
-        agent_id !== rule.agent_id ||
-        per_tool !== rule.per_tool
-      ) {
-        changed = true;
-        return { ...rule, tool_ids, agent_id, per_tool };
-      }
-      return rule;
-    });
-    if (changed) setToolRules(remapped);
+    const remapped = remapToolRuleNames(methods.toolRules, catalog.agents);
+    if (remapped !== methods.toolRules) patchMethods({ toolRules: remapped });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toolCatalog]);
-
-  // Does Not Contain config
-  const [notContainsText, setNotContainsText] = useState(initialData?.notContainsText ?? "");
-
-  // Field Equals config
-  const [fieldEqualsField, setFieldEqualsField] = useState(initialData?.fieldEqualsField ?? "");
-  const [fieldEqualsExpected, setFieldEqualsExpected] = useState(
-    initialData?.fieldEqualsExpected ?? ""
-  );
-
-  // Route Taken config — always at least one rule row to fill in.
-  const [routeRules, setRouteRules] = useState<RouteRuleDraft[]>(
-    initialData?.routeRules?.length ? initialData.routeRules : [newRouteRule()],
-  );
-
-  // Action Taken config — always at least one rule row to fill in.
-  const [actionRules, setActionRules] = useState<ActionRuleDraft[]>(
-    initialData?.actionRules?.length ? initialData.actionRules : [newActionRule()],
-  );
-
-  // LLM Judge config — always at least one rule row to fill in.
-  const [judgeRules, setJudgeRules] = useState<JudgeRuleDraft[]>(
-    initialData?.judgeRules?.length ? initialData.judgeRules : [newJudgeRule()],
-  );
-  const [judgeProviderId, setJudgeProviderId] = useState(
-    initialData?.judgeProviderId ?? providers[0]?.id ?? ""
-  );
+  }, [catalog.agents]);
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === step);
-
-  // Canonical id sets to catch legacy names that never resolved (block save on them).
-  const catalogLoaded = toolCatalog.length > 0;
-  const catalogToolIds = new Set(toolCatalog.flatMap((a) => a.tools.map((t) => t.id)));
-  const catalogAgentIds = new Set(toolCatalog.map((a) => a.id));
-
-  const ruleHasUnresolvedRef = (rule: ToolUsageRule): boolean => {
-    if (!catalogLoaded) return false;
-    const toolUnresolved = rule.tool_ids.some((id) => !catalogToolIds.has(id));
-    const agentUnresolved = Boolean(rule.agent_id) && !catalogAgentIds.has(rule.agent_id as string);
-    return toolUnresolved || agentUnresolved;
-  };
-
-  const toolRulesInvalid =
-    toolUsageSelected &&
-    (toolRules.length === 0 ||
-      toolRules.some(
-        (rule) =>
-          (rule.operator !== "only" && rule.tool_ids.length === 0) ||
-          ruleHasUnresolvedRef(rule) ||
-          scopeTargetIncomplete(rule),
-      ));
-  const nliScoreInvalid = metrics.includes("nli_eval") && !isValidScore(nliMinEntailScore);
-  const provScoreInvalid = metrics.includes("provenance_eval") && !isValidScore(provMinScore);
-  const judgeRulesInvalid =
-    metrics.includes("llm_judge") &&
-    (judgeRules.length === 0 ||
-      judgeRules.some((rule) => !rule.rubric.trim() || !isValidScore(rule.minScore)));
-
-  // Per-rule validity mirrors the builders' dropdown/free-text split: with a
-  // catalogue, a fresh rule must pick a router; legacy free-text rules only
-  // need the expected route.
-  const routeRuleInvalid = (rule: RouteRuleDraft): boolean => {
-    const inCatalog = catalogRouters.some((router) => router.id === rule.router);
-    const isLegacyValue =
-      catalogRouters.length > 0 &&
-      ((Boolean(rule.router) && !inCatalog) || (!rule.router && Boolean(rule.expected)));
-    const usesDropdowns = catalogRouters.length > 0 && !isLegacyValue;
-    if (usesDropdowns && !rule.router.trim()) return true;
-    if (scopeTargetIncomplete(rule)) return true;
-    return !rule.expected.trim();
-  };
-
-  const actionRuleInvalid = (rule: ActionRuleDraft): boolean =>
-    (!rule.node.trim() && !rule.nodeType.trim()) || scopeTargetIncomplete(rule);
-
-  const isConfigureStepValid = (): boolean => {
-    if (metrics.includes("not_contains") && !notContainsText.trim()) return false;
-    if (metrics.includes("route_taken")) {
-      if (routeRules.length === 0 || routeRules.some(routeRuleInvalid)) return false;
-    }
-    if (metrics.includes("action_taken")) {
-      if (actionRules.length === 0 || actionRules.some(actionRuleInvalid)) return false;
-    }
-    if (toolRulesInvalid || nliScoreInvalid || provScoreInvalid || judgeRulesInvalid) return false;
-    return true;
-  };
 
   const canProceed = (): boolean => {
     switch (step) {
@@ -605,7 +180,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
       case "validation":
         return metrics.length > 0;
       case "configure":
-        return isConfigureStepValid();
+        return methodSettingsComplete(metrics, methods, { agents: catalog.agents, routers: catalog.routers });
       default:
         return false;
     }
@@ -634,28 +209,9 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         metrics,
         inputMetadataText,
         useMemory,
-        nliModelName,
-        nliMinEntailScore,
-        nliFailOnContradiction,
-        nliEvidenceSource,
-        nliEvidenceField,
-        provMode,
-        provContextSource,
-        provContextField,
-        provEmbeddingType,
-        provEmbeddingModelName,
-        provMinScore,
-        provFailOnViolation,
-        provLlmProviderId,
-        provLlmJudgeSystemPromptSuffix,
-        toolRules,
-        notContainsText,
-        fieldEqualsField,
-        fieldEqualsExpected,
-        routeRules,
-        actionRules,
-        judgeRules,
-        judgeProviderId,
+        ...methods,
+        checks: initialData?.checks ?? [],
+        checksProviderId: initialData?.checksProviderId ?? "",
       });
       // Reset form on successful create
       if (mode === "create") {
@@ -676,26 +232,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     setInputMetadataText("{}");
     setIsMetadataValid(true);
     setUseMemory(defaults.useMemory);
-    setNliModelName("cross-encoder/nli-deberta-v3-base");
-    setNliMinEntailScore("0.5");
-    setNliFailOnContradiction(false);
-    setNliEvidenceSource("expected_output");
-    setProvMode("embeddings");
-    setProvContextSource("kb_retrievals");
-    setProvEmbeddingType("huggingface");
-    setProvEmbeddingModelName("all-MiniLM-L6-v2");
-    setProvMinScore("0.5");
-    setProvFailOnViolation(false);
-    setProvLlmProviderId(providers[0]?.id ?? "");
-    setProvLlmJudgeSystemPromptSuffix("");
-    setToolRules([newToolRule()]);
-    setNotContainsText("");
-    setFieldEqualsField("");
-    setFieldEqualsExpected("");
-    setRouteRules([newRouteRule()]);
-    setActionRules([newActionRule()]);
-    setJudgeRules([newJudgeRule()]);
-    setJudgeProviderId(providers[0]?.id ?? "");
+    setMethods(methodDefaults(undefined, providers));
   };
 
   const handleOpenChange = (open: boolean) => {
@@ -704,8 +241,6 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
     }
     onOpenChange(open);
   };
-
-  const needsConfigStep = metrics.some((m) => CONFIG_METRICS.includes(m));
 
   const renderStepContent = () => {
     switch (step) {
@@ -845,358 +380,22 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
                 Select at least one method to validate your agent's outputs
               </p>
             </div>
-            {METRIC_GROUPS.map((group) => (
-              <div key={group.label} className="space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {group.label}
-                </div>
-                {group.metrics.map((metric) => (
-                  <MetricOption
-                    key={metric.value}
-                    metric={metric}
-                    selected={metrics.includes(metric.value)}
-                    onToggle={(checked) =>
-                      setMetrics((prev) =>
-                        checked
-                          ? [...prev, metric.value]
-                          : prev.filter((m) => m !== metric.value)
-                      )
-                    }
-                  />
-                ))}
-              </div>
-            ))}
+            <MethodPicker metrics={metrics} onChange={setMetrics} />
           </div>
         );
 
       case "configure":
         return (
-          <div className="space-y-4">
-            {!needsConfigStep && (
-              <div className="text-center py-8 text-muted-foreground">
-                <Settings className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                <p className="text-sm">No additional configuration needed.</p>
-                <p className="text-xs mt-1">
-                  The selected validation methods don't require extra settings.
-                </p>
-              </div>
-            )}
-
-            {metrics.includes("nli_eval") && (
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                  NLI Evaluation Config
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Uses workflow output as answer and expected output as evidence.
-                </p>
-                <div>
-                  <Label className="text-xs">NLI Model</Label>
-                  <Select value={nliModelName} onValueChange={setNliModelName}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select NLI model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {NLI_MODEL_OPTIONS.map((model) => (
-                        <SelectItem key={model.value} value={model.value}>
-                          {model.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Compare answer with</Label>
-                  <GradingSourceSelect
-                    value={nliEvidenceSource}
-                    onChange={setNliEvidenceSource}
-                    legacyField={nliEvidenceField}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Expected answer checks consistency with the reference answer; Retrieved
-                    context checks support from what the agent retrieved this run.
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-xs">Min Entailment Score (0-1)</Label>
-                  <Input
-                    value={nliMinEntailScore}
-                    onChange={(e) => setNliMinEntailScore(e.target.value)}
-                    className="mt-1"
-                    placeholder="0.5"
-                  />
-                  {nliScoreInvalid && (
-                    <p className="text-xs text-red-500 mt-1">Enter a number between 0 and 1.</p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {metrics.includes("provenance_eval") && (
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                  Provenance Evaluation Config
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Uses workflow output as answer and expected output as context.
-                </p>
-                <div>
-                  <Label className="text-xs">Grounding source</Label>
-                  <GradingSourceSelect
-                    value={provContextSource}
-                    onChange={setProvContextSource}
-                    legacyField={provContextField}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Retrieved context means only what the agent actually retrieved this run
-                    (KB passages and retrieval-tool results), not the whole knowledge base.
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-xs">Provenance Mode</Label>
-                  <Select
-                    value={provMode}
-                    onValueChange={(value: "embeddings" | "llm") => setProvMode(value)}
-                  >
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select mode" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="embeddings">Embeddings</SelectItem>
-                      <SelectItem value="llm">LLM Verification</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Min Score (0-1)</Label>
-                  <Input
-                    value={provMinScore}
-                    onChange={(e) => setProvMinScore(e.target.value)}
-                    className="mt-1"
-                    placeholder="0.5"
-                  />
-                  {provScoreInvalid && (
-                    <p className="text-xs text-red-500 mt-1">Enter a number between 0 and 1.</p>
-                  )}
-                </div>
-                {provMode === "embeddings" && (
-                  <>
-                    <div>
-                      <Label className="text-xs">Embedding Provider</Label>
-                      <Select
-                        value={provEmbeddingType}
-                        onValueChange={(value: "openai" | "huggingface" | "bedrock") =>
-                          setProvEmbeddingType(value)
-                        }
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select embedding provider" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="huggingface">HuggingFace</SelectItem>
-                          <SelectItem value="openai">OpenAI</SelectItem>
-                          <SelectItem value="bedrock">AWS Bedrock</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Embedding Model Name</Label>
-                      <Input
-                        value={provEmbeddingModelName}
-                        onChange={(e) => setProvEmbeddingModelName(e.target.value)}
-                        placeholder="all-MiniLM-L6-v2"
-                        className="mt-1"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {provMode === "llm" && (
-                  <>
-                    <div>
-                      <Label className="text-xs">LLM Provider</Label>
-                      <Select value={provLlmProviderId} onValueChange={setProvLlmProviderId}>
-                        <SelectTrigger className="mt-1">
-                          <SelectValue placeholder="Select provider" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {providers.map((provider) => (
-                            <SelectItem key={provider.id} value={provider.id}>
-                              {provider.name} ({provider.llm_model_provider} - {provider.llm_model})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Additional Verification Instructions</Label>
-                      <Textarea
-                        value={provLlmJudgeSystemPromptSuffix}
-                        onChange={(e) => setProvLlmJudgeSystemPromptSuffix(e.target.value)}
-                        placeholder="Optional extra instructions for the judge..."
-                        size="body"
-                        className="mt-1"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-            {metrics.includes("tool_used") && (
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                  Tool Usage
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Add rules about which tools an agent should or should not use. Agents and
-                  tools come from the selected workflow.
-                </p>
-                {!effectiveWorkflowId ? (
-                  <p className="text-sm text-muted-foreground">
-                    Pick a workflow in the Workflow step to load its agents and tools.
-                  </p>
-                ) : (
-                  <ToolUsageRuleBuilder
-                    rules={toolRules}
-                    onChange={setToolRules}
-                    catalog={toolCatalog}
-                    conversations={conversations}
-                    loading={catalogLoading}
-                    error={catalogError}
-                  />
-                )}
-              </div>
-            )}
-
-            {metrics.includes("not_contains") && (
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                  Does Not Contain Config
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Fails the run if any of these phrases appears in the output. One phrase
-                  per line. Matching is case-insensitive.
-                </p>
-                <div>
-                  <Label className="text-xs">Forbidden Phrases *</Label>
-                  <Textarea
-                    value={notContainsText}
-                    onChange={(e) => setNotContainsText(e.target.value)}
-                    placeholder={"e.g.\ncompetitor name\nsocial security number"}
-                    size="body"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-            )}
-
-            {metrics.includes("field_equals") && (
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-sky-500"></span>
-                  Field Equals Config
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Checks that a value from the run equals an expected value. Values are
-                  compared as text.
-                </p>
-                <div>
-                  <Label className="text-xs">Field</Label>
-                  <Input
-                    value={fieldEqualsField}
-                    onChange={(e) => setFieldEqualsField(e.target.value)}
-                    placeholder="Leave empty for the final output, or e.g. outputs.status"
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Expected Value</Label>
-                  <Input
-                    value={fieldEqualsExpected}
-                    onChange={(e) => setFieldEqualsExpected(e.target.value)}
-                    placeholder="Leave empty to use the test case's expected output"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-            )}
-
-            {metrics.includes("route_taken") && (
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                  Route Taken Config
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Checks that router nodes selected the expected branches, on every turn or
-                  at least once in a conversation. All rules must pass.
-                </p>
-                <RouteRulesBuilder
-                  rules={routeRules}
-                  routers={catalogRouters}
-                  conversations={conversations}
-                  onChange={setRouteRules}
-                />
-              </div>
-            )}
-
-            {metrics.includes("action_taken") && (
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-teal-500"></span>
-                  Action Taken Config
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Checks whether specific workflow nodes ran successfully, on every turn or
-                  at least once in a conversation. All rules must pass.
-                </p>
-                <ActionRulesBuilder
-                  rules={actionRules}
-                  nodes={catalogActionNodes}
-                  conversations={conversations}
-                  onChange={setActionRules}
-                />
-              </div>
-            )}
-
-            {metrics.includes("llm_judge") && (
-              <div className="border rounded-lg p-4 space-y-3">
-                <div className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-pink-500"></span>
-                  LLM Judge Config
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Grades the answer against rubrics you write. One criterion per rule works
-                  best; all rules must pass.
-                </p>
-                <div>
-                  <Label className="text-xs">LLM Provider</Label>
-                  <Select value={judgeProviderId} onValueChange={setJudgeProviderId}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="Select provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {providers.map((provider) => (
-                        <SelectItem key={provider.id} value={provider.id}>
-                          {provider.name} ({provider.llm_model_provider} - {provider.llm_model})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <JudgeRulesBuilder
-                  rules={judgeRules}
-                  presets={RUBRIC_PRESETS}
-                  onChange={setJudgeRules}
-                />
-              </div>
-            )}
-          </div>
+          <MethodSettings
+            metrics={metrics}
+            settings={methods}
+            onChange={patchMethods}
+            providers={providers}
+            catalog={catalog}
+            conversations={conversations}
+            hasWorkflow={Boolean(effectiveWorkflowId)}
+            showEmptyState
+          />
         );
 
       default:

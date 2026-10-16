@@ -217,7 +217,11 @@ export const RoutesProvider = () => {
             },
             {
               path: "notifications",
-              element: <Notifications />,
+              element: (
+                <ProtectedRoute requiredPermissions={["read:dashboard"]}>
+                  <Notifications />
+                </ProtectedRoute>
+              ),
             },
             {
               path: "settings",

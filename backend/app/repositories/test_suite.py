@@ -187,6 +187,25 @@ class TestRunRepository(DbRepository[TestRunModel]):
         result = await self.db.execute(stmt)
         return [str(run_id) for run_id in result.scalars().all()]
 
+    async def publish_progress(self, run_id: UUID, progress: dict) -> None:
+        """Write a run's progress in a transaction of its own, so it shows before the run's next commit"""
+        from sqlalchemy import text
+
+        from app.core.tenant_scope import get_tenant_context
+        from app.db.multi_tenant_session import multi_tenant_manager
+
+        session_factory = multi_tenant_manager.get_tenant_session_factory(get_tenant_context())
+        async with session_factory() as session:
+            # Progress is best effort; never wait long on the run's row.
+            await session.execute(text("SET LOCAL lock_timeout = '2s'"))
+            await session.execute(
+                update(TestRunModel)
+                .where(TestRunModel.id == run_id)
+                .values(progress=progress)
+                .execution_options(synchronize_session=False)
+            )
+            await session.commit()
+
     async def mark_orphaned_as_failed(
         self,
         waiting_ids: List[str],

@@ -44,11 +44,15 @@ import { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import { TestRun, TestSuite } from "@/interfaces/testSuite.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import { EvaluationWizard, EvaluationWizardData } from "./EvaluationWizard";
+import { EvaluationEditor } from "./EvaluationEditor";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
 import { EvaluationListRow } from "./EvaluationListRow";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
 import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../helpers/evaluationForm";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
-import { runAvgAccuracy } from "../helpers/runResults";
+import { extractErrorMessage } from "@/helpers/apiError";
+import { runAvgAccuracy, runProgressText } from "../helpers/runResults";
 import {
   apiErrorDetail,
   bundleFilename,
@@ -139,6 +143,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
   }, [workflowId]);
 
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const checksEnabled = useFeatureFlagVisible(FeatureFlags.EVALUATIONS.CHECKS);
   const [editingEvaluation, setEditingEvaluation] = useState<TestEvaluationConfig | null>(null);
   const [deletingEvaluationId, setDeletingEvaluationId] = useState<string | null>(null);
   const [isRunAllVersionDialogOpen, setIsRunAllVersionDialogOpen] = useState(false);
@@ -356,7 +361,16 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     }
   };
 
-  const handleCreateSubmit = async (data: EvaluationWizardData) => {
+  const startRunAfterSave = async (evaluationId: string) => {
+    try {
+      await runTestEvaluation(evaluationId);
+      toast.success("Evaluation started");
+    } catch (error) {
+      toast.error(runStartErrorMessage(error));
+    }
+  };
+
+  const handleCreateSubmit = async (data: EvaluationWizardData, options?: { run?: boolean }) => {
     try {
       const created = await createTestEvaluation({
         name: data.name.trim(),
@@ -369,14 +383,15 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       });
       if (!created) return;
       setIsCreateDialogOpen(false);
+      if (options?.run && created.id) await startRunAfterSave(created.id);
       void refetchPage();
       if (created.id) onOpenEvaluation(created.id);
-    } catch {
-      toast.error("Failed to create evaluation");
+    } catch (error) {
+      toast.error(extractErrorMessage(error, "Failed to create evaluation"));
     }
   };
 
-  const handleEditSubmit = async (data: EvaluationWizardData) => {
+  const handleEditSubmit = async (data: EvaluationWizardData, options?: { run?: boolean }) => {
     if (!editingEvaluation?.id) return;
     try {
       const updated = await updateTestEvaluation(editingEvaluation.id, {
@@ -391,6 +406,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       if (!updated) return;
       setEditingEvaluation(null);
       toast.success("Evaluation updated");
+      if (options?.run) await startRunAfterSave(editingEvaluation.id);
       void refetchPage(); // its workflow may have changed — refetch the page
     } catch (error) {
       if (isRunConflict(error)) {
@@ -398,7 +414,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         setEditingEvaluation(null);
         void refetchPage();
       } else {
-        toast.error("Failed to update evaluation");
+        toast.error(extractErrorMessage(error, "Failed to update evaluation"));
       }
     }
   };
@@ -604,6 +620,9 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
                 lastRunStatus={
                   evaluation.id ? lastRunsByEvaluationId[evaluation.id]?.status : undefined
                 }
+                progressText={
+                  evaluation.id ? runProgressText(lastRunsByEvaluationId[evaluation.id]) : null
+                }
                 onOpen={() => evaluation.id && onOpenEvaluation(evaluation.id)}
                 onEdit={() => setEditingEvaluation(evaluation)}
                 onExport={() => void handleExport(evaluation)}
@@ -642,7 +661,20 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         />
       )}
 
-      {allowCreate && !isUnassigned && (
+      {allowCreate && !isUnassigned && checksEnabled && (
+        <EvaluationEditor
+          isOpen={isCreateDialogOpen}
+          onOpenChange={setIsCreateDialogOpen}
+          onSubmit={handleCreateSubmit}
+          suites={suites}
+          workflows={workflows}
+          providers={providers}
+          mode="create"
+          lockedWorkflowId={workflowId}
+        />
+      )}
+
+      {allowCreate && !isUnassigned && !checksEnabled && (
         <EvaluationWizard
           isOpen={isCreateDialogOpen}
           onOpenChange={setIsCreateDialogOpen}
@@ -655,7 +687,22 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         />
       )}
 
-      {editingEvaluation && (
+      {editingEvaluation && checksEnabled && (
+        <EvaluationEditor
+          isOpen={!!editingEvaluation}
+          onOpenChange={(open) => {
+            if (!open) setEditingEvaluation(null);
+          }}
+          onSubmit={handleEditSubmit}
+          suites={suites}
+          workflows={workflows}
+          providers={providers}
+          mode="edit"
+          initialData={getEditInitialData(editingEvaluation, providers)}
+        />
+      )}
+
+      {editingEvaluation && !checksEnabled && (
         <EvaluationWizard
           isOpen={!!editingEvaluation}
           onOpenChange={(open) => {

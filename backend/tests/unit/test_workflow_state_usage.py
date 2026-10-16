@@ -450,3 +450,22 @@ class TestOwnDiagnosticsSurviveTheSubFlowMerge:
         parent.update_nodes_from_another_state(child)
 
         assert parent.prompt_caching_diagnostics == {"ok": _APPLIED}
+
+
+class TestAnnotateNodeExecution:
+    def test_extra_data_survives_completion_and_the_response(self):
+        node = {"id": "kb", "type": "knowledgeBaseNode", "data": {"name": "KB"}}
+        state = WorkflowState(workflow={**WF, "nodes": [node]}, thread_id=THREAD, initial_values={"message": "hi"})
+        state.start_node_execution("kb")
+
+        state.annotate_node_execution("kb", sources=[{"id": "a", "score": 0.5}])
+        state.complete_node_execution("kb", output="text")
+
+        entry = state.format_state_as_response()["state"]["nodeExecutionStatus"]["kb"]
+        assert entry["sources"] == [{"id": "a", "score": 0.5}]
+        assert entry["output"] == "text"
+
+    def test_a_node_that_has_not_started_is_left_alone(self):
+        state = _state()
+        state.annotate_node_execution("kb", sources=[])
+        assert state.node_execution_status == {}

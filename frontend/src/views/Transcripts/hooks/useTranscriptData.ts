@@ -20,6 +20,8 @@ interface UseTranscriptDataOptions {
   include_feedback?: boolean;
   sortNewestFirst?: boolean;
   conversation_status?: string[];
+  conversation_topics?: string[];
+  conversation_subtopics?: string[];
   order_by?: string;
   sort_direction?: string;
   agent_id?: string;
@@ -32,12 +34,14 @@ interface UseTranscriptDataOptions {
 }
 
 export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
-  const { id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst = true, conversation_status, order_by, sort_direction, agent_id, scoreFilters, from_date, to_date, exclude_empty, custom_attributes, search } = options;
+  const { id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst = true, conversation_status, conversation_topics, conversation_subtopics, order_by, sort_direction, agent_id, scoreFilters, from_date, to_date, exclude_empty, custom_attributes, search } = options;
   // Stabilize score filters for dependency tracking
   const scoreFiltersKey = scoreFilters ? JSON.stringify(scoreFilters) : "";
   const customAttrsKey = custom_attributes ? JSON.stringify(custom_attributes) : "";
   // Stabilize array reference for useCallback dependency
   const statusKey = conversation_status?.join(",") ?? "";
+  const topicsKey = conversation_topics?.join(",") ?? "";
+  const subtopicsKey = conversation_subtopics?.join(",") ?? "";
 
   const [data, setData] = useState<Transcript | Transcript[]>(id ? null : []);
   const [loading, setLoading] = useState<boolean>(true);
@@ -79,7 +83,7 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
         if (!silent) setLoading(true);
         const params = {
           limit, skip, sentiment, hostility_neutral_max, hostility_positive_max,
-          include_feedback, conversation_status, order_by, sort_direction,
+          include_feedback, conversation_status, conversation_topics, conversation_subtopics, order_by, sort_direction,
           agent_id, scoreFilters, from_date, to_date, exclude_empty, custom_attributes, search,
         };
 
@@ -137,7 +141,7 @@ export const useTranscriptData = (options: UseTranscriptDataOptions = {}) => {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst, statusKey, order_by, sort_direction, agent_id, scoreFiltersKey, from_date, to_date, exclude_empty, customAttrsKey, search]);
+  }, [id, limit, skip, sentiment, hostility_neutral_max, hostility_positive_max, include_feedback, sortNewestFirst, statusKey, topicsKey, subtopicsKey, order_by, sort_direction, agent_id, scoreFiltersKey, from_date, to_date, exclude_empty, customAttrsKey, search]);
 
   const permissions = usePermissions();
 

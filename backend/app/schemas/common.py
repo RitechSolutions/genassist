@@ -3,7 +3,7 @@ from typing import Generic, List, Literal, Optional, TypeVar
 
 from pydantic import BaseModel
 
-from app.schemas.filter import BaseFilterModel
+from app.schemas.filter import PageFilter
 
 
 class ConnectionStatus(BaseModel):
@@ -30,7 +30,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
         cls,
         items: List[T],
         total: int,
-        filter_obj: BaseFilterModel
+        filter_obj: PageFilter
     ) -> "PaginatedResponse[T]":
         """
         Create a PaginatedResponse from items, total count, and filter object.

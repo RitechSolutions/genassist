@@ -21,6 +21,8 @@ import { ArrowUp, ArrowDown, X, Info } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormField } from "@/components/ui/form-field";
 import { CRUDDialog } from "@/components/ui/crud-dialog";
+import { ListErrorState } from "@/components/ListErrorState";
+import { extractErrorMessage } from "@/helpers/apiError";
 import {
   createFallbackChain,
   updateFallbackChain,
@@ -56,11 +58,26 @@ export function FallbackChainDialog({
 }: FallbackChainDialogProps) {
   const queryClient = useQueryClient();
 
-  const { data: providers = [] } = useQuery({
+  const {
+    data: providerData,
+    isLoading: isLoadingProviders,
+    isError: isProvidersError,
+    error: providersError,
+    refetch: refetchProviders,
+  } = useQuery({
     queryKey: ["llmProviders"],
     queryFn: getAllLLMProviders,
     enabled: isOpen,
   });
+
+  const providers = providerData ?? [];
+  // apiRequest resolves null on a 403 instead of throwing. A later failed
+  // refetch keeps that null, so it only means "forbidden" while there is no error.
+  const isProvidersForbidden = providerData === null && !isProvidersError;
+  // A failed background refetch keeps the cached list, so only treat it as a
+  // load failure when there are no providers to pick from at all.
+  const providersLoadFailed =
+    (isProvidersError && !providerData) || isProvidersForbidden;
 
   const providerName = (id: string) =>
     providers.find((p) => p.id === id)?.name ?? id;
@@ -279,24 +296,60 @@ export function FallbackChainDialog({
                   ))}
                 </div>
               )}
-              <Select value="" onValueChange={addProvider}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Add a provider…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableProviders.length === 0 ? (
-                    <SelectItem value="__none__" disabled>
-                      No more active providers
-                    </SelectItem>
-                  ) : (
-                    availableProviders.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} ({p.llm_model_provider} - {p.llm_model})
+              {providersLoadFailed ? (
+                <div className="rounded-md border">
+                  <ListErrorState
+                    compact
+                    title={
+                      isProvidersForbidden
+                        ? "No access to LLM providers"
+                        : "Couldn't load providers"
+                    }
+                    message={
+                      isProvidersForbidden
+                        ? "You don't have permission to view LLM providers."
+                        : extractErrorMessage(
+                            providersError,
+                            "Failed to fetch LLM providers."
+                          )
+                    }
+                    onRetry={
+                      isProvidersForbidden
+                        ? undefined
+                        : () => void refetchProviders()
+                    }
+                  />
+                </div>
+              ) : (
+                <Select
+                  value=""
+                  onValueChange={addProvider}
+                  disabled={isLoadingProviders}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        isLoadingProviders
+                          ? "Loading providers…"
+                          : "Add a provider…"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableProviders.length === 0 ? (
+                      <SelectItem value="__none__" disabled>
+                        No more active providers
                       </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+                    ) : (
+                      availableProviders.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name} ({p.llm_model_provider} - {p.llm_model})
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
               {errors.provider_ids && (
                 <p className="text-sm text-red-500 mt-1">
                   {errors.provider_ids}

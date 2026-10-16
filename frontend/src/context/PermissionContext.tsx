@@ -1,14 +1,17 @@
 import React, {
   ReactNode,
   createContext,
+  useCallback,
   useContext,
   useState,
   useEffect,
+  useRef,
 } from "react";
 import { apiRequest } from "@/config/api";
 import { isServerDown } from "@/config/serverStatus";
+import { PermissionFetchResult, PermissionRequestGate } from "@/helpers/permissionRetry";
 import { applySentryUserFromMeResponse } from "@/plugins/sentryUserSync";
-import { AuthMeResponse, isAuthenticated, persistAuthMe } from "@/services/auth";
+import { AuthMeResponse, getPermissions, isAuthenticated, persistAuthMe } from "@/services/auth";
 
 interface PermissionContextType {
   permissions: string[];
@@ -27,39 +30,55 @@ const PermissionContext = createContext<PermissionContextType | undefined>(
 export const PermissionProvider: React.FC<PermissionProviderProps> = ({
   children,
 }) => {
-  const [permissions, setPermissions] = useState<string[]>([]);
+  // Start from the stored list so screens and services agree until /auth/me answers
+  const [permissions, setPermissions] = useState<string[]>(() =>
+    isAuthenticated() ? getPermissions() : []
+  );
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchPermissions = async () => {
+  const fetchPermissions = async (): Promise<PermissionFetchResult> => {
     if (!isAuthenticated()) {
       setIsLoading(false);
-      return;
+      return "skipped";
     }
 
     // If server is down avoid requests
     if (isServerDown() || (typeof navigator !== 'undefined' && !navigator.onLine)) {
       setIsLoading(false);
-      return;
+      return "skipped";
     }
 
     setIsLoading(true);
     try {
       const response = await apiRequest<AuthMeResponse>("GET", "/auth/me");
-      persistAuthMe(response ?? undefined);
-      applySentryUserFromMeResponse(response ?? undefined);
-      const userPermissions: string[] = response?.permissions || [];
-      setPermissions(userPermissions);
+      // No answer (e.g. a refused request) keeps the current list, matching what stays in storage
+      if (!response) return "failed";
+      persistAuthMe(response);
+      applySentryUserFromMeResponse(response);
+      setPermissions(response.permissions || []);
+      return "answered";
     } catch (error) {
-      // Quiet known down-state errors
-      if ((error as Error)?.message !== 'SERVER_DOWN') {
-        // ignore
-      }
+      // A down server is retried once it is back, without using up a retry
+      return (error as Error)?.message === "SERVER_DOWN" ? "skipped" : "failed";
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
+  // Created once, so page guards that unmount and remount cannot restart the retries
+  const requestGateRef = useRef<PermissionRequestGate | null>(null);
+  if (!requestGateRef.current) {
+    requestGateRef.current = new PermissionRequestGate(fetchPermissions);
+  }
+
   useEffect(() => {
-    fetchPermissions();
+    const requestGate = requestGateRef.current;
+    void requestGate?.fetchNow();
+    return () => requestGate?.dispose();
+  }, []);
+
+  const refreshPermissions = useCallback(async () => {
+    requestGateRef.current?.request();
   }, []);
 
   return (
@@ -67,7 +86,7 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({
       value={{
         permissions,
         isLoading,
-        refreshPermissions: fetchPermissions,
+        refreshPermissions,
       }}
     >
       {children}

@@ -12,6 +12,7 @@ import {
   runAvgAccuracy,
   runFailureReason,
   runFailureText,
+  runProgressText,
   runStatusLabel,
   techniqueAccuracy,
   techniqueSummaries,
@@ -185,6 +186,66 @@ describe("caseStatusFor", () => {
   });
 });
 
+describe("methods that could not grade a turn", () => {
+  const notEvaluated = { score: null, passed: false, not_evaluated: true };
+  const errored = { score: null, passed: false, error: true };
+
+  it("leave the verdict to the methods that did grade it", () => {
+    const turn = result({ metrics: { contains: notEvaluated, judge: metric(true) } });
+    expect(isResultPassed(turn)).toBe(true);
+    expect(caseStatusFor(turn, [])).toBe("passed");
+  });
+
+  it("make a turn not scored when nothing else graded it", () => {
+    const turn = result({ metrics: { contains: notEvaluated } });
+    expect(isResultNotScored(turn)).toBe(true);
+    expect(isResultFailed(turn)).toBe(false);
+    expect(notScoredLabel(turn)).toBe("Not evaluated");
+  });
+
+  it("still let a passed rule pass the turn", () => {
+    expect(caseStatusFor(result({ metrics: { contains: notEvaluated } }), [toolResult("passed")])).toBe(
+      "passed",
+    );
+  });
+
+  it("leave a turn unscored, not failed, when a method broke and nothing failed", () => {
+    const turn = result({ metrics: { judge: errored, contains: metric(true) } });
+    expect(caseStatusFor(turn, [])).toBe("not_scored");
+  });
+
+  it("keep a turn whose method broke unscored even when a rule passed", () => {
+    const turn = result({ metrics: { judge: errored, contains: metric(true) } });
+    expect(caseStatusFor(turn, [toolResult("passed")])).toBe("not_scored");
+  });
+
+  it("keep a turn whose scoring crashed unscored even when a rule passed", () => {
+    const turn = result({ status: "scoring_failed" });
+    expect(caseStatusFor(turn, [toolResult("passed")])).toBe("not_scored");
+  });
+
+  it("never hide a failure", () => {
+    const turn = result({ metrics: { judge: errored, contains: metric(false) } });
+    expect(caseStatusFor(turn, [])).toBe("failed");
+  });
+});
+
+describe("runProgressText", () => {
+  const progress = (done: number, total: number) => ({
+    progress: { conversations_done: 0, conversations_total: 1, turns_done: done, turns_total: total },
+  });
+
+  it("counts finished turns", () => {
+    expect(runProgressText(progress(3, 11))).toBe("3 of 11 turns done");
+    expect(runProgressText(progress(0, 1))).toBe("0 of 1 turn done");
+  });
+
+  it("is null before the run reports progress", () => {
+    expect(runProgressText({ progress: null })).toBeNull();
+    expect(runProgressText(null)).toBeNull();
+  });
+});
+
 describe("runAvgAccuracy", () => {
   const run = (summary_metrics?: Record<string, unknown>): TestRun => ({
     suite_id: "suite",
@@ -289,11 +350,31 @@ describe("turnsPassed", () => {
       turnRule("d", "passed"), // a passed turn rule scores an unscored case
       turnRule("a", "failed", "conversation"), // conversation rules sit on no case
     ];
-    expect(turnsPassed(results, rules)).toEqual({ passed: 2, total: 4 });
+    expect(turnsPassed(results, rules)).toEqual({ passed: 2, total: 4, notEvaluated: 0 });
+  });
+
+  it("counts turns nothing could grade apart, but keeps failed executions in the total", () => {
+    const notEvaluated = { score: null, passed: false, not_evaluated: true };
+    const results = [
+      result({ case_id: "a", metrics: { contains: metric(true) } }),
+      result({ case_id: "b", metrics: { contains: notEvaluated } }),
+      result({ case_id: "c", status: "execution_failed" }),
+    ];
+    expect(turnsPassed(results, [])).toEqual({ passed: 1, total: 2, notEvaluated: 1 });
+  });
+
+  it("keeps a turn whose method broke in the total, as unscored rather than not evaluated", () => {
+    const errored = { score: null, passed: false, error: true };
+    const results = [
+      result({ case_id: "a", metrics: { contains: metric(true) } }),
+      result({ case_id: "b", metrics: { judge: errored, contains: metric(true) } }),
+    ];
+    expect(turnsPassed(results, [])).toEqual({ passed: 1, total: 2, notEvaluated: 0 });
+    expect(notScoredLabel(results[1])).toBe("Not scored");
   });
 
   it("is zero of zero for a run without results", () => {
-    expect(turnsPassed([], [])).toEqual({ passed: 0, total: 0 });
+    expect(turnsPassed([], [])).toEqual({ passed: 0, total: 0, notEvaluated: 0 });
   });
 });
 

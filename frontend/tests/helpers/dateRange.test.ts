@@ -3,6 +3,7 @@ import {
   normalizeDateRange,
   toExactActivityParams,
   toExactInterval,
+  toInclusiveDateParams,
   toUtcBucketDateParams,
 } from "@/helpers/dateRange";
 
@@ -124,5 +125,24 @@ describe("agent performance parameter families", () => {
     expect(new Date(params.activity_from_datetime!).getTime()).toBeLessThan(
       new Date(params.activity_to_datetime!).getTime(),
     );
+  });
+});
+
+describe("toInclusiveDateParams", () => {
+  it("sends nothing for all-time", () => {
+    expect(toInclusiveDateParams(undefined)).toEqual({});
+  });
+
+  it("leaves the end open for a from-only pick", () => {
+    expect(toInclusiveDateParams({ from: day(2026, 10, 1, 13), to: undefined })).toEqual({
+      from_date: "2026-10-01",
+    });
+  });
+
+  it("covers the whole last day", () => {
+    expect(toInclusiveDateParams({ from: day(2026, 10, 1), to: day(2026, 10, 6) })).toEqual({
+      from_date: "2026-10-01",
+      to_date: "2026-10-06 23:59:59",
+    });
   });
 });
