@@ -517,6 +517,45 @@ class TestBudget:
         assert result.summary.skipped == 2
         assert result.provenance.deadline_hit is True
 
+    @pytest.mark.asyncio
+    async def test_a_call_cut_by_its_timeout_keeps_its_slot_while_it_runs(self):
+        import app.services.prompt_editor as module
+
+        concurrency = module.PROMPT_CHECK_CONCURRENCY
+        cases = [_case(f"m{index}", {"value": f"m{index}"}) for index in range(concurrency + 2)]
+        service = _service(cases)
+        _persist_spy(service)
+        release = asyncio.Event()
+        in_flight = {"now": 0, "peak": 0}
+        llm = AsyncMock()
+
+        async def stalled_invoke(_messages):
+            in_flight["now"] += 1
+            in_flight["peak"] = max(in_flight["peak"], in_flight["now"])
+            try:
+                await release.wait()
+                return AIMessage(content="m0")
+            finally:
+                in_flight["now"] -= 1
+
+        llm.ainvoke.side_effect = stalled_invoke
+
+        class ShortBudget(module.Budget):
+            def __init__(self, _seconds):
+                super().__init__(0.5)
+
+        with (
+            patch.object(module, "Budget", ShortBudget),
+            patch.object(module, "PROMPT_CHECK_CALL_TIMEOUT_SECONDS", 0.1),
+        ):
+            result = await asyncio.wait_for(_run(service, _injector(llm)), 5)
+        release.set()
+        await asyncio.gather(*background_tasks._TASKS)
+
+        assert in_flight["peak"] == concurrency
+        assert llm.ainvoke.call_count == concurrency
+        assert result.summary.skipped == 2
+
 
     @pytest.mark.asyncio
     async def test_a_call_cut_by_the_run_budget_does_not_blame_the_provider(self):

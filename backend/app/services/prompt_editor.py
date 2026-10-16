@@ -395,14 +395,32 @@ def _usage_entry(response: Any, call_index: int, purpose: str, provider_id: UUID
 class _MeteredCall:
     def __init__(self, llm: Any, ref: "PromptUsageRef", call_index: int, purpose: str, provider_id: UUID) -> None:
         self.llm, self.ref, self.call_index, self.purpose, self.provider_id = llm, ref, call_index, purpose, provider_id
+        self.cut: Optional["asyncio.Task[Any]"] = None
 
     async def ainvoke(self, messages: Any) -> Any:
         task = asyncio.ensure_future(self.llm.ainvoke(messages))
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
+            self.cut = task
             self.ref.abandoned.append(AbandonedCall(task, self.call_index, self.purpose, self.provider_id))
             raise
+
+    def hold_until_done(self, slot: asyncio.Semaphore, budget: "Budget") -> bool:
+        """Holds ``slot`` during a cut call until the budget ends; False if no cut call is running"""
+        if self.cut is None or self.cut.done():
+            return False
+        released = False
+
+        def release(*_args: Any) -> None:
+            nonlocal released
+            if not released:
+                released = True
+                slot.release()
+
+        self.cut.add_done_callback(release)
+        asyncio.get_running_loop().call_later(max(budget.remaining(), 0), release)
+        return True
 
 
 def _collect_usage(ref: "PromptUsageRef", runs: List["_CaseRun"], provider_id: UUID) -> None:
@@ -1114,7 +1132,9 @@ class PromptEditorService:
         semaphore: asyncio.Semaphore,
         check_id: UUID,
     ) -> _CaseRun:
-        async with semaphore:
+        await semaphore.acquire()
+        handed_over = False
+        try:
             remaining = budget.remaining()
             if remaining <= 0:
                 return _CaseRun(
@@ -1139,6 +1159,8 @@ class PromptEditorService:
                 actual = response.text
             except asyncio.TimeoutError:
                 budget_cut = call_timeout < PROMPT_CHECK_CALL_TIMEOUT_SECONDS
+                # The cut call still runs to be metered, so it keeps the slot until it ends
+                handed_over = llm.hold_until_done(semaphore, budget)
                 return _CaseRun(
                     case=case, position=position, status="execution_failed",
                     error=(
@@ -1156,6 +1178,9 @@ class PromptEditorService:
                 return _CaseRun(
                     case=case, position=position, status="execution_failed", error=_INTERNAL_FAILURE,
                 )
+        finally:
+            if not handed_over:
+                semaphore.release()
         return _CaseRun(
             case=case, position=position, status="scored", actual=actual, response=response, latency_ms=latency_ms
         )

@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.core.utils.llm_json import parse_json_object_reply
+from app.core.utils.llm_json import _MAX_ESCAPE_REPAIRS, parse_json_object_reply
 
 
 class TestParseJsonObjectReply:
@@ -82,3 +82,11 @@ class TestParseJsonObjectReply:
         with pytest.raises(ValueError):
             parse_json_object_reply(reply)
         assert parse_json_object_reply(reply, strict=False) == {"a": "x\ny", "b": "z"}
+
+    def test_the_lenient_mode_gives_up_after_the_repair_cap(self):
+        def reply(separators):
+            return "{" + ",\\n ".join(f'"k{i}": {i}' for i in range(separators + 1)) + "}"
+
+        assert len(parse_json_object_reply(reply(_MAX_ESCAPE_REPAIRS), strict=False)) == _MAX_ESCAPE_REPAIRS + 1
+        with pytest.raises(ValueError):
+            parse_json_object_reply(reply(_MAX_ESCAPE_REPAIRS + 1), strict=False)

@@ -9,6 +9,7 @@ import re
 
 _FENCE_RE = re.compile(r"```(?:json)?(.*?)```", re.DOTALL)
 _STRAY_ESCAPES_RE = re.compile(r"(?:\\[nrt]|\s)+")
+_MAX_ESCAPE_REPAIRS = 16
 
 
 def _reject_constant(name: str) -> None:
@@ -37,7 +38,7 @@ def parse_json_object_reply(text: str, *, strict: bool = True) -> dict:
     if fenced:
         candidate = fenced.group(1).strip()
 
-    while True:
+    for _ in range(_MAX_ESCAPE_REPAIRS + 1):
         try:
             parsed = json.loads(
                 candidate, strict=strict, parse_constant=_reject_constant, parse_float=_finite_float
@@ -51,6 +52,8 @@ def parse_json_object_reply(text: str, *, strict: bool = True) -> dict:
             candidate = f"{candidate[: exc.pos]} {candidate[stray.end() :]}"
         except (ValueError, RecursionError) as exc:
             raise ValueError("Reply is not a single JSON object.") from exc
+    else:
+        raise ValueError("Reply is not a single JSON object.")
 
     if not isinstance(parsed, dict):
         raise ValueError("Reply is not a single JSON object.")
