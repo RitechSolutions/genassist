@@ -49,7 +49,11 @@
       "Details werden überprüft…",
       "Alles wird zusammengefügt…",
       "Fast fertig…"
-    ]
+    ],
+    "activity": {
+      "knowledge": "Die Wissensdatenbank wird durchsucht…",
+      "tool": "Ihre Anfrage wird bearbeitet…"
+    }
   },
   "time": {
     "justNow": "Gerade eben",

@@ -14,6 +14,7 @@ import {
   InProgressPollMessage,
   ReadReceiptState,
   ConversationAvailability,
+  StreamEvent,
 } from "../types";
 import {
   createWebSocket,
@@ -30,9 +31,24 @@ import {
   isExpiredPassError,
 } from "../utils/conversationErrors";
 import { removeStoredConversationData } from "../utils/conversationStorage";
+import { createSseParser } from "../utils/sse";
 
 const FINALIZED_CONVERSATION_STATUS = "finalized";
 const AVAILABILITY_CHECK_TIMEOUT_MS = 5000;
+
+const httpError = (status: number, data: any) =>
+  Object.assign(new Error(typeof data?.error === "string" ? data.error : `Request failed with status code ${status}`), {
+    response: { status, data },
+  });
+
+async function readBody(res: Response): Promise<any> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
 
 export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_updated";
 
@@ -48,6 +64,7 @@ export class ChatService {
   private isFinalized: boolean = false;
   private webSocket: WebSocket | null = null;
   private messageHandler: ((message: ChatMessage) => void) | null = null;
+  private streamHandler: ((event: StreamEvent) => void) | null = null;
   private takeoverHandler: (() => void) | null = null;
   private finalizedHandler: (() => void) | null = null;
   private conversationGoneHandler:
@@ -259,6 +276,10 @@ export class ChatService {
 
   setMessageHandler(handler: (message: ChatMessage) => void) {
     this.messageHandler = handler;
+  }
+
+  setStreamHandler(handler: ((event: StreamEvent) => void) | null) {
+    this.streamHandler = handler;
   }
 
   setTakeoverHandler(handler: () => void) {
@@ -875,6 +896,36 @@ export class ChatService {
     }
   }
 
+  /**
+    * Sends one chat turn and requests an SSE stream. Activity frames go to the stream handler;
+    * the saved conversation comes from the `done` frame, or from the JSON body if the backend doesn't stream.
+  */
+  private async updateConversation(requestBody: unknown): Promise<any> {
+    // Browsers that can't read a body as it arrives ask for the plain JSON reply instead.
+    const canReadStream = "body" in Response.prototype;
+    const res = await fetch(`${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`, {
+      method: "PATCH",
+      headers: canReadStream ? { ...this.getHeaders(), Accept: "text/event-stream" } : this.getHeaders(),
+      body: JSON.stringify(requestBody),
+    });
+    if (!res.ok) throw httpError(res.status, await readBody(res));
+    if (!res.body || !(res.headers.get("content-type") || "").includes("text/event-stream")) return readBody(res);
+
+    const reader = res.body.getReader();
+    const parse = createSseParser();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      for (const frame of parse(value)) {
+        const data = JSON.parse(frame.data);
+        if (frame.event === "activity" || frame.event === "delta") this.streamHandler?.({ type: frame.event, ...data });
+        else if (frame.event === "error") throw httpError(typeof data.error_code === "number" ? data.error_code : 500, data);
+        else if (frame.event === "done") return data.conversation;
+      }
+    }
+    throw new Error("Stream ended before done");
+  }
+
   async sendMessage(
     message: string,
     attachments?: Attachment[],
@@ -931,13 +982,7 @@ export class ChatService {
         requestBody.metadata = mergedMetadata;
       }
 
-      const response = await axios.patch(
-        `${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`,
-        requestBody,
-        {
-          headers: this.getHeaders(),
-        }
-      );
+      const responseBody = await this.updateConversation(requestBody);
 
       // Anchor this optimistic visitor bubble to its server-assigned sequence_number
       // and message_id (the saved copy is the newest 'customer' message in the
@@ -945,7 +990,7 @@ export class ChatService {
       // logic compares against the supervisor's last-read marker for "Seen".
       if (!opts?.silent && this.messageMetaHandler) {
         try {
-          const respMessages = (response?.data as any)?.messages;
+          const respMessages = responseBody?.messages;
           if (Array.isArray(respMessages)) {
             let newest: any = null;
             for (const m of respMessages) {
@@ -974,7 +1019,7 @@ export class ChatService {
       // If not using WebSocket, try to retrieve the response message from the update conversation response
       if (!this.useWs && this.messageHandler && (!this.useWs || !this.usePoll)) { // usePoll is true when using heartbeat polling
         try {
-          const responseData = response?.data as any || {};
+          const responseData = responseBody || {};
 
           if (responseData.messages && Array.isArray(responseData.messages)) {
 

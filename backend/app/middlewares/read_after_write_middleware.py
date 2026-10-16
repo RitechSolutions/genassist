@@ -133,3 +133,10 @@ class ReadAfterWriteMiddleware(BaseHTTPMiddleware):
             await _redis().set(client_key, "1", ex=settings.DB_READ_PIN_AFTER_WRITE_SECONDS)
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning("Read pin could not be stored: %s", exc)
+
+    @classmethod
+    async def remember_write(cls, request: Request) -> None:
+        """Pin the client after a write that committed once its response had started."""
+        client_key = _client_key(request)
+        if client_key and cls._enabled():
+            await cls._remember_write(client_key)

@@ -68,6 +68,14 @@ const httpError = (status: number, errorKey?: string) => ({
   response: { status, data: errorKey ? { error_key: errorKey } : {} },
 });
 
+const errorResponse = (status: number, errorKey?: string) =>
+  new Response(JSON.stringify(errorKey ? { error_key: errorKey } : {}), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+
+let fetchMock: Mock;
+
 beforeEach(() => {
   storage = new MemoryStorage();
   vi.stubGlobal("localStorage", storage);
@@ -77,6 +85,8 @@ beforeEach(() => {
   mockedAxios.post.mockReset();
   mockedAxios.patch.mockReset();
   mockedAxios.get.mockRejectedValue(new Error("unexpected request"));
+  fetchMock = vi.fn().mockRejectedValue(new Error("unexpected request"));
+  vi.stubGlobal("fetch", fetchMock);
 });
 
 afterEach(() => {
@@ -180,7 +190,7 @@ describe("sendMessage into a conversation that can no longer be continued", () =
     const service = createService();
     const emitted: ChatMessage[] = [];
     service.setMessageHandler((message) => emitted.push(message));
-    mockedAxios.patch.mockRejectedValueOnce(httpError(400, "CONVERSATION_FINALIZED"));
+    fetchMock.mockResolvedValueOnce(errorResponse(400, "CONVERSATION_FINALIZED"));
 
     await expect(service.sendMessage("Hello again")).rejects.toMatchObject({
       response: { status: 400 },
@@ -192,7 +202,7 @@ describe("sendMessage into a conversation that can no longer be continued", () =
 
   it("clears the conversation when the guest token is rejected", async () => {
     const service = createService();
-    mockedAxios.patch.mockRejectedValueOnce(httpError(401, "EXPIRED_TOKEN"));
+    fetchMock.mockResolvedValueOnce(errorResponse(401, "EXPIRED_TOKEN"));
 
     await expect(service.sendMessage("Hello again")).rejects.toBeTruthy();
 
@@ -201,7 +211,7 @@ describe("sendMessage into a conversation that can no longer be continued", () =
 
   it("keeps the conversation for refusals that do not end it", async () => {
     const service = createService();
-    mockedAxios.patch.mockRejectedValueOnce(httpError(403, "RECAPTCHA_VERIFICATION_FAILED"));
+    fetchMock.mockResolvedValueOnce(errorResponse(403, "RECAPTCHA_VERIFICATION_FAILED"));
 
     await expect(service.sendMessage("Hello again")).rejects.toBeTruthy();
 
@@ -210,14 +220,14 @@ describe("sendMessage into a conversation that can no longer be continued", () =
 
   it("keeps a newer chat when a message sent to the old one is refused late", async () => {
     const service = createService();
-    let refuse: (reason: unknown) => void = () => {};
-    mockedAxios.patch.mockImplementationOnce(() => new Promise((_, reject) => { refuse = reject; }));
+    let refuse: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => { refuse = resolve; }));
 
     const lateSend = service.sendMessage("Hello again");
     service.resetChatConversation();
     mockedAxios.post.mockResolvedValueOnce({ data: { conversation_id: "conversation-2" } });
     await service.startConversation();
-    refuse(httpError(400, "CONVERSATION_FINALIZED"));
+    refuse(errorResponse(400, "CONVERSATION_FINALIZED"));
 
     await expect(lateSend).rejects.toBeTruthy();
     expect(service.getConversationId()).toBe("conversation-2");
@@ -298,7 +308,7 @@ describe("requests made with a chat pass that has expired", () => {
 
     await expect(service.sendMessage("Hello again")).rejects.toBeInstanceOf(ConversationGoneError);
 
-    expect(mockedAxios.patch).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(shown).toHaveLength(0);
     expect(onGone).toHaveBeenCalledTimes(1);
   });
@@ -381,5 +391,121 @@ describe("refusals that must not end a live chat", () => {
     await receipt;
 
     expect(onGone).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendMessage over a streamed response", () => {
+  const savedTurn = {
+    id: CONVERSATION_ID,
+    messages: [
+      { id: "m-3", speaker: "customer", text: "Hello again", sequence_number: 3 },
+      {
+        id: "m-4",
+        speaker: "agent",
+        text: "Hi there",
+        type: "message",
+        create_time: NOW_MS / 1000,
+        start_time: NOW_MS / 1000 - 1,
+        end_time: NOW_MS / 1000,
+        sequence_number: 4,
+      },
+    ],
+  };
+
+  const streamResponse = (...chunks: string[]) =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          chunks.forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { "content-type": "text/event-stream" } },
+    );
+
+  const send = async (response: Response) => {
+    const service = createService();
+    const shown: ChatMessage[] = [];
+    const anchored: unknown[] = [];
+    const events: unknown[] = [];
+    service.setMessageHandler((message) => shown.push(message));
+    service.setMessageMetaHandler((meta) => anchored.push(meta));
+    service.setStreamHandler((event) => events.push(event));
+    fetchMock.mockResolvedValueOnce(response);
+    const sending = service.sendMessage("Hello again");
+    return { service, shown, anchored, events, sending };
+  };
+
+  beforeEach(() => {
+    saveConversation({ welcomeData: { imageUrl: "https://cdn.example.test/welcome.png" } });
+  });
+
+  it("reads the reply from the done frame and reports activity along the way", async () => {
+    const done = JSON.stringify({ conversation: savedTurn });
+    const { shown, anchored, events, sending } = await send(
+      streamResponse('event: activity\ndata: {"kind": "knowledge", "phase": "start"}\n\n: ping\n\n', `event: done\ndata: ${done.slice(0, 20)}`, `${done.slice(20)}\n\n`),
+    );
+
+    await sending;
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe(`${BASE_URL}/api/conversations/in-progress/update/${CONVERSATION_ID}`);
+    expect(init.method).toBe("PATCH");
+    expect(init.headers.Accept).toBe("text/event-stream");
+    expect(init.headers.Authorization).toBe(`Bearer ${validGuestToken()}`);
+    expect(events).toEqual([{ type: "activity", kind: "knowledge", phase: "start" }]);
+    expect(shown.filter((message) => message.speaker === "agent").map((message) => message.text)).toEqual(["Hi there"]);
+    expect(anchored).toEqual([{ client_id: shown[0].client_id, message_id: "m-3", sequence_number: 3 }]);
+  });
+
+  it("still takes the reply from a backend that answers with plain JSON", async () => {
+    const { shown, anchored, sending } = await send(
+      new Response(JSON.stringify(savedTurn), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+
+    await sending;
+
+    expect(shown.filter((message) => message.speaker === "agent").map((message) => message.text)).toEqual(["Hi there"]);
+    expect(anchored).toEqual([{ client_id: shown[0].client_id, message_id: "m-3", sequence_number: 3 }]);
+  });
+
+  it("asks for plain JSON when the browser cannot read a streamed body", async () => {
+    const json = new Response(JSON.stringify(savedTurn), { status: 200, headers: { "content-type": "application/json" } });
+    vi.stubGlobal("Response", class {});
+    const { shown, sending } = await send(json);
+
+    await sending;
+
+    expect(fetchMock.mock.calls[0][1].headers.Accept).toBeUndefined();
+    expect(shown.filter((message) => message.speaker === "agent").map((message) => message.text)).toEqual(["Hi there"]);
+  });
+
+  it("turns an error frame into an error carrying the HTTP-style response", async () => {
+    const { service, sending } = await send(
+      streamResponse('event: error\ndata: {"error": "Service unavailable", "error_code": 503, "error_key": "SERVICE_BUSY"}\n\n'),
+    );
+
+    const error = await sending.catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({ message: "Service unavailable", response: { status: 503, data: { error_key: "SERVICE_BUSY" } } });
+    expect(service.getConversationId()).toBe(CONVERSATION_ID);
+  });
+
+  it("recognises an expired chat pass from a plain-text 401 body", async () => {
+    const { service, sending } = await send(new Response("Token has expired", { status: 401 }));
+
+    await expect(sending).rejects.toMatchObject({ response: { status: 401, data: "Token has expired" } });
+    expect(service.getConversationId()).toBeNull();
+  });
+
+  it("fails without a response when the stream ends before done", async () => {
+    const { sending } = await send(streamResponse('event: activity\ndata: {"kind": "tool", "phase": "start"}\n\n'));
+
+    const error = await sending.catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as { response?: unknown }).response).toBeUndefined();
   });
 });

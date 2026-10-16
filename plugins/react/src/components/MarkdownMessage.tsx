@@ -25,7 +25,7 @@ export interface MarkdownMessageProps {
  * - All external links open in a new tab with target="_blank" and rel="noopener noreferrer".
  * - No dangerouslySetInnerHTML without sanitization; uses rehype-sanitize.
  */
-export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ text, style }) => {
+export const MarkdownMessage = React.memo<MarkdownMessageProps>(({ text, style }) => {
   const baseStyle: React.CSSProperties = {
     whiteSpace: 'pre-wrap',
     lineHeight: 1.5,
@@ -87,4 +87,4 @@ export const MarkdownMessage: React.FC<MarkdownMessageProps> = ({ text, style })
       </ReactMarkdown>
     </div>
   );
-};
+});

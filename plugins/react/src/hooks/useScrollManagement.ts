@@ -1,11 +1,32 @@
 import { useRef, useLayoutEffect, useEffect, useState, useCallback } from 'react';
 import { ChatMessage } from '../types';
 
+const PIN_PEEK = 24;
+
+export const LATEST_QUESTION_ATTR = 'data-ga-latest-question';
+
+/** Scroll offset that pins the visitor's question near the top, or its bottom at mid-screen when it is tall. */
+export function pinTop(questionTop: number, questionBottom: number, viewportHeight: number): number {
+  return Math.max(0, questionTop - PIN_PEEK, questionBottom - viewportHeight / 2);
+}
+
+export function spacerHeight(top: number, viewportHeight: number, contentHeight: number): number {
+  return Math.max(0, top + viewportHeight - contentHeight);
+}
+
+export function isAtBottom({ scrollHeight, scrollTop, clientHeight }: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>): boolean {
+  return scrollHeight - scrollTop - clientHeight <= 100;
+}
+
+/** Identity of a visitor's message, stable when the server later adds its id. */
+export function questionKey(question: ChatMessage | undefined): string | null {
+  return question ? question.client_id ?? question.message_id ?? String(question.create_time) : null;
+}
+
 interface UseScrollManagementOptions {
   messages: ChatMessage[];
+  latestQuestion: ChatMessage | undefined;
   isAgentTyping: boolean;
-  currentThinkingPartIndex: number;
-  currentThinkingPartsLength: number;
   conversationId: string | null | undefined;
   isFloatingOpen: boolean;
   mode: string;
@@ -13,9 +34,8 @@ interface UseScrollManagementOptions {
 
 export function useScrollManagement({
   messages,
+  latestQuestion,
   isAgentTyping,
-  currentThinkingPartIndex,
-  currentThinkingPartsLength,
   conversationId,
   isFloatingOpen,
   mode,
@@ -25,6 +45,10 @@ export function useScrollManagement({
   const hasAnchoredHistory = useRef(false);
   const isUserAtBottomRef = useRef(true);
   const prevIsFloatingOpenRef = useRef(isFloatingOpen);
+  const spacerRef = useRef<HTMLDivElement>(null);
+  const lastQuestionKeyRef = useRef<string | null>(null);
+  const holdingRef = useRef(false);
+  const awaitingReplyRef = useRef(false);
   // Reactive flag driving the "jump to latest" affordance — true when the conversation
   // is scrollable and the user has scrolled up far enough from the newest message.
   const [showScrollButton, setShowScrollButton] = useState(false);
@@ -79,22 +103,62 @@ export function useScrollManagement({
     }
   };
 
-  useLayoutEffect(() => {
-    if (!messages.length) return;
-    if (hasAnchoredHistory.current) {
-      scrollToBottom('smooth', false);
-    } else {
-      anchorHistory();
+  const fitSpacer =(): number | null => {
+    const container = chatContainerRef.current;
+    const spacer = spacerRef.current;
+    if (!container || !spacer) return null;
+    const question = holdingRef.current ? container.querySelector<HTMLElement>(`[${LATEST_QUESTION_ATTR}]`) : null;
+    if (!question) {
+      spacer.style.height = '0px';
+      return null;
     }
+    const offset = container.scrollTop - container.getBoundingClientRect().top;
+    const rect = question.getBoundingClientRect();
+    const top = pinTop(rect.top + offset, rect.bottom + offset, container.clientHeight);
+    spacer.style.height = `${spacerHeight(top, container.clientHeight, container.scrollHeight - spacer.offsetHeight)}px`;
+    return top;
+  };
+
+  useLayoutEffect(() => {
+    const key = questionKey(latestQuestion);
+    const isNewQuestion = key !== null && key !== lastQuestionKeyRef.current;
+    lastQuestionKeyRef.current = key;
+    if (!messages.length) return;
+    if (!hasAnchoredHistory.current) {
+      anchorHistory();
+      return;
+    }
+    if (isNewQuestion) {
+      holdingRef.current = true;
+      const top = fitSpacer();
+      awaitingReplyRef.current = top !== null;
+      if (top !== null) chatContainerRef.current?.scrollTo({ top, behavior: 'smooth' });
+      return;
+    }
+    if (awaitingReplyRef.current) {
+      const speaker = messages[messages.length - 1].speaker;
+      if (speaker !== 'agent' && speaker !== 'special') return;
+      awaitingReplyRef.current = false;
+      // A reply growing under a still reader fires no scroll event, so the flag can be stale.
+      if (chatContainerRef.current) isUserAtBottomRef.current = isAtBottom(chatContainerRef.current);
+      return;
+    }
+    scrollToBottom('smooth', false);
   }, [messages]);
 
   useLayoutEffect(() => {
-    if (!isAgentTyping) return;
-    scrollToBottom('auto', true);
-  }, [isAgentTyping, currentThinkingPartIndex, currentThinkingPartsLength]);
+    fitSpacer();
+    updateScrollButton();
+  });
+
+  useLayoutEffect(() => {
+    if (isAgentTyping && !awaitingReplyRef.current) scrollToBottom('auto', true);
+  }, [isAgentTyping]);
 
   useEffect(() => {
     hasAnchoredHistory.current = false;
+    holdingRef.current = false;
+    awaitingReplyRef.current = false;
   }, [conversationId]);
 
   useEffect(() => {
@@ -132,6 +196,7 @@ export function useScrollManagement({
     if (!el) return;
 
     const resizeObserver = new ResizeObserver(() => {
+      fitSpacer();
       if (isUserAtBottomRef.current) {
         anchorHistory();
       }
@@ -149,13 +214,8 @@ export function useScrollManagement({
     const container = chatContainerRef.current;
     if (!container) return;
 
-    const isAtBottom = (threshold: number = 100): boolean => {
-      if (!container) return true;
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      return scrollHeight - scrollTop - clientHeight <= threshold;
-    };
     const handleScroll = () => {
-      isUserAtBottomRef.current = isAtBottom();
+      isUserAtBottomRef.current = isAtBottom(container);
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
@@ -184,6 +244,7 @@ export function useScrollManagement({
   return {
     messagesEndRef,
     chatContainerRef,
+    spacerRef,
     showScrollButton,
     scrollToLatest,
   };

@@ -427,15 +427,6 @@ class ToolAgent(BaseToolAgent):
         result = await self._execute_tools_workflow(query, chat_history)
         return result
 
-    async def stream(self, query: str, chat_history: Optional[List] = None, **kwargs):
-        """Stream the agent's tool selection and execution process"""
-        try:
-            result = await self.invoke(query, chat_history)
-            yield result
-        except Exception as e:
-            logger.error(f"Error streaming ToolAgent query: {str(e)}")
-            yield create_error_response(str(e), self._get_agent_name())
-
     async def select_tool(self, query: str) -> Dict[str, Any]:
         """Select the most appropriate tool for a given query without executing it"""
         try:
