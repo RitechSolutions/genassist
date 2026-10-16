@@ -20,7 +20,9 @@ def node() -> TrainDataSourceNode:
 
 class TestProcessCsvSourcePrefersDownloadById:
     @pytest.mark.asyncio
-    async def test_downloads_by_id_even_when_csv_file_path_is_also_given(self, node, tmp_path):
+    async def test_downloads_by_id_even_when_csv_file_path_is_also_given(
+        self, node, monkeypatch, tmp_path
+    ):
         """
         A stored csvFilePath is an absolute path captured wherever the file
         was originally uploaded from - it can be unresolvable in whatever
@@ -49,6 +51,10 @@ class TestProcessCsvSourcePrefersDownloadById:
         )
         mock_file_manager.download_file_to_path = AsyncMock(side_effect=fake_download)
 
+        monkeypatch.setattr(
+            "app.modules.workflow.engine.nodes.ml.ml_utils.DATA_VOLUME",
+            tmp_path,
+        )
         with patch(
             "app.dependencies.injector.injector.get", return_value=mock_file_manager
         ):
@@ -68,7 +74,52 @@ class TestProcessCsvSourcePrefersDownloadById:
         call_args = mock_file_manager.download_file_to_path.call_args
         assert call_args.args[0] == "file-id-123"
         assert downloaded_paths and not downloaded_paths[0].exists()
+        assert downloaded_paths[0].parent == (
+            tmp_path / "train" / node.state.thread_id
+        )
         assert result["success"] is True
+        assert result["metadata"]["columns"] == ["col1", "col2"]
+
+    @pytest.mark.asyncio
+    async def test_extensionless_saved_file_keeps_legacy_csv_behavior(
+        self, node, monkeypatch, tmp_path
+    ):
+        downloaded_paths = []
+
+        async def fake_download(_file_id, path):
+            destination = Path(path)
+            destination.write_text("col1,col2\n1,2\n", encoding="utf-8")
+            downloaded_paths.append(destination)
+
+        file_manager = MagicMock()
+        file_manager.get_file_by_id = AsyncMock(
+            return_value=SimpleNamespace(
+                name="legacy-training-file",
+                path="uploads/legacy-training-file",
+                size=14,
+                storage_provider="s3",
+            )
+        )
+        file_manager.download_file_to_path = AsyncMock(side_effect=fake_download)
+        monkeypatch.setattr(
+            "app.modules.workflow.engine.nodes.ml.ml_utils.DATA_VOLUME",
+            tmp_path,
+        )
+
+        with patch(
+            "app.dependencies.injector.injector.get", return_value=file_manager
+        ):
+            result = await node._process_csv_source(
+                {
+                    "csvFileId": "legacy-file-id",
+                    "csvFileName": "legacy-training-file",
+                },
+                node._resolve_extraction_limits({}),
+                1,
+            )
+
+        assert downloaded_paths[0].suffix == ".csv"
+        assert not downloaded_paths[0].exists()
         assert result["metadata"]["columns"] == ["col1", "col2"]
 
     @pytest.mark.asyncio
@@ -124,7 +175,9 @@ class TestProcessCsvSourcePrefersDownloadById:
         file_manager.download_file_to_path.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_s3_access_failure_removes_temporary_file(self, node):
+    async def test_s3_access_failure_removes_temporary_file(
+        self, node, monkeypatch, tmp_path
+    ):
         downloaded_paths = []
 
         async def fail_download(_file_id, destination):
@@ -144,6 +197,10 @@ class TestProcessCsvSourcePrefersDownloadById:
         )
         file_manager.download_file_to_path = AsyncMock(side_effect=fail_download)
 
+        monkeypatch.setattr(
+            "app.modules.workflow.engine.nodes.ml.ml_utils.DATA_VOLUME",
+            tmp_path,
+        )
         with patch(
             "app.dependencies.injector.injector.get",
             return_value=file_manager,

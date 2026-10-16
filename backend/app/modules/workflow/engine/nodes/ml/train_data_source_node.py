@@ -350,7 +350,11 @@ class TrainDataSourceNode(BaseNode):
                     or csv_file_path
                     or ""
                 )
-                suffix = Path(source_name).suffix.lower()
+                # Older saved workflows can reference CSV files whose stored
+                # names predate extension tracking. Preserve their historical
+                # CSV behavior while still rejecting explicit unsupported
+                # extensions below.
+                suffix = Path(source_name).suffix.lower() or ".csv"
                 self._validate_training_file_suffix(suffix)
 
                 stored_size = getattr(stored_file, "size", None)
@@ -360,7 +364,13 @@ class TrainDataSourceNode(BaseNode):
                         limits.max_bytes,
                     )
 
+                source_dir = (
+                    ml_utils.DATA_VOLUME / "train" / self.state.thread_id
+                )
+                source_dir.mkdir(parents=True, exist_ok=True)
                 with tempfile.NamedTemporaryFile(
+                    dir=source_dir,
+                    prefix=".source_",
                     suffix=suffix,
                     delete=False,
                 ) as temp_file:
