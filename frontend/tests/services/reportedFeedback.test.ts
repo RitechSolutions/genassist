@@ -14,6 +14,7 @@ import { apiRequest } from "@/config/api";
 import {
   addIssueNote,
   EMPTY_SUMMARY,
+  fetchIssueHistory,
   fetchIssueNotes,
   fetchReportedFeedback,
   fetchReportedFeedbackSummary,
@@ -70,6 +71,21 @@ describe("fetchReportedFeedback", () => {
     );
   });
 
+  it("asks for one report by its comment id, for a shared link", async () => {
+    mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
+    await fetchReportedFeedback({ feedback_id: "f1", limit: 1 });
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "conversations/issues?limit=1&feedback_id=f1");
+  });
+
+  it("appends the search last, encoded", async () => {
+    mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
+    await fetchReportedFeedback({ status: "open", topic: "Refund", search: "50% off" });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "conversations/issues?limit=20&status=open&topic=Refund&search=50%25+off"
+    );
+  });
+
   it("omits the status param when status is 'all'", async () => {
     mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
     await fetchReportedFeedback({ status: "all" });
@@ -109,10 +125,11 @@ describe("fetchReportedFeedbackSummary", () => {
       to_date: "2026-10-06 23:59:59",
       topic: "",
       subtopic: "Wrong plate",
+      search: "timeout",
     });
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
-      "conversations/issues/summary?from_date=2026-10-01&to_date=2026-10-06+23%3A59%3A59&subtopic=Wrong+plate"
+      "conversations/issues/summary?from_date=2026-10-01&to_date=2026-10-06+23%3A59%3A59&subtopic=Wrong+plate&search=timeout"
     );
   });
 
@@ -168,5 +185,19 @@ describe("issue notes", () => {
   it("throws when adding a note resolves null (403)", async () => {
     mockApiRequest.mockResolvedValue(null as never);
     await expect(addIssueNote("f1", "x")).rejects.toThrow();
+  });
+});
+
+describe("issue history", () => {
+  it("GETs the history of one issue", async () => {
+    const events = [{ at: "2026-10-08T10:14:00Z", by: "jane", field: "status", old: "open", new: "resolved" }];
+    mockApiRequest.mockResolvedValue(events as never);
+    expect(await fetchIssueHistory("f1")).toBe(events);
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "conversations/issues/f1/history");
+  });
+
+  it("returns [] when the history request resolves null (403)", async () => {
+    mockApiRequest.mockResolvedValue(null as never);
+    expect(await fetchIssueHistory("f1")).toEqual([]);
   });
 });
