@@ -21,7 +21,7 @@ class TestBedrockStreaming:
 @pytest.mark.asyncio
 class TestBedrockReadTimeout:
     @pytest.mark.parametrize("model", ["eu.amazon.nova-2-lite-v1:0", "eu.anthropic.claude-sonnet-4-5-v1:0"])
-    async def test_runtime_client_waits_an_hour_for_a_reply(self, model):
+    async def test_runtime_client_waits_five_minutes_for_a_reply(self, model):
         llm = await build_chat_model("bedrock", _BEDROCK_KEYS, model)
-        assert llm.client.meta.config.read_timeout == 3600
+        assert llm.client.meta.config.read_timeout == 300
         assert llm.client.meta.config.connect_timeout == 60

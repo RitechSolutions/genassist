@@ -1,11 +1,21 @@
 """Unit tests for the server-sent event stream of one chat turn"""
 
 import logging
+from contextlib import contextmanager
 
 import pytest
 
 from app.core import turn_stream
-from app.core.turn_stream import TurnStream, current_stream
+from app.core.turn_stream import TurnStream, current_stream, node_path
+
+
+@contextmanager
+def _running(*node_ids):
+    token = node_path.set(node_ids)
+    try:
+        yield
+    finally:
+        node_path.reset(token)
 
 
 @pytest.mark.asyncio
@@ -76,7 +86,8 @@ def test_reply_text_streams_while_envelopes_stay_muted():
 def test_text_a_tool_start_cleared_does_not_hold_off_later_activity():
     stream = TurnStream("c1")
     stream.delta("n1", "scratch", "Let me check")
-    stream.activity("tool", "start")
+    with _running("n1", "tool"):
+        stream.activity("tool", "start")
     stream.end_reply("n1")
     stream.activity("knowledge", "start")
 
@@ -96,7 +107,8 @@ def test_a_final_reply_holds_off_activity_starts_until_new_text_streams():
         turn_stream.emit_activity("tool", "start")
         turn_stream.emit_activity("knowledge", "end")
         stream.delta("n1", "next", "More")
-        turn_stream.emit_activity("tool", "start")
+        with _running("n1", "tool"):
+            turn_stream.emit_activity("tool", "start")
     finally:
         current_stream.reset(token)
 
@@ -113,7 +125,8 @@ def test_a_second_node_cannot_interleave_with_the_reply_in_progress():
     stream.delta("a", "call-a", "Hello")
     stream.delta("b", "call-b", "Other")
     stream.end_reply("b")
-    stream.activity("tool", "start")
+    with _running("a", "tool"):
+        stream.activity("tool", "start")
     stream.delta("a", "call-a", " there")
     stream.end_reply("a")
     stream.delta("b", "call-b", " late")

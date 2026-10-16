@@ -79,8 +79,7 @@ async def build_chat_model(
         # langchain-aws 1.2.0 doesn't list Nova 2 Lite as streaming-capable and would answer streamed turns in one piece.
         if "nova-2-lite" in (model_name or "").lower():
             cd["disable_streaming"] = False
-        # AWS says Bedrock calls can run up to 60 minutes.
-        cd["config"] = Config(read_timeout=3600)
+        cd["config"] = Config(read_timeout=300)
         # Use the Converse API instead of the legacy InvokeModel path so inference params
         # (max_tokens, temperature) are normalized into inferenceConfig across model
         # families. Nova rejects a top-level max_tokens on InvokeModel; Converse handles

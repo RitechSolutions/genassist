@@ -22,6 +22,8 @@ ActivityPhase = Literal["start", "end"]
 TokenSink = Callable[[str, str], None]
 
 current_stream: ContextVar[Optional["TurnStream"]] = ContextVar("turn_stream", default=None)
+# Ids of the nodes whose execution encloses the running code, outermost first.
+node_path: ContextVar[tuple[str, ...]] = ContextVar("turn_stream_node_path", default=())
 
 
 class TurnStream:
@@ -61,6 +63,8 @@ class TurnStream:
     def activity(self, kind: ActivityKind, phase: ActivityPhase) -> None:
         if phase == "start":
             if self._screen == "final":
+                return
+            if self._screen == "live" and self._replying_node not in node_path.get():
                 return
             self._screen = "empty"
         self.emit("activity", kind=kind, phase=phase)

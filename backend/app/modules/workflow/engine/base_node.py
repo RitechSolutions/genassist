@@ -467,6 +467,7 @@ class BaseNode(ABC):
             else nullcontext()
         )
 
+        path_token = turn_stream.node_path.set((*turn_stream.node_path.get(), self.node_id))
         _emit_node_activity(self.get_type(), "start")
         try:
             with span_cm as span:
@@ -603,6 +604,7 @@ class BaseNode(ABC):
             record_workflow_node_duration(self.get_type(), time.perf_counter() - t0, success)
             _emit_node_activity(self.get_type(), "end")
             turn_stream.end_reply(self.node_id)
+            turn_stream.node_path.reset(path_token)
 
     @abstractmethod
     async def process(self, config: Dict[str, Any]) -> Any:

@@ -1,5 +1,6 @@
 """Unit tests for what a node sends to a streamed chat turn: coarse activity and reply text"""
 
+import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -13,9 +14,9 @@ from app.modules.workflow.engine.workflow_state import WorkflowState
 
 
 class _Node(BaseNode):
-    def __init__(self, node_type, data=None, fails=False):
-        node_config = {"id": "n1", "type": node_type, "data": {"name": "Secret builder name", **(data or {})}}
-        super().__init__("n1", node_config, WorkflowState(workflow={"nodes": [node_config]}, thread_id="thread-1"))
+    def __init__(self, node_type, data=None, fails=False, node_id="n1"):
+        node_config = {"id": node_id, "type": node_type, "data": {"name": "Secret builder name", **(data or {})}}
+        super().__init__(node_id, node_config, WorkflowState(workflow={"nodes": [node_config]}, thread_id="thread-1"))
         self._fails = fails
 
     async def process(self, config):
@@ -145,3 +146,35 @@ async def test_a_tool_after_the_streamed_reply_cannot_clear_it(stream, reply, la
     await _Node("zendeskTicketNode").execute()
 
     assert _frames(stream) == later_frames
+
+
+@pytest.mark.asyncio
+async def test_only_the_replying_agents_own_tools_clear_its_live_reply(stream):
+    agent = _feeding()
+    reply_live, sibling_done = asyncio.Event(), asyncio.Event()
+
+    async def process(config):
+        sink = agent.chat_token_sink()
+        sink("call-1", "Let me check")
+        await _Node("apiToolNode", node_id="own-tool").execute()
+        sink("call-2", "Your order")
+        reply_live.set()
+        await sibling_done.wait()
+        sink("call-2", " shipped")
+
+    async def sibling():
+        await reply_live.wait()
+        await _Node("slackMessageNode", node_id="side-branch").execute()
+        sibling_done.set()
+
+    agent.process = process
+    await asyncio.gather(agent.execute(), sibling())
+
+    assert _frames(stream) == [
+        'event: delta\ndata: {"call_id": "call-1", "text": "Let me check"}\n\n',
+        'event: activity\ndata: {"kind": "tool", "phase": "start"}\n\n',
+        'event: activity\ndata: {"kind": "tool", "phase": "end"}\n\n',
+        'event: delta\ndata: {"call_id": "call-2", "text": "Your order"}\n\n',
+        'event: activity\ndata: {"kind": "tool", "phase": "end"}\n\n',
+        'event: delta\ndata: {"call_id": "call-2", "text": " shipped"}\n\n',
+    ]
