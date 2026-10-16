@@ -39,10 +39,29 @@ class TestTranslateCategoryLiterals:
             ('color == "red"', "color == 1"),
             ('(size == "High") & (color == "blue")', "(size == 2) & (color == 0)"),
             ('size == " High"', "size == 2"),  # stray spaces match, like ordinal encoding
+            # pandas binds & and | looser than comparisons, so no parentheses needed
+            ('size == "High" & price > 3', "(size == 2) & (price > 3)"),
+            ('size == "Low" | color == "red"', "(size == 0) | (color == 1)"),
+            ('size == "High" and price > 3', "(size == 2) & (price > 3)"),
         ],
     )
     def test_translates_text_compared_to_encoded_column(self, expression, expected):
         assert translate_category_literals(expression, self.LABEL, self.ORDINAL) == expected
+
+    @pytest.mark.parametrize("parenthesized", [False, True])
+    @pytest.mark.parametrize("op", ["&", "|"])
+    def test_unparenthesized_boolean_matches_parenthesized(self, op, parenthesized):
+        # DataFrame.eval reads both forms the same way; so must the translation,
+        # or "High" stays text and the feature is False on every row.
+        df = pd.DataFrame({"size": [2, 2, 0, 1], "price": [5, 1, 5, 1]})
+        expected = df.eval(f"(size == 2) {op} (price > 3)")
+        expression = f'(size == "High") {op} (price > 3)' if parenthesized else f'size == "High" {op} price > 3'
+        result = df.eval(translate_category_literals(expression, self.LABEL, self.ORDINAL))
+        pd.testing.assert_series_equal(result, expected)
+
+    def test_text_left_inside_operand_raises(self):
+        with pytest.raises(ValueError, match="wrap each comparison in parentheses"):
+            translate_category_literals('size == "Hi" + "gh"', self.LABEL, self.ORDINAL)
 
     @pytest.mark.parametrize(
         "expression",

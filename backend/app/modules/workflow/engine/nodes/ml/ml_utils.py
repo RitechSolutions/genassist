@@ -7,12 +7,14 @@ This module contains shared functionality used across ML-related nodes.
 import ast
 import asyncio
 import csv
+import io
 import json
 import keyword
 import logging
 import math
 import os
 import re
+import tokenize
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
@@ -498,6 +500,35 @@ def ordinal_key(value: Any) -> Optional[str]:
 _BACKTICK_NAME = re.compile(r"`([^`]*)`")
 
 
+def _with_pandas_boolean_precedence(expression: str) -> str:
+    """Swap & and | for `and` / `or`, as DataFrame.eval's parser does.
+
+    pandas binds & and | looser than comparisons, so size == "High" & price > 3
+    means (size == "High") & (price > 3). Python binds them tighter - it reads
+    size == ("High" & price) > 3 - so without this the text would never be
+    seen as compared to size.
+    """
+    tokens = tokenize.generate_tokens(io.StringIO(expression).readline)
+    swapped = {"&": "and", "|": "or"}
+    return tokenize.untokenize(
+        (tokenize.NAME, swapped[tok.string]) if tok.type == tokenize.OP and tok.string in swapped
+        else (tok.type, tok.string)
+        for tok in tokens
+    )
+
+
+class _BoolOpToBitwise(ast.NodeTransformer):
+    """Turn `and` / `or` back into & / |, which unparse wraps in parentheses."""
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> ast.AST:
+        self.generic_visit(node)
+        op = ast.BitAnd() if isinstance(node.op, ast.And) else ast.BitOr()
+        result = node.values[0]
+        for value in node.values[1:]:
+            result = ast.BinOp(left=result, op=op, right=value)
+        return result
+
+
 def translate_category_literals(
     expression: str,
     label_encodings: Dict[str, Dict[Any, int]],
@@ -529,8 +560,10 @@ def translate_category_literals(
         return placeholder
 
     try:
-        tree = ast.parse(_BACKTICK_NAME.sub(to_placeholder, expression), mode="eval")
-    except SyntaxError:
+        tree = ast.parse(
+            _with_pandas_boolean_precedence(_BACKTICK_NAME.sub(to_placeholder, expression)), mode="eval"
+        )
+    except (SyntaxError, tokenize.TokenError):
         return expression  # DataFrame.eval reports the real error
 
     def column_of(node: ast.AST) -> Optional[str]:
@@ -579,10 +612,21 @@ def translate_category_literals(
                 node.left = translated
             else:
                 node.comparators[i - 1] = translated
+            # Text left inside the operand (e.g. "High" + x) would still
+            # compare a string to codes and quietly be False on every row.
+            leftover = next(
+                (n.value for n in ast.walk(translated) if isinstance(n, ast.Constant) and isinstance(n.value, str)),
+                None,
+            )
+            if leftover is not None:
+                raise ValueError(
+                    f"compares '{column}' with an expression containing '{leftover}', which can't be matched "
+                    f"to one of its categories - wrap each comparison in parentheses, e.g. ({column} == \"{leftover}\")"
+                )
 
     if not translated_any:
         return expression
-    result = ast.unparse(tree)
+    result = ast.unparse(_BoolOpToBitwise().visit(tree))
     for placeholder, name in backtick_names.items():
         result = re.sub(rf"\b{placeholder}\b", f"`{name}`", result)
     return result
