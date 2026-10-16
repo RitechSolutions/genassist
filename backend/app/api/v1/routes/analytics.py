@@ -108,7 +108,8 @@ async def trigger_analytics_backfill(
     window, repopulating columns that were added after rows were first aggregated
     (e.g. ``unique_conversations``, which made Containment Rate read 100%). Runs
     asynchronously and is idempotent — at large scale, call it in slices (e.g. one
-    month per request). Returns the Celery task id for monitoring (e.g. in Flower).
+    month per request). Returns the Celery task id, which identifies the run in the
+    worker logs (task results are not stored).
     """
     from app.core.tenant_scope import get_tenant_context
     from app.tasks.analytics_aggregation_tasks import backfill_agent_analytics
