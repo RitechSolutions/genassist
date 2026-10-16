@@ -25,3 +25,10 @@ export const effectiveOutcomeOf = (
     : suggestion === result.suggested_prompt
       ? result.outcome
       : suggestionOutcomeOf(optimizedFrom, suggestion);
+
+export const gateOutcomeOf = (
+  outcome: SuggestionOutcome | null,
+  optimizedFrom: string,
+  chainOrigin: string | null,
+): SuggestionOutcome | null =>
+  chainOrigin !== null && optimizedFrom !== chainOrigin ? null : outcome;

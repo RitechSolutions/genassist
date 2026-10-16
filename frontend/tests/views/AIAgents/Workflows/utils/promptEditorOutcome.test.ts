@@ -5,6 +5,7 @@ import type {
 } from "@/interfaces/promptEditor.interface";
 import {
   effectiveOutcomeOf,
+  gateOutcomeOf,
   suggestionOutcomeOf,
 } from "@/views/AIAgents/Workflows/utils/promptEditorOutcome";
 
@@ -51,5 +52,20 @@ describe("effectiveOutcomeOf", () => {
       "whitespace_only",
     );
     expect(effectiveOutcomeOf(null, "before", "before")).toBeNull();
+  });
+});
+
+describe("gateOutcomeOf", () => {
+  it("keeps a no-op on the prompt the chain started from gated", () => {
+    expect(gateOutcomeOf("unchanged", "draft", "draft")).toBe("unchanged");
+    expect(gateOutcomeOf("whitespace_only", "draft", "draft")).toBe(
+      "whitespace_only",
+    );
+    expect(gateOutcomeOf("unchanged", "s1", null)).toBe("unchanged");
+  });
+
+  it("opens a no-op on an earlier suggestion, which the draft never got", () => {
+    expect(gateOutcomeOf("unchanged", "s1", "draft")).toBeNull();
+    expect(gateOutcomeOf("whitespace_only", "s1", "draft")).toBeNull();
   });
 });

@@ -71,7 +71,10 @@ import {
   type Baseline,
   type Round,
 } from "../../utils/promptEditorRounds";
-import { effectiveOutcomeOf } from "../../utils/promptEditorOutcome";
+import {
+  effectiveOutcomeOf,
+  gateOutcomeOf,
+} from "../../utils/promptEditorOutcome";
 import {
   bindingChangeNote,
   comparePromptBindings,
@@ -861,12 +864,17 @@ export const usePromptMeasurement = ({
     providerId: activeOptimizeProviderId,
     instructions,
   });
+  const gateOutcome = gateOutcomeOf(
+    suggestionOutcome,
+    optimizedFrom,
+    chainOriginDraft,
+  );
   const evaluateSuggested = evaluateGate(historyState, casesState, caps, {
     ...evalInputs,
     content: suggestion,
     contentNoun: "suggested prompt",
     stale: optimizeStale,
-    outcome: suggestionOutcome,
+    outcome: gateOutcome,
   });
   const holdoutOff = !splitActive || holdoutCaseIds.length === 0;
   const validateHoldout: Gate = !evaluateSuggested.enabled
@@ -877,7 +885,7 @@ export const usePromptMeasurement = ({
   const accept = acceptGate(historyState, caps, suggestion, {
     pending: false,
     stale: optimizeStale,
-    outcome: suggestionOutcome,
+    outcome: gateOutcome,
   });
 
   const hasRuns =

@@ -168,7 +168,8 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
       <Button
         size="sm"
         variant={
-          optimizeResult && suggestionOutcome === "changed"
+          optimizeResult &&
+          (suggestionOutcome === "changed" || primaryAction !== null)
             ? "outline"
             : "default"
         }
