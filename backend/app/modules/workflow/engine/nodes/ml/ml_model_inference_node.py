@@ -23,7 +23,7 @@ from app.modules.workflow.engine.nodes.ml.ml_utils import (
     normalize_feature_expression,
     ordinal_key,
 )
-from app.schemas.ml_model import MLModelBase
+from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM, MLModelBase
 from app.services.ml_model_manager import download_pkl_file, get_ml_model_manager
 from app.services.ml_models import MLModelsService
 
@@ -33,7 +33,6 @@ ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
 
 _BOOL_TRUE = frozenset({"true"})
 _BOOL_FALSE = frozenset({"false"})
-_MAX_REPORTED_FEATURES = 5
 
 
 def convert_value(val: Any) -> Any:
@@ -80,19 +79,65 @@ def convert_value(val: Any) -> Any:
         return val
 
 
-def convert_input_types(inference_inputs: Dict[str, Any]) -> Dict[str, Any]:
+def _convert_categorical_input(
+    value: Any,
+    known_values: Optional[set[Any]],
+    normalize_key: bool,
+) -> Any:
+    if isinstance(value, list):
+        return [
+            _convert_categorical_input(item, known_values, normalize_key)
+            for item in value
+        ]
+    if not isinstance(value, str):
+        return value
+
+    converted = convert_value(value)
+    if isinstance(converted, list):
+        return [
+            _convert_categorical_input(item, known_values, normalize_key)
+            for item in converted
+        ]
+    if isinstance(converted, dict) or known_values is None:
+        return value if not isinstance(converted, dict) else converted
+    if _category_key(value, normalize_key) in known_values:
+        return value
+    if _category_key(converted, normalize_key) in known_values:
+        return converted
+    return value
+
+
+def convert_input_types(
+    inference_inputs: Dict[str, Any],
+    categorical_features: Optional[Sequence[str]] = None,
+    categorical_values: Optional[Dict[str, set[Any]]] = None,
+    normalized_categorical_features: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
     """
     Convert string values in inference inputs to their appropriate types.
     Supports both single values and lists of values (for batch predictions).
 
     Args:
         inference_inputs: Raw inference inputs with string values
+        categorical_features: Features whose fitted category types must be preserved
+        categorical_values: Fitted category keys by feature
+        normalized_categorical_features: Features matched through ordinal keys
 
     Returns:
         Dictionary with properly typed values
     """
+    categorical_feature_set = set(categorical_features or [])
+    categorical_values = categorical_values or {}
+    normalized_feature_set = set(normalized_categorical_features or [])
     converted = {}
     for key, value in inference_inputs.items():
+        if key in categorical_feature_set:
+            converted[key] = _convert_categorical_input(
+                value,
+                categorical_values.get(key),
+                key in normalized_feature_set,
+            )
+            continue
         # Handle list of values (batch input) - apply conversion to each element
         if isinstance(value, list):
             converted[key] = [convert_value(v) for v in value]
@@ -121,34 +166,6 @@ def _normalize_inference_inputs(inference_inputs: Dict[str, Any]) -> Dict[str, L
     return normalized
 
 
-def _is_unusable_value(value: Any) -> bool:
-    return isinstance(value, str) and value.strip().lower() == "null"
-
-
-def _validate_inference_values(
-    normalized_inputs: Dict[str, List[Any]],
-    feature_names: Sequence[str],
-    error: Exception,
-) -> None:
-    """After a failed preparation or prediction, names the model features that received no upstream value"""
-    if not normalized_inputs:
-        detail = "No inference inputs were provided, map at least one feature value"
-    else:
-        offending = [
-            (name, next(v for v in normalized_inputs[name] if _is_unusable_value(v)))
-            for name in feature_names
-            if name in normalized_inputs and any(_is_unusable_value(v) for v in normalized_inputs[name])
-        ]
-        if not offending:
-            return
-        shown = ", ".join(f"{name}={value!r}" for name, value in offending[:_MAX_REPORTED_FEATURES])
-        detail = f"Unusable inference input for {len(offending)} feature(s): {shown}"
-        if len(offending) > _MAX_REPORTED_FEATURES:
-            detail += f" (+{len(offending) - _MAX_REPORTED_FEATURES} more)"
-        detail += ". A value of 'null' means the upstream node did not produce that field"
-    raise AppException(error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID, error_detail=detail) from error
-
-
 def _infer_batch_size(normalized_inputs: Dict[str, List[Any]]) -> int:
     if not normalized_inputs:
         return 0
@@ -162,9 +179,12 @@ def _broadcast_column(values: List[Any], batch_size: int, feature_name: str) -> 
         return values
     if col_len == 1:
         return values * batch_size
-    raise ValueError(
-        f"Feature '{feature_name}' has {col_len} values but batch size is {batch_size}. "
-        f"Provide one value (applied to every row) or exactly {batch_size} values."
+    raise AppException(
+        error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+        error_detail=(
+            f"Feature '{feature_name}' has {col_len} values but batch size is {batch_size}. "
+            f"Provide one value (applied to every row) or exactly {batch_size} values."
+        ),
     )
 
 
@@ -177,16 +197,20 @@ def _validate_categorical_inputs(
     instead of silently encoding it as the dropped baseline category (which is
     indistinguishable from a legitimate prediction for that category).
 
-    A column the caller left unset is skipped here - normalized_inputs already
-    excludes it (see _is_empty_input), and it's filled with 0 by
-    _build_input_array, the same as a missing numeric feature - not treated as
-    an invalid category.
+    Missing columns are handled by the feature-contract validation before this
+    transform runs; this helper only validates supplied categorical values.
     """
     for col, known in zip(categorical_columns, categories):
         if col not in normalized_inputs:
             continue
-        known_values = {str(v) for v in known.tolist()}
-        invalid_values = sorted({str(v) for v in normalized_inputs[col] if str(v) not in known_values})
+        known_values = {_category_key(value) for value in known.tolist()}
+        invalid_values = sorted(
+            {
+                str(value)
+                for value in normalized_inputs[col]
+                if _category_key(value) not in known_values
+            }
+        )
         if invalid_values:
             allowed = ", ".join(str(v) for v in known.tolist())
             raise AppException(
@@ -199,70 +223,322 @@ def _validate_categorical_inputs(
             )
 
 
-def _is_missing_value(value: Any) -> bool:
+def _category_key(value: Any, normalize: bool = False) -> Any:
+    if normalize:
+        return ordinal_key(value)
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, bool):
+        return ("bool", value)
+    return value
+
+
+def _is_missing_value(
+    value: Any,
+    known_categorical_values: Optional[set[Any]] = None,
+    normalize_category_key: bool = False,
+) -> bool:
     if value is None:
         return True
+    if isinstance(value, str) and value.strip().lower() in {"null", "nan", "none"}:
+        return known_categorical_values is None or _category_key(
+            value, normalize_category_key
+        ) not in known_categorical_values
     try:
         return bool(pd.isna(value))
     except (TypeError, ValueError):
         return False
 
 
-def _with_training_fills(
-    normalized_inputs: Dict[str, List[Any]], fills: Dict[str, Any], batch_size: int
-) -> Dict[str, List[Any]]:
-    """Inputs with missing and null values replaced by the training-time fills.
+def _is_unresolved_upstream_value(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().lower() == "null"
 
-    Training fills missing values before feature engineering runs, so
-    engineered features must be rebuilt from filled inputs too - otherwise a
-    missing or null input made the feature impossible to rebuild.
-    """
-    filled = dict(normalized_inputs)
-    for col, fill in fills.items():
-        if col not in filled:
-            filled[col] = [fill] * batch_size
-        else:
-            filled[col] = [fill if _is_missing_value(v) else v for v in filled[col]]
-    return filled
+
+def _summarize_error(error: Exception) -> str:
+    detail = str(error).strip()
+    return detail.splitlines()[0][:200] if detail else type(error).__name__
+
+
+def _feature_defaults(
+    inference_params: Any,
+    legacy_defaults: Any = None,
+) -> Dict[str, Any]:
+    """Combine historical training fills with configured per-feature defaults."""
+    if inference_params and not isinstance(inference_params, dict):
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail="Model inference parameters must be an object.",
+        )
+
+    configured_defaults = (
+        inference_params.get(FEATURE_DEFAULTS_PARAM)
+        if isinstance(inference_params, dict)
+        else None
+    ) or {}
+    if not isinstance(configured_defaults, dict):
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=f"Model inference parameter '{FEATURE_DEFAULTS_PARAM}' must be an object.",
+        )
+
+    training_fills = legacy_defaults or {}
+    if not isinstance(training_fills, dict):
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail="Model artifact training fills must be an object.",
+        )
+
+    return {**training_fills, **configured_defaults}
+
+
+def _prepare_inference_inputs(
+    normalized_inputs: Dict[str, List[Any]],
+    feature_names: Sequence[str],
+    defaults: Optional[Dict[str, Any]] = None,
+    allowed_extra_features: Optional[Sequence[str]] = None,
+    categorical_features: Optional[Sequence[str]] = None,
+    categorical_values: Optional[Dict[str, set[Any]]] = None,
+    normalized_categorical_features: Optional[Sequence[str]] = None,
+    default_feature_names: Optional[Sequence[str]] = None,
+    inference_warnings: Optional[List[str]] = None,
+) -> tuple[Dict[str, List[Any]], List[str]]:
+    """Validate required inputs, apply defaults, and ignore stale extra inputs."""
+    expected_features = list(feature_names)
+    if not expected_features:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "This model artifact does not record its required feature set. "
+                "Retrain the model with current metadata before running inference."
+            ),
+        )
+
+    defaults = defaults or {}
+    expected_set = set(expected_features)
+    allowed_extra_set = {feature for feature in allowed_extra_features or [] if feature}
+    categorical_feature_set = (
+        None if categorical_features is None else set(categorical_features)
+    )
+    categorical_values = categorical_values or {}
+    normalized_categorical_feature_set = set(normalized_categorical_features or [])
+
+    default_feature_set = (
+        expected_set
+        if default_feature_names is None
+        else set(default_feature_names)
+    )
+    unknown_defaults = [name for name in defaults if name not in default_feature_set]
+    if unknown_defaults:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                f"Model default(s) configured for unknown feature(s): {', '.join(unknown_defaults)}. "
+                f"Registered model features: {', '.join(default_feature_names or expected_features)}."
+            ),
+        )
+
+    unused_defaults = [name for name in defaults if name not in expected_set]
+    if unused_defaults and inference_warnings is not None:
+        inference_warnings.append(
+            "Ignored feature default(s) that are not part of this artifact's input contract: "
+            f"{', '.join(unused_defaults)}."
+        )
+    defaults = {name: value for name, value in defaults.items() if name in expected_set}
+
+    missing_value_masks = {
+        name: [
+            _is_missing_value(
+                value,
+                categorical_values.get(name),
+                name in normalized_categorical_feature_set,
+            )
+            for value in normalized_inputs[name]
+        ]
+        for name in expected_features
+        if name in normalized_inputs
+    }
+    missing_features = [name for name in expected_features if name not in normalized_inputs]
+    features_with_missing_values = [
+        name for name, missing_mask in missing_value_masks.items() if any(missing_mask)
+    ]
+    defaults_to_apply = {
+        name
+        for name in expected_features
+        if name in defaults
+        and (name in missing_features or name in features_with_missing_values)
+    }
+    prepared_defaults = {
+        name: (
+            value
+            if categorical_feature_set is not None and name in categorical_feature_set
+            else convert_value(value)
+        )
+        for name, value in defaults.items()
+        if name in defaults_to_apply
+    }
+
+    invalid_defaults = [
+        name
+        for name, value in prepared_defaults.items()
+        if isinstance(value, (dict, list))
+        or _is_missing_value(
+            value,
+            categorical_values.get(name),
+            name in normalized_categorical_feature_set,
+        )
+    ]
+    if invalid_defaults:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "Inference fallback value(s) must be non-null scalar values for: "
+                f"{', '.join(invalid_defaults)}."
+            ),
+        )
+
+    invalid_numeric_defaults = [
+        name
+        for name, value in prepared_defaults.items()
+        if categorical_feature_set is not None
+        and name not in categorical_feature_set
+        and isinstance(value, str)
+    ]
+    if invalid_numeric_defaults:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "Inference fallback value(s) for numeric feature(s) must be numbers or booleans: "
+                f"{', '.join(invalid_numeric_defaults)}."
+            ),
+        )
+
+    non_finite_defaults = [
+        name
+        for name, value in prepared_defaults.items()
+        if isinstance(value, (float, np.floating)) and not np.isfinite(value)
+    ]
+    if non_finite_defaults:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "Inference fallback value(s) must be finite numbers for: "
+                f"{', '.join(non_finite_defaults)}."
+            ),
+        )
+
+    invalid_categorical_defaults = [
+        name
+        for name, value in prepared_defaults.items()
+        if name in categorical_values
+        and _category_key(
+            value, name in normalized_categorical_feature_set
+        ) not in categorical_values[name]
+    ]
+    if invalid_categorical_defaults:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "Invalid categorical default or saved training fill(s): "
+                f"{', '.join(invalid_categorical_defaults)}. Each categorical fallback must "
+                "match a category fitted by the model."
+            ),
+        )
+
+    unexpected_features = [
+        name for name in normalized_inputs if name not in expected_set and name not in allowed_extra_set
+    ]
+    if unexpected_features:
+        warning = (
+            "Ignored unexpected inference input(s): "
+            f"{', '.join(unexpected_features)}. Accepted inference inputs: "
+            f"{', '.join(expected_features + sorted(allowed_extra_set))}."
+        )
+        logger.warning(warning)
+        if inference_warnings is not None:
+            inference_warnings.append(warning)
+    unfilled_features = [
+        name
+        for name in expected_features
+        if (name in missing_features or name in features_with_missing_values) and name not in defaults
+    ]
+
+    problems = []
+    if unfilled_features:
+        problems.append(
+            f"Missing value(s) for feature(s): {', '.join(unfilled_features)}."
+        )
+    unresolved_upstream_features = [
+        name
+        for name in unfilled_features
+        if name in normalized_inputs
+        and any(_is_unresolved_upstream_value(value) for value in normalized_inputs[name])
+    ]
+    if unresolved_upstream_features:
+        problems.append(
+            "Unresolved upstream value(s) for feature(s): "
+            f"{', '.join(unresolved_upstream_features)}. A value of 'null' means the "
+            "upstream node did not produce that field. Fix the upstream node output before "
+            "running inference."
+        )
+        problems.append(
+            f"Required model features: {', '.join(expected_features)}."
+        )
+    elif unfilled_features:
+        problems.append(
+            f"Provide every value or configure '{FEATURE_DEFAULTS_PARAM}' in the model's inference parameters. "
+            f"Required model features: {', '.join(expected_features)}."
+        )
+    if problems:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=" ".join(problems),
+        )
+
+    prepared_inputs = {
+        name: values
+        for name, values in normalized_inputs.items()
+        if name not in unexpected_features
+    }
+    batch_size = _infer_batch_size(prepared_inputs) or 1
+    defaults_applied = []
+    for name in expected_features:
+        if name not in prepared_inputs:
+            prepared_inputs[name] = [prepared_defaults[name]] * batch_size
+            defaults_applied.append(name)
+            continue
+
+        values = _broadcast_column(prepared_inputs[name], batch_size, name)
+        missing_mask = _broadcast_column(
+            missing_value_masks[name], batch_size, name
+        )
+        if name in prepared_defaults and any(missing_mask):
+            values = [
+                prepared_defaults[name] if is_missing else value
+                for value, is_missing in zip(values, missing_mask)
+            ]
+            defaults_applied.append(name)
+        prepared_inputs[name] = values
+
+    return prepared_inputs, defaults_applied
 
 
 def _build_input_array(
     normalized_inputs: Dict[str, List[Any]],
     feature_names: Sequence[str],
-    fills: Optional[Dict[str, Any]] = None,
 ) -> np.ndarray:
-    """Build a 2-D numpy array aligned to feature_names, filling missing features with
-    the value persisted at training time (see TrainModelNode's missing_value_fills
-    metadata), or 0 if the feature has no persisted fill (legacy model, or the
-    feature was never actually missing during training).
-
-    Batch size is the maximum length among provided feature columns. Single-value
-    columns are broadcast to that batch size.
-
-    When feature_names is empty (model metadata doesn't specify column order),
-    falls back to using all input columns in their dict-insertion order.
-    """
+    """Build a 2-D array in model feature order without inventing values."""
     if not normalized_inputs:
         return np.empty((0, 0))
 
-    # Fall back to input columns when model doesn't provide feature ordering
-    if len(feature_names) == 0:
-        feature_names = list(normalized_inputs.keys())
-
-    fills = fills or {}
     batch_size = _infer_batch_size(normalized_inputs)
-    input_cols = set(normalized_inputs)
-    columns = []
-    for feat in feature_names:
-        if feat in input_cols:
-            values = _broadcast_column(normalized_inputs[feat], batch_size, feat)
-            if feat in fills:
-                # A null sent for a feature gets the same training-time fill
-                # as a feature that wasn't sent at all.
-                values = [fills[feat] if _is_missing_value(v) else v for v in values]
-            columns.append(values)
-        else:
-            columns.append([fills.get(feat, 0)] * batch_size)
+    missing_features = [name for name in feature_names if name not in normalized_inputs]
+    if missing_features:
+        raise ValueError(f"Missing prepared feature column(s): {', '.join(missing_features)}")
+
+    columns = [
+        _broadcast_column(normalized_inputs[feature_name], batch_size, feature_name)
+        for feature_name in feature_names
+    ]
     return np.column_stack(columns) if columns else np.empty((batch_size, 0))
 
 
@@ -273,10 +549,7 @@ def _one_hot_transform(
 ) -> "tuple[np.ndarray, List[str]]":
     """Reapply a fitted OneHotEncoder to raw categorical inputs, validating
     against the categories it was fit on."""
-    # object dtype - a categorical column left entirely unset comes back as a
-    # plain numeric (int) array of 0-fillers, which trips an internal numpy
-    # isnan check in OneHotEncoder.transform when compared against its
-    # (string) fitted categories.
+    # Object dtype keeps categorical values compatible with the fitted encoder.
     cat_data = _build_input_array(normalized_inputs, columns).astype(object)
     _validate_categorical_inputs(normalized_inputs, columns, encoder.categories_)
     encoded = encoder.transform(cat_data)
@@ -313,7 +586,10 @@ def _mapped_transform(
             mapping = {ordinal_key(k): v for k, v in mapping.items()}
             out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in raw[:, i]]
         else:
-            out[:, i] = [mapping.get(v, unseen_value) for v in raw[:, i]]
+            mapping = {_category_key(k): v for k, v in mapping.items()}
+            out[:, i] = [
+                mapping.get(_category_key(v), unseen_value) for v in raw[:, i]
+            ]
     return out
 
 
@@ -332,11 +608,218 @@ def _json_safe_scalar(value: Any) -> Any:
     except (TypeError, ValueError):
         return str(value)
     return value
+
+
+_UNREADABLE_MODEL_ATTRIBUTE = object()
+
+
+def _read_model_attribute(model: Any, attribute: str) -> Any:
+    try:
+        return getattr(model, attribute, None)
+    except Exception:
+        return _UNREADABLE_MODEL_ATTRIBUTE
+
+
+def _model_feature_count(model: Any) -> Optional[int]:
+    count_values = [_read_model_attribute(model, "n_features_in_")]
+
+    found_invalid_count = False
+    valid_counts = []
+    for value in count_values:
+        if value is None:
+            continue
+        if (
+            value is _UNREADABLE_MODEL_ATTRIBUTE
+            or isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or value < 1
+        ):
+            found_invalid_count = True
+            continue
+        valid_counts.append(int(value))
+
+    if valid_counts:
+        return valid_counts[0] if len(set(valid_counts)) == 1 else -1
+
+    return -1 if found_invalid_count else None
+
+
+def _normalize_estimator_feature_names(
+    names: Any,
+    expected_feature_count: Optional[int],
+) -> Optional[List[str]]:
+    if isinstance(names, np.ndarray):
+        names = names.tolist()
+    if not isinstance(names, (list, tuple)):
+        return None
+
+    normalized_names = list(names)
+    if (
+        not normalized_names
+        or any(
+            not isinstance(name, str) or not name.strip()
+            for name in normalized_names
+        )
+        or len(set(normalized_names)) != len(normalized_names)
+        or (
+            expected_feature_count is not None
+            and len(normalized_names) != expected_feature_count
+        )
+    ):
+        return None
+    return normalized_names
+
+
+def _resolve_estimator_feature_names(
+    model: Any,
+    module_root: str,
+    expected_feature_count: Optional[int],
+) -> Optional[List[str]]:
+    if module_root == "xgboost" and type(model).__name__ == "Booster":
+        return None
+
+    resolved_orders = []
+    for attribute, required_module in (
+        ("feature_names_in_", None),
+        ("feature_names_", "catboost"),
+        ("feature_name_", "lightgbm"),
+    ):
+        if required_module is not None and module_root != required_module:
+            continue
+        normalized_names = _normalize_estimator_feature_names(
+            _read_model_attribute(model, attribute),
+            expected_feature_count,
+        )
+        if normalized_names is not None:
+            resolved_orders.append(normalized_names)
+
+    if module_root == "xgboost":
+        get_booster = _read_model_attribute(model, "get_booster")
+        if not callable(get_booster):
+            return None
+        try:
+            booster = get_booster()
+        except Exception:
+            return None
+        native_names = _normalize_estimator_feature_names(
+            _read_model_attribute(booster, "feature_names"),
+            expected_feature_count,
+        )
+        if native_names is None:
+            return None
+        resolved_orders.append(native_names)
+
+    if resolved_orders and all(
+        names == resolved_orders[0] for names in resolved_orders[1:]
+    ):
+        return resolved_orders[0]
+    return None
+
+
+def _lightgbm_feature_name(name: str) -> str:
+    return "".join("_" if character.isspace() else character for character in name)
+
+
+def _match_registered_feature_names(
+    estimator_names: List[str],
+    registered_names: Any,
+    module_root: str,
+) -> Optional[List[str]]:
+    normalized_registered_names = _normalize_estimator_feature_names(
+        registered_names,
+        len(estimator_names),
+    )
+    if normalized_registered_names is None:
+        return None
+
+    if set(normalized_registered_names) == set(estimator_names):
+        return list(estimator_names)
+
+    if module_root != "lightgbm":
+        return None
+
+    registered_by_estimator_name = {
+        _lightgbm_feature_name(name): name for name in normalized_registered_names
+    }
+    if set(registered_by_estimator_name) != set(estimator_names):
+        return None
+    return [registered_by_estimator_name[name] for name in estimator_names]
+
+
+def _describe_feature_names(names: Any) -> str:
+    if isinstance(names, np.ndarray):
+        names = names.tolist()
+    if isinstance(names, (list, tuple)):
+        return f"[{', '.join(repr(name) for name in names)}]"
+    return repr(names)
+
+
+def _resolve_feature_order(
+    metadata: Dict[str, Any],
+    model: Any,
+    model_name: str,
+    registered_names: Any = None,
+    metadata_is_authoritative: bool = False,
+) -> tuple[List[str], List[str], str]:
+    module_root = type(model).__module__.split(".", 1)[0]
+    expected_feature_count = _model_feature_count(model)
+    estimator_names = _resolve_estimator_feature_names(
+        model,
+        module_root,
+        expected_feature_count,
+    )
+
+    if metadata_is_authoritative:
+        recorded_names = _normalize_estimator_feature_names(
+            metadata.get("feature_columns"),
+            None,
+        )
+        if recorded_names is not None:
+            return recorded_names, estimator_names or [], "artifact_metadata"
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                f"Model '{model_name}' artifact does not record its required feature set. "
+                "Its feature_columns metadata must be a non-empty, unique list of names. "
+                "Retrain and upload a complete model artifact."
+            ),
+        )
+
+    if estimator_names is not None:
+        caller_names = _match_registered_feature_names(
+            estimator_names,
+            registered_names,
+            module_root,
+        )
+        if caller_names is not None:
+            return caller_names, estimator_names, "estimator"
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                f"Model '{model_name}' records estimator feature names "
+                f"{_describe_feature_names(estimator_names)}, but its registered features are "
+                f"{_describe_feature_names(registered_names)}. Update the registered feature "
+                "list to contain the same names. Retrain only if the estimator names are incorrect."
+            ),
+        )
+
+    raise AppException(
+        error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+        error_detail=(
+            "Feature order source: refused. "
+            f"Model '{model_name}' does not record a safe, unambiguous feature-name order, "
+            "so an unknown order could "
+            "swap values between columns. Registry order was not used as a substitute. "
+            "Please retrain it on data with named columns (a pandas DataFrame), ensure "
+            "those names match the registered features, and upload the new file."
+        ),
+    )
+
+
 def _replay_feature_engineering(
     normalized_inputs: Dict[str, List[Any]],
     steps: List[Dict[str, Any]],
     batch_size: int,
-    fills: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, np.ndarray]:
     """Recompute engineered feature columns from raw caller-supplied inputs,
     using the exact fitted parameters (bin edges, mean/std, fitted
@@ -349,8 +832,7 @@ def _replay_feature_engineering(
     column is folded into `available` for subsequent steps to read.
     """
     computed: Dict[str, np.ndarray] = {}
-    # Same order as training: fill missing values first, then engineer.
-    available: Dict[str, List[Any]] = _with_training_fills(normalized_inputs, fills or {}, batch_size)
+    available = dict(normalized_inputs)
 
     for step in steps:
         strategy = step.get("strategy")
@@ -372,7 +854,7 @@ def _replay_feature_engineering(
                 bin_edges = step.get("bin_edges") or []
                 if bin_column not in available or len(bin_edges) < 2:
                     continue
-                raw = _build_input_array(available, [bin_column], None).astype(float)[:, 0]
+                raw = _build_input_array(available, [bin_column]).astype(float)[:, 0]
                 clipped = np.clip(raw, bin_edges[0], bin_edges[-1])
                 binned = pd.cut(
                     pd.Series(clipped), bins=bin_edges, labels=False, include_lowest=True
@@ -386,7 +868,7 @@ def _replay_feature_engineering(
                 for col, stats in (step.get("column_stats") or {}).items():
                     if col not in available:
                         continue
-                    raw = _build_input_array(available, [col], None).astype(float)[:, 0]
+                    raw = _build_input_array(available, [col]).astype(float)[:, 0]
                     out_col = stats["out_col"]
                     if strategy == "normalize":
                         result = (raw - stats["min"]) / (stats["max"] - stats["min"])
@@ -401,7 +883,7 @@ def _replay_feature_engineering(
                 new_names = step.get("new_names") or []
                 if not poly_columns or poly is None or any(c not in available for c in poly_columns):
                     continue
-                raw = _build_input_array(available, poly_columns, None).astype(float)
+                raw = _build_input_array(available, poly_columns).astype(float)
                 poly_out = poly.transform(raw)
                 new_values = poly_out[:, len(poly_columns):]
                 for i, name in enumerate(new_names):
@@ -565,37 +1047,132 @@ class MLModelInferenceNode(BaseNode):
                     error_detail=f"Could not load model: {e}. Ensure all dependencies are installed.",
                 ) from e
 
-            # Prepare features for inference
-            # Convert string inputs to proper types (bool, float, int) and parse JSON arrays
-            inference_inputs = convert_input_types(inference_inputs)
-
-            # Normalize to batch format; skip unset feature slots from the UI
-            normalized_inputs = _normalize_inference_inputs(inference_inputs)
-
             # Check if model_response has a "version" key for v2.0 format vs legacy
             metadata: Dict[str, Any] = {}
+            inference_warnings: List[str] = []
+            metadata_is_authoritative = False
             if "version" in model_response and model_response["version"] == "v2.0":
                 model = model_response.get("model", {})
                 metadata = model_response.get("metadata", {})
-                feature_names: Sequence[str] = metadata.get("feature_columns", [])
+                metadata_is_authoritative = True
             else:
                 # legacy model response is the raw model object
                 model = model_response.get("model", {})
-                feature_names = model.feature_names_in_ if hasattr(model, "feature_names_in_") else []
+
+            feature_names, estimator_feature_names, feature_order_source = (
+                _resolve_feature_order(
+                    metadata,
+                    model,
+                    ml_model.name,
+                    registered_names=getattr(ml_model, "features", None),
+                    metadata_is_authoritative=metadata_is_authoritative,
+                )
+            )
 
             # Prepare input array for prediction (always batch format)
-            # Fall back to input columns when model doesn't provide feature ordering
-            if len(feature_names) == 0:
-                feature_names = list(normalized_inputs.keys())
+            defaults_applied: List[str] = []
             try:
-                # Reapply the same missing-value fills computed at training time
-                # (if any) instead of defaulting an unset feature to 0.
-                missing_value_fills: Dict[str, Any] = metadata.get("missing_value_fills") or {}
+                inference_params = getattr(ml_model, "inference_params", None) or {}
+                target_transform = metadata.get("target_transform")
+                categorical_columns: List[str] = metadata.get("categorical_columns") or []
+                categorical_columns_no_drop: List[str] = metadata.get("categorical_columns_no_drop") or []
+                label_encodings: Dict[str, Dict[Any, int]] = metadata.get("label_encodings") or {}
+                ordinal_encodings: Dict[str, Dict[Any, Any]] = metadata.get("ordinal_encodings") or {}
+                encoder = metadata.get("encoder")
+                encoder_no_drop = metadata.get("encoder_no_drop")
+                categorical_features = (
+                    categorical_columns
+                    + categorical_columns_no_drop
+                    + list(label_encodings)
+                    + list(ordinal_encodings)
+                )
+                categorical_values: Dict[str, set[Any]] = {
+                    name: {_category_key(value) for value in mapping}
+                    for name, mapping in label_encodings.items()
+                }
+                categorical_values.update(
+                    {
+                        name: {_category_key(value, normalize=True) for value in mapping}
+                        for name, mapping in ordinal_encodings.items()
+                    }
+                )
+                if encoder is not None:
+                    categorical_values.update(
+                        {
+                            name: {_category_key(value) for value in values.tolist()}
+                            for name, values in zip(categorical_columns, encoder.categories_)
+                        }
+                    )
+                if encoder_no_drop is not None:
+                    categorical_values.update(
+                        {
+                            name: {_category_key(value) for value in values.tolist()}
+                            for name, values in zip(
+                                categorical_columns_no_drop,
+                                encoder_no_drop.categories_,
+                            )
+                        }
+                    )
+                inference_inputs = convert_input_types(
+                    inference_inputs,
+                    categorical_features=categorical_features if metadata else None,
+                    categorical_values=categorical_values if metadata else None,
+                    normalized_categorical_features=list(ordinal_encodings),
+                )
+                normalized_inputs = _normalize_inference_inputs(inference_inputs)
+                allowed_extra_features = {
+                    inference_params.get("ratioBaselineColumn")
+                    if isinstance(inference_params, dict)
+                    else None,
+                    target_transform.get("baselineColumn") if target_transform else None,
+                }
+                legacy_defaults = metadata.get("missing_value_fills")
+                registered_feature_names = list(
+                    getattr(ml_model, "features", None) or []
+                )
+                default_feature_names = registered_feature_names or list(feature_names)
+                if isinstance(legacy_defaults, dict):
+                    registered_feature_set = set(default_feature_names)
+                    expected_feature_set = set(feature_names)
+                    legacy_defaults = {
+                        name: value
+                        for name, value in legacy_defaults.items()
+                        if name in registered_feature_set and name in expected_feature_set
+                    }
+                configured_feature_defaults = _feature_defaults(inference_params)
+                feature_defaults = _feature_defaults(
+                    inference_params,
+                    legacy_defaults=legacy_defaults,
+                )
+                normalized_inputs, defaults_applied = _prepare_inference_inputs(
+                    normalized_inputs,
+                    feature_names,
+                    defaults=feature_defaults,
+                    allowed_extra_features=allowed_extra_features,
+                    categorical_features=categorical_features if metadata else None,
+                    categorical_values=categorical_values if metadata else None,
+                    normalized_categorical_features=list(ordinal_encodings),
+                    default_feature_names=default_feature_names,
+                    inference_warnings=inference_warnings,
+                )
+                legacy_defaults_applied = [
+                    name
+                    for name in defaults_applied
+                    if isinstance(legacy_defaults, dict)
+                    and name in legacy_defaults
+                    and name not in configured_feature_defaults
+                ]
+                if legacy_defaults_applied:
+                    inference_warnings.append(
+                        "Applied saved training fill(s) as fallback defaults for: "
+                        f"{', '.join(legacy_defaults_applied)}. Explicit Feature Defaults "
+                        "override saved fills per feature."
+                    )
 
-                # Raw values as supplied by the caller, aligned to feature_names -
-                # used below to build the model-ready matrix and for the
-                # human-readable "input_data" echoed back in the response.
-                raw_input_data = _build_input_array(normalized_inputs, feature_names, missing_value_fills)
+                # Validated raw values aligned to feature_names, including any
+                # deliberate per-model defaults applied above. Used below to
+                # build the model-ready matrix and the echoed "input_data".
+                raw_input_data = _build_input_array(normalized_inputs, feature_names)
                 batch_size = raw_input_data.shape[0]
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
@@ -607,12 +1184,6 @@ class MLModelInferenceNode(BaseNode):
                 # columns it was trained on, instead of the raw (pre-encoding)
                 # feature names. No-op for models with no categorical features
                 # or legacy models that predate this metadata.
-                categorical_columns: List[str] = metadata.get("categorical_columns") or []
-                categorical_columns_no_drop: List[str] = metadata.get("categorical_columns_no_drop") or []
-                encoder = metadata.get("encoder")
-                encoder_no_drop = metadata.get("encoder_no_drop")
-                label_encodings: Dict[str, Dict[Any, int]] = metadata.get("label_encodings") or {}
-                ordinal_encodings: Dict[str, Dict[Any, Any]] = metadata.get("ordinal_encodings") or {}
                 label_columns = list(label_encodings.keys())
                 ordinal_columns = list(ordinal_encodings.keys())
 
@@ -634,7 +1205,7 @@ class MLModelInferenceNode(BaseNode):
                 if encoded_feature_columns:
                     numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
                     numeric_data = (
-                        _build_input_array(normalized_inputs, numeric_order, missing_value_fills).astype(float)
+                        _build_input_array(normalized_inputs, numeric_order).astype(float)
                         if numeric_order else np.empty((batch_size, 0))
                     )
                     for i, col in enumerate(numeric_order):
@@ -685,28 +1256,65 @@ class MLModelInferenceNode(BaseNode):
                 # that predate this metadata.
                 feature_engineering_steps = metadata.get("feature_engineering_steps") or []
                 if feature_engineering_steps:
-                    engineered = _replay_feature_engineering(
-                        normalized_inputs, feature_engineering_steps, batch_size, missing_value_fills
-                    )
+                    engineered = _replay_feature_engineering(normalized_inputs, feature_engineering_steps, batch_size)
                     column_arrays.update(engineered)
                     legacy_order += [c for c in engineered if c not in legacy_order]
 
                 # The real training-time column order, when available, always
                 # wins over the grouped fallback above.
-                model_input_columns = metadata.get("model_input_columns")
-                model_feature_names = list(model_input_columns) if model_input_columns else legacy_order
+                recorded_model_input_columns = metadata.get("model_input_columns")
+                model_input_columns = None
+                if recorded_model_input_columns is not None:
+                    model_input_columns = _normalize_estimator_feature_names(
+                        recorded_model_input_columns,
+                        None,
+                    )
+                    if model_input_columns is None:
+                        raise AppException(
+                            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                            error_detail=(
+                                f"Model '{ml_model.name}' artifact has invalid "
+                                "model_input_columns metadata. Retrain and upload "
+                                "a complete model artifact."
+                            ),
+                        )
 
-                missing_columns = [c for c in model_feature_names if c not in column_arrays]
+                artifact_model_order = model_input_columns or legacy_order
+                if estimator_feature_names:
+                    module_root = type(model).__module__.split(".", 1)[0]
+                    matrix_column_order = _match_registered_feature_names(
+                        estimator_feature_names,
+                        artifact_model_order,
+                        module_root,
+                    )
+                    if matrix_column_order is None:
+                        raise AppException(
+                            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                            error_detail=(
+                                f"Model '{ml_model.name}' artifact feature names disagree "
+                                "with the names recorded by its fitted estimator. Retrain "
+                                "and upload a consistent model artifact."
+                            ),
+                        )
+                    model_feature_names = estimator_feature_names
+                else:
+                    model_feature_names = artifact_model_order
+                    matrix_column_order = artifact_model_order
+
+                missing_columns = [
+                    column for column in matrix_column_order if column not in column_arrays
+                ]
                 if missing_columns:
                     error = ValueError(
                         f"Could not reconstruct column(s) {missing_columns} that the model "
                         "was trained on - the saved model metadata may be incomplete or from "
                         "an incompatible older version."
                     )
-                    _validate_inference_values(normalized_inputs, feature_names, error)
                     raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(error))
 
-                input_data = np.column_stack([column_arrays[c] for c in model_feature_names])
+                input_data = np.column_stack(
+                    [column_arrays[column] for column in matrix_column_order]
+                )
 
                 # Reapply the scaler fitted at training time (if any) so scaled
                 # features match what the model was trained on. No-op for
@@ -716,16 +1324,31 @@ class MLModelInferenceNode(BaseNode):
                 scaled_columns = metadata.get("scaled_columns") or []
                 if scaler is not None and scaled_columns:
                     scaled_indices = [
-                        model_feature_names.index(c) for c in scaled_columns if c in model_feature_names
+                        matrix_column_order.index(c)
+                        for c in scaled_columns
+                        if c in matrix_column_order
                     ]
                     if scaled_indices:
                         input_data = input_data.astype(float)
                         input_data[:, scaled_indices] = scaler.transform(input_data[:, scaled_indices])
+
+                prediction_input = pd.DataFrame(
+                    input_data,
+                    columns=model_feature_names,
+                )
             except AppException:
                 raise
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
-                _validate_inference_values(normalized_inputs, feature_names, e)
+                if defaults_applied:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            "Data preparation failed after configured feature default(s) were applied "
+                            f"for: {', '.join(defaults_applied)}. "
+                            f"Cause: {_summarize_error(e)}"
+                        ),
+                    ) from e
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Data preparation failed: {e}"
                 ) from e
@@ -744,13 +1367,13 @@ class MLModelInferenceNode(BaseNode):
                 probabilities: Optional[np.ndarray] = None
                 if hasattr(model, "predict_proba") and class_labels is not None:
                     try:
-                        probabilities = model.predict_proba(input_data)
+                        probabilities = model.predict_proba(prediction_input)
                         predictions = np.asarray(class_labels)[np.argmax(probabilities, axis=1)]
                     except Exception:
                         probabilities = None
-                        predictions = model.predict(input_data)
+                        predictions = model.predict(prediction_input)
                 else:
-                    predictions = model.predict(input_data)
+                    predictions = model.predict(prediction_input)
 
                 # Reconstruct real-unit predictions for a model trained on a
                 # ratio target (target / baselineColumn - see TrainModelNode's
@@ -758,7 +1381,6 @@ class MLModelInferenceNode(BaseNode):
                 # raw ratio (e.g. 0.73) instead of the real-unit value the
                 # caller expects (e.g. 54750). No-op for models with no
                 # targetTransform or legacy models that predate this metadata.
-                target_transform = metadata.get("target_transform")
                 if target_transform is not None:
                     baseline_column = target_transform.get("baselineColumn")
                     if baseline_column not in normalized_inputs:
@@ -801,6 +1423,7 @@ class MLModelInferenceNode(BaseNode):
                     "features_used": ml_model.features,
                     "batch_size": batch_size,
                     "input_data": input_data_by_column,
+                    "defaults_applied": defaults_applied,
                     # Backward-compatible flat output keys, preserving model value types.
                     "prediction": prediction_values,
                     "prediction_label": prediction_labels,
@@ -815,15 +1438,29 @@ class MLModelInferenceNode(BaseNode):
                     probability_outputs, confidences = _build_probability_outputs(probabilities, class_labels)
                     result["probabilities"] = probability_outputs
                     result["confidences"] = confidences
-
-                logger.info("Prediction complete: %d rows for model %s", batch_size, model_id)
+                if inference_warnings:
+                    result["warnings"] = inference_warnings
+                logger.info(
+                    "Prediction complete: %d rows for model %s (feature order: %s)",
+                    batch_size,
+                    model_id,
+                    feature_order_source,
+                )
                 return result
 
             except AppException:
                 raise
             except Exception as e:
                 logger.error("Error during model prediction: %s", e, exc_info=True)
-                _validate_inference_values(normalized_inputs, feature_names, e)
+                if defaults_applied:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            "Prediction failed after configured feature default(s) were applied for: "
+                            f"{', '.join(defaults_applied)}. "
+                            f"Cause: {_summarize_error(e)}"
+                        ),
+                    ) from e
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Error during model prediction: {e}"
                 ) from e

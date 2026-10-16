@@ -8,6 +8,8 @@ import logging
 import uuid
 from typing import Any, Dict, Optional
 
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.string_utils import truncate_for_log
 from app.core.utils.token_utils import calculate_history_tokens
 from app.modules.workflow.agents.agent_runtime import run_agent_once
 from app.modules.workflow.engine import BaseNode
@@ -24,6 +26,20 @@ MAX_DELEGATIONS = 5
 CONTINUATION_TASK_CAP = 2000
 CONTINUATION_RESULT_CAP = 8000
 SUB_AGENT_TRACE_STEPS_CAP = 30
+
+# Customer-facing fallbacks; the technical detail stays in "error" and the logs
+AGENT_ERROR_MESSAGE = "Sorry, I couldn't complete your request. Please try again."
+AGENT_NO_RESPONSE_MESSAGE = "Sorry, I couldn't prepare a response. Please try again."
+# Same cap BaseNode applies to a raised error's recorded detail
+ERROR_DETAIL_MAX_LEN = 500
+
+
+def agent_failure(error_detail: str, **extra: Any) -> Dict[str, Any]:
+    """Recorded node failure whose output hides the technical detail from the customer"""
+    detail = redact_sensitive_substrings(error_detail) or "unknown error"
+    detail = truncate_for_log(detail, ERROR_DETAIL_MAX_LEN)
+    output = {"message": AGENT_ERROR_MESSAGE, "error": detail, **extra}
+    return node_failure(detail, output=output)
 
 
 def _frame_snapshot(value: Any) -> Any:
@@ -295,6 +311,12 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
             invocation_id = uuid.uuid4().hex
             root_thread_id = state.get_thread_id()
+
+            def _release_child() -> None:
+                if persistent:
+                    state.sub_agent_persistent_claimed = False
+                orchestrator.discard_child_memory(root_thread_id, child_id, invocation_id)
+
             try:
                 child_state = await orchestrator.run_child_turn(
                     workflow=state.workflow,
@@ -308,14 +330,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     usage_sink=state.llm_usage,
                 )
             except asyncio.TimeoutError:
-                if persistent:
-                    state.sub_agent_persistent_claimed = False
-                orchestrator.discard_child_memory(root_thread_id, child_id, invocation_id)
+                _release_child()
                 return messages.child_timeout(timeout_seconds)
             except Exception:
-                if persistent:
-                    state.sub_agent_persistent_claimed = False
-                orchestrator.discard_child_memory(root_thread_id, child_id, invocation_id)
+                _release_child()
                 logger.exception("Sub-agent delegation to %s failed", child_id)
                 return messages.child_failed()
 
@@ -325,6 +343,14 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             orchestrator.propagate_prompt_cache_diagnostics(child_state, state)
 
             completion = orchestrator.child_completion(child_state)
+            child_error = self._child_failure(child_state, child_id)
+            child_failed_without_result = completion is None and child_error is not None
+            if child_failed_without_result:
+                # Same outcome as a raised error: the parent answers, no frame is kept
+                _release_child()
+                logger.error("Sub-agent %s failed: %s", child_id, child_error)
+                return messages.child_failed()
+
             message = orchestrator.child_message(child_state)
             if mode == "single_turn" or completion is not None:
                 status = "completed"
@@ -414,7 +440,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             if envelope is None:
                 all_tools = [t for t in all_tools if t.name != called]
                 delegation_map = {k: v for k, v in delegation_map.items() if k != called}
-                current_prompt = self._build_delegation_failure_prompt(called, run.response, pii)
+                current_prompt = self._build_delegation_failure_prompt(called, run.response, current_prompt, pii)
                 continue
 
             child_id = envelope["child_node_id"]
@@ -531,15 +557,19 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             continuation = f"{prior_prompt}\n\n{continuation}"
         return completed_count + 1, steps, tools_used, continuation
 
-    def _build_delegation_failure_prompt(self, tool_name: str, reason: str, pii: bool) -> str:
+    def _build_delegation_failure_prompt(self, tool_name: str, reason: str, prior_prompt: str, pii: bool) -> str:
+        """The prompt so far plus a note that the delegation failed"""
         reason = reason or ""
         if pii:
             reason = self._mask_for_llm(reason)
-        return (
+        note = (
             f"You tried to delegate to the '{tool_name}' specialist, but it is "
             f"unavailable in this context: {reason}\n"
             "Do not call that tool again; answer the user yourself with what you have."
         )
+        if not prior_prompt:
+            return note
+        return f"{prior_prompt}\n\n{note}"
 
     def _build_continuation_prompt(self, task: str, child_answer: str, pii: bool) -> str:
         task = (task or "")[:CONTINUATION_TASK_CAP]
@@ -561,20 +591,23 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         if run.status == "error":
             error_detail = run.error or "an unknown error occurred"
             logger.error("Agent returned an error: %s", error_detail)
-            return {
-                "message": f"The agent could not complete your request: {error_detail}",
-                "error": error_detail,
-                "steps": steps,
-                "tools_used": tools_used,
-            }
+            return agent_failure(error_detail, steps=steps, tools_used=tools_used)
         response = run.response
         if response is None:
-            response = "The agent did not return a response. Please try again or review the agent configuration."
+            response = AGENT_NO_RESPONSE_MESSAGE
         return {"message": response, "steps": steps, "tools_used": tools_used}
 
     @staticmethod
     def _shape_delegated_message(message: str, steps, tools_used) -> Dict[str, Any]:
         return {"message": message, "steps": steps, "tools_used": tools_used}
+
+    @staticmethod
+    def _child_failure(child_state, child_id: str) -> Optional[str]:
+        """The child node's recorded error, or None if it did not fail"""
+        status = child_state.node_execution_status.get(child_id) or {}
+        if status.get("status") != "failed":
+            return None
+        return status.get("error") or "unknown error"
 
     def _child_trace(self, child_id: str) -> Dict[str, Any]:
         """Nested observability"""
@@ -622,7 +655,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         try:
             delegation_tools, delegation_map = self._build_delegation_tools(config)
         except SubAgentTopologyError as e:
-            return {"message": f"The agent could not complete your request: {e}", "error": str(e)}
+            logger.error("Invalid sub-agent topology for agent node %s: %s", self.node_id, e)
+            return agent_failure(str(e))
         all_tools = tools + delegation_tools if delegation_tools else tools
 
         # If PII masking is on, wrap every tool
@@ -690,21 +724,13 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 logger.error("Agent '%s' returned an error: %s", agent_type, error_detail)
                 # Record the failure but keep the message as the flow output
                 # so the user still gets a reply and downstream nodes still run
-                return node_failure(
-                    error_detail,
-                    output={
-                        "message": f"The agent could not complete your request: {error_detail}",
-                        "error": error_detail,
-                        "steps": run.steps,
-                        "tools_used": run.tools_used,
-                    },
-                )
+                return agent_failure(error_detail, steps=run.steps, tools_used=run.tools_used)
 
             # Prepare output
             response = run.response
             if response is None:
                 logger.warning("Agent '%s' returned no response. Result: %s", agent_type, run.raw)
-                response = "The agent did not return a response. Please try again or review the agent configuration."
+                response = AGENT_NO_RESPONSE_MESSAGE
 
             output = {
                 "message": response,
@@ -716,11 +742,4 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
         except Exception as e:
             logger.exception("Error processing agent node")
-            error_message = str(e)
-            return node_failure(
-                error_message,
-                output={
-                    "message": f"The agent could not complete your request: {error_message}",
-                    "error": error_message,
-                },
-            )
+            return agent_failure(str(e) or type(e).__name__)

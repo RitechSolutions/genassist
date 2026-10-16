@@ -12,6 +12,7 @@ export const METHOD_LABELS: Record<string, string> = {
   nli_eval: "NLI Evaluation",
   provenance_eval: "Provenance Evaluation",
   llm_judge: "LLM Judge",
+  checks: "Checks",
 };
 
 export const methodLabel = (technique: string): string =>

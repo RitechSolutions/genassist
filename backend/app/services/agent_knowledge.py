@@ -9,7 +9,7 @@ from app.db.models.knowledge_base import KnowledgeBaseModel
 from app.repositories.knowledge_base import KnowledgeBaseRepository
 from app.schemas.agent_knowledge import KBCreate, KBListItem, KBRead
 from app.schemas.common import PaginatedResponse
-from app.schemas.filter import BaseFilterModel
+from app.schemas.filter import KnowledgeBaseListFilter
 
 import logging
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class KnowledgeBaseService:
         self.repository = repository
 
     # ─────────────── READ ───────────────
-    async def get_list_paginated(self, filter_obj: BaseFilterModel) -> PaginatedResponse[KBListItem]:
+    async def get_list_paginated(self, filter_obj: KnowledgeBaseListFilter) -> PaginatedResponse[KBListItem]:
         rows, total = await self.repository.get_list_paginated(filter_obj)
         items = [
             KBListItem(
