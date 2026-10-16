@@ -348,7 +348,10 @@ async def _run_inference(monkeypatch, model, model_type):
             return_value={
                 "version": "v2.0",
                 "model": model,
-                "metadata": {"feature_columns": ["feature"]},
+                "metadata": {
+                    "metadata_schema_version": 2,
+                    "feature_columns": ["feature"],
+                },
             }
         )
     )
@@ -423,6 +426,8 @@ async def _predict(
     registered_feature_names=None,
     inference_params=None,
     legacy=False,
+    artifact_version="v2.0",
+    include_metadata_schema_version=True,
     **metadata,
 ):
     expected_features = list(inputs) if feature_names is None else list(feature_names)
@@ -443,10 +448,19 @@ async def _predict(
     service = MagicMock(get_by_id=AsyncMock(return_value=ml_model))
     model_response = {"model": model}
     if not legacy:
+        artifact_metadata = {
+            "feature_columns": expected_features,
+            **metadata,
+        }
+        if (
+            include_metadata_schema_version
+            and "metadata_schema_version" not in artifact_metadata
+        ):
+            artifact_metadata["metadata_schema_version"] = 2
         model_response = {
-            "version": "v2.0",
+            "version": artifact_version,
             "model": model,
-            "metadata": {"feature_columns": expected_features, **metadata},
+            "metadata": artifact_metadata,
         }
     manager = MagicMock(get_model=AsyncMock(return_value=model_response))
     monkeypatch.setattr(inference_module, "injector", MagicMock(get=MagicMock(return_value=service)))
@@ -457,6 +471,109 @@ async def _predict(
 
 
 class TestInferenceFeatureContract:
+    @pytest.mark.parametrize(
+        "artifact_version",
+        ["v2.0", "sha256:4f83c0a", "v2.1", ""],
+    )
+    @pytest.mark.asyncio
+    async def test_artifact_version_does_not_control_metadata_schema(
+        self,
+        monkeypatch,
+        artifact_version,
+    ):
+        class RecordingModel(_StubModel):
+            received = None
+
+            def predict(self, input_data):
+                self.received = input_data
+                return np.zeros(len(input_data), dtype=int)
+
+        model = RecordingModel()
+        await _predict(
+            monkeypatch,
+            model,
+            {"lag_24": 12, "hour": 8},
+            feature_names=["hour", "lag_24"],
+            artifact_version=artifact_version,
+        )
+
+        assert list(model.received.columns) == ["hour", "lag_24"]
+        np.testing.assert_array_equal(model.received, [[8, 12]])
+
+    @pytest.mark.asyncio
+    async def test_metadata_without_schema_version_is_refused(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8},
+                feature_names=["hour"],
+                include_metadata_schema_version=False,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert (
+            "has metadata but does not declare a metadata schema version"
+            in exc.value.error_detail
+        )
+        assert "cannot be read safely" in exc.value.error_detail
+        assert "Retrain the model" in exc.value.error_detail
+
+    @pytest.mark.parametrize("schema_version", [True, "2", 0])
+    @pytest.mark.asyncio
+    async def test_invalid_artifact_schema_is_refused(
+        self,
+        monkeypatch,
+        schema_version,
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8},
+                feature_names=["hour"],
+                metadata_schema_version=schema_version,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "invalid metadata schema version" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_schema_one_artifact_uses_metadata(self, monkeypatch):
+        class RecordingModel(_StubModel):
+            received = None
+
+            def predict(self, input_data):
+                self.received = input_data
+                return np.zeros(len(input_data), dtype=int)
+
+        model = RecordingModel()
+        await _predict(
+            monkeypatch,
+            model,
+            {"lag_24": 12, "hour": 8},
+            feature_names=["hour", "lag_24"],
+            metadata_schema_version=1,
+        )
+
+        assert list(model.received.columns) == ["hour", "lag_24"]
+        np.testing.assert_array_equal(model.received, [[8, 12]])
+
+    @pytest.mark.asyncio
+    async def test_future_artifact_schema_is_refused(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8},
+                feature_names=["hour"],
+                metadata_schema_version=3,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "artifact schema v3" in exc.value.error_detail
+        assert "supports up to v2" in exc.value.error_detail
+
     @pytest.mark.asyncio
     async def test_missing_feature_is_rejected_before_prediction(self, monkeypatch):
         model = _StubModel()

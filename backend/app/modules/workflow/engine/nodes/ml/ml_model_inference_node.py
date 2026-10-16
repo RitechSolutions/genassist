@@ -30,6 +30,7 @@ from app.services.ml_models import MLModelsService
 logger = logging.getLogger(__name__)
 
 ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
+SUPPORTED_ARTIFACT_SCHEMA_VERSION = 2
 
 _BOOL_TRUE = frozenset({"true"})
 _BOOL_FALSE = frozenset({"false"})
@@ -816,6 +817,46 @@ def _resolve_feature_order(
     )
 
 
+def _resolve_artifact_metadata(model_response: Dict[str, Any]) -> Dict[str, Any]:
+    """Return metadata only when the artifact declares a supported schema."""
+    metadata = model_response.get("metadata")
+    if not isinstance(metadata, dict):
+        return {}
+
+    schema_version = metadata.get("metadata_schema_version")
+    if schema_version is None:
+        if not metadata:
+            return {}
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "This model artifact has metadata but does not declare a metadata schema version, "
+                "so it cannot be read safely. Retrain the model with the current version of GenAssist."
+            ),
+        )
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version < 1
+    ):
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "This model artifact declares an invalid metadata schema version. "
+                "Retrain the model with the current version of GenAssist."
+            ),
+        )
+    if schema_version > SUPPORTED_ARTIFACT_SCHEMA_VERSION:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                f"This model uses artifact schema v{schema_version}, but this server supports "
+                f"up to v{SUPPORTED_ARTIFACT_SCHEMA_VERSION}. Upgrade the server or retrain the model."
+            ),
+        )
+    return metadata
+
+
 def _replay_feature_engineering(
     normalized_inputs: Dict[str, List[Any]],
     steps: List[Dict[str, Any]],
@@ -1047,17 +1088,12 @@ class MLModelInferenceNode(BaseNode):
                     error_detail=f"Could not load model: {e}. Ensure all dependencies are installed.",
                 ) from e
 
-            # Check if model_response has a "version" key for v2.0 format vs legacy
-            metadata: Dict[str, Any] = {}
+            # Artifact identity/version may be a fingerprint and does not describe
+            # the metadata layout. Only the metadata schema is load-bearing here.
             inference_warnings: List[str] = []
-            metadata_is_authoritative = False
-            if "version" in model_response and model_response["version"] == "v2.0":
-                model = model_response.get("model", {})
-                metadata = model_response.get("metadata", {})
-                metadata_is_authoritative = True
-            else:
-                # legacy model response is the raw model object
-                model = model_response.get("model", {})
+            model = model_response.get("model", {})
+            metadata = _resolve_artifact_metadata(model_response)
+            metadata_is_authoritative = bool(metadata)
 
             feature_names, estimator_feature_names, feature_order_source = (
                 _resolve_feature_order(
