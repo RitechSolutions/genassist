@@ -1,3 +1,4 @@
+import type { SuggestionOutcome } from "@/interfaces/promptEditor.interface";
 import type { PromptEditorCapabilities } from "./promptEditorCapabilities";
 
 /** One decision per control; button and handler stay in sync */
@@ -46,6 +47,7 @@ export interface EvalInputs extends RunInputs {
   judgeScoreProblem?: string | null;
   /** Set only for a suggested prompt, which cannot be run once its inputs moved on */
   stale?: boolean;
+  outcome?: SuggestionOutcome | null;
 }
 
 export const MAX_PROMPT_LENGTH = 200_000;
@@ -62,6 +64,11 @@ export const HISTORY_FORBIDDEN_REASON =
 
 export const SUGGESTION_STALE_REASON =
   "Inputs changed since this suggestion. Run Optimize again.";
+
+export const SUGGESTION_UNCHANGED_REASON =
+  "The suggestion is the same as the prompt it came from. Edit it or run Optimize again.";
+export const SUGGESTION_WHITESPACE_REASON =
+  "The suggestion changes only spacing. Edit it or run Optimize again.";
 
 export const HOLDOUT_STALE_REASON =
   "Inputs changed since this comparison. Start a new hold-out run.";
@@ -120,6 +127,15 @@ const providerGate = (run: RunInputs): Gate | null => {
   return null;
 };
 
+const outcomeGate = (
+  outcome: SuggestionOutcome | null | undefined,
+): Gate | null => {
+  if (outcome === "unchanged") return blocked(SUGGESTION_UNCHANGED_REASON);
+  if (outcome === "whitespace_only")
+    return blocked(SUGGESTION_WHITESPACE_REASON);
+  return null;
+};
+
 /** Isolated check only works for system-role fields */
 const inlineCheckGate = (history: HistoryState): Gate | null =>
   history.inlineCheckSupported
@@ -158,6 +174,8 @@ export const evaluateGate = (
   const inline = inlineCheckGate(history);
   if (inline) return inline;
   if (run.stale) return blocked(SUGGESTION_STALE_REASON);
+  const outcome = outcomeGate(run.outcome);
+  if (outcome) return outcome;
   if (!history.goldSuiteId)
     return blocked("Link a gold dataset before running an evaluation.");
   if (cases.status === "pending") return blocked("Loading cases…");
@@ -206,7 +224,11 @@ export const acceptGate = (
   history: HistoryState,
   caps: PromptEditorCapabilities,
   suggestion: string,
-  state: { pending: boolean; stale: boolean },
+  state: {
+    pending: boolean;
+    stale: boolean;
+    outcome?: SuggestionOutcome | null;
+  },
 ): Gate => {
   const context = contextGate(
     history,
@@ -216,6 +238,8 @@ export const acceptGate = (
   if (context) return context;
   if (state.pending) return blocked("A save is already running.");
   if (state.stale) return blocked(SUGGESTION_STALE_REASON);
+  const outcome = outcomeGate(state.outcome);
+  if (outcome) return outcome;
   return bodyGate(suggestion, "suggested prompt") ?? OPEN;
 };
 

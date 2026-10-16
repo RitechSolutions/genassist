@@ -4,8 +4,13 @@ import { Button } from "@/components/button";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { Label } from "@/components/label";
 import { RichTextarea } from "@/components/richTextarea";
+import type { SuggestionOutcome } from "@/interfaces/promptEditor.interface";
 import type { PromptEditorCapabilities } from "../../utils/promptEditorCapabilities";
-import { SUGGESTION_STALE_REASON } from "../../utils/promptEditorGates";
+import {
+  SUGGESTION_STALE_REASON,
+  SUGGESTION_UNCHANGED_REASON,
+  SUGGESTION_WHITESPACE_REASON,
+} from "../../utils/promptEditorGates";
 import { rewriteHeader } from "../../utils/promptEditorResults";
 import type { Round, RoundCounts } from "../../utils/promptEditorRounds";
 import { GateTooltip } from "./GateTooltip";
@@ -28,6 +33,21 @@ const roundStatus = (round: Round): string => {
 
 const RESTORE_BLOCKED_REASON = "Wait for the running rewrite to finish";
 const RUN_IN_FLIGHT_REASON = "Wait for the current run to finish";
+
+const outcomeNoteOf = (
+  outcome: SuggestionOutcome | null,
+  edited: boolean,
+): string | null => {
+  if (outcome === "unchanged")
+    return edited
+      ? SUGGESTION_UNCHANGED_REASON
+      : "The model returned the prompt unchanged.";
+  if (outcome === "whitespace_only")
+    return edited
+      ? SUGGESTION_WHITESPACE_REASON
+      : "The suggestion changes only spacing.";
+  return null;
+};
 
 const RoundRow: React.FC<{
   round: Round;
@@ -93,6 +113,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     splitActive,
     failedIncluded,
     failedTotal,
+    basePassed,
     baseScored,
     draftDiverged,
     comparison,
@@ -107,6 +128,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     suggestion,
     optimizedFrom,
     suggestionEdited,
+    suggestionOutcome,
     editSuggestion,
     placeholderNote,
     suggestedEvalRun,
@@ -123,6 +145,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     dismiss,
   } = measurement;
   const [roundsOpen, setRoundsOpen] = useState(false);
+  const outcomeNote = outcomeNoteOf(suggestionOutcome, suggestionEdited);
 
   // A run that lands after a newer one started is dropped, so its spend is wasted
   const runInFlight =
@@ -144,7 +167,12 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     <GateTooltip reason={waitReason(optimize.reason, optimize.pending)}>
       <Button
         size="sm"
-        variant={optimizeResult ? "outline" : "default"}
+        variant={
+          optimizeResult &&
+          (suggestionOutcome === "changed" || primaryAction !== null)
+            ? "outline"
+            : "default"
+        }
         onClick={optimize.run}
         disabled={!optimize.enabled || runInFlight}
       >
@@ -168,6 +196,13 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
           onChange={setOptimizeProviderId}
           isEmpty={providerStatus === "empty"}
         />
+        {activeOptimizeProviderId !== "" &&
+          activeOptimizeProviderId === activeEvalProviderId && (
+            <p className="text-xs text-muted-foreground">
+              The optimizer is the model being tested. A stronger model usually
+              rewrites better.
+            </p>
+          )}
 
         <div className="space-y-1">
           <p className="text-xs text-muted-foreground">
@@ -177,6 +212,12 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
             <p className="text-xs text-muted-foreground">
               No failures will be sent. Evaluating first produces a targeted
               rewrite.
+            </p>
+          )}
+          {baseScored && failedTotal === 0 && basePassed > 0 && (
+            <p className="text-xs text-muted-foreground">
+              No checked case failed. Nothing to target; the model will only
+              change what the instructions ask for.
             </p>
           )}
           {baseScored && failedTotal > failedIncluded && (
@@ -221,6 +262,9 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
             edited={suggestionEdited}
             onChange={editSuggestion}
           />
+          {outcomeNote && (
+            <p className="text-sm text-muted-foreground">{outcomeNote}</p>
+          )}
 
           <p className="text-xs text-muted-foreground tabular-nums">
             {rewriteHeader(optimizeResult.provenance, optimizeProviderFallback)}
@@ -228,10 +272,19 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
 
           {optimizeResult.explanation && (
             <div className="space-y-1">
-              <Label className="text-sm font-medium">Explanation</Label>
+              <Label className="text-sm font-medium">
+                {optimizeResult.outcome === "changed"
+                  ? "Explanation"
+                  : "Why the model kept it"}
+              </Label>
               <p className="text-sm text-muted-foreground">
                 {optimizeResult.explanation}
               </p>
+              {suggestionEdited && (
+                <p className="text-xs text-muted-foreground">
+                  Describes the model's suggestion before it was edited.
+                </p>
+              )}
             </div>
           )}
 
@@ -247,6 +300,11 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
                 <span className="text-sm">
                   {countsLine(comparison.comparison)}
                 </span>
+                {suggestedEvalRun?.results.provenance.trials === 1 && (
+                  <span className="text-xs text-muted-foreground">
+                    single sample
+                  </span>
+                )}
                 {baseline && (
                   <span className="text-xs text-muted-foreground">
                     compared with {baseline.label}

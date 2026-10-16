@@ -21,7 +21,11 @@ export const measurementStatus = (
       }${measurement.evalStale ? " · inputs changed" : ""}`
     : null,
   optimize: measurement.optimizeResult
-    ? `Suggestion ready${measurement.optimizeStale ? " · inputs changed" : ""}${
+    ? `${
+        measurement.suggestionOutcome === "changed"
+          ? "Suggestion ready"
+          : "No change suggested"
+      }${measurement.optimizeStale ? " · inputs changed" : ""}${
         measurement.rounds.length > 0
           ? ` · ${measurement.rounds.length} earlier round${
               measurement.rounds.length === 1 ? "" : "s"
