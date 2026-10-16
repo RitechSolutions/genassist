@@ -145,7 +145,8 @@ class MLModelsService:
             artifact_contract=artifact_contract,
         )
 
-        db_ml_model = await self.repository.create(ml_model)
+        model_to_create = ml_model.model_copy(update={"pkl_file": None}) if ml_model.pkl_file_id else ml_model
+        db_ml_model = await self.repository.create(model_to_create)
         return db_ml_model
 
     async def get_by_id(self, ml_model_id: UUID) -> MLModel:

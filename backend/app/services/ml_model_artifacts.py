@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import numbers
 import os
 import stat
 import tempfile
@@ -10,6 +9,13 @@ from uuid import UUID
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.ml_model_feature_contract import (
+    _match_registered_feature_names,
+    _model_feature_count,
+    _normalize_estimator_feature_names,
+    _resolve_artifact_metadata,
+    _resolve_estimator_feature_names,
+)
 from app.services.ml_model_manager import (
     _MODEL_LOAD_EXECUTOR,
     MLModelManager,
@@ -18,7 +24,6 @@ from app.services.ml_model_manager import (
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_ARTIFACT_SCHEMA_VERSION = 2
 # Same limit the upload endpoint enforces for .pkl files.
 MAX_ARTIFACT_BYTES = 500 * 1024 * 1024
 # Download + read must finish within the frontend's 120s request timeout.
@@ -41,13 +46,16 @@ _UNREADABLE_DETAIL = (
 class ModelArtifactContract:
     """What a model artifact declares about its inputs and target.
 
-    ``features`` is None when the artifact records only a feature count, and
     ``target_variable`` is None for raw models, which do not record a target.
+    ``feature_order_source`` distinguishes caller-facing artifact metadata
+    from names recorded directly by a fitted estimator.
     """
 
     features: Optional[tuple[str, ...]]
     target_variable: Optional[str]
     feature_count: int
+    module_root: str = ""
+    feature_order_source: str = "artifact_metadata"
 
 
 def _artifact_error(detail: str) -> AppException:
@@ -67,39 +75,18 @@ def _unavailable(reason: str) -> AppException:
     return AppException(error_key=ErrorKey.INTERNAL_ERROR, status_code=503)
 
 
-def _extract_v2_contract(metadata: Any) -> ModelArtifactContract:
-    # Inference reads only feature_columns from v2 metadata, so that is the one
-    # required field; schema version and target are checked when present.
+def _extract_metadata_contract(metadata: Any) -> ModelArtifactContract:
     if not isinstance(metadata, dict) or "feature_columns" not in metadata:
         raise _artifact_error(
             "The model file does not contain feature metadata. "
             "Retrain or export the model with the current GenAssist training pipeline."
         )
 
-    if "metadata_schema_version" in metadata:
-        schema_version = metadata["metadata_schema_version"]
-        if (
-            isinstance(schema_version, bool)
-            or not isinstance(schema_version, numbers.Integral)
-            or schema_version < 1
-        ):
-            raise _artifact_error(
-                "The model file has an invalid metadata schema version. "
-                "Retrain or export the model with the current GenAssist training pipeline."
-            )
-        if schema_version > SUPPORTED_ARTIFACT_SCHEMA_VERSION:
-            raise _artifact_error(
-                f"The model file uses metadata schema v{schema_version}, but this server "
-                f"supports up to v{SUPPORTED_ARTIFACT_SCHEMA_VERSION}. Upgrade the server or retrain the model."
-            )
-
-    feature_columns = metadata["feature_columns"]
-    if (
-        not isinstance(feature_columns, list)
-        or not feature_columns
-        or any(not isinstance(name, str) or not name.strip() for name in feature_columns)
-        or len(set(feature_columns)) != len(feature_columns)
-    ):
+    feature_columns = _normalize_estimator_feature_names(
+        metadata["feature_columns"],
+        None,
+    )
+    if feature_columns is None:
         raise _artifact_error(
             "The model file has invalid feature_columns metadata. "
             "It must be a non-empty ordered list of unique feature names."
@@ -119,41 +106,38 @@ def _extract_v2_contract(metadata: Any) -> ModelArtifactContract:
 
 
 def _extract_raw_model_contract(model: Any) -> ModelArtifactContract:
-    recorded_names = getattr(model, "feature_names_in_", None)
-    if recorded_names is not None and len(recorded_names) > 0:
-        names = tuple(str(name) for name in recorded_names)
-        if len(set(names)) != len(names):
-            raise _artifact_error(
-                "The model file records duplicate feature names, so the feature order is ambiguous. "
-                "Retrain it on columns with unique names."
-            )
-        return ModelArtifactContract(features=names, target_variable=None, feature_count=len(names))
-
-    recorded_count = getattr(model, "n_features_in_", None)
-    if (
-        isinstance(recorded_count, numbers.Integral)
-        and not isinstance(recorded_count, bool)
-        and recorded_count > 0
-    ):
-        return ModelArtifactContract(features=None, target_variable=None, feature_count=int(recorded_count))
+    module_root = type(model).__module__.split(".", 1)[0]
+    feature_count = _model_feature_count(model)
+    recorded_names = _resolve_estimator_feature_names(
+        model,
+        module_root,
+        feature_count,
+    )
+    if recorded_names is not None:
+        return ModelArtifactContract(
+            features=tuple(recorded_names),
+            target_variable=None,
+            feature_count=len(recorded_names),
+            module_root=module_root,
+            feature_order_source="estimator",
+        )
 
     raise _artifact_error(
-        "The model file records neither feature names nor a feature count, so its features "
-        "cannot be checked and inference cannot use it. Fit the model on a DataFrame with "
-        "named columns, or retrain it with the GenAssist training pipeline."
+        "The model file does not record a safe, unambiguous feature-name order, so inference "
+        "cannot use it. Fit the model on a DataFrame with named columns, or retrain it with "
+        "the GenAssist training pipeline."
     )
 
 
 def extract_model_artifact_contract(artifact: Any) -> ModelArtifactContract:
-    """Read the feature contract a loaded artifact declares.
-
-    Mirrors MLModelInferenceNode: after normalization, version "v2.0" means a
-    GenAssist artifact with metadata; anything else is read as a raw model that
-    may record ``feature_names_in_`` or ``n_features_in_``.
-    """
+    """Read the same feature contract that inference will enforce."""
     normalized = MLModelManager._normalize_loaded_model(artifact)
-    if normalized.get("version") == "v2.0":
-        return _extract_v2_contract(normalized.get("metadata"))
+    metadata = _resolve_artifact_metadata(
+        normalized,
+        error_key=ErrorKey.ML_MODEL_ARTIFACT_INVALID,
+    )
+    if metadata:
+        return _extract_metadata_contract(metadata)
     return _extract_raw_model_contract(normalized["model"])
 
 
@@ -266,7 +250,7 @@ def validate_registry_contract(
     feature_names: Optional[Sequence[str]],
     target_variable: Optional[str],
 ) -> None:
-    """Require registry fields to match the artifact contract, order included."""
+    """Require registry fields to name the same inputs accepted by inference."""
     registered = list(feature_names or [])
     problems = []
 
@@ -279,32 +263,38 @@ def validate_registry_contract(
     if duplicates:
         problems.append(f"Duplicate features: {_name_list(duplicates)}.")
 
-    if contract.features is not None:
-        expected = list(contract.features)
-        missing = [name for name in expected if name not in registered]
-        extra = [name for name in registered if name not in expected]
+    expected = list(contract.features or [])
+    if expected:
+        if contract.feature_order_source == "estimator":
+            names_match = (
+                _match_registered_feature_names(
+                    expected,
+                    registered,
+                    contract.module_root,
+                )
+                is not None
+            )
+        else:
+            normalized_registered = _normalize_estimator_feature_names(
+                registered,
+                len(expected),
+            )
+            names_match = normalized_registered is not None and set(normalized_registered) == set(expected)
+
+        if names_match:
+            missing = []
+            extra = []
+        else:
+            missing = [name for name in expected if name not in registered]
+            extra = [name for name in registered if name not in expected]
         if missing:
             problems.append(f"Missing features: {_name_list(missing)}.")
         if extra:
             problems.append(f"Features not in the model: {_name_list(extra)}.")
-        if not missing and not extra and not duplicates and registered != expected:
-            # Both lists hold the same unique names here, so they differ somewhere.
-            position = next(
-                (index for index, (want, have) in enumerate(zip(expected, registered)) if want != have),
-                min(len(expected), len(registered)) - 1,
-            )
-            problems.append(
-                f"Feature order differs at position {position + 1}: the model expects "
-                f"{_short(expected[position])}, the registry has {_short(registered[position])}."
-            )
-    elif len(registered) != contract.feature_count:
-        problems.append(
-            f"The model expects {contract.feature_count} feature(s), the registry lists {len(registered)}."
-        )
+        if not names_match and not missing and not extra:
+            problems.append("Registered feature names are invalid or ambiguous.")
     else:
-        logger.warning(
-            "Model artifact records only a feature count; registry feature order cannot be verified."
-        )
+        problems.append("The model does not record a safe feature-name order and cannot be registered for inference.")
 
     if problems:
         raise _artifact_error("Registry fields do not match the model file. " + " ".join(problems))

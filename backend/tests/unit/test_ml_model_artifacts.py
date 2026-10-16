@@ -62,7 +62,7 @@ class TestExtractContract:
     @pytest.mark.parametrize(
         "artifact,error_fragment",
         [
-            ({"model": object()}, "does not contain feature metadata"),
+            ({"model": object()}, "safe, unambiguous feature-name order"),
             (_artifact(schema_version=True), "invalid metadata schema version"),
             (_artifact(schema_version=3), "supports up to v2"),
             (_artifact(features=[]), "invalid feature_columns metadata"),
@@ -77,40 +77,44 @@ class TestExtractContract:
         assert exc.value.error_key is ErrorKey.ML_MODEL_ARTIFACT_INVALID
         assert error_fragment in exc.value.error_detail
 
-    def test_v2_metadata_without_schema_version_or_target_is_accepted(self):
+    def test_metadata_without_schema_version_is_rejected_like_inference(self):
         artifact = {"model": object(), "metadata": {"feature_columns": ["hour", "lag_24"]}, "version": "v2.0"}
 
-        contract = extract_model_artifact_contract(artifact)
+        with pytest.raises(AppException) as exc:
+            extract_model_artifact_contract(artifact)
 
-        assert contract == ModelArtifactContract(
-            features=("hour", "lag_24"), target_variable=None, feature_count=2
-        )
+        assert exc.value.error_key is ErrorKey.ML_MODEL_ARTIFACT_INVALID
+        assert "does not declare a metadata schema version" in exc.value.error_detail
 
-    def test_non_v2_dict_payload_is_read_as_a_raw_model(self):
-        artifact = {"model": _named_raw_model(), "version": "v1"}
+    def test_dict_without_metadata_is_read_as_a_raw_model_like_inference(self):
+        artifact = {"model": _named_raw_model(), "version": "v2.0"}
 
         contract = extract_model_artifact_contract(artifact)
 
         assert contract.features == ("hour", "lag_24")
 
-    def test_numpy_integer_feature_count_is_accepted(self):
+    def test_numpy_integer_feature_count_without_names_is_rejected(self):
         model = SimpleNamespace(n_features_in_=np.int64(3))
 
-        contract = extract_model_artifact_contract(model)
+        with pytest.raises(AppException) as exc:
+            extract_model_artifact_contract(model)
 
-        assert contract.feature_count == 3 and contract.features is None
+        assert "safe, unambiguous feature-name order" in exc.value.error_detail
 
     def test_raw_model_uses_recorded_feature_names(self):
         contract = extract_model_artifact_contract(_named_raw_model())
 
-        assert contract == ModelArtifactContract(
-            features=("hour", "lag_24"), target_variable=None, feature_count=2
-        )
+        assert contract.features == ("hour", "lag_24")
+        assert contract.target_variable is None
+        assert contract.feature_count == 2
+        assert contract.module_root == "sklearn"
+        assert contract.feature_order_source == "estimator"
 
-    def test_raw_model_without_names_uses_feature_count(self):
-        contract = extract_model_artifact_contract(_unnamed_raw_model())
+    def test_raw_model_without_names_is_rejected_like_inference(self):
+        with pytest.raises(AppException) as exc:
+            extract_model_artifact_contract(_unnamed_raw_model())
 
-        assert contract == ModelArtifactContract(features=None, target_variable=None, feature_count=2)
+        assert "safe, unambiguous feature-name order" in exc.value.error_detail
 
     def test_raw_model_with_duplicate_recorded_names_is_rejected(self):
         model = SimpleNamespace(feature_names_in_=np.array(["a", "b", "a"]))
@@ -118,14 +122,24 @@ class TestExtractContract:
         with pytest.raises(AppException) as exc:
             extract_model_artifact_contract(model)
 
-        assert "duplicate feature names" in exc.value.error_detail
+        assert "safe, unambiguous feature-name order" in exc.value.error_detail
 
     def test_raw_model_without_names_or_count_is_rejected(self):
         with pytest.raises(AppException) as exc:
             extract_model_artifact_contract(object())
 
         assert exc.value.error_key is ErrorKey.ML_MODEL_ARTIFACT_INVALID
-        assert "neither feature names nor a feature count" in exc.value.error_detail
+        assert "safe, unambiguous feature-name order" in exc.value.error_detail
+
+    def test_lightgbm_feature_names_use_inference_normalization(self):
+        class LightGBMModel:
+            n_features_in_ = 1
+            feature_name_ = ["monthly_charges"]
+
+        LightGBMModel.__module__ = "lightgbm.sklearn"
+        contract = extract_model_artifact_contract(LightGBMModel())
+
+        validate_registry_contract(contract, ["monthly charges"], "revenue")
 
 
 class TestValidateRegistryContract:
@@ -138,7 +152,6 @@ class TestValidateRegistryContract:
             (["hour"], "Missing features: 'lag_24'."),
             (["hour", "lag_24", "is_weekend"], "Features not in the model: 'is_weekend'."),
             (["hour", "lag24"], "Missing features: 'lag_24'. Features not in the model: 'lag24'."),
-            (["lag_24", "hour"], "order differs at position 1: the model expects 'hour'"),
             (["hour", "lag_24", "lag_24"], "Duplicate features: 'lag_24'."),
         ],
     )
@@ -149,12 +162,21 @@ class TestValidateRegistryContract:
         assert exc.value.error_key is ErrorKey.ML_MODEL_ARTIFACT_INVALID
         assert fragment.lower() in exc.value.error_detail.lower()
 
+    def test_accepts_the_same_unique_features_in_a_different_order(self):
+        validate_registry_contract(_contract(), ["lag_24", "hour"], "revenue")
+
+    def test_accepts_reordered_sklearn_estimator_features(self):
+        contract = extract_model_artifact_contract(_named_raw_model())
+
+        validate_registry_contract(contract, ["lag_24", "hour"], "anything")
+
     def test_target_mismatch_is_reported_first(self):
         with pytest.raises(AppException) as exc:
             validate_registry_contract(_contract(), ["lag_24", "hour"], "sessions")
 
         detail = exc.value.error_detail
-        assert detail.index("Target must be 'revenue', not 'sessions'") < detail.index("order differs")
+        assert "Target must be 'revenue', not 'sessions'" in detail
+        assert "Feature order" not in detail
 
     def test_large_mismatch_stays_short_and_keeps_the_target(self):
         features = tuple(f"feature_with_a_long_descriptive_name_{index:02d}" for index in range(30))
@@ -183,14 +205,13 @@ class TestValidateRegistryContract:
 
         validate_registry_contract(contract, ["hour", "lag_24"], "anything")
 
-    def test_count_only_contract_checks_the_feature_count(self):
+    def test_count_only_contract_is_rejected_even_when_the_count_matches(self):
         contract = ModelArtifactContract(features=None, target_variable=None, feature_count=2)
 
-        validate_registry_contract(contract, ["a", "b"], "revenue")
         with pytest.raises(AppException) as exc:
-            validate_registry_contract(contract, ["a"], "revenue")
+            validate_registry_contract(contract, ["a", "b"], "revenue")
 
-        assert "expects 2 feature(s), the registry lists 1" in exc.value.error_detail
+        assert "does not record a safe feature-name order" in exc.value.error_detail
 
     def test_count_only_contract_rejects_duplicate_registry_features(self):
         contract = ModelArtifactContract(features=None, target_variable=None, feature_count=2)

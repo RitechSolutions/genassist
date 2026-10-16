@@ -452,3 +452,6 @@ async def test_create_with_an_uploaded_file_ignores_the_caller_path(monkeypatch)
     )
 
     validator.assert_awaited_once_with(None, file_id, ["hour"], "revenue", artifact_contract=None)
+    created_model = repository.create.await_args.args[0]
+    assert created_model.pkl_file is None
+    assert str(created_model.pkl_file_id) == file_id
