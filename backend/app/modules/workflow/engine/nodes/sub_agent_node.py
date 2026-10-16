@@ -6,10 +6,10 @@ from typing import Any, Dict, Optional
 from pydantic import ValidationError
 
 from app.modules.workflow.agents.agent_runtime import run_agent_once
-from app.modules.workflow.agents.sub_agents import messages
 from app.modules.workflow.agents.sub_agents.models import SubAgentConfig
 from app.modules.workflow.agents.sub_agents.orchestrator import SUB_AGENT_CONTROL_ATTR
-from app.modules.workflow.engine.nodes.agent_node import AgentNode
+from app.modules.workflow.engine.node_result import node_failure
+from app.modules.workflow.engine.nodes.agent_node import AgentNode, agent_failure
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class SubAgentNode(AgentNode):
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         invalid = self._validate_config_values(config)
         if invalid:
-            return invalid
+            return node_failure(invalid["error"], output=invalid)
 
         provider_id = config.get("providerId")
         fallback_chain_id = config.get("fallbackChainId")
@@ -40,7 +40,8 @@ class SubAgentNode(AgentNode):
         try:
             delegation_tools, delegation_map = self._build_delegation_tools(config)
         except SubAgentTopologyError as e:
-            return {"message": f"The sub-agent could not run: {e}", "error": str(e)}
+            logger.error("Invalid sub-agent topology for sub-agent node %s: %s", self.node_id, e)
+            return agent_failure(str(e))
 
         completion_tool = self._build_completion_tool(mode)
         all_tools = tools + delegation_tools + ([completion_tool] if completion_tool else [])
@@ -92,7 +93,7 @@ class SubAgentNode(AgentNode):
             return self._shape_delegated_output(run, run.steps, run.tools_used)
         except Exception as e:
             logger.exception("Error processing sub-agent node")
-            return {"message": messages.child_failed(), "error": str(e)}
+            return agent_failure(str(e) or type(e).__name__)
 
     def _validate_config_values(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         # Provider presence is a runtime-only requirement (drafts save without one)

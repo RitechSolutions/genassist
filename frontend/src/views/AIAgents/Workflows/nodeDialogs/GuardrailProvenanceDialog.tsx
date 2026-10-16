@@ -83,7 +83,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             value={values.answer_field ?? "answer"}
             onChange={(e) => setField("answer_field", e.target.value)}
             placeholder="answer"
-            rows={2}
+            size="hint"
           />
         </div>
         <div className="space-y-2">
@@ -92,7 +92,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             value={values.context_field ?? "context"}
             onChange={(e) => setField("context_field", e.target.value)}
             placeholder="context"
-            rows={2}
+            size="hint"
           />
         </div>
         <div className="space-y-2">
@@ -143,7 +143,7 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
               value={values.fallback_answer ?? ""}
               onChange={(e) => setField("fallback_answer", e.target.value)}
               placeholder="e.g. I'm sorry, I cannot provide an answer based on the available information."
-              rows={3}
+              size="hint"
             />
           </div>
         )}
@@ -240,6 +240,8 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
                   <PromptEditorButton
                     workflowId={workflow.id}
                     nodeId={props.nodeId}
+                    nodeType={props.nodeType}
+                    nodeLabel={values.name}
                     promptField="llm_judge_system_prompt_suffix"
                     currentValue={values.llm_judge_system_prompt_suffix ?? ""}
                     onPromptChange={(val) =>

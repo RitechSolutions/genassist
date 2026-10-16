@@ -12,8 +12,10 @@ import {
   CategoricalEncodingConfig,
   CategoricalEncodingItem,
   CategoricalEncodingStrategy,
-} from "../preprocessingConfig";
+} from "../../../types/nodes";
 import { CSVAnalysisResult } from "@/services/mlModels";
+import { OrdinalOrderEditor } from "./OrdinalOrderEditor";
+import { mappingFromOrder, orderFromMapping } from "../ordinalOrder";
 
 interface CategoricalEncodingHandlerProps {
   config: CategoricalEncodingConfig | undefined;
@@ -100,12 +102,28 @@ export const CategoricalEncodingHandler: React.FC<
     columnName: string,
     strategy: CategoricalEncodingStrategy
   ) => {
+    const newColumns = columns.map((col) => {
+      if (col.columnName !== columnName) return col;
+      // Picking Ordinal starts from the column's values (as found by the
+      // analysis) so there's always an order to adjust - an ordinal entry
+      // with no order is rejected at training time.
+      const ordinalMapping =
+        strategy === "ordinal" && !Object.keys(col.ordinalMapping || {}).length
+          ? mappingFromOrder(getColumnCategories(columnName))
+          : col.ordinalMapping;
+      return { ...col, strategy, ordinalMapping };
+    });
+    setColumns(newColumns);
+    onChange({
+      enabled: config?.enabled ?? true,
+      columns: newColumns,
+    });
+  };
+
+  const handleOrdinalOrderChange = (columnName: string, order: string[]) => {
     const newColumns = columns.map((col) =>
       col.columnName === columnName
-        ? {
-            ...col,
-            strategy,
-          }
+        ? { ...col, ordinalMapping: mappingFromOrder(order) }
         : col
     );
     setColumns(newColumns);
@@ -114,6 +132,12 @@ export const CategoricalEncodingHandler: React.FC<
       columns: newColumns,
     });
   };
+
+  const getColumnInfo = (columnName: string) =>
+    analysisResult?.columns_info.find((col) => col.name === columnName);
+
+  const getColumnCategories = (columnName: string): string[] =>
+    getColumnInfo(columnName)?.categories || [];
 
   const handleDropFirstChange = (columnName: string, dropFirst: boolean) => {
     const newColumns = columns.map((col) =>
@@ -162,8 +186,8 @@ export const CategoricalEncodingHandler: React.FC<
                     (col) => col.name === column.columnName
                   );
                   return (
+                    <div key={column.columnName} className="space-y-2">
                     <div
-                      key={column.columnName}
                       className="flex items-center justify-between p-3 border rounded hover:bg-muted gap-4"
                     >
                       <div className="flex-1 min-w-0">
@@ -214,6 +238,18 @@ export const CategoricalEncodingHandler: React.FC<
                           </div>
                         )}
                       </div>
+                    </div>
+                    {column.strategy === "ordinal" && (
+                      <OrdinalOrderEditor
+                        columnName={column.columnName}
+                        order={orderFromMapping(column.ordinalMapping)}
+                        categories={columnInfo?.categories}
+                        categoriesTruncated={columnInfo?.categories_truncated}
+                        onChange={(order) =>
+                          handleOrdinalOrderChange(column.columnName, order)
+                        }
+                      />
+                    )}
                     </div>
                   );
                 })}

@@ -24,6 +24,10 @@ from app.schemas.ml_model_pipeline import (
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.ml_model_pipeline import PipelineRunStatus as PipelineRunStatusEnum
+from app.services.ml_models import (
+    STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX,
+    merge_model_inference_params,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -255,18 +259,33 @@ class MLModelPipelineRunService:
 
         # Optionally update model file and metrics
         if promote_data.update_model_file and execution_output:
+            stale_default_warnings = [
+                warning
+                for warning in execution_output.get("warnings", [])
+                if isinstance(warning, str)
+                and warning.startswith(STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX)
+            ]
+            if stale_default_warnings:
+                result["warnings"] = stale_default_warnings
             model_file_path = execution_output.get("model_file_path")
             target_column = execution_output.get("target_column")
             feature_columns = execution_output.get("feature_columns")
+            target_transform = execution_output.get("target_transform")
             if model_file_path:
                 from app.schemas.ml_model import MLModelUpdate
 
                 try:
-                    update_data = MLModelUpdate(
-                        pkl_file=model_file_path,
-                        target_variable=target_column,
-                        features=feature_columns,
-                    )
+                    model_updates = {"pkl_file": model_file_path}
+                    if target_column:
+                        model_updates["target_variable"] = target_column
+                    if feature_columns:
+                        model_updates["features"] = feature_columns
+                        model_updates["inference_params"] = merge_model_inference_params(
+                            model.inference_params,
+                            feature_columns,
+                            target_transform.get("baselineColumn") if target_transform else None,
+                        )
+                    update_data = MLModelUpdate(**model_updates)
                     await self.model_repository.update(
                         model_id, update_data.model_dump(exclude_unset=True)
                     )

@@ -3,7 +3,9 @@ from typing import List, Optional, Tuple
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import and_, delete, exists, func, or_, select, update
+from sqlalchemy import and_, delete, exists, func, literal, or_, select, update
+from sqlalchemy import case as sa_case
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
@@ -36,6 +38,38 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
             select(TestCaseModel)
             .where(TestCaseModel.suite_id == str(suite_id))
             .order_by(TestCaseModel.id)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def get_case_index_for_suite(
+        self, suite_id: UUID
+    ) -> List[Tuple[UUID, Optional[UUID], Optional[int]]]:
+        """(id, source_conversation_id, turn_index) per live case, same order as get_all_for_suite.
+        No JSONB—efficient for counting and windowing"""
+        stmt = (
+            select(
+                TestCaseModel.id,
+                TestCaseModel.source_conversation_id,
+                TestCaseModel.turn_index,
+            )
+            .where(TestCaseModel.suite_id == str(suite_id))
+            .order_by(TestCaseModel.id)
+        )
+        result = await self.db.execute(stmt)
+        return [
+            (row.id, row.source_conversation_id, row.turn_index) for row in result.all()
+        ]
+
+    async def get_cases_by_ids(
+        self, suite_id: UUID, case_ids: List[UUID]
+    ) -> List[TestCaseModel]:
+        """Fetch rows by ids; applies suite scope (DbRepository.get_by_ids doesn't)"""
+        if not case_ids:
+            return []
+        stmt = select(TestCaseModel).where(
+            TestCaseModel.suite_id == str(suite_id),
+            TestCaseModel.id.in_(case_ids),
         )
         result = await self.db.execute(stmt)
         return result.scalars().all()
@@ -76,6 +110,31 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         if commit:
             await self.db.flush()
 
+    async def get_conversation_membership(
+        self, conversation_id: UUID
+    ) -> List[Tuple[UUID, int, datetime]]:
+        """Per suite, how many turns of one conversation it holds and when they landed.
+
+        Only cases tagged ``imported`` count: a hand-authored thread carries a
+        generated source_conversation_id too, so the tag is what says the turns
+        came from a real conversation.
+        """
+        stmt = (
+            select(
+                TestCaseModel.suite_id,
+                func.count(TestCaseModel.id),
+                func.min(TestCaseModel.created_at),
+            )
+            .where(
+                TestCaseModel.source_conversation_id == conversation_id,
+                TestCaseModel.is_deleted == 0,
+                TestCaseModel.tags.contains(["imported"]),
+            )
+            .group_by(TestCaseModel.suite_id)
+        )
+        result = await self.db.execute(stmt)
+        return [(row[0], row[1], row[2]) for row in result.all()]
+
     async def create_many(self, cases: List[TestCaseModel]) -> List[TestCaseModel]:
         """Insert cases in a single transaction so a partial import cannot persist."""
         self.db.add_all(cases)
@@ -83,6 +142,11 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         for case in cases:
             await self.db.refresh(case)
         return cases
+
+    async def add_many(self, cases: List[TestCaseModel]) -> None:
+        """Insert cases in one flush without reading them back, for large imports."""
+        self.db.add_all(cases)
+        await self.db.flush()
 
 
 @inject
@@ -123,11 +187,31 @@ class TestRunRepository(DbRepository[TestRunModel]):
         result = await self.db.execute(stmt)
         return [str(run_id) for run_id in result.scalars().all()]
 
+    async def publish_progress(self, run_id: UUID, progress: dict) -> None:
+        """Write a run's progress in a transaction of its own, so it shows before the run's next commit"""
+        from sqlalchemy import text
+
+        from app.core.tenant_scope import get_tenant_context
+        from app.db.multi_tenant_session import multi_tenant_manager
+
+        session_factory = multi_tenant_manager.get_tenant_session_factory(get_tenant_context())
+        async with session_factory() as session:
+            # Progress is best effort; never wait long on the run's row.
+            await session.execute(text("SET LOCAL lock_timeout = '2s'"))
+            await session.execute(
+                update(TestRunModel)
+                .where(TestRunModel.id == run_id)
+                .values(progress=progress)
+                .execution_options(synchronize_session=False)
+            )
+            await session.commit()
+
     async def mark_orphaned_as_failed(
         self,
         waiting_ids: List[str],
         running_before: datetime,
         error_message: str,
+        waiting_error_message: Optional[str] = None,
     ) -> int:
         """Fail queued runs whose job left the broker and runs past the max run age."""
         conditions = [
@@ -140,10 +224,17 @@ class TestRunRepository(DbRepository[TestRunModel]):
             conditions.append(
                 and_(TestRunModel.status == "queued", TestRunModel.id.in_(waiting_ids))
             )
+        summary = {"error": error_message}
+        if waiting_error_message:
+            # A queued run never started, so it gets its own reason (SET sees the old status).
+            summary = sa_case(
+                (TestRunModel.status == "queued", literal({"error": waiting_error_message}, JSONB)),
+                else_=literal(summary, JSONB),
+            )
         stmt = (
             update(TestRunModel)
             .where(TestRunModel.is_deleted == 0, or_(*conditions))
-            .values(status="failed", summary_metrics={"error": error_message})
+            .values(status="failed", summary_metrics=summary)
             .execution_options(synchronize_session=False)
         )
         result = await self.db.execute(stmt)

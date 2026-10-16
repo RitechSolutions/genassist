@@ -1,0 +1,264 @@
+import type { PromptEditorCapabilities } from "./promptEditorCapabilities";
+
+/** One decision per control; button and handler stay in sync */
+export interface Gate {
+  enabled: boolean;
+  reason: string | null;
+}
+
+/** The history query projected to what the gates need */
+export interface HistoryState {
+  status: "pending" | "error" | "forbidden" | "ready";
+  nodeMissing: boolean;
+  inlineCheckSupported: boolean;
+  unsupportedReason: string | null;
+  goldSuiteId: string | null;
+}
+
+export interface CasesState {
+  status: "idle" | "pending" | "error" | "forbidden" | "success";
+  count: number;
+}
+
+/** Run inputs formatted to match gate checks */
+export interface RunInputs {
+  content: string;
+  /** Content name in blocking reason ("prompt" or "suggested prompt") */
+  contentNoun: string;
+  providerStatus: "pending" | "error" | "empty" | "ready";
+  /** Empty when nothing is selected or the selection is no longer active */
+  providerId: string;
+}
+
+export interface OptimizeInputs extends RunInputs {
+  /** May be empty; only its length is checked */
+  instructions: string;
+  rubricProblem?: string | null;
+  judgeScoreProblem?: string | null;
+}
+
+export interface EvalInputs extends RunInputs {
+  techniqueCount: number;
+  /** Why the forbidden-phrase list is not sendable; null or absent when it is */
+  phrasesProblem?: string | null;
+  entailScoreProblem?: string | null;
+  rubricProblem?: string | null;
+  judgeScoreProblem?: string | null;
+  /** Set only for a suggested prompt, which cannot be run once its inputs moved on */
+  stale?: boolean;
+}
+
+export const MAX_PROMPT_LENGTH = 200_000;
+export const MAX_INSTRUCTIONS_LENGTH = 4_000;
+
+/** Code points, matching the backend bound; JS `.length` double-counts astral characters */
+export const promptLength = (content: string): number =>
+  Array.from(content).length;
+
+/** Shared with the dialog banner, which reports the same failures */
+export const HISTORY_ERROR_REASON = "Prompt history could not be loaded.";
+export const HISTORY_FORBIDDEN_REASON =
+  "You don't have permission to view prompt history.";
+
+export const SUGGESTION_STALE_REASON =
+  "Inputs changed since this suggestion. Run Optimize again.";
+
+export const HOLDOUT_STALE_REASON =
+  "Inputs changed since this comparison. Start a new hold-out run.";
+
+export const HOLDOUT_OFF_REASON =
+  "Turn on Hold out cases to validate on the hold-out set.";
+
+const NODE_MISSING_REASON =
+  "This node isn't in the saved workflow. Save the workflow first.";
+
+const OPEN: Gate = { enabled: true, reason: null };
+
+const blocked = (reason: string): Gate => ({ enabled: false, reason });
+
+/** Shared conditions: capability, loaded history, live node */
+const contextGate = (
+  history: HistoryState,
+  hasCapability: boolean,
+  missingCapabilityReason: string,
+): Gate | null => {
+  if (!hasCapability) return blocked(missingCapabilityReason);
+  if (history.status === "pending") return blocked("Loading prompt history…");
+  if (history.status === "forbidden") return blocked(HISTORY_FORBIDDEN_REASON);
+  if (history.status === "error") return blocked(HISTORY_ERROR_REASON);
+  if (history.nodeMissing) return blocked(NODE_MISSING_REASON);
+  return null;
+};
+
+const blankGate = (content: string, noun: string): Gate | null =>
+  content.trim() ? null : blocked(`The ${noun} is empty.`);
+
+/** POST body bounds, shared by every endpoint that takes a prompt */
+const bodyGate = (content: string, noun: string): Gate | null => {
+  const blank = blankGate(content, noun);
+  if (blank) return blank;
+  // Quick check first; code-point walk only if already over
+  if (
+    content.length > MAX_PROMPT_LENGTH &&
+    promptLength(content) > MAX_PROMPT_LENGTH
+  )
+    return blocked(
+      `The ${noun} is longer than ${MAX_PROMPT_LENGTH.toLocaleString()} characters.`,
+    );
+  return null;
+};
+
+/** A run needs a provider the user can actually see selected */
+const providerGate = (run: RunInputs): Gate | null => {
+  if (run.providerStatus === "pending")
+    return blocked("Loading LLM providers…");
+  if (run.providerStatus === "error")
+    return blocked("LLM providers could not be loaded.");
+  if (run.providerStatus === "empty")
+    return blocked("No active LLM providers are available.");
+  if (!run.providerId) return blocked("Select an LLM provider.");
+  return null;
+};
+
+/** Isolated check only works for system-role fields */
+const inlineCheckGate = (history: HistoryState): Gate | null =>
+  history.inlineCheckSupported
+    ? null
+    : blocked(
+        history.unsupportedReason ??
+          "The isolated check is not supported for this field.",
+      );
+
+export const saveGate = (
+  history: HistoryState,
+  caps: PromptEditorCapabilities,
+  draft: string,
+): Gate => {
+  const context = contextGate(
+    history,
+    caps.canEditPrompt,
+    "Saving versions needs the update:evaluation permission.",
+  );
+  if (context) return context;
+  return bodyGate(draft, "prompt") ?? OPEN;
+};
+
+export const evaluateGate = (
+  history: HistoryState,
+  cases: CasesState,
+  caps: PromptEditorCapabilities,
+  run: EvalInputs,
+): Gate => {
+  const context = contextGate(
+    history,
+    caps.canEvaluate,
+    "Running evaluations needs the run:evaluation permission.",
+  );
+  if (context) return context;
+  const inline = inlineCheckGate(history);
+  if (inline) return inline;
+  if (run.stale) return blocked(SUGGESTION_STALE_REASON);
+  if (!history.goldSuiteId)
+    return blocked("Link a gold dataset before running an evaluation.");
+  if (cases.status === "pending") return blocked("Loading cases…");
+  if (cases.status === "success" && cases.count === 0)
+    return blocked("The gold dataset has no cases yet.");
+  const provider = providerGate(run);
+  if (provider) return provider;
+  if (run.techniqueCount === 0)
+    return blocked("Select at least one matching technique.");
+  if (run.phrasesProblem) return blocked(run.phrasesProblem);
+  if (run.entailScoreProblem) return blocked(run.entailScoreProblem);
+  if (run.rubricProblem) return blocked(run.rubricProblem);
+  if (run.judgeScoreProblem) return blocked(run.judgeScoreProblem);
+  return bodyGate(run.content, run.contentNoun) ?? OPEN;
+};
+
+export const optimizeGate = (
+  history: HistoryState,
+  caps: PromptEditorCapabilities,
+  run: OptimizeInputs,
+): Gate => {
+  const context = contextGate(
+    history,
+    caps.canOptimize,
+    "Optimizing needs the update:evaluation permission.",
+  );
+  if (context) return context;
+  const inline = inlineCheckGate(history);
+  if (inline) return inline;
+  const provider = providerGate(run);
+  if (provider) return provider;
+  if (run.rubricProblem) return blocked(run.rubricProblem);
+  if (run.judgeScoreProblem) return blocked(run.judgeScoreProblem);
+  if (promptLength(run.instructions) > MAX_INSTRUCTIONS_LENGTH)
+    return blocked(
+      `The additional instructions are longer than ${MAX_INSTRUCTIONS_LENGTH.toLocaleString()} characters.`,
+    );
+  return bodyGate(run.content, run.contentNoun) ?? OPEN;
+};
+
+/**
+ * Accept applies the suggestion to the draft
+ * Not gated on inline check—suggestions only appear where Optimize is allowed
+ */
+export const acceptGate = (
+  history: HistoryState,
+  caps: PromptEditorCapabilities,
+  suggestion: string,
+  state: { pending: boolean; stale: boolean },
+): Gate => {
+  const context = contextGate(
+    history,
+    caps.canEditPrompt,
+    "Applying a suggestion needs the update:evaluation permission.",
+  );
+  if (context) return context;
+  if (state.pending) return blocked("A save is already running.");
+  if (state.stale) return blocked(SUGGESTION_STALE_REASON);
+  return bodyGate(suggestion, "suggested prompt") ?? OPEN;
+};
+
+export interface HoldoutRequestKeys {
+  baselineKey: string;
+  suggestionKey: string;
+}
+
+/**
+ * Compares two prompts against current inputs. Valid only if both match;
+ * missing key invalidates (single version ≠ comparison)
+ */
+export const pairedKeysMatch = (
+  stored: {
+    baselineKey: string | null | undefined;
+    suggestionKey: string | null | undefined;
+  },
+  current: HoldoutRequestKeys | null,
+): boolean =>
+  current !== null &&
+  stored.baselineKey === current.baselineKey &&
+  stored.suggestionKey === current.suggestionKey;
+
+export interface HoldoutRetryInputs {
+  half: "baseline" | "suggestion";
+  requestKey: string;
+  nextKey?: string;
+  storedBaselineKey: string | null;
+}
+
+/** Replaying one half is only honest while the pair it belongs to is still current */
+export const retryGate = (
+  stored: HoldoutRetryInputs,
+  current: HoldoutRequestKeys | null,
+): Gate =>
+  pairedKeysMatch(
+    stored.half === "baseline"
+      ? { baselineKey: stored.requestKey, suggestionKey: stored.nextKey }
+      : {
+          baselineKey: stored.storedBaselineKey,
+          suggestionKey: stored.requestKey,
+        },
+    current,
+  )
+    ? OPEN
+    : blocked(HOLDOUT_STALE_REASON);

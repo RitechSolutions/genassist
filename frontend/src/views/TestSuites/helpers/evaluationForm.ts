@@ -1,4 +1,4 @@
-import {
+import type {
   EvaluationWizardData,
   GradingSourceSelection,
 } from "../components/EvaluationWizard";
@@ -14,6 +14,7 @@ import {
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
+import { CHECKS_TECHNIQUE, parseChecks, serializeChecks } from "./checks";
 
 const GRADING_SOURCES = new Set<GradingSourceSelection>([
   "expected_output",
@@ -269,7 +270,7 @@ const parseJsonObject = (
 
 // One forbidden phrase per textarea line: trimmed, empties dropped, ASCII-case dedupe.
 // The backend re-dedupes with Unicode casefold, which is the authoritative pass.
-const splitForbiddenPhrases = (text: string): string[] => {
+export const splitForbiddenPhrases = (text: string): string[] => {
   const phrases: string[] = [];
   const seen = new Set<string>();
   for (const line of text.split("\n")) {
@@ -288,6 +289,15 @@ const forbiddenPhrasesToText = (config: Record<string, unknown> | undefined): st
   if (Array.isArray(phrases)) return phrases.join("\n");
   return (config?.text as string) ?? "";
 };
+
+// Starting values for a new evaluation, shared by the wizard's reset.
+export const newEvaluationDefaults = (
+  lockedWorkflowId?: string,
+): Pick<EvaluationWizardData, "workflowId" | "metrics" | "useMemory"> => ({
+  workflowId: lockedWorkflowId ?? "",
+  metrics: [],
+  useMemory: true,
+});
 
 // Parse the wizard's metadata textarea and fold in the "use memory" flag.
 export const wizardMetadata = (
@@ -384,6 +394,10 @@ export const buildTechniqueConfigs = (
     };
   }
 
+  if (data.metrics.includes(CHECKS_TECHNIQUE)) {
+    configs.checks = serializeChecks(data.checks ?? [], data.checksProviderId);
+  }
+
   if (data.metrics.includes("llm_judge")) {
     configs.llm_judge = {
       ...(data.judgeProviderId.trim() ? { llm_provider_id: data.judgeProviderId.trim() } : {}),
@@ -425,6 +439,7 @@ export const getEditInitialData = (
     "context_field",
     "expected_output",
   );
+  const savedChecks = parseChecks(evaluation.technique_configs?.[CHECKS_TECHNIQUE]);
   const metaWithoutMemory = evaluation.input_metadata
     ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
     : {};
@@ -459,5 +474,7 @@ export const getEditInitialData = (
     actionRules: parseActionRules(actionCfg),
     judgeRules: parseJudgeRules(judgeCfg),
     judgeProviderId: (judgeCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
+    checks: savedChecks.checks,
+    checksProviderId: savedChecks.providerId || providers[0]?.id || "",
   };
 };

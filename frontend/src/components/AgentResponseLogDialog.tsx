@@ -2,6 +2,8 @@ import { useEffect, useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/dialog";
 import { fetchAgentResponseLog, AgentResponseLog } from "@/services/transcripts";
 import JsonViewer from "@/components/JsonViewer";
+import { extractReferencedArticles } from "@/helpers/referencedArticles";
+import { TruncatedText } from "@/components/TruncatedText";
 
 type AgentResponseLogDialogProps = {
   isOpen: boolean;
@@ -34,6 +36,7 @@ export function AgentResponseLogDialog({
   const [data, setData] = useState<AgentResponseLogEntry | null>(null);
 
   const parsedResponse = useMemo(() => parseRawResponse(data?.raw_response), [data?.raw_response]);
+  const references = useMemo(() => extractReferencedArticles(parsedResponse), [parsedResponse]);
 
   useEffect(() => {
     if (!isOpen || !messageId) {
@@ -108,6 +111,40 @@ export function AgentResponseLogDialog({
                 )}
                 {data.logged_at != null && (
                   <div><span className="font-medium">Logged at:</span> {new Date(data.logged_at).toLocaleString()}</div>
+                )}
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-muted-foreground mb-1">Referenced articles</div>
+                {references.kbCalls === 0 ? (
+                  <p className="text-xs text-muted-foreground">No knowledge-base lookup recorded in this response's log.</p>
+                ) : references.articles.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {references.failedCalls === references.kbCalls
+                      ? "The knowledge-base lookup failed, so no articles were returned."
+                      : "The knowledge base was queried but returned no results."}
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5 text-sm">
+                    {references.articles.map((article) => (
+                      <li key={article.id} className="flex items-baseline gap-x-2">
+                        <TruncatedText className="min-w-0">
+                          {article.title && <span className="mr-2 font-medium">{article.title}</span>}
+                          <code className="text-xs text-muted-foreground">{article.id}</code>
+                        </TruncatedText>
+                        {article.score != null && (
+                          <span className="shrink-0 text-xs text-muted-foreground">score {article.score.toFixed(3)}</span>
+                        )}
+                        {article.kbId && (
+                          <span className="flex shrink-0 items-baseline gap-1 text-xs text-muted-foreground">
+                            KB <TruncatedText className="max-w-[6rem]">{article.kbId}</TruncatedText>
+                          </span>
+                        )}
+                        {article.legacy && (
+                          <span className="shrink-0 text-xs italic text-muted-foreground">parsed from log text</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
               <div>

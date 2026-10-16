@@ -9,7 +9,10 @@ import {
 import { Button } from "@/components/button";
 import { Play, X } from "lucide-react";
 import { NodeData, HumanInTheLoopNodeData } from "../types/nodes";
-import { testNode } from "@/services/workflows";
+import {
+  getTrainDataSourceTestFailureMessage,
+  testNode,
+} from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { SchemaField, SchemaType } from "../types/schemas";
@@ -94,8 +97,6 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       let variables = extractVariablesFromNodeConfig(nodeData);
       variables = variables.filter((v) => v !== "direct_input");
       const schemaFields = extractInputSchemaFields(nodeData);
-      // Create a set of schema field names to avoid duplicates
-      const schemaFieldNames = new Set(schemaFields.map((field) => field.id));
       const availableData = nodeId ? getAvailableDataForNode(nodeId) : null;
 
       if (!nodeId) {
@@ -263,6 +264,10 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         node_config: nodeData,
       });
 
+      if (nodeType === "trainDataSourceNode") {
+        setError(getTrainDataSourceTestFailureMessage(response));
+      }
+
       if (response && response.output !== undefined) {
         const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
         setOutput(Object.assign({}, response, { output: truncatedOutput }));
@@ -369,6 +374,9 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         node_config: nodeData,
       });
 
+      if (nodeType === "trainDataSourceNode") {
+        setError(getTrainDataSourceTestFailureMessage(response));
+      }
 
       if (response && response.output !== undefined) {
         const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
@@ -400,7 +408,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] w-full overflow-hidden" style={{ zIndex: 1201 }}>
+      <DialogContent className="w-[95vw] max-w-[min(1100px,95vw)] max-h-[90vh] flex flex-col overflow-hidden" style={{ zIndex: 1201 }}>
         <DialogHeader>
           <DialogTitle>{`Test ${nodeName}`}</DialogTitle>
           <p className="text-sm text-muted-foreground">
@@ -416,7 +424,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           )}
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-1 max-h-[calc(85vh-180px)] min-w-0">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-1 min-w-0">
           <div className="flex flex-col space-y-4 min-w-0 w-full">
             {isAudioInputNode && (
               <STTAudioInput
@@ -450,7 +458,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="mt-4">
           <Button variant="outline" onClick={onClose}>
             <X className="h-4 w-4 mr-2" />
             Close

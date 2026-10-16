@@ -32,6 +32,8 @@ Defaults: `sourceHandle = "output"`, `targetHandle = "input"`. Override for spec
 - Sub-agent delegation: `sourceHandle: "output_sub_agent"`, `targetHandle: "input_sub_agents"`
 - Router true: `sourceHandle: "output_true"`
 - Router false: `sourceHandle: "output_false"`
+- Switch case: `sourceHandle: "output_<case id>"` (e.g. `"output_case_1"`); Switch no-match: `sourceHandle: "output_default"`
+- Filter: the default `sourceHandle: "output"` (its only output; followed only when the condition holds)
 
 ---
 
@@ -116,6 +118,75 @@ Edges:
   4→6, 5→7
 ```
 
+### Gating a Branch (Filter)
+Use `filterNode` when a branch should only continue under a condition, with nothing to do otherwise. It has ONE output; when the condition is false the branch simply stops. When it passes, the next node receives the Filter's input unchanged.
+```
+chatInputNode(1) → llmModelNode(2) → filterNode(3) → agentNode(4) → chatOutputNode(5)
+
+filterNode(3) config:
+  field: "{{source.message}}"
+  operator: "equal"
+  value: "on_topic"
+  stopMessage: "Sorry, I can only help with Client questions."
+
+Edges: 1→2, 2→3, 3→4, 4→5
+```
+If the Filter can stop the conversation's main path, set `stopMessage`: it becomes the chat reply when the branch stops.
+
+### Multi-Way Routing (Switch)
+Use `switchNode` instead of chaining routers when ONE value picks between 3+ branches. Classify first, then switch on the label. Every case edge and the default edge need their own branch.
+```
+chatInputNode(1) → llmModelNode(2) → switchNode(3)
+  output_case_1 → agentNode(4) → chatOutputNode(7)
+  output_case_2 → agentNode(5) → chatOutputNode(8)
+  output_default → templateNode(6) → chatOutputNode(9)
+
+llmModelNode(2) config:
+  systemPrompt: "Classify the user's message. Respond with exactly one word: billing, technical or other."
+  userPrompt: "{{session.message}}"
+
+switchNode(3) config:
+  switchValue: "{{source.message}}"
+  matchMode: "equal"
+  caseSensitive: false
+  cases: [{"id": "case_1", "label": "Billing", "value": "billing"},
+          {"id": "case_2", "label": "Technical", "value": "technical"}]
+
+Edges:
+  1→2, 2→3
+  3→4 (sourceHandle: "output_case_1")
+  3→5 (sourceHandle: "output_case_2")
+  3→6 (sourceHandle: "output_default")
+  4→7, 5→8, 6→9
+```
+
+### Repeating Steps (Loop)
+Use `loopNode` to run the same nodes for every item of a list, or to retry a step until its result is good enough. The body starts at `output_loop`; its LAST node connects back to the Loop's `input_loop`. Whatever runs after the loop connects from `output_done`.
+```
+chatInputNode(1) → apiToolNode(2) → loopNode(3)
+  output_loop → llmModelNode(4) ──back to 3 (input_loop)
+  output_done → templateNode(5) → chatOutputNode(6)
+
+loopNode(3) config:
+  mode: "forEach"
+  items: "{{source.tickets}}"
+  maxIterations: 100
+
+llmModelNode(4) config:
+  userPrompt: "Summarise this ticket: {{source.item}}"
+
+templateNode(5) config:
+  template: "Summaries: {{source.results}}"
+
+Edges:
+  1→2, 2→3
+  3→4 (sourceHandle: "output_loop")
+  4→3 (targetHandle: "input_loop")
+  3→5 (sourceHandle: "output_done")
+  5→6
+```
+Critique-and-retry uses `mode: "repeatUntil"`: the body is drafter → critic → back, and the stop condition checks the critic's verdict (`stopField: "{{node_outputs.<critic_id>.verdict}}"`, `stopOperator: "equal"`, `stopValue: "pass"`). The drafter reads the previous attempt from `{{source.previous}}`.
+
 ### AI Pipeline (no agent)
 ```
 chatInputNode(1) → templateNode(2) → llmModelNode(3) → chatOutputNode(4)
@@ -149,6 +220,16 @@ These rules are **non-negotiable**. Violating any of them produces a broken work
 - **RIGHT**: `chatInput → llmModelNode` (classifies topic) → `routerNode` (checks classification string)
 - If the user's use case involves "if X is found, do Y", put the search as a **TOOL** of the agent and let the agent decide via its reasoning + systemPrompt instructions. Do NOT use a routerNode for this.
 - routerNode config has ONLY these fields: `first_value`, `compare_condition`, `second_value`. Do NOT invent fields like `condition`, `trueLabel`, `falseLabel`.
+- When one value selects between 3 or more branches, use a single `switchNode` rather than a chain of routerNodes. The same rules apply: it compares strings, so classify first.
+- When a branch should only continue if a condition holds (and there is no "else" path), use a `filterNode` instead of a routerNode with an unconnected output. Use its number operators for thresholds (scores, amounts, confidence) and `is_empty` / `is_not_empty` for missing data.
+
+### Loop Rules
+- A `loopNode` is the ONLY way to run a node more than once. Never connect a node back to an earlier node any other way: the engine ignores such cycles.
+- The body is everything reachable from `output_loop`. Its last node MUST connect back to the Loop's `input_loop`; that node's output is the iteration's result.
+- Nodes that run after the loop connect from `output_done` ONLY. A body node must never connect to them directly.
+- The first body node reads the current item as `{{source.item}}`; deeper body nodes use `{{node_outputs.<loop_id>.item}}`.
+- `humanInTheLoopNode` is not allowed inside a loop body. An `agentNode` inside a body must not have a `task` or `chat` sub-agent, nor a tool whose sub-flow contains a `humanInTheLoopNode` (`single_turn` sub-agents are fine).
+- Always set `maxIterations`. A `filterNode` inside the body skips the current item.
 
 ### Tool Connection Rules
 - Integration and data nodes (`knowledgeBaseNode`, `zendeskTicketNode`, `slackMessageNode`, `gmailNode`, `jiraNode`, `apiToolNode`, `sqlNode`, `calendarEventNode`, `readMailsNode`, `whatsappToolNode`, etc.) **MUST** be connected as **TOOLS** of an `agentNode` via a `toolBuilderNode`. They must **NEVER** be placed as standalone nodes in the main chain.
@@ -173,6 +254,7 @@ These rules are **non-negotiable**. Violating any of them produces a broken work
 
 ### Node Config Rules
 - Every chat workflow MUST start with `chatInputNode` and end with `chatOutputNode`.
+- A workflow started by an external HTTP event uses `webhookTriggerNode` as its entry point instead of (or in addition to) `chatInputNode`.
 - Agent and LLM nodes MUST have `"userPrompt": "{{session.message}}"`. NEVER set it to null, empty, or literal text.
 - Use `{{session.message}}` for tool/KB query fields.
 - Write real, specific `systemPrompt` values. Never use generic placeholders like "You are a helpful assistant."
@@ -187,6 +269,19 @@ Router connections — must specify branch:
 ```json
 {"from": "<router_id>", "to": "<target>", "sourceHandle": "output_true", "targetHandle": "input"}
 {"from": "<router_id>", "to": "<target>", "sourceHandle": "output_false", "targetHandle": "input"}
+```
+
+Switch connections — one edge per case id, plus the default:
+```json
+{"from": "<switch_id>", "to": "<target>", "sourceHandle": "output_case_1", "targetHandle": "input"}
+{"from": "<switch_id>", "to": "<target>", "sourceHandle": "output_default", "targetHandle": "input"}
+```
+
+Loop connections — body out, body back in, and the continuation:
+```json
+{"from": "<loop_id>", "to": "<first_body_node>", "sourceHandle": "output_loop", "targetHandle": "input"}
+{"from": "<last_body_node>", "to": "<loop_id>", "sourceHandle": "output", "targetHandle": "input_loop"}
+{"from": "<loop_id>", "to": "<after>", "sourceHandle": "output_done", "targetHandle": "input"}
 ```
 
 Tool connections — both edges required:
@@ -231,6 +326,29 @@ Sub-agent delegation — single edge from child to parent:
 | input | target | left | any |
 
 **Config:** None (auto-configured).
+
+---
+
+### webhookTriggerNode — Webhook Trigger
+**Category:** I/O
+**Purpose:** Entry point for workflows started by an external system through an inbound HTTP request. Each node gets its own authenticated endpoint (bearer token or HMAC signature). The delivery reaches downstream nodes as `webhook` (`{method, headers, query, body}`), plus any mapped fields; `message` is set only when a message path is configured. A workflow may contain both a `chatInputNode` and a `webhookTriggerNode`; each run starts from exactly one of them.
+**Use cases:** Order created in an e-commerce platform, CRM ticket/account changes, monitoring alerts, form submissions, any system without a dedicated connector.
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| output | source | right | any |
+
+**Optional config:**
+| Field | Type | Default | Description |
+|---|---|---|---|
+| name | text | — | Display name |
+| messagePath | text | — | Dotted path (e.g. `body.message`) whose value becomes the workflow `message` |
+| threadIdPath | text | — | Path whose value groups deliveries into one conversation thread |
+| idempotencyPath | text | — | Path to a unique delivery id; an `Idempotency-Key` header is always honoured |
+| samplePayload | textarea | — | JSON used by the Test button and mapping preview |
+
+Downstream prompts reference the delivery with `{{session.webhook.body.<field>}}` (or `{{session.message}}` when a message path is set). Endpoint settings (URL, secret, method, auth mode, rate limit) are managed in the node's dialog and are not part of the workflow JSON.
 
 ---
 
@@ -476,6 +594,102 @@ Same memory sub-settings as agentNode (conditional on memoryTrimmingMode).
 - `ends_with` — first_value ends with second_value
 - `not_ends_with` — first_value does not end with second_value
 - `regex` — second_value is a regex pattern to test against first_value
+
+---
+
+### switchNode — Switch
+**Category:** Control Flow
+**Purpose:** Deterministic multi-way branching on a single value. Compares `switchValue` against each case in order; the FIRST matching case wins and only its branch runs. If no case matches, `output_default` runs. In its default rule mode it does SIMPLE STRING COMPARISON only, like routerNode — classify with an llmModelNode or nlpNode first, then switch on the label. With `smartModeEnabled: true` an LLM picks the case instead (any invalid answer takes `output_default`).
+**Use cases:** Routing classified intents (billing, account, technical support, sales, cancellation) to separate branches, status-based processing (new, pending, approved, rejected), priority routing (low, medium, high, critical).
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output_<case id> | source | right | any |
+| output_default | source | right | any |
+
+There is one `output_<case id>` handler per entry in `cases` (case `case_1` → handler `output_case_1`).
+
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| switchValue | text | Yes | The value to route on. Supports `{{source.field}}` |
+| cases | list | Yes | Ordered list of `{"id": "case_1", "label": "Billing", "value": "billing"}`. Ids must be unique, use the form `case_<n>`, and never be `default` |
+| matchMode | select | No | `equal` (default), `contains`, `starts_with`, `ends_with`, `regex` |
+| caseSensitive | boolean | No | Default `false` |
+| smartModeEnabled | boolean | No | Default `false`. When `true`, an LLM picks the case instead of comparing `switchValue` |
+| providerId | select | Smart Mode only | LLM provider that picks the case |
+| smartPrompt | text | Smart Mode only | Routing instructions, e.g. `"Route this message: {{session.message}}"`. Case `value`s act as descriptions of when to pick each case |
+| systemPrompt | text | No | Smart Mode only; overrides the built-in routing instructions |
+| name | text | No | Node name |
+
+**Output:** `route` (the matched case id, or `default`), `label` (the matched case label, or `Default`), `value` (the compared value).
+
+---
+
+### filterNode — Filter
+**Category:** Control Flow
+**Purpose:** Gate. Continues the branch only when `field <operator> value` holds; otherwise the branch stops. When it passes, it forwards its input unchanged, so the next node reads `{{source...}}` as if the Filter were not there. Text comparisons ignore case unless `caseSensitive` is true; a variable that resolved to nothing counts as empty.
+**Use cases:** Continue only for active records, stop when a required field is missing, only escalate when a score is above a threshold, skip agent/API calls that are not needed.
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
+
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| field | text | Yes | The value to check. Supports `{{source.field}}` |
+| operator | select | No | Default `equal`. See below |
+| value | text | For all operators except `is_empty` / `is_not_empty` | What the field is compared with |
+| caseSensitive | boolean | No | Default `false` |
+| stopMessage | text | No | Chat reply used when the filter stops the main path |
+| name | text | No | Node name |
+
+**Available operators:**
+- Text: `equal`, `not_equal`, `contains`, `not_contain`, `starts_with`, `not_starts_with`, `ends_with`, `not_ends_with`, `regex`
+- Numbers: `greater_than`, `greater_than_or_equal`, `less_than`, `less_than_or_equal` (false when either side is not a number)
+- Presence: `is_empty`, `is_not_empty` (no value needed)
+
+---
+
+### loopNode — Loop
+**Category:** Control Flow
+**Purpose:** Repeats a body of nodes. `forEach` runs the body once per item of a list; `repeatUntil` runs it until the stop condition holds or `maxIterations` is reached. Passes run one at a time, in order. The node wired back into `input_loop` provides each pass's result.
+**Use cases:** Process every ticket/row/recipient of a list, draft–critique–rewrite until approved, retry a step until its output is valid.
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| input_loop | target | bottom | any |
+| output_loop | source | right | any |
+| output_done | source | right | any |
+
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| mode | select | No | `forEach` (default) or `repeatUntil` |
+| items | text | For `forEach` | The list to go through, e.g. `{{source.tickets}}`. An object iterates as `{key, value}` entries, a whole number N repeats N times, plain text is split on lines or commas |
+| batchSize | number | No | Default 1. Items per pass; above 1 the body receives a list in `item` |
+| maxIterations | number | No | Upper bound on passes. Default 100 (`forEach`) / 5 (`repeatUntil`) |
+| stopField | text | No | Value checked after each pass: the pass's result `{{node_outputs.<loop_id>.result}}`, or an output of a body node `{{node_outputs.<body_node_id>.field}}`. Optional early exit for `forEach`, the exit of `repeatUntil` |
+| stopOperator | select | No | Default `equal`. Same operators as `filterNode` |
+| stopValue | text | No | What `stopField` is compared with |
+| stopCaseSensitive | boolean | No | Default `false` |
+| onError | select | No | `stop` (default) ends the loop on the first failing pass; `continue` moves on and collects the errors |
+| delaySeconds | number | No | Default 0. Wait between passes, at most 60 |
+| delayBackoff | boolean | No | Default `false`. Doubles the wait after every pass (retries) |
+| timeLimitSeconds | number | No | Default 0 (no limit). No new pass starts once the loop has run this long |
+| collect | select | No | `all` (default), `last` or `none`: what `results` keeps |
+| name | text | No | Node name |
+
+**Output during a pass (read by the body):** `item` (a list when `batchSize` > 1), `index` (0-based), `iteration` (1-based), `total` (number of passes), `is_first`, `is_last`, `previous` (the last successful pass's result), `input` (what the Loop itself received), `result` (this pass's result, once it has run).
+
+**Output after the loop (read from `output_done`):** `results` (one entry per pass that produced a result, in order; failed passes are excluded), `last`, `count`, `iterations`, `total`, `total_items`, `skipped`, `failed`, `errors`, `stopped_reason` (`completed`, `condition`, `max_iterations`, `error`, `timeout`, `budget`, `no_body`).
 
 ---
 
@@ -965,8 +1179,8 @@ Same memory sub-settings as agentNode (conditional on memoryTrimmingMode).
 
 ### trainDataSourceNode — Train Data Source
 **Category:** ML
-**Purpose:** Loads training data from a data source for ML training pipelines.
-**Use cases:** Loading CSV datasets, querying databases for training data.
+**Purpose:** Loads training data from a database query or uploaded file for ML training pipelines.
+**Use cases:** Loading uploaded datasets, querying databases for training data.
 
 **Handlers:**
 | ID | Type | Position | Compatibility |
@@ -977,21 +1191,21 @@ Same memory sub-settings as agentNode (conditional on memoryTrimmingMode).
 **Config:**
 | Field | Type | Required | Description |
 |---|---|---|---|
-| sourceType | select | Yes | Type of data source: "datasource" (database) or "csv" (file upload) |
+| sourceType | select | Yes | Type of data source: "datasource" (database) or "csv" (uploaded file) |
 | name | text | No | Node name |
-| dataSourceId | select | No | Data source ID (required when sourceType="datasource") |
+| dataSourceId | text | No | Data source ID (required when sourceType="datasource") |
 | query | text | No | SQL query for data extraction (required when sourceType="datasource") |
-| csvFileName | text | No | Name of the uploaded CSV file (when sourceType="csv") |
-| csvFilePath | text | No | Server path to the uploaded CSV file |
-| csvFileId | text | No | ID of the uploaded CSV file |
-| csvFileUrl | text | No | URL of the uploaded CSV file |
+| csvFileName | text | No | Original name of the uploaded training file |
+| csvFilePath | text | No | Server path to the uploaded training file |
+| csvFileId | text | No | File Manager ID of the uploaded training file |
+| csvFileUrl | text | No | File Manager URL of the uploaded training file |
 
 ---
 
 ### preprocessingNode — Preprocessing
 **Category:** ML
-**Purpose:** Preprocesses data for ML model training. Applies transformations using custom Python code.
-**Use cases:** Data cleaning, feature engineering, handling missing values and outliers.
+**Purpose:** Cleans the dataset before model training: column filter, remove duplicate rows, remove columns/rows, remove mostly-empty columns, change column data types, plus custom Python code.
+**Use cases:** Removing duplicates and unneeded columns, fixing data types. Missing values, outliers, encoding, feature engineering and scaling belong on trainModelNode, where they are fit on the training split only.
 
 **Handlers:**
 | ID | Type | Position | Compatibility |
@@ -1029,6 +1243,9 @@ Same memory sub-settings as agentNode (conditional on memoryTrimmingMode).
 | validationSplit | number | Yes | Train/test split ratio (default: 0.2, range: 0.1–0.5) |
 | name | text | No | Node name |
 | modelParameters | object | No | Model-specific hyperparameters |
+| missingValueHandling | list | No | Per-column `{columnName, strategy}`: drop_rows, drop_column, impute_constant (+ imputeValue), impute_mean, impute_median, impute_mode. Remaining missing values are always filled automatically (median / most frequent) before feature engineering |
+| featureEngineering | list | No | Derived features `{newColumnName, strategy, ...}`: custom_expression (expression, e.g. `price * quantity`), bin_numeric (binColumn, numBins), polynomial (polynomialColumns, polynomialDegree), log_transform (sourceColumns; log(1 + x), values ≥ 0), quantile_transform (sourceColumns, quantileOutputDistribution uniform/normal, nQuantiles), power_transform (sourceColumns, powerMethod yeo-johnson/box-cox), pca (sourceColumns ≥ 2, pcaComponents, pcaStandardize). Column transforms accept replaceSourceColumns (default true for pca). normalize/standardize are retired - use scalingMethod |
+| scalingMethod | select | No | auto, standard, minmax, maxabs, robust, none - applied to all numeric features after feature engineering |
 
 ---
 

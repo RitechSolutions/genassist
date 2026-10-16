@@ -1,6 +1,14 @@
 import * as Sentry from "@sentry/react";
-import axios, { Method, AxiosRequestConfig, AxiosError, type InternalAxiosRequestConfig } from "axios";
+import axios, { Method, AxiosRequestConfig, AxiosError, CanceledError, type InternalAxiosRequestConfig } from "axios";
 import { setServerDown, setServerUp } from "@/config/serverStatus";
+import {
+  formatAuthorizationHeader,
+  isCredentialCheck,
+  isPublicPath,
+  readBearerToken,
+  renewSession,
+  shouldRenewBeforeRequest,
+} from "@/config/session";
 
 function captureSentryIfApiHttpError(error: unknown): void {
   if (!import.meta.env.VITE_SENTRY_DSN) return;
@@ -10,36 +18,28 @@ function captureSentryIfApiHttpError(error: unknown): void {
   Sentry.captureException(error, { tags: { source: "api", http_status: String(status) } });
 }
 
-const AUTH_KEYS = ["access_token", "refresh_token", "token_type", "isAuthenticated", "force_upd_pass_date", "tenant_id"] as const;
-
-const clearAuthStorage = () => AUTH_KEYS.forEach((key) => localStorage.removeItem(key));
-
-let isRefreshing = false;
-let failedQueue: Array<{
-  resolve: (value?: unknown) => void;
-  reject: (reason?: unknown) => void;
-}> = [];
-
-const processQueue = (error: unknown, token: string | null = null) => {
-  failedQueue.forEach(({ resolve, reject }) => {
-    if (error) {
-      reject(error);
-    } else {
-      resolve(token);
-    }
-  });
-  failedQueue = [];
-};
-
 const ensureTrailingSlash = (url: string): string =>
   url.endsWith("/") ? url : `${url}/`;
 
 /** Default HTTP client timeout for JSON/API calls (not used for large file uploads — see uploadConstants). */
 export const API_DEFAULT_TIMEOUT_MS = 120000;
 
-/** Timeout for CSV analysis / data profiling calls, which can run arbitrary
- *  pandas code (or ydata-profiling, for the profile-csv endpoint) server-side. */
+/**
+ * Timeout for CSV analysis / preprocessing-step execution calls, which can run
+ * arbitrary pandas code (or ydata-profiling, for the profile-data endpoint)
+ * server-side. Kept slightly above the backend's _EXEC_TIMEOUT_SECONDS cap
+ * (600s, in backend/app/modules/workflow/utils.py) so the backend's own
+ * timeout error always wins the race.
+ */
 export const API_PREPROCESSING_TIMEOUT_MS = 630000;
+
+/**
+ * Timeout for running a full workflow test (POST genagent/workflow/test), which
+ * executes every node synchronously in one request — e.g. Train Data Source ->
+ * Preprocessing -> Train Model. Preprocessing alone can take up to the backend's
+ * 600s exec cap, so this must comfortably exceed that plus the other nodes.
+ */
+export const API_WORKFLOW_TEST_TIMEOUT_MS = 1200000;
 
 const api = axios.create({
   headers: {
@@ -50,16 +50,29 @@ const api = axios.create({
 
 export { API_UPLOAD_TIMEOUT_MS } from "@/config/uploadConstants";
 
+const getRefreshUrl = async (): Promise<string> => `${await getApiUrl()}auth/refresh_token`;
+
+/** Renews the login first when it is about to expire, so no request is sent with a dead token. */
+const ensureFreshAccessToken = async (): Promise<void> => {
+  if (!shouldRenewBeforeRequest()) return;
+  const outcome = await renewSession(await getRefreshUrl(), localStorage.getItem("access_token"));
+  // Protected pages are leaving for the login page; public ones such as /login go ahead without a login
+  const isLeavingProtectedPage = outcome.status === "ended" && !isPublicPath(window.location.pathname);
+  if (isLeavingProtectedPage) throw new CanceledError("Session ended");
+};
+
 // Interceptor: Request
 api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
+  async (config: InternalAxiosRequestConfig) => {
+    const hasExplicitAuthorization = Boolean(config.headers.Authorization);
+    const needsFreshLogin = !hasExplicitAuthorization && !isCredentialCheck(config.url);
+    if (needsFreshLogin) await ensureFreshAccessToken();
+
     const accessToken = localStorage.getItem("access_token");
-    const tokenType = localStorage.getItem("token_type") || "Bearer";
     const tenantId = localStorage.getItem("tenant_id");
 
-    if (accessToken && !config.headers.Authorization) {
-      const properTokenType = tokenType.toLowerCase() === "bearer" ? "Bearer" : tokenType;
-      config.headers.Authorization = `${properTokenType} ${accessToken}`;
+    if (accessToken && !hasExplicitAuthorization) {
+      config.headers.Authorization = formatAuthorizationHeader(accessToken);
     }
 
     // Add tenant ID header if available
@@ -91,63 +104,21 @@ api.interceptors.response.use(
     const originalRequest = error.config;
     captureSentryIfApiHttpError(error);
 
-    // Handle 401 errors with token refresh
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then(token => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          return api(originalRequest);
-        }).catch(err => {
-          return Promise.reject(err);
-        });
-      }
+    // Safety net: a request refused for its login renews once and is retried
+    const isFirstAuthFailure =
+      error.response?.status === 401 &&
+      Boolean(originalRequest) &&
+      !originalRequest._retry &&
+      !isCredentialCheck(originalRequest.url);
+    if (!isFirstAuthFailure) return Promise.reject(error);
 
-      originalRequest._retry = true;
-      isRefreshing = true;
+    originalRequest._retry = true;
+    const refusedAccessToken = readBearerToken(originalRequest.headers?.Authorization);
+    const outcome = await renewSession(await getRefreshUrl(), refusedAccessToken);
+    if (outcome.status !== "renewed") return Promise.reject(error);
 
-      const refreshToken = localStorage.getItem("refresh_token");
-
-      if (!refreshToken) {
-        isRefreshing = false;
-        processQueue(error, null);
-        clearAuthStorage();
-        return Promise.reject(error);
-      }
-
-      try {
-        const baseURL = await getApiUrl();
-        const tenantId = localStorage.getItem("tenant_id");
-        const params = new URLSearchParams({ refresh_token: refreshToken });
-
-        const { data } = await axios.post(`${baseURL}auth/refresh_token`, params, {
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            ...(tenantId ? { "x-tenant-id": tenantId } : {}),
-          },
-        });
-
-        localStorage.setItem("access_token", data.access_token);
-        localStorage.setItem("token_type", data.token_type || "Bearer");
-        localStorage.setItem("isAuthenticated", "true");
-        if (data.refresh_token) localStorage.setItem("refresh_token", data.refresh_token);
-        if (data.force_upd_pass_date) localStorage.setItem("force_upd_pass_date", data.force_upd_pass_date);
-
-        originalRequest.headers.Authorization = `${data.token_type || "Bearer"} ${data.access_token}`;
-        processQueue(null, data.access_token);
-        isRefreshing = false;
-
-        return api(originalRequest);
-      } catch (refreshError) {
-        clearAuthStorage();
-        processQueue(refreshError, null);
-        isRefreshing = false;
-        return Promise.reject(refreshError);
-      }
-    }
-
-    return Promise.reject(error);
+    originalRequest.headers.Authorization = formatAuthorizationHeader(outcome.accessToken);
+    return api(originalRequest);
   }
 );
 
@@ -186,7 +157,13 @@ export const apiRequest = async <T>(
   method: Method,
   endpoint: string,
   data?: Record<string, unknown> | URLSearchParams | FormData,
-  config: Partial<AxiosRequestConfig> = {}
+  config: Partial<AxiosRequestConfig> = {},
+  /**
+   * Opt out of the 403-to-null behaviour below. Set this when the endpoint has
+   * more than one reason to answer 403 and the caller needs the server's
+   * message to tell the user what to do about it.
+   */
+  options: { rethrowForbidden?: boolean } = {}
 ): Promise<T | null> => {
   const baseURL = await getApiUrl();
   // remove starting slash from endpoint
@@ -212,11 +189,16 @@ export const apiRequest = async <T>(
 
     if (status === 403) {
       setServerUp();
+      if (options.rethrowForbidden) throw error;
       return null;
     }
 
+    const body = errObj.response?.data;
+    const isAppEnvelope =
+      typeof body === "object" && body !== null && "error_key" in body;
+
     // Mark server as down for 5xx errors allowed 500, 501
-    if (status && status > 501) {
+    if (status && status > 501 && !isAppEnvelope) {
       setServerDown();
     } else if (hasResponse) {
       setServerUp();

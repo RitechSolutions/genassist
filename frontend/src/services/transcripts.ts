@@ -38,9 +38,12 @@ export interface FetchTranscriptsParams {
   hostility_positive_max?: number;
   include_feedback?: boolean;
   conversation_status?: string[];
+  conversation_topics?: string[];
+  conversation_subtopics?: string[];
   order_by?: string;
   sort_direction?: string;
   agent_id?: string;
+  operator_id?: string;
   workflow_id?: string;
   customer_satisfaction_min?: number;
   customer_satisfaction_max?: number;
@@ -66,8 +69,8 @@ export const fetchTranscripts = async (
   try {
     const {
       limit, skip, sentiment, hostility_neutral_max, hostility_positive_max,
-      include_feedback, conversation_status, order_by, sort_direction,
-      agent_id, workflow_id, scoreFilters, from_date, to_date, exclude_empty, id_suffix,
+      include_feedback, conversation_status, conversation_topics, conversation_subtopics, order_by, sort_direction,
+      agent_id, operator_id, workflow_id, scoreFilters, from_date, to_date, exclude_empty, id_suffix,
       custom_attributes, search,
     } = params;
 
@@ -94,9 +97,14 @@ export const fetchTranscripts = async (
         queryParams.append("conversation_status", status);
       });
     }
+    conversation_topics?.forEach((topic) => queryParams.append("conversation_topics", topic));
+    conversation_subtopics?.forEach((subtopic) =>
+      queryParams.append("conversation_subtopics", subtopic),
+    );
     if (order_by) queryParams.append("order_by", order_by);
     if (sort_direction) queryParams.append("sort_direction", sort_direction);
     if (agent_id) queryParams.append("agent_id", agent_id);
+    if (operator_id) queryParams.append("operator_id", operator_id);
     if (workflow_id) queryParams.append("workflow_id", workflow_id);
     if (from_date) queryParams.append("from_date", from_date);
     if (to_date) queryParams.append("to_date", to_date);

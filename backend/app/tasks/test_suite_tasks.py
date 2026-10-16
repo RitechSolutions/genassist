@@ -21,19 +21,26 @@ from app.tasks.base import (
     should_execute_run,
     was_abandoned_by_worker,
 )
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 from app.core.tenant_scope import get_tenant_context
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
-from app.services.realtime_notifications import emit_notification, notification_payload
+from app.services.realtime_notifications import emit_notification, evaluation_run_failed_notification
 
 logger = logging.getLogger(__name__)
 
+MISSING_WORKFLOW_VERSION_ERROR = "The workflow version for this run no longer exists."
+
+
 async def _persist_failure(service, run, exc: Exception) -> None:
     """Commit the failed status on its own; the task wrapper rolls back on raise."""
+    from app.services.test_suite import UNEXPECTED_RUN_FAILURE_ERROR
+
     session = service.run_repo.db
     # The service may already have failed the run in memory and notified the user
     already_notified = run.status in TERMINAL_RUN_STATUSES
-    error = (run.summary_metrics or {}).get("error") or f"Run failed unexpectedly: {exc}"
+    error = (run.summary_metrics or {}).get("error") or UNEXPECTED_RUN_FAILURE_ERROR
     try:
         await session.rollback()
         await session.refresh(run)
@@ -48,6 +55,46 @@ async def _persist_failure(service, run, exc: Exception) -> None:
         await session.commit()
     except Exception:
         logger.error("Could not persist the failed status of TestRun %s", run.id, exc_info=True)
+        # The run's own session can still be busy or broken, which would leave the run "running".
+        await _fail_on_new_session(run.id, error, notify=not already_notified)
+
+
+async def _fail_on_new_session(run_id: UUID, error: str, *, notify: bool) -> None:
+    """Fail the run through a session of its own, unless it already finished."""
+    from sqlalchemy import text, update
+
+    from app.db.models.test_suite import TestRunModel
+    from app.db.multi_tenant_session import multi_tenant_manager
+
+    try:
+        session_factory = multi_tenant_manager.get_tenant_session_factory(get_tenant_context())
+        async with session_factory() as session:
+            # Gives up rather than waiting on a row lock the run's own session may hold.
+            await session.execute(text("SET LOCAL lock_timeout = '5s'"))
+            result = await session.execute(
+                update(TestRunModel)
+                .where(TestRunModel.id == run_id, TestRunModel.status.not_in(TERMINAL_RUN_STATUSES))
+                .values(status="failed", summary_metrics={"error": error})
+                .execution_options(synchronize_session=False)
+            )
+            await session.commit()
+    except Exception:
+        logger.error("Could not persist the failed status of TestRun %s on a new session", run_id, exc_info=True)
+        return
+    if notify and result.rowcount:
+        emit_notification(
+            socket_connection_manager=injector.get(SocketConnectionManager),
+            tenant_id=get_tenant_context(),
+            payload=evaluation_run_failed_notification(run_id),
+        )
+
+
+def _run_config(run, input_metadata, technique_configs):
+    """The run's own snapshot; the task arguments only for runs queued before snapshots."""
+    snapshot = getattr(run, "config_snapshot", None)
+    if not isinstance(snapshot, dict):
+        return input_metadata, technique_configs
+    return snapshot.get("input_metadata"), snapshot.get("technique_configs")
 
 
 async def _execute_test_suite_run_async(
@@ -77,27 +124,20 @@ async def _execute_test_suite_run_async(
     suite = await service.suite_repo.get_by_id(run.suite_id)
     if not suite:
         logger.error("Suite %s not found for run %s", run.suite_id, run_id)
-        run.status = "failed"
-        run.summary_metrics = {"error": "Suite not found"}
-        await service.run_repo.update(run)
-        emit_notification(
-            socket_connection_manager=injector.get(SocketConnectionManager),
-            tenant_id=get_tenant_context(),
-            payload=notification_payload(
-                notification_id=f"workflow_failed:test:{run_id}",
-                title="Workflow Run Failed",
-                description=f"Test run {str(run_id)[:8]}... failed.",
-                level="error",
-                action_url="/tests/evaluations",
-                entity_kind="test_run",
-                entity_id=run_id,
-                event_key=f"workflow_failed:test:{run_id}",
-            ),
-        )
+        await service._fail_run(run, "Suite not found")
         return
 
     try:
-        workflow = await service.workflow_service.get_by_id(UUID(str(run.workflow_id)))
+        try:
+            workflow = await service.workflow_service.get_by_id(UUID(str(run.workflow_id)))
+        except AppException as exc:
+            if exc.error_key != ErrorKey.WORKFLOW_NOT_FOUND:
+                raise
+            # The version was deleted after the run was queued.
+            logger.warning("Workflow %s of test run %s no longer exists", run.workflow_id, run_id)
+            await service._fail_run(run, MISSING_WORKFLOW_VERSION_ERROR)
+            return
+        input_metadata, technique_configs = _run_config(run, input_metadata, technique_configs)
         await service._execute_run(
             suite,
             workflow,

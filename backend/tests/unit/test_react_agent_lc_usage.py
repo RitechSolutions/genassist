@@ -1,12 +1,15 @@
 """Unit tests for ReActAgentLC token-usage capture"""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from langgraph.errors import GraphRecursionError
 
+from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
+from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.llm.prompt_caching_chat_model import (
     PromptCachingChatModel,
@@ -14,18 +17,26 @@ from app.modules.workflow.llm.prompt_caching_chat_model import (
 )
 
 _CREATE_AGENT = "app.modules.workflow.agents.react_agent_lc.create_agent"
+_EXTRACT_USAGE = "app.modules.workflow.agents.react_agent_lc.extract_usage_from_aimessage"
 _STABLE = "You are a helpful agent with a long stable prefix."
 _SUFFIX = " Current time: 2026-08-17 12:00:00"
 
 
-def _build_agent(fake_result, system_prompt="you are a helpful agent"):
+def _build_agent(fake_result=None, system_prompt="you are a helpful agent", error=None):
     with patch(_CREATE_AGENT, return_value=MagicMock()):
         agent = ReActAgentLC(
             llm_model=MagicMock(),
             system_prompt=system_prompt,
             tools=[],
         )
-    agent.agent_executor.ainvoke = AsyncMock(return_value=fake_result)
+
+    async def _astream(input_data, config=None, **kwargs):
+        if fake_result is not None:
+            yield fake_result
+        if error is not None:
+            raise error
+
+    agent.agent_executor.astream = _astream
     return agent
 
 
@@ -62,6 +73,70 @@ async def test_no_llm_usage_key_when_no_usage_reported():
     result = await agent.invoke("hi")
 
     assert result["status"] == "success"
+    assert "llm_usage" not in result
+
+
+@pytest.mark.asyncio
+async def test_a_message_whose_usage_cannot_be_read_does_not_fail_the_run():
+    tool_call_msg = AIMessage(
+        content="",
+        tool_calls=[{"name": "search", "args": {"q": "x"}, "id": "call_1", "type": "tool_call"}],
+        usage_metadata={"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+    )
+    tool_msg = ToolMessage(content="tool output", tool_call_id="call_1")
+    final_msg = AIMessage(
+        content="the final answer",
+        usage_metadata={"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
+    )
+    fake_result = {"messages": [HumanMessage(content="hi"), tool_call_msg, tool_msg, final_msg]}
+
+    def read_usage(message):
+        if message is tool_call_msg:
+            raise ValueError("unreadable usage payload")
+        return extract_usage_from_aimessage(message)
+
+    agent = _build_agent(fake_result)
+    with patch(_EXTRACT_USAGE, side_effect=read_usage):
+        result = await agent.invoke("hi")
+
+    assert result["status"] == "success"
+    assert result["response"] == "the final answer"
+    assert result["llm_usage"] == [{"input_tokens": 30, "output_tokens": 5, "total_tokens": 35}]
+
+
+@pytest.mark.asyncio
+async def test_a_run_that_raises_mid_loop_still_reports_the_calls_it_made():
+    first_call = AIMessage(
+        content="",
+        tool_calls=[{"name": "search", "args": {}, "id": "call_1", "type": "tool_call"}],
+        usage_metadata={"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+    )
+    tool_msg = ToolMessage(content="tool output", tool_call_id="call_1")
+    second_call = AIMessage(
+        content="",
+        tool_calls=[{"name": "search", "args": {}, "id": "call_2", "type": "tool_call"}],
+        usage_metadata={"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
+    )
+    fake_result = {"messages": [HumanMessage(content="hi"), first_call, tool_msg, second_call]}
+
+    agent = _build_agent(fake_result, error=GraphRecursionError("Recursion limit of 11 reached"))
+    result = await agent.invoke("hi")
+
+    assert result["status"] == "error"
+    assert result["error"] == "Recursion limit of 11 reached"
+    assert result["llm_usage"] == [
+        {"input_tokens": 11, "output_tokens": 7, "total_tokens": 18},
+        {"input_tokens": 30, "output_tokens": 5, "total_tokens": 35},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_run_that_raises_before_any_state_reports_no_usage():
+    agent = _build_agent(error=RuntimeError("boom"))
+    result = await agent.invoke("hi")
+
+    assert result["status"] == "error"
+    assert result["error"] == "boom"
     assert "llm_usage" not in result
 
 
@@ -113,6 +188,51 @@ class _CapturingModel(BaseChatModel):
 
 def _two_block_system_message() -> SystemMessage:
     return build_cacheable_system_message(_STABLE, _SUFFIX)
+
+
+@pytest.mark.asyncio
+async def test_a_real_graph_run_returns_the_model_reply():
+    agent = ReActAgentLC(llm_model=_CapturingModel(), system_prompt="sys", tools=[])
+
+    result = await agent.invoke("hi")
+
+    assert result["status"] == "success"
+    assert result["response"] == "the answer"
+
+
+class _AlwaysCallsToolModel(BaseChatModel):
+    @property
+    def _llm_type(self) -> str:
+        return "always-calls-tool"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        message = AIMessage(
+            content="",
+            tool_calls=[{"name": "search", "args": {}, "id": f"call_{len(messages)}", "type": "tool_call"}],
+            usage_metadata={"input_tokens": 10, "output_tokens": 1, "total_tokens": 11},
+        )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        return self._generate(messages, stop, run_manager, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_a_real_graph_run_that_hits_the_recursion_limit_reports_every_call():
+    async def search(_inp):
+        return "still pending"
+
+    tool = BaseTool(node_id="tool-1", name="search", description="d", parameters={}, function=search)
+    agent = ReActAgentLC(llm_model=_AlwaysCallsToolModel(), system_prompt="sys", tools=[tool], max_iterations=2)
+
+    result = await agent.invoke("hi")
+
+    assert result["status"] == "error"
+    assert result["error"].startswith("Recursion limit of 5 reached")
+    assert result["llm_usage"] == [{"input_tokens": 10, "output_tokens": 1, "total_tokens": 11}] * 3
 
 
 @pytest.mark.asyncio

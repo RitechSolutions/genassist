@@ -1,22 +1,24 @@
 import json
 from datetime import date, datetime
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
-from app.core.utils.enums.conversation_topic_enum import ConversationTopic
-from app.core.utils.enums.issue_status_enum import IssueStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
 from app.core.utils.enums.sort_direction_enum import SortDirection
 from app.core.utils.enums.sort_field_enum import SortField
+from app.schemas.agent_knowledge import KnowledgeBaseType
 
 
-class BaseFilterModel(BaseModel):
+class PageFilter(BaseModel):
     skip: int = Field(0, ge=0, description="The number of rows to skip before returning results")
     limit: int = Field(20, ge=1, le=100, description="The number of rows to return per page")
+
+
+class BaseFilterModel(PageFilter):
     from_date: Optional[date] = Field(None, description="Start date (YYYY-MM-DD)")
     to_date: Optional[datetime] = Field(None, description="End datetime (YYYY-MM-DD 23:59)")
     operator_id: Optional[UUID] = Field(None, description="Operator who made the conversation")
@@ -30,11 +32,14 @@ class UserListFilter(BaseFilterModel):
 
 class ConversationFilter(BaseFilterModel):
     conversation_status: Optional[list[ConversationStatus]] = Field(Query(None, description="Conversation statuses"))
-    conversation_topics: Optional[list[ConversationTopic]] = Field(
+    conversation_topics: Optional[list[str]] = Field(
         Query(
             None,
         ),
         description="Conversation topics decided by llm",
+    )
+    conversation_subtopics: Optional[list[str]] = Field(
+        Query(None, description="Sub-topics decided by llm, only finalized conversations have one")
     )
     sentiment: Optional[Sentiment] = Field(None, description="Sentiment of the conversation")
     agent_id: Optional[UUID] = Field(None, description="Filter by agent ID")
@@ -95,9 +100,21 @@ class ConversationFilter(BaseFilterModel):
             return None
 
 
-class MessageIssueFilter(BaseFilterModel):
-    status: Optional[IssueStatus] = Field(None, description="Filter by tracked resolution status")
+class MessageIssueSummaryFilter(BaseModel):
+    from_date: Optional[date] = Field(None, description="Start date (YYYY-MM-DD)")
+    to_date: Optional[datetime] = Field(None, description="End datetime (YYYY-MM-DD 23:59)")
     workflow_id: Optional[UUID] = Field(None, description="Filter by the workflow used by the agent")
+    topic: Optional[str] = Field(None, description="Conversation topic, as shown in the list")
+    subtopic: Optional[str] = Field(None, description="Conversation sub-topic, as shown in the list")
+    search: Optional[Annotated[str, StringConstraints(strip_whitespace=True)]] = Field(
+        None,
+        description="Case-insensitive match on the comment or any of its notes",
+    )
+
+
+class MessageIssueFilter(BaseFilterModel, MessageIssueSummaryFilter):
+    status: Optional[str] = Field(None, max_length=50, description="Filter by tracked resolution status")
+    feedback_id: Optional[UUID] = Field(None, description="Only this comment, for a shared link")
 
 
 class ApiKeysFilter(BaseFilterModel):
@@ -108,11 +125,20 @@ class RecordingFilter(BaseFilterModel):
     operator_id: Optional[UUID] = None
 
 
-class OperatorListFilter(BaseModel):
+class OperatorListFilter(PageFilter):
     """Query params for the paginated operator list"""
-    skip: int = Field(0, ge=0, description="The number of rows to skip before returning results")
-    limit: int = Field(20, ge=1, le=100, description="The number of rows to return per page")
     search: Optional[str] = Field(None, description="Case-insensitive substring match on operator first or last name")
+
+
+class ApiKeyListFilter(PageFilter):
+    """Query params for the paginated API key list"""
+    search: Optional[str] = Field(None, description="Case-insensitive substring match on API key name")
+
+
+class KnowledgeBaseListFilter(PageFilter):
+    """Query params for the paginated knowledge base list"""
+    search: Optional[str] = Field(None, description="Case-insensitive substring match on name or description")
+    type: Optional[KnowledgeBaseType] = Field(None, description="Exact knowledge base type, e.g. file or url")
 
 
 class AgentResponseLogFilter(BaseModel):

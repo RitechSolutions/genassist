@@ -9,52 +9,22 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions.error_messages import ErrorKey, get_error_message
+from app.core.exceptions.error_policy import client_safe_error_detail, sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException, UpstreamServiceError
 
 logger = logging.getLogger(__name__)
-
-# Errors whose detail is written for the end user and carries no internal
-# information, so it is returned outside dev too.
-_CLIENT_SAFE_DETAIL_KEYS = frozenset(
-    {
-        ErrorKey.SSO_MICROSOFT_OAUTH_ERROR,
-        ErrorKey.SSO_MICROSOFT_USER_DENIED,
-        ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED,
-        ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED,
-        ErrorKey.SSO_MICROSOFT_DISABLED,
-        # Says which reference could not be re-linked, or why the import was
-        # refused — the whole point is telling the user what to change.
-        ErrorKey.EVALUATION_BUNDLE_INVALID,
-    }
-)
-
-
-def _sanitize_public_error_detail(text: str, max_len: int = 450) -> str:
-    """Single-line hint for API clients; strips obvious secret patterns."""
-    if not text:
-        return ""
-    t = " ".join(str(text).split())
-    t = re.sub(
-        r"(client_secret|client_assertion|password|refresh_token|code_verifier)=[^\s&\"']+",
-        r"\1=***",
-        t,
-        flags=re.I,
-    )
-    return t[:max_len]
 
 
 def _response_error_detail(error: AppException) -> str | None:
     raw = (error.error_detail or "").strip()
     if not raw:
         return None
-    sanitized = _sanitize_public_error_detail(raw)
+    sanitized = sanitize_error_detail(raw)
     if not sanitized:
         return None
     if os.getenv("ENV") == "dev":
         return sanitized
-    if error.error_key in _CLIENT_SAFE_DETAIL_KEYS:
-        return sanitized
-    return None
+    return client_safe_error_detail(error)
 
 
 def init_error_handlers(app):
@@ -154,4 +124,3 @@ async def send_socket_error(websocket: WebSocket, error_key: ErrorKey, lang: str
         "error": get_error_message(error_key, lang=lang),
         "error_key": error_key.value,
         }))
-

@@ -493,8 +493,8 @@ def build_node_indexes(catalog: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
                 tool.get("name"),
             )
     for router in catalog.get("routers", []):
-        # Every router is a routerNode, so a type mismatch cannot arise here.
-        add(REF_KIND_ROUTER, router.get("id"), router.get("label"))
+        # Routers and switches record different routes, so the type guards name matches.
+        add(REF_KIND_ROUTER, router.get("id"), router.get("label"), router.get("type"))
     for node in catalog.get("action_nodes", []):
         add(REF_KIND_ACTION, node.get("id"), node.get("label"), node.get("type"))
     return indexes
@@ -1057,6 +1057,9 @@ class EvalBundleService:
                     "choose a different target workflow."
                 ),
             )
+        if not techniques:
+            # A bundle exported with no methods ran the platform defaults; it keeps them, now by name.
+            techniques = self.suites.evaluators.default_techniques()
         self._validate_tool_config(configs, resolution["catalog"])
 
         reuse_suite_id = request.existing_suite_id

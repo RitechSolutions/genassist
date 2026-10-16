@@ -10,6 +10,7 @@ from app.db.models.ml_model import MLModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.ml_model import MLModelCreate
 from starlette_context import context
+from starlette_context.errors import ContextDoesNotExistError
 import logging
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,7 @@ class MLModelsRepository(DbRepository[MLModel]):
                 pkl_file_id=ml_model_data.pkl_file_id,
                 features=ml_model_data.features,
                 target_variable=ml_model_data.target_variable,
+                inference_params=ml_model_data.inference_params,
             )
             async with self.db.begin_nested():
                 self.db.add(new_ml_model)
@@ -90,8 +92,8 @@ class MLModelsRepository(DbRepository[MLModel]):
             # Update the updated_by field from context
             try:
                 ml_model.updated_by = context.get("user_id")
-            except LookupError:
-                # Context not available, skip updating updated_by
+            except (LookupError, ContextDoesNotExistError):
+                # Context not available (e.g., in background tasks), skip updating updated_by
                 pass
 
             async with self.db.begin_nested():
@@ -110,5 +112,4 @@ class MLModelsRepository(DbRepository[MLModel]):
         ml_model.is_deleted = 1
         await self.db.flush()
         return ml_model
-
 

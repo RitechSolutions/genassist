@@ -50,6 +50,128 @@ export const CONDITIONAL_ROUTER_HELP_CONTENT: NodeHelpContent = {
   ],
 };
 
+export const SWITCH_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Switch node provides deterministic N-way branching based on a single value. Instead of chaining several binary routers, one Switch routes execution into multiple clearly defined branches — one per case, plus a default branch for anything that doesn't match.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Switch node when you need to:",
+      bullets: [
+        "Route classified intents (billing, account, technical support, sales, cancellation) into separate branches",
+        "Run different logic per status such as new, pending, approved, rejected, or completed",
+        "Send low-, medium-, high-, and critical-priority items through different handling paths",
+        "Branch on a known category, type, region, product, department, or workflow result",
+        "Use a Classifier's output to decide which downstream workflow runs",
+      ],
+    },
+    {
+      title: "How it differs",
+      body: "The Conditional Router is a binary true/false decision, and the Result Merger joins branches back together. Switch selects exactly one of many cases, keeping multi-option decisions readable on the canvas. A typical flow is Classifier → Switch → Specialist workflow.",
+    },
+    {
+      title: "Smart Mode",
+      body: "Turn on Smart Mode to let an LLM choose the case instead of comparing a value. Write a routing prompt (it can include variables such as the user's message) and describe each case; the model picks one of them. If the provider, prompt, or model answer is invalid, the Default branch is used.",
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "The Configure Switch dialog will open.",
+        "Enter the Node Name.",
+        "Set the Value to route on, usually a variable from an upstream node, or turn on Smart Mode and write a routing prompt.",
+        "Choose the Match Mode and whether matching is case sensitive (rule mode only).",
+        "Add one case per branch and give each a name and a value to match (or a description, in Smart Mode).",
+        "Connect each case output, plus the Default output, to its branch.",
+        "Save the node configuration.",
+      ],
+    },
+  ],
+};
+
+export const FILTER_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Filter node lets a branch continue only while a condition is true. When the condition is false, the branch stops. It answers a simpler question than the routers: not \"which way?\" but \"should this continue at all?\"",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Filter node when you need to:",
+      bullets: [
+        "Process only relevant records, e.g. continue only when the status is active",
+        "Run eligibility checks before a user, request or object moves on",
+        "Stop when required information is missing or invalid (Is empty / Is not empty)",
+        "Continue only if a score, amount, confidence or urgency meets a threshold",
+        "Skip unnecessary agent or API calls once an earlier result makes them pointless",
+      ],
+    },
+    {
+      title: "How it behaves",
+      body: "When the condition is true, the Filter is transparent: the next node receives exactly what the Filter received, so variables like {{source.status}} keep working. When it is false, nothing after the Filter runs. If that ends the conversation's main path, the optional \"Message when stopped\" is sent as the reply. A variable that resolved to nothing counts as empty, and number operators are false when either side is not a number.",
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "The Configure Filter dialog will open.",
+        "Enter the Node Name.",
+        "Set the Field to check, usually a variable from an upstream node.",
+        "Choose an Operator: text, number or presence (Is empty / Is not empty).",
+        "Enter the Value to compare with, unless the operator is a presence check.",
+        "Optionally add a Message when stopped.",
+        "Save the node configuration.",
+      ],
+    },
+  ],
+};
+
+export const LOOP_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Loop node repeats a set of nodes: once for every item of a list, or again and again until a condition is met. It is the only way to run a node more than once in a workflow.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Loop node when you need to:",
+      bullets: [
+        "Process every item of a list, e.g. summarise each ticket an API returned",
+        "Send one message per recipient",
+        "Draft, review and rewrite an answer until the reviewer approves it",
+        "Retry a step until its output is valid, with a limit on attempts",
+      ],
+    },
+    {
+      title: "Connecting the loop",
+      body: "The Loop has two outputs and two inputs. Connect \"Loop body\" (the upper output) to the first node that should repeat. Connect the last repeated node back to \"Loop back\" (the input at the bottom): its output is the result of that pass. Connect \"Done\" (the lower output) to whatever should run once the loop has finished. Nodes after the loop must be connected from Done only.",
+    },
+    {
+      title: "What the nodes can read",
+      body: "Inside the loop, the first node reads the current pass from the Loop: {{source.item}}, {{source.index}}, {{source.iteration}}, {{source.total}}, {{source.is_first}}, {{source.is_last}}, {{source.previous}} (the previous pass's result) and {{source.input}} (what the Loop received). After the loop, the node on Done reads {{source.results}} (one entry per pass), {{source.last}}, {{source.count}}, {{source.errors}} and {{source.stopped_reason}}.",
+    },
+    {
+      title: "Stopping and limits",
+      body: "The stop condition is checked after every pass and usually looks at the output of a node inside the loop. In \"For each item\" it is an optional early exit; in \"Repeat until\" it is what ends the loop. Maximum iterations always applies, so a loop can never run forever. A Filter inside the loop skips the current item. Passes run one at a time, and a Human in the Loop node cannot be used inside a loop. Optionally, a wait between passes (doubling after each one if you want to back off) and a time limit after which no new pass starts.",
+    },
+    {
+      title: "Batches and results",
+      body: "With a Batch size above 1, each pass receives that many items as a list in {{source.item}}. Items can also be a number (repeat that many times) or plain text split on lines or commas. A pass in which a node failed is listed in errors and never counted as a result. \"Results to keep\" controls what Done receives: every pass, only the last one, or none.",
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "The Configure Loop dialog will open.",
+        "Enter the Node Name.",
+        "Choose the Mode: For each item, or Repeat until.",
+        "For each item: set Items to the list to go through, usually a variable from an upstream node.",
+        "Set Maximum iterations.",
+        "Optionally (or, for Repeat until, as the exit) set the Stop when condition.",
+        "Choose what happens when a pass fails.",
+        "Optionally set a wait between passes, a time limit and which results to keep.",
+        "Save the node configuration.",
+      ],
+    },
+  ],
+};
+
 export const RESULT_MERGER_HELP_CONTENT: NodeHelpContent = {
   intro:
     "The Result Merger node combines outputs from multiple workflow branches into a single result. It is useful for collecting parallel outputs and preparing them for later steps.",

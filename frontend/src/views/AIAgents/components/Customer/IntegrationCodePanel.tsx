@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import { Copy } from "lucide-react";
+import { v4 as uuidv4 } from "uuid";
 import { getAgentConfig, getAgentIntegrationKey } from "@/services/api";
 import { getApiUrl } from "@/config/api";
 import { getTenantId } from "@/services/auth";
@@ -18,6 +19,7 @@ interface IntegrationCodePanelProps {
 
 interface CodeSectionProps {
   title: string;
+  description?: string;
   code: string;
   copyId: string;
   copiedSection: string | null;
@@ -33,6 +35,7 @@ const SAMPLE_METADATA = {
 
 const CodeSection = ({
   title,
+  description,
   code,
   copyId,
   copiedSection,
@@ -44,6 +47,9 @@ const CodeSection = ({
   return (
     <div className="space-y-2">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      {description && (
+        <p className="text-xs text-muted-foreground">{description}</p>
+      )}
       <div
         className={cn(
           "relative rounded-xl border border-[#E5E7EB] bg-[#F7F7F8] dark:border-zinc-700 dark:bg-zinc-900 p-4",
@@ -80,6 +86,7 @@ export const IntegrationCodePanel = ({
   const [apiKey, setApiKey] = useState<string>("");
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const [sampleThreadId] = useState(() => uuidv4());
 
   useEffect(() => {
     if (!agentId) return;
@@ -136,7 +143,7 @@ export const IntegrationCodePanel = ({
   const curlWorkflowExecute = `curl -X 'POST' \\
   '${baseUrl}genagent/agents/${
     agentId || "019b8614-72d2-74bd-8b48-8388ba371d40"
-  }/query/${apiKey}' \\
+  }/query/${sampleThreadId}' \\
   -H 'accept: application/json' \\
   -H 'Content-Type: application/json' \\
   -H "X-API-Key: ${apiKey}"${
@@ -342,6 +349,7 @@ struct ContentView: View {
 
             <CodeSection
               title="1. Direct Agent Execution"
+              description="The last path segment is your conversation id: generate a random UUID per conversation and reuse it to continue that conversation. Never put your API key there."
               code={curlWorkflowExecute}
               copyId="direct-agent-execution"
               copiedSection={copiedSection}

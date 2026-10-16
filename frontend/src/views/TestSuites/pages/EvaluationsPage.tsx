@@ -16,11 +16,17 @@ import { getLLMProvidersMinimal } from "@/services/llmProviders";
 import {
   createTestEvaluation,
   getWorkflowEvaluationSummaries,
+  runTestEvaluation,
 } from "@/services/testEvaluations";
 import { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import { TestSuite } from "@/interfaces/testSuite.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import { EvaluationWizard, EvaluationWizardData } from "../components/EvaluationWizard";
+import { EvaluationEditor } from "../components/EvaluationEditor";
+import { useFeatureFlagVisible } from "@/components/featureFlag";
+import { FeatureFlags } from "@/config/featureFlags";
+import toast from "react-hot-toast";
+import { runStartErrorMessage } from "../helpers/runErrors";
 import { ImportEvaluationDialog } from "../components/ImportEvaluationDialog";
 import { EntityTitle } from "../components/EntityTitle";
 import { buildTechniqueConfigs, wizardMetadata } from "../helpers/evaluationForm";
@@ -64,6 +70,7 @@ const EvaluationsPage: React.FC = () => {
   const [reloadKey, setReloadKey] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const checksEnabled = useFeatureFlagVisible(FeatureFlags.EVALUATIONS.CHECKS);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   // Summaries carry the live health and running state. staleTime 0 makes
@@ -148,7 +155,7 @@ const EvaluationsPage: React.FC = () => {
     navigate(`/tests/evaluations/workflows/${row.workflowId ?? UNASSIGNED}`);
   };
 
-  const handleCreate = async (data: EvaluationWizardData) => {
+  const handleCreate = async (data: EvaluationWizardData, options?: { run?: boolean }) => {
     const created = await createTestEvaluation({
       name: data.name.trim(),
       description: data.description.trim() || undefined,
@@ -160,18 +167,26 @@ const EvaluationsPage: React.FC = () => {
     });
     if (!created) return;
     setIsCreateDialogOpen(false);
+    if (options?.run && created.id) {
+      try {
+        await runTestEvaluation(created.id);
+        toast.success("Evaluation started");
+      } catch (error) {
+        toast.error(runStartErrorMessage(error));
+      }
+    }
     navigate(`/tests/evaluations/${created.id}`);
   };
 
   const renderRow = (row: WorkflowRow) => {
     const healthTooltip = row.anyRunning
       ? row.health !== null
-        ? "Evaluations running; accuracy shown is from the previous completed runs."
+        ? "Evaluations running. The avg score shown is from the previous completed runs."
         : "Evaluations are running…"
       : row.health !== null
-        ? `Accuracy from ${row.finishedCount} of ${row.count} evaluation${
-            row.count !== 1 ? "s" : ""
-          } (failed runs count as 0%)`
+        ? `Avg score: the average of each method's pass rate, across ${row.finishedCount} of ${
+            row.count
+          } evaluation${row.count !== 1 ? "s" : ""}. Failed runs count as 0%.`
         : "No evaluations scored yet";
     return (
       <tr
@@ -270,7 +285,7 @@ const EvaluationsPage: React.FC = () => {
               <thead>
                 <tr className="border-b bg-muted text-left text-xs font-medium text-muted-foreground">
                   <th className="px-6 py-3 font-medium">Workflow</th>
-                  <th className="px-6 py-3 font-medium">Accuracy</th>
+                  <th className="px-6 py-3 font-medium">Avg score</th>
                   <th className="px-6 py-3 font-medium">Evaluations</th>
                 </tr>
               </thead>
@@ -280,15 +295,27 @@ const EvaluationsPage: React.FC = () => {
         )}
       </div>
 
-      <EvaluationWizard
-        isOpen={isCreateDialogOpen}
-        onOpenChange={setIsCreateDialogOpen}
-        onSubmit={handleCreate}
-        suites={suites}
-        workflows={workflows}
-        providers={providers}
-        mode="create"
-      />
+      {checksEnabled ? (
+        <EvaluationEditor
+          isOpen={isCreateDialogOpen}
+          onOpenChange={setIsCreateDialogOpen}
+          onSubmit={handleCreate}
+          suites={suites}
+          workflows={workflows}
+          providers={providers}
+          mode="create"
+        />
+      ) : (
+        <EvaluationWizard
+          isOpen={isCreateDialogOpen}
+          onOpenChange={setIsCreateDialogOpen}
+          onSubmit={handleCreate}
+          suites={suites}
+          workflows={workflows}
+          providers={providers}
+          mode="create"
+        />
+      )}
 
       <ImportEvaluationDialog
         isOpen={isImportDialogOpen}

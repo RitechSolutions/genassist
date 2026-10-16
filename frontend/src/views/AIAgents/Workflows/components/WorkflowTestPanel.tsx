@@ -34,7 +34,11 @@ import {
 } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
 import { HumanInTheLoopFormField } from "../types/nodes";
-import { testWorkflow, WorkflowTestResponse } from "@/services/workflows";
+import {
+  getFailedNodeDisplayMessage,
+  testWorkflow,
+  WorkflowTestResponse,
+} from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
@@ -641,8 +645,9 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                       </span>
                     )}
                   </div>
-                  <RichInput
+                  <RichTextarea
                     id="test-input-message"
+                    size="body"
                     placeholder="Enter your message"
                     value={testInput.message || ""}
                     onChange={(e) =>
@@ -799,7 +804,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                                         ? "border-blue-300 bg-blue-50 dark:bg-blue-500/15"
                                         : ""
                                     }`}
-                                    rows={4}
+                                    size="code"
                                   />
                                 ) : (
                                   <RichInput
@@ -932,6 +937,18 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                                   ))}
                                 </SelectContent>
                               </Select>
+                            ) : field.type === "textarea" ? (
+                              <RichTextarea
+                                id={fieldKey}
+                                size="body"
+                                placeholder={
+                                  field.placeholder ||
+                                  `Enter ${field.label}`
+                                }
+                                value={val}
+                                onChange={(e) => onChange(e.target.value)}
+                                disabled={testing}
+                              />
                             ) : (
                               <RichInput
                                 id={fieldKey}
@@ -1075,8 +1092,10 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                                   <span className="font-medium">
                                     {n.name || n.type || n.node_id}
                                   </span>
-                                  {n.error ? (
-                                    <span className="text-amber-700">: {n.error}</span>
+                                  {getFailedNodeDisplayMessage(n) ? (
+                                    <span className="text-amber-700">
+                                      : {getFailedNodeDisplayMessage(n)}
+                                    </span>
                                   ) : null}
                                 </li>
                               ))}

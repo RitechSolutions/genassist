@@ -11,7 +11,6 @@ The output is written to app/db/seed/knowledge/node_specs.md.
 Hand-authored descriptions and use cases are merged in from NODE_DESCRIPTIONS below.
 """
 
-import os
 from pathlib import Path
 
 from app.schemas.dynamic_form_schemas.nodes import (
@@ -32,6 +31,17 @@ NODE_DESCRIPTIONS = {
             "Starting point for a customer support chatbot",
             "Receiving user queries in a Q&A assistant",
             "Capturing commands for an automation workflow triggered by chat",
+        ],
+    },
+    "webhookTriggerNode": {
+        "category": "I/O",
+        "description": "Entry point for workflows started by an external system through an inbound HTTP request. Each node gets its own authenticated endpoint (bearer token or HMAC signature). The delivery is available downstream as `webhook` ({method, headers, query, body}); configurable paths map parts of it to `message`, the thread id, an idempotency key and any extra input fields.",
+        "when_to_use": "When a workflow should start from an event in another system (order created, ticket updated, form submitted, monitoring alert) instead of a chat message or a schedule. A workflow may contain both a Chat Input and a Webhook Trigger; each run starts from exactly one of them.",
+        "example_use_cases": [
+            "Starting an order-processing workflow when an e-commerce platform posts a new order",
+            "Reacting to a CRM webhook when an account or ticket changes",
+            "Launching an incident workflow from a monitoring alert",
+            "Letting a customer-facing app kick off automation without a chat interaction",
         ],
     },
     "chatOutputNode": {
@@ -104,6 +114,36 @@ NODE_DESCRIPTIONS = {
             "Routing high-priority tickets to Jira, low-priority to Slack",
             "Branching based on email sender domain",
             "Conditional processing based on classification results",
+        ],
+    },
+    "filterNode": {
+        "category": "Control Flow",
+        "description": "Gate with a single output. Continues the branch only when field <operator> value holds (text, number and empty/not-empty operators); otherwise the branch stops. Forwards its input unchanged when it passes; an optional stopMessage becomes the chat reply when it stops the main path.",
+        "when_to_use": "When a branch should only continue under a condition and there is no alternative path, e.g. a threshold, an eligibility check or a missing-data check.",
+        "example_use_cases": [
+            "Continue only for records whose status is active",
+            "Only escalate when a confidence or urgency score is above a threshold",
+            "Stop before calling an agent or API when required information is missing",
+        ],
+    },
+    "loopNode": {
+        "category": "Control Flow",
+        "description": "Repeats a body of nodes. mode 'forEach' runs the body once per item of a list (items); mode 'repeatUntil' repeats until the stop condition (stopField / stopOperator / stopValue) holds or maxIterations is reached. The body starts at output_loop and its last node connects back to input_loop; output_done continues after the loop with {results, last, count, iterations, errors, stopped_reason}.",
+        "when_to_use": "When the same steps must run for every element of a list, or when a step should be retried until its result is good enough. It is the only way to revisit a node.",
+        "example_use_cases": [
+            "Summarising or classifying each ticket returned by an API call",
+            "Draft, critique and rewrite an answer until the critic approves it",
+            "Sending one message per recipient in a list",
+        ],
+    },
+    "switchNode": {
+        "category": "Control Flow",
+        "description": "Deterministic multi-way branching. Compares switchValue against an ordered list of cases (each {id, label, value}); the first match routes to output_<case id>, no match routes to output_default. Match modes: equal, contains, starts_with, ends_with, regex.",
+        "when_to_use": "When one value selects between three or more branches, such as a classified intent, a status or a priority. Use instead of chaining several routerNodes.",
+        "example_use_cases": [
+            "Routing billing, technical support, sales and cancellation intents to separate agents",
+            "Different handling for new, pending, approved and rejected items",
+            "Sending low-, medium-, high- and critical-priority tickets down different paths",
         ],
     },
     "aggregatorNode": {
@@ -332,27 +372,27 @@ NODE_DESCRIPTIONS = {
     },
     "trainDataSourceNode": {
         "category": "ML",
-        "description": "Loads training data from a configured data source (CSV file, database query, etc.) for ML model training pipelines.",
+        "description": "Loads training data from a database query or uploaded file for ML model training pipelines.",
         "when_to_use": "When setting up an ML training pipeline and you need to load the training dataset.",
         "example_use_cases": [
-            "Loading a CSV dataset for model training",
+            "Loading an uploaded dataset for model training",
             "Querying a database for training data",
             "Fetching data from a data source for preprocessing",
         ],
     },
     "preprocessingNode": {
         "category": "ML",
-        "description": "Preprocesses data for ML model training. Applies transformations using custom Python code on the loaded dataset.",
-        "when_to_use": "When training data needs cleaning, transformation, or feature engineering before model training.",
+        "description": "Cleans the dataset before model training: column filter, remove duplicate rows, remove columns/rows, remove mostly-empty columns, change column data types, plus custom Python code on the loaded dataset.",
+        "when_to_use": "When the raw training data needs cleaning (rows, columns, data types) before model training. Missing values, outliers, encoding, feature engineering and scaling are configured on the Train Model node instead, where they are fit on the training split only.",
         "example_use_cases": [
-            "Cleaning and normalizing training data",
-            "Feature engineering before model training",
-            "Handling missing values and outliers",
+            "Removing duplicate rows and unneeded columns",
+            "Fixing column data types (int, float, text, boolean, date, category)",
+            "Dropping mostly-empty columns",
         ],
     },
     "trainModelNode": {
         "category": "ML",
-        "description": "Trains an ML model on preprocessed data. Configure model type, target column, feature columns, and validation split.",
+        "description": "Trains an ML model on preprocessed data. Configure model type, target column, feature columns, and validation split, plus (fit on the training split only) missing-value handling, outlier handling, categorical encoding, feature engineering (custom_expression, bin_numeric, polynomial, log_transform, quantile_transform, power_transform, pca) and scaling method.",
         "when_to_use": "When you need to train a custom ML model within the platform.",
         "example_use_cases": [
             "Training a classification model on labeled data",

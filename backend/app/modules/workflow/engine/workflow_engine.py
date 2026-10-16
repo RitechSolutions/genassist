@@ -21,6 +21,7 @@ from app.core.utils.background_tasks import spawn
 from app.core.utils.date_time_utils import utc_now
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.entry_nodes import ENTRY_NODE_TYPES, is_entry_node_type
 from app.modules.workflow.engine.nodes import (
     AgentNode,
     AggregatorNode,
@@ -32,6 +33,7 @@ from app.modules.workflow.engine.nodes import (
     DataMapperNode,
     ExternalAgentNode,
     FileReaderNode,
+    FilterNode,
     FinalizeConversationNode,
     GmailToolNode,
     GuardrailNliNode,
@@ -41,6 +43,7 @@ from app.modules.workflow.engine.nodes import (
     JiraNode,
     KnowledgeToolNode,
     LLMModelNode,
+    LoopNode,
     MCPNode,
     MLModelInferenceNode,
     NLPNode,
@@ -54,6 +57,7 @@ from app.modules.workflow.engine.nodes import (
     SQLNode,
     STTNode,
     SubAgentNode,
+    SwitchNode,
     TemplateNode,
     ThreadRAGNode,
     ToolBuilderNode,
@@ -64,15 +68,28 @@ from app.modules.workflow.engine.nodes import (
     VoiceAgentNode,
     WebScraperNode,
     WebSearchNode,
+    WebhookTriggerNode,
     WhatsAppToolNode,
     WorkflowExecutorNode,
     ZendeskToolNode,
 )
+from app.modules.workflow.engine.utils import describe_exception
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import process_path_based_input_data
 
 logger = logging.getLogger(__name__)
+
+
+# Node types that exist only in the editor and never execute. A "groupNode" is a visual container
+# that frames related nodes on the canvas (see frontend utils/nodeGroups.ts); it has no edges or
+# handles. Dropped on load so it can't become an inferred starting node or count towards steps.
+EDITOR_ONLY_NODE_TYPES = frozenset({"groupNode"})
+
+
+def executable_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The workflow's nodes minus editor-only ones (visual groups)."""
+    return [node for node in nodes if node.get("type") not in EDITOR_ONLY_NODE_TYPES]
 
 
 class MemoryPersistenceError(Exception):
@@ -133,6 +150,9 @@ class WorkflowEngine:
         cls._node_registry["chatInputNode"] = ChatInputNode
         cls._node_registry["chatOutputNode"] = ChatOutputNode
         cls._node_registry["routerNode"] = RouterNode
+        cls._node_registry["switchNode"] = SwitchNode
+        cls._node_registry["filterNode"] = FilterNode
+        cls._node_registry["loopNode"] = LoopNode
         cls._node_registry["agentNode"] = AgentNode
         cls._node_registry["externalAgentNode"] = ExternalAgentNode
         cls._node_registry["apiToolNode"] = ApiToolNode
@@ -175,6 +195,7 @@ class WorkflowEngine:
         cls._node_registry["finalizeConversationNode"] = FinalizeConversationNode
         cls._node_registry["nlpNode"] = NLPNode
         cls._node_registry["subAgentNode"] = SubAgentNode
+        cls._node_registry["webhookTriggerNode"] = WebhookTriggerNode
 
         cls._registry_initialized = True
         logger.debug(f"Initialized node registry with {len(cls._node_registry)} node types")
@@ -197,6 +218,9 @@ class WorkflowEngine:
         no_db_nodes = {
             "templateNode",
             "routerNode",
+            "switchNode",
+            "filterNode",
+            "loopNode",
             "chatInputNode",
             "chatOutputNode",
             "pythonCodeNode",
@@ -208,6 +232,7 @@ class WorkflowEngine:
             "setStateNode",
             "nlpNode",
             "webSearchNode",
+            "webhookTriggerNode",
         }
 
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)
@@ -238,7 +263,7 @@ class WorkflowEngine:
         # Build and store workflow configuration
         self.workflow = {
             "config": workflow_config,
-            "nodes": workflow_config["nodes"],
+            "nodes": executable_nodes(workflow_config["nodes"]),
             "edges": workflow_config.get("edges", []),
             "metadata": {
                 "name": workflow_config.get("name", "Unnamed Workflow"),
@@ -289,6 +314,7 @@ class WorkflowEngine:
         await_persist: bool = False,
         usage_context: Optional[WorkflowUsageContext] = None,
         usage_sink: Optional[list] = None,
+        state_sink: Optional[list] = None,
     ) -> WorkflowState:
         """
         Execute workflow starting from a specific node.
@@ -307,6 +333,8 @@ class WorkflowEngine:
             usage_sink: Nested runs pass a parent list to append their usage into, so
                 a child's usage survives even when the child raises. Mutually exclusive
                 with usage_context; when neither is set, behavior is unchanged.
+            state_sink: Receives the execution state as soon as it exists, so a caller
+                can still read a run that raised or was cancelled.
 
         Returns:
             WorkflowState with execution results
@@ -354,6 +382,12 @@ class WorkflowEngine:
                 initial_values=initial_values,
                 registry_managed=registry_managed,
             )
+            if state_sink is not None:
+                state_sink.append(state)
+            # A run that starts at an entry node (Chat Input / Webhook Trigger)
+            # must not wait on, or read from, the workflow's *other* entry nodes.
+            _, start_node_type = self.get_node_config(start_node_id)
+            state.entry_node_id = start_node_id if is_entry_node_type(start_node_type) else None
 
             try:
                 try:
@@ -471,6 +505,12 @@ class WorkflowEngine:
         if input_node:
             return [input_node["id"]]
 
+        # No Chat Input: a lone trigger node (e.g. Webhook Trigger) is the entry
+        # point even when tool nodes also have no incoming edges.
+        entry_nodes = [n["id"] for n in self.workflow["nodes"] if n.get("type") in ENTRY_NODE_TYPES]
+        if len(entry_nodes) == 1:
+            return entry_nodes
+
         starting_nodes = []
         for node in self.workflow["nodes"]:
             node_id = node["id"]
@@ -535,8 +575,22 @@ class WorkflowEngine:
         if node_output and "next_nodes" in node_output:
             next_nodes = node_output.get("next_nodes", [])
         else:
-            next_nodes = self._find_next_nodes(node_id)
+            bypass_next = node.get_bypass_next_nodes() if node.is_deactivated() else None
+            next_nodes = bypass_next if bypass_next is not None else self._find_next_nodes(node_id)
 
+        await self._execute_next_nodes(next_nodes, state, visited)
+
+    async def run_subgraph(self, start_node_ids: List[str], state: WorkflowState, blocked: Set[str]) -> None:
+        """Run part of the graph within the current run, e.g. one pass of a loop body.
+
+        Execution starts at ``start_node_ids`` with a fresh visited set, so nodes
+        that already ran can run again; it never enters a ``blocked`` node, which
+        is where the sub-graph ends (the Loop node its body wires back into).
+        """
+        await self._execute_next_nodes(start_node_ids, state, set(blocked))
+
+    async def _execute_next_nodes(self, next_nodes: List[str], state: WorkflowState, visited: Set[str]) -> None:
+        """Execute the given nodes (in parallel when there are several) and everything after them."""
         # Find and execute next nodes in parallel
         if next_nodes:
             # Capture tenant context from the main request scope
@@ -655,6 +709,7 @@ class WorkflowEngine:
             raise ValueError(
                 f"Unknown node type: {node_type}, skipping node {node_id}")
         node = node_class(node_id, node_config, state)
+        node.engine = self
         return node
 
     async def _execute_single_node(
@@ -678,8 +733,9 @@ class WorkflowEngine:
         except WorkflowPausedException:
             raise  # Propagate pause signal to top-level execute_from_node
         except Exception as e:
-            logger.error(f"Error executing node {node_id}: {e}")
-            state.fail_execution(f"Node {node_id} failed: {str(e)}")
+            message = describe_exception(e)
+            logger.error(f"Error executing node {node_id}: {message}")
+            state.fail_execution(f"Node {node_id} failed: {message}")
             raise
 
     def get_workflow_status(self) -> Dict[str, Any]:

@@ -12,7 +12,7 @@ import {
   MissingValueHandlingConfig,
   MissingValueHandlingItem,
   MissingValueStrategy,
-} from "../preprocessingConfig";
+} from "../../../types/nodes";
 import { CSVAnalysisResult } from "@/services/mlModels";
 
 interface MissingValueHandlerProps {

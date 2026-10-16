@@ -1,13 +1,7 @@
-import { useEffect, useRef, useState } from "react";
 import { Column } from "@/components/ui/data-table";
 import { EntityTableCard } from "@/components/EntityTableCard";
 import { Badge } from "@/components/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipProvider,
-} from "@/components/RadixTooltip";
+import { TruncatedText } from "@/components/TruncatedText";
 import { LLMAnalyst } from "@/interfaces/llmAnalyst.interface";
 import { Brain } from "lucide-react";
 import { Button } from "@/components/button";
@@ -21,39 +15,6 @@ interface LLMAnalystCardProps {
   onCreate?: () => void;
   onEdit: (analyst: LLMAnalyst) => void;
   onDelete: (id: string) => Promise<void>;
-}
-
-// Reveals the full prompt on hover only when the cell text is truncated
-function PromptCell({ prompt }: { prompt: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [isTruncated, setIsTruncated] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => setIsTruncated(el.scrollWidth > el.clientWidth);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [prompt]);
-
-  return (
-    <TooltipProvider delayDuration={200}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span ref={ref} className="block truncate">
-            {prompt}
-          </span>
-        </TooltipTrigger>
-        {isTruncated && (
-          <TooltipContent className="max-w-md whitespace-pre-wrap break-words">
-            {prompt}
-          </TooltipContent>
-        )}
-      </Tooltip>
-    </TooltipProvider>
-  );
 }
 
 export function LLMAnalystCard({
@@ -84,7 +45,7 @@ export function LLMAnalystCard({
       key: "prompt",
       headerClassName: "w-[360px]",
       className: "max-w-[360px]",
-      cell: (analyst) => <PromptCell prompt={analyst.prompt} />,
+      cell: (analyst) => <TruncatedText>{analyst.prompt}</TruncatedText>,
     },
     {
       header: "Status",
