@@ -578,18 +578,23 @@ def _mapped_transform(
     """
     if not columns:
         return np.empty((batch_size, 0))
-    raw = _build_input_array(normalized_inputs, columns).astype(object)
-    out = np.empty(raw.shape, dtype=float)
+    missing = [col for col in columns if col not in normalized_inputs]
+    if missing:
+        raise ValueError(f"Missing prepared feature column(s): {', '.join(missing)}")
+    out = np.empty((batch_size, len(columns)), dtype=float)
     for i, col in enumerate(columns):
+        # The values as given, not via a numpy array: an array holding any
+        # text (another column, or "3" in this one) turns every value into
+        # text, so a 2.0 became "2.0" - which matches neither the ordinal key
+        # "2" nor the label category 2.
+        raw = _broadcast_column(normalized_inputs[col], batch_size, col)
         mapping = mappings.get(col, {})
         if normalize_keys:
             mapping = {ordinal_key(k): v for k, v in mapping.items()}
-            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in raw[:, i]]
+            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in raw]
         else:
             mapping = {_category_key(k): v for k, v in mapping.items()}
-            out[:, i] = [
-                mapping.get(_category_key(v), unseen_value) for v in raw[:, i]
-            ]
+            out[:, i] = [mapping.get(_category_key(v), unseen_value) for v in raw]
     return out
 
 
@@ -1069,14 +1074,34 @@ class MLModelInferenceNode(BaseNode):
                     legacy_order = list(feature_names)
 
                 # Recompute any engineered features (bin_numeric, normalize,
-                # standardize, polynomial, custom_expression) from the raw
-                # inputs, using the exact fitted parameters captured at
+                # standardize, polynomial, custom_expression) from the inputs, using the exact fitted parameters captured at
                 # training time (TrainModelNode._engineer_features). No-op
                 # for models with no feature engineering or legacy models
                 # that predate this metadata.
                 feature_engineering_steps = metadata.get("feature_engineering_steps") or []
                 if feature_engineering_steps:
-                    engineered = _replay_feature_engineering(normalized_inputs, feature_engineering_steps, batch_size)
+                    fe_inputs: Dict[str, List[Any]] = normalized_inputs
+                    mapped_columns = label_columns + ordinal_columns
+                    if metadata.get("encoding_before_feature_engineering") and mapped_columns:
+                        # These models built their derived features from the
+                        # label/ordinal codes, so replay them from codes too.
+                        # Same order as training: missing values were already
+                        # filled above (_prepare_inference_inputs), then encode.
+                        fe_inputs = dict(normalized_inputs)
+                        if label_columns:
+                            codes = _mapped_transform(
+                                normalized_inputs, label_columns, label_encodings, batch_size, unseen_value=-1
+                            )
+                            for i, col in enumerate(label_columns):
+                                fe_inputs[col] = codes[:, i].tolist()
+                        if ordinal_columns:
+                            codes = _mapped_transform(
+                                normalized_inputs, ordinal_columns, ordinal_encodings, batch_size,
+                                unseen_value=np.nan, normalize_keys=True,
+                            )
+                            for i, col in enumerate(ordinal_columns):
+                                fe_inputs[col] = codes[:, i].tolist()
+                    engineered = _replay_feature_engineering(fe_inputs, feature_engineering_steps, batch_size)
                     column_arrays.update(engineered)
                     legacy_order += [c for c in engineered if c not in legacy_order]
 
