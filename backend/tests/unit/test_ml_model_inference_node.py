@@ -348,7 +348,10 @@ async def _run_inference(monkeypatch, model, model_type):
             return_value={
                 "version": "v2.0",
                 "model": model,
-                "metadata": {"feature_columns": ["feature"]},
+                "metadata": {
+                    "metadata_schema_version": 2,
+                    "feature_columns": ["feature"],
+                },
             }
         )
     )
@@ -378,6 +381,7 @@ class TestInferenceOutput:
         assert result["prediction_label"] == [None]
         assert result["prediction_details"] == [{"result": 12.75, "label": None}]
         assert result["batch_size"] == 1
+        assert "feature_order_source" not in result
         json.dumps(result)
 
     @pytest.mark.asyncio
@@ -422,6 +426,8 @@ async def _predict(
     registered_feature_names=None,
     inference_params=None,
     legacy=False,
+    artifact_version="v2.0",
+    include_metadata_schema_version=True,
     **metadata,
 ):
     expected_features = list(inputs) if feature_names is None else list(feature_names)
@@ -442,10 +448,19 @@ async def _predict(
     service = MagicMock(get_by_id=AsyncMock(return_value=ml_model))
     model_response = {"model": model}
     if not legacy:
+        artifact_metadata = {
+            "feature_columns": expected_features,
+            **metadata,
+        }
+        if (
+            include_metadata_schema_version
+            and "metadata_schema_version" not in artifact_metadata
+        ):
+            artifact_metadata["metadata_schema_version"] = 2
         model_response = {
-            "version": "v2.0",
+            "version": artifact_version,
             "model": model,
-            "metadata": {"feature_columns": expected_features, **metadata},
+            "metadata": artifact_metadata,
         }
     manager = MagicMock(get_model=AsyncMock(return_value=model_response))
     monkeypatch.setattr(inference_module, "injector", MagicMock(get=MagicMock(return_value=service)))
@@ -456,6 +471,109 @@ async def _predict(
 
 
 class TestInferenceFeatureContract:
+    @pytest.mark.parametrize(
+        "artifact_version",
+        ["v2.0", "sha256:4f83c0a", "v2.1", ""],
+    )
+    @pytest.mark.asyncio
+    async def test_artifact_version_does_not_control_metadata_schema(
+        self,
+        monkeypatch,
+        artifact_version,
+    ):
+        class RecordingModel(_StubModel):
+            received = None
+
+            def predict(self, input_data):
+                self.received = input_data
+                return np.zeros(len(input_data), dtype=int)
+
+        model = RecordingModel()
+        await _predict(
+            monkeypatch,
+            model,
+            {"lag_24": 12, "hour": 8},
+            feature_names=["hour", "lag_24"],
+            artifact_version=artifact_version,
+        )
+
+        assert list(model.received.columns) == ["hour", "lag_24"]
+        np.testing.assert_array_equal(model.received, [[8, 12]])
+
+    @pytest.mark.asyncio
+    async def test_metadata_without_schema_version_is_refused(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8},
+                feature_names=["hour"],
+                include_metadata_schema_version=False,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert (
+            "has metadata but does not declare a metadata schema version"
+            in exc.value.error_detail
+        )
+        assert "cannot be read safely" in exc.value.error_detail
+        assert "Retrain the model" in exc.value.error_detail
+
+    @pytest.mark.parametrize("schema_version", [True, "2", 0])
+    @pytest.mark.asyncio
+    async def test_invalid_artifact_schema_is_refused(
+        self,
+        monkeypatch,
+        schema_version,
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8},
+                feature_names=["hour"],
+                metadata_schema_version=schema_version,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "invalid metadata schema version" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_schema_one_artifact_uses_metadata(self, monkeypatch):
+        class RecordingModel(_StubModel):
+            received = None
+
+            def predict(self, input_data):
+                self.received = input_data
+                return np.zeros(len(input_data), dtype=int)
+
+        model = RecordingModel()
+        await _predict(
+            monkeypatch,
+            model,
+            {"lag_24": 12, "hour": 8},
+            feature_names=["hour", "lag_24"],
+            metadata_schema_version=1,
+        )
+
+        assert list(model.received.columns) == ["hour", "lag_24"]
+        np.testing.assert_array_equal(model.received, [[8, 12]])
+
+    @pytest.mark.asyncio
+    async def test_future_artifact_schema_is_refused(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8},
+                feature_names=["hour"],
+                metadata_schema_version=3,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "artifact schema v3" in exc.value.error_detail
+        assert "supports up to v2" in exc.value.error_detail
+
     @pytest.mark.asyncio
     async def test_missing_feature_is_rejected_before_prediction(self, monkeypatch):
         model = _StubModel()
@@ -533,36 +651,19 @@ class TestInferenceFeatureContract:
 
     @pytest.mark.asyncio
     async def test_raw_estimator_uses_its_recorded_feature_order(self, monkeypatch):
-        class RawModel(_StubModel):
-            feature_names_in_ = np.array(["lag_24", "hour"])
-            received = None
+        import pandas as pd
+        from sklearn.linear_model import LinearRegression
 
-            def predict(self, input_data):
-                self.received = input_data
-                return np.zeros(len(input_data), dtype=int)
-
-        model = RawModel()
-        await _predict(
-            monkeypatch,
-            model,
-            {"hour": 8, "lag_24": 12},
-            feature_names=["hour", "lag_24"],
-            legacy=True,
+        training_data = pd.DataFrame(
+            {
+                "lag_24": [0, 1, 0, 1],
+                "hour": [0, 0, 1, 1],
+            }
         )
-
-        np.testing.assert_array_equal(model.received, [[12, 8]])
-
-    @pytest.mark.asyncio
-    async def test_raw_estimator_can_use_matching_registry_feature_contract(self, monkeypatch):
-        class RawModel(_StubModel):
-            n_features_in_ = 2
-            received = None
-
-            def predict(self, input_data):
-                self.received = input_data
-                return np.zeros(len(input_data), dtype=int)
-
-        model = RawModel()
+        model = LinearRegression().fit(
+            training_data,
+            100 * training_data["lag_24"] + training_data["hour"],
+        )
         result = await _predict(
             monkeypatch,
             model,
@@ -571,16 +672,491 @@ class TestInferenceFeatureContract:
             legacy=True,
         )
 
-        np.testing.assert_array_equal(model.received, [[8, 12]])
-        assert result["warnings"] == [
-            "The model artifact does not record feature names, so inference used the "
-            "registry feature order. Verify that the registry order matches training."
-        ]
+        assert result["prediction"] == pytest.approx([1208])
+
+    @pytest.mark.asyncio
+    async def test_v2_artifact_uses_estimator_order_when_metadata_order_differs(
+        self, monkeypatch
+    ):
+        import pandas as pd
+        from sklearn.linear_model import LinearRegression
+
+        training_data = pd.DataFrame(
+            {
+                "lag_24": [0, 1, 0, 1],
+                "hour": [0, 0, 1, 1],
+            }
+        )
+        model = LinearRegression().fit(
+            training_data,
+            100 * training_data["lag_24"] + training_data["hour"],
+        )
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"hour": 8, "lag_24": 12},
+            feature_names=["hour", "lag_24"],
+        )
+
+        assert result["prediction"] == pytest.approx([1208])
+
+    @pytest.mark.asyncio
+    async def test_v2_artifact_refuses_names_that_disagree_with_estimator(
+        self, monkeypatch
+    ):
+        import pandas as pd
+        from sklearn.linear_model import LinearRegression
+
+        training_data = pd.DataFrame(
+            {
+                "lag_24": [0, 1, 0, 1],
+                "hour": [0, 0, 1, 1],
+            }
+        )
+        model = LinearRegression().fit(training_data, [0, 100, 1, 101])
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"hour": 8, "lag24": 12},
+                feature_names=["lag24", "hour"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "artifact feature names disagree" in exc.value.error_detail
+        assert "consistent model artifact" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_real_xgboost_wrapper_uses_native_feature_order(
+        self, monkeypatch
+    ):
+        import pandas as pd
+
+        xgboost = pytest.importorskip("xgboost")
+        training_data = pd.DataFrame(
+            {
+                "lag_24": [0, 1, 0, 1],
+                "hour": [0, 0, 1, 1],
+            }
+        )
+        model = xgboost.XGBRegressor(
+            n_estimators=2,
+            max_depth=1,
+            learning_rate=1,
+            n_jobs=1,
+        ).fit(training_data, [0, 100, 1, 101])
+        expected = model.predict(
+            pd.DataFrame({"lag_24": [12], "hour": [8]})
+        ).tolist()
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"hour": 8, "lag_24": 12},
+            feature_names=["hour", "lag_24"],
+            legacy=True,
+        )
+
+        assert result["prediction"] == pytest.approx(expected)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("library", ["lightgbm", "catboost"])
+    async def test_real_optional_estimators_use_recorded_feature_order(
+        self, monkeypatch, library
+    ):
+        import pandas as pd
+
+        package = pytest.importorskip(library)
+        training_data = pd.DataFrame(
+            {
+                "lag_24": [0, 1, 0, 1],
+                "hour": [0, 0, 1, 1],
+            }
+        )
+        if library == "lightgbm":
+            model = package.LGBMRegressor(n_estimators=2, verbosity=-1)
+        else:
+            model = package.CatBoostRegressor(
+                iterations=2,
+                verbose=False,
+                allow_writing_files=False,
+            )
+        model.fit(training_data, [0, 100, 1, 101])
+        expected = model.predict(
+            pd.DataFrame({"lag_24": [12], "hour": [8]})
+        ).tolist()
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"hour": 8, "lag_24": 12},
+            feature_names=["hour", "lag_24"],
+            legacy=True,
+        )
+
+        assert result["prediction"] == pytest.approx(expected)
+
+    @pytest.mark.asyncio
+    async def test_sklearn_pipeline_receives_named_dataframe(self, monkeypatch):
+        import pandas as pd
+        from sklearn.compose import ColumnTransformer
+        from sklearn.linear_model import LinearRegression
+        from sklearn.pipeline import Pipeline
+
+        training_data = pd.DataFrame(
+            {
+                "lag_24": [0, 1, 0, 1],
+                "hour": [0, 0, 1, 1],
+            }
+        )
+        model = Pipeline(
+            [
+                (
+                    "columns",
+                    ColumnTransformer(
+                        [
+                            ("lag", "passthrough", ["lag_24"]),
+                            ("hour", "passthrough", ["hour"]),
+                        ]
+                    ),
+                ),
+                ("regressor", LinearRegression()),
+            ]
+        ).fit(
+            training_data,
+            100 * training_data["lag_24"] + training_data["hour"],
+        )
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"hour": 8, "lag_24": 12},
+            feature_names=["lag_24", "hour"],
+            legacy=True,
+        )
+
+        assert result["prediction"] == pytest.approx([1208])
+
+    @pytest.mark.parametrize(
+        ("feature_names_attribute", "estimator_module"),
+        [
+            ("feature_names_", "catboost.core"),
+            ("feature_name_", "lightgbm.sklearn"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_raw_estimator_uses_library_specific_recorded_feature_order(
+        self,
+        monkeypatch,
+        feature_names_attribute,
+        estimator_module,
+    ):
+        class RawModel(_StubModel):
+            n_features_in_ = 2
+            received = None
+
+            def predict(self, input_data):
+                self.received = input_data
+                return np.zeros(len(input_data), dtype=int)
+
+        RawModel.__module__ = estimator_module
+        model = RawModel()
+        setattr(model, feature_names_attribute, ["lag_24", "hour"])
+        await _predict(
+            monkeypatch,
+            model,
+            {"hour": 8, "lag_24": 12},
+            feature_names=["lag_24", "hour"],
+            legacy=True,
+        )
+
+        np.testing.assert_array_equal(model.received, [[12, 8]])
+
+    @pytest.mark.asyncio
+    async def test_lightgbm_matches_whitespace_normalized_registry_names(
+        self, monkeypatch
+    ):
+        class RawModel(_StubModel):
+            n_features_in_ = 2
+            feature_name_ = ["lag_24", "hour"]
+            received = None
+
+            def predict(self, input_data):
+                self.received = input_data
+                return np.zeros(len(input_data), dtype=int)
+
+        RawModel.__module__ = "lightgbm.sklearn"
+        model = RawModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"hour": 8, "lag 24": 12},
+            feature_names=["lag 24", "hour"],
+            legacy=True,
+        )
+
+        assert list(model.received.columns) == ["lag_24", "hour"]
+        np.testing.assert_array_equal(model.received, [[12, 8]])
+        assert result["input_data"] == {"lag 24": [12], "hour": [8]}
+
+    @pytest.mark.parametrize(
+        "estimator_names",
+        [
+            "lag_24",
+            {"lag_24": 1, "hour": 2},
+            ["lag_24", 2],
+            ["lag_24", "lag_24"],
+            ["lag_24"],
+        ],
+    )
+    def test_estimator_feature_names_must_match_fitted_feature_contract(
+        self,
+        estimator_names,
+    ):
+        from sklearn.linear_model import LinearRegression
+
+        model = LinearRegression().fit(
+            np.array([[0, 0], [1, 0], [0, 1], [1, 1]]),
+            np.array([0, 1, 1, 2]),
+        )
+        model.feature_names_in_ = estimator_names
+
+        with pytest.raises(AppException) as exc:
+            inference_module._resolve_feature_order(
+                {},
+                model,
+                "forecast",
+                registered_names=["lag_24", "hour"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Feature order source: refused" in exc.value.error_detail
+
+    def test_real_placeholder_like_feature_names_are_preserved(self):
+        import pandas as pd
+        from sklearn.linear_model import LinearRegression
+
+        training_data = pd.DataFrame(
+            {
+                "f1": [0, 1, 0, 1],
+                "2023": [0, 0, 1, 1],
+            }
+        )
+        model = LinearRegression().fit(training_data, [0, 1, 1, 2])
+
+        caller_names, estimator_names, source = inference_module._resolve_feature_order(
+            {},
+            model,
+            "forecast",
+            registered_names=["f1", "2023"],
+        )
+
+        assert caller_names == ["f1", "2023"]
+        assert estimator_names == ["f1", "2023"]
+        assert source == "estimator"
+
+    def test_custom_model_with_valid_feature_names_is_supported(self):
+        class RawModel(_StubModel):
+            n_features_in_ = 2
+            feature_names_in_ = ["lag_24", "hour"]
+
+        caller_names, estimator_names, source = inference_module._resolve_feature_order(
+            {},
+            RawModel(),
+            "forecast",
+            registered_names=["hour", "lag_24"],
+        )
+
+        assert caller_names == ["lag_24", "hour"]
+        assert estimator_names == ["lag_24", "hour"]
+        assert source == "estimator"
+
+    @pytest.mark.parametrize(
+        "registered_names",
+        [None, [], ["lag_24"], ["lag24", "hour"]],
+    )
+    def test_registry_mismatch_names_both_contracts_and_the_registry_fix(
+        self, registered_names
+    ):
+        class RawModel(_StubModel):
+            n_features_in_ = 2
+            feature_names_in_ = ["lag_24", "hour"]
+
+        with pytest.raises(AppException) as exc:
+            inference_module._resolve_feature_order(
+                {},
+                RawModel(),
+                "forecast",
+                registered_names=registered_names,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "estimator feature names ['lag_24', 'hour']" in exc.value.error_detail
+        assert f"registered features are {registered_names!r}" in exc.value.error_detail
+        assert "Update the registered feature list" in exc.value.error_detail
+        assert "Retrain only if the estimator names are incorrect" in exc.value.error_detail
+        assert "does not record a safe" not in exc.value.error_detail
+
+    def test_estimator_feature_name_method_is_not_treated_as_a_name_list(self):
+        class RawModel(_StubModel):
+            n_features_in_ = 2
+
+            def feature_names_in_(self):
+                return ["lag_24", "hour"]
+
+        RawModel.__module__ = "sklearn.fake"
+        with pytest.raises(AppException) as exc:
+            inference_module._resolve_feature_order(
+                {},
+                RawModel(),
+                "forecast",
+                registered_names=["lag_24", "hour"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Feature order source: refused" in exc.value.error_detail
+
+    def test_raising_estimator_feature_name_property_is_refused(self):
+        class RawModel(_StubModel):
+            n_features_in_ = 2
+
+            @property
+            def feature_names_in_(self):
+                raise RuntimeError("model is not fitted")
+
+        RawModel.__module__ = "sklearn.fake"
+        with pytest.raises(AppException) as exc:
+            inference_module._resolve_feature_order(
+                {},
+                RawModel(),
+                "forecast",
+                registered_names=["lag_24", "hour"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Feature order source: refused" in exc.value.error_detail
+
+    def test_raising_estimator_feature_count_property_is_refused(self):
+        class RawModel(_StubModel):
+            feature_names_in_ = ["lag_24", "hour"]
+
+            @property
+            def n_features_in_(self):
+                raise RuntimeError("model is not fitted")
+
+        assert inference_module._model_feature_count(RawModel()) == -1
+
+    def test_disagreeing_estimator_feature_name_sources_are_refused(self):
+        class RawModel(_StubModel):
+            n_features_in_ = 2
+            feature_names_in_ = ["lag_24", "hour"]
+            feature_names_ = ["hour", "lag_24"]
+
+        RawModel.__module__ = "catboost.core"
+        with pytest.raises(AppException) as exc:
+            inference_module._resolve_feature_order(
+                {},
+                RawModel(),
+                "forecast",
+                registered_names=["lag_24", "hour"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Feature order source: refused" in exc.value.error_detail
+
+    def test_raw_xgboost_booster_feature_names_are_not_used(self):
+        import pandas as pd
+
+        xgboost = pytest.importorskip("xgboost")
+        training_data = pd.DataFrame(
+            {
+                "lag_24": [0, 1, 0, 1],
+                "hour": [0, 0, 1, 1],
+            }
+        )
+        model = xgboost.train(
+            {"objective": "reg:squarederror", "nthread": 1},
+            xgboost.DMatrix(training_data, label=[0, 100, 1, 101]),
+            num_boost_round=1,
+        )
+
+        with pytest.raises(AppException) as exc:
+            inference_module._resolve_feature_order(
+                {},
+                model,
+                "forecast",
+                registered_names=["lag_24", "hour"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Feature order source: refused" in exc.value.error_detail
+
+    def test_constructor_defined_generic_feature_names_are_not_trusted(self):
+        class RawModel(_StubModel):
+            n_features_in_ = 2
+            feature_names = ["lag_24", "hour"]
+
+        with pytest.raises(AppException) as exc:
+            inference_module._resolve_feature_order(
+                {},
+                RawModel(),
+                "forecast",
+                registered_names=["lag_24", "hour"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Feature order source: refused" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_raw_estimator_refuses_matching_registry_feature_contract(
+        self, monkeypatch
+    ):
+        class RawModel(_StubModel):
+            n_features_in_ = 2
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                RawModel(),
+                {"hour": 8, "lag_24": 12},
+                feature_names=["hour", "lag_24"],
+                legacy=True,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Feature order source: refused" in exc.value.error_detail
+        assert "Model 'forecast'" in exc.value.error_detail
+        assert "swap values between columns" in exc.value.error_detail
+        assert "pandas DataFrame" in exc.value.error_detail
+        assert "upload the new file" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_v2_artifact_without_feature_columns_is_refused_early(
+        self, monkeypatch
+    ):
+        class RawModel(_StubModel):
+            feature_names_in_ = np.array(["lag_24", "hour"])
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                RawModel(),
+                {"hour": 8, "lag_24": 12},
+                feature_names=[],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "artifact does not record its required feature set" in (
+            exc.value.error_detail
+        )
+        assert "feature_columns" in exc.value.error_detail
 
     @pytest.mark.asyncio
     async def test_raw_estimator_converts_quoted_numeric_default(self, monkeypatch):
         class RawModel(_StubModel):
-            n_features_in_ = 2
+            feature_names_in_ = np.array(["hour", "lag_24"])
             received = None
 
             def predict(self, input_data):
@@ -594,19 +1170,18 @@ class TestInferenceFeatureContract:
             {"hour": 8},
             feature_names=["hour", "lag_24"],
             inference_params={"featureDefaults": {"lag_24": "5"}},
-            legacy=True,
         )
 
         np.testing.assert_array_equal(model.received, [[8, 5]])
         assert result["defaults_applied"] == ["lag_24"]
 
     @pytest.mark.asyncio
-    async def test_raw_estimator_failure_names_applied_default(self, monkeypatch):
+    async def test_model_failure_names_applied_default(self, monkeypatch):
         class RawModel(_StubModel):
-            n_features_in_ = 2
+            feature_names_in_ = np.array(["hour", "lag_24"])
 
             def predict(self, input_data):
-                raise ValueError("could not convert string to float: 'abc'")
+                raise ValueError("model rejected prepared input")
 
         with pytest.raises(AppException) as exc:
             await _predict(
@@ -614,19 +1189,18 @@ class TestInferenceFeatureContract:
                 RawModel(),
                 {"hour": 8},
                 feature_names=["hour", "lag_24"],
-                inference_params={"featureDefaults": {"lag_24": "abc"}},
-                legacy=True,
+                inference_params={"featureDefaults": {"lag_24": 5}},
             )
 
         assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
         assert "configured feature default(s) were applied" in exc.value.error_detail
         assert "lag_24" in exc.value.error_detail
-        assert "could not convert string to float" in exc.value.error_detail
+        assert "model rejected prepared input" in exc.value.error_detail
 
     @pytest.mark.asyncio
-    async def test_legacy_text_default_does_not_block_complete_request(self, monkeypatch):
+    async def test_text_default_does_not_block_complete_request(self, monkeypatch):
         class RawModel(_StubModel):
-            n_features_in_ = 2
+            feature_names_in_ = np.array(["region", "hour"])
 
         result = await _predict(
             monkeypatch,
@@ -634,7 +1208,6 @@ class TestInferenceFeatureContract:
             {"region": "east", "hour": 8},
             feature_names=["region", "hour"],
             inference_params={"featureDefaults": {"region": "unknown"}},
-            legacy=True,
         )
 
         assert result["status"] == "success"
@@ -663,7 +1236,7 @@ class TestInferenceFeatureContract:
     @pytest.mark.asyncio
     async def test_long_prediction_failure_keeps_default_hint_visible(self, monkeypatch):
         class RawModel(_StubModel):
-            n_features_in_ = 2
+            feature_names_in_ = np.array(["hour", "lag_24"])
 
             def predict(self, input_data):
                 raise ValueError("invalid value 'abc' for hour\nStack trace:\n" + "x" * 2000)
@@ -675,7 +1248,6 @@ class TestInferenceFeatureContract:
                 {"hour": "abc"},
                 feature_names=["hour", "lag_24"],
                 inference_params={"featureDefaults": {"lag_24": 0}},
-                legacy=True,
             )
 
         visible_detail = truncate_for_log(describe_exception(exc.value), 500)
@@ -685,7 +1257,9 @@ class TestInferenceFeatureContract:
         assert "Stack trace" not in visible_detail
 
     @pytest.mark.asyncio
-    async def test_raw_estimator_rejects_mismatched_registry_feature_contract(self, monkeypatch):
+    async def test_raw_estimator_feature_count_does_not_replace_feature_names(
+        self, monkeypatch
+    ):
         class RawModel(_StubModel):
             n_features_in_ = 3
 
@@ -696,14 +1270,19 @@ class TestInferenceFeatureContract:
                 {"hour": 8, "lag_24": 12},
                 feature_names=["hour", "lag_24"],
                 legacy=True,
-        )
+            )
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
-        assert "expects 3 feature(s)" in exc.value.error_detail
-        assert "registry lists 2" in exc.value.error_detail
+        assert "Model 'forecast'" in exc.value.error_detail
+        assert "does not record a safe, unambiguous feature-name order" in (
+            exc.value.error_detail
+        )
+        assert "swap values between columns" in exc.value.error_detail
 
     @pytest.mark.asyncio
-    async def test_raw_estimator_without_names_or_count_gets_upload_guidance(self, monkeypatch):
+    async def test_raw_estimator_without_names_or_count_gets_retraining_guidance(
+        self, monkeypatch
+    ):
         class RawModel(_StubModel):
             pass
 
@@ -717,8 +1296,10 @@ class TestInferenceFeatureContract:
             )
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
-        assert "neither feature names nor a feature count" in exc.value.error_detail
-        assert "registry lists 2" in exc.value.error_detail
+        assert "Feature order source: refused" in exc.value.error_detail
+        assert "Model 'forecast'" in exc.value.error_detail
+        assert "pandas DataFrame" in exc.value.error_detail
+        assert "upload the new file" in exc.value.error_detail
 
     @pytest.mark.asyncio
     async def test_known_none_category_is_not_treated_as_missing(self, monkeypatch):
@@ -919,6 +1500,32 @@ class TestInferenceFeatureContract:
     @pytest.mark.asyncio
     async def test_model_feature_order_wins_over_caller_order(self, monkeypatch):
         class CapturingModel:
+            received = []
+
+            def predict(self, input_data):
+                self.received.append(input_data.to_numpy())
+                return input_data.iloc[:, 0] * 10 + input_data.iloc[:, 1]
+
+        model = CapturingModel()
+        first = await _predict(
+            monkeypatch,
+            model,
+            {"hour": 20, "is_weekend": 1},
+            feature_names=["hour", "is_weekend"],
+        )
+        second = await _predict(
+            monkeypatch,
+            model,
+            {"is_weekend": 1, "hour": 20},
+            feature_names=["hour", "is_weekend"],
+        )
+
+        np.testing.assert_array_equal(model.received, [[[20, 1]], [[20, 1]]])
+        assert first["prediction"] == second["prediction"] == [201]
+
+    @pytest.mark.asyncio
+    async def test_raw_feature_columns_remain_the_caller_contract(self, monkeypatch):
+        class CapturingModel:
             received = None
 
             def predict(self, input_data):
@@ -929,11 +1536,12 @@ class TestInferenceFeatureContract:
         await _predict(
             monkeypatch,
             model,
-            {"is_weekend": 1, "hour": 20},
-            feature_names=["hour", "is_weekend"],
+            {"hour": 8, "lag_24": 12},
+            feature_names=["hour", "lag_24"],
+            fitted_feature_names=["hour", "lag_24_encoded"],
         )
 
-        np.testing.assert_array_equal(model.received, [[20, 1]])
+        np.testing.assert_array_equal(model.received, [[8, 12]])
 
 
 class TestEnsurePklFile:

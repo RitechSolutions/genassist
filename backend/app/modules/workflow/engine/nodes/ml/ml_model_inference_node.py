@@ -30,6 +30,7 @@ from app.services.ml_models import MLModelsService
 logger = logging.getLogger(__name__)
 
 ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
+SUPPORTED_ARTIFACT_SCHEMA_VERSION = 2
 
 _BOOL_TRUE = frozenset({"true"})
 _BOOL_FALSE = frozenset({"false"})
@@ -610,6 +611,252 @@ def _json_safe_scalar(value: Any) -> Any:
     return value
 
 
+_UNREADABLE_MODEL_ATTRIBUTE = object()
+
+
+def _read_model_attribute(model: Any, attribute: str) -> Any:
+    try:
+        return getattr(model, attribute, None)
+    except Exception:
+        return _UNREADABLE_MODEL_ATTRIBUTE
+
+
+def _model_feature_count(model: Any) -> Optional[int]:
+    count_values = [_read_model_attribute(model, "n_features_in_")]
+
+    found_invalid_count = False
+    valid_counts = []
+    for value in count_values:
+        if value is None:
+            continue
+        if (
+            value is _UNREADABLE_MODEL_ATTRIBUTE
+            or isinstance(value, (bool, np.bool_))
+            or not isinstance(value, (int, np.integer))
+            or value < 1
+        ):
+            found_invalid_count = True
+            continue
+        valid_counts.append(int(value))
+
+    if valid_counts:
+        return valid_counts[0] if len(set(valid_counts)) == 1 else -1
+
+    return -1 if found_invalid_count else None
+
+
+def _normalize_estimator_feature_names(
+    names: Any,
+    expected_feature_count: Optional[int],
+) -> Optional[List[str]]:
+    if isinstance(names, np.ndarray):
+        names = names.tolist()
+    if not isinstance(names, (list, tuple)):
+        return None
+
+    normalized_names = list(names)
+    if (
+        not normalized_names
+        or any(
+            not isinstance(name, str) or not name.strip()
+            for name in normalized_names
+        )
+        or len(set(normalized_names)) != len(normalized_names)
+        or (
+            expected_feature_count is not None
+            and len(normalized_names) != expected_feature_count
+        )
+    ):
+        return None
+    return normalized_names
+
+
+def _resolve_estimator_feature_names(
+    model: Any,
+    module_root: str,
+    expected_feature_count: Optional[int],
+) -> Optional[List[str]]:
+    if module_root == "xgboost" and type(model).__name__ == "Booster":
+        return None
+
+    resolved_orders = []
+    for attribute, required_module in (
+        ("feature_names_in_", None),
+        ("feature_names_", "catboost"),
+        ("feature_name_", "lightgbm"),
+    ):
+        if required_module is not None and module_root != required_module:
+            continue
+        normalized_names = _normalize_estimator_feature_names(
+            _read_model_attribute(model, attribute),
+            expected_feature_count,
+        )
+        if normalized_names is not None:
+            resolved_orders.append(normalized_names)
+
+    if module_root == "xgboost":
+        get_booster = _read_model_attribute(model, "get_booster")
+        if not callable(get_booster):
+            return None
+        try:
+            booster = get_booster()
+        except Exception:
+            return None
+        native_names = _normalize_estimator_feature_names(
+            _read_model_attribute(booster, "feature_names"),
+            expected_feature_count,
+        )
+        if native_names is None:
+            return None
+        resolved_orders.append(native_names)
+
+    if resolved_orders and all(
+        names == resolved_orders[0] for names in resolved_orders[1:]
+    ):
+        return resolved_orders[0]
+    return None
+
+
+def _lightgbm_feature_name(name: str) -> str:
+    return "".join("_" if character.isspace() else character for character in name)
+
+
+def _match_registered_feature_names(
+    estimator_names: List[str],
+    registered_names: Any,
+    module_root: str,
+) -> Optional[List[str]]:
+    normalized_registered_names = _normalize_estimator_feature_names(
+        registered_names,
+        len(estimator_names),
+    )
+    if normalized_registered_names is None:
+        return None
+
+    if set(normalized_registered_names) == set(estimator_names):
+        return list(estimator_names)
+
+    if module_root != "lightgbm":
+        return None
+
+    registered_by_estimator_name = {
+        _lightgbm_feature_name(name): name for name in normalized_registered_names
+    }
+    if set(registered_by_estimator_name) != set(estimator_names):
+        return None
+    return [registered_by_estimator_name[name] for name in estimator_names]
+
+
+def _describe_feature_names(names: Any) -> str:
+    if isinstance(names, np.ndarray):
+        names = names.tolist()
+    if isinstance(names, (list, tuple)):
+        return f"[{', '.join(repr(name) for name in names)}]"
+    return repr(names)
+
+
+def _resolve_feature_order(
+    metadata: Dict[str, Any],
+    model: Any,
+    model_name: str,
+    registered_names: Any = None,
+    metadata_is_authoritative: bool = False,
+) -> tuple[List[str], List[str], str]:
+    module_root = type(model).__module__.split(".", 1)[0]
+    expected_feature_count = _model_feature_count(model)
+    estimator_names = _resolve_estimator_feature_names(
+        model,
+        module_root,
+        expected_feature_count,
+    )
+
+    if metadata_is_authoritative:
+        recorded_names = _normalize_estimator_feature_names(
+            metadata.get("feature_columns"),
+            None,
+        )
+        if recorded_names is not None:
+            return recorded_names, estimator_names or [], "artifact_metadata"
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                f"Model '{model_name}' artifact does not record its required feature set. "
+                "Its feature_columns metadata must be a non-empty, unique list of names. "
+                "Retrain and upload a complete model artifact."
+            ),
+        )
+
+    if estimator_names is not None:
+        caller_names = _match_registered_feature_names(
+            estimator_names,
+            registered_names,
+            module_root,
+        )
+        if caller_names is not None:
+            return caller_names, estimator_names, "estimator"
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                f"Model '{model_name}' records estimator feature names "
+                f"{_describe_feature_names(estimator_names)}, but its registered features are "
+                f"{_describe_feature_names(registered_names)}. Update the registered feature "
+                "list to contain the same names. Retrain only if the estimator names are incorrect."
+            ),
+        )
+
+    raise AppException(
+        error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+        error_detail=(
+            "Feature order source: refused. "
+            f"Model '{model_name}' does not record a safe, unambiguous feature-name order, "
+            "so an unknown order could "
+            "swap values between columns. Registry order was not used as a substitute. "
+            "Please retrain it on data with named columns (a pandas DataFrame), ensure "
+            "those names match the registered features, and upload the new file."
+        ),
+    )
+
+
+def _resolve_artifact_metadata(model_response: Dict[str, Any]) -> Dict[str, Any]:
+    """Return metadata only when the artifact declares a supported schema."""
+    metadata = model_response.get("metadata")
+    if not isinstance(metadata, dict):
+        return {}
+
+    schema_version = metadata.get("metadata_schema_version")
+    if schema_version is None:
+        if not metadata:
+            return {}
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "This model artifact has metadata but does not declare a metadata schema version, "
+                "so it cannot be read safely. Retrain the model with the current version of GenAssist."
+            ),
+        )
+    if (
+        isinstance(schema_version, bool)
+        or not isinstance(schema_version, int)
+        or schema_version < 1
+    ):
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "This model artifact declares an invalid metadata schema version. "
+                "Retrain the model with the current version of GenAssist."
+            ),
+        )
+    if schema_version > SUPPORTED_ARTIFACT_SCHEMA_VERSION:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                f"This model uses artifact schema v{schema_version}, but this server supports "
+                f"up to v{SUPPORTED_ARTIFACT_SCHEMA_VERSION}. Upgrade the server or retrain the model."
+            ),
+        )
+    return metadata
+
+
 def _replay_feature_engineering(
     normalized_inputs: Dict[str, List[Any]],
     steps: List[Dict[str, Any]],
@@ -841,53 +1088,22 @@ class MLModelInferenceNode(BaseNode):
                     error_detail=f"Could not load model: {e}. Ensure all dependencies are installed.",
                 ) from e
 
-            # Check if model_response has a "version" key for v2.0 format vs legacy
-            metadata: Dict[str, Any] = {}
+            # Artifact identity/version may be a fingerprint and does not describe
+            # the metadata layout. Only the metadata schema is load-bearing here.
             inference_warnings: List[str] = []
-            if "version" in model_response and model_response["version"] == "v2.0":
-                model = model_response.get("model", {})
-                metadata = model_response.get("metadata", {})
-                feature_names: Sequence[str] = metadata.get("feature_columns", [])
-            else:
-                # legacy model response is the raw model object
-                model = model_response.get("model", {})
-                recorded_feature_names = getattr(model, "feature_names_in_", None)
-                if recorded_feature_names is not None and len(recorded_feature_names) > 0:
-                    feature_names = list(recorded_feature_names)
-                else:
-                    registered_feature_names = list(getattr(ml_model, "features", None) or [])
-                    recorded_feature_count = getattr(model, "n_features_in_", None)
-                    if registered_feature_names and recorded_feature_count == len(
-                        registered_feature_names
-                    ):
-                        feature_names = registered_feature_names
-                        warning = (
-                            "The model artifact does not record feature names, so inference used the "
-                            "registry feature order. Verify that the registry order matches training."
-                        )
-                        inference_warnings.append(warning)
-                        logger.warning("Model %s: %s", model_id, warning)
-                    elif recorded_feature_count is None:
-                        raise AppException(
-                            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-                            error_detail=(
-                                "This model artifact does not record its required feature set. "
-                                "This uploaded or legacy model records neither feature names nor a "
-                                f"feature count, while the registry lists {len(registered_feature_names)} "
-                                "feature(s). Upload an artifact that records its feature contract or "
-                                "replace it with a compatible model."
-                            ),
-                        )
-                    else:
-                        raise AppException(
-                            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-                            error_detail=(
-                                "This model artifact does not record its required feature set. "
-                                f"This uploaded or legacy model expects {recorded_feature_count} feature(s), "
-                                f"but the registry lists {len(registered_feature_names)}. Correct the model's "
-                                "registered feature list or upload a compatible artifact."
-                            ),
-                        )
+            model = model_response.get("model", {})
+            metadata = _resolve_artifact_metadata(model_response)
+            metadata_is_authoritative = bool(metadata)
+
+            feature_names, estimator_feature_names, feature_order_source = (
+                _resolve_feature_order(
+                    metadata,
+                    model,
+                    ml_model.name,
+                    registered_names=getattr(ml_model, "features", None),
+                    metadata_is_authoritative=metadata_is_authoritative,
+                )
+            )
 
             # Prepare input array for prediction (always batch format)
             defaults_applied: List[str] = []
@@ -1082,10 +1298,48 @@ class MLModelInferenceNode(BaseNode):
 
                 # The real training-time column order, when available, always
                 # wins over the grouped fallback above.
-                model_input_columns = metadata.get("model_input_columns")
-                model_feature_names = list(model_input_columns) if model_input_columns else legacy_order
+                recorded_model_input_columns = metadata.get("model_input_columns")
+                model_input_columns = None
+                if recorded_model_input_columns is not None:
+                    model_input_columns = _normalize_estimator_feature_names(
+                        recorded_model_input_columns,
+                        None,
+                    )
+                    if model_input_columns is None:
+                        raise AppException(
+                            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                            error_detail=(
+                                f"Model '{ml_model.name}' artifact has invalid "
+                                "model_input_columns metadata. Retrain and upload "
+                                "a complete model artifact."
+                            ),
+                        )
 
-                missing_columns = [c for c in model_feature_names if c not in column_arrays]
+                artifact_model_order = model_input_columns or legacy_order
+                if estimator_feature_names:
+                    module_root = type(model).__module__.split(".", 1)[0]
+                    matrix_column_order = _match_registered_feature_names(
+                        estimator_feature_names,
+                        artifact_model_order,
+                        module_root,
+                    )
+                    if matrix_column_order is None:
+                        raise AppException(
+                            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                            error_detail=(
+                                f"Model '{ml_model.name}' artifact feature names disagree "
+                                "with the names recorded by its fitted estimator. Retrain "
+                                "and upload a consistent model artifact."
+                            ),
+                        )
+                    model_feature_names = estimator_feature_names
+                else:
+                    model_feature_names = artifact_model_order
+                    matrix_column_order = artifact_model_order
+
+                missing_columns = [
+                    column for column in matrix_column_order if column not in column_arrays
+                ]
                 if missing_columns:
                     error = ValueError(
                         f"Could not reconstruct column(s) {missing_columns} that the model "
@@ -1094,7 +1348,9 @@ class MLModelInferenceNode(BaseNode):
                     )
                     raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(error))
 
-                input_data = np.column_stack([column_arrays[c] for c in model_feature_names])
+                input_data = np.column_stack(
+                    [column_arrays[column] for column in matrix_column_order]
+                )
 
                 # Reapply the scaler fitted at training time (if any) so scaled
                 # features match what the model was trained on. No-op for
@@ -1104,11 +1360,18 @@ class MLModelInferenceNode(BaseNode):
                 scaled_columns = metadata.get("scaled_columns") or []
                 if scaler is not None and scaled_columns:
                     scaled_indices = [
-                        model_feature_names.index(c) for c in scaled_columns if c in model_feature_names
+                        matrix_column_order.index(c)
+                        for c in scaled_columns
+                        if c in matrix_column_order
                     ]
                     if scaled_indices:
                         input_data = input_data.astype(float)
                         input_data[:, scaled_indices] = scaler.transform(input_data[:, scaled_indices])
+
+                prediction_input = pd.DataFrame(
+                    input_data,
+                    columns=model_feature_names,
+                )
             except AppException:
                 raise
             except Exception as e:
@@ -1140,13 +1403,13 @@ class MLModelInferenceNode(BaseNode):
                 probabilities: Optional[np.ndarray] = None
                 if hasattr(model, "predict_proba") and class_labels is not None:
                     try:
-                        probabilities = model.predict_proba(input_data)
+                        probabilities = model.predict_proba(prediction_input)
                         predictions = np.asarray(class_labels)[np.argmax(probabilities, axis=1)]
                     except Exception:
                         probabilities = None
-                        predictions = model.predict(input_data)
+                        predictions = model.predict(prediction_input)
                 else:
-                    predictions = model.predict(input_data)
+                    predictions = model.predict(prediction_input)
 
                 # Reconstruct real-unit predictions for a model trained on a
                 # ratio target (target / baselineColumn - see TrainModelNode's
@@ -1213,8 +1476,12 @@ class MLModelInferenceNode(BaseNode):
                     result["confidences"] = confidences
                 if inference_warnings:
                     result["warnings"] = inference_warnings
-
-                logger.info("Prediction complete: %d rows for model %s", batch_size, model_id)
+                logger.info(
+                    "Prediction complete: %d rows for model %s (feature order: %s)",
+                    batch_size,
+                    model_id,
+                    feature_order_source,
+                )
                 return result
 
             except AppException:
