@@ -27,9 +27,8 @@ pip install -r requirements-app.txt
 pip install -r requirements-rag.txt
 ```
 
-
 ```bash
-# Only for development purpooses
+# Only for development purposes
 pip install -r requirements-dev.txt
 ```
 
@@ -41,7 +40,6 @@ cp .env.example .env
 ```
 
 > **Note:** If using HuggingFace models for the first time, accept the license at https://hf.co/pyannote/segmentation
-create .env file from example and put config values
 
 ### 4. Start Infrastructure Services
 
