@@ -7,6 +7,28 @@ const ACTIVITY_LABEL_FALLBACKS: Record<ActivityKind, string> = {
   tool: 'Working on your request…',
 };
 
+export const MIN_LABEL_MS = 800;
+
+export interface LabelPace {
+  latest?: ActivityKind;
+  shown?: ActivityKind;
+  shownAt: number | null;
+}
+
+export const IDLE_PACE: LabelPace = { shownAt: null };
+
+/** Moves the label towards the latest step once the shown one has been up for MIN_LABEL_MS. */
+export function paceLabel(
+  pace: LabelPace,
+  activityKind: ActivityKind | undefined,
+  now: number,
+): LabelPace {
+  if (pace.shownAt === null) return { latest: activityKind, shownAt: now };
+  const latest = activityKind ?? pace.latest;
+  if (latest !== pace.shown && now >= pace.shownAt + MIN_LABEL_MS) return { latest, shown: latest, shownAt: now };
+  return latest === pace.latest ? pace : { ...pace, latest };
+}
+
 interface UseThinkingAnimationOptions {
   isAgentTyping: boolean;
   thinkingPhrases: string[] | undefined;
@@ -74,8 +96,27 @@ export function useThinkingAnimation({
     };
   }, [isAgentTyping, thinkingPhrases, thinkingDelayMs]);
 
-  const activityLabel = activityKind
-    ? getTranslationString(`thinking.activity.${activityKind}`, translations, ACTIVITY_LABEL_FALLBACKS[activityKind])
+  const [pace, setPace] = useState<LabelPace>(IDLE_PACE);
+  const [wakeCount, wake] = useState(0);
+
+  useEffect(() => {
+    if (!isAgentTyping) {
+      setPace(IDLE_PACE);
+      return;
+    }
+    const next = paceLabel(pace, activityKind, Date.now());
+    if (next !== pace) {
+      setPace(next);
+      return;
+    }
+    if (pace.latest === pace.shown || pace.shownAt === null) return;
+    const timeoutId = setTimeout(() => wake((n) => n + 1), pace.shownAt + MIN_LABEL_MS - Date.now());
+    return () => clearTimeout(timeoutId);
+  }, [isAgentTyping, activityKind, pace, wakeCount]);
+
+  const shownKind = isAgentTyping ? pace.shown : undefined;
+  const activityLabel = shownKind
+    ? getTranslationString(`thinking.activity.${shownKind}`, translations, ACTIVITY_LABEL_FALLBACKS[shownKind])
     : undefined;
 
   return {

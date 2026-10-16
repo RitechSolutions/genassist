@@ -6,6 +6,7 @@ import os
 from typing import TYPE_CHECKING, Any, Dict, Optional
 from urllib.parse import urlparse
 import copy
+from botocore.config import Config
 import httpx
 from injector import inject
 if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls torch/transformers
@@ -75,6 +76,11 @@ async def build_chat_model(
             cd["additional_model_request_fields"] = extra_fields
         else:
             cd.pop("reasoning_effort", None)
+        # langchain-aws 1.2.0 doesn't list Nova 2 Lite as streaming-capable and would answer streamed turns in one piece.
+        if "nova-2-lite" in (model_name or "").lower():
+            cd["disable_streaming"] = False
+        # AWS says Bedrock calls can run up to 60 minutes.
+        cd["config"] = Config(read_timeout=3600)
         # Use the Converse API instead of the legacy InvokeModel path so inference params
         # (max_tokens, temperature) are normalized into inferenceConfig across model
         # families. Nova rejects a top-level max_tokens on InvokeModel; Converse handles
@@ -113,10 +119,6 @@ async def build_chat_model(
     # langchain-openai leaves usage out of streamed replies whenever a base_url is set (vLLM, OpenRouter, Azure).
     if provider in ("openai", "azure_openai"):
         model_kwargs["stream_usage"] = True
-
-    # langchain-aws 1.2.0 doesn't list Nova 2 Lite as streaming-capable and would answer streamed turns in one piece.
-    if original_provider == "bedrock" and "nova-2-lite" in str(model_name).lower():
-        model_kwargs["disable_streaming"] = False
 
     # Native Opik LLM tracing: attach the OpikTracer callback at construction so every
     # invocation of this model (including nested agent loops) is traced. No-op unless

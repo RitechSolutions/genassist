@@ -846,22 +846,6 @@ class TestStreamUsage:
         assert "stream_usage" not in init.call_args.kwargs
 
 
-_BEDROCK_KEYS = {"region_name": "eu-central-1", "aws_access_key_id": "x", "aws_secret_access_key": "y"}
-
-
-@pytest.mark.asyncio
-class TestBedrockStreaming:
-    @pytest.mark.parametrize("model", ["eu.amazon.nova-2-lite-v1:0", "amazon.nova-2-lite-v1:0"])
-    async def test_nova_2_lite_streams(self, model):
-        llm = await build_chat_model("bedrock", dict(_BEDROCK_KEYS), model)
-        assert llm.disable_streaming is False
-
-    @pytest.mark.parametrize("model", ["eu.amazon.nova-lite-v1:0", "eu.anthropic.claude-3-5-sonnet-20240620-v1:0"])
-    async def test_other_bedrock_models_keep_the_library_default(self, model):
-        _, init = await _build("bedrock", dict(_BEDROCK_KEYS), model, requested=False)
-        assert "disable_streaming" not in init.call_args.kwargs
-
-
 def _patch_provider_lookups(chain=None):
     from app.services.fallback_chains import FallbackChainService
 

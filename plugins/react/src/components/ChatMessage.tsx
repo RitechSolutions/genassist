@@ -47,6 +47,7 @@ interface ChatMessageProps {
   /** Read-receipt status to show under this (visitor's) message. Only the latest
    *  visitor message receives one; undefined hides the indicator entirely. */
   receiptStatus?: MessageReceiptStatus;
+  isLatestQuestion?: boolean;
 }
 
 export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
@@ -61,6 +62,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   possibleQueries,
   onQuickQuery,
   isLastMessage = false,
+  isLatestQuestion = false,
   onQuickAction,
   onScheduleConfirm,
   translations: customTranslations,
@@ -378,6 +380,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   return (
     <div 
       style={messageContainerStyle}
+      data-ga-latest-question={isLatestQuestion || undefined}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => { if (!editingFeedback) setIsHovered(false); }}
     >
