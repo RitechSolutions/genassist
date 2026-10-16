@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronDown,
   ChevronLeft,
   Download,
   GitBranch,
   ListChecks,
   Loader2,
+  MoreVertical,
   Play,
   Plus,
   Search,
@@ -21,10 +24,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu";
 import { PaginationBar } from "@/components/PaginationBar";
 import { PageListSkeleton } from "@/components/skeletons";
 import { TooltipProvider } from "@/components/RadixTooltip";
 import { TooltipButton } from "@/components/tooltip-button";
+import { cn } from "@/helpers/utils";
 
 import { getWorkflowsMinimal } from "@/services/workflows";
 import { getTestRunsBatch, listTestSuites } from "@/services/testSuites";
@@ -44,7 +54,9 @@ import { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import { TestRun, TestSuite } from "@/interfaces/testSuite.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import { EvaluationWizard, EvaluationWizardData } from "./EvaluationWizard";
-import { EvaluationEditor } from "./EvaluationEditor";
+import { EntityTitle } from "./EntityTitle";
+import { useChecksPreview, withPreview } from "../hooks/useChecksPreview";
+import { WORKFLOW_SUMMARIES_QUERY_KEY } from "../hooks/useEvaluationData";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
 import { EvaluationListRow } from "./EvaluationListRow";
@@ -53,6 +65,7 @@ import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../he
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
 import { extractErrorMessage } from "@/helpers/apiError";
 import { runAvgAccuracy, runProgressText } from "../helpers/runResults";
+import { runConversationCounts } from "../helpers/runConversations";
 import {
   apiErrorDetail,
   bundleFilename,
@@ -63,6 +76,13 @@ import {
 const PAGE_SIZE = 20;
 const UNASSIGNED = "unassigned";
 const RUNNING_POLL_MS = 5000;
+
+/** Lists the evaluations page already loaded, so its sections don't load them again. */
+export interface EvaluationReferenceData {
+  workflows: WorkflowMinimal[];
+  suites: TestSuite[];
+  providers: LLMProviderMinimal[];
+}
 
 export interface WorkflowEvaluationsPanelProps {
   /** Workflow to scope the list to. Pass "unassigned" for evaluations with no workflow. */
@@ -77,6 +97,26 @@ export interface WorkflowEvaluationsPanelProps {
    * the overview, so it leaves this off.
    */
   allowCreate?: boolean;
+  /** "section": one collapsible workflow on the evaluations page, with no search box of its own. */
+  variant?: "page" | "section";
+  /** Section only: its heading, evaluation count and whether it is open. */
+  title?: string;
+  count?: number;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Section only: false until the page scrolls near it, so nothing loads before then. */
+  load?: boolean;
+  /** Section only: the page's search, matched against evaluation names, and how many matched. */
+  search?: string;
+  matches?: number | null;
+  /** Section only: the page's word on running evaluations, for a folded section that loaded nothing. */
+  running?: boolean;
+  reference?: EvaluationReferenceData;
+  /** With checks on, the editor opens through these, as in the builder's tab; without them, its page opens. */
+  onCreateEvaluation?: () => void;
+  onEditEvaluation?: (evaluationId: string) => void;
+  /** The version Run and Run all preselect, such as the one open in the builder; the active one when left out. */
+  runVersionId?: string;
 }
 
 /**
@@ -91,16 +131,37 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
   onOpenEvaluation,
   onBack,
   allowCreate = false,
+  variant = "page",
+  title,
+  count,
+  open = true,
+  onOpenChange,
+  load = true,
+  search: sectionSearch = "",
+  matches = null,
+  running = false,
+  reference,
+  onCreateEvaluation,
+  onEditEvaluation,
+  runVersionId,
 }) => {
   const isUnassigned = workflowId === UNASSIGNED;
+  const isSection = variant === "section";
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  const [workflows, setWorkflows] = useState<WorkflowMinimal[]>([]);
-  const [suites, setSuites] = useState<TestSuite[]>([]);
-  const [providers, setProviders] = useState<LLMProviderMinimal[]>([]);
+  const [ownWorkflows, setWorkflows] = useState<WorkflowMinimal[]>([]);
+  const [ownSuites, setSuites] = useState<TestSuite[]>([]);
+  const [ownProviders, setProviders] = useState<LLMProviderMinimal[]>([]);
+  const workflows = reference?.workflows ?? ownWorkflows;
+  const suites = reference?.suites ?? ownSuites;
+  const providers = reference?.providers ?? ownProviders;
 
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const [ownSearch, setSearch] = useState("");
+  // A section is searched from the page, which waits for typing to stop.
+  const search = isSection ? sectionSearch : ownSearch;
 
   const [lastRunsByEvaluationId, setLastRunsByEvaluationId] = useState<
     Record<string, TestRun | null>
@@ -147,10 +208,13 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
   const [editingEvaluation, setEditingEvaluation] = useState<TestEvaluationConfig | null>(null);
   const [deletingEvaluationId, setDeletingEvaluationId] = useState<string | null>(null);
   const [isRunAllVersionDialogOpen, setIsRunAllVersionDialogOpen] = useState(false);
+  // The evaluation whose Run is asking for the version.
+  const [versionRunEvaluation, setVersionRunEvaluation] = useState<TestEvaluationConfig | null>(null);
 
   // staleTime 0 makes react-query refetch this when the tab regains focus. The
   // interval is the page's only poll: it runs when a batch is active that this
   // session isn't already tracking, and react-query pauses it in a hidden tab.
+  // A folded section loads nothing until it is opened.
   const {
     data: pageData = null,
     dataUpdatedAt,
@@ -165,6 +229,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         pageSize: PAGE_SIZE,
         search,
       })) ?? null,
+    enabled: !isSection || (open && load),
     staleTime: 0,
     refetchInterval: (query) =>
       query.state.data?.any_running && !isWorkflowRunning ? RUNNING_POLL_MS : false,
@@ -172,6 +237,36 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
 
   const evaluations = pageData?.items ?? [];
   const total = pageData?.total ?? 0;
+  const anyRunning = pageData ? pageData.any_running : running;
+
+  // The page's summaries say how each workflow did, so they follow every change made here;
+  // a change that can move an evaluation to another workflow reloads every list.
+  const refresh = (everywhere = false) => {
+    if (everywhere) void queryClient.invalidateQueries({ queryKey: ["workflow-evaluations"] });
+    else void refetchPage();
+    void queryClient.invalidateQueries({ queryKey: WORKFLOW_SUMMARIES_QUERY_KEY });
+  };
+
+  const previews = useChecksPreview(checksEnabled, evaluations);
+
+  // With checks on, the editor is a page of its own, which makes older methods into checks first.
+  const editEvaluation = (evaluation: TestEvaluationConfig) => {
+    if (!checksEnabled) {
+      setEditingEvaluation(evaluation);
+      return;
+    }
+    if (!evaluation.id) return;
+    if (onEditEvaluation) onEditEvaluation(evaluation.id);
+    else navigate(`/tests/evaluations/${evaluation.id}/edit`);
+  };
+  const createEvaluation = () => {
+    if (!checksEnabled) {
+      setIsCreateDialogOpen(true);
+      return;
+    }
+    if (onCreateEvaluation) onCreateEvaluation();
+    else navigate(`/tests/evaluations/new?workflow=${encodeURIComponent(workflowId)}`);
+  };
   const totalUnfiltered = pageData?.total_unfiltered ?? 0;
   const currentWorkflow = workflows.find((w) => w.id === workflowId);
   const workflowName = isUnassigned
@@ -180,8 +275,12 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
   const workflowAgentId = isUnassigned ? null : currentWorkflow?.agent_id ?? null;
   // Offered on every workflow; the dialog handles one with no second version.
   const canRunAgainstVersion = Boolean(workflowAgentId);
+  // With checks on, Run and Run all ask for the version first, starting from the given one.
+  const pickVersionOnRun = checksEnabled && canRunAgainstVersion;
+  const playVersionId = checksEnabled ? runVersionId : undefined;
 
   useEffect(() => {
+    if (reference) return;
     const load = async () => {
       const [workflowData, suiteData, providersData] = await Promise.all([
         getWorkflowsMinimal(),
@@ -193,16 +292,22 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       setProviders((providersData ?? []).filter((p) => p.is_active === 1));
     };
     void load();
-  }, []);
+  }, [reference]);
 
   // Debounce the search box and reset to the first page when it changes.
   useEffect(() => {
+    if (isSection) return;
     const timer = window.setTimeout(() => {
       setSearch(searchInput);
       setPage(1);
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, isSection]);
+
+  // A section's search comes from the page, already debounced.
+  useEffect(() => {
+    if (isSection) setPage(1);
+  }, [sectionSearch, isSection]);
 
   // Load the latest run for each evaluation on the page.
   useEffect(() => {
@@ -247,20 +352,19 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     return lastRun ? runAvgAccuracy(lastRun) : null;
   };
 
-  const handleQuickRun = async (evaluation: TestEvaluationConfig, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const startRun = async (evaluation: TestEvaluationConfig, targetWorkflowId?: string) => {
     if (!evaluation.id || isEvaluationRunning(evaluation)) return;
     setRunningEvalIds((prev) => new Set(prev).add(evaluation.id));
     try {
-      const created = await runTestEvaluation(evaluation.id);
+      const created = await runTestEvaluation(evaluation.id, targetWorkflowId);
       if (created?.id) {
         setLastRunsByEvaluationId((prev) => ({ ...prev, [evaluation.id as string]: created }));
         toast.success("Evaluation started");
-        void refetchPage(); // any_running turns on, which starts the status poll
+        refresh(); // any_running turns on, which starts the status poll
       }
     } catch (error) {
       toast.error(runStartErrorMessage(error));
-      if (isRunConflict(error)) void refetchPage();
+      if (isRunConflict(error)) refresh();
     } finally {
       setRunningEvalIds((prev) => {
         const next = new Set(prev);
@@ -270,8 +374,14 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     }
   };
 
+  const handleQuickRun = (evaluation: TestEvaluationConfig, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (pickVersionOnRun) setVersionRunEvaluation(evaluation);
+    else void startRun(evaluation);
+  };
+
   const handleRunAll = async (targetWorkflowId?: string) => {
-    if (isUnassigned || isRunAllInFlight.current || isWorkflowRunning || pageData?.any_running) {
+    if (isUnassigned || isRunAllInFlight.current || isWorkflowRunning || anyRunning) {
       return;
     }
     isRunAllInFlight.current = true;
@@ -283,7 +393,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       if (isStale()) return; // don't touch another workflow's guard/progress
       isRunAllInFlight.current = false;
       setIsWorkflowRunning(false);
-      void refetchPage(); // settle any_running/health once the batch ends
+      refresh(); // settle any_running/health once the batch ends
     };
 
     try {
@@ -309,6 +419,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       // Run all starts every evaluation in the workflow, not just the filtered page.
       setWorkflowProgress({ done: 0, total: runIds.length });
       toast.success(`Started ${runIds.length} evaluation${runIds.length !== 1 ? "s" : ""}`);
+      void queryClient.invalidateQueries({ queryKey: WORKFLOW_SUMMARIES_QUERY_KEY });
 
       let consecutivePollErrors = 0;
       const maxPollErrors = 5;
@@ -353,7 +464,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       // A 409 here is about the whole workflow, so it keeps its own message.
       if (isRunConflict(error)) {
         toast.error("This workflow already has running evaluations");
-        void refetchPage(); // refetch so any_running blocks the button
+        refresh(); // refetch so any_running blocks the button
       } else {
         toast.error(runStartErrorMessage(error));
       }
@@ -384,7 +495,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       if (!created) return;
       setIsCreateDialogOpen(false);
       if (options?.run && created.id) await startRunAfterSave(created.id);
-      void refetchPage();
+      refresh();
       if (created.id) onOpenEvaluation(created.id);
     } catch (error) {
       toast.error(extractErrorMessage(error, "Failed to create evaluation"));
@@ -407,12 +518,12 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       setEditingEvaluation(null);
       toast.success("Evaluation updated");
       if (options?.run) await startRunAfterSave(editingEvaluation.id);
-      void refetchPage(); // its workflow may have changed — refetch the page
+      refresh(true); // its workflow may have changed
     } catch (error) {
       if (isRunConflict(error)) {
         toast.error("This evaluation is running. Wait for it to finish before editing.");
         setEditingEvaluation(null);
-        void refetchPage();
+        refresh();
       } else {
         toast.error(extractErrorMessage(error, "Failed to update evaluation"));
       }
@@ -441,9 +552,9 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         toast.error("You don't have permission to export evaluations.");
         return;
       }
-      downloadJsonFile(bundleSetFilename(workflowName), bundleSet);
-      const count = bundleSet.evaluations.length;
-      toast.success(`Exported ${count} evaluation${count !== 1 ? "s" : ""}`);
+      downloadJsonFile(bundleSetFilename(title ?? workflowName), bundleSet);
+      const exported = bundleSet.evaluations.length;
+      toast.success(`Exported ${exported} evaluation${exported !== 1 ? "s" : ""}`);
     } catch (error) {
       // The backend explains its export limits precisely; a generic message
       // would hide both the limit and how far over it this workflow is.
@@ -458,7 +569,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       setDeletingEvaluationId(null);
       if (isRunConflict(error)) {
         toast.error("This evaluation is running. Wait for it to finish before deleting.");
-        void refetchPage();
+        refresh();
       } else {
         toast.error("Failed to delete evaluation");
       }
@@ -468,181 +579,254 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     toast.success("Evaluation deleted");
     if (evaluations.length === 1 && page > 1) {
       setPage((current) => current - 1);
+      void queryClient.invalidateQueries({ queryKey: WORKFLOW_SUMMARIES_QUERY_KEY });
     } else {
-      void refetchPage();
+      refresh();
     }
   };
 
+  const runAllDisabled = isWorkflowRunning || Boolean(anyRunning);
+  const runAll = () => (pickVersionOnRun ? setIsRunAllVersionDialogOpen(true) : void handleRunAll());
+  const sectionCount = isSection ? count ?? totalUnfiltered : 0;
+  const runAllLabel =
+    isWorkflowRunning && workflowProgress ? (
+      <>
+        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+        {workflowProgress.done}/{workflowProgress.total}
+      </>
+    ) : isWorkflowRunning ? (
+      <>
+        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+        Starting…
+      </>
+    ) : anyRunning ? (
+      <>
+        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+        Running…
+      </>
+    ) : (
+      <>
+        <Play className="h-3.5 w-3.5 mr-1" />
+        Run all
+      </>
+    );
+
+  const listBody = isLoading ? (
+    <PageListSkeleton variant="evaluation" bordered={false} />
+  ) : hasError ? (
+    <div className="py-16 text-center">
+      <p className="text-sm text-muted-foreground mb-3">Couldn't load evaluations.</p>
+      <Button variant="outline" onClick={() => void refetchPage()}>
+        Retry
+      </Button>
+    </div>
+  ) : evaluations.length === 0 ? (
+    <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+      <div className="rounded-full bg-muted p-4">
+        <ListChecks className="h-10 w-10 text-muted-foreground" />
+      </div>
+      <p className="text-sm text-muted-foreground max-w-sm">
+        {search
+          ? "No evaluations match your search."
+          : allowCreate && !isUnassigned
+            ? "This workflow has no evaluations yet. Create your first one to get started."
+            : isSection
+              ? "This workflow has no evaluations yet."
+              : "This workflow has no evaluations yet. Create one from the Evaluations overview."}
+      </p>
+      {!search && allowCreate && !isUnassigned && (
+        <Button onClick={createEvaluation}>
+          <Plus className="h-4 w-4 mr-2" />
+          New Evaluation
+        </Button>
+      )}
+    </div>
+  ) : (
+    <div className="divide-y divide-border">
+      {evaluations.map((evaluation) => (
+        <EvaluationListRow
+          key={evaluation.id}
+          evaluation={withPreview(evaluation, previews)}
+          avgAccuracy={getAverageAccuracy(evaluation)}
+          conversations={
+            checksEnabled && evaluation.id ? runConversationCounts(lastRunsByEvaluationId[evaluation.id]) : null
+          }
+          isRunning={isEvaluationRunning(evaluation)}
+          layout={checksEnabled ? "columns" : "stacked"}
+          indent={isSection}
+          lastRunStatus={
+            evaluation.id ? lastRunsByEvaluationId[evaluation.id]?.status : undefined
+          }
+          progressText={
+            evaluation.id ? runProgressText(lastRunsByEvaluationId[evaluation.id]) : null
+          }
+          onOpen={() => evaluation.id && onOpenEvaluation(evaluation.id)}
+          onEdit={() => void editEvaluation(evaluation)}
+          onExport={() => void handleExport(evaluation)}
+          onDelete={() => setDeletingEvaluationId(evaluation.id ?? null)}
+          onRun={(e) => handleQuickRun(evaluation, e)}
+        />
+      ))}
+    </div>
+  );
+
+  const pagination = !isLoading && !hasError && total > PAGE_SIZE && (
+    <PaginationBar
+      total={total}
+      currentPage={page}
+      pageSize={PAGE_SIZE}
+      pageItemCount={evaluations.length}
+      onPageChange={setPage}
+      className={isSection ? "border-t px-4 py-3" : "mt-4"}
+    />
+  );
+
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        {onBack && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onBack}
-            className="shrink-0"
-            aria-label="Back to evaluations"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-        )}
-        <div className="flex items-center gap-2 min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight truncate animate-fade-down">
-            {workflowName}
-          </h1>
-          <Badge variant="secondary" className="shrink-0">
-            {search
-              ? `Showing ${total} of ${totalUnfiltered}`
-              : `${total} evaluation${total !== 1 ? "s" : ""}`}
-          </Badge>
-        </div>
-        <div className="ml-auto flex items-center gap-2 shrink-0">
-          <div className="relative w-56">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search evaluations..."
-              className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </div>
-          {!isUnassigned && (
-            <div className="flex items-center gap-2">
-              <TooltipProvider delayDuration={200}>
-                <TooltipButton
-                  button={
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => void handleExportAll()}
-                      aria-label="Export all evaluations"
-                    >
-                      <Download className="h-4 w-4" />
+      {isSection ? (
+        <section className="overflow-hidden rounded-lg border bg-card dark:bg-zinc-900">
+          {/* Anywhere on the header folds the section; the button's click reaches it. */}
+          <div className="flex cursor-pointer items-center gap-3 px-4 py-3" onClick={() => onOpenChange?.(!open)}>
+            <button
+              type="button"
+              aria-expanded={open}
+              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            >
+              <ChevronDown
+                className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")}
+              />
+              <EntityTitle level="group" muted={isUnassigned} className="w-auto shrink">
+                {title ?? workflowName}
+              </EntityTitle>
+              {/* Phones keep the room for the name. */}
+              <Badge variant="secondary" className="hidden shrink-0 sm:inline-flex">
+                {search
+                  ? `${pageData ? total : matches ?? 0} of ${sectionCount} match`
+                  : `${sectionCount} evaluation${sectionCount !== 1 ? "s" : ""}`}
+              </Badge>
+            </button>
+            {!isUnassigned && (
+              // Run all and the menu act on their own instead of folding the section.
+              <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
+                <Button variant="outline" size="sm" disabled={runAllDisabled} onClick={runAll}>
+                  {runAllLabel}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`More actions for ${title ?? workflowName}`}>
+                      <MoreVertical className="h-4 w-4" />
                     </Button>
-                  }
-                  tooltipContent={{ children: <p>Export all evaluations</p> }}
-                />
-              </TooltipProvider>
-              {canRunAgainstVersion && (
-                <TooltipProvider delayDuration={200}>
-                  <TooltipButton
-                    button={
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        disabled={isWorkflowRunning || Boolean(pageData?.any_running)}
-                        onClick={() => setIsRunAllVersionDialogOpen(true)}
-                        aria-label="Run all against a version"
-                      >
-                        <GitBranch className="h-4 w-4" />
-                      </Button>
-                    }
-                    tooltipContent={{ children: <p>Run all against a version</p> }}
-                  />
-                </TooltipProvider>
-              )}
-              <Button
-                variant="outline"
-                disabled={isWorkflowRunning || Boolean(pageData?.any_running)}
-                onClick={() => handleRunAll()}
-              >
-                {isWorkflowRunning && workflowProgress ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                    {workflowProgress.done}/{workflowProgress.total}
-                  </>
-                ) : isWorkflowRunning ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                    Starting…
-                  </>
-                ) : pageData?.any_running ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                    Running…
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-3.5 w-3.5 mr-1" />
-                    Run all
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
-          {allowCreate && !isUnassigned && (
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-1" />
-              New Evaluation
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
-        {isLoading ? (
-          <PageListSkeleton variant="evaluation" bordered={false} />
-        ) : hasError ? (
-          <div className="py-16 text-center">
-            <p className="text-sm text-muted-foreground mb-3">Couldn't load evaluations.</p>
-            <Button variant="outline" onClick={() => void refetchPage()}>
-              Retry
-            </Button>
-          </div>
-        ) : evaluations.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-            <div className="rounded-full bg-muted p-4">
-              <ListChecks className="h-10 w-10 text-muted-foreground" />
-            </div>
-            <p className="text-sm text-muted-foreground max-w-sm">
-              {search
-                ? "No evaluations match your search."
-                : allowCreate && !isUnassigned
-                  ? "This workflow has no evaluations yet. Create your first one to get started."
-                  : "This workflow has no evaluations yet. Create one from the Evaluations overview."}
-            </p>
-            {!search && allowCreate && !isUnassigned && (
-              <Button onClick={() => setIsCreateDialogOpen(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                New Evaluation
-              </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canRunAgainstVersion && !pickVersionOnRun && (
+                      <DropdownMenuItem disabled={runAllDisabled} onSelect={() => setIsRunAllVersionDialogOpen(true)}>
+                        <GitBranch className="h-4 w-4 mr-2" />
+                        Run all against a version
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem onSelect={() => void handleExportAll()}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Export all
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             )}
           </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {evaluations.map((evaluation) => (
-              <EvaluationListRow
-                key={evaluation.id}
-                evaluation={evaluation}
-                avgAccuracy={getAverageAccuracy(evaluation)}
-                isRunning={isEvaluationRunning(evaluation)}
-                lastRunStatus={
-                  evaluation.id ? lastRunsByEvaluationId[evaluation.id]?.status : undefined
-                }
-                progressText={
-                  evaluation.id ? runProgressText(lastRunsByEvaluationId[evaluation.id]) : null
-                }
-                onOpen={() => evaluation.id && onOpenEvaluation(evaluation.id)}
-                onEdit={() => setEditingEvaluation(evaluation)}
-                onExport={() => void handleExport(evaluation)}
-                onDelete={() => setDeletingEvaluationId(evaluation.id ?? null)}
-                onRun={(e) => handleQuickRun(evaluation, e)}
-              />
-            ))}
+          {open && (
+            <div className="border-t">
+              {listBody}
+              {pagination}
+            </div>
+          )}
+        </section>
+      ) : (
+        <>
+          <div className="mb-6 flex flex-wrap items-center gap-2">
+            {onBack && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onBack}
+                className="shrink-0"
+                aria-label="Back to evaluations"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+            )}
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-2xl font-bold tracking-tight truncate animate-fade-down">
+                {workflowName}
+              </h1>
+              <Badge variant="secondary" className="shrink-0">
+                {search
+                  ? `Showing ${total} of ${totalUnfiltered}`
+                  : `${total} evaluation${total !== 1 ? "s" : ""}`}
+              </Badge>
+            </div>
+            <div className="ml-auto flex items-center gap-2 shrink-0">
+              <div className="relative w-56">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  placeholder="Search evaluations..."
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              {!isUnassigned && (
+                <div className="flex items-center gap-2">
+                  <TooltipProvider delayDuration={200}>
+                    <TooltipButton
+                      button={
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => void handleExportAll()}
+                          aria-label="Export all evaluations"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      }
+                      tooltipContent={{ children: <p>Export all evaluations</p> }}
+                    />
+                  </TooltipProvider>
+                  {canRunAgainstVersion && !pickVersionOnRun && (
+                    <TooltipProvider delayDuration={200}>
+                      <TooltipButton
+                        button={
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            disabled={runAllDisabled}
+                            onClick={() => setIsRunAllVersionDialogOpen(true)}
+                            aria-label="Run all against a version"
+                          >
+                            <GitBranch className="h-4 w-4" />
+                          </Button>
+                        }
+                        tooltipContent={{ children: <p>Run all against a version</p> }}
+                      />
+                    </TooltipProvider>
+                  )}
+                  <Button variant="outline" disabled={runAllDisabled} onClick={runAll}>
+                    {runAllLabel}
+                  </Button>
+                </div>
+              )}
+              {allowCreate && !isUnassigned && (
+                <Button onClick={createEvaluation}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  New Evaluation
+                </Button>
+              )}
+            </div>
           </div>
-        )}
-      </div>
 
-      {!isLoading && !hasError && total > PAGE_SIZE && (
-        <PaginationBar
-          total={total}
-          currentPage={page}
-          pageSize={PAGE_SIZE}
-          pageItemCount={evaluations.length}
-          onPageChange={setPage}
-          className="mt-4"
-        />
+          <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">{listBody}</div>
+
+          {pagination}
+        </>
       )}
 
       {canRunAgainstVersion && workflowAgentId && (
@@ -651,8 +835,17 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
           onOpenChange={setIsRunAllVersionDialogOpen}
           agentId={workflowAgentId}
           currentWorkflowId={workflowId}
-          workflowName={workflowName}
+          openWorkflowId={playVersionId}
+          workflowName={title ?? workflowName}
           confirmLabel="Run all"
+          asRun={
+            pickVersionOnRun
+              ? {
+                  title: "Run all evaluations",
+                  description: `Runs every evaluation of ${title ?? workflowName} on the version you pick.`,
+                }
+              : undefined
+          }
           isStarting={isWorkflowRunning}
           onRun={(targetWorkflowId) => {
             setIsRunAllVersionDialogOpen(false);
@@ -661,16 +854,30 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         />
       )}
 
-      {allowCreate && !isUnassigned && checksEnabled && (
-        <EvaluationEditor
-          isOpen={isCreateDialogOpen}
-          onOpenChange={setIsCreateDialogOpen}
-          onSubmit={handleCreateSubmit}
-          suites={suites}
-          workflows={workflows}
-          providers={providers}
-          mode="create"
-          lockedWorkflowId={workflowId}
+      {checksEnabled && workflowAgentId && versionRunEvaluation && (
+        <RunAgainstVersionDialog
+          isOpen
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setVersionRunEvaluation(null);
+          }}
+          agentId={workflowAgentId}
+          currentWorkflowId={versionRunEvaluation.workflow_id ?? workflowId}
+          openWorkflowId={playVersionId}
+          workflowName={title ?? workflowName}
+          asRun={{
+            title: "Run evaluation",
+            description: (
+              <>
+                Runs <span className="font-medium text-foreground">{versionRunEvaluation.name}</span> on the version
+                you pick.
+              </>
+            ),
+          }}
+          onRun={(targetWorkflowId) => {
+            const evaluation = versionRunEvaluation;
+            setVersionRunEvaluation(null);
+            void startRun(evaluation, targetWorkflowId);
+          }}
         />
       )}
 
@@ -687,26 +894,11 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         />
       )}
 
-      {editingEvaluation && checksEnabled && (
-        <EvaluationEditor
-          isOpen={!!editingEvaluation}
-          onOpenChange={(open) => {
-            if (!open) setEditingEvaluation(null);
-          }}
-          onSubmit={handleEditSubmit}
-          suites={suites}
-          workflows={workflows}
-          providers={providers}
-          mode="edit"
-          initialData={getEditInitialData(editingEvaluation, providers)}
-        />
-      )}
-
       {editingEvaluation && !checksEnabled && (
         <EvaluationWizard
           isOpen={!!editingEvaluation}
-          onOpenChange={(open) => {
-            if (!open) setEditingEvaluation(null);
+          onOpenChange={(isOpen) => {
+            if (!isOpen) setEditingEvaluation(null);
           }}
           onSubmit={handleEditSubmit}
           suites={suites}
@@ -719,8 +911,8 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
 
       <Dialog
         open={!!deletingEvaluationId}
-        onOpenChange={(open) => {
-          if (!open) setDeletingEvaluationId(null);
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setDeletingEvaluationId(null);
         }}
       >
         <DialogContent className="max-w-sm">

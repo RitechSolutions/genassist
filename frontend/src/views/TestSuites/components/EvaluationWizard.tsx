@@ -28,6 +28,7 @@ import type {
   ActionRuleDraft,
   JudgeRuleDraft,
   RouteRuleDraft,
+  OlderMethods,
   ScenarioCheck,
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
@@ -89,6 +90,8 @@ export interface EvaluationWizardData {
   /** Edited in the evaluation editor; the wizard keeps them as they are. */
   checks: ScenarioCheck[];
   checksProviderId: string;
+  /** What the checks were made from, kept as it is. */
+  checksOlderMethods?: OlderMethods | null;
 }
 
 interface EvaluationWizardProps {
@@ -212,6 +215,7 @@ export const EvaluationWizard: React.FC<EvaluationWizardProps> = ({
         ...methods,
         checks: initialData?.checks ?? [],
         checksProviderId: initialData?.checksProviderId ?? "",
+        checksOlderMethods: initialData?.checksOlderMethods ?? null,
       });
       // Reset form on successful create
       if (mode === "create") {
