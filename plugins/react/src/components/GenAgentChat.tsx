@@ -1497,7 +1497,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 audioHeaders={message.type === 'audio' && useAudio ? audioHeaders : undefined}
                 autoPlayAudioMessageId={autoPlayAudioMessageId}
                 receiptStatus={index === lastCustomerIndex ? lastCustomerReceipt : undefined}
-                isLatestQuestion={index === lastCustomerIndex}
+                isLatestQuestion={message === messages[lastCustomerIndex]}
               />
             </React.Fragment>
           );

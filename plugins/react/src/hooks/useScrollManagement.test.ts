@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChatMessage } from "../types";
-import { latestQuestionKey, pinTop, spacerHeight } from "./useScrollManagement";
+import { isAtBottom, latestQuestionKey, pinTop, spacerHeight } from "./useScrollManagement";
 
 const VIEWPORT = 700;
 
@@ -27,6 +27,16 @@ describe("spacerHeight", () => {
   it("shrinks as the reply grows and is gone once the reply fills the screen", () => {
     expect(spacerHeight(1976, VIEWPORT, 2500)).toBe(176);
     expect(spacerHeight(1976, VIEWPORT, 2900)).toBe(0);
+  });
+});
+
+describe("isAtBottom", () => {
+  it("counts a visitor beside a short reply's spacer as at the bottom", () => {
+    expect(isAtBottom({ scrollHeight: 2676, scrollTop: 1976, clientHeight: VIEWPORT })).toBe(true);
+  });
+
+  it("does not count a reader left at the top of a reply that outgrew the screen", () => {
+    expect(isAtBottom({ scrollHeight: 2900, scrollTop: 1976, clientHeight: VIEWPORT })).toBe(false);
   });
 });
 
