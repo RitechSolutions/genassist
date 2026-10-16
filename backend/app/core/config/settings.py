@@ -212,6 +212,9 @@ class ProjectSettings(BaseSettings):
     # Hard ceiling on how long a single interactive (FastAPI) query may run.
     # Prevents runaway searches from pinning DB CPU indefinitely. 0 disables.
     DB_STATEMENT_TIMEOUT: int = 1800  # seconds (30 minutes)
+    # Lock wait cap for startup migrations (0 waits forever) and the retries after a lock timeout
+    MIGRATION_LOCK_TIMEOUT_SECONDS: int = Field(default=5, ge=0, le=2147483)  # Postgres maximum
+    MIGRATION_LOCK_RETRIES: int = Field(default=5, ge=0)
 
     # === Multi-Tenancy ===
     MULTI_TENANT_ENABLED: bool = False
