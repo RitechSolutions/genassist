@@ -96,11 +96,15 @@ const truncateAtWord = (text: string): string => {
   return `${cut.trimEnd()}…`;
 };
 
-/** A conversation's name: its opening user message, or its short id without one. */
-export const conversationLabel = (group: ConversationGroup): string => {
-  const message = openingMessage(group);
-  return message ? truncateAtWord(message) : `Conversation #${shortIdOf(group)}`;
+/** A name from an opening message, cut at a word, or the fallback without one. */
+export const labelFromMessage = (message: string, fallback: string): string => {
+  const text = message.replace(/\s+/g, " ").trim();
+  return text ? truncateAtWord(text) : fallback;
 };
+
+/** A conversation's name: its opening user message, or its short id without one. */
+export const conversationLabel = (group: ConversationGroup): string =>
+  labelFromMessage(openingMessage(group), `Conversation #${shortIdOf(group)}`);
 
 /** One label per conversation, keyed by group key. Clashing labels get the short id. */
 export const conversationLabels = (groups: ConversationGroup[]): Map<string, string> => {

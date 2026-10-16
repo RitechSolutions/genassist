@@ -125,6 +125,10 @@ export const notScoredLabel = (result: Pick<TestResult, "status" | "metrics">): 
   return "Not scored";
 };
 
+/** A failed run has a page worth opening only when some turns finished before it stopped. */
+export const runHasResults = (run: Pick<TestRun, "status" | "progress">): boolean =>
+  run.status !== "failed" || (run.progress?.turns_done ?? 0) > 0;
+
 // "12 of 40 turns done" while a run is in progress; null before it reports any.
 export const runProgressText = (run: Pick<TestRun, "progress"> | null | undefined): string | null => {
   const progress = run?.progress;
@@ -189,11 +193,19 @@ export const checksConversations = (run: TestRun | null | undefined): ChecksConv
   return conversations && conversations.total ? conversations : null;
 };
 
+/** Why none of a run's checks could be graded, or null. */
+export const checksGradingError = (run: TestRun | null | undefined): string | null => {
+  const checks = (run?.summary_metrics as Record<string, unknown> | undefined)?.checks as { error?: unknown } | undefined;
+  return typeof checks?.error === "string" && checks.error
+    ? "The checks could not be graded in this run, so its conversations were not evaluated. Run it again."
+    : null;
+};
+
 /** True when a run also graded turns with an older method, beside its checks. */
 export const runGradesTurns = (run: Pick<TestRun, "techniques"> | null | undefined): boolean =>
   (run?.techniques ?? []).some((technique) => technique !== "checks");
 
-/** "3 of 4 conversations passed · 1 failed" for a run with checks, or null. */
+/** "3 of 4 conversations passed · 1 failed" for a run with checks, or null. Read where the switch is off. */
 export const checksVerdictText = (run: TestRun | null | undefined): string | null => {
   const conversations = checksConversations(run);
   if (!conversations) return null;
@@ -285,3 +297,29 @@ export const runFailureText = (run: TestRun): string => {
   if (!reason) return "Run failed.";
   return /^run\b/i.test(reason) ? reason : `Run failed: ${reason}`;
 };
+
+/** "Run 3" once numbered in its evaluation, else "Run #a1b2". */
+export const runName = (run: Pick<TestRun, "id" | "number">): string =>
+  run.number ? `Run ${run.number}` : `Run #${(run.id ?? "").slice(-4)}`;
+
+/** The runs numbered in their evaluation: its run ids are kept newest first and never removed. */
+export const numberRuns = (runs: TestRun[], runIds: string[]): TestRun[] => {
+  const numbers = new Map(runIds.map((id, index) => [id, runIds.length - index]));
+  return runs.map((run) => (run.id && numbers.has(run.id) ? { ...run, number: numbers.get(run.id) } : run));
+};
+
+export const runDate = (run: Pick<TestRun, "created_at">): string => new Date(run.created_at ?? "").toLocaleString();
+
+/** How long a finished run took, from when it was queued to its last update. */
+export const runDuration = (run: Pick<TestRun, "status" | "created_at" | "updated_at">): string | null => {
+  if (isRunInProgress(run) || !run.created_at || !run.updated_at) return null;
+  const seconds = Math.round((new Date(run.updated_at).getTime() - new Date(run.created_at).getTime()) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+};
+
+/** "Run 3 · workflow v4.1 · 9 Oct, 14:02", for choosing a run; the version is the workflow's. */
+export const runOptionLabel = (run: TestRun): string =>
+  [runName(run), run.workflow_version ? `workflow v${run.workflow_version}` : null, runDate(run)]
+    .filter(Boolean)
+    .join(" · ");

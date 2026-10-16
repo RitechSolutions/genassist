@@ -395,7 +395,7 @@ export const buildTechniqueConfigs = (
   }
 
   if (data.metrics.includes(CHECKS_TECHNIQUE)) {
-    configs.checks = serializeChecks(data.checks ?? [], data.checksProviderId);
+    configs.checks = serializeChecks(data.checks ?? [], data.checksProviderId, data.checksOlderMethods);
   }
 
   if (data.metrics.includes("llm_judge")) {
@@ -476,5 +476,6 @@ export const getEditInitialData = (
     judgeProviderId: (judgeCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
     checks: savedChecks.checks,
     checksProviderId: savedChecks.providerId || providers[0]?.id || "",
+    checksOlderMethods: savedChecks.olderMethods,
   };
 };

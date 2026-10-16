@@ -34,6 +34,7 @@ import {
   NOT_EVALUATED,
   caseStatusFor,
   isTurnScope,
+  runName,
   techniqueAccuracy,
   techniqueSummaries,
 } from "../helpers/runResults";
@@ -70,7 +71,7 @@ const runLabel = (run: TestRun): string => {
   const date = run.created_at
     ? ` · ${new Date(run.created_at).toLocaleString()}`
     : "";
-  return `Run #${run.id?.slice(-4)}${version}${date}`;
+  return `${runName(run)}${version}${date}`;
 };
 
 const classifyChange = (

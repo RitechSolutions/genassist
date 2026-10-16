@@ -1,5 +1,5 @@
 from uuid import UUID
-from typing import List, Optional
+from typing import Dict, Iterable, List, Optional
 from injector import inject
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -25,6 +25,15 @@ class FeatureFlagRepository(DbRepository[FeatureFlagModel]):
     async def get_all(self) -> List[FeatureFlagModel]:
         result = await self.db.execute(select(FeatureFlagModel))
         return result.scalars().all()
+
+    async def get_active_values(self, keys: Iterable[str]) -> Dict[str, str]:
+        """The value of each of these flags that is active."""
+        result = await self.db.execute(
+            select(FeatureFlagModel.key, FeatureFlagModel.val).where(
+                FeatureFlagModel.key.in_(list(keys)), FeatureFlagModel.is_active == 1
+            )
+        )
+        return dict(result.all())
 
     async def update(
         self, id: UUID, dto: FeatureFlagUpdate

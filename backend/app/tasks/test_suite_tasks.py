@@ -175,6 +175,8 @@ def execute_test_suite_run_task(
     # rather than erroring — see the ml-worker asyncio-loop crash history).
     # Context-local (propagates into the run_async_in_celery event loop) so it can't
     # race with other tasks in the same worker.
+    from app.services.test_suite import RUN_TIME_LIMIT_SECONDS
+
     with background_task_context():
         try:
             async def _run():
@@ -194,7 +196,7 @@ def execute_test_suite_run_task(
 
             run_async_in_celery(
                 _run(),
-                timeout=2 * 60 * 60,
+                timeout=RUN_TIME_LIMIT_SECONDS,
                 task_name=f"execute_test_suite_run_task[{run_id}]",
             )
         except Exception as exc:

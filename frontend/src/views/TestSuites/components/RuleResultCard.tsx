@@ -1,13 +1,10 @@
 import React from "react";
 import { CheckCircle2, XCircle, MinusCircle } from "lucide-react";
 import { Badge } from "@/components/badge";
-import type {
-  RuleTechnique,
-  TestToolRuleResult,
-  ToolRuleResultDetails,
-} from "@/interfaces/testEvaluation.interface";
+import type { TestToolRuleResult, ToolRuleResultDetails } from "@/interfaces/testEvaluation.interface";
 import { cn } from "@/helpers/utils";
-import { times, toolActualText, toolExpectedText } from "../helpers/toolRuleText";
+import { times } from "../helpers/toolRuleText";
+import { ruleActualText, ruleExpectedText } from "../helpers/runConversations";
 import { ruleTargetLabel, type ConversationIndex } from "../helpers/datasetConversations";
 
 const STATUS_META = {
@@ -34,20 +31,6 @@ const targetLine = (details: ToolRuleResultDetails): string | null => {
   return target.label;
 };
 
-// Route and action results already carry a plain expected/observed pair; tool
-// results are described from their observed/missing/forbidden tool lists.
-const expectedText = (technique: RuleTechnique, details: ToolRuleResultDetails): string =>
-  technique === "tool_used" ? toolExpectedText(details) : details.expected ?? "";
-
-const actualText = (
-  technique: RuleTechnique,
-  details: ToolRuleResultDetails,
-  status: string,
-): string => {
-  if (technique === "tool_used") return toolActualText(details, status);
-  return details.comment ?? details.observed ?? "";
-};
-
 interface Props {
   result: TestToolRuleResult;
   /** The dataset's names for turns and conversations, preferred over the stored label. */
@@ -56,7 +39,6 @@ interface Props {
 
 export const RuleResultCard: React.FC<Props> = ({ result, labels }) => {
   const details = (result.details ?? {}) as ToolRuleResultDetails;
-  const technique = result.technique ?? "tool_used";
   const meta = STATUS_META[result.status] ?? STATUS_META.not_evaluated;
   const Icon = meta.icon;
   const target = (labels && ruleTargetLabel(result, labels)) ?? targetLine(details);
@@ -84,12 +66,12 @@ export const RuleResultCard: React.FC<Props> = ({ result, labels }) => {
         <div className="grid gap-2 sm:grid-cols-2">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Expected</div>
-            <p className="text-xs text-foreground">{expectedText(technique, details)}</p>
+            <p className="text-xs text-foreground">{ruleExpectedText(result)}</p>
           </div>
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Actual</div>
             <p className={cn("text-xs", result.status === "passed" ? "text-foreground" : "text-destructive")}>
-              {actualText(technique, details, result.status)}
+              {ruleActualText(result)}
             </p>
           </div>
         </div>

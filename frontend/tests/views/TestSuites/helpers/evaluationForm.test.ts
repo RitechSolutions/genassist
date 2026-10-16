@@ -502,3 +502,41 @@ describe("newEvaluationDefaults", () => {
     expect(getEditInitialData(evaluation, []).useMemory).toBe(false);
   });
 });
+
+describe("checks and what they were made from", () => {
+  const evaluation = {
+    id: "e2",
+    name: "converted",
+    suite_id: "s1",
+    techniques: ["checks"],
+    technique_configs: {
+      checks: {
+        checks: [{ id: "c1", expect: "should", kind: "reply_mentions", level: "every_conversation", when: "anywhere", text: "hi" }],
+        llm_provider_id: "p1",
+        older_methods: { techniques: ["contains"], left_out: ["Contains: an empty phrase."] },
+      },
+    },
+    run_ids: [],
+    created_at: "",
+    updated_at: "",
+  } as unknown as TestEvaluationConfig;
+
+  it("loads the older methods' record with the checks", () => {
+    const loaded = getEditInitialData(evaluation, []);
+    expect(loaded.checks?.map((check) => check.id)).toEqual(["c1"]);
+    expect(loaded.checksProviderId).toBe("p1");
+    expect(loaded.checksOlderMethods).toEqual({ techniques: ["contains"], left_out: ["Contains: an empty phrase."] });
+  });
+
+  it("saves the record back, marked as seen by the editor", () => {
+    const loaded = getEditInitialData(evaluation, []);
+    const configs = buildTechniqueConfigs({
+      ...loaded,
+      metrics: ["checks"],
+      checksOlderMethods: { ...loaded.checksOlderMethods!, reviewed: true },
+    } as EvaluationWizardData);
+    expect(configs.checks).toMatchObject({
+      older_methods: { techniques: ["contains"], left_out: ["Contains: an empty phrase."], reviewed: true },
+    });
+  });
+});

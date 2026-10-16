@@ -23,6 +23,8 @@ from app.schemas.eval_bundle import (
     EvaluationSetImportResult,
 )
 from app.schemas.test_suite import (
+    ChecksPreviewRequest,
+    ChecksPreviewResult,
     EvaluationRunRequest,
     EvaluationToolCatalog,
     PaginatedEvaluations,
@@ -89,6 +91,19 @@ async def create_evaluation(
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     return await service.create_evaluation(data)
+
+
+@router.post(
+    "/evaluations/checks-preview",
+    response_model=ChecksPreviewResult,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def preview_evaluation_checks(
+    data: ChecksPreviewRequest,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """These evaluations' older methods read as checks, without saving them."""
+    return await service.preview_checks(data)
 
 
 @router.post(
@@ -359,10 +374,14 @@ async def run_workflow_evaluations(
     dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
 )
 async def list_workflow_evaluation_summaries(
+    search: Optional[str] = Query(None, max_length=200),
     service: TestSuiteService = Injected(TestSuiteService),
 ):
-    """One row per workflow (and the unassigned bucket): count, health, running."""
-    return await service.get_workflow_evaluation_summaries()
+    """One row per workflow (and the unassigned bucket): count, health, running.
+
+    With a search, only workflows with evaluations whose name or description match.
+    """
+    return await service.get_workflow_evaluation_summaries(search)
 
 
 @router.get(

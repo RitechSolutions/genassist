@@ -669,7 +669,7 @@ export const ImportEvaluationDialog: React.FC<ImportEvaluationDialogProps> = ({
           )}
         </div>
 
-        <DialogFooter className="mt-2 gap-2 border-t pt-4">
+        <DialogFooter className="mt-6 gap-2">
           {step !== "file" && step !== "results" && (
             <Button
               variant="ghost"
