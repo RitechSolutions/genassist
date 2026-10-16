@@ -64,6 +64,7 @@ from app.schemas.conversation_transcript import (
 from app.schemas.common import PaginatedResponse
 from app.schemas.filter import ConversationFilter, MessageIssueFilter, MessageIssueSummaryFilter
 from app.schemas.message_issue import (
+    IssueHistoryEvent,
     IssueNoteCreate,
     IssueNoteRead,
     IssueStatusSummary,
@@ -1115,6 +1116,20 @@ async def add_message_issue_note(
     ),
 ):
     return await transcript_message_service.add_issue_note(message_feedback_id, payload)
+
+
+@router.get(
+    "/issues/{message_feedback_id}/history",
+    response_model=list[IssueHistoryEvent],
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def list_message_issue_history(
+    message_feedback_id: UUID,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    return await transcript_message_service.list_issue_history(message_feedback_id)
 
 
 @router.delete(

@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { LoginForm } from "../components/LoginForm";
 import { useAuth } from "../hooks/useAuth";
+import { postLoginPath } from "../helpers/postLoginPath";
 import { ForcePasswordUpdateDialog } from "../components/ForcePasswordUpdateDialog";
 import { fetchUserPermissions } from "@/services/auth";
 import { TermsAndPolicyNotice } from "@/components/TermsAndPolicyNotice";
@@ -173,9 +174,7 @@ const LoginPage = () => {
         }
 
         toast.success("Logged in successfully.");
-        const from = location.state?.from?.pathname || "/dashboard";
-        // Never redirect back to onboarding — go to dashboard instead
-        window.location.href = from === "/onboarding" ? "/dashboard" : from;
+        window.location.href = postLoginPath(location.state?.from);
       } else {
         toast.error("Failed to log in.");
       }
