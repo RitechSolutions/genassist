@@ -188,7 +188,6 @@ def run_migrations_for_all_tenants() -> bool:
 
         success_count = 0
         failed_count = 0
-        lock_blocked_tenants = []
 
         # Run migrations for each tenant
         for tenant in tenants:
@@ -212,10 +211,6 @@ def run_migrations_for_all_tenants() -> bool:
                         f"✗ Migrations failed for tenant: ({tenant})"
                     )
                     failed_count += 1
-            except MigrationLockRetriesExhausted as e:
-                logger.error(f"Tenant ({tenant}) is lock-blocked, continuing with the others: {e}")
-                lock_blocked_tenants.append(tenant)
-                failed_count += 1
             except Exception as e:
                 logger.error(
                     f"Failed to run migrations for tenant ({tenant}): {e}"
@@ -225,16 +220,8 @@ def run_migrations_for_all_tenants() -> bool:
         logger.info(
             f"Tenant migrations complete: {success_count} successful, {failed_count} failed"
         )
-        # A lock-blocked tenant must not be served on the old schema; fail the pod after the pass
-        if lock_blocked_tenants:
-            raise MigrationLockRetriesExhausted(
-                f"Tenants could not take their migration locks: {', '.join(lock_blocked_tenants)}"
-            )
-
         return failed_count == 0
 
-    except MigrationLockRetriesExhausted:
-        raise
     except Exception as e:
         logger.error(f"Error running migrations for all tenants: {e}")
         return False

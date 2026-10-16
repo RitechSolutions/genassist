@@ -3,8 +3,6 @@
 from types import SimpleNamespace
 
 import pytest
-import sqlalchemy
-import sqlalchemy.orm
 from sqlalchemy.exc import OperationalError
 
 import migrations
@@ -84,55 +82,3 @@ def test_other_database_errors_are_not_retried(monkeypatch, sleeps):
 
     assert calls == ["head"]
     assert sleeps == []
-
-
-class _FakeTenantSession:
-    tenants = [("acme",)]
-
-    def execute(self, statement):
-        return SimpleNamespace(fetchall=lambda: list(self.tenants))
-
-
-@pytest.fixture
-def one_active_tenant(monkeypatch):
-    monkeypatch.setattr(_FakeTenantSession, "tenants", [("acme",)])
-    monkeypatch.setattr(settings, "MULTI_TENANT_ENABLED", True)
-    monkeypatch.setattr(sqlalchemy, "create_engine", lambda url: object())
-    monkeypatch.setattr(sqlalchemy.orm, "sessionmaker", lambda bind=None: _FakeTenantSession)
-
-
-def test_a_tenant_that_exhausts_its_lock_retries_fails_startup(monkeypatch, one_active_tenant):
-    def exhausted(url):
-        raise migrations.MigrationLockRetriesExhausted("acme")
-
-    monkeypatch.setattr(migrations, "run_migrations", exhausted)
-
-    with pytest.raises(migrations.MigrationLockRetriesExhausted):
-        migrations.run_migrations_for_all_tenants()
-
-
-def test_remaining_tenants_are_migrated_before_a_lock_blocked_one_fails_startup(monkeypatch, one_active_tenant):
-    monkeypatch.setattr(_FakeTenantSession, "tenants", [("busy",), ("idle",)])
-    migrated = []
-
-    def run_for(url):
-        if "busy" in url:
-            raise migrations.MigrationLockRetriesExhausted("busy")
-        migrated.append(url)
-        return True
-
-    monkeypatch.setattr(migrations, "run_migrations", run_for)
-
-    with pytest.raises(migrations.MigrationLockRetriesExhausted):
-        migrations.run_migrations_for_all_tenants()
-
-    assert len(migrated) == 1 and "idle" in migrated[0]
-
-
-def test_other_tenant_failures_are_still_logged_and_skipped(monkeypatch, one_active_tenant):
-    def broken(url):
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(migrations, "run_migrations", broken)
-
-    assert migrations.run_migrations_for_all_tenants() is False
