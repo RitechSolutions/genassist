@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.core import turn_stream
 from app.core.turn_stream import TurnStream, current_stream
+from app.modules.workflow.engine import base_node
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
@@ -78,7 +78,7 @@ def test_deactivated_node_pass_through_sends_nothing(stream):
 def test_every_labelled_node_type_is_a_registered_node_type():
     WorkflowEngine._initialize_node_registry()
 
-    assert set(turn_stream._NODE_ACTIVITY_KINDS) - set(WorkflowEngine._node_registry) == set()
+    assert set(base_node._NODE_ACTIVITY_KINDS) - set(WorkflowEngine._node_registry) == set()
 
 
 class _ReplyNode(PIIAnonymizerMixin, _Node):

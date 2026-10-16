@@ -29,7 +29,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import send_socket_error
 from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
-from app.core.turn_stream import stream_turn
+from app.core.turn_stream_response import stream_turn
 from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode

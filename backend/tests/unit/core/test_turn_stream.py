@@ -71,22 +71,20 @@ def test_reply_text_streams_while_envelopes_stay_muted():
         'event: delta\ndata: {"call_id": "reply", "text": "Hello"}\n\n',
         'event: delta\ndata: {"call_id": "reply", "text": " there"}\n\n',
     ]
-    assert stream.shown_text() == "Hello there"
 
 
-def test_a_tool_start_clears_the_shown_reply_as_the_widget_does():
+def test_text_a_tool_start_cleared_does_not_hold_off_later_activity():
     stream = TurnStream("c1")
-    token = current_stream.set(stream)
-    try:
-        stream.delta("n1", "scratch", "Let me check")
-        turn_stream.emit_activity("tool", "start")
-        shown_during_tool = stream.shown_text()
-        stream.delta("n1", "answer", "Done")
-    finally:
-        current_stream.reset(token)
+    stream.delta("n1", "scratch", "Let me check")
+    stream.activity("tool", "start")
+    stream.end_reply("n1")
+    stream.activity("knowledge", "start")
 
-    assert shown_during_tool is None
-    assert stream.shown_text() == "Done"
+    assert [stream.queue.get_nowait() for _ in range(stream.queue.qsize())] == [
+        'event: delta\ndata: {"call_id": "scratch", "text": "Let me check"}\n\n',
+        'event: activity\ndata: {"kind": "tool", "phase": "start"}\n\n',
+        'event: activity\ndata: {"kind": "knowledge", "phase": "start"}\n\n',
+    ]
 
 
 def test_a_final_reply_holds_off_activity_starts_until_new_text_streams():
@@ -127,4 +125,3 @@ def test_a_second_node_cannot_interleave_with_the_reply_in_progress():
         'event: delta\ndata: {"call_id": "call-a", "text": " there"}\n\n',
         'event: delta\ndata: {"call_id": "call-c", "text": "Next"}\n\n',
     ]
-    assert stream.shown_text() == "Next"

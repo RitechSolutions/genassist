@@ -3,6 +3,8 @@ import { ChatMessage } from '../types';
 
 const PIN_PEEK = 24;
 
+export const LATEST_QUESTION_ATTR = 'data-ga-latest-question';
+
 /** Scroll offset that pins the visitor's question near the top, or its bottom at mid-screen when it is tall. */
 export function pinTop(questionTop: number, questionBottom: number, viewportHeight: number): number {
   return Math.max(0, questionTop - PIN_PEEK, questionBottom - viewportHeight / 2);
@@ -16,17 +18,14 @@ export function isAtBottom({ scrollHeight, scrollTop, clientHeight }: Pick<HTMLE
   return scrollHeight - scrollTop - clientHeight <= 100;
 }
 
-/** Identity of the visitor's latest message, stable when the server later adds its id. */
-export function latestQuestionKey(messages: ChatMessage[]): string | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.speaker === 'customer') return m.client_id ?? m.message_id ?? String(m.create_time);
-  }
-  return null;
+/** Identity of a visitor's message, stable when the server later adds its id. */
+export function questionKey(question: ChatMessage | undefined): string | null {
+  return question ? question.client_id ?? question.message_id ?? String(question.create_time) : null;
 }
 
 interface UseScrollManagementOptions {
   messages: ChatMessage[];
+  latestQuestion: ChatMessage | undefined;
   isAgentTyping: boolean;
   conversationId: string | null | undefined;
   isFloatingOpen: boolean;
@@ -35,6 +34,7 @@ interface UseScrollManagementOptions {
 
 export function useScrollManagement({
   messages,
+  latestQuestion,
   isAgentTyping,
   conversationId,
   isFloatingOpen,
@@ -107,7 +107,7 @@ export function useScrollManagement({
     const container = chatContainerRef.current;
     const spacer = spacerRef.current;
     if (!container || !spacer) return null;
-    const question = holdingRef.current ? container.querySelector<HTMLElement>('[data-ga-latest-question]') : null;
+    const question = holdingRef.current ? container.querySelector<HTMLElement>(`[${LATEST_QUESTION_ATTR}]`) : null;
     if (!question) {
       spacer.style.height = '0px';
       return null;
@@ -120,7 +120,7 @@ export function useScrollManagement({
   };
 
   useLayoutEffect(() => {
-    const key = latestQuestionKey(messages);
+    const key = questionKey(latestQuestion);
     const isNewQuestion = key !== null && key !== lastQuestionKeyRef.current;
     lastQuestionKeyRef.current = key;
     if (!messages.length) return;

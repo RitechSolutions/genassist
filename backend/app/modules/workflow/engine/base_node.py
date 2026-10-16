@@ -33,6 +33,34 @@ from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
 
+# Node types whose work the chat widget may label. Only the coarse kind leaves the backend;
+# node names, ids and types never do, and unlisted types send nothing.
+_NODE_ACTIVITY_KINDS: dict[str, turn_stream.ActivityKind] = {
+    "knowledgeBaseNode": "knowledge",
+    "apiToolNode": "tool",
+    "openApiNode": "tool",
+    "pythonCodeNode": "tool",
+    "sqlNode": "tool",
+    "webSearchNode": "tool",
+    "webScraperNode": "tool",
+    "slackMessageNode": "tool",
+    "gmailNode": "tool",
+    "readMailsNode": "tool",
+    "calendarEventNode": "tool",
+    "whatsappToolNode": "tool",
+    "zendeskTicketNode": "tool",
+    "salesforceCaseNode": "tool",
+    "jiraNode": "tool",
+    "createWorkflowScheduleNode": "tool",
+    "mlModelInferenceNode": "tool",
+}
+
+
+def _emit_node_activity(node_type: str, phase: turn_stream.ActivityPhase) -> None:
+    kind = _NODE_ACTIVITY_KINDS.get(node_type)
+    if kind:
+        turn_stream.emit_activity(kind, phase)
+
 
 class BaseNode(ABC):
     """
@@ -439,7 +467,7 @@ class BaseNode(ABC):
             else nullcontext()
         )
 
-        turn_stream.emit_node_activity(self.get_type(), "start")
+        _emit_node_activity(self.get_type(), "start")
         try:
             with span_cm as span:
                 try:
@@ -573,7 +601,7 @@ class BaseNode(ABC):
                     return node_failure(error_msg, code=500)
         finally:
             record_workflow_node_duration(self.get_type(), time.perf_counter() - t0, success)
-            turn_stream.emit_node_activity(self.get_type(), "end")
+            _emit_node_activity(self.get_type(), "end")
             turn_stream.end_reply(self.node_id)
 
     @abstractmethod

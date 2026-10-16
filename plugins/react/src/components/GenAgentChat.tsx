@@ -294,8 +294,18 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const revealingMessage =
     !streaming && lastMessage?.speaker === 'agent' && revealedText !== lastMessage.text ? lastMessage : null;
 
+  // Index of the visitor's most recent message, so only it shows the receipt.
+  const lastCustomerIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].speaker === 'customer') return i;
+    }
+    return -1;
+  }, [messages]);
+  const latestQuestion: ChatMessage | undefined = messages[lastCustomerIndex];
+
   const { messagesEndRef, chatContainerRef, spacerRef, showScrollButton, scrollToLatest } = useScrollManagement({
     messages,
+    latestQuestion,
     isAgentTyping,
     conversationId,
     isFloatingOpen: mode === 'inputbar' ? barPanelOpen : isFloatingOpen,
@@ -359,14 +369,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
     return 'delivered';
   }, [readReceipts, lastCustomerSequence, readState]);
-
-  // Index of the visitor's most recent message, so only it shows the receipt.
-  const lastCustomerIndex = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].speaker === 'customer') return i;
-    }
-    return -1;
-  }, [messages]);
 
   const {
     windowWidth,
@@ -1497,7 +1499,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 audioHeaders={message.type === 'audio' && useAudio ? audioHeaders : undefined}
                 autoPlayAudioMessageId={autoPlayAudioMessageId}
                 receiptStatus={index === lastCustomerIndex ? lastCustomerReceipt : undefined}
-                isLatestQuestion={message === messages[lastCustomerIndex]}
+                isLatestQuestion={message === latestQuestion}
               />
             </React.Fragment>
           );

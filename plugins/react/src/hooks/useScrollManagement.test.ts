@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChatMessage } from "../types";
-import { isAtBottom, latestQuestionKey, pinTop, spacerHeight } from "./useScrollManagement";
+import { isAtBottom, pinTop, questionKey, spacerHeight } from "./useScrollManagement";
 
 const VIEWPORT = 700;
 
@@ -40,25 +40,9 @@ describe("isAtBottom", () => {
   });
 });
 
-describe("latestQuestionKey", () => {
-  const message = (speaker: ChatMessage["speaker"], extra: Partial<ChatMessage> = {}): ChatMessage => ({
-    create_time: 1,
-    start_time: 0,
-    end_time: 0.01,
-    speaker,
-    text: "hi",
-    ...extra,
-  });
-
+describe("questionKey", () => {
   it("keeps the same key when the server adds an id to the sent message", () => {
-    const sent = message("customer", { client_id: "c_1" });
-    expect(latestQuestionKey([sent, message("agent")])).toBe(
-      latestQuestionKey([{ ...sent, message_id: "m_9" }, message("agent")]),
-    );
-  });
-
-  it("changes when the visitor sends again", () => {
-    const first = [message("customer", { client_id: "c_1" }), message("agent")];
-    expect(latestQuestionKey([...first, message("customer", { client_id: "c_2" })])).not.toBe(latestQuestionKey(first));
+    const sent: ChatMessage = { create_time: 1, start_time: 0, end_time: 0.01, speaker: "customer", text: "hi", client_id: "c_1" };
+    expect(questionKey({ ...sent, message_id: "m_9" })).toBe("c_1");
   });
 });

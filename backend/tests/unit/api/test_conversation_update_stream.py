@@ -12,7 +12,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.testclient import TestClient
 
 from app.api.v1.routes import conversations as route
-from app.core import turn_stream
+from app.core import turn_stream, turn_stream_response
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.middlewares.rate_limit_middleware import limiter
@@ -69,7 +69,7 @@ def turn(monkeypatch):
     monkeypatch.setattr(route, "process_attachments_from_metadata", attachments)
     monkeypatch.setattr(route, "process_conversation_update_with_agent", run)
     monkeypatch.setattr(route, "invalidate_cache", invalidate)
-    monkeypatch.setattr(turn_stream, "create_tenant_request_scope", scope)
+    monkeypatch.setattr(turn_stream_response, "create_tenant_request_scope", scope)
     monkeypatch.setattr(ReadAfterWriteMiddleware, "remember_write", remember)
     monkeypatch.setattr(route, "injector", SimpleNamespace(get=lambda cls: None))
     monkeypatch.setattr(route, "verify_recaptcha_token", lambda token, agent=None: (True, 1.0, ""))

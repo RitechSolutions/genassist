@@ -8,6 +8,7 @@ import { InteractiveContent } from './InteractiveContent';
 import { parseInteractiveContentBlocks } from '../utils/interactiveContent';
 import { defaultTranslations, getTranslationString, mergeTranslations } from '../utils/i18n';
 import { UploadFilePreview } from './common/UploadFilePreview';
+import { LATEST_QUESTION_ATTR } from '../hooks/useScrollManagement';
 
 interface ChatMessageProps {
   message: ChatMessage;
@@ -380,7 +381,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   return (
     <div 
       style={messageContainerStyle}
-      data-ga-latest-question={isLatestQuestion || undefined}
+      {...{ [LATEST_QUESTION_ATTR]: isLatestQuestion || undefined }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => { if (!editingFeedback) setIsHovered(false); }}
     >

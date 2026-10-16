@@ -440,10 +440,6 @@ async def process_conversation_update_with_agent(
             agent_response, model.metadata, now, elapsed_seconds
         )
 
-        streamed = (stream := current_stream.get()) and stream.shown_text()
-        if streamed and transcript_object.type == "message" and streamed.strip() != transcript_object.text.strip():
-            logger.info("Streamed reply text differs from the saved reply (conversation %s)", conversation_id)
-
         # For a start-form trigger, drop the invisible trigger message so only the form
         # (agent reply) is persisted; otherwise keep both the user message and the reply.
         if is_start_form_trigger:
