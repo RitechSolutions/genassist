@@ -58,6 +58,7 @@ This is the recommended way to run GenAssist locally. Everything runs in Docker,
 | Requirement | Notes |
 |---|---|
 | **Git** | macOS: run `xcode-select --install` in Terminal. Windows/Linux: [git-scm.com](https://git-scm.com/) |
+| **Make** *(optional)* | Pre-installed on macOS and Linux. Gives you the short `make …` commands below; every command also has a plain `docker compose` equivalent. |
 | **Docker Desktop** | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/). It must be **open and running** whenever you use GenAssist. |
 | **Memory** | Give Docker at least **8 GB** (Docker Desktop → Settings → Resources → Memory). The stack runs about 15 services. |
 | **Time** | The first build downloads and builds several large images: expect **15–30 minutes**. Later starts take seconds. |
@@ -82,6 +83,8 @@ cp backend/.env.example   backend/.env
 cp websocket/.env.example websocket/.env
 ```
 
+> *(Optional)* To change Docker-level settings such as ports or image tags, also run `cp docker/.env.example docker/.env`. The defaults work without it. See [docker/README.md](./docker/README.md) for how the Docker setup is organised.
+
 ### Step 3: Fill in the required settings
 
 Open `backend/.env` in any text editor and set these values:
@@ -90,7 +93,7 @@ Open `backend/.env` in any text editor and set these values:
 |---|---|---|
 | `SEED_ADMIN_PASSWORD` | A password of your choice | Your login password for the `admin` user. It is only applied on the **first** start; see [Reset everything](#everyday-commands). |
 | `FERNET_KEY` | A generated key (see below) | Encryption key. The backend **will not start** with the placeholder value. |
-| `DB_PASS` | `postgres` | Must match the database password in `docker-compose.dev.yml`. |
+| `DB_PASS` | `postgres` | Must match the database password in `docker/docker-compose.base.yml` (default `postgres`). |
 | `OPENAI_API_KEY` | Your OpenAI key *(optional)* | Needed for agents to respond. |
 
 To generate a `FERNET_KEY`, run this and paste the output after `FERNET_KEY=`:
@@ -104,7 +107,13 @@ Then open `websocket/.env` and set `WS_INTERNAL_SECRET` to the **same value** as
 ### Step 4: Build and start
 
 ```bash
-docker compose -f docker-compose.dev.yml -p genassist_dev up --build -d
+make dev
+```
+
+Without Make, run the same thing directly:
+
+```bash
+docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml --profile full up -d --build
 ```
 
 Wait until the command finishes and every line shows **Started**, **Running** or **Healthy**. On the very first start the backend also creates and fills the database, which can take up to **3–5 minutes** before it reports healthy.
@@ -122,17 +131,19 @@ That's it. 🎉
 
 ## Everyday commands
 
-Run these from the `genassist` folder. Docker Desktop must be open.
+Run these from the `genassist` folder. Docker Desktop must be open. Run `make help` to see every command.
+
+Without Make, replace `make dev…` with `docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml --profile full` followed by the matching `up`/`down` arguments.
 
 | To… | Run |
 |---|---|
-| **Start** GenAssist | `docker compose -f docker-compose.dev.yml -p genassist_dev up -d` |
-| **Stop** GenAssist (keeps your data) | `docker compose -f docker-compose.dev.yml -p genassist_dev down` |
-| **Rebuild** after pulling new code | `docker compose -f docker-compose.dev.yml -p genassist_dev up -d --build` |
-| **Apply changed `.env` settings** | `docker compose -f docker-compose.dev.yml -p genassist_dev up -d --force-recreate` |
+| **Start** GenAssist | `make dev-no-build` |
+| **Stop** GenAssist (keeps your data) | `make dev-down` |
+| **Rebuild** after pulling new code | `make dev` |
+| **Apply changed `.env` settings** | `docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.yml --profile full up -d --force-recreate` |
 | **See what's running** | `docker ps --format "table {{.Names}}\t{{.Status}}"` |
-| **Read the backend log** | `docker logs genassist-app-dev --tail 100` |
-| **Reset everything** ⚠️ deletes all data | `docker compose -f docker-compose.dev.yml -p genassist_dev down -v` |
+| **Read the backend log** | `docker logs genassist-app-dev --tail 100` (or `make logs-app` to follow it) |
+| **Reset everything** ⚠️ deletes all data | `make dev-down-v` |
 
 > **Tip:** to see only errors in the backend log, run
 > `docker logs genassist-app-dev 2>&1 | grep -E "ERROR|Traceback|Error:" | tail -n 40`
@@ -164,7 +175,7 @@ Other users created on first start (passwords are set in `backend/.env`): `super
 | Log: `password authentication failed` | `DB_PASS` doesn't match the database | Set `DB_PASS=postgres`, then run *Apply changed `.env` settings*. |
 | Browser: **ERR_CONNECTION_RESET** on `http://localhost` | The app is served on port 8080 | Use **http://localhost:8080**. |
 | Login fails right after starting | The backend is still starting | Wait 1–2 minutes. The health check URL should return `200`. |
-| Login fails with the password you set | The admin user was created on an earlier start with a different password | Reset everything (`down -v`) and start again. |
+| Login fails with the password you set | The admin user was created on an earlier start with a different password | Reset everything (`make dev-down-v`) and start again. |
 | Containers keep stopping or restarting | Docker is out of memory | Increase Docker's memory to 8 GB or more. |
 | Agents don't reply | No AI provider key | Add `OPENAI_API_KEY` (or another provider key) to `backend/.env`, then run *Apply changed `.env` settings*. |
 | Many `change detected` DEBUG lines in the log | Normal in development mode | Safe to ignore. Use the error-only log command above. |
@@ -177,8 +188,10 @@ Other users created on first start (passwords are set in `backend/.env`): `super
 
 GenAssist can export workflow metrics via OpenTelemetry and display them in Grafana. This stack is optional and lives in [`docker-compose.otel.yml`](./docker-compose.otel.yml).
 
+Start the main stack first (`make dev`), then layer the OTEL stack on top:
+
 ```bash
-docker compose -f docker-compose.dev.yml -f docker-compose.otel.yml -p genassist_dev up -d
+docker compose -f docker-compose.otel.yml -p genassist_dev up -d
 ```
 
 | Service | URL |
@@ -196,10 +209,12 @@ Uses the published images from the container registry, which is faster because n
 
 ```bash
 # Start
-docker compose -f docker-compose.yml -p genassist_local_01 up -d
+make prod
 # Stop
-docker compose -f docker-compose.yml -p genassist_local_01 down
+make prod-down
 ```
+
+Without Make: `docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.yml --profile full up -d` (and `… down` to stop).
 
 ---
 
@@ -213,6 +228,13 @@ For developers working on the code directly. Requires **Node.js + npm** (fronten
 | **Backend** | `cd backend`, create `.env` from `.env.example`, then follow [backend/README.md](./backend/README.md) |
 
 The backend API is then available at http://localhost:8000/api and its docs at http://localhost:8000/docs.
+
+To run only the supporting services (database, Redis, Chroma, Qdrant, Whisper) in Docker while you run the backend and frontend in your IDE:
+
+```bash
+make services        # start
+make services-down   # stop
+```
 
 ---
 

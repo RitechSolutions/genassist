@@ -9,6 +9,7 @@ from app.repositories.db_repository import DbRepository
 from app.schemas.filter import KnowledgeBaseListFilter
 
 
+
 @inject
 class KnowledgeBaseRepository(DbRepository[KnowledgeBaseModel]):
     def __init__(self, db: AsyncSession):
@@ -41,6 +42,7 @@ class KnowledgeBaseRepository(DbRepository[KnowledgeBaseModel]):
         data_stmt = self._apply_pagination(data_stmt, filter_obj)
         rows = (await self.db.execute(data_stmt)).all()
         return rows, total
+
 
     async def get_all(
         self,
