@@ -583,15 +583,18 @@ export const usePromptMeasurement = ({
       suggestedRunKey === null ||
       staleOf(suggestedEvalRun.key, suggestedRunKey));
 
-  const baseRun = chained
-    ? suggestedEvalRun && !suggestedStale
+  const suggestedBaseRun =
+    suggestion === base && suggestedEvalRun && !suggestedStale
       ? suggestedEvalRun
-      : null
-    : base === draft
-      ? evalRun && !evalStale
-        ? evalRun
-        : null
-      : roundRunOf(rounds, contextKey, base);
+      : null;
+  const baseRun = chained
+    ? suggestedBaseRun
+    : (suggestedBaseRun ??
+      (base === draft
+        ? evalRun && !evalStale
+          ? evalRun
+          : null
+        : roundRunOf(rounds, contextKey, base)));
   const failedCases = useMemo(
     () => (baseRun ? failedCasesOf(baseRun.results.results) : []),
     [baseRun],
