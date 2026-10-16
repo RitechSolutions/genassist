@@ -3,9 +3,15 @@
 import importlib
 import math
 import re
+import threading
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
+from celery.backends.base import DisabledBackend
+from celery.beat import Scheduler
+from redis.client import PubSub
+from redis.connection import ConnectionPool
 
 import app
 from app import LONG_TASK_TIMEOUTS, create_celery
@@ -163,3 +169,46 @@ def test_solo_watchdog_fires_before_redelivery(celery_conf):
     assert celery_conf.task_time_limit + GRACE_SECONDS < visibility_timeout
     for name, limits in celery_conf.task_annotations.items():
         assert limits["time_limit"] + GRACE_SECONDS < visibility_timeout, name
+
+
+@pytest.fixture
+def result_subscriptions(celery_app):
+    """Records Redis pub/sub subscriptions while sent messages go nowhere"""
+    with patch.object(PubSub, "subscribe") as subscribe, patch.object(celery_app.amqp, "send_task_message"):
+        yield subscribe
+
+
+def test_task_results_are_never_stored(monkeypatch):
+    """Nothing reads task results, so no process may subscribe to or store them, whatever the env sets"""
+    monkeypatch.setenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+
+    assert isinstance(create_celery().backend, DisabledBackend)
+
+
+def test_beat_dispatch_never_subscribes_to_a_result(celery_app, result_subscriptions):
+    """Beat never reads its subscriptions, so their replies pile up until Redis drops the connection"""
+    celery_app.loader.import_default_modules()
+    scheduler = Scheduler(app=celery_app, lazy=True)
+    scheduler.merge_inplace(celery_app.conf.beat_schedule)
+    # An unregistered task takes beat's send-by-name path, whatever the env flags enable
+    scheduler.merge_inplace({"unregistered-task": {"task": "app.tasks.nowhere.unregistered", "schedule": 60.0}})
+
+    for entry in list(scheduler.schedule.values()):
+        scheduler.apply_async(entry, producer=MagicMock(), advance=False)
+
+    result_subscriptions.assert_not_called()
+
+
+def test_tasks_sent_by_name_never_subscribe_to_a_result(celery_app, result_subscriptions):
+    """Beat dispatches unregistered tasks by name through send_task, which must not subscribe either"""
+    for name in RUN_TASKS:
+        celery_app.send_task(name, args=["run-id"], producer=MagicMock())
+
+    result_subscriptions.assert_not_called()
+
+
+def test_redis_pubsub_lock_is_reentrant():
+    """A pub/sub reconnect re-subscribes under the lock it already holds; before redis 6.4 that deadlocks"""
+    pubsub = PubSub(ConnectionPool())
+
+    assert isinstance(pubsub._lock, type(threading.RLock()))
