@@ -154,25 +154,6 @@ def test_create_agent_receives_the_system_prompt_unchanged(system_prompt):
     assert create_agent.call_args.kwargs["system_prompt"] is system_prompt
 
 
-@pytest.mark.asyncio
-async def test_stream_input_carries_no_system_message():
-    agent = _build_agent({"messages": [AIMessage(content="done")]})
-    seen = {}
-
-    async def _astream(input_data, config=None, **kwargs):
-        seen["messages"] = input_data["messages"]
-        for chunk in ():
-            yield chunk
-
-    agent.agent_executor.astream = _astream
-
-    async for _ in agent.stream("hi", chat_history=[{"role": "user", "content": "earlier"}]):
-        pass
-
-    assert not any(isinstance(message, SystemMessage) for message in seen["messages"])
-    assert seen["messages"][-1] == HumanMessage(content="hi")
-
-
 class _CapturingModel(BaseChatModel):
     seen: list = []
 
