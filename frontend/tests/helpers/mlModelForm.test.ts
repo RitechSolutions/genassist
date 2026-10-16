@@ -5,6 +5,7 @@ import {
   featureDefaultsChanged,
   featureDefaultsUpdate,
   latestInferenceParams,
+  mlModelSaveErrorMessage,
 } from '@/views/MLModels/components/mlModelForm';
 
 describe('buildInferenceParams', () => {
@@ -59,5 +60,32 @@ describe('latestInferenceParams', () => {
     const cached = { ratioBaselineColumn: 'cached' };
 
     expect(latestInferenceParams(undefined, cached)).toEqual(cached);
+  });
+});
+
+describe('mlModelSaveErrorMessage', () => {
+  it('keeps the duplicate-name message specific to that error key', () => {
+    expect(
+      mlModelSaveErrorMessage(
+        { response: { data: { error_key: 'ML_MODEL_NAME_EXISTS' } } },
+        'create'
+      )
+    ).toBe('An ML model with this name already exists.');
+  });
+
+  it('surfaces artifact contract mismatch details from other 400 responses', () => {
+    expect(
+      mlModelSaveErrorMessage(
+        {
+          response: {
+            data: {
+              error_key: 'ML_MODEL_ARTIFACT_INVALID',
+              error_detail: 'Registry fields do not match the model file. Missing features: lag_24.',
+            },
+          },
+        },
+        'update'
+      )
+    ).toBe('Registry fields do not match the model file. Missing features: lag_24.');
   });
 });

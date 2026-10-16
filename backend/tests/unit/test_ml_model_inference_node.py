@@ -1542,3 +1542,25 @@ class TestInferenceFeatureContract:
         )
 
         np.testing.assert_array_equal(model.received, [[8, 12]])
+
+
+class TestEnsurePklFile:
+    @pytest.mark.asyncio
+    async def test_downloaded_copy_is_recorded_without_registry_revalidation(self, monkeypatch, tmp_path):
+        model_id = uuid4()
+        ml_model = SimpleNamespace(id=model_id, name="forecast", pkl_file=None, pkl_file_id=str(uuid4()))
+        service = MagicMock(record_local_pkl_file=AsyncMock(), update=AsyncMock())
+
+        async def fake_download(_file_id, destination_path):
+            return destination_path
+
+        monkeypatch.setattr(inference_module, "download_pkl_file", fake_download)
+        monkeypatch.setattr(inference_module, "ML_MODELS_UPLOAD_DIR", str(tmp_path))
+        node = MLModelInferenceNode("ml1", {"id": "ml1", "type": "mlModelInferenceNode", "data": {}}, MagicMock())
+
+        await node._ensure_pkl_file(ml_model, service)
+
+        expected_path = str(tmp_path / f"forecast_{model_id}.pkl")
+        service.record_local_pkl_file.assert_awaited_once_with(model_id, expected_path)
+        service.update.assert_not_awaited()
+        assert ml_model.pkl_file == expected_path

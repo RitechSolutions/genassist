@@ -1,4 +1,5 @@
 import type { MLModel } from '@/interfaces/ml-model.interface';
+import { extractErrorMessage } from '@/helpers/apiError';
 
 type FeatureDefault = string | number | boolean;
 
@@ -41,3 +42,18 @@ export const latestInferenceParams = (
   latestModel: Pick<MLModel, 'inference_params'> | null | undefined,
   cached: MLModel['inference_params']
 ): MLModel['inference_params'] => (latestModel ? latestModel.inference_params : cached);
+
+export const mlModelSaveErrorMessage = (
+  error: unknown,
+  action: 'create' | 'update'
+): string => {
+  const errorKey = (
+    error as { response?: { data?: { error_key?: unknown } } } | null
+  )?.response?.data?.error_key;
+
+  if (errorKey === 'ML_MODEL_NAME_EXISTS') {
+    return 'An ML model with this name already exists.';
+  }
+
+  return extractErrorMessage(error, `Failed to ${action} ML model.`);
+};
