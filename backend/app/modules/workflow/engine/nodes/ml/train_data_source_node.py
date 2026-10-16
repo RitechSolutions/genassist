@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import re
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +18,6 @@ from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
-from app.core.project_path import DATA_VOLUME
 from app.core.utils.sensitive_data_utils import redact_bound_values, redact_sensitive_substrings
 from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.database.provider_manager import DBProviderManager
@@ -318,6 +318,7 @@ class TrainDataSourceNode(BaseNode):
 
         logger.info("Processing uploaded training file")
 
+        temporary_source_path: Path | None = None
         try:
             # Prefer re-downloading by ID over trusting a stored csvFilePath.
             # csvFilePath is an absolute path captured wherever the file was
@@ -333,14 +334,45 @@ class TrainDataSourceNode(BaseNode):
                 from app.services.file_manager import FileManagerService
 
                 file_manager_service = injector.get(FileManagerService)
-                # Keep the extension so parser dispatch selects the right format.
-                original_suffix = Path(csv_file_name).suffix if csv_file_name else Path(csv_file_path or "").suffix
-                dest_file_path = f"{DATA_VOLUME}/train/{csv_file_id}{original_suffix or '.csv'}"
+                try:
+                    stored_file = await file_manager_service.get_file_by_id(csv_file_id)
+                except Exception as exc:
+                    logger.error(
+                        "Could not resolve training file metadata: %s",
+                        self._sanitized_diagnostic(exc),
+                    )
+                    raise self._file_unavailable_error() from None
+
+                source_name = (
+                    csv_file_name
+                    or getattr(stored_file, "name", None)
+                    or getattr(stored_file, "path", None)
+                    or csv_file_path
+                    or ""
+                )
+                suffix = Path(source_name).suffix.lower()
+                self._validate_training_file_suffix(suffix)
+
+                stored_size = getattr(stored_file, "size", None)
+                if isinstance(stored_size, int):
+                    self._enforce_training_file_byte_limit(
+                        stored_size,
+                        limits.max_bytes,
+                    )
+
+                with tempfile.NamedTemporaryFile(
+                    suffix=suffix,
+                    delete=False,
+                ) as temp_file:
+                    temporary_source_path = Path(temp_file.name)
 
                 logger.info("Downloading uploaded training file for processing")
 
                 try:
-                    await file_manager_service.download_file_to_path(csv_file_id, dest_file_path)
+                    await file_manager_service.download_file_to_path(
+                        csv_file_id,
+                        str(temporary_source_path),
+                    )
                 except Exception as exc:
                     logger.error(
                         "Could not download training file: %s",
@@ -348,7 +380,7 @@ class TrainDataSourceNode(BaseNode):
                     )
                     raise self._file_unavailable_error() from None
 
-                csv_file_path = dest_file_path
+                csv_file_path = str(temporary_source_path)
 
             csv_path = Path(csv_file_path)
             if not csv_path.exists():
@@ -362,9 +394,12 @@ class TrainDataSourceNode(BaseNode):
                     ),
                 )
 
-            self._enforce_csv_byte_limit(csv_path, limits.max_bytes)
-
             suffix = csv_path.suffix.lower()
+            self._validate_training_file_suffix(suffix)
+            self._enforce_training_file_byte_limit(
+                csv_path.stat().st_size,
+                limits.max_bytes,
+            )
 
             async def stream_training_file():
                 if suffix == ".csv":
@@ -419,6 +454,15 @@ class TrainDataSourceNode(BaseNode):
                 error_key=ErrorKey.ML_EXTRACT_FAILED,
                 error_detail=f"CSV source processing failed: {str(e)}",
             ) from e
+        finally:
+            if temporary_source_path is not None:
+                try:
+                    temporary_source_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(
+                        "Failed to delete temporary training source file",
+                        exc_info=True,
+                    )
 
     @staticmethod
     def _log_query_advisories(query: str, db_manager: Any) -> None:
@@ -633,17 +677,30 @@ class TrainDataSourceNode(BaseNode):
         )
 
     @staticmethod
-    def _enforce_csv_byte_limit(csv_path: Path, max_bytes: int) -> None:
-        csv_size = csv_path.stat().st_size
-        if csv_size <= max_bytes:
+    def _enforce_training_file_byte_limit(file_size: int, max_bytes: int) -> None:
+        if file_size <= max_bytes:
             return
 
         raise AppException(
             error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
             error_detail=(
-                f"CSV file is {csv_size:,} bytes, which exceeds the limit "
+                f"Training file is {file_size:,} bytes, which exceeds the limit "
                 f"of {max_bytes:,} bytes for training extracts. "
                 "Use a smaller file or ask an administrator to raise the file-size limit."
+            ),
+        )
+
+    @staticmethod
+    def _validate_training_file_suffix(suffix: str) -> None:
+        if suffix in ml_utils.SUPPORTED_TRAINING_FILE_SUFFIXES:
+            return
+
+        raise AppException(
+            error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+            status_code=400,
+            error_detail=(
+                "This training file type is not supported. Use CSV, Excel (.xlsx), "
+                "JSON, or Parquet."
             ),
         )
 

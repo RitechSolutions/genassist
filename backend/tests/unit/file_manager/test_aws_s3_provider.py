@@ -94,6 +94,27 @@ class TestS3StorageProvider:
         """Test getting the base path returns bucket name."""
         assert s3_provider.get_base_path() == "test-bucket"
 
+    @pytest.mark.asyncio
+    async def test_download_file_to_path_uses_native_s3_download(
+        self,
+        s3_provider,
+        mock_s3_client,
+        tmp_path,
+    ):
+        destination = tmp_path / "training.csv"
+        mock_s3_client.download_file.return_value = True
+
+        downloaded = await s3_provider.download_file_to_path(
+            "uploads/training.csv",
+            str(destination),
+        )
+
+        assert downloaded is True
+        mock_s3_client.download_file.assert_called_once_with(
+            "uploads/training.csv",
+            str(destination),
+        )
+
     def test_get_stats(self, s3_provider):
         """Test getting provider statistics."""
         stats = s3_provider.get_stats()

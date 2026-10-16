@@ -1,3 +1,5 @@
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -27,19 +29,27 @@ class TestProcessCsvSourcePrefersDownloadById:
         always be used to re-download the file fresh, ignoring csvFilePath,
         instead of trusting a path that may not exist here.
         """
+        downloaded_paths = []
+
         async def fake_download(file_id, path):
             from pathlib import Path
 
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             Path(path).write_text("col1,col2\n1,2\n")
+            downloaded_paths.append(Path(path))
 
         mock_file_manager = MagicMock()
+        mock_file_manager.get_file_by_id = AsyncMock(
+            return_value=SimpleNamespace(
+                name="training.csv",
+                path="uploads/training.csv",
+                size=14,
+                storage_provider="s3",
+            )
+        )
         mock_file_manager.download_file_to_path = AsyncMock(side_effect=fake_download)
 
         with patch(
-            "app.modules.workflow.engine.nodes.ml.train_data_source_node.DATA_VOLUME",
-            tmp_path,
-        ), patch(
             "app.dependencies.injector.injector.get", return_value=mock_file_manager
         ):
             result = await node._process_csv_source(
@@ -57,6 +67,7 @@ class TestProcessCsvSourcePrefersDownloadById:
         mock_file_manager.download_file_to_path.assert_called_once()
         call_args = mock_file_manager.download_file_to_path.call_args
         assert call_args.args[0] == "file-id-123"
+        assert downloaded_paths and not downloaded_paths[0].exists()
         assert result["success"] is True
         assert result["metadata"]["columns"] == ["col1", "col2"]
 
@@ -84,6 +95,123 @@ class TestProcessCsvSourcePrefersDownloadById:
                 node._resolve_extraction_limits({}),
                 1,
             )
+
+    @pytest.mark.asyncio
+    async def test_missing_s3_file_returns_safe_error(self, node):
+        file_manager = MagicMock()
+        file_manager.get_file_by_id = AsyncMock(
+            side_effect=RuntimeError(
+                "NoSuchKey bucket=private-training key=tenant/secret.csv"
+            )
+        )
+        file_manager.download_file_to_path = AsyncMock()
+
+        with patch(
+            "app.dependencies.injector.injector.get",
+            return_value=file_manager,
+        ), pytest.raises(AppException) as exc_info:
+            await node._process_csv_source(
+                {"csvFileId": "missing-file", "csvFileName": "training.csv"},
+                node._resolve_extraction_limits({}),
+                1,
+            )
+
+        assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE
+        assert exc_info.value.error_detail == (
+            "The uploaded training file is no longer available. Upload it again."
+        )
+        assert "private-training" not in exc_info.value.error_detail
+        file_manager.download_file_to_path.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_s3_access_failure_removes_temporary_file(self, node):
+        downloaded_paths = []
+
+        async def fail_download(_file_id, destination):
+            path = Path(destination)
+            path.write_bytes(b"partial")
+            downloaded_paths.append(path)
+            raise RuntimeError("AccessDenied for arn:aws:s3:::private-training")
+
+        file_manager = MagicMock()
+        file_manager.get_file_by_id = AsyncMock(
+            return_value=SimpleNamespace(
+                name="training.csv",
+                path="uploads/training.csv",
+                size=100,
+                storage_provider="s3",
+            )
+        )
+        file_manager.download_file_to_path = AsyncMock(side_effect=fail_download)
+
+        with patch(
+            "app.dependencies.injector.injector.get",
+            return_value=file_manager,
+        ), pytest.raises(AppException) as exc_info:
+            await node._process_csv_source(
+                {"csvFileId": "restricted-file", "csvFileName": "training.csv"},
+                node._resolve_extraction_limits({}),
+                1,
+            )
+
+        assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE
+        assert downloaded_paths and not downloaded_paths[0].exists()
+        assert "AccessDenied" not in exc_info.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_unsupported_s3_file_type_is_rejected_before_download(self, node):
+        file_manager = MagicMock()
+        file_manager.get_file_by_id = AsyncMock(
+            return_value=SimpleNamespace(
+                name="training.txt",
+                path="uploads/training.txt",
+                size=10,
+                storage_provider="s3",
+            )
+        )
+        file_manager.download_file_to_path = AsyncMock()
+
+        with patch(
+            "app.dependencies.injector.injector.get",
+            return_value=file_manager,
+        ), pytest.raises(AppException) as exc_info:
+            await node._process_csv_source(
+                {"csvFileId": "text-file", "csvFileName": "training.txt"},
+                node._resolve_extraction_limits({}),
+                1,
+            )
+
+        assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID
+        assert "not supported" in exc_info.value.error_detail
+        file_manager.download_file_to_path.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_s3_file_over_byte_limit_is_rejected_before_download(self, node):
+        file_manager = MagicMock()
+        file_manager.get_file_by_id = AsyncMock(
+            return_value=SimpleNamespace(
+                name="training.csv",
+                path="uploads/training.csv",
+                size=11,
+                storage_provider="s3",
+            )
+        )
+        file_manager.download_file_to_path = AsyncMock()
+
+        limits = node._resolve_extraction_limits({"maxBytes": 10})
+        with patch(
+            "app.dependencies.injector.injector.get",
+            return_value=file_manager,
+        ), pytest.raises(AppException) as exc_info:
+            await node._process_csv_source(
+                {"csvFileId": "large-file", "csvFileName": "training.csv"},
+                limits,
+                1,
+            )
+
+        assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED
+        assert "11 bytes" in exc_info.value.error_detail
+        file_manager.download_file_to_path.assert_not_awaited()
 
 
 @pytest.mark.asyncio
