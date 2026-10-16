@@ -73,3 +73,12 @@ class TestParseJsonObjectReply:
         with pytest.raises(ValueError):
             parse_json_object_reply(reply)
         assert parse_json_object_reply(reply, strict=False) == {"a": "x\ny"}
+
+    @pytest.mark.parametrize(
+        "reply",
+        ['{"a": "x\\ny",\\n  "b": "z"}', '{\\n  "a": "x\\ny", "b": "z"\\r\\n}'],
+    )
+    def test_an_escaped_newline_between_members_needs_the_lenient_mode(self, reply):
+        with pytest.raises(ValueError):
+            parse_json_object_reply(reply)
+        assert parse_json_object_reply(reply, strict=False) == {"a": "x\ny", "b": "z"}

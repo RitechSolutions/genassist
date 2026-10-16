@@ -8,6 +8,7 @@ import math
 import re
 
 _FENCE_RE = re.compile(r"```(?:json)?(.*?)```", re.DOTALL)
+_STRAY_ESCAPES_RE = re.compile(r"(?:\\[nrt]|\s)+")
 
 
 def _reject_constant(name: str) -> None:
@@ -24,7 +25,8 @@ def _finite_float(value: str) -> float:
 def parse_json_object_reply(text: str, *, strict: bool = True) -> dict:
     """Extract one JSON object from a reply (optional Markdown fence).
     Nested objects and duplicate keys pass through as json.loads returns them.
-    ``strict=False`` admits raw control characters inside strings.
+    ``strict=False`` admits raw control characters inside strings and escaped
+    whitespace between tokens (``"a",\\n "b"``).
     Raises:
         ValueError: array, a scalar, prose,
             a second object, an unbalanced fence, a non-finite number, or
@@ -35,12 +37,20 @@ def parse_json_object_reply(text: str, *, strict: bool = True) -> dict:
     if fenced:
         candidate = fenced.group(1).strip()
 
-    try:
-        parsed = json.loads(
-            candidate, strict=strict, parse_constant=_reject_constant, parse_float=_finite_float
-        )
-    except (ValueError, RecursionError) as exc:
-        raise ValueError("Reply is not a single JSON object.") from exc
+    while True:
+        try:
+            parsed = json.loads(
+                candidate, strict=strict, parse_constant=_reject_constant, parse_float=_finite_float
+            )
+            break
+        except json.JSONDecodeError as exc:
+            stray = None if strict else _STRAY_ESCAPES_RE.match(candidate, exc.pos)
+            if stray is None:
+                raise ValueError("Reply is not a single JSON object.") from exc
+            # Nova 2 Lite sometimes writes the newline between members as an escape
+            candidate = f"{candidate[: exc.pos]} {candidate[stray.end() :]}"
+        except (ValueError, RecursionError) as exc:
+            raise ValueError("Reply is not a single JSON object.") from exc
 
     if not isinstance(parsed, dict):
         raise ValueError("Reply is not a single JSON object.")
