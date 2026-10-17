@@ -34,6 +34,7 @@ def _fake_state(response, last_output=None):
     return SimpleNamespace(
         format_state_as_response=lambda: response,
         get_last_node_output=lambda: last_output,
+        node_execution_status={},
     )
 
 
