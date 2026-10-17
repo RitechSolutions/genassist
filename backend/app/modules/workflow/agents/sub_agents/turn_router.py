@@ -78,7 +78,7 @@ class SubAgentTurnRouter:
                 child_node_id=frame.child_node_id,
                 invocation_id=frame.invocation_id,
                 message=session_message,
-                session=input_data.get("session"),
+                session=input_data.get("session") or frame.parent_resume.request_context.get("session"),
                 timeout_seconds=timeout_seconds,
                 inherit_pii=frame.inherit_pii,
                 usage_context=usage_context,

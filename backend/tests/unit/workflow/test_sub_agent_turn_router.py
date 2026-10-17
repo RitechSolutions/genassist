@@ -10,7 +10,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.agents.memory import ConversationMemory, InMemoryConversationMemory
 from app.modules.workflow.agents.sub_agents import graph as sub_graph
 from app.modules.workflow.agents.sub_agents import session as sub_session
-from app.modules.workflow.agents.sub_agents.models import SubAgentFrame, SubAgentStack
+from app.modules.workflow.agents.sub_agents.models import ParentResume, SubAgentFrame, SubAgentStack
 from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
@@ -37,7 +37,7 @@ def _fake_state(response, last_output=None):
     )
 
 
-def _seed_stack(fingerprint=None):
+def _seed_stack(fingerprint=None, session=None):
     mem = InMemoryConversationMemory("t1")
     frame = SubAgentFrame(
         child_node_id="child",
@@ -47,6 +47,7 @@ def _seed_stack(fingerprint=None):
         mode="task",
         task="do x",
         workflow_fingerprint=fingerprint if fingerprint is not None else sub_graph.fingerprint(_NODES, _EDGES),
+        parent_resume=ParentResume(request_context={"session": session} if session else {}),
     )
     mem.metadata[sub_session.STACK_KEY] = SubAgentStack(agent_id="agentA", frames=[frame]).model_dump()
     return mem
@@ -215,6 +216,20 @@ async def test_resume_turn_forwards_session_to_child():
         await router.route_turn(
             "a reply", "t1", {"message": "a reply", "session": {"customer_name": "Ada"}}, persist=True
         )
+    assert run_child.await_args.kwargs["session"] == {"customer_name": "Ada"}
+
+
+@pytest.mark.asyncio
+async def test_resume_turn_falls_back_to_the_pause_turn_session():
+    router = _make_router()
+    mem = _seed_stack(session={"customer_name": "Ada"})
+    child_state = _fake_state({"status": "success", "output": {"message": "ok"}}, last_output={"message": "ok"})
+    run_child = AsyncMock(return_value=child_state)
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", run_child),
+    ):
+        await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
     assert run_child.await_args.kwargs["session"] == {"customer_name": "Ada"}
 
 
