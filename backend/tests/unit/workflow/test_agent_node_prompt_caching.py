@@ -32,6 +32,7 @@ def _state():
         workflow={"nodes": [], "edges": []},
         initial_values={},
         get_memory=MagicMock(return_value=None),
+        get_session=MagicMock(return_value={}),
     )
 
 

@@ -263,7 +263,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 parameters={
                     "task": {
                         "type": "string",
-                        "description": "The full task or question to hand to this sub-agent.",
+                        "description": (
+                            "The full task or question to hand to this sub-agent. It sees only this text, "
+                            "so include every detail the user gave (names, ids, dates, amounts, preferences)."
+                        ),
                         "required": True,
                     }
                 },

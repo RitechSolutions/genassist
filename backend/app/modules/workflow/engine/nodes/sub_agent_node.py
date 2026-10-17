@@ -32,7 +32,11 @@ class SubAgentNode(AgentNode):
 
         system_prompt = config.get("systemPrompt") or "You are a helpful assistant."
         system_prompt += self._completion_instructions(mode)
-        prompt = config.get("userPrompt") or "{{session.message}}"
+        prompt = config.get("userPrompt")
+        if not prompt:
+            prompt = self.get_state().get_session().get("message", "")
+            if config.get("piiMasking"):
+                prompt = self._mask_for_llm(prompt)
 
         tools = self.get_connected_nodes("tools")
         from app.modules.workflow.agents.sub_agents.graph import SubAgentTopologyError
