@@ -117,6 +117,23 @@ async def test_active_child_question_returns_success_message():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("persist", [True, False])
+async def test_mid_delegation_turn_reaches_root_memory_only_when_persisted(persist):
+    router = _make_router()
+    mem = _seed_stack()
+    child_state = _fake_state(
+        {"status": "success", "output": {"message": "Which date?"}}, last_output={"message": "Which date?"}
+    )
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child_state)),
+    ):
+        await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=persist)
+    expected = [("user", "a reply"), ("assistant", "Which date?")] if persist else []
+    assert [(m.role, m.content) for m in mem.messages] == expected
+
+
+@pytest.mark.asyncio
 async def test_active_child_output_is_message_only():
     router = _make_router()
     mem = _seed_stack()

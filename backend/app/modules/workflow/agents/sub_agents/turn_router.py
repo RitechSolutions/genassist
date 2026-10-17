@@ -96,7 +96,10 @@ class SubAgentTurnRouter:
             response = child_state.format_state_as_response()
             if self._is_awaiting_sub_agent(response.get("output")):
                 return self.finalize(response)
-            return self._message_only(response, orchestrator.child_message(child_state))
+            reply = orchestrator.child_message(child_state)
+            if persist:
+                await self._remember_turn(memory, session_message, reply)
+            return self._message_only(response, reply)
 
         remaining = stack.frames[:-1]
         if remaining:
@@ -163,6 +166,13 @@ class SubAgentTurnRouter:
             return None
         logger.error("Sub-agent %s failed on a resumed turn: %s", child_id, error)
         return {"result": messages.child_failed()}
+
+    @staticmethod
+    async def _remember_turn(memory, session_message: str, reply: str) -> None:
+        try:
+            await memory.add_input_output(session_message, reply)
+        except Exception:
+            logger.warning("Could not record the sub-agent turn in conversation memory", exc_info=True)
 
     @staticmethod
     def _child_trace(child_state, child_id: str) -> dict:
