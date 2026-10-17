@@ -9,7 +9,6 @@ import pytest
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.agents.memory import ConversationMemory, InMemoryConversationMemory
 from app.modules.workflow.agents.sub_agents import graph as sub_graph
-from app.modules.workflow.agents.sub_agents import messages
 from app.modules.workflow.agents.sub_agents import session as sub_session
 from app.modules.workflow.agents.sub_agents.models import ParentResume, SubAgentFrame, SubAgentStack
 from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
@@ -216,7 +215,9 @@ async def test_failed_child_on_a_resumed_turn_hands_back_to_the_parent():
 
     assert result["output"]["message"] == "parent takes over"
     resume = router.workflow_engine.execute_from_node.await_args.kwargs["input_data"]["__sub_agent_resume"]
-    assert resume["child_result"] == messages.child_failed()
+    assert resume["child_result"] == (
+        "The sub-agent could not complete the task. The user's latest message to it was: a reply"
+    )
     assert mem.metadata[sub_session.STACK_KEY] is None
     discard.assert_called_once_with("t1", "child", "inv1")
 

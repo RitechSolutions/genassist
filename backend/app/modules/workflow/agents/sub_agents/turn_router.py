@@ -92,7 +92,7 @@ class SubAgentTurnRouter:
 
         completion = orchestrator.child_completion(child_state)
         if completion is None:
-            completion = self._failed_completion(child_state, frame.child_node_id)
+            completion = self._failed_completion(child_state, frame.child_node_id, session_message)
         if completion is None:
             response = child_state.format_state_as_response()
             if self._is_awaiting_sub_agent(response.get("output")):
@@ -169,14 +169,17 @@ class SubAgentTurnRouter:
         return response
 
     @staticmethod
-    def _failed_completion(child_state, child_id: str):
+    def _failed_completion(child_state, child_id: str, session_message: str):
         from app.modules.workflow.engine.nodes.agent_node import AgentNode
 
         error = AgentNode._child_failure(child_state, child_id)
         if error is None:
             return None
         logger.error("Sub-agent %s failed on a resumed turn: %s", child_id, error)
-        return {"result": messages.child_failed()}
+        result = messages.child_failed()
+        if session_message:
+            result += f" The user's latest message to it was: {session_message}"
+        return {"result": result}
 
     @staticmethod
     async def _remember_turn(memory, session_message: str, reply: str) -> None:
