@@ -54,6 +54,18 @@ async def test_single_turn_returns_clean_output_only():
         assert control_key not in output
 
 
+@pytest.mark.asyncio
+async def test_memory_is_on_when_the_node_omits_the_key():
+    node = _make_node()
+    with (
+        patch(f"{_NODE}.run_agent_once", AsyncMock(return_value=_run_result())),
+        patch.object(SubAgentNode, "get_connected_nodes", return_value=[]),
+        patch.object(SubAgentNode, "_get_chat_history_for_agent", AsyncMock(return_value=[])) as history,
+    ):
+        await node.process(dict(_OK_CONFIG))
+    history.assert_awaited_once()
+
+
 async def _resolved_user_prompt(data, task="THE TASK"):
     workflow = {"config": {"id": "wf1"}, "nodes": [{"id": "child", "type": "subAgentNode", "data": data}], "edges": []}
     state = WorkflowState(

@@ -229,6 +229,7 @@ async def test_completed_child_resumes_parent_registry_managed():
         sub_agent_control={"result": "child done"},
         get_last_node_output=lambda: {"message": "child done"},
         node_outputs={"child": {"message": "child done", "steps": [{"i": 1}], "tools_used": ["search"]}},
+        node_execution_status={"child": {"status": "success", "input": {"tools_reference": [object()]}}},
     )
     router.workflow_engine.execute_from_node = AsyncMock(
         return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})
@@ -247,6 +248,8 @@ async def test_completed_child_resumes_parent_registry_managed():
     assert resume["child_result"] == "child done"
     assert resume["child_steps"] == [{"i": 1}]
     assert resume["child_tools_used"] == ["search"]
+    assert resume["node_outputs"]["child"]["message"] == "child done"
+    assert resume["node_execution_status"]["child"] == {"status": "success", "input": {}}
     assert mem.metadata[sub_session.STACK_KEY] is None
 
 
@@ -288,6 +291,7 @@ async def test_completed_child_discards_child_memory():
         sub_agent_control={"result": "child done"},
         get_last_node_output=lambda: {"message": "child done"},
         node_outputs={"child": {"message": "child done"}},
+        node_execution_status={},
     )
     router.workflow_engine.execute_from_node = AsyncMock(
         return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})
@@ -310,6 +314,7 @@ async def test_resume_passes_one_usage_context_to_child_and_parent():
         sub_agent_control={"result": "child done"},
         get_last_node_output=lambda: {"message": "child done"},
         node_outputs={"child": {"message": "child done"}},
+        node_execution_status={},
     )
     router.workflow_engine.execute_from_node = AsyncMock(
         return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})

@@ -27,6 +27,12 @@ CONTINUATION_TASK_CAP = 2000
 CONTINUATION_RESULT_CAP = 8000
 SUB_AGENT_TRACE_STEPS_CAP = 30
 
+_DELEGATION_BEHAVIOR = {
+    "single_turn": "answers once and returns",
+    "task": "may ask the user clarifying questions, then finishes and returns",
+    "chat": "takes over the conversation with the user until it hands back",
+}
+
 # Customer-facing fallbacks; the technical detail stays in "error" and the logs
 AGENT_ERROR_MESSAGE = "Sorry, I couldn't complete your request. Please try again."
 AGENT_NO_RESPONSE_MESSAGE = "Sorry, I couldn't prepare a response. Please try again."
@@ -282,7 +288,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
     @staticmethod
     def _delegation_tool_description(name: str, mode: str, description: str) -> str:
         detail = f": {description}" if description else ""
-        return f"Delegate a task to the '{name}' sub-agent ({mode} mode){detail}."
+        behavior = _DELEGATION_BEHAVIOR.get(mode, _DELEGATION_BEHAVIOR["single_turn"])
+        return f"Delegate a task to the '{name}' sub-agent, which {behavior}{detail}."
 
     def _make_delegation_function(self, *, child_id: str, mode: str, timeout_seconds: float, inherit_pii: bool = False):
         """Closure the LLM calls to delegate; runs the child and returns an envelope"""
@@ -343,6 +350,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             child_output = child_state.get_node_output(child_id)
             if child_output is not None:
                 state.node_outputs[child_id] = child_output
+            child_status = child_state.node_execution_status.get(child_id)
+            if child_status is not None:
+                state.node_execution_status[child_id] = {k: v for k, v in child_status.items() if k != "endTime"}
             orchestrator.propagate_prompt_cache_diagnostics(child_state, state)
 
             completion = orchestrator.child_completion(child_state)
@@ -453,6 +463,8 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     envelope, steps, tools_used, completed_count, current_prompt, pii
                 )
                 if blocked is not None:
+                    state.sub_agent_persistent_claimed = False
+                    orchestrator.discard_child_memory(state.get_thread_id(), child_id, envelope["invocation_id"])
                     return blocked
                 from app.modules.workflow.engine.workflow_state import WorkflowPausedException
 
@@ -501,9 +513,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         # byte-identical to one written before this key existed
         if state.prompt_caching_diagnostics:
             request_context[SUB_AGENT_DIAGNOSTICS_KEY] = dict(state.prompt_caching_diagnostics)
+        paused = {k: v for k, v in state.node_execution_status.items() if k != envelope["child_node_id"]}
         resume = ParentResume(
             node_outputs=_frame_snapshot(state.node_outputs),
-            node_execution_status=_frame_snapshot(_without_tool_references(state.node_execution_status)),
+            node_execution_status=_frame_snapshot(_without_tool_references(paused)),
             request_context=_frame_snapshot(request_context),
             user_prompt=current_prompt[:MAX_USER_PROMPT_CHARS],
             completed_count=completed_count,
@@ -523,7 +536,11 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         )
         agent_id = str((state.initial_values or {}).get("agent_id") or state.workflow_id or "")
         frames = (stack.frames if stack else []) + [frame]
-        await sub_session.write_frame(memory, SubAgentStack(agent_id=agent_id, frames=frames))
+        try:
+            await sub_session.write_frame(memory, SubAgentStack(agent_id=agent_id, frames=frames))
+        except sub_session.SubAgentSessionError:
+            logger.exception("Could not save the sub-agent pause frame for %s", envelope["child_node_id"])
+            return self._shape_delegated_message(messages.child_failed(), steps, tools_used)
         return None
 
     def _apply_sub_agent_resume(self, resume: Dict[str, Any], pii: bool):

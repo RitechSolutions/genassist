@@ -389,6 +389,7 @@ async def test_ordinary_return_direct_tool_still_returns_directly():
 @pytest.mark.asyncio
 async def test_active_delegation_writes_frame_then_pauses():
     node = _parent_node(mode="task")
+    node.get_state().node_execution_status["child"] = {"status": "success"}
     dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
     results = [
         _rr(
@@ -407,6 +408,7 @@ async def test_active_delegation_writes_frame_then_pauses():
     top = stack.top()
     assert top.child_node_id == "child" and top.mode == "task" and top.invocation_id == "inv9"
     assert top.parent_resume is not None
+    assert "child" not in top.parent_resume.node_execution_status
 
 
 @pytest.mark.asyncio
@@ -648,6 +650,24 @@ async def test_corrupt_stack_on_pause_fails_delegation_without_overwrite():
     out, _ = await _run_loop(node, results, delegation_map=dmap)
     assert "could not be resumed" in out["message"]
     assert node.get_memory().metadata[sub_session.STACK_KEY] == corrupt
+
+
+@pytest.mark.asyncio
+async def test_unwritable_pause_frame_fails_cleanly_and_releases_the_child():
+    node = _parent_node(mode="task", thread_id="t-frame-fail")
+    node.get_state().sub_agent_persistent_claimed = True
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    results = [
+        _rr(_env("active", "a question?", mode="task", invocation_id="inv7"), return_direct=True, tool="request_task_child")
+    ]
+    with (
+        patch.object(sub_session, "write_frame", AsyncMock(side_effect=sub_session.SubAgentSessionError("too big"))),
+        patch(_ORCH_DISCARD) as discard,
+    ):
+        out, _ = await _run_loop(node, results, delegation_map=dmap)
+    assert out["message"] == messages.child_failed()
+    assert node.get_state().sub_agent_persistent_claimed is False
+    discard.assert_called_once_with("t-frame-fail", "child", "inv7")
 
 
 @pytest.mark.asyncio
@@ -899,11 +919,29 @@ async def test_in_turn_delegation_lands_the_child_diagnostic_in_the_parent_colle
 
 
 @pytest.mark.asyncio
-async def test_the_parents_execution_map_never_gains_the_child():
+async def test_the_childs_run_lands_in_the_parents_execution_map_without_diagnostics():
     node = _parent_node(thread_id="t-diag-map")
     await _delegate_once(node, _child_state_with_diagnostic())
 
-    assert set(node.get_state().node_execution_status) == {"parent"}
+    assert node.get_state().node_execution_status["child"] == {"status": "success"}
+
+
+@pytest.mark.asyncio
+async def test_an_in_turn_delegation_does_not_count_the_childs_time_twice():
+    node = _parent_node(thread_id="t-diag-time")
+    state = node.get_state()
+    state.node_execution_status["parent"] = {"status": "running", "startTime": 1000}
+    child = _child_state_with_diagnostic()
+    child.node_execution_status = {
+        "child": {"status": "success", "startTime": 3000, "endTime": 9000, "time_taken": 6000}
+    }
+    await _delegate_once(node, child)
+    state.node_execution_status["parent"].update({"status": "success", "endTime": 11000, "time_taken": 10000})
+    state.complete_execution()
+
+    response = state.format_state_as_response()
+    assert response["performance_metrics"]["totalExecutionTime"] == 10000
+    assert state.node_execution_status["child"]["time_taken"] == 6000
 
 
 @pytest.mark.asyncio

@@ -143,6 +143,8 @@ async def test_completed_child_pops_frame_and_reenters_parent():
     child_state = SimpleNamespace(
         sub_agent_control={"result": "child done"},
         get_last_node_output=lambda: {"message": "child done"},
+        node_outputs={},
+        node_execution_status={},
     )
     item.workflow_engine.execute_from_node = AsyncMock(
         return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})

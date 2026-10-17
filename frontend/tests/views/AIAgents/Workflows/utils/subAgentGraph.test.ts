@@ -73,6 +73,7 @@ describe("clampToolName", () => {
     expect(delegationToolName("Flight  Search!")).toBe("request_task_flight_search");
     expect(delegationToolName("data—sync")).toBe("request_task_data_sync");
     expect(clampToolName("中文名")).toBe("");
+    expect(delegationToolName("a".repeat(60))).toBe("request_task_" + "a".repeat(51));
   });
 });
 
