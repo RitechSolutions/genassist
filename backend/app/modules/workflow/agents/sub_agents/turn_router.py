@@ -116,7 +116,9 @@ class SubAgentTurnRouter:
             parent_resume["node_outputs"][child_id] = child_output
         child_status = child_state.node_execution_status.get(child_id)
         if child_status is not None:
-            parent_resume["node_execution_status"].update(_without_tool_references({child_id: child_status}))
+            parent_resume["node_execution_status"].update(
+                _without_tool_references({child_id: {k: v for k, v in child_status.items() if k != "endTime"}})
+            )
         resume = {
             **parent_resume,
             "child_node_id": child_id,
