@@ -24,6 +24,20 @@ import { SectionLabel } from "./SectionLabel";
 
 export function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
   const [draft, setDraft] = useState<TriageDraft>(() => toDraft(issue));
+  const [touched, setTouched] = useState(false);
+  const [shown, setShown] = useState(issue);
+  // The fetched copy replaces the row's values; adopt them unless the user already typed
+  if (
+    issue.fix_version !== shown.fix_version ||
+    issue.target_rollout_date !== shown.target_rollout_date
+  ) {
+    setShown(issue);
+    if (!touched) setDraft(toDraft(issue));
+  }
+  const edit = (change: Partial<TriageDraft>) => {
+    setTouched(true);
+    setDraft((current) => ({ ...current, ...change }));
+  };
   const saveTriage = useIssuePatch();
   const triageDirty = isDraftDirty(issue, draft);
 
@@ -52,12 +66,7 @@ export function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
             maxLength={100}
             placeholder="e.g. 2.4.1"
             value={draft.fix_version}
-            onChange={(e) =>
-              setDraft((current) => ({
-                ...current,
-                fix_version: e.target.value,
-              }))
-            }
+            onChange={(e) => edit({ fix_version: e.target.value })}
           />
         </div>
         <div className="space-y-1.5">
@@ -99,12 +108,7 @@ export function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
                       : undefined
                   }
                   onSelect={(day) =>
-                    setDraft((current) => ({
-                      ...current,
-                      target_rollout_date: day
-                        ? toDateOnly(day)
-                        : null,
-                    }))
+                    edit({ target_rollout_date: day ? toDateOnly(day) : null })
                   }
                   initialFocus
                 />
@@ -118,12 +122,7 @@ export function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
                 className="h-9 w-9 shrink-0 rounded-full"
                 title="Clear the target rollout date"
                 aria-label="Clear the target rollout date"
-                onClick={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    target_rollout_date: null,
-                  }))
-                }
+                onClick={() => edit({ target_rollout_date: null })}
               >
                 <X className="h-4 w-4" />
               </Button>

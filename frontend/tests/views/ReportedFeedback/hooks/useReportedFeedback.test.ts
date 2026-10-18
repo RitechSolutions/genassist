@@ -153,16 +153,17 @@ describe("issuePatchMutation", () => {
 });
 
 describe("issueQuery", () => {
-  it("opens a cached row without asking the server", async () => {
+  it("shows the cached row at once and then the server's copy", async () => {
     const client = new QueryClient();
-    cacheIssue(client, item({ status: "resolved" }));
+    cacheIssue(client, item({ status: "open" }));
+    mockApiRequest.mockResolvedValue(page([item({ status: "resolved" })]) as never);
 
     const observer = new QueryObserver(client, issueQuery("f1"));
     const unsubscribe = observer.subscribe(() => {});
-    await Promise.resolve();
 
-    expect(observer.getCurrentResult().data?.status).toBe("resolved");
-    expect(mockApiRequest).not.toHaveBeenCalled();
+    expect(observer.getCurrentResult().data?.status).toBe("open");
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "conversations/issues?limit=1&feedback_id=f1");
+    await vi.waitFor(() => expect(observer.getCurrentResult().data?.status).toBe("resolved"));
     unsubscribe();
   });
 });

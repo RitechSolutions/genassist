@@ -123,7 +123,7 @@ export default function ReportedFeedback() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useIssue(selectedId);
   const dialogIssue =
-    rows.find((row) => row.feedback_id === selectedId) ?? selected.data ?? null;
+    selected.data ?? rows.find((row) => row.feedback_id === selectedId) ?? null;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [lastOpenedId, setLastOpenedId] = useState<string | null>(null);
 
@@ -246,10 +246,13 @@ export default function ReportedFeedback() {
       header: "Status",
       key: "status",
       headerClassName: "w-[160px]",
-      // Editable inline; stop row-click so the dropdown doesn't open the dialog.
+      // Editable inline; stop row events so the dropdown doesn't open the dialog.
       cell: (item) =>
         canTriage ? (
-          <div onClick={(e) => e.stopPropagation()}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <StatusSelect
               value={item.status}
               statuses={statuses}

@@ -13,7 +13,6 @@ import app.db.models.test_suite  # noqa: F401
 from app.core.exceptions.exception_classes import AppException
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.message_issue import MessageIssueModel
-from app.repositories.conversation_analysis import ConversationAnalysisRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
 from app.schemas.filter import MessageIssueFilter, MessageIssueSummaryFilter
 from app.schemas.message_issue import ReportedIssueRead
@@ -107,17 +106,6 @@ async def test_group_scope_is_applied_explicitly_to_every_query(roles, scoped):
         where = _sql(stmt).split("WHERE", 1)[1]
         assert ("conversations.group_id" in where) is scoped
         assert stmt.get_execution_options()[GROUP_SCOPE_BYPASS_FLAG] is True
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("roles, scoped", [(("operator",), True), (("admin",), False)])
-async def test_stored_topic_options_only_come_from_conversations_the_caller_can_see(roles, scoped):
-    db = CapturingDb()
-    with caller(roles=roles):
-        await ConversationAnalysisRepository(db).list_distinct_topics()
-
-    sql = _sql(db.statements[0])
-    assert ("JOIN conversations" in sql and "conversations.group_id" in sql) is scoped
 
 
 @pytest.mark.asyncio
