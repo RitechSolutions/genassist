@@ -23,29 +23,18 @@ import { useIssuePatch } from "../hooks/useReportedFeedback";
 import { SectionLabel } from "./SectionLabel";
 
 export function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
-  const [draft, setDraft] = useState<TriageDraft>(() => toDraft(issue));
-  const [touched, setTouched] = useState(false);
-  const [shown, setShown] = useState(issue);
-  // The fetched copy replaces the row's values; adopt them unless the user already typed
-  if (
-    issue.fix_version !== shown.fix_version ||
-    issue.target_rollout_date !== shown.target_rollout_date
-  ) {
-    setShown(issue);
-    if (!touched) setDraft(toDraft(issue));
-  }
-  const edit = (change: Partial<TriageDraft>) => {
-    setTouched(true);
-    setDraft((current) => ({ ...current, ...change }));
-  };
+  const [edits, setEdits] = useState<Partial<TriageDraft>>({});
+  const draft = { ...toDraft(issue), ...edits };
+  const edit = (change: Partial<TriageDraft>) =>
+    setEdits((current) => ({ ...current, ...change }));
   const saveTriage = useIssuePatch();
   const triageDirty = isDraftDirty(issue, draft);
 
   const save = () => {
-    const submitted = draft;
+    const submitted = edits;
     void saveTriage.mutateAsync({ issue, patch: draftToPatch(issue, draft) }).then(
-      (saved) => {
-        setDraft((current) => (current === submitted ? toDraft(saved) : current));
+      () => {
+        setEdits((current) => (current === submitted ? {} : current));
         toast.success("Triage saved");
       },
       (err) => toast.error(extractErrorMessage(err, "Failed to update feedback")),
