@@ -77,17 +77,20 @@ class FakeReadRepo:
 
 
 class FakeAgent:
-    def __init__(self, id, name, workflow_id=None):
+    def __init__(self, id, name, workflow_id=None, is_deleted=0):
         self.id = id
         self.name = name
         self.workflow_id = workflow_id
+        self.is_deleted = is_deleted
 
 
 class FakeAgentRepo:
     def __init__(self, agents=None):
         self._agents = agents or []
+        self.include_deleted = None
 
-    async def get_by_ids(self, ids):
+    async def get_by_ids(self, ids, **kwargs):
+        self.include_deleted = kwargs.get("include_deleted")
         return [a for a in self._agents if a.id in ids]
 
 
@@ -300,6 +303,15 @@ async def test_zero_cost_conversation_still_reports_real_zero():
 
 
 @pytest.mark.asyncio
+async def test_summary_splits_conversation_and_non_conversation_cost():
+    service, *_ = _service(summary_row=_row(cost="1.00", conv_cost="0.80", conversations=4))
+    summ = await service.get_summary(_params())
+    assert summ.conversation_cost_usd == 0.80
+    assert summ.non_conversation_cost_usd == 0.20
+    assert summ.distinct_conversations == 4
+
+
+@pytest.mark.asyncio
 async def test_no_calls_reports_full_coverage():
     row = _row(cost="0", total_tokens=0, calls=0, configured=0, priced_tokens=0, conversations=0)
     service, *_ = _service(summary_row=row)
@@ -415,6 +427,16 @@ async def test_breakdown_agent_resolves_names_and_unattributed():
     by = {i.key: i for i in resp.items}
     assert by[str(aid)].label == "Sales Bot"
     assert by["unattributed"].label == "Unattributed"
+
+
+@pytest.mark.asyncio
+async def test_breakdown_agent_labels_deleted_agents():
+    aid = uuid4()
+    rows = [(aid, Decimal("0.10"), 0, 100, 1)]
+    service, *_ = _service(breakdown_rows=rows, agents=[FakeAgent(aid, "Old Bot", is_deleted=1)])
+    resp = await service.get_breakdown(_params(), "agent")
+    assert resp.items[0].label == "Old Bot (deleted)"
+    assert service.agent_repo.include_deleted is True
 
 
 @pytest.mark.asyncio
