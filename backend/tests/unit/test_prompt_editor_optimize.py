@@ -9,11 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from langchain_core.messages import AIMessage
 from pydantic import ValidationError
 
+import app.services.prompt_editor as prompt_editor_module
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils import background_tasks
 from app.schemas.prompt_editor import (
     MAX_ATTEMPT_DIFF_CHARS,
     MAX_ATTEMPT_TEXT_CHARS,
@@ -27,7 +30,10 @@ from app.services.prompt_editor import (
     MAX_OPTIMIZE_EXAMPLES,
     MAX_OPTIMIZE_PASSING_WITH_FAILURES,
     TRUNCATION_MARKER,
+    AbandonedCall,
     PromptEditorService,
+    PromptUsageRef,
+    suggestion_outcome,
 )
 
 WORKFLOW_ID = uuid4()
@@ -38,6 +44,18 @@ AGENT_NODE = {"id": NODE_ID, "type": "agentNode", "data": {"name": "A"}}
 PROVIDER = SimpleNamespace(id=uuid4(), llm_model_provider="openai", llm_model="gpt-4o")
 
 SUGGESTION = json.dumps({"improved_prompt": "Be concise.", "explanation": "Tightened."})
+LATE_USAGE = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _no_stray_repairs():
+    background_tasks._TASKS.clear()
+    yield
+    tasks = list(background_tasks._TASKS)
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    background_tasks._TASKS.clear()
 
 
 def _access_row(nodes=None):
@@ -139,6 +157,40 @@ async def _run(service, injector, request=None):
 
 def _human_message(llm) -> str:
     return llm.ainvoke.call_args.args[0][1].content
+
+
+def _gated_llm(release, reply=SUGGESTION, started=None):
+    """Answers only once the test sets ``release``, so the call outlives the deadline"""
+    llm = AsyncMock()
+
+    async def invoke(_messages):
+        if started is not None:
+            started.append(asyncio.current_task())
+        await release.wait()
+        if isinstance(reply, Exception):
+            raise reply
+        return AIMessage(content=reply, usage_metadata=LATE_USAGE)
+
+    llm.ainvoke.side_effect = invoke
+    return llm
+
+
+def _persist_spy(service):
+    calls = []
+
+    async def _persist(ref, *, replace_usage=False):
+        calls.append({"execution_id": ref.execution_id, "entries": list(ref.entries), "replace_usage": replace_usage})
+        return "recorded"
+
+    service._persist_usage = _persist
+    return calls
+
+
+async def _run_past_the_deadline(service, llm):
+    with patch.object(prompt_editor_module, "OPTIMIZE_CALL_TIMEOUT_SECONDS", 0.01):
+        with pytest.raises(AppException) as exc_info:
+            await _run(service, _injector(llm))
+    return exc_info.value
 
 
 class TestFieldGate:
@@ -480,8 +532,8 @@ class TestPreviousAttempts:
             _injector(llm),
             _request(
                 previous_attempts=[
-                    _attempt(improved=3, regressed=0, explanation="terser"),
-                    _attempt(regressed=2, explanation="added a rule"),
+                    _attempt(improved=3, regressed=0, explanation="terser", diff_summary="- a\n+ b"),
+                    _attempt(regressed=2, explanation="added a rule", diff_summary="+ c"),
                 ]
             ),
         )
@@ -490,6 +542,17 @@ class TestPreviousAttempts:
         assert "## PREVIOUS ATTEMPTS" in message
         assert message.index("Explanation: added a rule") < message.index("Explanation: terser")
         assert "Attempt: 3 improved, 0 regressed, 0 unchanged" in message
+
+    @pytest.mark.asyncio
+    async def test_an_attempt_with_no_diff_is_rendered_as_no_change(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        await _run(service, _injector(llm), _request(previous_attempts=[_attempt(explanation="x")]))
+
+        message = _human_message(llm)
+        assert "Change: none (the prompt was returned unchanged)" in message
+        assert "Explanation: x" not in message
 
     @pytest.mark.asyncio
     async def test_a_regression_names_the_labelled_case_or_says_it_is_not_shown(self):
@@ -571,6 +634,85 @@ class TestSystemPrompt:
         assert "Do not embed case-specific answers" in _OPTIMIZE_SYSTEM_PROMPT
         assert "build on what improved and avoid what regressed" in _OPTIMIZE_SYSTEM_PROMPT
         assert '"improved_prompt": "the full improved prompt text"' in _OPTIMIZE_SYSTEM_PROMPT
+
+    def test_the_system_prompt_states_the_objective_and_the_check_conditions(self):
+        assert "Diagnose first" in _OPTIMIZE_SYSTEM_PROMPT
+        assert "PASS THE GRADERS" in _OPTIMIZE_SYSTEM_PROMPT
+        assert "Preserve the original intent and domain of the prompt" in _OPTIMIZE_SYSTEM_PROMPT
+        assert "Keep every {{placeholder}}" in _OPTIMIZE_SYSTEM_PROMPT
+        assert "single sample" in _OPTIMIZE_SYSTEM_PROMPT
+        assert '"decision": "change" or "keep"' in _OPTIMIZE_SYSTEM_PROMPT
+
+    def test_an_unevaluated_prompt_is_still_asked_for_an_improvement(self):
+        assert "When no failures are listed" not in _OPTIMIZE_SYSTEM_PROMPT
+
+
+class TestRequestText:
+    @pytest.mark.asyncio
+    async def test_pass_state_and_labels_are_rendered(self):
+        cases = [_case(f"in{i}", {"value": f"out{i}"}) for i in range(3)]
+        service = _service(cases)
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(
+                passing_case_ids=[cases[0].id],
+                failed_cases=[{"case_id": cases[1].id, "actual": "wrong"}],
+            ),
+        )
+
+        message = _human_message(llm)
+        assert (
+            "1 evaluated case(s) pass with the current prompt; 1 failing case(s) are listed under FAILED CASES."
+            in message
+        )
+        assert "Case 2 (passes now)\nInput: in0" in message
+        assert "Case 3\nInput: in2" in message
+
+    @pytest.mark.asyncio
+    async def test_nothing_failed_tells_the_rewrite_to_keep_the_prompt(self):
+        case = _case("in0", {"value": "out0"})
+        service = _service([case])
+        llm = _llm()
+
+        await _run(service, _injector(llm), _request(passing_case_ids=[case.id]))
+
+        assert "## RESULTS OF THE LAST CHECK\nNo evaluated case failed." in _human_message(llm)
+
+    @pytest.mark.asyncio
+    async def test_an_unevaluated_prompt_gets_no_results_section(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        await _run(service, _injector(llm))
+
+        assert "## RESULTS OF THE LAST CHECK" not in _human_message(llm)
+
+    @pytest.mark.asyncio
+    async def test_a_check_where_nothing_passed_says_nothing(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        await _run(service, _injector(llm), _request(passing_case_ids=[]))
+
+        assert "## RESULTS OF THE LAST CHECK" not in _human_message(llm)
+
+    @pytest.mark.asyncio
+    async def test_a_judge_score_is_shown(self):
+        case = _case("in0", {"value": "out0"})
+        service = _service([case])
+        llm = _llm()
+
+        await _run(
+            service,
+            _injector(llm),
+            _request(failed_cases=[{"case_id": case.id, "actual": "near", "judge_score": 0.85}]),
+        )
+
+        message = _human_message(llm)
+        assert message.endswith("Got: near\nJudge score: 0.85")
 
 
 class TestCaseSplit:
@@ -661,6 +803,54 @@ class TestCaseSplit:
 
         assert "at least two conversations or cases" in exc_info.value.error_detail
 
+    @pytest.mark.asyncio
+    async def test_an_unknown_passing_case_is_refused(self):
+        service = _service([_case()])
+        llm = _llm()
+
+        with pytest.raises(AppException) as exc_info:
+            await _run(service, _injector(llm), _request(passing_case_ids=[uuid4()]))
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_key is ErrorKey.PROMPT_CASE_SELECTION_INVALID
+        assert "evaluated cases are no longer" in exc_info.value.error_detail
+        llm.ainvoke.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_passing_case_inside_the_hold_out_is_refused(self):
+        cases = [_case() for _ in range(4)]
+        service = _service(cases)
+        llm = _llm()
+
+        with pytest.raises(AppException) as exc_info:
+            await _run(
+                service,
+                _injector(llm),
+                _request(
+                    case_split={"holdout_case_ids": [cases[0].id, cases[1].id]},
+                    passing_case_ids=[cases[0].id],
+                ),
+            )
+
+        assert "hold-out set" in exc_info.value.error_detail
+        llm.ainvoke.assert_not_called()
+
+
+class TestSuggestionOutcome:
+    def test_identical_text_is_unchanged(self):
+        assert suggestion_outcome("a\nb", "a\nb") == "unchanged"
+
+    @pytest.mark.parametrize(
+        "suggested",
+        ["a\r\nb", "a  \nb", "a\n\nb", "a\nb\n"],
+        ids=["crlf", "trailing-spaces", "blank-line", "trailing-newline"],
+    )
+    def test_a_spacing_difference_is_whitespace_only(self, suggested):
+        assert suggestion_outcome("a\nb", suggested) == "whitespace_only"
+
+    def test_one_changed_word_is_changed(self):
+        assert suggestion_outcome("a b", "a c") == "changed"
+
 
 class TestSuggestionParsing:
     @pytest.mark.asyncio
@@ -694,6 +884,79 @@ class TestSuggestionParsing:
 
         assert "empty prompt" in exc_info.value.error_detail
 
+    @pytest.mark.asyncio
+    async def test_an_echo_of_the_current_prompt_reports_no_change_and_drops_the_story(self):
+        reply = json.dumps(
+            {
+                "diagnosis": "the rule is ambiguous",
+                "decision": "change",
+                "improved_prompt": "You are helpful.",
+                "explanation": "Tightened the rule.",
+            }
+        )
+
+        result = await _run(_service([]), _injector(_llm(reply)))
+
+        assert result.suggested_prompt == "You are helpful."
+        assert result.outcome == "unchanged"
+        assert result.explanation == ""
+
+    @pytest.mark.asyncio
+    async def test_a_deliberate_keep_keeps_its_reason(self):
+        reply = json.dumps(
+            {"decision": " Keep ", "improved_prompt": "You are helpful.", "explanation": "It already passes."}
+        )
+
+        result = await _run(_service([]), _injector(_llm(reply)))
+
+        assert result.outcome == "unchanged"
+        assert result.explanation == "It already passes."
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "reply",
+        [
+            {"decision": "keep", "improved_prompt": "  ", "explanation": "It already passes."},
+            {"decision": "keep", "explanation": "It already passes."},
+        ],
+        ids=["blank", "absent"],
+    )
+    async def test_a_keep_with_no_prompt_text_returns_the_current_prompt(self, reply):
+        result = await _run(_service([]), _injector(_llm(json.dumps(reply))))
+
+        assert result.suggested_prompt == "You are helpful."
+        assert result.outcome == "unchanged"
+        assert result.explanation == "It already passes."
+
+    @pytest.mark.asyncio
+    async def test_a_keep_that_changed_the_prompt_drops_its_reason(self):
+        reply = json.dumps({"decision": "keep", "improved_prompt": "Be concise.", "explanation": "Keep it."})
+
+        result = await _run(_service([]), _injector(_llm(reply)))
+
+        assert result.suggested_prompt == "Be concise."
+        assert result.outcome == "changed"
+        assert result.explanation == ""
+
+    @pytest.mark.asyncio
+    async def test_a_raw_newline_inside_the_prompt_is_accepted(self):
+        reply = '{"decision": "change", "improved_prompt": "Line one.' + "\n" + 'Line two.", "explanation": "Split."}'
+
+        result = await _run(_service([]), _injector(_llm(reply)))
+
+        assert result.suggested_prompt == "Line one.\nLine two."
+        assert result.outcome == "changed"
+        assert result.explanation == "Split."
+
+    @pytest.mark.asyncio
+    async def test_an_unknown_decision_reads_as_change(self):
+        reply = json.dumps({"decision": "maybe", "improved_prompt": "Be concise.", "explanation": "Tightened."})
+
+        result = await _run(_service([]), _injector(_llm(reply)))
+
+        assert result.outcome == "changed"
+        assert result.explanation == "Tightened."
+
 
 class TestProviderFailures:
     @pytest.mark.asyncio
@@ -720,19 +983,15 @@ class TestProviderFailures:
     @pytest.mark.asyncio
     async def test_a_call_that_runs_past_the_budget_is_a_504(self):
         service = _service([])
-        llm = AsyncMock()
+        service._persist_usage = AsyncMock(return_value="recorded")
+        release = asyncio.Event()
 
-        async def _never(_messages):
-            await asyncio.sleep(3600)
+        error = await _run_past_the_deadline(service, _gated_llm(release))
 
-        llm.ainvoke.side_effect = _never
-
-        with patch("app.services.prompt_editor.OPTIMIZE_CALL_TIMEOUT_SECONDS", 0.01):
-            with pytest.raises(AppException) as exc_info:
-                await _run(service, _injector(llm))
-
-        assert exc_info.value.status_code == 504
-        assert exc_info.value.error_key is ErrorKey.PROMPT_EXECUTION_TIMEOUT
+        assert error.status_code == 504
+        assert error.error_key is ErrorKey.PROMPT_EXECUTION_TIMEOUT
+        release.set()
+        await asyncio.gather(*background_tasks._TASKS)
 
 
 class TestMetering:
@@ -781,6 +1040,112 @@ class TestMetering:
             await _run(service, _injector(_llm(RuntimeError("down"))))
 
         assert called == []
+
+    @pytest.mark.asyncio
+    async def test_a_cut_call_is_handed_over_as_tokens_unknown(self):
+        service = _service([])
+        calls = _persist_spy(service)
+        release = asyncio.Event()
+
+        error = await _run_past_the_deadline(service, _gated_llm(release))
+
+        assert error.status_code == 504
+        assert len(calls) == 1
+        assert calls[0]["entries"] == [
+            {"call_index": 0, "purpose": "prompt_optimize", "provider_id": str(PROVIDER.id), "usage": None}
+        ]
+        assert calls[0]["replace_usage"] is False
+        release.set()
+
+    @pytest.mark.asyncio
+    async def test_a_cut_call_that_answers_later_is_metered_for_real(self):
+        service = _service([])
+        calls = _persist_spy(service)
+        release = asyncio.Event()
+
+        await _run_past_the_deadline(service, _gated_llm(release))
+        release.set()
+        await asyncio.gather(*background_tasks._TASKS)
+
+        assert len(calls) == 2
+        late = calls[1]
+        assert late["replace_usage"] is True
+        assert late["execution_id"] == calls[0]["execution_id"]
+        assert [(entry["call_index"], entry["purpose"]) for entry in late["entries"]] == [(0, "prompt_optimize")]
+        assert late["entries"][0]["usage"]["total_tokens"] == 15
+
+    @pytest.mark.asyncio
+    async def test_a_cut_call_that_fails_later_keeps_its_placeholder(self, caplog):
+        service = _service([])
+        calls = _persist_spy(service)
+        release = asyncio.Event()
+
+        await _run_past_the_deadline(service, _gated_llm(release, reply=RuntimeError("down")))
+        release.set()
+        await asyncio.gather(*background_tasks._TASKS)
+
+        assert len(calls) == 1
+        assert "never answered" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_cut_call_that_never_answers_is_cancelled_at_the_repair_deadline(self, caplog):
+        service = _service([])
+        calls = _persist_spy(service)
+        started = []
+
+        with patch.object(prompt_editor_module, "PROMPT_EDITOR_CALL_TIMEOUT_SECONDS", 0.01):
+            await _run_past_the_deadline(service, _gated_llm(asyncio.Event(), started=started))
+            await asyncio.gather(*background_tasks._TASKS)
+
+        assert started[0].cancelled()
+        assert len(calls) == 1
+        assert "never answered" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_cut_call_that_answered_before_the_flush_is_metered_in_the_flush(self):
+        service = _service([])
+        calls = _persist_spy(service)
+        answered = asyncio.get_running_loop().create_future()
+        answered.set_result(AIMessage(content="late", usage_metadata=LATE_USAGE))
+        ref = PromptUsageRef(execution_id="prompt_editor:optimize:x")
+        ref.abandoned.append(AbandonedCall(answered, 0, "prompt_optimize", PROVIDER.id))
+        service._rates = {}
+        service._name_cache = {str(PROVIDER.id): ("openai", "gpt-4o")}
+
+        await service._flush_usage(ref)
+
+        assert len(calls) == 1
+        assert calls[0]["entries"][0]["usage"]["total_tokens"] == 15
+        assert background_tasks._TASKS == set()
+
+    @pytest.mark.asyncio
+    async def test_a_failed_repair_scheduling_keeps_the_placeholder(self, caplog):
+        service = _service([])
+        calls = _persist_spy(service)
+        release = asyncio.Event()
+        started = []
+
+        def _no_spawn(coro, *, name):
+            coro.close()
+            raise RuntimeError("loop closing")
+
+        with patch.object(prompt_editor_module, "spawn", _no_spawn):
+            error = await _run_past_the_deadline(service, _gated_llm(release, started=started))
+
+        assert error.status_code == 504
+        assert len(calls) == 1
+        assert "Scheduling the late usage repair failed" in caplog.text
+        release.set()
+        await started[0]
+
+    @pytest.mark.asyncio
+    async def test_the_editor_builds_its_model_with_a_single_attempt_timeout(self):
+        injector = _injector(_llm())
+
+        await _run(_service([]), injector)
+
+        llm_provider = injector.get.side_effect(SimpleNamespace(__name__="LLMProvider"))
+        assert llm_provider.get_model_from_provider.call_args.kwargs["call_timeout_seconds"] == 120
 
     @pytest.mark.asyncio
     async def test_a_failed_hand_over_is_reported_on_the_run(self):
@@ -845,6 +1210,16 @@ class TestRequestBounds:
             _request(previous_attempts=[_attempt(prompt="the text the optimizer must not see")])
 
         assert exc_info.value.errors()[0]["type"] == "extra_forbidden"
+
+    def test_a_case_cannot_both_pass_and_fail(self):
+        case_id = uuid4()
+        with pytest.raises(ValidationError):
+            _request(failed_cases=[{"case_id": case_id, "actual": "x"}], passing_case_ids=[case_id])
+
+    @pytest.mark.parametrize("score", [-0.1, 1.5])
+    def test_a_judge_score_outside_the_unit_interval_is_rejected(self, score):
+        with pytest.raises(ValidationError):
+            _request(failed_cases=[{"case_id": uuid4(), "actual": "x", "judge_score": score}])
 
     def test_counts_beyond_one_run_of_cases_are_rejected(self):
         with pytest.raises(ValidationError):

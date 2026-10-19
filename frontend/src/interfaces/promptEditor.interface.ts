@@ -120,9 +120,12 @@ export interface PromptEvalResponse {
   provenance: PromptRunProvenance;
 }
 
+export type SuggestionOutcome = "changed" | "whitespace_only" | "unchanged";
+
 export interface PromptOptimizeResponse {
   suggested_prompt: string;
   explanation: string;
+  outcome: SuggestionOutcome;
   exposure: Record<string, string[]>;
   examples_truncated: boolean;
   holdout_case_ids: string[];
@@ -175,8 +178,10 @@ export interface PromptOptimizeRequestPayload {
     failed_metrics: string[];
     /** What the graders said about the reply, so the rewrite reads the same notes */
     feedback?: string;
+    judge_score?: number;
   }>;
   case_split?: { holdout_case_ids: string[] };
+  passing_case_ids?: string[];
   techniques?: string[];
   technique_configs?: PromptTechniqueConfigs;
   previous_attempts?: PreviousAttemptPayload[];
