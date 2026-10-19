@@ -3,9 +3,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette_context import context, request_cycle_context
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.permissions.constants import Permissions as P
 from app.modules.workflow.engine.nodes.ml.train_data_source_node import TrainDataSourceNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
 from app.schemas.dynamic_form_schemas.nodes.train_data_source_schema import (
@@ -19,6 +21,20 @@ def node() -> TrainDataSourceNode:
 
 
 class TestProcessCsvSourcePrefersDownloadById:
+    def test_file_id_requires_file_manager_read_in_authenticated_context(self, node):
+        with request_cycle_context():
+            context["user_permissions"] = []
+            with pytest.raises(AppException) as exc_info:
+                node._require_file_manager_read_permission()
+
+        assert exc_info.value.status_code == 403
+        assert exc_info.value.error_key == ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE
+
+    def test_file_id_allows_file_manager_read_permission(self, node):
+        with request_cycle_context():
+            context["user_permissions"] = [P.FileManager.READ]
+            node._require_file_manager_read_permission()
+
     @pytest.mark.asyncio
     async def test_downloads_by_id_even_when_csv_file_path_is_also_given(
         self, node, monkeypatch, tmp_path

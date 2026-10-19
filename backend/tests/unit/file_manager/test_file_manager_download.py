@@ -17,6 +17,7 @@ def _service(provider: MagicMock) -> FileManagerService:
         return_value=SimpleNamespace(
             path="uploads/training.csv",
             storage_provider="s3",
+            storage_path="settings-bucket",
         )
     )
     service.storage_provider = provider
@@ -38,6 +39,10 @@ async def test_s3_download_streams_to_destination(tmp_path):
 
     await service.download_file_to_path("file-id", str(destination))
 
+    service._initialize_storage_provider.assert_awaited_once_with(
+        "s3",
+        "settings-bucket",
+    )
     provider.download_file_to_path.assert_awaited_once()
     source, partial_path = provider.download_file_to_path.await_args.args
     assert source == "uploads/training.csv"
@@ -66,3 +71,21 @@ async def test_failed_s3_download_removes_partial_file(tmp_path):
 
     assert destination.read_bytes() == b"existing"
     assert not list(tmp_path.glob("*.part"))
+
+
+@pytest.mark.asyncio
+async def test_s3_provider_uses_bucket_from_file_manager_record():
+    provider = MagicMock()
+    provider.name = "s3"
+    provider.initialize = AsyncMock()
+    provider.is_initialized.return_value = True
+    provider.get_base_path.return_value = "settings-bucket"
+
+    service = object.__new__(FileManagerService)
+    service.storage_provider = None
+    service.get_storage_provider_by_name = MagicMock(return_value=provider)
+
+    await service._initialize_storage_provider("s3", "settings-bucket")
+
+    config = service.get_storage_provider_by_name.call_args.kwargs["config"]
+    assert config["AWS_BUCKET_NAME"] == "settings-bucket"

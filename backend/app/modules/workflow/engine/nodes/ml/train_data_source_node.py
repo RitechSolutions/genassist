@@ -14,10 +14,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, TypeVar
 
+from starlette_context import context
+
+from app.auth.utils import has_permission
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
+from app.core.permissions.constants import Permissions as P
 from app.core.utils.sensitive_data_utils import redact_bound_values, redact_sensitive_substrings
 from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.database.provider_manager import DBProviderManager
@@ -330,6 +334,7 @@ class TrainDataSourceNode(BaseNode):
             # process's own DATA_VOLUME. Only fall back to the raw
             # csvFilePath when there's no ID to re-download by.
             if csv_file_id:
+                self._require_file_manager_read_permission()
                 from app.dependencies.injector import injector
                 from app.services.file_manager import FileManagerService
 
@@ -572,6 +577,19 @@ class TrainDataSourceNode(BaseNode):
             error_detail=(
                 "The uploaded training file is no longer available. Upload it again."
             ),
+        )
+
+    @staticmethod
+    def _require_file_manager_read_permission() -> None:
+        """Authorize user-triggered file reads; internal worker runs are trusted."""
+        if not context.exists():
+            return
+        granted_permissions = context.get("user_permissions", [])
+        if has_permission(granted_permissions, P.FileManager.READ):
+            return
+        raise AppException(
+            error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE,
+            status_code=403,
         )
 
     @staticmethod

@@ -347,7 +347,10 @@ class FileManagerService:
     async def get_file_content(self, file: FileModel) -> bytes:
         """Get file content from storage provider."""
         # initialize the storage provider
-        await self._initialize_storage_provider(file.storage_provider)
+        await self._initialize_storage_provider(
+            file.storage_provider,
+            file.storage_path,
+        )
 
         # make sure the storage provider is initialized
         if not self.storage_provider.is_initialized():
@@ -385,7 +388,10 @@ class FileManagerService:
                 partial_path = partial_file.name
 
             file = await self.get_file_by_id(file_id)
-            await self._initialize_storage_provider(file.storage_provider)
+            await self._initialize_storage_provider(
+                file.storage_provider,
+                file.storage_path,
+            )
             if not self.storage_provider or not self.storage_provider.is_initialized():
                 raise ValueError("Storage provider not initialized")
 
@@ -541,13 +547,29 @@ class FileManagerService:
 
 
     # ==================== Helper Methods ====================
-    async def _initialize_storage_provider(self, storage_provider_name: str) -> BaseStorageProvider:
+    async def _initialize_storage_provider(
+        self,
+        storage_provider_name: str,
+        storage_path: Optional[str] = None,
+    ) -> BaseStorageProvider:
         """Initialize the storage provider."""
         current_name = getattr(self.storage_provider, "name", None) if self.storage_provider else None
+        expected_s3_bucket = (
+            storage_path if storage_provider_name == "s3" and storage_path else None
+        )
+        current_base_path = (
+            self.storage_provider.get_base_path()
+            if self.storage_provider and expected_s3_bucket is not None
+            else None
+        )
         if (
             self.storage_provider
             and self.storage_provider.is_initialized()
             and current_name == storage_provider_name
+            and (
+                expected_s3_bucket is None
+                or current_base_path == expected_s3_bucket
+            )
         ):
             return self.storage_provider
 
@@ -559,6 +581,11 @@ class FileManagerService:
         # get the storage provider configuration for the file storage provider
         # convert pydantic settings object to a plain dict for providers
         config = file_storage_settings.model_dump()
+        if expected_s3_bucket is not None:
+            # The File Manager record captures the bucket selected in File
+            # Manager Settings when the file was created. Use it for reads so
+            # downloads do not silently fall back to the environment bucket.
+            config["AWS_BUCKET_NAME"] = expected_s3_bucket
 
         # initialize the storage provider with the resolved configuration
         await self.set_storage_provider(

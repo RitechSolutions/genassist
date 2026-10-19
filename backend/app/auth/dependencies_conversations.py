@@ -328,7 +328,7 @@ def socket_auth_conversation(required_permissions: list[str]):
                         user.id,
                         guest_perms,
                     )
-                    _set_user_context(user, user.roles)
+                    _set_user_context(user, user.roles, guest_perms)
                     guest_handled = True
                 except AppException:
                     guest_handled = False
@@ -344,7 +344,7 @@ def socket_auth_conversation(required_permissions: list[str]):
                     key_obj.user.id,
                     key_obj.permissions,
                 )
-                _set_user_context(key_obj.user, key_obj.roles)
+                _set_user_context(key_obj.user, key_obj.roles, key_obj.permissions)
                 token_based_auth = await _conversation_token_based_auth(
                     conversation_id, conversation_service, agent_config_service
                 )
