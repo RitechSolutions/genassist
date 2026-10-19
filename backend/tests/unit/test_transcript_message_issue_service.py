@@ -56,7 +56,7 @@ class FakeRepo:
         self.saved = issue
         return issue
 
-    async def count_message_issues_by_status(self, **_):
+    async def count_message_issues_by_status(self, filter_obj):
         return self.counts
 
     async def list_ordered(self):

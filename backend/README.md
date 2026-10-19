@@ -55,6 +55,8 @@ docker compose -f docker/docker-compose.base.yml -f docker/docker-compose.build.
 
 > **Important:** When running backend locally (not in Docker), ensure `CHROMA_HOST=localhost` and `CHROMA_PORT=8005` are set in your `.env` file.
 
+> **Celery workers in Docker with a local backend:** the containers keep their files in the `app_data_volume` Docker volume by default. To share uploads and saved models with `python run.py`, start them with `APP_DATA_VOLUME=./backend/datavolume`, for example `APP_DATA_VOLUME=./backend/datavolume docker compose -f docker-compose.dev.yml up -d celery_worker_default celery_worker_ml`.
+
 ### 5. Run the Application
 
 ```bash
