@@ -200,7 +200,11 @@ class MLModelsService:
         )
         file_id = update_data.get("pkl_file_id", existing_file_id)
         file_id_changed = "pkl_file_id" in update_data and file_id != existing_file_id
-        if file_id and not file_id_changed:
+        if file_id_changed and file_id:
+            # A caller-supplied path must never override the uploaded file that
+            # was validated and will be downloaded for inference.
+            update_data["pkl_file"] = None
+        elif file_id and not file_id_changed:
             # pkl_file is only a local copy of the uploaded file, which inference
             # records itself. A stale value from the edit form must neither count
             # as a change nor overwrite the recorded copy.

@@ -315,7 +315,7 @@ async def test_recording_a_downloaded_copy_does_not_revalidate(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_new_uploaded_file_drops_the_stale_local_copy_and_is_validated(monkeypatch):
+async def test_new_uploaded_file_ignores_caller_path_and_is_validated(monkeypatch):
     model_id = uuid4()
     old_file_id, new_file_id = uuid4(), uuid4()
     existing = SimpleNamespace(
@@ -331,7 +331,13 @@ async def test_new_uploaded_file_drops_the_stale_local_copy_and_is_validated(mon
     validator = AsyncMock()
     monkeypatch.setattr(ml_models_module, "validate_model_artifact_registration", validator)
 
-    await MLModelsService(repository).update(model_id, MLModelUpdate(pkl_file_id=str(new_file_id)))
+    await MLModelsService(repository).update(
+        model_id,
+        MLModelUpdate(
+            pkl_file_id=str(new_file_id),
+            pkl_file="/tmp/caller-controlled.pkl",
+        ),
+    )
 
     validator.assert_awaited_once_with(None, str(new_file_id), ["hour"], "revenue", artifact_contract=None)
     assert repository.update.await_args.args[1]["pkl_file"] is None
