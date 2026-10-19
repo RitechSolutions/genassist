@@ -46,6 +46,16 @@ _UNPRICED = {
     "cost_usd": None,
     "pricing_status": PricingStatus.UNPRICED.value,
 }
+_USAGE_COLUMNS = (
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "token_details",
+    "cache_read_tokens",
+    "cache_creation_tokens",
+    "prompt_tokens",
+    *_UNPRICED,
+)
 
 RecordingStatus = Literal["recorded", "disabled", "failed", "empty"]
 
@@ -378,11 +388,15 @@ class LlmUsageRecorder:
         source: str = "test_suite",
         occurred_at: Optional[datetime] = None,
         configured_rates: Optional[dict[str, Any]] = None,
+        replace_usage: bool = False,
     ) -> RecordingStatus:
         """One batch per evaluated case: the case's judge events plus a single receipt.
 
         ``configured_rates`` lets a caller that already read this tenant's rates price
         its own view from the same snapshot the ledger row is written from
+
+        ``replace_usage`` lets a row written as tokens-unknown at a deadline take the real
+        counts once the call answers; no receipt is written then, the run's receipt already counted the row
         """
         if not entries:
             return "empty"
@@ -433,12 +447,24 @@ class LlmUsageRecorder:
                                 }
                             )
 
-                        insert_events = (
-                            insert(LlmUsageEventModel)
-                            .values(event_rows)
-                            .on_conflict_do_nothing(constraint="uq_llm_usage_events_execution_call")
-                        )
+                        insert_events = insert(LlmUsageEventModel).values(event_rows)
+                        if replace_usage:
+                            # onupdate is not applied inside ON CONFLICT DO UPDATE
+                            insert_events = insert_events.on_conflict_do_update(
+                                constraint="uq_llm_usage_events_execution_call",
+                                set_={
+                                    **{name: insert_events.excluded[name] for name in _USAGE_COLUMNS},
+                                    "updated_at": occurred_at,
+                                },
+                            )
+                        else:
+                            insert_events = insert_events.on_conflict_do_nothing(
+                                constraint="uq_llm_usage_events_execution_call"
+                            )
                         await session.execute(insert_events)
+                        if replace_usage:
+                            await session.commit()
+                            return "recorded"
                         persisted = await self._persisted_event_count(session, execution_id)
 
                         receipt = (
