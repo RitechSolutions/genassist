@@ -2213,6 +2213,7 @@ class TrainModelNode(BaseNode):
             from app.schemas.file import FileBase
             from app.services.app_settings import AppSettingsService
             from app.services.file_manager import FileManagerService
+            from app.services.ml_model_artifacts import ModelArtifactContract
 
             fm = injector.get(FileManagerService)
             app_cfg = await injector.get(AppSettingsService).get_by_type_and_name(
@@ -2295,11 +2296,22 @@ class TrainModelNode(BaseNode):
                     "relying on them during inference."
                 )
 
+            # These are the feature_columns/target_column this node wrote into the
+            # artifact metadata, so registration need not download and re-read it.
+            artifact_contract = ModelArtifactContract(
+                features=tuple(feature_columns),
+                target_variable=target_column,
+                feature_count=len(feature_columns),
+            )
             if existing:
-                updated = await ml_service.update(existing.id, MLModelUpdate(**model_fields))
+                updated = await ml_service.update(
+                    existing.id, MLModelUpdate(**model_fields), artifact_contract=artifact_contract
+                )
                 return str(updated.id), None, registration_warnings
 
-            created = await ml_service.create(MLModelCreate(name=name, **model_fields))
+            created = await ml_service.create(
+                MLModelCreate(name=name, **model_fields), artifact_contract=artifact_contract
+            )
             return str(created.id), None, registration_warnings
 
         except Exception as e:
