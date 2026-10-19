@@ -268,6 +268,36 @@ describe("run inputs", () => {
     expect(acceptGate(ready(), ADMIN, "suggested", { pending: false, stale: true }).reason).toBe(reason);
   });
 
+  it("closes a suggestion the model returned unchanged, for scoring and for accepting", () => {
+    const reason =
+      "The suggestion is the same as the prompt it came from. Edit it or run Optimize again.";
+
+    expect(
+      evaluate({ content: "s", contentNoun: "suggested prompt", outcome: "unchanged" })
+        .reason,
+    ).toBe(reason);
+    expect(
+      acceptGate(ready(), ADMIN, "s", { pending: false, stale: false, outcome: "unchanged" })
+        .reason,
+    ).toBe(reason);
+  });
+
+  it("closes a suggestion that changes only spacing", () => {
+    const reason = "The suggestion changes only spacing. Edit it or run Optimize again.";
+
+    expect(
+      evaluate({ content: "s", contentNoun: "suggested prompt", outcome: "whitespace_only" })
+        .reason,
+    ).toBe(reason);
+    expect(
+      acceptGate(ready(), ADMIN, "s", { pending: false, stale: false, outcome: "whitespace_only" })
+        .reason,
+    ).toBe(reason);
+    expect(
+      evaluate({ content: "s", contentNoun: "suggested prompt", outcome: "changed" }).enabled,
+    ).toBe(true);
+  });
+
   it("measures the body in code points, as the backend bound does", () => {
     const emoji = "😀".repeat(200_000);
 

@@ -14,6 +14,13 @@ import pandas as pd
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.ml_model_feature_contract import (
+    _match_registered_feature_names,
+    _model_feature_count,
+    _normalize_estimator_feature_names,
+    _resolve_artifact_metadata,
+    _resolve_estimator_feature_names,
+)
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml.ml_utils import (
@@ -23,14 +30,13 @@ from app.modules.workflow.engine.nodes.ml.ml_utils import (
     normalize_feature_expression,
     ordinal_key,
 )
-from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM, MLModelBase
+from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM
 from app.services.ml_model_manager import download_pkl_file, get_ml_model_manager
 from app.services.ml_models import MLModelsService
 
 logger = logging.getLogger(__name__)
 
 ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
-SUPPORTED_ARTIFACT_SCHEMA_VERSION = 2
 
 _BOOL_TRUE = frozenset({"true"})
 _BOOL_FALSE = frozenset({"false"})
@@ -611,142 +617,6 @@ def _json_safe_scalar(value: Any) -> Any:
     return value
 
 
-_UNREADABLE_MODEL_ATTRIBUTE = object()
-
-
-def _read_model_attribute(model: Any, attribute: str) -> Any:
-    try:
-        return getattr(model, attribute, None)
-    except Exception:
-        return _UNREADABLE_MODEL_ATTRIBUTE
-
-
-def _model_feature_count(model: Any) -> Optional[int]:
-    count_values = [_read_model_attribute(model, "n_features_in_")]
-
-    found_invalid_count = False
-    valid_counts = []
-    for value in count_values:
-        if value is None:
-            continue
-        if (
-            value is _UNREADABLE_MODEL_ATTRIBUTE
-            or isinstance(value, (bool, np.bool_))
-            or not isinstance(value, (int, np.integer))
-            or value < 1
-        ):
-            found_invalid_count = True
-            continue
-        valid_counts.append(int(value))
-
-    if valid_counts:
-        return valid_counts[0] if len(set(valid_counts)) == 1 else -1
-
-    return -1 if found_invalid_count else None
-
-
-def _normalize_estimator_feature_names(
-    names: Any,
-    expected_feature_count: Optional[int],
-) -> Optional[List[str]]:
-    if isinstance(names, np.ndarray):
-        names = names.tolist()
-    if not isinstance(names, (list, tuple)):
-        return None
-
-    normalized_names = list(names)
-    if (
-        not normalized_names
-        or any(
-            not isinstance(name, str) or not name.strip()
-            for name in normalized_names
-        )
-        or len(set(normalized_names)) != len(normalized_names)
-        or (
-            expected_feature_count is not None
-            and len(normalized_names) != expected_feature_count
-        )
-    ):
-        return None
-    return normalized_names
-
-
-def _resolve_estimator_feature_names(
-    model: Any,
-    module_root: str,
-    expected_feature_count: Optional[int],
-) -> Optional[List[str]]:
-    if module_root == "xgboost" and type(model).__name__ == "Booster":
-        return None
-
-    resolved_orders = []
-    for attribute, required_module in (
-        ("feature_names_in_", None),
-        ("feature_names_", "catboost"),
-        ("feature_name_", "lightgbm"),
-    ):
-        if required_module is not None and module_root != required_module:
-            continue
-        normalized_names = _normalize_estimator_feature_names(
-            _read_model_attribute(model, attribute),
-            expected_feature_count,
-        )
-        if normalized_names is not None:
-            resolved_orders.append(normalized_names)
-
-    if module_root == "xgboost":
-        get_booster = _read_model_attribute(model, "get_booster")
-        if not callable(get_booster):
-            return None
-        try:
-            booster = get_booster()
-        except Exception:
-            return None
-        native_names = _normalize_estimator_feature_names(
-            _read_model_attribute(booster, "feature_names"),
-            expected_feature_count,
-        )
-        if native_names is None:
-            return None
-        resolved_orders.append(native_names)
-
-    if resolved_orders and all(
-        names == resolved_orders[0] for names in resolved_orders[1:]
-    ):
-        return resolved_orders[0]
-    return None
-
-
-def _lightgbm_feature_name(name: str) -> str:
-    return "".join("_" if character.isspace() else character for character in name)
-
-
-def _match_registered_feature_names(
-    estimator_names: List[str],
-    registered_names: Any,
-    module_root: str,
-) -> Optional[List[str]]:
-    normalized_registered_names = _normalize_estimator_feature_names(
-        registered_names,
-        len(estimator_names),
-    )
-    if normalized_registered_names is None:
-        return None
-
-    if set(normalized_registered_names) == set(estimator_names):
-        return list(estimator_names)
-
-    if module_root != "lightgbm":
-        return None
-
-    registered_by_estimator_name = {
-        _lightgbm_feature_name(name): name for name in normalized_registered_names
-    }
-    if set(registered_by_estimator_name) != set(estimator_names):
-        return None
-    return [registered_by_estimator_name[name] for name in estimator_names]
-
-
 def _describe_feature_names(names: Any) -> str:
     if isinstance(names, np.ndarray):
         names = names.tolist()
@@ -815,46 +685,6 @@ def _resolve_feature_order(
             "those names match the registered features, and upload the new file."
         ),
     )
-
-
-def _resolve_artifact_metadata(model_response: Dict[str, Any]) -> Dict[str, Any]:
-    """Return metadata only when the artifact declares a supported schema."""
-    metadata = model_response.get("metadata")
-    if not isinstance(metadata, dict):
-        return {}
-
-    schema_version = metadata.get("metadata_schema_version")
-    if schema_version is None:
-        if not metadata:
-            return {}
-        raise AppException(
-            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-            error_detail=(
-                "This model artifact has metadata but does not declare a metadata schema version, "
-                "so it cannot be read safely. Retrain the model with the current version of GenAssist."
-            ),
-        )
-    if (
-        isinstance(schema_version, bool)
-        or not isinstance(schema_version, int)
-        or schema_version < 1
-    ):
-        raise AppException(
-            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-            error_detail=(
-                "This model artifact declares an invalid metadata schema version. "
-                "Retrain the model with the current version of GenAssist."
-            ),
-        )
-    if schema_version > SUPPORTED_ARTIFACT_SCHEMA_VERSION:
-        raise AppException(
-            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-            error_detail=(
-                f"This model uses artifact schema v{schema_version}, but this server supports "
-                f"up to v{SUPPORTED_ARTIFACT_SCHEMA_VERSION}. Upgrade the server or retrain the model."
-            ),
-        )
-    return metadata
 
 
 def _replay_feature_engineering(
@@ -1527,7 +1357,7 @@ class MLModelInferenceNode(BaseNode):
             destination_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{ml_model.name}_{ml_model.id}.pkl")
             pkl_file_path = await download_pkl_file(ml_model.pkl_file_id, destination_path)
             # Update the ml_model with the new pkl file path
-            await ml_service.update(ml_model.id, MLModelBase(pkl_file=str(pkl_file_path)))
+            await ml_service.record_local_pkl_file(ml_model.id, str(pkl_file_path))
             ml_model.pkl_file = str(pkl_file_path)
             return
 
