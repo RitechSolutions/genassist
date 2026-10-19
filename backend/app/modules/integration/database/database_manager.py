@@ -5,13 +5,49 @@ import os
 from sshtunnel import SSHTunnelForwarder
 from app.core.utils.encryption_utils import decrypt_key
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
-from sqlalchemy import text
+from sqlalchemy import column as sql_column
+from sqlalchemy import func, literal_column, quoted_name, select, text
+from sqlalchemy import table as sql_table
 from sqlalchemy.pool import NullPool
 import asyncio
 from app.modules.integration.snowflake import SnowflakeManager
 from app.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+
+# Schema query builders; SQLAlchemy quotes and escapes the table and column names.
+def _quoted_table(table_name: str):
+    return sql_table(quoted_name(table_name, quote=True))
+
+
+def _quoted_column(column_name: str):
+    return sql_column(quoted_name(column_name, quote=True))
+
+
+def _sample_rows_query(table_name: str, sample_size: int):
+    return select(literal_column("*")).select_from(_quoted_table(table_name)).limit(sample_size)
+
+
+def _distinct_values_query(table_name: str, column_name: str, max_values: int):
+    target_column = _quoted_column(column_name)
+    return (
+        select(target_column)
+        .distinct()
+        .select_from(_quoted_table(table_name))
+        .where(target_column.is_not(None))
+        .order_by(target_column)
+        .limit(max_values)
+    )
+
+
+def _distinct_count_query(table_name: str, column_name: str):
+    target_column = _quoted_column(column_name)
+    return (
+        select(func.count(target_column.distinct()))
+        .select_from(_quoted_table(table_name))
+        .where(target_column.is_not(None))
+    )
 
 
 class DatabaseManager:
@@ -1047,10 +1083,15 @@ class DatabaseManager:
                             continue
                         table_info = {"name": table, "columns": []}
 
-                        result = await conn.execute(
-                            text(f"PRAGMA table_info(`{table}`)")
-                        )
-                        columns = result.fetchall()
+                        try:
+                            result = await conn.execute(
+                                text("SELECT * FROM pragma_table_info(:table_name)"),
+                                {"table_name": table},
+                            )
+                            columns = result.fetchall()
+                        except Exception as e:
+                            logger.warning(f"Could not read columns for table {table}, skipping it: {e}")
+                            continue
 
                         for column in columns:
                             # Column structure in SQLite: (cid, name, type, notnull, dflt_value, pk)
@@ -1070,14 +1111,7 @@ class DatabaseManager:
                                 try:
                                     # Get distinct values for categorical columns
                                     result = await conn.execute(
-                                        text(f"""
-                                        SELECT DISTINCT `{column[1]}`
-                                        FROM `{table}`
-                                        WHERE `{column[1]}` IS NOT NULL
-                                        ORDER BY `{column[1]}`
-                                        LIMIT :limit
-                                    """),
-                                        {"limit": max_categorical_values},
+                                        _distinct_values_query(table, column[1], max_categorical_values)
                                     )
 
                                     distinct_values = [
@@ -1087,11 +1121,7 @@ class DatabaseManager:
 
                                     # Get count of distinct values
                                     result = await conn.execute(
-                                        text(f"""
-                                        SELECT COUNT(DISTINCT `{column[1]}`)
-                                        FROM `{table}`
-                                        WHERE `{column[1]}` IS NOT NULL
-                                    """)
+                                        _distinct_count_query(table, column[1])
                                     )
                                     total_distinct = result.fetchone()[0]
                                     col_info["total_distinct_count"] = total_distinct
@@ -1114,9 +1144,8 @@ class DatabaseManager:
                         if include_samples and sample_size > 0:
                             try:
                                 # Get sample rows
-                                sample_query = f"SELECT * FROM `{table}` LIMIT :limit"
                                 result = await conn.execute(
-                                    text(sample_query), {"limit": sample_size}
+                                    _sample_rows_query(table, sample_size)
                                 )
 
                                 rows = result.fetchall()
@@ -1144,10 +1173,15 @@ class DatabaseManager:
                     for table in tables:
                         if table not in allowed_tables:
                             continue
-                        result = await conn.execute(
-                            text(f"PRAGMA foreign_key_list(`{table}`)")
-                        )
-                        foreign_keys = result.fetchall()
+                        try:
+                            result = await conn.execute(
+                                text("SELECT * FROM pragma_foreign_key_list(:table_name)"),
+                                {"table_name": table},
+                            )
+                            foreign_keys = result.fetchall()
+                        except Exception as e:
+                            logger.warning(f"Could not read foreign keys for table {table}, skipping them: {e}")
+                            continue
 
                         for fk in foreign_keys:
                             # Foreign key structure: (id, seq, table, from, to, on_update, on_delete, match)
