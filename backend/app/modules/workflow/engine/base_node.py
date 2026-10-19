@@ -53,6 +53,7 @@ _NODE_ACTIVITY_KINDS: dict[str, turn_stream.ActivityKind] = {
     "jiraNode": "tool",
     "createWorkflowScheduleNode": "tool",
     "mlModelInferenceNode": "tool",
+    "toolBuilderNode": "tool",
 }
 
 
