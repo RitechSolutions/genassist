@@ -40,6 +40,7 @@ import {
   stepTypeLabel,
   targetFields,
   targetOf,
+  toolRefs,
 } from "../helpers/checks";
 import type { EvaluationCatalog } from "../hooks/useEvaluationData";
 import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
@@ -296,7 +297,48 @@ const SourceFields: React.FC<{
   </>
 );
 
-/** Rows of tool pickers, for more tools that count or the tools that may be used. */
+/** The tools the other rows picked, so no tool is picked twice. */
+const pickedElsewhere = (refs: CheckToolRef[], index: number) =>
+  new Set(refs.flatMap((ref, i) => (i !== index && ref.tool ? [ref.tool] : [])));
+
+/** One tool picker, without the tools other rows picked; a picked tool keeps its name, so one the version lacks still reads. */
+const ToolSelect: React.FC<{
+  value: CheckToolRef;
+  tools: Tool[];
+  taken: Set<string>;
+  loading: boolean;
+  label: string;
+  onChange: (ref: CheckToolRef) => void;
+}> = ({ value, tools, taken, loading, label, onChange }) => (
+  <Select
+    value={value.tool ?? ""}
+    onValueChange={(id) => {
+      const tool = tools.find((item) => item.id === id);
+      onChange({ tool: tool?.id ?? null, tool_name: tool?.name ?? null });
+    }}
+  >
+    <SelectTrigger aria-label={label}>
+      <SelectValue placeholder={loading ? "Loading tools…" : (value.tool_name ?? "Pick a tool")} />
+    </SelectTrigger>
+    <SelectContent>
+      {tools
+        .filter((tool) => tool.id === value.tool || !taken.has(tool.id))
+        .map((tool) => (
+          <SelectItem key={tool.id} value={tool.id}>
+            {tool.label}
+          </SelectItem>
+        ))}
+    </SelectContent>
+  </Select>
+);
+
+const RemoveTool: React.FC<{ onClick: () => void }> = ({ onClick }) => (
+  <Button type="button" variant="ghost" size="icon" aria-label="Remove tool" onClick={onClick}>
+    <X className="h-4 w-4" />
+  </Button>
+);
+
+/** Rows of tool pickers, for the tools that may be used or may not. */
 const ToolList: React.FC<{
   refs: CheckToolRef[];
   tools: Tool[];
@@ -309,40 +351,210 @@ const ToolList: React.FC<{
     <Label className="block text-sm">{label}</Label>
     {refs.map((ref, index) => (
       <div key={index} className="flex items-center gap-2">
-        <Select
-          value={ref.tool ?? ""}
-          onValueChange={(id) => {
-            const tool = tools.find((item) => item.id === id);
-            onChange(refs.map((entry, i) => (i === index ? { tool: tool?.id ?? null, tool_name: tool?.name ?? null } : entry)));
-          }}
-        >
-          <SelectTrigger aria-label={`${label} ${index + 1}`}>
-            <SelectValue placeholder={loading ? "Loading tools…" : ref.tool_name ?? "Pick a tool"} />
-          </SelectTrigger>
-          <SelectContent>
-            {tools.map((tool) => (
-              <SelectItem key={tool.id} value={tool.id}>
-                {tool.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Remove tool"
-          onClick={() => onChange(refs.filter((_, i) => i !== index))}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        <ToolSelect
+          value={ref}
+          tools={tools}
+          taken={pickedElsewhere(refs, index)}
+          loading={loading}
+          label={`${label} ${index + 1}`}
+          onChange={(picked) => onChange(refs.map((entry, i) => (i === index ? picked : entry)))}
+        />
+        <RemoveTool onClick={() => onChange(refs.filter((_, i) => i !== index))} />
       </div>
     ))}
-    <Button type="button" variant="outline" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => onChange([...refs, {}])}>
-      {addLabel}
-    </Button>
+    {/* Gone once every tool has a row. */}
+    {refs.length < tools.length && (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        icon={<Plus className="h-4 w-4" />}
+        onClick={() => onChange([...refs, {}])}
+      >
+        {addLabel}
+      </Button>
+    )}
   </div>
 );
+
+type ValueRow = [string, string];
+
+/** A tool's values as rows to edit, objects as their JSON. */
+const rowsFrom = (args?: Record<string, unknown>): ValueRow[] =>
+  Object.entries(args ?? {}).map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]);
+
+// A row without a name is still being typed, so it is not a value yet.
+const argsFrom = (rows: ValueRow[]): Record<string, string> => Object.fromEntries(rows.filter(([key]) => key.trim()));
+
+/** The values a tool is called with, a name and a value to a row. */
+const ValueRows: React.FC<{ rows: ValueRow[]; about?: string; onChange: (rows: ValueRow[]) => void }> = ({
+  rows,
+  about,
+  onChange,
+}) => {
+  const of = about ? ` of ${about}` : "";
+  return (
+    <div className="space-y-2">
+      <Label className="block text-sm">Values it is called with (optional)</Label>
+      {rows.map(([key, value], index) => (
+        <div key={index} className="flex items-center gap-2">
+          <Input
+            value={key}
+            onChange={(event) =>
+              onChange(rows.map((entry, i) => (i === index ? [event.target.value, entry[1]] : entry)))
+            }
+            placeholder="Name, e.g. region"
+            aria-label={`Value ${index + 1} name${of}`}
+          />
+          <span className="text-muted-foreground">=</span>
+          <Input
+            value={value}
+            onChange={(event) =>
+              onChange(rows.map((entry, i) => (i === index ? [entry[0], event.target.value] : entry)))
+            }
+            placeholder="Value, e.g. united-kingdom"
+            aria-label={`Value ${index + 1}${of}`}
+          />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={`Remove value${of}`}
+            onClick={() => onChange(rows.filter((_, i) => i !== index))}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        icon={<Plus className="h-4 w-4" />}
+        onClick={() => onChange([...rows, ["", ""]])}
+      >
+        Add value
+      </Button>
+    </div>
+  );
+};
+
+type ResultChoice = "anything" | "not_empty" | "contains";
+
+/** What a tool's call should return. */
+const ResultFields: React.FC<{ value: CheckToolRef; onChange: (patch: Partial<CheckToolRef>) => void }> = ({
+  value,
+  onChange,
+}) => {
+  const result: ResultChoice =
+    value.result_contains != null ? "contains" : value.result_not_empty ? "not_empty" : "anything";
+  return (
+    <>
+      <Field label="What it returns">
+        <Select
+          value={result}
+          onValueChange={(choice) =>
+            onChange({
+              result_not_empty: choice === "not_empty",
+              result_contains: choice === "contains" ? (value.result_contains ?? "") : null,
+            })
+          }
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="anything">Anything</SelectItem>
+            <SelectItem value="not_empty">A result, not empty</SelectItem>
+            <SelectItem value="contains">A result that contains…</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+      {result === "contains" && (
+        <Field label="The result contains">
+          <Input
+            value={value.result_contains ?? ""}
+            onChange={(event) => onChange({ result_contains: event.target.value })}
+            placeholder="e.g. saved"
+          />
+        </Field>
+      )}
+    </>
+  );
+};
+
+/** The tool a check is about, with its values and result; with Should, others can be added, any one of which counts. */
+const ToolChoices: React.FC<{
+  check: ScenarioCheck;
+  update: Update;
+  tools: Tool[];
+  loading: boolean;
+  /** The check's own tool's value rows as typed. */
+  mainRows: ValueRow[];
+  setMainRows: (rows: ValueRow[]) => void;
+}> = ({ check, update, tools, loading, mainRows, setMainRows }) => {
+  const should = check.expect === "should";
+  const refs = toolRefs(check).map((ref, index) => (index === 0 ? { ...ref, rows: mainRows } : ref));
+  // The first is the check's own tool and the rest its others, so removing the first moves the next up.
+  // A Should not shows only its own; the others wait in case it turns back to Should.
+  const save = (next: CheckToolRef[]) => {
+    const [first, ...others] = next;
+    const rows = first?.rows ?? rowsFrom(first?.args);
+    setMainRows(rows);
+    update({
+      tool: first?.tool ?? null,
+      tool_name: first?.tool_name ?? null,
+      args: argsFrom(rows),
+      result_not_empty: Boolean(first?.result_not_empty),
+      result_contains: first?.result_contains ?? null,
+      ...(should ? { tools: others } : {}),
+    });
+  };
+  const change = (index: number, patch: Partial<CheckToolRef>) =>
+    save(refs.map((ref, i) => (i === index ? { ...ref, ...patch } : ref)));
+  return (
+    <div className="space-y-2">
+      <Label className="block text-sm">Tool</Label>
+      {refs.map((ref, index) => (
+        <React.Fragment key={index}>
+          {index > 0 && <div className="px-3 text-xs text-muted-foreground">or</div>}
+          {/* Each tool with what its own call should have. */}
+          <div className="space-y-3 rounded-lg border p-3">
+            <div className="flex items-center gap-2">
+              <ToolSelect
+                value={ref}
+                tools={tools}
+                taken={pickedElsewhere(refs, index)}
+                loading={loading}
+                label={index ? `Tool ${index + 1}` : "Tool"}
+                onChange={(picked) => change(index, picked)}
+              />
+              {refs.length > 1 && <RemoveTool onClick={() => save(refs.filter((_, i) => i !== index))} />}
+            </div>
+            <ValueRows
+              rows={ref.rows ?? rowsFrom(ref.args)}
+              about={refs.length > 1 ? `tool ${index + 1}` : undefined}
+              onChange={(rows) => change(index, { rows, args: argsFrom(rows) })}
+            />
+            {should && <ResultFields value={ref} onChange={(patch) => change(index, patch)} />}
+          </div>
+        </React.Fragment>
+      ))}
+      {/* Gone once every tool has a row. */}
+      {should && refs.length < tools.length && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          icon={<Plus className="h-4 w-4" />}
+          onClick={() => save([...refs, {}])}
+        >
+          Or another tool
+        </Button>
+      )}
+    </div>
+  );
+};
 
 // The fewest and the most calls belong together, so they share a row.
 const CountFields: React.FC<{ check: ScenarioCheck; update: Update; label: string }> = ({ check, update, label }) => (
@@ -464,117 +676,39 @@ const AgentField: React.FC<{ check: ScenarioCheck; update: Update; catalog: Eval
   </Field>
 );
 
-type ResultChoice = "anything" | "not_empty" | "contains";
-
 const ToolFields: React.FC<{
   check: ScenarioCheck;
   update: Update;
   catalog: EvaluationCatalog;
   tools: Tool[];
-  args: [string, string][];
-  setArgs: (rows: [string, string][]) => void;
-}> = ({ check, update, catalog, tools, args, setArgs }) => {
-  const should = check.expect === "should";
-  const result: ResultChoice =
-    check.result_contains != null ? "contains" : check.result_not_empty ? "not_empty" : "anything";
+  mainRows: ValueRow[];
+  setMainRows: (rows: ValueRow[]) => void;
+}> = ({ check, update, catalog, tools, mainRows, setMainRows }) => {
+  const several = toolRefs(check).length > 1;
   return (
     <>
       <AgentField check={check} update={update} catalog={catalog} />
-      <Field label="Tool">
-        <Select
-          value={check.tool ?? ""}
-          onValueChange={(id) => {
-            const tool = tools.find((item) => item.id === id);
-            update({ tool: tool?.id ?? null, tool_name: tool?.name ?? null });
-          }}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder={catalog.loading ? "Loading tools…" : "Pick a tool"} />
-          </SelectTrigger>
-          <SelectContent>
-            {tools.map((tool) => (
-              <SelectItem key={tool.id} value={tool.id}>
-                {tool.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-      {should && (
-        <ToolList
-          refs={check.tools ?? []}
-          tools={tools}
-          loading={catalog.loading}
-          label="Or one of these tools instead (optional)"
-          addLabel="Add another tool"
-          onChange={(refs) => update({ tools: refs })}
-        />
-      )}
-      <div className="space-y-2">
-        <Label className="block text-sm">Values it is called with (optional)</Label>
-        {args.map(([key, value], index) => (
-          <div key={index} className="flex items-center gap-2">
-            <Input
-              value={key}
-              onChange={(event) => setArgs(args.map((entry, i) => (i === index ? [event.target.value, entry[1]] : entry)))}
-              placeholder="Name, e.g. region"
-              aria-label={`Value ${index + 1} name`}
-            />
-            <span className="text-muted-foreground">=</span>
-            <Input
-              value={value}
-              onChange={(event) => setArgs(args.map((entry, i) => (i === index ? [entry[0], event.target.value] : entry)))}
-              placeholder="Value, e.g. united-kingdom"
-              aria-label={`Value ${index + 1}`}
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              aria-label="Remove value"
-              onClick={() => setArgs(args.filter((_, i) => i !== index))}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
-        <Button type="button" variant="outline" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setArgs([...args, ["", ""]])}>
-          Add value
-        </Button>
-      </div>
-      {should && (
+      <ToolChoices
+        check={check}
+        update={update}
+        tools={tools}
+        loading={catalog.loading}
+        mainRows={mainRows}
+        setMainRows={setMainRows}
+      />
+      {/* Over every tool of the check. */}
+      {check.expect === "should" && (
         <>
-          <Field label="What it returns">
-            <Select
-              value={result}
-              onValueChange={(choice) =>
-                update({
-                  result_not_empty: choice === "not_empty",
-                  result_contains: choice === "contains" ? check.result_contains ?? "" : null,
-                })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="anything">Anything</SelectItem>
-                <SelectItem value="not_empty">A result, not empty</SelectItem>
-                <SelectItem value="contains">A result that contains…</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          {result === "contains" && (
-            <Field label="The result contains">
-              <Input
-                value={check.result_contains ?? ""}
-                onChange={(event) => update({ result_contains: event.target.value })}
-                placeholder="e.g. saved"
-              />
-            </Field>
-          )}
-          <SwitchRow label="It must succeed" checked={Boolean(check.succeeds)} onChange={(succeeds) => update({ succeeds })} />
-          <CountFields check={check} update={update} label="How many calls (optional)" />
+          <SwitchRow
+            label="It must succeed"
+            checked={Boolean(check.succeeds)}
+            onChange={(succeeds) => update({ succeeds })}
+          />
+          <CountFields
+            check={check}
+            update={update}
+            label={several ? "How many calls in all (optional)" : "How many calls (optional)"}
+          />
         </>
       )}
     </>
@@ -747,18 +881,21 @@ export const CheckForm: React.FC<CheckFormProps> = ({
   const tools = [...new Map(agentTools.map((tool) => [tool.id, tool])).values()];
   const stateKeys = [...new Set(catalog.stateKeys.map((item) => item.key))];
   // Rows stay as typed, so an empty or repeated name doesn't merge two rows while editing.
-  const [args, setArgRows] = React.useState<[string, string][]>(() =>
-    Object.entries(check.args ?? {}).map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value)]),
-  );
-  const argNames = args.map(([key]) => key.trim());
-  const argProblem =
+  const [args, setArgRows] = React.useState<ValueRow[]>(() => rowsFrom(check.args));
+  // The check's own tool's rows, and with Should each other tool's.
+  const rowSets =
     check.kind !== "tool_called"
-      ? null
-      : args.some(([key, value]) => !key.trim() && value.trim())
-        ? "Name each value."
-        : argNames.some((key, index) => key && argNames.indexOf(key) !== index)
-          ? "Give each value a different name."
-          : null;
+      ? []
+      : [args, ...(check.expect === "should" ? (check.tools ?? []).map((ref) => ref.rows ?? rowsFrom(ref.args)) : [])];
+  const repeats = (rows: ValueRow[]) => {
+    const names = rows.map(([key]) => key.trim());
+    return names.some((key, index) => key && names.indexOf(key) !== index);
+  };
+  const argProblem = rowSets.some((rows) => rows.some(([key, value]) => !key.trim() && value.trim()))
+    ? "Name each value."
+    : rowSets.some(repeats)
+      ? "Give each value a different name."
+      : null;
   const problem = missing ?? argProblem;
 
   React.useEffect(() => {
@@ -789,11 +926,6 @@ export const CheckForm: React.FC<CheckFormProps> = ({
     }
     update({ expect, when: whenBeforeNever.current ?? check.when });
     whenBeforeNever.current = null;
-  };
-
-  const setArgs = (rows: [string, string][]) => {
-    setArgRows(rows);
-    update({ args: Object.fromEntries(rows.filter(([key]) => key.trim())) });
   };
 
   // How often it held before a kind graded on every turn was picked, given back after.
@@ -971,7 +1103,14 @@ export const CheckForm: React.FC<CheckFormProps> = ({
       )}
 
       {check.kind === "tool_called" && (
-        <ToolFields check={check} update={update} catalog={catalog} tools={tools} args={args} setArgs={setArgs} />
+        <ToolFields
+          check={check}
+          update={update}
+          catalog={catalog}
+          tools={tools}
+          mainRows={args}
+          setMainRows={setArgRows}
+        />
       )}
 
       {check.kind === "only_tools" && (

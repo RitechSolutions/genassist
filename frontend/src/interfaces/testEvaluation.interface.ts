@@ -111,13 +111,6 @@ export interface RuleScopeTarget {
   target_turn_index?: number | null;
 }
 
-// An imported multi-turn conversation available for specific-turn targeting.
-export interface RuleConversation {
-  id: string; // source_conversation_id
-  label: string;
-  turns: { caseId: string; turnIndex: number; label: string }[];
-}
-
 // ---- Route / Action multi-rule builder drafts ----
 
 export interface RouteRuleDraft extends RuleScopeTarget {
@@ -190,10 +183,15 @@ export type CheckMatch = "exact" | "contains" | "meaning";
 // What an AI grader reads besides the reply; for reply_grounded, what the reply sticks to.
 export type CheckContext = "expected_reply" | "knowledge_base" | "tool_calls" | "session" | "run_value";
 
-// One more tool a check is about.
+// One more tool a check is about; as another tool that should be called, with its own values and result.
 export interface CheckToolRef {
   tool?: string | null;
   tool_name?: string | null;
+  args?: Record<string, string>;
+  result_not_empty?: boolean;
+  result_contains?: string | null;
+  // The form's value rows as typed, never saved.
+  rows?: [string, string][];
 }
 export type CheckLevel = "every_conversation" | "conversation" | "turn";
 export type CheckExpect = "should" | "should_not";

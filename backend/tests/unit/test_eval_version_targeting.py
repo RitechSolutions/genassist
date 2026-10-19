@@ -22,8 +22,8 @@ def _service() -> EvalService:
         workflow_service=AsyncMock(),
         conversation_repo=AsyncMock(),
     )
-    # Older methods run as they are, as with the checks flag off.
-    service._checks_enabled = AsyncMock(return_value=False)
+    # Older methods run as they are here; test_method_checks covers converting them.
+    service._checks_for_older_methods = AsyncMock(return_value=None)
     return service
 
 

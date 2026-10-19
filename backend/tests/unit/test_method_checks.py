@@ -265,8 +265,24 @@ class TestRules:
         assert sentences(conversion) == [
             'On every turn, the tool "save_region" should be called.',
             'On every turn, the tool "change_mode" should be called.',
-            'On every turn, one of the tools "save_region" or "change_mode" should be called at least 3 times.',
+            'On every turn, one of the tools "save_region" or "change_mode" should be called at least 3 times in all.',
         ]
+
+    def test_any_of_several_tools_keeps_what_each_one_checks(self):
+        conversion = convert_methods(["tool_used"], {"tool_used": {"rules": [
+            {"id": "r1", "tool_ids": ["tool-1", "tool-2"], "operator": "any", "require_success": True, "per_tool": {
+                "tool-1": {"expected_args": {"region": "uk"}},
+                "tool-2": {"result_contains": "refund"},
+            }},
+        ]}}, CATALOG)
+        [check] = conversion.checks
+        assert (check["tool_name"], check["args"]) == ("save_region", {"region": "uk"})
+        assert check["tools"] == [{"tool": "tool-2", "tool_name": "change_mode", "result_contains": "refund"}]
+        assert sentences(conversion) == [
+            'On every turn, one of the tools "save_region" (with region = uk) or "change_mode"'
+            ' (returning a result that contains "refund") should be called and succeed.'
+        ]
+        assert conversion.left_out == []
 
     def test_a_rule_that_does_not_read_keeps_the_others(self):
         conversion = convert_methods(["tool_used"], {"tool_used": {"rules": [
@@ -410,10 +426,9 @@ class TestService:
         assert [evaluation.techniques for evaluation in result.evaluations] == [["checks"]]
 
 
-class TestRunWithChecksOn:
-    def start(self, evaluation, enabled):
+class TestRunStart:
+    def start(self, evaluation):
         instance = service([evaluation])
-        instance._checks_enabled = AsyncMock(return_value=enabled)
         instance._default_run_workflow_id = AsyncMock(return_value=uuid4())
         instance.create_run = AsyncMock(side_effect=lambda suite_id, data: SimpleNamespace(id=uuid4(), data=data))
         instance.append_run_to_evaluation = AsyncMock()
@@ -423,7 +438,7 @@ class TestRunWithChecksOn:
     @pytest.mark.asyncio
     async def test_older_methods_run_as_checks_and_stay_on_the_evaluation(self):
         evaluation = row(["contains"])
-        instance, dispatch = self.start(evaluation, enabled=True)
+        instance, dispatch = self.start(evaluation)
         run = await instance._start_evaluation_run(evaluation, dispatch)
         assert run.data.techniques == ["checks"]
         assert run.data.technique_configs["checks"]["checks"][0]["kind"] == "reply_matches"
@@ -432,11 +447,12 @@ class TestRunWithChecksOn:
         instance.evaluation_repo.update.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_with_checks_off_older_methods_run_as_they_are(self):
-        evaluation = row(["contains"], {"contains": {}})
-        instance, dispatch = self.start(evaluation, enabled=False)
+    async def test_checks_run_as_they_are(self):
+        configs = {"checks": {"checks": [{"id": "a", "kind": "step_fails", "expect": "should_not"}]}}
+        evaluation = row(["checks"], configs)
+        instance, dispatch = self.start(evaluation)
         run = await instance._start_evaluation_run(evaluation, dispatch)
-        assert (run.data.techniques, run.data.technique_configs) == (["contains"], {"contains": {}})
+        assert (run.data.techniques, run.data.technique_configs) == (["checks"], configs)
 
 
 def test_only_these_tools_keeps_counts_per_turn_and_success():

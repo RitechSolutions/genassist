@@ -158,6 +158,9 @@ describe("checkMissing", () => {
     expect(checkMissing(check({ text: " " }))).toBe("Enter the words to look for.");
     expect(checkMissing(check({ kind: "reply_meets" }))).toBe("Write the rule.");
     expect(checkMissing(check({ kind: "tool_called" }))).toBe("Pick the tool.");
+    expect(checkMissing(check({ kind: "tool_called", tool: "t1", tools: [{}] }))).toBe("Pick each tool.");
+    // A Should not reads only its own tool, so an empty other row left from Should does not count.
+    expect(checkMissing(check({ kind: "tool_called", expect: "should_not", tool: "t1", tools: [{}] }))).toBeNull();
     expect(checkMissing(check({ kind: "step_runs" }))).toBe("Pick the step.");
     expect(checkMissing(check({ kind: "route_taken", router: "router-1" }))).toBe("Pick the branch.");
     expect(checkMissing(check({ kind: "state_equals", key: "mode" }))).toBe("Enter the value it should have.");
@@ -496,6 +499,47 @@ describe("every older-method setting as a check", () => {
     expect(checkSentence(check({ ...tool, expect: "should_not" }))).toBe(
       'In every conversation, the tool "save_region" should never be called.',
     );
+  });
+
+  it("keeps each tool's own values and result, for what should happen", () => {
+    const several = check({
+      kind: "tool_called",
+      tool: "t1",
+      tool_name: "save_region",
+      args: { region: "uk" },
+      tools: [{ tool: "t2", tool_name: "change_mode", args: { mode: " refund " }, result_contains: "saved", rows: [["mode", "refund"]] }],
+    });
+    // The same sentence the backend stores with each result.
+    expect(checkSentence(several)).toBe(
+      'In every conversation, at some point, one of the tools "save_region" (with region = uk) or "change_mode"' +
+        ' (with mode = refund, returning a result that contains "saved") should be called.',
+    );
+    expect(checkSentence({ ...several, min_calls: 3, succeeds: true })).toBe(
+      'In every conversation, at some point, one of the tools "save_region" (with region = uk) or "change_mode"' +
+        ' (with mode = refund, returning a result that contains "saved") should be called at least 3 times in all and succeed.',
+    );
+    const saved = serializeCheck(several);
+    expect(saved.args).toEqual({ region: "uk" });
+    // The rows are the form's own; only the values are saved.
+    expect(saved.tools).toEqual([{ tool: "t2", tool_name: "change_mode", args: { mode: "refund" }, result_contains: "saved" }]);
+    const { checks } = parseChecks({ checks: [saved] });
+    expect(checks[0].tools).toEqual([
+      { tool: "t2", tool_name: "change_mode", args: { mode: "refund" }, result_contains: "saved" },
+    ]);
+    expect(serializeCheck(checks[0])).toEqual(saved);
+    // A Should not reads only its own tool; allowed tools are names only.
+    expect(serializeCheck({ ...several, expect: "should_not" })).not.toHaveProperty("tools");
+    expect(serializeCheck(check({ kind: "only_tools", tools: [{ tool: "t2", args: { a: "b" } }] })).tools).toEqual([
+      { tool: "t2" },
+    ]);
+  });
+
+  it("saves each tool once", () => {
+    const repeated = check({ kind: "tool_called", tool: "t1", tool_name: "save_region",
+      tools: [{ tool: "t1", tool_name: "save_region" }, { tool: "t2", tool_name: "change_mode" }, { tool: "t2" }] });
+    expect(serializeCheck(repeated).tools).toEqual([{ tool: "t2", tool_name: "change_mode" }]);
+    const allowed = check({ kind: "only_tools", tools: [{ tool_name: "a" }, { tool_name: "a" }, { tool_name: "b" }] });
+    expect(serializeCheck(allowed).tools).toEqual([{ tool_name: "a" }, { tool_name: "b" }]);
   });
 
   it("saves allowed tools with an empty list, and as Should not without counts", () => {

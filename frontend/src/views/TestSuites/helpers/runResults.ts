@@ -1,85 +1,10 @@
 import { TestResult, TestRun } from "@/interfaces/testSuite.interface";
-import type {
-  RuleTechnique,
-  TestToolRuleResult,
-} from "@/interfaces/testEvaluation.interface";
-
-// Order rule sections the way the wizard lists the techniques, checks first.
-const TECHNIQUE_ORDER: RuleTechnique[] = ["checks", "tool_used", "route_taken", "action_taken"];
-
-// Rule-based techniques count rule checks (a rule per scope unit), not test cases.
-export const isRuleTechnique = (technique: string): boolean =>
-  TECHNIQUE_ORDER.includes(technique as RuleTechnique);
-
-// Rule results arrive for every technique at once; each is displayed on its own.
-export const groupByTechnique = (
-  results: TestToolRuleResult[],
-): [RuleTechnique, TestToolRuleResult[]][] => {
-  const byTechnique = new Map<RuleTechnique, TestToolRuleResult[]>();
-  for (const result of results) {
-    const technique = result.technique ?? "tool_used";
-    byTechnique.set(technique, [...(byTechnique.get(technique) ?? []), result]);
-  }
-  return TECHNIQUE_ORDER.filter((technique) => byTechnique.has(technique)).map(
-    (technique) => [technique, byTechnique.get(technique) as TestToolRuleResult[]],
-  );
-};
+import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
 
 // A turn-scoped result belongs to one case, so it is shown with that case; a
 // conversation-scoped one has no single case to sit on.
 export const isTurnScope = (scope: string): boolean =>
   scope === "every_turn" || scope === "specific_turn" || scope === "turn";
-
-// A check for every conversation is graded once per conversation, like a conversation rule.
-export const isConversationScope = (scope: string): boolean =>
-  scope === "conversation" || scope === "every_conversation";
-
-// Shown wherever a method's accuracy is null: nothing could be checked.
-export const NOT_EVALUATED = "Not evaluated";
-
-const countLabel = (count: number, noun: string): string =>
-  `${count} ${noun}${count === 1 ? "" : "s"}`;
-
-// A rule is graded once per scope unit, so the check count is rules x turns (plus
-// one per conversation for a conversation-scoped rule) — never the turn count. The
-// subline spells that out, so a number like "24 checks" over 12 turns is traceable.
-export const ruleCheckSummary = (
-  results: TestToolRuleResult[],
-): { headline: string; subline: string } => {
-  const passed = results.filter((result) => result.status === "passed").length;
-  const failed = results.filter((result) => result.status === "failed").length;
-  const evaluated = passed + failed;
-
-  const ruleCount = new Set(results.map((result) => result.rule_id)).size;
-  const turnChecks = results.filter((result) => isTurnScope(result.scope)).length;
-  const conversationChecks = results.filter((result) => isConversationScope(result.scope)).length;
-
-  const parts = [countLabel(ruleCount, "rule")];
-  if (turnChecks) parts.push(countLabel(turnChecks, "turn check"));
-  if (conversationChecks) parts.push(countLabel(conversationChecks, "conversation check"));
-
-  // Nothing checked has no pass rate, so it must not read as 0%.
-  if (!evaluated) return { headline: NOT_EVALUATED, subline: parts.join(" · ") };
-
-  const rate = Math.round((passed / evaluated) * 100);
-  return {
-    headline: `${passed} of ${evaluated} checks passed · ${rate}% pass rate`,
-    subline: parts.join(" · "),
-  };
-};
-
-// Checks read by conversation; each one gives a result per conversation or turn it covers.
-export const checkResultsSummary = (
-  results: TestToolRuleResult[],
-  verdict: string | null,
-): { headline: string; subline: string } => {
-  const checks = new Set(results.map((result) => result.rule_id)).size;
-  const subline = `${countLabel(checks, "check")} · ${countLabel(results.length, "result")}`;
-  if (verdict) return { headline: verdict, subline };
-  const passed = results.filter((result) => result.status === "passed").length;
-  const evaluated = passed + results.filter((result) => result.status === "failed").length;
-  return { headline: evaluated ? `${passed} of ${evaluated} results passed` : NOT_EVALUATED, subline };
-};
 
 export type CaseStatus = "passed" | "failed" | "not_scored";
 

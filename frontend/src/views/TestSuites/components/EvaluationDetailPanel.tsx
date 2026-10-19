@@ -2,21 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import JsonViewer from "@/components/JsonViewer";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
-import {
-  ChevronLeft,
-  ChevronRight,
-  GitBranch,
-  Pencil,
-  GitCompareArrows,
-  Play,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Loader2,
-} from "lucide-react";
+import { ChevronLeft, Pencil, GitCompareArrows, Play, Loader2 } from "lucide-react";
 import {
   getTestRunsBatch,
   listTestCases,
@@ -30,40 +18,16 @@ import {
   runTestEvaluation,
 } from "@/services/testEvaluations";
 import { TestCase, TestResult, TestRun, TestSuite } from "@/interfaces/testSuite.interface";
-import type { TestEvaluationConfig, TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
+import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
 import { WorkflowMinimal } from "@/interfaces/workflow.interface";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/dialog";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/resizable";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/skeleton";
 import { Progress } from "@/components/progress";
 import { PaginationBar } from "@/components/PaginationBar";
-import { TooltipProvider } from "@/components/RadixTooltip";
-import { TooltipButton } from "@/components/tooltip-button";
 import { cn } from "@/helpers/utils";
-import { RuleResults } from "./RuleResults";
-import { RuleResultCard } from "./RuleResultCard";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
-import { CompareRunsDialog } from "./CompareRunsDialog";
-import { MetricRuleBreakdown } from "./MetricRuleBreakdown";
 import { methodLabel } from "../helpers/methodLabels";
 import {
-  NOT_EVALUATED,
-  caseStatusFor,
-  groupByTechnique,
-  isRuleTechnique,
   isRunInProgress,
-  isTurnScope,
-  notScoredLabel,
   checksConversations,
   checksVerdictText,
   numberRuns,
@@ -74,16 +38,10 @@ import {
   runName,
   runProgressText,
   runStatusLabel,
-  techniqueAccuracy,
-  techniqueSummaries,
   turnsPassed,
 } from "../helpers/runResults";
-import { checkedAgainstLine, metricSourceLabel, usesExpectedOutput } from "../helpers/metricSources";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
-import { caseLabel, indexConversations } from "../helpers/datasetConversations";
 import { CHECKS_TECHNIQUE, checkConversations, leftOutNote, parseChecks } from "../helpers/checks";
-import { useFeatureFlagVisible } from "@/components/featureFlag";
-import { FeatureFlags } from "@/config/featureFlags";
 import { ChecksDialog } from "./ChecksDialog";
 import { CompareConversationView } from "./CompareConversationView";
 import { ConversationResultView } from "./ConversationResultView";
@@ -101,8 +59,6 @@ import {
 import { useEvaluationCatalog } from "../hooks/useEvaluationData";
 import { useChecksPreview, withPreview } from "../hooks/useChecksPreview";
 
-type ResultFilter = "all" | "passed" | "failed" | "not_scored";
-
 const RUNS_PAGE_SIZE = 6;
 const RUNNING_POLL_MS = 5000;
 const NO_RUNS: TestRun[] = [];
@@ -111,9 +67,6 @@ const AVG_SCORE_HINT = "Avg score: the average of each method's pass rate";
 
 /** Execution counts the backend stores alongside the per-technique metrics. */
 const RUN_TOTALS_KEY = "_totals";
-// Tool Usage has its own dedicated, readable section, so it is left out of the
-// generic per-technique summary grid to avoid a confusing "Avg Score" card.
-const TOOL_USED_TECHNIQUE = "tool_used";
 
 interface RunTotals {
   cases: number;
@@ -158,9 +111,6 @@ const accuracyTextClass = (acc: number): string =>
 const accuracyBarClass = (acc: number): string =>
   acc >= 0.9 ? "bg-green-600" : acc >= 0.7 ? "bg-amber-600" : "bg-red-600";
 
-const scoreBarClass = (acc: number): string =>
-  acc >= 0.9 ? "bg-success" : acc >= 0.7 ? "bg-warning" : "bg-destructive";
-
 const SummaryItem: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="min-w-0">
     <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
@@ -186,7 +136,8 @@ const RunFacts: React.FC<{ run: TestRun }> = ({ run }) => (
   <div className="min-w-0 space-y-0.5">
     <div className="flex items-center gap-2">
       <span className="font-semibold">{runName(run)}</span>
-      <RunStatusBadge status={run.status} />
+      {/* A failed run says so beside it, with why. */}
+      {run.status !== "failed" && <RunStatusBadge status={run.status} />}
     </div>
     {run.workflow_version && (
       <div className="text-xs text-muted-foreground">
@@ -200,11 +151,9 @@ const RunFacts: React.FC<{ run: TestRun }> = ({ run }) => (
 );
 
 /**
- * A single evaluation's detail — configuration, last run, all runs,
- * run comparison and the run-details dialog. Extracted from EvaluationDetailPage
- * so the standalone `/tests` route and the workflow builder's Evaluations tab
- * share one implementation. Renders content only (no page chrome); callers wrap
- * it in PageLayout or the tab's scroll container.
+ * One evaluation: its summary, last run and runs, and the results, conversation and
+ * comparison views they open. Shared by the evaluation's page and the workflow
+ * builder's Evaluations tab. Renders content only (no page chrome).
  */
 export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   evaluationId,
@@ -225,31 +174,16 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     onResultsViewChange ? onResultsViewChange(next, move) : setOwnResultsView(next);
   const topRef = useRef<HTMLDivElement>(null);
   const [isStarting, setIsStarting] = useState(false);
-  const [isLoadingResults, setIsLoadingResults] = useState(false);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
-  const [isRunDetailsOpen, setIsRunDetailsOpen] = useState(false);
   const [resultsByRun, setResultsByRun] = useState<Record<string, TestResult[]>>({});
   const [ruleResultsByRun, setRuleResultsByRun] = useState<Record<string, TestToolRuleResult[]>>({});
   const [suite, setSuite] = useState<TestSuite | null>(null);
   const [workflowName, setWorkflowName] = useState<string>("Dataset default");
   const [workflowAgentId, setWorkflowAgentId] = useState<string | null>(null);
   const [isVersionDialogOpen, setIsVersionDialogOpen] = useState(false);
-  const [isCompareOpen, setIsCompareOpen] = useState(false);
-  const [expectedOutputByCaseId, setExpectedOutputByCaseId] = useState<
-    Record<string, Record<string, unknown> | undefined>
-  >({});
-  const [inputByCaseId, setInputByCaseId] = useState<
-    Record<string, Record<string, unknown> | undefined>
-  >({});
   const [suiteCases, setSuiteCases] = useState<TestCase[]>([]);
   const [suiteCasesFor, setSuiteCasesFor] = useState<string | null>(null);
   const [suiteCasesFailed, setSuiteCasesFailed] = useState(false);
-  const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
   const [runsPage, setRunsPage] = useState(1);
-  const checksEnabled = useFeatureFlagVisible(FeatureFlags.EVALUATIONS.CHECKS);
-  // With checks on, Run asks for the version first, starting from the given one.
-  const playVersionId = checksEnabled ? runVersionId : undefined;
   const [showChecks, setShowChecks] = useState(false);
   const [allWorkflows, setAllWorkflows] = useState<WorkflowMinimal[]>([]);
 
@@ -300,9 +234,8 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   }, [evaluationLoaded, evaluationSuiteId, evaluationWorkflowId]);
 
   useEffect(() => {
-    const loadExpectedOutputs = async () => {
+    const loadCases = async () => {
       if (!evaluation?.suite_id) {
-        setExpectedOutputByCaseId({});
         setSuiteCases([]);
         return;
       }
@@ -316,18 +249,8 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
       }
       setSuiteCases(cases ?? []);
       setSuiteCasesFor(evaluation.suite_id);
-      const expectedMapping: Record<string, Record<string, unknown> | undefined> = {};
-      const inputMapping: Record<string, Record<string, unknown> | undefined> = {};
-      (cases ?? []).forEach((testCase) => {
-        if (testCase.id) {
-          expectedMapping[testCase.id] = testCase.expected_output;
-          inputMapping[testCase.id] = testCase.input_data;
-        }
-      });
-      setExpectedOutputByCaseId(expectedMapping);
-      setInputByCaseId(inputMapping);
     };
-    loadExpectedOutputs();
+    loadCases();
   }, [evaluation?.suite_id]);
 
   const runIds = evaluation?.run_ids ?? NO_RUN_IDS;
@@ -386,33 +309,12 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     return load;
   }, []);
 
-  // Opening another run's details starts from the top.
-  useEffect(() => {
-    setSelectedCaseId(null);
-    setResultFilter("all");
-  }, [selectedRunId]);
-
-  // Reloads when the selected run's status changes, so details opened mid-run fill in.
-  const selectedRunStatus = runs.find((run) => run.id === selectedRunId)?.status;
-  useEffect(() => {
-    if (!selectedRunId) return;
-    let cancelled = false;
-    setIsLoadingResults(true);
-    const finished = selectedRunStatus === "completed" || selectedRunStatus === "failed";
-    loadRunResults(selectedRunId, finished).finally(() => {
-      if (!cancelled) setIsLoadingResults(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedRunId, selectedRunStatus, loadRunResults]);
-
   // Runs are sorted newest-first, so the most recent is the summary for the header.
   const lastRun = runs[0];
   const lastRunId = lastRun?.id;
   const lastRunStatus = lastRun?.status;
   // A run that counted its conversations reads by conversation, with no results to load.
-  const lastRunCounts = checksEnabled ? runConversationCounts(lastRun) : null;
+  const lastRunCounts = runConversationCounts(lastRun);
   const hasLastRunCounts = Boolean(lastRunCounts);
 
   // The Last Run card counts turns passed, so it loads the run's results once it completes.
@@ -430,8 +332,6 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     topRef.current?.scrollIntoView({ block: "start" });
     topRef.current?.focus({ preventScroll: true });
   }, [view?.runId, view?.conversation, view?.compareWith]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const conversationIndex = useMemo(() => indexConversations(suiteCases), [suiteCases]);
 
   const handleRunEvaluation = async (targetWorkflowId?: string) => {
     if (!evaluation || !evaluationId) return;
@@ -465,9 +365,10 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
       allWorkflows.find((item) => item.agent_id === evaluationWorkflow.agent_id && item.is_active_version)) ||
     evaluationWorkflow;
   // Checks are read against the version Run preselects.
-  const checksWorkflowId = playVersionId ?? liveWorkflow?.id ?? evaluation?.workflow_id ?? suite?.workflow_id ?? undefined;
-  const checksCatalog = useEvaluationCatalog(checksWorkflowId, checksEnabled && showChecks);
-  const previews = useChecksPreview(checksEnabled, evaluation ? [evaluation] : []);
+  const checksWorkflowId =
+    runVersionId ?? liveWorkflow?.id ?? evaluation?.workflow_id ?? suite?.workflow_id ?? undefined;
+  const checksCatalog = useEvaluationCatalog(checksWorkflowId, showChecks);
+  const previews = useChecksPreview(evaluation ? [evaluation] : []);
   // Older methods show as the checks a run grades them with; saving in the editor keeps them.
   const shownEvaluation = useMemo(() => evaluation && withPreview(evaluation, previews), [evaluation, previews]);
   const parsedChecks = useMemo(() => parseChecks(shownEvaluation?.technique_configs?.checks), [shownEvaluation]);
@@ -485,13 +386,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   const conversationsLoaded = Boolean(evaluation?.suite_id) && suiteCasesFor === evaluation?.suite_id;
 
   const openRun = (runId: string | undefined) => {
-    if (!runId) return;
-    if (checksEnabled) {
-      setView({ runId });
-      return;
-    }
-    setSelectedRunId(runId);
-    setIsRunDetailsOpen(true);
+    if (runId) setView({ runId });
   };
 
   // Opens the comparison with the newest finished run picked, waiting for the second.
@@ -499,60 +394,6 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     const newest = runs.find((run) => run.status === "completed");
     if (newest?.id) setView({ runId: newest.id, compareWith: "" });
   };
-
-  const selectedRun = runs.find((run) => run.id === selectedRunId);
-  const selectedRunResults = selectedRunId ? resultsByRun[selectedRunId] ?? [] : [];
-  const selectedRunRuleResults = selectedRunId ? ruleResultsByRun[selectedRunId] ?? [] : [];
-
-  // Turn-level rule results are shown inside the matching test-case detail;
-  // conversation results stay in the run-level sections.
-  const ruleResultsByCaseId = useMemo(() => {
-    const rows = selectedRunId ? ruleResultsByRun[selectedRunId] ?? [] : [];
-    const map = new Map<string, TestToolRuleResult[]>();
-    for (const ruleResult of rows) {
-      if (isTurnScope(ruleResult.scope) && ruleResult.case_id) {
-        const existing = map.get(ruleResult.case_id) ?? [];
-        existing.push(ruleResult);
-        map.set(ruleResult.case_id, existing);
-      }
-    }
-    return map;
-  }, [selectedRunId, ruleResultsByRun]);
-
-  // A case's displayed status must reflect its turn-level Tool Usage results too: a
-  // tool failure fails the case, and a tool pass can score an otherwise-unscored case.
-  const caseTools = (result: TestResult): TestToolRuleResult[] =>
-    result.case_id ? ruleResultsByCaseId.get(result.case_id) ?? [] : [];
-
-  const casePassed = (result: TestResult): boolean =>
-    caseStatusFor(result, caseTools(result)) === "passed";
-
-  const caseFailed = (result: TestResult): boolean =>
-    caseStatusFor(result, caseTools(result)) === "failed";
-
-  const caseNotScored = (result: TestResult): boolean =>
-    caseStatusFor(result, caseTools(result)) === "not_scored";
-
-  const filterResults = () => {
-    if (resultFilter === "passed") return selectedRunResults.filter(casePassed);
-    if (resultFilter === "not_scored") return selectedRunResults.filter(caseNotScored);
-    if (resultFilter === "failed") return selectedRunResults.filter(caseFailed);
-    return selectedRunResults;
-  };
-
-  const filteredResults = filterResults();
-  // Keep a case selected in the right column; fall back to the first in the current filter.
-  const activeCase =
-    filteredResults.find((r) => r.id === selectedCaseId) ?? filteredResults[0] ?? null;
-
-  const passedCount = selectedRunResults.filter(casePassed).length;
-  const failedCount = selectedRunResults.filter(caseFailed).length;
-  const notScoredCount = selectedRunResults.filter(caseNotScored).length;
-
-  const runTotals = (selectedRun?.summary_metrics as Record<string, unknown> | undefined)?.[
-    RUN_TOTALS_KEY
-  ] as RunTotals | undefined;
-  const selectedSummaries = techniqueSummaries(selectedRun);
 
   // Client-side pagination for the runs list (runs are all loaded up front).
   const runsTotalPages = Math.max(1, Math.ceil(runs.length / RUNS_PAGE_SIZE));
@@ -564,14 +405,8 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   // The runs on screen share verdict slots, so their counts line up.
   const runSlots = tallySlots(pagedRuns.map(runConversationCounts));
 
-  // Offered whenever the evaluation targets a workflow; the dialog handles a
-  // workflow that has no second version to choose.
-  const canRunAgainstVersion = Boolean(workflowAgentId && evaluation?.workflow_id);
-  // With checks on, Run asks for the version itself.
-  const pickVersionOnRun = checksEnabled && canRunAgainstVersion;
-  const finishedRunCount = runs.filter(
-    (run) => run.status === "completed" || run.status === "failed",
-  ).length;
+  // Run asks for the version when the evaluation targets a workflow; the dialog handles one with no second version.
+  const pickVersionOnRun = Boolean(workflowAgentId && evaluation?.workflow_id);
   const completedRunCount = runs.filter((run) => run.status === "completed").length;
 
   const lastRunResults = lastRunId ? resultsByRun[lastRunId] : undefined;
@@ -609,7 +444,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     );
   }
 
-  if (checksEnabled && view) {
+  if (view) {
     const viewRun = runs.find((run) => run.id === view.runId);
     const runId = view.runId;
     // A run is not compared with itself, so that pick waits for another.
@@ -706,224 +541,6 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     );
   }
 
-  const renderCaseDetail = (result: TestResult) => {
-    const passed = casePassed(result);
-    const notScored = caseNotScored(result);
-    const gradedTechniques = Object.keys(result.metrics ?? {});
-    const caseExpectedOutput = result.case_id ? expectedOutputByCaseId[result.case_id] : undefined;
-    // Show Expected Output only when a graded metric actually uses it, so process-only
-    // checks never imply they were graded against it.
-    const showExpectedOutput =
-      gradedTechniques.length === 0 ||
-      gradedTechniques.some((tech) =>
-        usesExpectedOutput(
-          tech,
-          evaluation?.technique_configs?.[tech] as Record<string, unknown> | undefined,
-        ),
-      );
-    const caseRuleRows = result.case_id ? ruleResultsByCaseId.get(result.case_id) ?? [] : [];
-    const caseName = caseLabel(conversationIndex, result.case_id);
-
-    return (
-      <>
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
-          <div className="flex items-center gap-2 min-w-0">
-            {notScored ? (
-              <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-            ) : passed ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
-            ) : (
-              <XCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-            )}
-            <span className="truncate text-sm font-semibold" title={caseName}>
-              {caseName}
-            </span>
-            {notScored && (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-                {notScoredLabel(result)}
-              </span>
-            )}
-          </div>
-          {result.metrics && (
-            <div className="flex flex-wrap justify-end gap-1">
-              {Object.entries(result.metrics).map(([tech, metricValue]) => {
-                const metricNotScored = metricValue.not_evaluated || metricValue.error;
-                return (
-                <span
-                  key={tech}
-                  className={cn(
-                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px]",
-                    metricNotScored
-                      ? "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
-                      : metricValue.passed
-                        ? "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-400"
-                        : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
-                  )}
-                >
-                  <span className="mr-1 font-semibold">{methodLabel(tech)}</span>
-                  {typeof metricValue.score === "number" && (
-                    <span>
-                      {metricValue.score <= 1
-                        ? `${Math.round(metricValue.score * 100)}%`
-                        : metricValue.score.toFixed(2)}
-                    </span>
-                  )}
-                </span>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          {/* Metric comments + grading source */}
-          {result.metrics && (
-            <div className="space-y-1">
-              {Object.entries(result.metrics).map(([tech, metricValue]) => {
-                const sourceLabel = metricSourceLabel(
-                  tech,
-                  evaluation?.technique_configs?.[tech],
-                );
-                const ruleDetails =
-                  Array.isArray(metricValue.details) && metricValue.details.length > 1
-                    ? metricValue.details
-                    : null;
-                if (!metricValue.comment && !sourceLabel && !ruleDetails) return null;
-                const comment = ruleDetails ? null : metricValue.comment;
-                return (
-                  <div key={`${result.id}-${tech}-comment`} className="text-xs">
-                    <span className="font-semibold text-muted-foreground">{methodLabel(tech)}:</span>{" "}
-                    {(comment || sourceLabel) && (
-                      <span className="text-muted-foreground">
-                        {sourceLabel ? checkedAgainstLine(comment, sourceLabel) : comment}
-                      </span>
-                    )}
-                    {ruleDetails && <MetricRuleBreakdown details={ruleDetails} />}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Turn-level rule checks for this case, grouped by technique */}
-          {groupByTechnique(caseRuleRows).map(([technique, rows]) => (
-            <div key={technique}>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">
-                {methodLabel(technique)}
-              </div>
-              <div className="space-y-2">
-                {rows.map((ruleResult) => (
-                  <RuleResultCard
-                    key={ruleResult.id}
-                    result={ruleResult}
-                    labels={conversationIndex}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-
-          {/* Input / Expected comparison, side by side */}
-          <div
-            className={cn(
-              "grid grid-cols-1 gap-4",
-              showExpectedOutput && "lg:grid-cols-2",
-            )}
-          >
-            <div>
-              <div className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
-                Input
-              </div>
-              <div className="rounded border bg-card p-2 text-xs dark:bg-zinc-900">
-                <JsonViewer
-                  data={
-                    ((result.case_id && (inputByCaseId[result.case_id] as unknown)) ??
-                      {}) as unknown as never
-                  }
-                />
-              </div>
-            </div>
-            {showExpectedOutput && (
-              <div>
-                <div className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                  <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
-                  Expected Output
-                </div>
-                <div className="rounded border bg-card p-2 text-xs dark:bg-zinc-900">
-                  <JsonViewer data={(caseExpectedOutput ?? {}) as unknown as never} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Actual Output — full width, styled like Execution Trace */}
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">Actual Output</div>
-            <div className="rounded border bg-card p-2 text-xs dark:bg-zinc-900">
-              {result.actual_output &&
-              "value" in result.actual_output &&
-              Object.keys(result.actual_output).length === 1 ? (
-                <div className="whitespace-pre-wrap">{String(result.actual_output.value)}</div>
-              ) : (
-                <JsonViewer data={(result.actual_output ?? {}) as unknown as never} />
-              )}
-            </div>
-          </div>
-
-          {result.execution_trace && Object.keys(result.execution_trace).length > 0 && (
-            <div>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">Execution Trace</div>
-              <div className="rounded border bg-card p-2 text-xs dark:bg-zinc-900">
-                <JsonViewer data={(result.execution_trace ?? {}) as unknown as never} />
-              </div>
-            </div>
-          )}
-
-          {result.error && (
-            <div className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400">
-              <div className="mb-1 font-medium">Error</div>
-              {result.error}
-            </div>
-          )}
-        </div>
-      </>
-    );
-  };
-
-  const configurationCard = (
-    <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="min-w-0">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Dataset
-          </div>
-          <div className="mt-0.5 truncate text-sm font-medium">
-            {suite?.name ?? evaluation.suite_id}
-          </div>
-        </div>
-        <div className="min-w-0">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Workflow
-          </div>
-          <div className="mt-0.5 truncate text-sm font-medium">{workflowName}</div>
-        </div>
-        <div className="sm:col-span-2">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Metrics
-          </div>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {evaluation.techniques.map((technique) => (
-              <Badge key={technique} variant="secondary">
-                {methodLabel(technique)}
-              </Badge>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   // Methods no check could be read from, as when the preview could not load.
   const olderTechniques = (shownEvaluation ?? evaluation).techniques.filter(
     (technique) => technique !== CHECKS_TECHNIQUE,
@@ -1000,19 +617,17 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
         conversationsReady={conversationsLoaded}
         catalog={checksCatalog}
         actions={
-          checksEnabled && (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowChecks(false);
-                openEditor();
-              }}
-              disabled={isRunning}
-              icon={<Pencil className="h-4 w-4" />}
-            >
-              Edit
-            </Button>
-          )
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowChecks(false);
+              openEditor();
+            }}
+            disabled={isRunning}
+            icon={<Pencil className="h-4 w-4" />}
+          >
+            Edit
+          </Button>
         }
       />
     </div>
@@ -1095,51 +710,11 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
       )}
     </>
   );
-  const lastRunContent = (
-    <>
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Last Run
-        </div>
-        {lastRun && !isLoadingRuns && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-      </div>
-      {isLoadingRuns ? (
-        <div className="space-y-2">
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-2 w-40" />
-        </div>
-      ) : !lastRun ? (
-        <div className="text-sm text-muted-foreground">No runs yet.</div>
-      ) : (
-        <div className="space-y-2">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{runName(lastRun)}</span>
-              {lastRun.workflow_version && !checksEnabled && (
-                <Badge variant="outline" className="text-[10px]">
-                  v{lastRun.workflow_version}
-                </Badge>
-              )}
-              <RunStatusBadge status={lastRun.status} />
-            </div>
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              {new Date(lastRun.created_at ?? "").toLocaleString()}
-              {/* The version of the workflow it played, not of the evaluation. */}
-              {checksEnabled && lastRun.workflow_version && ` · workflow v${lastRun.workflow_version}`}
-            </div>
-          </div>
-          {lastRunScore}
-          {lastRunNotes}
-        </div>
-      )}
-    </>
-  );
-
   // The facts on the left, the result large on the right.
-  const lastRunLayout =
-    checksEnabled && lastRun && !isLoadingRuns ? (
-      <>
-        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Last Run</div>
+  const lastRunLayout = (
+    <>
+      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Last Run</div>
+      {lastRun && !isLoadingRuns ? (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-1">
             <RunFacts run={lastRun} />
@@ -1148,15 +723,19 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
           {/* Inset by a run row's border and padding, so its counts sit over theirs. */}
           <div className="flex min-w-0 sm:mr-[13px] sm:max-w-md sm:justify-end sm:text-right">{lastRunScore}</div>
         </div>
-      </>
-    ) : (
-      lastRunContent
-    );
+      ) : (
+        <div className="space-y-2">
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-2 w-40" />
+        </div>
+      )}
+    </>
+  );
 
   // Opens the last run on click, like a row in the list.
   // A failed run with no results says all it has here, so it does not open.
   const lastRunCard =
-    lastRun && !isLoadingRuns && (!checksEnabled || runHasResults(lastRun)) ? (
+    lastRun && !isLoadingRuns && runHasResults(lastRun) ? (
       <button
         type="button"
         onClick={() => openRun(lastRun.id)}
@@ -1170,23 +749,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
 
   const runsCard = (
     <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-semibold">All runs</h2>
-        <div className="flex items-center gap-2">
-          {!checksEnabled && finishedRunCount >= 2 && (
-            <Button variant="outline" size="sm" onClick={() => setIsCompareOpen(true)}>
-              <GitCompareArrows className="mr-1.5 h-3.5 w-3.5" />
-              Compare
-            </Button>
-          )}
-          {/* Runs are numbered in order, so the last run's number already says how many there are. */}
-          {!checksEnabled && (
-            <Badge variant="secondary" className="text-xs">
-              {runs.length} run{runs.length !== 1 ? "s" : ""}
-            </Badge>
-          )}
-        </div>
-      </div>
+      <h2 className="mb-3 text-lg font-semibold">All runs</h2>
 
       {isLoadingRuns ? (
         <div className="space-y-2 max-h-72 overflow-y-auto">
@@ -1215,123 +778,44 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
       ) : (
         <div className="space-y-2">
           {pagedRuns.map((run) => {
-            const counts = checksEnabled ? runConversationCounts(run) : null;
+            const counts = runConversationCounts(run);
             const avgAccuracy = counts ? null : runAvgAccuracy(run);
-            const summaries = counts ? [] : techniqueSummaries(run);
-            if (checksEnabled) {
-              const opens = runHasResults(run);
-              const Row = opens ? "button" : "div";
-              return (
-                <Row
-                  key={run.id}
-                  {...(opens ? { type: "button" as const, onClick: () => openRun(run.id) } : {})}
-                  className={cn(
-                    "flex w-full flex-col gap-2 rounded-lg border p-3 text-left sm:flex-row sm:items-center sm:justify-between",
-                    opens && "transition-colors hover:bg-muted",
-                  )}
-                >
-                  <RunFacts run={run} />
-                  <div className="flex min-w-0 sm:max-w-md sm:justify-end sm:text-right">
-                    {run.status === "failed" ? (
-                      <span className="text-sm text-red-600 dark:text-red-400">{runFailureText(run)}</span>
-                    ) : run.status !== "completed" ? (
-                      <span className="text-sm text-muted-foreground">{runProgressText(run) ?? "Not scored yet"}</span>
-                    ) : counts ? (
-                      <VerdictTally
-                        counts={counts}
-                        className="text-lg font-semibold"
-                        iconClassName="h-5 w-5"
-                        slots={runSlots}
-                      />
-                    ) : avgAccuracy !== null ? (
-                      <span
-                        title={AVG_SCORE_HINT}
-                        className={cn("text-lg font-semibold tabular-nums", accuracyTextClass(avgAccuracy))}
-                      >
-                        {Math.round(avgAccuracy * 100)}%
-                      </span>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">No score</span>
-                    )}
-                  </div>
-                </Row>
-              );
-            }
+            const opens = runHasResults(run);
+            const Row = opens ? "button" : "div";
             return (
-              <button
+              <Row
                 key={run.id}
-                type="button"
-                onClick={() => openRun(run.id)}
-                className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted"
+                {...(opens ? { type: "button" as const, onClick: () => openRun(run.id) } : {})}
+                className={cn(
+                  "flex w-full flex-col gap-2 rounded-lg border p-3 text-left sm:flex-row sm:items-center sm:justify-between",
+                  opens && "transition-colors hover:bg-muted",
+                )}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{runName(run)}</span>
-                    {run.workflow_version && !checksEnabled && (
-                      <Badge variant="outline" className="text-[10px]">
-                        v{run.workflow_version}
-                      </Badge>
-                    )}
-                    {avgAccuracy !== null && (
-                      <div className="flex items-center gap-1" title={AVG_SCORE_HINT}>
-                        <Progress
-                          value={avgAccuracy * 100}
-                          className="h-1.5 w-16"
-                          indicatorClassName={scoreBarClass(avgAccuracy)}
-                        />
-                        <span className={cn("text-xs font-medium", accuracyTextClass(avgAccuracy))}>
-                          {Math.round(avgAccuracy * 100)}%
-                        </span>
-                      </div>
-                    )}
-                    {counts && run.status === "completed" && (
-                      <VerdictTally counts={counts} className="text-xs font-medium" iconClassName="h-3.5 w-3.5" />
-                    )}
-                    {!counts && avgAccuracy === null && run.status === "completed" && (
-                      <span className="text-xs text-muted-foreground">No score</span>
-                    )}
-                  </div>
-                  <RunStatusBadge status={run.status} />
+                <RunFacts run={run} />
+                <div className="flex min-w-0 sm:max-w-md sm:justify-end sm:text-right">
+                  {run.status === "failed" ? (
+                    <span className="text-sm text-red-600 dark:text-red-400">{runFailureText(run)}</span>
+                  ) : run.status !== "completed" ? (
+                    <span className="text-sm text-muted-foreground">{runProgressText(run) ?? "Not scored yet"}</span>
+                  ) : counts ? (
+                    <VerdictTally
+                      counts={counts}
+                      className="text-lg font-semibold"
+                      iconClassName="h-5 w-5"
+                      slots={runSlots}
+                    />
+                  ) : avgAccuracy !== null ? (
+                    <span
+                      title={AVG_SCORE_HINT}
+                      className={cn("text-lg font-semibold tabular-nums", accuracyTextClass(avgAccuracy))}
+                    >
+                      {Math.round(avgAccuracy * 100)}%
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No score</span>
+                  )}
                 </div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {new Date(run.created_at ?? "").toLocaleString()}
-                  {checksEnabled && run.workflow_version && ` · workflow v${run.workflow_version}`}
-                </div>
-                {run.status === "failed" && (
-                  <div className="mt-1 text-xs text-red-600 dark:text-red-400">
-                    {runFailureText(run)}
-                  </div>
-                )}
-                {summaries.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
-                    {summaries.map(([tech, summary]) => {
-                      const acc = techniqueAccuracy(summary);
-                      let colorClasses = "bg-muted text-muted-foreground border border-border";
-                      if (acc !== null) {
-                        if (acc >= 0.9) {
-                          colorClasses =
-                            "bg-green-50 text-green-700 border border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/30";
-                        } else if (acc >= 0.7) {
-                          colorClasses =
-                            "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/30";
-                        } else {
-                          colorClasses =
-                            "bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/30";
-                        }
-                      }
-                      return (
-                        <span
-                          key={tech}
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 ${colorClasses}`}
-                        >
-                          <span className="mr-1 font-semibold">{methodLabel(tech)}</span>
-                          <span>{acc !== null ? `${Math.round(acc * 100)}%` : NOT_EVALUATED}</span>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </button>
+              </Row>
             );
           })}
         </div>
@@ -1371,7 +855,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
           )}
         </div>
         <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
-          {checksEnabled && completedRunCount >= 2 && (
+          {completedRunCount >= 2 && (
             <Button
               variant="outline"
               onClick={openComparison}
@@ -1380,34 +864,9 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
               Compare
             </Button>
           )}
-          {canRunAgainstVersion && !pickVersionOnRun && (
-            <TooltipProvider delayDuration={200}>
-              <TooltipButton
-                button={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    disabled={isRunning}
-                    onClick={() => setIsVersionDialogOpen(true)}
-                    aria-label="Run against a version"
-                  >
-                    <GitBranch className="h-4 w-4" />
-                  </Button>
-                }
-                tooltipContent={{ children: <p>Run against a version</p> }}
-              />
-            </TooltipProvider>
-          )}
-          {checksEnabled && (
-            <Button
-              variant="outline"
-              onClick={openEditor}
-              disabled={isRunning}
-              icon={<Pencil className="h-4 w-4" />}
-            >
-              Edit
-            </Button>
-          )}
+          <Button variant="outline" onClick={openEditor} disabled={isRunning} icon={<Pencil className="h-4 w-4" />}>
+            Edit
+          </Button>
           <Button
             onClick={() => (pickVersionOnRun ? setIsVersionDialogOpen(true) : void handleRunEvaluation())}
             disabled={isRunning}
@@ -1423,275 +882,26 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
         </div>
       </div>
 
-      {checksEnabled ? (
-        <>
-          {summaryCard}
-          {lastRunCard}
-          {runsCard}
-        </>
-      ) : (
-        <>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {configurationCard}
-            {lastRunCard}
-          </div>
-          {runsCard}
-        </>
-      )}
+      {summaryCard}
+      {/* With no runs, All runs says so on its own. */}
+      {(isLoadingRuns || lastRun) && lastRunCard}
+      {runsCard}
 
-      {/* Run Details — big dialog with columns (Test Workflow style) */}
-      <Dialog
-        open={isRunDetailsOpen && !!selectedRun}
-        onOpenChange={(open) => {
-          setIsRunDetailsOpen(open);
-          if (!open) setResultFilter("all");
-        }}
-      >
-        <DialogContent className="flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[1800px] flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-5 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <DialogTitle>{selectedRun ? runName(selectedRun) : "Run details"}</DialogTitle>
-                {selectedRun?.workflow_version && (
-                  <Badge variant="outline" className="text-[10px]">
-                    v{selectedRun.workflow_version}
-                  </Badge>
-                )}
-              </div>
-              {selectedRun && <RunStatusBadge status={selectedRun.status} />}
-            </div>
-            {selectedRun?.created_at && (
-              <p className="text-xs text-muted-foreground">
-                {new Date(selectedRun.created_at).toLocaleString()}
-              </p>
-            )}
-          </DialogHeader>
-
-          {/* Columns: evaluation summary | results list | selected case detail */}
-          <div className="min-h-0 flex-1">
-            <ResizablePanelGroup
-              direction="horizontal"
-              autoSaveId="run-details-v2"
-              className="h-full"
-            >
-              {/* Evaluation Summary column */}
-              <ResizablePanel defaultSize={24} minSize={18} maxSize={35}>
-                <div className="flex h-full flex-col overflow-hidden">
-                  <div className="shrink-0 border-b px-4 py-2.5 text-sm font-medium">
-                    Evaluation Summary
-                  </div>
-                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-                    {runTotals && runTotals.scored < runTotals.cases && (
-                      <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-400">
-                        Scores cover {runTotals.scored} of {runTotals.cases} turns
-                        {runTotals.execution_failed > 0 &&
-                          ` · ${runTotals.execution_failed} failed to execute`}
-                        {runTotals.scoring_failed > 0 &&
-                          ` · ${runTotals.scoring_failed} ran but failed scoring`}
-                        {runTotals.skipped > 0 && ` · ${runTotals.skipped} skipped`}
-                      </div>
-                    )}
-                    {selectedSummaries.length > 0 ? (
-                      <div className="grid grid-cols-1 gap-3">
-                        {selectedSummaries
-                          .filter(([tech]) => tech !== TOOL_USED_TECHNIQUE)
-                          .map(([tech, summary]) => {
-                            const acc = techniqueAccuracy(summary);
-                            return (
-                              <div key={tech} className="rounded-lg border bg-card p-3 dark:bg-zinc-900">
-                                <div className="mb-2 text-xs font-medium text-muted-foreground">{methodLabel(tech)}</div>
-                                {acc !== null ? (
-                                  <div className="space-y-1">
-                                    <div className="flex items-center justify-between">
-                                      <span className={cn("text-lg font-semibold", accuracyTextClass(acc))}>
-                                        {Math.round(acc * 100)}%
-                                      </span>
-                                      {tech === "checks" && checksConversations(selectedRun) ? (
-                                        <span className="text-xs text-muted-foreground">
-                                          {checksConversations(selectedRun)?.total} conversations
-                                        </span>
-                                      ) : typeof summary.cases === "number" && (
-                                        <span className="text-xs text-muted-foreground">
-                                          {summary.cases} {isRuleTechnique(tech) ? "checks" : "turns"}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <Progress value={acc * 100} className="h-2" indicatorClassName={scoreBarClass(acc)} />
-                                  </div>
-                                ) : (
-                                  <div className="text-sm text-muted-foreground">{NOT_EVALUATED}</div>
-                                )}
-                                {typeof summary.avg_score === "number" && (
-                                  <div className="mt-1 text-sm">
-                                    Avg Score:{" "}
-                                    <span className="font-medium">{summary.avg_score.toFixed(2)}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                      </div>
-                    ) : selectedRun?.status === "failed" ? (
-                      <div className="text-sm text-red-600 dark:text-red-400">
-                        {runFailureText(selectedRun)}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-muted-foreground">No metrics available</div>
-                    )}
-                  </div>
-                </div>
-              </ResizablePanel>
-
-              <ResizableHandle withHandle />
-
-              {/* Results list column */}
-              <ResizablePanel defaultSize={32} minSize={22}>
-                <div className="flex h-full flex-col overflow-hidden">
-                  <div className="shrink-0 border-b px-3 py-2.5">
-                    <Tabs value={resultFilter} onValueChange={(v) => setResultFilter(v as ResultFilter)}>
-                      <TabsList className="h-8">
-                        <TabsTrigger value="all" className="px-2.5 py-1 text-xs">
-                          All ({selectedRunResults.length})
-                        </TabsTrigger>
-                        <TabsTrigger value="passed" className="px-2.5 py-1 text-xs">
-                          <CheckCircle2 className="mr-1 h-3 w-3 text-green-600 dark:text-green-400" />
-                          {passedCount}
-                        </TabsTrigger>
-                        <TabsTrigger value="failed" className="px-2.5 py-1 text-xs">
-                          <XCircle className="mr-1 h-3 w-3 text-red-600 dark:text-red-400" />
-                          {failedCount}
-                        </TabsTrigger>
-                        <TabsTrigger value="not_scored" className="px-2.5 py-1 text-xs">
-                          <AlertCircle className="mr-1 h-3 w-3 text-amber-600" />
-                          {notScoredCount}
-                        </TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  </div>
-                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-                    {selectedRunRuleResults.length > 0 && (
-                      <RuleResults
-                        results={selectedRunRuleResults}
-                        labels={conversationIndex}
-                        checksVerdict={checksVerdictText(selectedRun)}
-                      />
-                    )}
-
-                    {isLoadingResults ? (
-                      [1, 2, 3, 4].map((i) => (
-                        <div key={i} className="rounded-md border p-3">
-                          <Skeleton className="h-4 w-24" />
-                          <Skeleton className="mt-2 h-3 w-40" />
-                        </div>
-                      ))
-                    ) : filteredResults.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-8 text-center">
-                        <AlertCircle className="mb-2 h-8 w-8 text-muted-foreground/40" />
-                        <p className="text-sm text-muted-foreground">
-                          {resultFilter === "all"
-                            ? selectedRun && isRunInProgress(selectedRun)
-                              ? "No results yet."
-                              : "This run has no results."
-                            : resultFilter === "passed"
-                              ? "No passed turns."
-                              : resultFilter === "not_scored"
-                                ? "No unscored turns."
-                                : "No failed turns."}
-                        </p>
-                      </div>
-                    ) : (
-                      filteredResults.map((result) => {
-                        const passed = casePassed(result);
-                        const notScored = caseNotScored(result);
-                        const isActive = activeCase?.id === result.id;
-                        const metricComments = Object.entries(result.metrics ?? {})
-                          .filter(([, m]) => m.comment)
-                          .map(([tech, m]) => `${methodLabel(tech)}: ${m.comment}`)
-                          .join(" | ");
-                        let caseStatusLabel = "Passed";
-                        if (notScored) caseStatusLabel = notScoredLabel(result);
-                        else if (!passed) caseStatusLabel = "Failed";
-                        const subtitleText = metricComments || caseStatusLabel;
-                        return (
-                          <button
-                            key={result.id}
-                            type="button"
-                            onClick={() => setSelectedCaseId(result.id ?? null)}
-                            className={cn(
-                              "w-full rounded-md border p-2.5 text-left transition-colors",
-                              isActive ? "bg-primary/5 ring-1 ring-primary" : "hover:bg-muted",
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                {notScored ? (
-                                  <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                                ) : passed ? (
-                                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
-                                ) : (
-                                  <XCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-                                )}
-                                <span className="truncate text-sm font-medium">
-                                  {caseLabel(conversationIndex, result.case_id)}
-                                </span>
-                              </div>
-                            </div>
-                            {result.metrics && (
-                              <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
-                                {subtitleText}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              </ResizablePanel>
-
-              <ResizableHandle withHandle />
-
-              {/* Selected case detail column */}
-              <ResizablePanel defaultSize={44} minSize={30}>
-                <div className="flex h-full flex-col overflow-hidden">
-                  {activeCase ? (
-                    renderCaseDetail(activeCase)
-                  ) : (
-                    <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-                      <AlertCircle className="mb-3 h-10 w-10 text-muted-foreground/30" />
-                      <p className="text-sm text-muted-foreground">
-                        {isLoadingResults ? "Loading results..." : "Select a turn to see its details."}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {canRunAgainstVersion && workflowAgentId && (
+      {pickVersionOnRun && workflowAgentId && (
         <RunAgainstVersionDialog
           isOpen={isVersionDialogOpen}
           onOpenChange={setIsVersionDialogOpen}
           agentId={workflowAgentId}
           currentWorkflowId={evaluation.workflow_id}
-          openWorkflowId={playVersionId}
-          workflowName={workflowName}
-          asRun={
-            pickVersionOnRun
-              ? {
-                  title: "Run evaluation",
-                  description: (
-                    <>
-                      Runs <span className="font-medium text-foreground">{evaluation.name}</span> on the version you
-                      pick.
-                    </>
-                  ),
-                }
-              : undefined
-          }
+          openWorkflowId={runVersionId}
+          asRun={{
+            title: "Run evaluation",
+            description: (
+              <>
+                Runs <span className="font-medium text-foreground">{evaluation.name}</span> on the version you pick.
+              </>
+            ),
+          }}
           isStarting={isRunning}
           onRun={(targetWorkflowId) => {
             setIsVersionDialogOpen(false);
@@ -1699,13 +909,6 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
           }}
         />
       )}
-
-      <CompareRunsDialog
-        isOpen={isCompareOpen}
-        onOpenChange={setIsCompareOpen}
-        runs={runs}
-        cases={suiteCases}
-      />
     </>
   );
 };

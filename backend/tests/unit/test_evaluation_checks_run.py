@@ -150,6 +150,19 @@ class TestChecksInARun:
         assert summary["coverage"]["total"] == 6
 
     @pytest.mark.asyncio
+    async def test_a_hidden_value_in_another_tools_values_is_masked(self, in_memory):
+        cases = [_case(uuid4(), 0, {"message": "Hello", "region": "uk", "api_token": SECRET})]
+        checks = [{"id": "tools", "kind": "tool_called", "tool_name": "lookup",
+                   "tools": [{"tool_name": "search", "args": {"key": SECRET}, "result_contains": SECRET}]}]
+        service = _service()
+
+        await _execute(service, cases, checks)
+
+        (row,) = _rows(service)
+        assert SECRET not in str(row.details)
+        assert row.details["rule"]["tools"][0]["args"] == {"key": "[API_TOKEN]"}
+
+    @pytest.mark.asyncio
     async def test_a_short_hidden_value_masks_texts_but_not_the_grading(self, in_memory):
         cases = [_case(uuid4(), 0, {"message": "Hello", "api_token": "no"})]
         checks = [

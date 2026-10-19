@@ -6,8 +6,8 @@ import { needsConversion } from "../helpers/checks";
 
 type Previews = Map<string, TestEvaluationConfig>;
 
-/** With checks on, older methods read as checks; nothing is saved until the editor saves, and a run converts its own copy. */
-export const useChecksPreview = (enabled: boolean, evaluations: TestEvaluationConfig[]): Previews => {
+/** Older methods read as checks; nothing is saved until the editor saves, and a run converts its own copy. */
+export const useChecksPreview = (evaluations: TestEvaluationConfig[]): Previews => {
   // The edit time is in the key, so a changed evaluation is read again.
   const pending = evaluations
     .filter((evaluation) => evaluation.id && needsConversion(evaluation.techniques))
@@ -16,7 +16,7 @@ export const useChecksPreview = (enabled: boolean, evaluations: TestEvaluationCo
   const { data } = useQuery({
     queryKey: ["evaluation-checks-preview", pending],
     queryFn: () => previewEvaluationChecks(pending.map((key) => key.split("@")[0])),
-    enabled: enabled && pending.length > 0,
+    enabled: pending.length > 0,
     staleTime: Infinity,
   });
   return useMemo(() => new Map((data?.evaluations ?? []).map((evaluation) => [evaluation.id, evaluation])), [data]);

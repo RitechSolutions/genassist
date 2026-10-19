@@ -20,7 +20,6 @@ import {
   pairTurnChecks,
   type ReplyCheckPair,
   pairTurns,
-  replyVerdict,
   runConversationLabels,
   turnCheckDetail,
 } from "../helpers/runConversations";
@@ -261,20 +260,14 @@ export const CompareConversationView: React.FC<CompareConversationViewProps> = (
   };
   const turnCount = turns.length;
 
-  const reply = (side: Side, turn: RunTurnResult | undefined, changed: boolean) =>
+  // What changed on a row is said once, by its checks pill.
+  const reply = (side: Side, turn: RunTurnResult | undefined) =>
     side.conversation && turn ? (
       <AgentReply
         fill
         turn={turn}
         conversation={side.conversation}
         speaker={runName(side.run)}
-        note={
-          changed && (
-            <span className="rounded-full bg-amber-500/15 px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:text-amber-400">
-              Changed
-            </span>
-          )
-        }
         onShowSteps={() => setSteps({ run: side.run, turn })}
       />
     ) : (
@@ -387,40 +380,30 @@ export const CompareConversationView: React.FC<CompareConversationViewProps> = (
         </div>
 
         <div className="space-y-6 rounded-lg border bg-card p-4 sm:p-6">
-          {turns.map(({ key, before: earlierTurn, after: laterTurn }) => {
-            // Read as each reply shows it, so the mark agrees with the icons beside it.
-            const changed = Boolean(
-              earlierTurn &&
-              laterTurn &&
-              sides[0].conversation &&
-              sides[1].conversation &&
-              replyVerdict(earlierTurn, sides[0].conversation) !== replyVerdict(laterTurn, sides[1].conversation),
-            );
-            return (
-              <div key={key} ref={ref(key)} className={cn("space-y-3", MARK, marked === key && MARKED)}>
-                <CustomerBubble message={(laterTurn ?? earlierTurn)?.message ?? ""} />
-                <div className="grid gap-4 md:grid-cols-2">
-                  {reply(sides[0], earlierTurn, false)}
-                  {reply(sides[1], laterTurn, changed)}
-                </div>
-                {/* Centred, as it compares both replies rather than belonging to one. */}
-                <div className="flex justify-center">
-                  <ChecksPill
-                    pairs={pairReplyChecks(
-                      earlierTurn && sides[0].conversation
-                        ? { turn: earlierTurn, conversation: sides[0].conversation }
-                        : undefined,
-                      laterTurn && sides[1].conversation
-                        ? { turn: laterTurn, conversation: sides[1].conversation }
-                        : undefined,
-                    )}
-                    about={(laterTurn ?? earlierTurn)?.message ?? ""}
-                    onOpen={() => setCompared(key)}
-                  />
-                </div>
+          {turns.map(({ key, before: earlierTurn, after: laterTurn }) => (
+            <div key={key} ref={ref(key)} className={cn("space-y-3", MARK, marked === key && MARKED)}>
+              <CustomerBubble message={(laterTurn ?? earlierTurn)?.message ?? ""} />
+              <div className="grid gap-4 md:grid-cols-2">
+                {reply(sides[0], earlierTurn)}
+                {reply(sides[1], laterTurn)}
               </div>
-            );
-          })}
+              {/* Centred, as it compares both replies rather than belonging to one. */}
+              <div className="flex justify-center">
+                <ChecksPill
+                  pairs={pairReplyChecks(
+                    earlierTurn && sides[0].conversation
+                      ? { turn: earlierTurn, conversation: sides[0].conversation }
+                      : undefined,
+                    laterTurn && sides[1].conversation
+                      ? { turn: laterTurn, conversation: sides[1].conversation }
+                      : undefined,
+                  )}
+                  about={(laterTurn ?? earlierTurn)?.message ?? ""}
+                  onOpen={() => setCompared(key)}
+                />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

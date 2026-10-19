@@ -549,6 +549,10 @@ export interface CheckMoves {
   worse: number;
 }
 
+/** Checks that moved while the conversation's result stayed the same, which the result alone would hide. */
+export const hiddenCheckMoves = (change: ConversationChange): boolean =>
+  change.before === change.after && (change.checks.better > 0 || change.checks.worse > 0);
+
 /** "3 checks now pass, 1 now fails." */
 export const checkMovesText = ({ better, worse }: CheckMoves): string =>
   [
@@ -561,7 +565,7 @@ export const checkMovesText = ({ better, worse }: CheckMoves): string =>
 export interface RunComparison {
   verdict: ComparisonVerdict;
   changes: ConversationChange[];
-  /** Every conversation's checks that moved, together. */
+  /** Checks that moved where the conversation's result stayed the same, together: what the rows' pills add up to. */
   checks: CheckMoves;
   /** No conversation changed result, so the verdict comes from the checks. */
   fromChecks: boolean;
@@ -625,10 +629,13 @@ export const compareRuns = (baseline: RunConversations, current: RunConversation
   const worse = groups.has("newly_failing");
   const better = groups.has("newly_passing");
   const byConversation: ComparisonVerdict = worse && better ? "mixed" : worse ? "worse" : better ? "better" : "same";
-  const checks = changes.reduce(
-    (sum, change) => ({ better: sum.better + change.checks.better, worse: sum.worse + change.checks.worse }),
-    none,
-  );
+  // A conversation that changed result is on its card already; only what that would hide is counted.
+  const checks = changes
+    .filter(hiddenCheckMoves)
+    .reduce(
+      (sum, change) => ({ better: sum.better + change.checks.better, worse: sum.worse + change.checks.worse }),
+      none,
+    );
   // "Same" only when nothing changed: with every conversation where it was, the checks decide.
   const fromChecks = byConversation === "same" && (checks.better > 0 || checks.worse > 0);
   const verdict: ComparisonVerdict = fromChecks

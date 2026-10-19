@@ -82,12 +82,10 @@ export const AgentReply: React.FC<{
   fill?: boolean;
   /** Who replied: the agent, or the run when two are side by side. */
   speaker?: string;
-  /** Said beside the speaker, such as that the verdict changed. */
-  note?: React.ReactNode;
   onShowSteps?: () => void;
   /** Without it the checks pill is left out, as when one pill compares two runs' replies. */
   onShowChecks?: () => void;
-}> = ({ turn, conversation, fill = false, speaker = "Agent", note, onShowSteps, onShowChecks }) => {
+}> = ({ turn, conversation, fill = false, speaker = "Agent", onShowSteps, onShowChecks }) => {
   const crashed = turn.status === "execution_failed";
   const skipped = turn.status === "skipped";
   // A turn that ran but could not be graded still replied.
@@ -110,10 +108,7 @@ export const AgentReply: React.FC<{
 
   return (
     <div className={cn("flex flex-col", fill ? "items-stretch" : "items-end")}>
-      <Speaker className="flex items-center gap-1.5">
-        {speaker}
-        {note}
-      </Speaker>
+      <Speaker>{speaker}</Speaker>
       {/* How it went shows in the checks pill below, so the bubble needs no icon of its own. */}
       <div className={cn("flex", fill ? "w-full" : "max-w-[85%] sm:max-w-[75%]")}>
         <div className={cn("flex min-w-0 flex-col", fill && "flex-1")}>

@@ -89,7 +89,6 @@ from app.core.utils.sensitive_data_utils import build_hidden_value_map, mask_hid
 from app.core.utils.transcript_utils import extract_qa_pairs
 from app.core.utils.uuid_utils import coerce_uuid
 from app.repositories.conversations import ConversationRepository
-from app.repositories.feature_flag import FeatureFlagRepository
 from app.repositories.test_suite import (
     TestSuiteRepository,
     TestCaseRepository,
@@ -211,8 +210,6 @@ NLI_EVALUATION_TIMEOUT_SECONDS = 2 * 60
 # Rule grading runs after the cases; a bug or stuck DB call here must not leave
 # the run stuck in "running" forever.
 RULE_EVALUATION_TIMEOUT_SECONDS = 60
-# Shows the checks; with it on, older methods run as checks.
-CHECKS_FEATURE_FLAG = "evaluations.checks"
 # Checks can need many AI gradings, so they get a longer budget, and each grading its own.
 CHECKS_EVALUATION_TIMEOUT_SECONDS = 15 * 60
 CHECK_JUDGE_TIMEOUT_SECONDS = 90
@@ -227,6 +224,7 @@ CHECKS_JUDGE_BUDGET_CAP_SECONDS = 60 * 60
 # The texts of a check's row and snapshot, which can quote a hidden value.
 _CHECK_RESULT_TEXTS = ("expected", "observed", "comment", "facts", "checked_facts")
 _CHECK_RULE_TEXTS = ("text", "rubric", "value", "args", "turn_message", "result_contains")
+_TOOL_REF_TEXTS = ("args", "result_contains")
 
 # Metering runs outside the scoring budget; one hung flush must not stall a long run.
 EVALUATION_USAGE_FLUSH_TIMEOUT_SECONDS = 30
@@ -3612,8 +3610,11 @@ class TestSuiteService:
 
         def check_details(entry: Dict[str, Any]) -> Dict[str, Any]:
             check = check_by_id[entry["rule_id"]]
+            rule = masked(check.model_dump(mode="json"), _CHECK_RULE_TEXTS)
+            # Each other tool's values and result text too.
+            rule["tools"] = [masked(ref, _TOOL_REF_TEXTS) for ref in rule.get("tools") or []]
             return {
-                "rule": masked(check.model_dump(mode="json"), _CHECK_RULE_TEXTS),
+                "rule": rule,
                 "rule_summary": mask_hidden_values(describe_check(check), value_map) if value_map else describe_check(check),
             }
 
@@ -4133,12 +4134,6 @@ class TestSuiteService:
                 )
         return ChecksPreviewResult(evaluations=previews)
 
-    async def _checks_enabled(self) -> bool:
-        """The checks flag as the app reads it: the flag, else its parent, else on."""
-        keys = (CHECKS_FEATURE_FLAG, CHECKS_FEATURE_FLAG.rsplit(".", 1)[0])
-        values = await FeatureFlagRepository(self.evaluation_repo.db).get_active_values(keys)
-        return next((values[key] == "true" for key in keys if key in values), True)
-
     async def append_run_to_evaluation(
         self, evaluation_id: UUID, run_id: str
     ) -> TestEvaluationInDB:
@@ -4192,14 +4187,13 @@ class TestSuiteService:
                 workflow_id
             )
 
-        # Read once for the batch: the checks flag and each workflow's names for converting older methods.
-        checks_on = any(needs_conversion(ev.techniques) for ev in targeted) and await self._checks_enabled()
+        # Each workflow's names are read once for the batch, for converting older methods.
         catalogs: Dict[str, Any] = {}
         results: List[StartedEvaluationRun] = []
         for ev in targeted:
             try:
                 run = await self._start_evaluation_run(
-                    ev, dispatch, batch_target, checks_on=checks_on, catalogs=catalogs
+                    ev, dispatch, batch_target, catalogs=catalogs
                 )
                 results.append(
                     StartedEvaluationRun(
@@ -4494,7 +4488,6 @@ class TestSuiteService:
         ],
         target_workflow_id: Optional[UUID] = None,
         *,
-        checks_on: Optional[bool] = None,
         catalogs: Optional[Dict[str, Any]] = None,
     ) -> TestRunInDB:
         """Create, record and dispatch a single evaluation run.
@@ -4517,8 +4510,8 @@ class TestSuiteService:
                 status_code=400, error_key=ErrorKey.EVALUATION_WORKFLOW_REQUIRED
             )
         techniques, technique_configs = list(ev.techniques or []), ev.technique_configs or None
-        # With checks on, older methods run as the checks they read as; the evaluation keeps them until saved.
-        if needs_conversion(techniques) and (await self._checks_enabled() if checks_on is None else checks_on):
+        # Older methods run as the checks they read as; the evaluation keeps them until saved.
+        if needs_conversion(techniques):
             converted = await self._checks_for_older_methods(ev, catalogs if catalogs is not None else {})
             if converted:
                 techniques, technique_configs = converted

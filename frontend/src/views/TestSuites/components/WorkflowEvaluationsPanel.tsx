@@ -1,18 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ChevronDown,
-  ChevronLeft,
-  Download,
-  GitBranch,
-  ListChecks,
-  Loader2,
-  MoreVertical,
-  Play,
-  Plus,
-  Search,
-} from "lucide-react";
+import { ChevronDown, Download, ListChecks, Loader2, MoreVertical, Play, Plus, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { Button } from "@/components/button";
@@ -37,33 +26,24 @@ import { TooltipButton } from "@/components/tooltip-button";
 import { cn } from "@/helpers/utils";
 
 import { getWorkflowsMinimal } from "@/services/workflows";
-import { getTestRunsBatch, listTestSuites } from "@/services/testSuites";
-import { getLLMProvidersMinimal } from "@/services/llmProviders";
+import { getTestRunsBatch } from "@/services/testSuites";
 import {
-  createTestEvaluation,
   deleteTestEvaluation,
   exportTestEvaluation,
   exportWorkflowEvaluations,
   getWorkflowEvaluationsPage,
   runTestEvaluation,
   runWorkflowEvaluations,
-  updateTestEvaluation,
 } from "@/services/testEvaluations";
 import { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
 import { WorkflowMinimal } from "@/interfaces/workflow.interface";
-import { TestRun, TestSuite } from "@/interfaces/testSuite.interface";
-import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
-import { EvaluationWizard, EvaluationWizardData } from "./EvaluationWizard";
+import { TestRun } from "@/interfaces/testSuite.interface";
 import { EntityTitle } from "./EntityTitle";
 import { useChecksPreview, withPreview } from "../hooks/useChecksPreview";
 import { WORKFLOW_SUMMARIES_QUERY_KEY } from "../hooks/useEvaluationData";
-import { useFeatureFlagVisible } from "@/components/featureFlag";
-import { FeatureFlags } from "@/config/featureFlags";
 import { EvaluationListRow } from "./EvaluationListRow";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
-import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../helpers/evaluationForm";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
-import { extractErrorMessage } from "@/helpers/apiError";
 import { runAvgAccuracy, runProgressText } from "../helpers/runResults";
 import { runConversationCounts } from "../helpers/runConversations";
 import {
@@ -80,8 +60,6 @@ const RUNNING_POLL_MS = 5000;
 /** Lists the evaluations page already loaded, so its sections don't load them again. */
 export interface EvaluationReferenceData {
   workflows: WorkflowMinimal[];
-  suites: TestSuite[];
-  providers: LLMProviderMinimal[];
 }
 
 export interface WorkflowEvaluationsPanelProps {
@@ -89,12 +67,10 @@ export interface WorkflowEvaluationsPanelProps {
   workflowId: string;
   /** Open an evaluation's detail. In-tab callers swap views; the route wrapper navigates. */
   onOpenEvaluation: (evaluationId: string) => void;
-  /** When provided, a back arrow is shown in the header (used by the standalone page). */
-  onBack?: () => void;
   /**
    * When true, a "New Evaluation" button creates an evaluation pinned to this
-   * workflow (used by the in-builder tab). The standalone page keeps creation on
-   * the overview, so it leaves this off.
+   * workflow (used by the in-builder tab). The evaluations page keeps creation in
+   * its header, so its sections leave this off.
    */
   allowCreate?: boolean;
   /** "section": one collapsible workflow on the evaluations page, with no search box of its own. */
@@ -112,7 +88,7 @@ export interface WorkflowEvaluationsPanelProps {
   /** Section only: the page's word on running evaluations, for a folded section that loaded nothing. */
   running?: boolean;
   reference?: EvaluationReferenceData;
-  /** With checks on, the editor opens through these, as in the builder's tab; without them, its page opens. */
+  /** The editor opens through these, as in the builder's tab; without them, its page opens. */
   onCreateEvaluation?: () => void;
   onEditEvaluation?: (evaluationId: string) => void;
   /** The version Run and Run all preselect, such as the one open in the builder; the active one when left out. */
@@ -120,16 +96,13 @@ export interface WorkflowEvaluationsPanelProps {
 }
 
 /**
- * The per-workflow evaluations list — search, pagination, quick-run, run-all,
- * run-against-version, export, edit and delete. Extracted from
- * WorkflowEvaluationsPage so both the standalone `/tests` route and the workflow
- * builder's Evaluations tab share one implementation. Renders content only (no
- * page chrome); callers wrap it in PageLayout or the tab's scroll container.
+ * One workflow's evaluations: search, pagination, run, run all, export, edit and
+ * delete. Shared by the evaluations page's sections and the workflow builder's
+ * Evaluations tab. Renders content only (no page chrome).
  */
 export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> = ({
   workflowId,
   onOpenEvaluation,
-  onBack,
   allowCreate = false,
   variant = "page",
   title,
@@ -151,11 +124,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
   const navigate = useNavigate();
 
   const [ownWorkflows, setWorkflows] = useState<WorkflowMinimal[]>([]);
-  const [ownSuites, setSuites] = useState<TestSuite[]>([]);
-  const [ownProviders, setProviders] = useState<LLMProviderMinimal[]>([]);
   const workflows = reference?.workflows ?? ownWorkflows;
-  const suites = reference?.suites ?? ownSuites;
-  const providers = reference?.providers ?? ownProviders;
 
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
@@ -203,9 +172,6 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     };
   }, [workflowId]);
 
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const checksEnabled = useFeatureFlagVisible(FeatureFlags.EVALUATIONS.CHECKS);
-  const [editingEvaluation, setEditingEvaluation] = useState<TestEvaluationConfig | null>(null);
   const [deletingEvaluationId, setDeletingEvaluationId] = useState<string | null>(null);
   const [isRunAllVersionDialogOpen, setIsRunAllVersionDialogOpen] = useState(false);
   // The evaluation whose Run is asking for the version.
@@ -247,23 +213,15 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     void queryClient.invalidateQueries({ queryKey: WORKFLOW_SUMMARIES_QUERY_KEY });
   };
 
-  const previews = useChecksPreview(checksEnabled, evaluations);
+  const previews = useChecksPreview(evaluations);
 
-  // With checks on, the editor is a page of its own, which makes older methods into checks first.
+  // The editor is a page of its own, which makes older methods into checks first.
   const editEvaluation = (evaluation: TestEvaluationConfig) => {
-    if (!checksEnabled) {
-      setEditingEvaluation(evaluation);
-      return;
-    }
     if (!evaluation.id) return;
     if (onEditEvaluation) onEditEvaluation(evaluation.id);
     else navigate(`/tests/evaluations/${evaluation.id}/edit`);
   };
   const createEvaluation = () => {
-    if (!checksEnabled) {
-      setIsCreateDialogOpen(true);
-      return;
-    }
     if (onCreateEvaluation) onCreateEvaluation();
     else navigate(`/tests/evaluations/new?workflow=${encodeURIComponent(workflowId)}`);
   };
@@ -273,25 +231,12 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     ? "Unassigned evaluations"
     : currentWorkflow?.agent_name || currentWorkflow?.name || "Workflow";
   const workflowAgentId = isUnassigned ? null : currentWorkflow?.agent_id ?? null;
-  // Offered on every workflow; the dialog handles one with no second version.
-  const canRunAgainstVersion = Boolean(workflowAgentId);
-  // With checks on, Run and Run all ask for the version first, starting from the given one.
-  const pickVersionOnRun = checksEnabled && canRunAgainstVersion;
-  const playVersionId = checksEnabled ? runVersionId : undefined;
+  // Run and Run all ask for the version first, starting from the given one; a workflow with no agent runs directly.
+  const pickVersionOnRun = Boolean(workflowAgentId);
 
   useEffect(() => {
     if (reference) return;
-    const load = async () => {
-      const [workflowData, suiteData, providersData] = await Promise.all([
-        getWorkflowsMinimal(),
-        listTestSuites(),
-        getLLMProvidersMinimal(),
-      ]);
-      setWorkflows(workflowData ?? []);
-      setSuites(suiteData ?? []);
-      setProviders((providersData ?? []).filter((p) => p.is_active === 1));
-    };
-    void load();
+    void getWorkflowsMinimal().then((workflowData) => setWorkflows(workflowData ?? []));
   }, [reference]);
 
   // Debounce the search box and reset to the first page when it changes.
@@ -472,64 +417,6 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     }
   };
 
-  const startRunAfterSave = async (evaluationId: string) => {
-    try {
-      await runTestEvaluation(evaluationId);
-      toast.success("Evaluation started");
-    } catch (error) {
-      toast.error(runStartErrorMessage(error));
-    }
-  };
-
-  const handleCreateSubmit = async (data: EvaluationWizardData, options?: { run?: boolean }) => {
-    try {
-      const created = await createTestEvaluation({
-        name: data.name.trim(),
-        description: data.description.trim() || undefined,
-        suite_id: data.suiteId,
-        workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
-        techniques: data.metrics,
-        technique_configs: buildTechniqueConfigs(data),
-        input_metadata: wizardMetadata(data),
-      });
-      if (!created) return;
-      setIsCreateDialogOpen(false);
-      if (options?.run && created.id) await startRunAfterSave(created.id);
-      refresh();
-      if (created.id) onOpenEvaluation(created.id);
-    } catch (error) {
-      toast.error(extractErrorMessage(error, "Failed to create evaluation"));
-    }
-  };
-
-  const handleEditSubmit = async (data: EvaluationWizardData, options?: { run?: boolean }) => {
-    if (!editingEvaluation?.id) return;
-    try {
-      const updated = await updateTestEvaluation(editingEvaluation.id, {
-        name: data.name.trim(),
-        description: data.description.trim(), // "" clears it; undefined would keep the old one
-        suite_id: data.suiteId,
-        workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
-        techniques: data.metrics,
-        technique_configs: buildTechniqueConfigs(data),
-        input_metadata: wizardMetadata(data),
-      });
-      if (!updated) return;
-      setEditingEvaluation(null);
-      toast.success("Evaluation updated");
-      if (options?.run) await startRunAfterSave(editingEvaluation.id);
-      refresh(true); // its workflow may have changed
-    } catch (error) {
-      if (isRunConflict(error)) {
-        toast.error("This evaluation is running. Wait for it to finish before editing.");
-        setEditingEvaluation(null);
-        refresh();
-      } else {
-        toast.error(extractErrorMessage(error, "Failed to update evaluation"));
-      }
-    }
-  };
-
   const handleExport = async (evaluation: TestEvaluationConfig) => {
     if (!evaluation.id) return;
     try {
@@ -648,11 +535,8 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
           key={evaluation.id}
           evaluation={withPreview(evaluation, previews)}
           avgAccuracy={getAverageAccuracy(evaluation)}
-          conversations={
-            checksEnabled && evaluation.id ? runConversationCounts(lastRunsByEvaluationId[evaluation.id]) : null
-          }
+          conversations={evaluation.id ? runConversationCounts(lastRunsByEvaluationId[evaluation.id]) : null}
           isRunning={isEvaluationRunning(evaluation)}
-          layout={checksEnabled ? "columns" : "stacked"}
           indent={isSection}
           lastRunStatus={
             evaluation.id ? lastRunsByEvaluationId[evaluation.id]?.status : undefined
@@ -718,12 +602,6 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {canRunAgainstVersion && !pickVersionOnRun && (
-                      <DropdownMenuItem disabled={runAllDisabled} onSelect={() => setIsRunAllVersionDialogOpen(true)}>
-                        <GitBranch className="h-4 w-4 mr-2" />
-                        Run all against a version
-                      </DropdownMenuItem>
-                    )}
                     <DropdownMenuItem onSelect={() => void handleExportAll()}>
                       <Download className="h-4 w-4 mr-2" />
                       Export all
@@ -743,17 +621,6 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
       ) : (
         <>
           <div className="mb-6 flex flex-wrap items-center gap-2">
-            {onBack && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onBack}
-                className="shrink-0"
-                aria-label="Back to evaluations"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </Button>
-            )}
             <div className="flex items-center gap-2 min-w-0">
               <h1 className="text-2xl font-bold tracking-tight truncate animate-fade-down">
                 {workflowName}
@@ -791,24 +658,6 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
                       tooltipContent={{ children: <p>Export all evaluations</p> }}
                     />
                   </TooltipProvider>
-                  {canRunAgainstVersion && !pickVersionOnRun && (
-                    <TooltipProvider delayDuration={200}>
-                      <TooltipButton
-                        button={
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            disabled={runAllDisabled}
-                            onClick={() => setIsRunAllVersionDialogOpen(true)}
-                            aria-label="Run all against a version"
-                          >
-                            <GitBranch className="h-4 w-4" />
-                          </Button>
-                        }
-                        tooltipContent={{ children: <p>Run all against a version</p> }}
-                      />
-                    </TooltipProvider>
-                  )}
                   <Button variant="outline" disabled={runAllDisabled} onClick={runAll}>
                     {runAllLabel}
                   </Button>
@@ -829,23 +678,18 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         </>
       )}
 
-      {canRunAgainstVersion && workflowAgentId && (
+      {workflowAgentId && (
         <RunAgainstVersionDialog
           isOpen={isRunAllVersionDialogOpen}
           onOpenChange={setIsRunAllVersionDialogOpen}
           agentId={workflowAgentId}
           currentWorkflowId={workflowId}
-          openWorkflowId={playVersionId}
-          workflowName={title ?? workflowName}
+          openWorkflowId={runVersionId}
           confirmLabel="Run all"
-          asRun={
-            pickVersionOnRun
-              ? {
-                  title: "Run all evaluations",
-                  description: `Runs every evaluation of ${title ?? workflowName} on the version you pick.`,
-                }
-              : undefined
-          }
+          asRun={{
+            title: "Run all evaluations",
+            description: `Runs every evaluation of ${title ?? workflowName} on the version you pick.`,
+          }}
           isStarting={isWorkflowRunning}
           onRun={(targetWorkflowId) => {
             setIsRunAllVersionDialogOpen(false);
@@ -854,7 +698,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         />
       )}
 
-      {checksEnabled && workflowAgentId && versionRunEvaluation && (
+      {workflowAgentId && versionRunEvaluation && (
         <RunAgainstVersionDialog
           isOpen
           onOpenChange={(isOpen) => {
@@ -862,8 +706,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
           }}
           agentId={workflowAgentId}
           currentWorkflowId={versionRunEvaluation.workflow_id ?? workflowId}
-          openWorkflowId={playVersionId}
-          workflowName={title ?? workflowName}
+          openWorkflowId={runVersionId}
           asRun={{
             title: "Run evaluation",
             description: (
@@ -878,34 +721,6 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
             setVersionRunEvaluation(null);
             void startRun(evaluation, targetWorkflowId);
           }}
-        />
-      )}
-
-      {allowCreate && !isUnassigned && !checksEnabled && (
-        <EvaluationWizard
-          isOpen={isCreateDialogOpen}
-          onOpenChange={setIsCreateDialogOpen}
-          onSubmit={handleCreateSubmit}
-          suites={suites}
-          workflows={workflows}
-          providers={providers}
-          mode="create"
-          lockedWorkflowId={workflowId}
-        />
-      )}
-
-      {editingEvaluation && !checksEnabled && (
-        <EvaluationWizard
-          isOpen={!!editingEvaluation}
-          onOpenChange={(isOpen) => {
-            if (!isOpen) setEditingEvaluation(null);
-          }}
-          onSubmit={handleEditSubmit}
-          suites={suites}
-          workflows={workflows}
-          providers={providers}
-          mode="edit"
-          initialData={getEditInitialData(editingEvaluation, providers)}
         />
       )}
 

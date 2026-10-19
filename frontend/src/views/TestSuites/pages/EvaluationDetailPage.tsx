@@ -2,8 +2,6 @@ import React, { useCallback, useMemo, useRef } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { PageLayout } from "@/components/PageLayout";
-import { useFeatureFlagVisible } from "@/components/featureFlag";
-import { FeatureFlags } from "@/config/featureFlags";
 import { EvaluationDetailPanel } from "../components/EvaluationDetailPanel";
 import {
   locationFromParams,
@@ -27,7 +25,6 @@ const EvaluationDetailPage: React.FC = () => {
   const location = useLocation();
   const { evaluationId } = useParams<{ evaluationId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const checksEnabled = useFeatureFlagVisible(FeatureFlags.EVALUATIONS.CHECKS);
   // The panel reports the evaluation's workflow id once loaded; back uses it.
   const workflowIdRef = useRef<string | null>(null);
 
@@ -35,15 +32,11 @@ const EvaluationDetailPage: React.FC = () => {
     workflowIdRef.current = workflowId;
   }, []);
 
-  // With checks on, every workflow's evaluations are on the overview, opened at this one.
+  // Every workflow's evaluations are on the overview, opened at this one.
   const handleBack = useCallback(() => {
     const workflow = workflowIdRef.current ?? UNASSIGNED;
-    navigate(
-      checksEnabled
-        ? `/tests/evaluations?workflow=${encodeURIComponent(workflow)}`
-        : `/tests/evaluations/workflows/${workflow}`,
-    );
-  }, [navigate, checksEnabled]);
+    navigate(`/tests/evaluations?workflow=${encodeURIComponent(workflow)}`);
+  }, [navigate]);
 
   const search = searchParams.toString();
   const resultsView = useMemo(() => locationFromParams(new URLSearchParams(search)), [search]);

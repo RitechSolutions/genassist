@@ -5,6 +5,7 @@ import type {
   CheckKind,
   CheckLevel,
   CheckMatch,
+  CheckToolRef,
   EvaluationToolCatalog,
   OlderMethods,
   ScenarioCheck,
@@ -292,10 +293,12 @@ const argPairs = (args: Record<string, string> | undefined): string =>
     .map(([key, value]) => `${key.trim()} = ${text(value)}`)
     .join(", ");
 
-const listed = (names: string[], joiner: string): string => {
-  const quoted = names.map((name) => `"${name}"`);
-  return quoted.length === 1 ? quoted[0] : `${quoted.slice(0, -1).join(", ")} ${joiner} ${quoted[quoted.length - 1]}`;
-};
+const joined = (items: string[], joiner: string): string =>
+  items.length === 1 ? items[0] : `${items.slice(0, -1).join(", ")} ${joiner} ${items[items.length - 1]}`;
+
+const quoted = (name: string): string => `"${name}"`;
+
+const listed = (names: string[], joiner: string): string => joined(names.map(quoted), joiner);
 
 const times = (count: number): string => (count === 1 ? "1 time" : `${count} times`);
 
@@ -319,11 +322,32 @@ const gradedBy = (check: ScenarioCheck): string => {
   return check.grader === "similarity" ? ", graded by text similarity" : "";
 };
 
-/** Every tool a check is about: a tool check's own and, for what should happen, its others; or the list that may be used. */
-export const toolRefs = (check: ScenarioCheck) =>
+/**
+ * Every tool a check is about: a tool check's own, with its values and result, and for what should happen its
+ * others; or the list that may be used.
+ */
+export const toolRefs = (check: ScenarioCheck): CheckToolRef[] =>
   check.kind === "tool_called"
-    ? [{ tool: check.tool, tool_name: check.tool_name }, ...(check.expect === "should" ? (check.tools ?? []) : [])]
+    ? [
+        {
+          tool: check.tool,
+          tool_name: check.tool_name,
+          args: check.args,
+          result_not_empty: check.result_not_empty,
+          result_contains: check.result_contains,
+        },
+        ...(check.expect === "should" ? (check.tools ?? []) : []),
+      ]
     : (check.tools ?? []);
+
+/** A tool by name, with what its own call should have, e.g. "lookup" (with id = 7, returning a result). */
+const toolWithConditions = (ref: CheckToolRef): string => {
+  const parts = argPairs(ref.args) ? [`with ${argPairs(ref.args)}`] : [];
+  if (filled(ref.result_contains)) parts.push(`returning a result that contains "${text(ref.result_contains)}"`);
+  else if (ref.result_not_empty) parts.push("returning a result");
+  const name = `"${text(ref.tool_name || ref.tool)}"`;
+  return parts.length ? `${name} (${parts.join(", ")})` : name;
+};
 
 /** A node type as words: "zendeskTicketNode" reads "Zendesk ticket", as the backend names it. */
 export const stepTypeLabel = (type: string): string => {
@@ -365,9 +389,16 @@ const clause = (check: ScenarioCheck, modal: string): string => {
       if (modal === "should") return "a step should fail";
       return modal === "should never" ? "no step should ever fail" : "no step should fail";
     case "tool_called": {
-      const names = toolRefs(check).map((ref) => text(ref.tool_name || ref.tool));
-      const subject = names.length === 1 ? `the tool "${names[0]}"` : `one of the tools ${listed(names, "or")}`;
-      let result = `${subject} ${modal} be called${byAgent(check)}`;
+      const refs = toolRefs(check);
+      if (refs.length > 1) {
+        // Each tool says its own values and result; the counts and success are over them all.
+        const named = joined(refs.map(toolWithConditions), "or");
+        const total = counts(check);
+        return `one of the tools ${named} ${modal} be called${byAgent(check)}${total}${total ? " in all" : ""}${
+          check.succeeds ? " and succeed" : ""
+        }`;
+      }
+      let result = `the tool "${toolName(check)}" ${modal} be called${byAgent(check)}`;
       const pairs = argPairs(check.args);
       if (pairs) result += ` with ${pairs}`;
       // Counts, success and results only say more about what should happen.
@@ -532,7 +563,8 @@ export const checkMissing = (check: ScenarioCheck): string | null => {
     case "step_fails":
       return null;
     case "tool_called":
-      if (!toolRefs(check).every((ref) => filled(ref.tool) || filled(ref.tool_name))) return "Pick the tool.";
+      if (!toolRefs(check).every((ref) => filled(ref.tool) || filled(ref.tool_name)))
+        return toolRefs(check).length > 1 ? "Pick each tool." : "Pick the tool.";
       return check.expect === "should" ? countProblem(check) : null;
     case "only_tools":
       if (!(check.tools ?? []).every((ref) => filled(ref.tool) || filled(ref.tool_name))) return "Pick each tool.";
@@ -719,13 +751,40 @@ const keeps = (check: ScenarioCheck, field: keyof ScenarioCheck): boolean => {
   return true;
 };
 
-const toolList = (refs: ScenarioCheck["tools"]): Record<string, string>[] =>
-  (refs ?? [])
+const toolKey = (ref: CheckToolRef) =>
+  filled(ref.tool) ? text(ref.tool) : filled(ref.tool_name) ? `name:${text(ref.tool_name)}` : "";
+
+/** What a tool's own call should have, trimmed as the check's own values are. */
+const toolConditions = (ref: CheckToolRef): Record<string, unknown> => {
+  const args = Object.fromEntries(
+    Object.entries(ref.args ?? {})
+      .filter(([key]) => filled(key))
+      .map(([key, value]) => [key.trim(), text(value)]),
+  );
+  return {
+    ...(Object.keys(args).length ? { args } : {}),
+    ...(ref.result_not_empty ? { result_not_empty: true } : {}),
+    // Looked for as typed, spaces included, as Tool Usage looked for it.
+    ...(ref.result_contains ? { result_contains: ref.result_contains } : {}),
+  };
+};
+
+/** Each tool once, the check's own tool included, so a repeat is dropped; with conditions, each keeps its own. */
+const toolList = (refs: ScenarioCheck["tools"], own?: CheckToolRef, conditions = false): Record<string, unknown>[] => {
+  const seen = new Set(own && toolKey(own) ? [toolKey(own)] : []);
+  return (refs ?? [])
+    .filter((ref) => {
+      const key = toolKey(ref);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .map((ref) => ({
       ...(filled(ref.tool) ? { tool: text(ref.tool) } : {}),
       ...(filled(ref.tool_name) ? { tool_name: text(ref.tool_name) } : {}),
-    }))
-    .filter((ref) => Object.keys(ref).length > 0);
+      ...(conditions ? toolConditions(ref) : {}),
+    }));
+};
 
 /** Only what the check's kind and level use, trimmed, so a changed kind leaves nothing behind. */
 export const serializeCheck = (check: ScenarioCheck): Record<string, unknown> => {
@@ -759,7 +818,8 @@ export const serializeCheck = (check: ScenarioCheck): Record<string, unknown> =>
         .map(([key, value]) => [key.trim(), text(value)]),
     );
     if (Object.keys(args).length) out.args = args;
-    const others = check.expect === "should" ? toolList(check.tools) : [];
+    const others =
+      check.expect === "should" ? toolList(check.tools, { tool: check.tool, tool_name: check.tool_name }, true) : [];
     if (others.length) out.tools = others;
   }
   if (check.kind === "only_tools") out.tools = toolList(check.tools);
@@ -795,7 +855,19 @@ export const parseChecks = (
       const tools = Array.isArray(entry.tools)
         ? (entry.tools as unknown[])
             .filter((ref): ref is Record<string, unknown> => Boolean(ref) && typeof ref === "object")
-            .map((ref) => ({ tool: (ref.tool as string) ?? null, tool_name: (ref.tool_name as string) ?? null }))
+            .map((ref) => ({
+              tool: (ref.tool as string) ?? null,
+              tool_name: (ref.tool_name as string) ?? null,
+              ...(ref.args && typeof ref.args === "object"
+                ? {
+                    args: Object.fromEntries(
+                      Object.entries(ref.args as Record<string, unknown>).map(([key, value]) => [key, text(value)]),
+                    ),
+                  }
+                : {}),
+              ...(ref.result_not_empty === true ? { result_not_empty: true } : {}),
+              ...(typeof ref.result_contains === "string" ? { result_contains: ref.result_contains } : {}),
+            }))
         : [];
       const level = LEVELS.has(String(entry.level)) ? (entry.level as CheckLevel) : "every_conversation";
       const ids = Array.isArray(entry.conversation_ids)

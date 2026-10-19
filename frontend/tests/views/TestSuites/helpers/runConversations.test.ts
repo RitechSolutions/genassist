@@ -26,6 +26,7 @@ import {
   notComparedReason,
   pairChecks,
   checkDetail,
+  hiddenCheckMoves,
   pairTurns,
   tallyItems,
   tallySlots,
@@ -745,6 +746,29 @@ describe("comparing two runs", () => {
     ).toBe("mixed");
     const still = compareRuns(run(whole("a", "failed")), run(whole("a", "failed")));
     expect([still.verdict, still.fromChecks]).toEqual(["same", false]);
+  });
+
+  it("shows a conversation's moved checks only when its result stayed the same", () => {
+    const whole = (id: string, status: Verdict) =>
+      rule({ id, rule_id: id, scope: "every_conversation", status, details: { expected: `Should ${id}`, observed: "x" } });
+    const run = (verdict: Verdict, ...rules: TestToolRuleResult[]) => runOf([conversation("a", verdict, { rules })]);
+    // Still failing with a check fixed: its result alone would hide that.
+    const still = compareRuns(
+      run("failed", whole("a", "failed"), whole("b", "failed")),
+      run("failed", whole("a", "passed"), whole("b", "failed")),
+    );
+    expect(hiddenCheckMoves(still.changes[0])).toBe(true);
+    // Newly passing: its result already says its checks were fixed.
+    const fixed = compareRuns(run("failed", whole("a", "failed")), run("passed", whole("a", "passed")));
+    expect(fixed.changes[0].checks).toEqual({ better: 1, worse: 0 });
+    expect(hiddenCheckMoves(fixed.changes[0])).toBe(false);
+    // The run's total is what the rows' pills add up to, so a changed result is not counted again.
+    expect([still.checks, fixed.checks, fixed.verdict, fixed.fromChecks]).toEqual([
+      { better: 1, worse: 0 },
+      { better: 0, worse: 0 },
+      "better",
+      false,
+    ]);
   });
 
   it("says Better, Worse or Same", () => {

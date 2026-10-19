@@ -82,12 +82,19 @@ MATERIAL_CHARS = 16000
 
 
 class ToolRef(BaseModel):
-    """One more tool a check is about, by id and name."""
+    """One more tool a check is about, by id and name; as another tool that should be called, with its own values and result."""
 
     model_config = ConfigDict(extra="ignore")
 
     tool: Optional[str] = None
     tool_name: Optional[str] = None
+    args: Dict[str, Any] = Field(default_factory=dict)
+    result_not_empty: bool = False
+    result_contains: Optional[str] = None
+
+    @property
+    def conditioned(self) -> bool:
+        return bool(self.args) or self.result_not_empty or _filled(self.result_contains)
 
 
 class Check(BaseModel):
@@ -139,15 +146,17 @@ class Check(BaseModel):
     match: Optional[Literal["exact", "contains", "meaning"]] = None
     tool: Optional[str] = None
     tool_name: Optional[str] = None
-    # tool_called: more tools, any of which counts; only_tools: the tools that may be used, or with Should not, may not.
+    # tool_called: more tools, any of which counts, each with its own values and result;
+    # only_tools: the tools that may be used, or with Should not, may not.
     tools: List[ToolRef] = Field(default_factory=list)
     agent: Optional[str] = None
     agent_name: Optional[str] = None
+    # The check's own tool: the values it is called with, and what it returns.
     args: Dict[str, Any] = Field(default_factory=dict)
-    # A tool call counts only when it succeeded, or when its result is not empty or contains this.
-    succeeds: bool = False
     result_not_empty: bool = False
     result_contains: Optional[str] = None
+    # Over every tool of the check: a call counts only when it succeeded.
+    succeeds: bool = False
     min_calls: Optional[int] = Field(default=None, ge=0)
     max_calls: Optional[int] = Field(default=None, ge=0)
     step: Optional[str] = None
@@ -209,6 +218,8 @@ class Check(BaseModel):
             raise ValueError(f"check {self.id!r}: a tool that should be called at most 0 times can never pass")
         if self.kind == "tool_called" and any(not (_filled(item.tool) or _filled(item.tool_name)) for item in self.tools):
             raise ValueError(f"check {self.id!r}: pick each tool")
+        if self.kind == "only_tools" and any(item.conditioned for item in self.tools):
+            raise ValueError(f"check {self.id!r}: only a tool that should be called has values or a result")
         if self.min_calls is not None and self.max_calls is not None and self.min_calls > self.max_calls:
             raise ValueError(f"check {self.id!r}: the fewest calls cannot be more than the most")
 
@@ -278,9 +289,17 @@ class Check(BaseModel):
 
     @property
     def tool_refs(self) -> List[ToolRef]:
-        """Every tool the check is about: tool_called's own and its others, or only_tools' list."""
-        first = [ToolRef(tool=self.tool, tool_name=self.tool_name)] if self.kind == "tool_called" else []
-        return first + list(self.tools)
+        """Every tool the check is about: tool_called's own, with its values and result, and its others; or only_tools' list."""
+        if self.kind != "tool_called":
+            return list(self.tools)
+        own = ToolRef(
+            tool=self.tool,
+            tool_name=self.tool_name,
+            args=self.args,
+            result_not_empty=self.result_not_empty,
+            result_contains=self.result_contains,
+        )
+        return [own, *self.tools]
 
     @property
     def counted(self) -> bool:
@@ -388,9 +407,15 @@ def _clause(check: Check, modal: str) -> str:
             return "a step should fail"
         return "no step should ever fail" if modal == "should never" else "no step should fail"
     if check.kind == "tool_called":
-        names = [normalize_text(ref.tool_name or ref.tool) for ref in check.tool_refs]
-        subject = f'the tool "{names[0]}"' if len(names) == 1 else f"one of the tools {_listed(names, 'or')}"
-        clause = f"{subject} {modal} be called" + _by_agent(check)
+        refs = check.tool_refs
+        if len(refs) > 1:
+            # Each tool says its own values and result; the counts and success are over them all.
+            named = _joined([_tool_with_conditions(ref) for ref in refs], "or")
+            clause = f"one of the tools {named} {modal} be called" + _by_agent(check) + _counts(check)
+            if check.counted:
+                clause += " in all"
+            return clause + (" and succeed" if check.succeeds else "")
+        clause = f'the tool "{tool_display(check)}" {modal} be called' + _by_agent(check)
         if check.args:
             clause += f" with {_pairs(check.args)}"
         clause += _counts(check)
@@ -463,9 +488,23 @@ def _counts(check: Check) -> str:
     return ""
 
 
+def _joined(items: List[str], joiner: str) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + f" {joiner} {items[-1]}"
+
+
 def _listed(names: List[str], joiner: str) -> str:
-    quoted = [f'"{name}"' for name in names]
-    return quoted[0] if len(quoted) == 1 else ", ".join(quoted[:-1]) + f" {joiner} {quoted[-1]}"
+    return _joined([f'"{name}"' for name in names], joiner)
+
+
+def _tool_with_conditions(ref: ToolRef) -> str:
+    """A tool by name, with what its own call should have, e.g. '"lookup" (with id = 7, returning a result)'."""
+    parts = [f"with {_pairs(ref.args)}"] if ref.args else []
+    if _filled(ref.result_contains):
+        parts.append(f'returning a result that contains "{normalize_text(ref.result_contains)}"')
+    elif ref.result_not_empty:
+        parts.append("returning a result")
+    name = f'"{normalize_text(ref.tool_name or ref.tool)}"'
+    return f"{name} ({', '.join(parts)})" if parts else name
 
 
 def is_step_type(check: Check) -> bool:
@@ -607,6 +646,8 @@ class Targets:
     """A check's tools, agent, steps or routers, resolved to ids in the workflow that ran."""
 
     tool_ids: List[str] = field(default_factory=list)
+    # Each of the check's tools in order: its ids in the workflow that ran; none means it is matched by name.
+    tool_ids_by_ref: List[List[str]] = field(default_factory=list)
     agent_id: Optional[str] = None
     # The step or router; a name on several nodes means any of them, as Action Taken matched it.
     node_ids: List[str] = field(default_factory=list)
@@ -633,6 +674,7 @@ def resolve_targets(check: Check, catalog: Optional[Dict[str, List[Dict[str, Any
     if check.kind not in ("tool_called", "only_tools", "step_runs", "route_taken") or catalog is None:
         return Targets(
             tool_ids=[ref.tool for ref in check.tool_refs if ref.tool],
+            tool_ids_by_ref=[[ref.tool] if ref.tool else [] for ref in check.tool_refs],
             agent_id=check.agent,
             node_names=[name for name in (check.step, check.router, check.step_name, check.router_name) if _filled(name)],
             node_type=check.step_type if is_step_type(check) else None,
@@ -683,11 +725,13 @@ def _tool_targets(check: Check, catalog: Dict[str, List[Dict[str, Any]]]) -> Tar
     fields = ("id", "name", "label")
     tools = [tool for entry in agents if agent_id in (None, entry.get("id")) for tool in entry.get("tools") or []]
     tool_ids: List[str] = []
+    by_ref: List[List[str]] = []
     missing: List[str] = []
     name = None
     for ref in check.tool_refs:
         # A name on several tool nodes means any of them: a call to either counts.
         ids = _matching_ids(tools, ref.tool, ref.tool_name, fields)
+        by_ref.append(ids)
         if not ids:
             # No call can be to a tool the workflow lacks, as for Tool Usage.
             missing.append(normalize_text(ref.tool_name or ref.tool))
@@ -695,7 +739,7 @@ def _tool_targets(check: Check, catalog: Dict[str, List[Dict[str, Any]]]) -> Tar
         tool_ids.extend(item for item in ids if item not in tool_ids)
         if name is None:
             name = next((tool.get("name") for tool in tools if tool.get("id") in ids), None)
-    return Targets(tool_ids=tool_ids, agent_id=agent_id, name=name, missing_tools=missing,
+    return Targets(tool_ids=tool_ids, tool_ids_by_ref=by_ref, agent_id=agent_id, name=name, missing_tools=missing,
                    agent_ids=[entry.get("id") for entry in agents if entry.get("id")])
 
 
@@ -900,12 +944,22 @@ def tool_fact(check: Check, targets: Targets, turns: List[TurnRecord]) -> Tuple[
     if not calls and targets.agent_id and not any(agent_ran(targets, turn) for turn in turns):
         agent = normalize_text(check.agent_name or check.agent)
         return False, f'"{agent}" did not run, so {called} was not called.'
+    several = len(check.tool_refs) > 1
+
+    def own(call: Dict[str, Any]) -> ToolRef:
+        """The check's tool the call is to, whose values and result it is held to."""
+        return _tool_of(call, targets, check)
 
     def with_values(call: Dict[str, Any]) -> bool:
-        return not check.args or args_match(call.get("arguments"), check.args)
+        args = own(call).args
+        return not args or args_match(call.get("arguments"), args)
 
     def hit(call: Dict[str, Any]) -> str:
         return call.get("tool_name") or called
+
+    def subject(call: Dict[str, Any]) -> str:
+        # With several tools, a miss names the one it is about.
+        return hit(call) if several else called
 
     if check.expect == "should_not":
         # A refused call never ran: it is not a call, but it is an attempt a "should not" forbids.
@@ -917,7 +971,7 @@ def tool_fact(check: Check, targets: Targets, turns: List[TurnRecord]) -> Tuple[
             return True, f"{hit(matched[0])} was called{values}."
         if not ran:
             return False, f"{called} was not called."
-        return False, f"{called} was called with {_seen_values(check, ran)}."
+        return False, f"{called} was called with {_seen_values(check.args, ran)}."
 
     if not ran:
         missed = f"None of {called} was called." if name.startswith("none of ") else f"{called} was not called."
@@ -925,21 +979,26 @@ def tool_fact(check: Check, targets: Targets, turns: List[TurnRecord]) -> Tuple[
     used = [call for call in ran if not check.succeeds or call.get("status") == "succeeded"]
     if not used:
         return False, f"{called} was called but did not succeed."
-    if check.args and not any(with_values(call) for call in used):
-        return False, f"{called} was called with {_seen_values(check, used)}."
-    fitting = [call for call in used if with_values(call) and _result_fits(check, call)]
+    valued = [call for call in used if with_values(call)]
+    if not valued:
+        last = used[-1]
+        return False, f"{subject(last)} was called with {_seen_values(own(last).args, [last])}."
+    fitting = [call for call in valued if _result_fits(own(call), call)]
     if not fitting:
-        if _filled(check.result_contains):
-            return False, f'{called} did not return a result that contains "{check.result_contains}".'
-        return False, f"{called} returned no result."
+        last = valued[-1]
+        wanted = own(last)
+        if _filled(wanted.result_contains):
+            return False, f'{subject(last)} did not return a result that contains "{wanted.result_contains}".'
+        return False, f"{subject(last)} returned no result."
     count = len(used)
     attempts = len([call for call in calls if not check.succeeds or call.get("status") == "succeeded"])
     if not _within(check, count, attempts):
         together = " in all" if len(check.tool_refs) > 1 else ""
         over = check.max_calls is not None and attempts > check.max_calls
         return False, f"{called} {'were' if together else 'was'} called {_times(attempts if over else count)}{together}."
-    values = f" with {_pairs(check.args)}" if check.args else ""
-    if check.counted and len(check.tool_refs) > 1:
+    args = own(fitting[0]).args
+    values = f" with {_pairs(args)}" if args else ""
+    if check.counted and several:
         return True, f"{called} were called {_times(count)} in all."
     counted = f" {_times(count)}" if check.counted else ""
     return True, f"{hit(fitting[0])} was called{values}{counted}."
@@ -1001,9 +1060,10 @@ def _missing_note(targets: Targets) -> str:
     return f" {_listed(names, 'and')} {'is' if len(names) == 1 else 'are'} not in the workflow that ran."
 
 
-def _seen_values(check: Check, calls: List[Dict[str, Any]]) -> str:
+def _seen_values(args: Dict[str, Any], calls: List[Dict[str, Any]]) -> str:
+    """What the last call was called with, for the values the check asks about."""
     shown = calls[-1].get("shown_arguments")
-    return _pairs({key: (shown or {}).get(key) for key in check.args}) if isinstance(shown, dict) else "other values"
+    return _pairs({key: (shown or {}).get(key) for key in args}) if isinstance(shown, dict) else "other values"
 
 
 def _result_text(result: Any) -> str:
@@ -1017,15 +1077,35 @@ def _result_text(result: Any) -> str:
         return str(result)
 
 
-def _result_fits(check: Check, call: Dict[str, Any]) -> bool:
-    """The call's result as the check asks: not empty, or containing its text, as Tool Usage read it."""
+def _result_fits(wanted: ToolRef, call: Dict[str, Any]) -> bool:
+    """The call's result as its tool asks: not empty, or containing its text, as Tool Usage read it."""
     result = call.get("result")
     text = _result_text(result)
     empty = not text or (isinstance(result, (list, dict)) and not result) or text.lower().startswith(_EMPTY_RESULT_PREFIXES)
-    if check.result_not_empty and empty:
+    if wanted.result_not_empty and empty:
         return False
     # Spaces included, as Tool Usage looked for the text.
-    return not _filled(check.result_contains) or check.result_contains in text
+    return not _filled(wanted.result_contains) or wanted.result_contains in text
+
+
+def _tool_of(call: Dict[str, Any], targets: Targets, check: Check) -> ToolRef:
+    """Which of the check's tools a call of them is to: by its ids in the workflow that ran, else by name."""
+    refs = check.tool_refs
+    if len(refs) == 1:
+        return refs[0]
+    by_ref = (
+        targets.tool_ids_by_ref
+        if len(targets.tool_ids_by_ref) == len(refs)
+        else [[ref.tool] if ref.tool else [] for ref in refs]
+    )
+    for ref, ids in zip(refs, by_ref):
+        if ids and call.get("tool_id") in ids:
+            return ref
+    # A tool the workflow that ran lacks is called by name, as from a sub-workflow.
+    for ref, ids in zip(refs, by_ref):
+        if not ids and names_equal(call.get("tool_name"), ref.tool_name or ref.tool):
+            return ref
+    return refs[0]
 
 
 def _is_tool(call: Dict[str, Any], targets: Targets, check: Check) -> bool:

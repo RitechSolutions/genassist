@@ -30,12 +30,10 @@ interface RunAgainstVersionDialogProps {
   currentWorkflowId?: string;
   /** The version open in the builder, preselected when given. */
   openWorkflowId?: string;
-  /** Named once in the description instead of repeated per option. */
-  workflowName?: string;
   /** Confirm label, e.g. "Run" or "Run all". */
   confirmLabel?: string;
-  /** With checks on, Run itself opens this to pick the version, so it is worded for that and one version can run. */
-  asRun?: { title: string; description: React.ReactNode };
+  /** Run itself opens this to pick the version, so it says what runs, and one version can run. */
+  asRun: { title: string; description: React.ReactNode };
   isStarting?: boolean;
   onRun: (targetWorkflowId: string) => void;
 }
@@ -46,7 +44,6 @@ export const RunAgainstVersionDialog: React.FC<RunAgainstVersionDialogProps> = (
   agentId,
   currentWorkflowId,
   openWorkflowId,
-  workflowName,
   confirmLabel = "Run",
   asRun,
   isStarting = false,
@@ -112,17 +109,14 @@ export const RunAgainstVersionDialog: React.FC<RunAgainstVersionDialogProps> = (
     return `v${version.version} · ${version.name}${suffix}`;
   };
 
-  const hasOtherVersions = versions.length > 1;
-  const canRun = Boolean(selectedWorkflowId) && (hasOtherVersions || Boolean(asRun)) && !isStarting;
+  const canRun = Boolean(selectedWorkflowId) && !isStarting;
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>{asRun?.title ?? "Run against a version"}</DialogTitle>
-          <DialogDescription>
-            {asRun?.description ?? `Execute against another saved version of ${workflowName ?? "this workflow"}`}
-          </DialogDescription>
+          <DialogTitle>{asRun.title}</DialogTitle>
+          <DialogDescription>{asRun.description}</DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -147,11 +141,7 @@ export const RunAgainstVersionDialog: React.FC<RunAgainstVersionDialogProps> = (
               </Button>
             </div>
           ) : (
-            <Select
-              value={selectedWorkflowId}
-              onValueChange={setSelectedWorkflowId}
-              disabled={!hasOtherVersions && !asRun}
-            >
+            <Select value={selectedWorkflowId} onValueChange={setSelectedWorkflowId}>
               <SelectTrigger>
                 <SelectValue placeholder="Choose a version" />
               </SelectTrigger>
@@ -163,12 +153,6 @@ export const RunAgainstVersionDialog: React.FC<RunAgainstVersionDialogProps> = (
                 ))}
               </SelectContent>
             </Select>
-          )}
-          {!isLoadingVersions && !hasLoadFailed && !hasOtherVersions && !asRun && (
-            <p className="text-xs text-muted-foreground">
-              This workflow has only one saved version. Save another version in
-              the workflow builder to run against it here.
-            </p>
           )}
         </div>
         <DialogFooter className="mt-6 gap-2">

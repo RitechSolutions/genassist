@@ -14,7 +14,7 @@ import type { TestSuite } from "@/interfaces/testSuite.interface";
 import type { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import type { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
 import type { ScenarioCheck } from "@/interfaces/testEvaluation.interface";
-import { newEvaluationDefaults } from "../helpers/evaluationForm";
+import { newEvaluationDefaults, type EvaluationFormData } from "../helpers/evaluationForm";
 import { methodDefaults, remapToolRuleNames, type MethodSettingsValue } from "../helpers/methodSettings";
 import { groupWorkflowVersions } from "../helpers/workflowVersions";
 import { useDatasetCases, useEvaluationCatalog } from "../hooks/useEvaluationData";
@@ -26,18 +26,17 @@ import {
   leftOutNote,
   newCheck,
 } from "../helpers/checks";
-import type { EvaluationWizardData } from "./EvaluationWizard";
 import { ChecksList } from "./ChecksList";
 import { LeftOutNote } from "./LeftOutNote";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
 
 export interface EvaluationEditorProps {
-  onSubmit: (data: EvaluationWizardData, options?: { run?: boolean; targetWorkflowId?: string }) => Promise<void>;
+  onSubmit: (data: EvaluationFormData, options?: { run?: boolean; targetWorkflowId?: string }) => Promise<void>;
   onCancel: () => void;
   suites: TestSuite[];
   workflows: WorkflowMinimal[];
   providers: LLMProviderMinimal[];
-  initialData?: Partial<EvaluationWizardData>;
+  initialData?: Partial<EvaluationFormData>;
   mode?: "create" | "edit";
   /** Pins the workflow, e.g. when creating from a workflow's page. */
   lockedWorkflowId?: string;
@@ -151,7 +150,7 @@ export const EvaluationEditor: React.FC<EvaluationEditorProps> = ({
   const runVersion = runVersionId ? group?.versions.find((version) => version.id === runVersionId) : undefined;
   const catalog = useEvaluationCatalog(runVersion?.id ?? liveVersion?.id ?? effectiveWorkflowId, true);
 
-  // Older evaluations may name tools and agents; they become ids once the catalog loads, as in the wizard.
+  // Older evaluations may name tools and agents; they become ids once the catalog loads.
   useEffect(() => {
     setMethods((previous) => {
       const toolRules = remapToolRuleNames(previous.toolRules, catalog.agents);

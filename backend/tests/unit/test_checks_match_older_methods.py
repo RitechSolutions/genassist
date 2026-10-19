@@ -264,6 +264,23 @@ class TestRules:
         turn_trace = trace({"message": "Hi"}, nodes=AGENT_RAN, tool_events=[event("tool-1", "lookup_order", arguments={"city": value})])
         assert same("tool_used", config, case(), turn_trace) == (verdict, verdict)
 
+    @pytest.mark.parametrize("calls, verdict", [
+        ([("tool-1", "lookup_order", {"id": "7"}, "ok")], "passed"),
+        ([("tool-2", "create_ticket", {"subject": "refund"}, "created")], "passed"),
+        ([("tool-1", "lookup_order", {"id": "8"}, "ok")], "failed"),
+        # Each tool is held to its own values, not to another tool's.
+        ([("tool-2", "create_ticket", {"id": "7"}, "created")], "failed"),
+        ([("tool-2", "create_ticket", {"subject": "refund"}, "error")], "failed"),
+    ])
+    def test_any_of_several_tools_holds_each_to_its_own_checks(self, calls, verdict):
+        config = tools({"tool_ids": ["tool-1", "tool-2"], "operator": "any", "per_tool": {
+            "tool-1": {"expected_args": {"id": "7"}},
+            "tool-2": {"expected_args": {"subject": "refund"}, "result_contains": "created"},
+        }})
+        events = [event(tool, name, arguments=arguments, result=result) for tool, name, arguments, result in calls]
+        turn_trace = trace({"message": "Hi"}, nodes=AGENT_RAN, tool_events=events)
+        assert same("tool_used", config, case(), turn_trace) == (verdict, verdict)
+
     def test_only_these_tools_catches_an_agent_in_a_sub_workflow(self):
         config = tools({"tool_ids": ["tool-1"], "operator": "only"})
         turn_trace = trace({"message": "Hi"}, tool_events=[event("tool-2", "create_ticket")])

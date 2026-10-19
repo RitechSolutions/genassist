@@ -14,12 +14,16 @@ import {
   runTestEvaluation,
   updateTestEvaluation,
 } from "@/services/testEvaluations";
-import { buildTechniqueConfigs, getEditInitialData, wizardMetadata } from "../helpers/evaluationForm";
+import {
+  buildTechniqueConfigs,
+  formMetadata,
+  getEditInitialData,
+  type EvaluationFormData,
+} from "../helpers/evaluationForm";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
 import { WORKFLOW_SUMMARIES_QUERY_KEY } from "../hooks/useEvaluationData";
 import { previewedForEditing } from "../hooks/useChecksPreview";
 import { EvaluationEditor } from "./EvaluationEditor";
-import type { EvaluationWizardData } from "./EvaluationWizard";
 
 interface EvaluationEditorViewProps {
   /** The evaluation to edit; a new one is made without it. */
@@ -76,14 +80,14 @@ export const EvaluationEditorView: React.FC<EvaluationEditorViewProps> = ({
     refetchOnReconnect: false,
   });
 
-  const submit = async (data: EvaluationWizardData, options?: { run?: boolean; targetWorkflowId?: string }) => {
+  const submit = async (data: EvaluationFormData, options?: { run?: boolean; targetWorkflowId?: string }) => {
     const payload = {
       name: data.name.trim(),
       suite_id: data.suiteId,
       workflow_id: data.workflowId === "none" ? undefined : data.workflowId,
       techniques: data.metrics,
       technique_configs: buildTechniqueConfigs(data),
-      input_metadata: wizardMetadata(data),
+      input_metadata: formMetadata(data),
     };
     let savedId: string;
     if (evaluationId) {

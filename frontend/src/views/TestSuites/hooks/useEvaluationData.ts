@@ -1,15 +1,13 @@
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { TestCase } from "@/interfaces/testSuite.interface";
 import type {
   EvaluationActionNodeInfo,
   EvaluationAgentInfo,
   EvaluationRouterInfo,
   EvaluationStateKeyInfo,
-  RuleConversation,
 } from "@/interfaces/testEvaluation.interface";
 import { getEvaluationToolCatalog } from "@/services/testEvaluations";
 import { listTestCases } from "@/services/testSuites";
-import { ruleConversations } from "../helpers/datasetConversations";
 
 /** The evaluations page's per-workflow summaries; refreshed when a workflow's evaluations change. */
 export const WORKFLOW_SUMMARIES_QUERY_KEY = ["workflow-evaluation-summaries"];
@@ -108,7 +106,3 @@ export const useDatasetCases = (
   const retry = useCallback(() => setAttempt((count) => count + 1), []);
   return { cases: ready ? state.cases : NO_CASES, ready, failed, retry };
 };
-
-/** Imported conversations for specific-turn targeting, derived from the dataset's turns. */
-export const useRuleConversations = (cases: TestCase[]): RuleConversation[] =>
-  React.useMemo(() => ruleConversations(cases), [cases]);

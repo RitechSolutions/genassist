@@ -1,8 +1,4 @@
 import type { TestCase } from "@/interfaces/testSuite.interface";
-import type {
-  RuleConversation,
-  TestToolRuleResult,
-} from "@/interfaces/testEvaluation.interface";
 
 /** Tag the backend stamps on cases created by conversation import. */
 export const IMPORTED_TAG = "imported";
@@ -75,8 +71,6 @@ export const countConversations = (cases: TestCase[]): number =>
   groupCasesByConversation(cases).length;
 
 const LABEL_MAX_LENGTH = 60;
-
-const turnsLabel = (count: number): string => `${count} turn${count === 1 ? "" : "s"}`;
 
 // The id a conversation goes by: its thread, or the case for a legacy single turn.
 const shortIdOf = (group: ConversationGroup): string =>
@@ -151,67 +145,4 @@ export const searchConversations = (
         .filter(({ entry }) => !needle || turnMatches(entry, needle)),
     }))
     .filter((match) => match.turns.length > 0);
-};
-
-/** Conversations a specific-turn rule can target. The targeted value stays turn_index. */
-export const ruleConversations = (cases: TestCase[]): RuleConversation[] => {
-  const groups = groupCasesByConversation(cases);
-  const labels = conversationLabels(groups);
-  return groups
-    .filter((group) => group.conversationId)
-    .map((group) => ({
-      id: group.conversationId as string,
-      label: `${labels.get(group.key)} (${turnsLabel(group.cases.length)})`,
-      turns: group.cases.map((turn, index) => ({
-        caseId: turn.id as string,
-        turnIndex: turn.turn_index ?? 0,
-        label: turnLabel(index + 1),
-      })),
-    }));
-};
-
-export interface ConversationIndex {
-  /** Case id to its conversation's label and turn position. */
-  turns: Map<string, { conversation: string; position: number }>;
-  /** Conversation id to its label and current turn count. */
-  conversations: Map<string, { label: string; turnCount: number }>;
-}
-
-/** Names for a dataset's turns and conversations, as the dataset page shows them. */
-export const indexConversations = (cases: TestCase[]): ConversationIndex => {
-  const groups = groupCasesByConversation(cases);
-  const labels = conversationLabels(groups);
-  const index: ConversationIndex = { turns: new Map(), conversations: new Map() };
-  for (const group of groups) {
-    const label = labels.get(group.key) ?? conversationLabel(group);
-    if (group.conversationId) {
-      index.conversations.set(group.conversationId, { label, turnCount: group.cases.length });
-    }
-    group.cases.forEach((entry, position) => {
-      if (entry.id) index.turns.set(entry.id, { conversation: label, position: position + 1 });
-    });
-  }
-  return index;
-};
-
-/** "{conversation} · Turn {position}". A case no longer in the dataset keeps its short id. */
-export const caseLabel = (index: ConversationIndex, caseId: string | null | undefined): string => {
-  const turn = caseId ? index.turns.get(caseId) : undefined;
-  if (turn) return `${turn.conversation} · ${turnLabel(turn.position)}`;
-  return `Case #${(caseId ?? "").slice(-4)}`;
-};
-
-/** What a rule result graded, named from the dataset. Null when the dataset lacks it. */
-export const ruleTargetLabel = (
-  result: TestToolRuleResult,
-  index: ConversationIndex,
-): string | null => {
-  if (result.scope === "conversation" || result.scope === "every_conversation") {
-    const conversation = result.source_conversation_id
-      ? index.conversations.get(result.source_conversation_id)
-      : undefined;
-    return conversation ? `${conversation.label} · ${turnsLabel(conversation.turnCount)}` : null;
-  }
-  const turn = result.case_id ? index.turns.get(result.case_id) : undefined;
-  return turn ? turnLabel(turn.position) : null;
 };

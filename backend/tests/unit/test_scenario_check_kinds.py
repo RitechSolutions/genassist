@@ -425,6 +425,36 @@ class TestTools:
         )
         assert tool_fact(item, targets, [turn()]) == (False, 'None of "save_region" or "change_mode" was called.')
 
+    def test_each_of_several_tools_has_its_own_values_and_result(self):
+        item = tool_check(args={"region": "uk"}, tools=[
+            {"tool": "tool-2", "tool_name": "change_mode", "args": {"mode": "refund"}, "result_contains": "saved"},
+        ])
+        targets = resolve_targets(item, TOOLS)
+
+        def change(mode, result="Mode saved"):
+            return {**call("tool-2", "change_mode", result=result, arguments={"mode": mode}), "shown_arguments": {"mode": mode}}
+
+        # The other tool is held to its own values and result, not to the first tool's.
+        assert tool_fact(item, targets, [turn(tool_calls=[change("refund")])]) == (
+            True, "change_mode was called with mode = refund."
+        )
+        assert tool_fact(item, targets, [turn(tool_calls=[change("standard")])]) == (
+            False, "change_mode was called with mode = standard."
+        )
+        assert tool_fact(item, targets, [turn(tool_calls=[change("refund", result="Nothing")])]) == (
+            False, 'change_mode did not return a result that contains "saved".'
+        )
+        region = {**call("tool-1", "save_region", arguments={"region": "uk"}), "shown_arguments": {"region": "uk"}}
+        assert tool_fact(item, targets, [turn(tool_calls=[region])]) == (True, "save_region was called with region = uk.")
+        assert describe_check(item) == (
+            'In every conversation, at some point, one of the tools "save_region" (with region = uk) or "change_mode"'
+            ' (with mode = refund, returning a result that contains "saved") should be called.'
+        )
+
+    def test_only_a_tool_that_should_be_called_has_values(self):
+        with pytest.raises(ValueError, match="only a tool that should be called"):
+            Check(id="o", kind="only_tools", tools=[{"tool": "tool-1", "args": {"a": "b"}}])
+
     def test_a_missing_extra_tool_cannot_be_called_but_the_others_can(self):
         item = tool_check(tools=[{"tool": "tool-9", "tool_name": "gone"}])
         targets = resolve_targets(item, TOOLS)

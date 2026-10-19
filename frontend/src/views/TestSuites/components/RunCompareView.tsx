@@ -24,6 +24,7 @@ import {
   type ConversationChange,
   compareGroup,
   checkMovesText,
+  hiddenCheckMoves,
   compareRuns,
   conversationFindings,
   inTimeOrder,
@@ -120,8 +121,8 @@ const ChangeRow: React.FC<{
         <p className="truncate font-medium">{label}</p>
         {detail && <p className="truncate text-sm text-muted-foreground">{detail}</p>}
       </div>
-      {/* Checks that moved, even when the conversation's result did not. */}
-      {(change.checks.better > 0 || change.checks.worse > 0) && (
+      {/* Checks that moved while its result stayed the same; a changed result already says so. */}
+      {hiddenCheckMoves(change) && (
         <span
           className="flex shrink-0 items-center gap-2.5 rounded-full border px-2.5 py-0.5 text-xs font-medium"
           title={checkMovesText(change.checks)}
@@ -220,8 +221,8 @@ export const RunCompareView: React.FC<RunCompareViewProps> = ({
     [...(picked && !completed.some((item) => item.id === picked.id) ? [picked] : []), ...completed].filter(
       (item) => item.id !== without?.id,
     );
-  // Within a group, conversations whose checks moved come first.
-  const moved = (change: ConversationChange) => (change.checks.better || change.checks.worse ? 0 : 1);
+  // Within a group, conversations whose checks moved without changing their result come first.
+  const moved = (change: ConversationChange) => (hiddenCheckMoves(change) ? 0 : 1);
   const grouped = (group: CompareGroup) =>
     (comparison?.changes.filter((change) => compareGroup(change) === group) ?? []).sort((a, b) => moved(a) - moved(b));
   const notCompared = grouped("not_compared");
@@ -297,11 +298,9 @@ export const RunCompareView: React.FC<RunCompareViewProps> = ({
         </Fact>
         <SideFact label="Before" run={before} />
         <SideFact label="After" run={other ? after : null} />
-        {/* An important part of the comparison, so it has its own place: checks that flipped between the runs. */}
-        <Fact label="Checks that changed">
-          {!comparison ? (
-            "–"
-          ) : comparison.checks.better || comparison.checks.worse ? (
+        {/* The pills on the rows together: checks that flipped where a conversation's result did not. */}
+        {comparison && (comparison.checks.better > 0 || comparison.checks.worse > 0) && (
+          <Fact label="Checks that changed">
             <span className="flex flex-col gap-0.5">
               {comparison.checks.better > 0 && (
                 <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
@@ -316,10 +315,8 @@ export const RunCompareView: React.FC<RunCompareViewProps> = ({
                 </span>
               )}
             </span>
-          ) : (
-            "None"
-          )}
-        </Fact>
+          </Fact>
+        )}
       </HeaderCard>
       <ChecksDialog
         open={showChecks}

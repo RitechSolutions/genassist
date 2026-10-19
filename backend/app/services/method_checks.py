@@ -564,15 +564,12 @@ def _tool_used(builder: _Builder, config: Dict[str, Any]) -> None:
         conditions = [{key: value for key, value in condition.items() if not _blank(value)} for condition in conditions]
         succeeds = {"succeeds": rule.require_success}
         if rule.operator == "any" and len(refs) > 1:
-            # Any one of the tools, each held to the same conditions.
-            if any(condition != conditions[0] for condition in conditions):
-                builder.leave_out(f"Tool Usage: different checks on what each of {_named(names)} returns.")
-                continue
+            # Any one of the tools, each held to its own values and result.
+            first, *others = [{**ref, **condition} for ref, condition in zip(refs, conditions)]
             for placement in placements:
                 builder.add(
                     "tool_called",
-                    {"kind": "tool_called", **refs[0], "tools": refs[1:], **who, **conditions[0], **succeeds,
-                     **counts, **placement},
+                    {"kind": "tool_called", **first, "tools": others, **who, **succeeds, **counts, **placement},
                 )
             continue
 
