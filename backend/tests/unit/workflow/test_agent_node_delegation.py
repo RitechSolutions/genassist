@@ -429,6 +429,30 @@ async def test_pause_frame_is_strictly_json_serializable_with_live_tools():
 
 
 @pytest.mark.asyncio
+async def test_pause_frame_stores_a_sub_agent_output_once_and_resume_restores_it():
+    node = _parent_node(mode="task", thread_id="t-frame-once")
+    state = node.get_state()
+    answer = {"message": "Flight AB123 departs at 9:00."}
+    state.node_outputs["first"] = answer
+    state.node_execution_status["first"] = {"type": "subAgentNode", "status": "success", "output": answer}
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    results = [_rr(_env("active", "Is a layover okay?", mode="task"), return_direct=True, tool="request_task_child")]
+    with pytest.raises(WorkflowPausedException):
+        await _run_loop(node, results, delegation_map=dmap)
+
+    saved = (await sub_session.read_frame_strict(node.get_memory())).top().parent_resume.model_dump()
+    assert saved["node_outputs"]["first"] == answer
+    assert "output" not in saved["node_execution_status"]["first"]
+
+    resume = {**saved, "child_node_id": "child", "mode": "task", "child_task": "do x", "child_result": "ok"}
+    resumed = _parent_node(
+        mode="task", initial_values={"message": "yes", "agent_id": "agentA", "__sub_agent_resume": resume}
+    )
+    await _run_loop(resumed, [_rr("final")], delegation_map=dmap)
+    assert resumed.get_state().node_execution_status["first"]["output"] == answer
+
+
+@pytest.mark.asyncio
 async def test_active_delegation_depth_limit_returns_error_without_frame():
     node = _parent_node(mode="task")
     frames = [

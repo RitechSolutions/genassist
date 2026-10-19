@@ -65,6 +65,10 @@ def _without_tool_references(execution_status: Dict[str, Any]) -> Dict[str, Any]
     return stripped
 
 
+def _is_sub_agent_entry(entry: Any) -> bool:
+    return isinstance(entry, dict) and entry.get("type") == "subAgentNode"
+
+
 class AgentNode(PIIAnonymizerMixin, BaseNode):
     """Agent node that can select and execute tools using the BaseNode approach"""
 
@@ -513,7 +517,11 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         # byte-identical to one written before this key existed
         if state.prompt_caching_diagnostics:
             request_context[SUB_AGENT_DIAGNOSTICS_KEY] = dict(state.prompt_caching_diagnostics)
-        paused = {k: v for k, v in state.node_execution_status.items() if k != envelope["child_node_id"]}
+        paused = {
+            k: {f: x for f, x in v.items() if f != "output"} if _is_sub_agent_entry(v) else v
+            for k, v in state.node_execution_status.items()
+            if k != envelope["child_node_id"]
+        }
         resume = ParentResume(
             node_outputs=_frame_snapshot(state.node_outputs),
             node_execution_status=_frame_snapshot(_without_tool_references(paused)),
@@ -547,7 +555,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         """Restore the parent agent's turn from a saved ``ParentResume`` after a child finishes"""
         state = self.get_state()
         state.node_outputs.update(resume.get("node_outputs") or {})
-        state.node_execution_status.update(resume.get("node_execution_status") or {})
+        for node_id, entry in (resume.get("node_execution_status") or {}).items():
+            if _is_sub_agent_entry(entry) and "output" not in entry:
+                entry = {**entry, "output": state.node_outputs.get(node_id)}
+            state.node_execution_status[node_id] = entry
         request_context = resume.get("request_context")
         if request_context:
             from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_DIAGNOSTICS_KEY
