@@ -24,6 +24,7 @@ class S3StorageProvider(BaseStorageProvider):
     aws_bucket_name: str
     aws_access_key_id: Optional[str]
     aws_secret_access_key: Optional[str]
+    aws_session_token: Optional[str]
     aws_region_name: Optional[str]
 
     def __init__(self, config: Dict[str, Any]):
@@ -37,6 +38,7 @@ class S3StorageProvider(BaseStorageProvider):
         self.aws_bucket_name = config.get("AWS_BUCKET_NAME", "")
         self.aws_access_key_id = config.get("AWS_ACCESS_KEY_ID", None)
         self.aws_secret_access_key = config.get("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = config.get("AWS_SESSION_TOKEN", None)
         self.aws_region_name = config.get("AWS_REGION", None)
 
         # Initialize S3 client
@@ -44,6 +46,7 @@ class S3StorageProvider(BaseStorageProvider):
             bucket_name=self.aws_bucket_name,
             aws_access_key_id=self.aws_access_key_id,
             aws_secret_access_key=self.aws_secret_access_key,
+            aws_session_token=self.aws_session_token,
             region_name=self.aws_region_name,
         )
 

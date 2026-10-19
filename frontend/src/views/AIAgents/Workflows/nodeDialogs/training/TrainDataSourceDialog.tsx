@@ -336,7 +336,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
                 handleAnalyzeFile(
                   previewTarget,
                   result.original_filename,
-                  result.file_id,
+                  result.file_path ? undefined : result.file_id,
                 );
               }
             }}

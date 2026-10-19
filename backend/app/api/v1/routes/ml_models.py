@@ -60,6 +60,7 @@ class ProfileDataRequest(BaseModel):
 
 
 _require_data_source_read = permissions(P.DataSource.READ)
+_require_file_manager_read = permissions(P.FileManager.READ)
 
 
 @router.post("", response_model=MLModelRead, dependencies=[
@@ -296,6 +297,7 @@ async def validate_model_file(
     Depends(permissions(P.MlModel.READ))
 ])
 async def analyze_csv(
+    request: Request,
     file_url: Optional[str] = Body(None, embed=True, description="Path or URL to CSV file"),
     file_id: Optional[UUID] = Body(None, embed=True, description="File Manager ID"),
     file_name: Optional[str] = Body(None, embed=True, description="Original CSV file name"),
@@ -339,6 +341,7 @@ async def analyze_csv(
             file_url=file_url,
             file_id=file_id,
             file_name=file_name,
+            request=request,
             file_manager_service=file_manager_service,
         )
 
@@ -398,6 +401,8 @@ async def analyze_csv(
     except HTTPException:
         raise
     except AppException as exc:
+        if exc.status_code == 403:
+            raise
         status_code = 404 if exc.error_key == ErrorKey.FILE_NOT_FOUND else 400
         raise HTTPException(
             status_code=status_code,
@@ -485,14 +490,16 @@ def _temporary_csv_path() -> Path:
 
 
 async def _resolve_profile_csv(
-    request: ProfileDataRequest,
+    profile_request: ProfileDataRequest,
+    request: Request,
     file_manager_service: FileManagerService,
 ) -> tuple[Path, Optional[Path]]:
     """Resolve the CSV input used by data profiling."""
     return await _resolve_csv_input(
-        file_url=request.file_url,
-        file_id=request.file_id,
-        file_name=request.file_name,
+        file_url=profile_request.file_url,
+        file_id=profile_request.file_id,
+        file_name=profile_request.file_name,
+        request=request,
         file_manager_service=file_manager_service,
     )
 
@@ -502,26 +509,38 @@ async def _resolve_csv_input(
     file_url: Optional[str],
     file_id: Optional[UUID],
     file_name: Optional[str],
+    request: Request,
     file_manager_service: FileManagerService,
 ) -> tuple[Path, Optional[Path]]:
     """Resolve a local CSV or download a File Manager/non-local CSV.
 
     The second tuple item identifies a temporary file owned by this request and
-    therefore requiring cleanup.
+    therefore requiring cleanup. Reading a File Manager record also requires
+    File Manager read permission; local paths do not.
     """
-    candidate_name = file_name or file_url
-    if candidate_name:
-        suffix = Path(candidate_name.split("?", maxsplit=1)[0]).suffix.lower()
-        if suffix and suffix != ".csv":
-            raise HTTPException(
-                status_code=400,
-                detail="Only CSV files can be previewed or profiled.",
-            )
-
     if file_id is None and file_url:
         file_id = await file_manager_service.extract_file_id_from_url(file_url)
 
     if file_id is not None:
+        await _require_file_manager_read(request)
+        try:
+            stored_file = await file_manager_service.get_file_by_id(file_id)
+            if stored_file is None:
+                raise LookupError("File Manager record not found")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Could not access the selected CSV file. Check that it still "
+                    "exists and that the storage configuration is valid."
+                ),
+            ) from exc
+        _validate_file_manager_csv(stored_file)
+        # Reject from stored metadata before downloading the object.
+        stored_size = getattr(stored_file, "size", None)
+        if isinstance(stored_size, int):
+            _raise_if_csv_input_too_large(stored_size)
+
         temp_path = _temporary_csv_path()
         try:
             await file_manager_service.download_file_to_path(
@@ -537,8 +556,21 @@ async def _resolve_csv_input(
                     "exists and that the storage configuration is valid."
                 ),
             ) from exc
-        _enforce_csv_input_byte_limit(temp_path)
+        try:
+            _enforce_csv_input_byte_limit(temp_path)
+        except HTTPException:
+            temp_path.unlink(missing_ok=True)
+            raise
         return temp_path, temp_path
+
+    candidate_name = file_url or file_name
+    if candidate_name:
+        suffix = Path(candidate_name.split("?", maxsplit=1)[0]).suffix.lower()
+        if suffix and suffix != ".csv":
+            raise HTTPException(
+                status_code=400,
+                detail="Only CSV files can be previewed or profiled.",
+            )
 
     if file_url and not file_url.startswith(("http://", "https://")):
         local_path = ml_utils.resolve_csv_file_path(file_url)
@@ -566,7 +598,11 @@ async def _resolve_csv_input(
                 status_code=400,
                 detail="Could not fetch the CSV file.",
             ) from exc
-        _enforce_csv_input_byte_limit(temp_path)
+        try:
+            _enforce_csv_input_byte_limit(temp_path)
+        except HTTPException:
+            temp_path.unlink(missing_ok=True)
+            raise
         return temp_path, temp_path
 
     raise HTTPException(
@@ -577,11 +613,13 @@ async def _resolve_csv_input(
 
 def _enforce_csv_input_byte_limit(file_path: Path) -> None:
     """Apply the Train Data Source byte ceiling to preview/profile inputs."""
-    file_size = file_path.stat().st_size
+    _raise_if_csv_input_too_large(file_path.stat().st_size)
+
+
+def _raise_if_csv_input_too_large(file_size: int) -> None:
     if file_size <= settings.ML_EXTRACT_MAX_BYTES:
         return
 
-    file_path.unlink(missing_ok=True)
     raise HTTPException(
         status_code=413,
         detail=(
@@ -589,6 +627,29 @@ def _enforce_csv_input_byte_limit(file_path: Path) -> None:
             f"{settings.ML_EXTRACT_MAX_BYTES:,}-byte training-data limit."
         ),
     )
+
+
+def _validate_file_manager_csv(stored_file: object) -> None:
+    """Validate a File Manager record using server-controlled metadata."""
+    extension = str(getattr(stored_file, "file_extension", "") or "").strip()
+    if extension:
+        suffix = f".{extension.lstrip('.').lower()}"
+    else:
+        suffix = ""
+        for candidate in (
+            getattr(stored_file, "name", None),
+            getattr(stored_file, "path", None),
+        ):
+            if candidate:
+                suffix = Path(str(candidate)).suffix.lower()
+                if suffix:
+                    break
+
+    if suffix != ".csv":
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV files can be previewed or profiled.",
+        )
 
 
 async def _load_query_profile_dataframe(
@@ -712,6 +773,7 @@ async def profile_data(
         else:
             file_path, temporary_path = await _resolve_profile_csv(
                 profile_request,
+                request,
                 file_manager_service,
             )
             logger.info("Profiling CSV file: %s", file_path)
@@ -735,6 +797,8 @@ async def profile_data(
     except HTTPException:
         raise
     except AppException as exc:
+        if exc.status_code == 403:
+            raise
         status_code = 404 if exc.error_key == ErrorKey.FILE_NOT_FOUND else 400
         raise HTTPException(status_code=status_code, detail=exc.error_detail) from exc
     except Exception as e:
