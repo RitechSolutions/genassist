@@ -471,7 +471,8 @@ class FileManagerService:
             try:
                 await self._initialize_storage_provider(file.storage_provider)
                 if self.storage_provider and self.storage_provider.is_initialized():
-                    await self.storage_provider.delete_file(file.storage_path)
+                    # storage_path is the provider's base folder; path is the file's key inside it
+                    await self.storage_provider.delete_file(file.path)
             except Exception as e:
                 logger.warning(f"Failed to delete file from storage: {e}")
 

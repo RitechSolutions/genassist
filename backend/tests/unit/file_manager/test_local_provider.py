@@ -26,8 +26,8 @@ def create_mock_upload_file(filename: str = "test.txt", content: bytes = b"test 
     mock_file = MagicMock(spec=UploadFile)
     mock_file.filename = filename
     mock_file.file = io.BytesIO(content)
-    # One chunk, then b"" to end the stream (a constant return value never ends it).
-    mock_file.read = AsyncMock(side_effect=[content, b""])
+    # Read from the buffer so chunked readers reach EOF
+    mock_file.read = AsyncMock(side_effect=lambda size=-1: mock_file.file.read(size))
     mock_file.seek = AsyncMock()
     return mock_file
 
@@ -358,11 +358,13 @@ class TestLocalFileManagerService:
         await local_provider.upload_file(file_content, storage_path)
         assert await local_provider.file_exists(storage_path)
 
-        # Setup mock repository
+        # Setup mock repository: storage_path is the provider base folder,
+        # path is the file's location inside it (as create_file stores them)
         mock_file = create_mock_file_model(
             file_id=file_id,
             storage_provider="local",
-            storage_path=storage_path,
+            storage_path=local_provider.get_base_path(),
+            path=storage_path,
             user_id=test_user_id
         )
         mock_repository.get_file_by_id.return_value = mock_file
@@ -377,6 +379,52 @@ class TestLocalFileManagerService:
         # Verify file removed from storage
         assert not await local_provider.file_exists(storage_path)
         mock_repository.delete_file.assert_called_once_with(file_id)
+
+    @pytest.mark.asyncio
+    async def test_delete_file_removes_file_created_through_service(
+        self, mock_repository, local_provider, test_tenant_id, temp_storage_dir
+    ):
+        """A file uploaded with create_file is gone from disk after delete_file."""
+        file_content = b"Created then deleted"
+
+        # Hand back whatever create_file stored, so delete_file sees the real record
+        def _store(file_data):
+            stored = create_mock_file_model(
+                name=file_data.name,
+                storage_provider=file_data.storage_provider,
+                storage_path=file_data.storage_path,
+                path=file_data.path,
+            )
+            mock_repository.get_file_by_id.return_value = stored
+            return stored
+
+        mock_repository.create_file.side_effect = _store
+
+        service = FileManagerService(repository=mock_repository)
+        await service.set_storage_provider(local_provider)
+
+        mock_upload_file = create_mock_upload_file("to_delete.txt", file_content)
+        mock_upload_file.content_type = "text/plain"
+
+        created = await service.create_file(
+            file=mock_upload_file,
+            # Same shape as the upload route: storage_path is the provider base folder
+            file_base=FileBase(
+                name=f"{uuid4()}.txt",
+                path="uploads",
+                storage_path=local_provider.get_base_path(),
+                storage_provider="local",
+                file_extension="txt",
+            ),
+        )
+
+        on_disk = os.path.join(temp_storage_dir, created.path)
+        assert os.path.isfile(on_disk)
+
+        await service.delete_file(created.id, delete_from_storage=True)
+
+        assert not os.path.exists(on_disk)
+        mock_repository.delete_file.assert_called_once_with(created.id)
 
 
 class TestFileManagerServiceBuildFileHeaders:
