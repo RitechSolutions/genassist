@@ -48,6 +48,7 @@ import { getAudioUrl, stripAudioDataForDisplay } from "../hooks/useAudioTest";
 import { STTAudioInput } from "./TestInputFields";
 import JsonViewer from "@/components/JsonViewer";
 import NodeExecutionView from "./execution/NodeExecutionView";
+import { FallbackRatesNotice } from "./FallbackRatesNotice";
 
 type TestViewMode = "response" | "debug" | "execution";
 
@@ -530,6 +531,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
+      <FallbackRatesNotice />
       {/* Three-column layout: history | inputs | results. The page title lives
           in the Executions header row (rendered by GraphFlow), not here. */}
       <div className="min-h-0 flex-1">

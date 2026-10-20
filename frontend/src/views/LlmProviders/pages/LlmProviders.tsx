@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { getAllLLMProviders } from "@/services/llmProviders";
 import { PageLayout } from "@/components/PageLayout";
 import { PageHeader } from "@/components/PageHeader";
@@ -28,7 +29,8 @@ export default function LLMProviders() {
     null
   );
   const [updatedProvider, setUpdatedProvider] = useState<LLMProvider | null>(null);
-  const [costRatesOpen, setCostRatesOpen] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [costRatesOpen, setCostRatesOpen] = useState(searchParams.get("manage") === "costs");
   const [modelCatalogOpen, setModelCatalogOpen] = useState(false);
 
   // Fetch all providers
@@ -46,6 +48,18 @@ export default function LLMProviders() {
     };
     fetchData();
   }, [refreshKey]);
+
+  useEffect(() => {
+    if (searchParams.get("manage") !== "costs") return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("manage");
+        return next;
+      },
+      { replace: true }
+    );
+  }, [searchParams, setSearchParams]);
 
   const handleProviderSaved = () => {
     setRefreshKey((k) => k + 1);
