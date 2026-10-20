@@ -19,7 +19,8 @@ from app.repositories.file_manager import FileManagerRepository
 from app.core.tenant_scope import get_tenant_context
 
 from app.modules.filemanager.providers import init_by_name
-from app.core.config.settings import file_storage_settings
+from app.core.config.settings import file_storage_settings, settings
+from app.core.utils.web_scraping_utils import _validate_url
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.app_settings import AppSettingsRead
@@ -385,8 +386,9 @@ class FileManagerService:
             raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(e))
 
     async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
-        """Download file from URL to path."""
+        """Download file from URL to path, refusing internal addresses and files over the upload size limit."""
         try:
+            await _validate_url(file_url)
             # create the directory if it doesn't exist
             os.makedirs(os.path.dirname(path), exist_ok=True)
 
@@ -394,13 +396,19 @@ class FileManagerService:
                 async with client.stream("GET", file_url) as response:
                     response.raise_for_status()
 
+                    downloaded_size = 0
                     with open(path, "wb") as f:
                         async for chunk in response.aiter_bytes(chunk_size=8192):
+                            downloaded_size += len(chunk)
+                            if downloaded_size > settings.MAX_CONTENT_LENGTH:
+                                raise ValueError(f"File is larger than {settings.MAX_CONTENT_LENGTH} bytes")
                             f.write(chunk)
 
             return True
         except Exception as e:
             logger.error(f"Failed to download file from URL {file_url} to path {path}: {e}")
+            if os.path.exists(path):
+                os.remove(path)
             return False
 
     async def get_file_content_from_url(self, file_url: str) -> bytes:
