@@ -5,7 +5,6 @@ import uuid
 from typing import Any, Dict, Optional
 from uuid import UUID
 
-import httpx
 from injector import inject
 
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
@@ -273,9 +272,8 @@ class DataSourceService:
                 from app.services.AzureStorageService import AzureStorageService
                 return AzureStorageService.test_connection(cd)
             elif source_type_lower == "url":
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(cd["url"], timeout=10.0, follow_redirects=True)
-                    response.raise_for_status()
+                from app.core.utils.web_scraping_utils import fetch_from_url
+                await fetch_from_url(cd["url"], use_http_request=True)
                 return {"success": True, "message": "URL is accessible."}
             else:
                 return {
