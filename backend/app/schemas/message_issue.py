@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
@@ -14,6 +14,7 @@ class ReportedIssueRead(BaseModel):
     message_id: UUID
     conversation_id: UUID
     agent_id: Optional[UUID] = None
+    agent_name: Optional[str] = None
     workflow_name: Optional[str] = None
     text: str
     speaker: str
@@ -27,6 +28,7 @@ class ReportedIssueRead(BaseModel):
     conversation_date: Optional[datetime] = None
     fix_version: Optional[str] = None
     target_rollout_date: Optional[date] = None
+    matched_note: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -82,3 +84,14 @@ class IssueNoteRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+IssueHistoryField = Literal["status", "fix_version", "target_rollout_date", "comment"]
+
+
+class IssueHistoryEvent(BaseModel):
+    at: datetime
+    by: Optional[str] = None
+    field: IssueHistoryField
+    old: Optional[str] = None
+    new: Optional[str] = None

@@ -6,6 +6,7 @@ export interface ReportedFeedbackItem {
   message_id: string;
   conversation_id: string;
   agent_id: string | null;
+  agent_name: string | null;
   workflow_name: string | null;
   text: string;
   speaker: string;
@@ -19,6 +20,7 @@ export interface ReportedFeedbackItem {
   conversation_date: string | null;
   fix_version: string | null;
   target_rollout_date: string | null;
+  matched_note: string | null;
 }
 
 export interface ReportedFeedbackResult {
@@ -33,15 +35,17 @@ export interface FeedbackFilters {
   /** Filter by when the comment was added (reported time). */
   from_date?: string;
   to_date?: string;
-  workflow_id?: string;
+  agent_id?: string;
   topic?: string;
   subtopic?: string;
+  search?: string;
 }
 
 export interface FetchReportedFeedbackParams extends FeedbackFilters {
   skip?: number;
   limit?: number;
   status?: string;
+  feedback_id?: string;
 }
 
 const MAX_BACKEND_LIMIT = 100;
@@ -161,4 +165,22 @@ export const addIssueNote = async (
   );
   if (!note) throw new Error("You don't have permission to add a note");
   return note;
+};
+
+export interface IssueHistoryEvent {
+  at: string;
+  by: string | null;
+  field: "status" | "fix_version" | "target_rollout_date" | "comment";
+  old: string | null;
+  new: string | null;
+}
+
+export const fetchIssueHistory = async (
+  feedbackId: string,
+): Promise<IssueHistoryEvent[]> => {
+  const events = await apiRequest<IssueHistoryEvent[]>(
+    "GET",
+    `conversations/issues/${feedbackId}/history`,
+  );
+  return Array.isArray(events) ? events : [];
 };

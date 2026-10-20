@@ -1,12 +1,14 @@
 import logging
 from datetime import datetime, timezone
+from typing import get_args
 from injector import inject
 from sqlalchemy import UUID
 
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.enums.issue_status_enum import IssueStatusCategory
+from app.core.utils.enums.issue_status_enum import DEFAULT_ISSUE_STATUS_KEY, IssueStatusCategory
+from app.db.models.audit_log import field_changes
 from app.db.models.message_model import MessageFeedbackModel
 from app.repositories.issue_status import IssueStatusRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
@@ -14,6 +16,8 @@ from app.schemas.common import PaginatedResponse
 from app.schemas.conversation_transcript import (TranscriptSegmentFeedback)
 from app.schemas.filter import MessageIssueFilter, MessageIssueSummaryFilter
 from app.schemas.message_issue import (
+    IssueHistoryEvent,
+    IssueHistoryField,
     IssueNoteCreate,
     IssueNoteRead,
     IssueStatusSummary,
@@ -54,63 +58,15 @@ class TranscriptMessageService:
     ) -> PaginatedResponse[ReportedIssueRead]:
         """Return a paginated list of commented messages (reported issues,
         newest first) with the context needed to act on them, for the review list."""
-        rows, total = await self.transcript_message_repo.get_message_issues(
-            skip=filter_obj.skip,
-            limit=filter_obj.limit,
-            status=filter_obj.status,
-            from_date=filter_obj.from_date,
-            to_date=filter_obj.to_date,
-            workflow_id=filter_obj.workflow_id,
-            topic=filter_obj.topic,
-            subtopic=filter_obj.subtopic,
-        )
-
-        items = [
-            ReportedIssueRead(
-                feedback_id=feedback.id,
-                message_id=message.id,
-                conversation_id=conversation.id,
-                agent_id=agent_id,
-                workflow_name=workflow_name,
-                text=message.text,
-                speaker=message.speaker,
-                comment=feedback.feedback_message,
-                rating=feedback.feedback,
-                status=issue_status,
-                reported_by=username,
-                reported_at=feedback.feedback_timestamp,
-                conversation_topic=topic,
-                conversation_subtopic=subtopic,
-                conversation_date=conversation.conversation_date,
-                fix_version=issue.fix_version if issue else None,
-                target_rollout_date=issue.target_rollout_date if issue else None,
-            )
-            for (
-                feedback,
-                message,
-                conversation,
-                username,
-                workflow_name,
-                agent_id,
-                issue_status,
-                issue,
-                topic,
-                subtopic,
-            ) in rows
-        ]
+        rows, total = await self.transcript_message_repo.get_message_issues(filter_obj)
+        items = [ReportedIssueRead.model_validate(row) for row in rows]
         return PaginatedResponse.from_filter(items, total, filter_obj)
 
     async def get_issue_status_summary(
         self, filter_obj: MessageIssueSummaryFilter
     ) -> IssueStatusSummary:
         """Reported issues counted per status, under the list's filters."""
-        rows = await self.transcript_message_repo.count_message_issues_by_status(
-            from_date=filter_obj.from_date,
-            to_date=filter_obj.to_date,
-            workflow_id=filter_obj.workflow_id,
-            topic=filter_obj.topic,
-            subtopic=filter_obj.subtopic,
-        )
+        rows = await self.transcript_message_repo.count_message_issues_by_status(filter_obj)
         by_status = {s.key: 0 for s in await self.issue_status_repo.list_ordered()}
         by_status.update(dict(rows))
         return IssueStatusSummary(total=sum(by_status.values()), by_status=by_status)
@@ -142,6 +98,29 @@ class TranscriptMessageService:
         )
         return _note_read(created, username)
 
+    async def list_issue_history(self, message_feedback_id: UUID) -> list[IssueHistoryEvent]:
+        rows = await self.transcript_message_repo.list_issue_history(message_feedback_id)
+        return [event for log, username in rows for event in _history_events(log, username)]
+
 
 def _note_read(note, username) -> IssueNoteRead:
     return IssueNoteRead.model_validate(note).model_copy(update={"author_username": username})
+
+
+_HISTORY_FIELDS = get_args(IssueHistoryField)
+_NEW_ISSUE_VALUES = {"status": DEFAULT_ISSUE_STATUS_KEY}
+
+
+def _history_events(log, username) -> list[IssueHistoryEvent]:
+    changes = field_changes(log)
+
+    def event(field, old=None, new=None):
+        return IssueHistoryEvent(at=log.modified_at, by=username, field=field, old=old, new=new)
+
+    if log.table_name == MessageFeedbackModel.__tablename__:
+        old_comment, _ = changes.get("feedback_message", (None, None))
+        return [event("comment")] if isinstance(old_comment, str) and old_comment.strip() else []
+    if log.action_name == "Insert":
+        changes = {field: (_NEW_ISSUE_VALUES.get(field), new) for field, (_, new) in changes.items()}
+    pairs = [(field, *changes[field]) for field in _HISTORY_FIELDS if field in changes]
+    return [event(field, old, new) for field, old, new in pairs if old != new]

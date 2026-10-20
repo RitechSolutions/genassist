@@ -2,13 +2,7 @@
 
 The marker is provider-specific: Anthropic sets `cache_control: {"type": "ephemeral"}`
 on the system block itself, Bedrock Converse adds a `{"cachePoint": {"type": "default"}}`
-block after it.
-
-A tool-bound wrapper additionally marks the end of the conversation on every call, so
-each turn of a tool loop re-reads the previous turn's prefix. Anthropic takes this as
-a `cache_control` request kwarg — the provider package places it on the last eligible
-block itself — while Bedrock takes a cachePoint block appended to the last human or
-tool message."""
+block after it."""
 
 from __future__ import annotations
 
