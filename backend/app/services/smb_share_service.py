@@ -51,12 +51,16 @@ class SMBShareFSService:
             smb_host/smb_share/smb_user/smb_pass: SMB connection settings (ignored in local mode)
             smb_port: Optional explicit SMB port (e.g., 445)
             use_local_fs: True to operate on local filesystem
-            local_root: Base path for local operations (defaults to current working dir)
+            local_root: Base path for local operations (required in local mode; LOCAL_ROOT env as fallback)
         """
         self.use_local_fs = use_local_fs
 
         # Local base (equivalent to previous self.smb_mount semantic)
-        self.local_root = Path(local_root or os.getenv("LOCAL_ROOT", "."))
+        # Never fall back to the working directory: it holds the backend code and .env
+        root = local_root or os.getenv("LOCAL_ROOT")
+        if use_local_fs and not root:
+            raise ValueError("local_root is required when use_local_fs is true")
+        self.local_root = Path(root) if root else None
 
         # SMB settings
         if not use_local_fs:
