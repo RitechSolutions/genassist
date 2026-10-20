@@ -41,11 +41,13 @@ import { TestRun } from "@/interfaces/testSuite.interface";
 import { EntityTitle } from "./EntityTitle";
 import { useChecksPreview, withPreview } from "../hooks/useChecksPreview";
 import { WORKFLOW_SUMMARIES_QUERY_KEY } from "../hooks/useEvaluationData";
+import { CATEGORIES_QUERY_KEY } from "../hooks/useCategories";
 import { EvaluationListRow } from "./EvaluationListRow";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
 import { runAvgAccuracy, runProgressText } from "../helpers/runResults";
 import { runConversationCounts } from "../helpers/runConversations";
+import { ALL_CATEGORIES, categoryQuery, runAllScope } from "../helpers/categories";
 import {
   apiErrorDetail,
   bundleFilename,
@@ -87,6 +89,8 @@ export interface WorkflowEvaluationsPanelProps {
   matches?: number | null;
   /** Section only: the page's word on running evaluations, for a folded section that loaded nothing. */
   running?: boolean;
+  /** Section only: the page's category filter. */
+  category?: string;
   reference?: EvaluationReferenceData;
   /** The editor opens through these, as in the builder's tab; without them, its page opens. */
   onCreateEvaluation?: () => void;
@@ -113,6 +117,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
   search: sectionSearch = "",
   matches = null,
   running = false,
+  category = ALL_CATEGORIES,
   reference,
   onCreateEvaluation,
   onEditEvaluation,
@@ -188,12 +193,13 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     isError: hasError,
     refetch: refetchPage,
   } = useQuery({
-    queryKey: ["workflow-evaluations", workflowId, page, search],
+    queryKey: ["workflow-evaluations", workflowId, page, search, category],
     queryFn: async () =>
       (await getWorkflowEvaluationsPage(workflowId, {
         page,
         pageSize: PAGE_SIZE,
         search,
+        ...categoryQuery(category),
       })) ?? null,
     enabled: !isSection || (open && load),
     staleTime: 0,
@@ -249,10 +255,10 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     return () => window.clearTimeout(timer);
   }, [searchInput, isSection]);
 
-  // A section's search comes from the page, already debounced.
+  // A section's search and category come from the page, the search already debounced.
   useEffect(() => {
     if (isSection) setPage(1);
-  }, [sectionSearch, isSection]);
+  }, [sectionSearch, category, isSection]);
 
   // Load the latest run for each evaluation on the page.
   useEffect(() => {
@@ -342,7 +348,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     };
 
     try {
-      const started = await runWorkflowEvaluations(workflowId, targetWorkflowId);
+      const started = await runWorkflowEvaluations(workflowId, targetWorkflowId, categoryQuery(category));
       if (isStale()) return; // navigated away before the POST resolved
       const startedRuns = (started ?? []).filter(
         (s): s is typeof s & { run_id: string } => Boolean(s.run_id),
@@ -361,7 +367,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         runIdToEvalId[s.run_id] = s.evaluation_id;
       });
       const runIds = startedRuns.map((s) => s.run_id);
-      // Run all starts every evaluation in the workflow, not just the filtered page.
+      // Run all starts every evaluation in the workflow, or in the picked category, not just the filtered page.
       setWorkflowProgress({ done: 0, total: runIds.length });
       toast.success(`Started ${runIds.length} evaluation${runIds.length !== 1 ? "s" : ""}`);
       void queryClient.invalidateQueries({ queryKey: WORKFLOW_SUMMARIES_QUERY_KEY });
@@ -434,7 +440,8 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
 
   const handleExportAll = async () => {
     try {
-      const bundleSet = await exportWorkflowEvaluations(workflowId);
+      // Like Run all, it takes the evaluations in the picked category.
+      const bundleSet = await exportWorkflowEvaluations(workflowId, categoryQuery(category));
       if (!bundleSet) {
         toast.error("You don't have permission to export evaluations.");
         return;
@@ -464,6 +471,8 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
     }
     setDeletingEvaluationId(null);
     toast.success("Evaluation deleted");
+    // Its category may have been the last one in use.
+    void queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
     if (evaluations.length === 1 && page > 1) {
       setPage((current) => current - 1);
       void queryClient.invalidateQueries({ queryKey: WORKFLOW_SUMMARIES_QUERY_KEY });
@@ -513,8 +522,8 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         <ListChecks className="h-10 w-10 text-muted-foreground" />
       </div>
       <p className="text-sm text-muted-foreground max-w-sm">
-        {search
-          ? "No evaluations match your search."
+        {search || category !== ALL_CATEGORIES
+          ? "No evaluations match your search or category."
           : allowCreate && !isUnassigned
             ? "This workflow has no evaluations yet. Create your first one to get started."
             : isSection
@@ -688,7 +697,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
           confirmLabel="Run all"
           asRun={{
             title: "Run all evaluations",
-            description: `Runs every evaluation of ${title ?? workflowName} on the version you pick.`,
+            description: `Runs ${runAllScope(category, title ?? workflowName)} on the version you pick.`,
           }}
           isStarting={isWorkflowRunning}
           onRun={(targetWorkflowId) => {

@@ -894,6 +894,7 @@ class EvalBundleService:
             evaluation=BundleEvaluation(
                 name=evaluation.name,
                 description=evaluation.description,
+                category=evaluation.category,
                 techniques=list(evaluation.techniques or []),
                 technique_configs=configs or None,
                 input_metadata=input_metadata,
@@ -901,6 +902,7 @@ class EvalBundleService:
             dataset=BundleDataset(
                 name=suite.name,
                 description=suite.description,
+                category=suite.category,
                 default_input_metadata=default_metadata,
                 cases=bundle_cases,
             ),
@@ -1155,6 +1157,7 @@ class EvalBundleService:
                 TestEvaluationCreate(
                     name=bundle.evaluation.name,
                     description=bundle.evaluation.description,
+                    category=bundle.evaluation.category,
                     suite_id=suite_id,
                     workflow_id=request.target_workflow_id,
                     techniques=techniques,
@@ -1185,6 +1188,7 @@ class EvalBundleService:
             TestSuiteCreate(
                 name=bundle.dataset.name,
                 description=bundle.dataset.description,
+                category=bundle.dataset.category,
                 workflow_id=target_workflow_id,
                 default_input_metadata=bundle.dataset.default_input_metadata,
             )
@@ -1414,17 +1418,21 @@ class EvalBundleService:
     # ---- Set export / import ------------------------------------------------
 
     async def export_workflow_evaluations(
-        self, workflow_id: UUID
+        self, workflow_id: UUID, category: Optional[str] = None
     ) -> EvaluationBundleSet:
-        """Every evaluation of the workflow (all versions) in one file, with
-        each shared dataset stored once."""
+        """Every evaluation of the workflow (all versions), or those in one
+        category ("" = none set), in one file, with each shared dataset stored once."""
         await self.workflows.get_by_id(workflow_id)
-        evaluations = await self._group_evaluations(workflow_id)
+        evaluations = await self._group_evaluations(workflow_id, category)
         if not evaluations:
             raise AppException(
                 status_code=404,
                 error_key=ErrorKey.NOT_FOUND,
-                error_detail="This workflow has no evaluations to export.",
+                error_detail=(
+                    "This workflow has no evaluations to export."
+                    if category is None
+                    else "This workflow has no evaluations in this category to export."
+                ),
             )
         if len(evaluations) > MAX_SET_EVALUATIONS:
             raise AppException(
@@ -1485,11 +1493,14 @@ class EvalBundleService:
             evaluations=items,
         )
 
-    async def _group_evaluations(self, workflow_id: UUID) -> List[Any]:
-        """The workflow group's evaluations, ordered by name for a stable file."""
+    async def _group_evaluations(self, workflow_id: UUID, category: Optional[str] = None) -> List[Any]:
+        """The workflow group's evaluations, or those in one category, ordered by name for a stable file."""
         version_ids = await self._workflow_version_ids(workflow_id)
         evaluations = await self.suites.list_evaluations()
         matched = [e for e in evaluations if str(e.workflow_id) in version_ids]
+        if category is not None:
+            in_category = await self.suites.evaluation_ids_in_category(category)
+            matched = [e for e in matched if e.id in in_category]
         return sorted(matched, key=lambda e: _normalize_name(e.name))
 
     async def preview_set_import(

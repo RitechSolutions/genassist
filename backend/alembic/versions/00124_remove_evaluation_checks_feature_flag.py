@@ -1,19 +1,17 @@
 """remove evaluation checks feature flag
 
 Revision ID: 82e8726df1a0
-Revises: a416df487c31
+Revises: 6afdf3640e70
 Create Date: 2026-10-19 14:16:51.767468
 
 """
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = '82e8726df1a0'
-down_revision: Union[str, None] = 'a416df487c31'
+down_revision: Union[str, None] = '6afdf3640e70'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

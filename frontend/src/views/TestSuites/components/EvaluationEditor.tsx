@@ -18,6 +18,7 @@ import { newEvaluationDefaults, type EvaluationFormData } from "../helpers/evalu
 import { methodDefaults, remapToolRuleNames, type MethodSettingsValue } from "../helpers/methodSettings";
 import { groupWorkflowVersions } from "../helpers/workflowVersions";
 import { useDatasetCases, useEvaluationCatalog } from "../hooks/useEvaluationData";
+import { useCategories } from "../hooks/useCategories";
 import {
   CHECKS_TECHNIQUE,
   checkConversations,
@@ -26,6 +27,7 @@ import {
   leftOutNote,
   newCheck,
 } from "../helpers/checks";
+import { CategoryPicker } from "./CategoryPicker";
 import { ChecksList } from "./ChecksList";
 import { LeftOutNote } from "./LeftOutNote";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
@@ -97,6 +99,10 @@ export const EvaluationEditor: React.FC<EvaluationEditorProps> = ({
   const defaults = newEvaluationDefaults(lockedWorkflowId);
   const [name, setName] = useState(initialData?.name ?? "");
   const [description, setDescription] = useState(initialData?.description ?? "");
+  const [category, setCategory] = useState(initialData?.category ?? "");
+  // A new evaluation's category follows its dataset until one is picked, "No category" included.
+  const [categoryPicked, setCategoryPicked] = useState(mode === "edit" || Boolean(initialData?.category));
+  const categories = useCategories();
   const [suiteId, setSuiteId] = useState(initialData?.suiteId ?? "none");
   const [workflowId, setWorkflowId] = useState(lockedWorkflowId ?? initialData?.workflowId ?? defaults.workflowId);
   const [inputMetadataText, setInputMetadataText] = useState(initialData?.inputMetadataText ?? "{}");
@@ -172,13 +178,15 @@ export const EvaluationEditor: React.FC<EvaluationEditorProps> = ({
     if (id !== newId) setNewId(null);
   };
 
-  // A dataset made for a workflow brings it along when none is picked yet.
+  // A dataset made for a workflow brings it along when none is picked yet, and its category until one is picked.
   const pickDataset = (id: string) => {
     setSuiteId(id);
-    const datasetWorkflow = suites.find((suite) => suite.id === id)?.workflow_id;
+    const dataset = suites.find((suite) => suite.id === id);
+    const datasetWorkflow = dataset?.workflow_id;
     if (!ownWorkflowId && !lockedWorkflowId && datasetWorkflow && workflows.some((item) => item.id === datasetWorkflow)) {
       setWorkflowId(datasetWorkflow);
     }
+    if (!categoryPicked) setCategory(dataset?.category ?? "");
   };
 
   // What still blocks saving, where it is, and the check it is about.
@@ -238,6 +246,7 @@ export const EvaluationEditor: React.FC<EvaluationEditorProps> = ({
         {
           name,
           description,
+          category,
           suiteId,
           // A legacy evaluation without a workflow of its own keeps running its dataset's.
           workflowId: workflowId || effectiveWorkflowId || "",
@@ -313,6 +322,21 @@ export const EvaluationEditor: React.FC<EvaluationEditorProps> = ({
               onChange={(event) => setDescription(event.target.value)}
               placeholder="What this evaluation tests"
               size="description"
+            />
+          </Field>
+          <Field
+            id={`${fieldId}-category`}
+            label="Category"
+            hint="Groups evaluations and datasets so they are easier to find."
+          >
+            <CategoryPicker
+              id={`${fieldId}-category`}
+              value={category}
+              onChange={(picked) => {
+                setCategory(picked);
+                setCategoryPicked(true);
+              }}
+              categories={categories}
             />
           </Field>
           <Field
