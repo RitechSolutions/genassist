@@ -467,6 +467,13 @@ class FileManagerService:
             delete_from_storage: Whether to delete from storage provider as well
         """
         file = await self.repository.get_file_by_id(file_id)
+        # Before uuid names, uploads with the same folder and name shared one stored
+        # object; keep it while another live record still points at it.
+        if delete_from_storage and await self.repository.is_path_shared(
+            file_id, file.storage_provider, file.path
+        ):
+            logger.info(f"Keeping stored object for file {file_id}: its path is shared by another file")
+            delete_from_storage = False
         if delete_from_storage:
             try:
                 await self._initialize_storage_provider(file.storage_provider)

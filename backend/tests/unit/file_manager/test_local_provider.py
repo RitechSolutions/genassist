@@ -51,7 +51,10 @@ def local_provider(temp_storage_dir):
 @pytest.fixture
 def mock_repository():
     """Create a mocked file manager repository."""
-    return AsyncMock(spec=FileManagerRepository)
+    repository = AsyncMock(spec=FileManagerRepository)
+    # A bare AsyncMock result is truthy, which would read as "path shared"
+    repository.is_path_shared.return_value = False
+    return repository
 
 
 @pytest.fixture
@@ -425,6 +428,27 @@ class TestLocalFileManagerService:
 
         assert not os.path.exists(on_disk)
         mock_repository.delete_file.assert_called_once_with(created.id)
+
+    @pytest.mark.asyncio
+    async def test_delete_file_keeps_object_shared_with_another_record(
+        self, mock_repository, local_provider, temp_storage_dir
+    ):
+        """Older uploads could share one stored object; deleting one record must not break the other."""
+        await local_provider.initialize()
+        await local_provider.upload_file(b"shared", "uploads/report.pdf")
+        file_id = uuid4()
+        mock_repository.get_file_by_id.return_value = create_mock_file_model(
+            file_id=file_id, storage_path=local_provider.get_base_path(), path="uploads/report.pdf"
+        )
+        mock_repository.is_path_shared.return_value = True
+
+        service = FileManagerService(repository=mock_repository)
+        await service.set_storage_provider(local_provider)
+        await service.delete_file(file_id, delete_from_storage=True)
+
+        mock_repository.is_path_shared.assert_awaited_once_with(file_id, "local", "uploads/report.pdf")
+        assert os.path.isfile(os.path.join(temp_storage_dir, "uploads", "report.pdf"))
+        mock_repository.delete_file.assert_called_once_with(file_id)
 
 
 class TestFileManagerServiceBuildFileHeaders:
