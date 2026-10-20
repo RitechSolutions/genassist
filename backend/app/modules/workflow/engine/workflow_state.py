@@ -11,6 +11,7 @@ from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
+from app.core.config.llm_pricing import canonical_prompt_tokens
 from app.core.utils.llm_usage_utils import extract_cache_tokens
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
@@ -385,12 +386,9 @@ class WorkflowState:
 
     def get_total_llm_usage(self) -> dict:
         """Sum token usage and compute total cost in USD."""
-        total_input = sum(u.get("input_tokens", 0) for u in self.llm_usage)
-        total_output = sum(u.get("output_tokens", 0) for u in self.llm_usage)
-        total_tokens = sum(
-            max(u.get("total_tokens") or 0, u.get("input_tokens", 0) + u.get("output_tokens", 0))
-            for u in self.llm_usage
-        )
+        total_input = 0
+        total_output = 0
+        total_tokens = 0
         total_cost_usd = 0.0
         total_cache_read = 0
         total_cache_creation = 0
@@ -398,14 +396,22 @@ class WorkflowState:
         from app.services.llm_cost_calculator import LlmCostCalculator
         self.llm_cost_calculator = LlmCostCalculator()
         for u in self.llm_usage:
+            input_tokens = u.get("input_tokens", 0)
+            output_tokens = u.get("output_tokens", 0)
             cache_read, cache_creation = extract_cache_tokens(u.get("token_details"))
+            prompt_tokens = canonical_prompt_tokens(
+                (u.get("provider") or "").strip().lower(), input_tokens, cache_read, cache_creation
+            )
+            total_input += prompt_tokens
+            total_output += output_tokens
+            total_tokens += max(u.get("total_tokens") or 0, prompt_tokens + output_tokens)
             total_cache_read += cache_read
             total_cache_creation += cache_creation
             cost = self.llm_cost_calculator.calculate_cost(
                 u.get("provider", ""),
                 u.get("model", ""),
-                u.get("input_tokens", 0),
-                u.get("output_tokens", 0),
+                input_tokens,
+                output_tokens,
                 cache_read,
                 cache_creation,
             )
