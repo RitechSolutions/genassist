@@ -14,6 +14,7 @@ import {
   isOptimizeCurrent,
   measurementContextKeyOf,
   optimizeKeyOf,
+  passingCaseIdsOf,
   staleOf,
   MAX_FAILURE_FEEDBACK_CHARS,
   type EvalKeyInputs,
@@ -147,7 +148,13 @@ describe("failedCasesOf", () => {
     ]);
 
     expect(cases).toEqual([
-      { caseId: "a", actual: "actual", failedMetrics: [], feedback: null },
+      {
+        caseId: "a",
+        actual: "actual",
+        failedMetrics: [],
+        feedback: null,
+        judgeScore: null,
+      },
     ]);
   });
 
@@ -180,6 +187,35 @@ describe("failedCasesOf", () => {
     const actual = "x".repeat(16_000);
 
     expect(failedCasesOf([result("a", { actual })])[0].actual).toBe(actual);
+  });
+
+  it("carries the judge's numeric score only when the judge is what failed", () => {
+    const judgeScoreOf = (metrics: Record<string, PromptEvalMetric>) =>
+      failedCasesOf([result("a", { metrics })])[0].judgeScore;
+
+    expect(judgeScoreOf({ llm_judge: { score: 0.8, passed: false } })).toBe(0.8);
+    expect(judgeScoreOf({ llm_judge: { score: 0, passed: false } })).toBe(0);
+    expect(judgeScoreOf({ llm_judge: { score: false, passed: false } })).toBeNull();
+    expect(judgeScoreOf({ contains: { score: false, passed: false } })).toBeNull();
+    expect(
+      judgeScoreOf({
+        llm_judge: { score: 0.9, passed: true },
+        contains: { score: false, passed: false },
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("passingCaseIdsOf", () => {
+  it("lists only the cases the run graded as passed", () => {
+    expect(
+      passingCaseIdsOf([
+        result("a", { verdict: "passed", passed: true }),
+        result("b"),
+        result("c", { verdict: "inconclusive" }),
+        result("d", { status: "execution_failed", verdict: null }),
+      ]),
+    ).toEqual(["a"]);
   });
 });
 
