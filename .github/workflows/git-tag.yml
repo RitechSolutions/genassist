@@ -1,7 +1,10 @@
 name: Create & Push Git Tag
 
 on:
-  pull_request:
+  # pull_request_target so the tag push works for merges from forks, whose
+  # pull_request GITHUB_TOKEN is read-only. Only main is checked out below,
+  # never the PR's code.
+  pull_request_target:
     branches: ["main"]
     types: [closed]
 
@@ -27,6 +30,8 @@ jobs:
       - name: Compute next semver tag from PR labels
         id: ver
         shell: bash
+        env:
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
 
@@ -47,8 +52,7 @@ jobs:
           fi
 
           # collect merged PR labels (lowercased)
-          labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
-          labels="$(echo "$labels" | tr '[:upper:]' '[:lower:]')"
+          labels="$(echo "$PR_LABELS" | tr '[:upper:]' '[:lower:]')"
           echo "PR labels: $labels"
 
           # bump rules (customize to your label naming)
@@ -72,9 +76,10 @@ jobs:
           echo "Next tag: $next_tag"
 
       - name: Create and push git tag
+        env:
+          TAG: ${{ steps.ver.outputs.next_tag }}
         run: |
           set -euo pipefail
-          TAG="${{ steps.ver.outputs.next_tag }}"
 
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists. Skipping."
