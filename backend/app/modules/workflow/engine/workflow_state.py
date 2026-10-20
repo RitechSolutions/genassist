@@ -395,12 +395,15 @@ class WorkflowState:
         total_cache_read = 0
         total_cache_creation = 0
         unpriced_calls = 0
+        fallback_calls = 0
+        from app.core.config.llm_pricing import resolve_live_pricing
         from app.services.llm_cost_calculator import LlmCostCalculator
         self.llm_cost_calculator = LlmCostCalculator()
         for u in self.llm_usage:
             cache_read, cache_creation = extract_cache_tokens(u.get("token_details"))
             total_cache_read += cache_read
             total_cache_creation += cache_creation
+            pricing = resolve_live_pricing(u.get("provider", ""), u.get("model", ""))
             cost = self.llm_cost_calculator.calculate_cost(
                 u.get("provider", ""),
                 u.get("model", ""),
@@ -408,11 +411,14 @@ class WorkflowState:
                 u.get("output_tokens", 0),
                 cache_read,
                 cache_creation,
+                pricing=pricing,
             )
             if cost is None:
                 unpriced_calls += 1
             else:
                 total_cost_usd += cost
+                if cost > 0 and not pricing.configured:
+                    fallback_calls += 1
         totals = {
             "input_tokens": total_input,
             "output_tokens": total_output,
@@ -421,6 +427,7 @@ class WorkflowState:
             "cache_creation_tokens": total_cache_creation,
             "cost_usd": round(total_cost_usd, 6),
             "cost_is_partial": unpriced_calls > 0,
+            "fallback_calls": fallback_calls,
             "calls": len(self.llm_usage),
         }
         if not (total_cache_read or total_cache_creation or self._prompt_caching_requested()):

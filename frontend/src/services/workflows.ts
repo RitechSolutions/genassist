@@ -75,6 +75,7 @@ export interface WorkflowTokenUsage {
   cost_usd?: number;
   /** True when a call could not be priced, so cost_usd is the priced subtotal only. */
   cost_is_partial?: boolean;
+  fallback_calls?: number;
   calls?: number;
 }
 
