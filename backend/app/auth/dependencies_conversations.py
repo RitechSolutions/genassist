@@ -94,6 +94,7 @@ async def _handle_guest_token(
     context["auth_mode"] = "guest_token"
     context["user_id"] = user_id_uuid
     context["user_roles"] = []
+    context["user_permissions"] = guest_token_data.get("permissions", [])
     context["operator_id"] = agent.operator.id if agent and agent.operator else None
 
     return True
@@ -133,6 +134,7 @@ async def _handle_authenticated_agent(
     context["auth_mode"] = "token"
     context["user_id"] = user.id
     context["user_roles"] = user.roles
+    context["user_permissions"] = user.permissions
     context["operator_id"] = user.operator.id if user.operator else None
 
 
