@@ -258,9 +258,14 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   const handleSaveAndSwitch = async () => {
     if (workflowToSelect) {
       setIsSwitching(true);
-      await onSaveWorkflow();
-      await selectVersion(workflowToSelect);
-      setIsSwitching(false);
+      try {
+        await onSaveWorkflow();
+        await selectVersion(workflowToSelect);
+      } catch {
+        // the save already showed its error; stay on the current version
+      } finally {
+        setIsSwitching(false);
+      }
     }
     setIsUnsavedChangesDialogOpen(false);
     setWorkflowToSelect(null);
