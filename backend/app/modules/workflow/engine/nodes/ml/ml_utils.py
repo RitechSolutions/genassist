@@ -13,9 +13,12 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 
+from fastapi import HTTPException
+
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.file_system_utils import get_safe_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -360,6 +363,15 @@ def parse_csv_file(file_path: str) -> List[Dict[str, Any]]:
         ) from e
 
 
+def _csv_path_inside_data_volume(candidate: Any) -> Optional[Path]:
+    """Return the candidate as a path inside the data volume, or None if it is outside it or missing."""
+    try:
+        return Path(get_safe_file_path(str(candidate), DATA_VOLUME))
+    except (HTTPException, ValueError, RuntimeError):
+        # Outside the volume, missing, or a path the OS cannot resolve (NUL byte, symlink loop)
+        return None
+
+
 def resolve_csv_file_path(
     file_url: str, thread_id: Optional[str] = None
 ) -> Path:
@@ -380,7 +392,7 @@ def resolve_csv_file_path(
         # Handle both absolute paths and relative paths
         if file_url.startswith("/"):
             # Absolute path
-            file_path = Path(file_url)
+            candidates = [file_url]
         elif file_url.startswith("http://") or file_url.startswith("https://"):
             # For HTTP URLs, we'd need to download first
             # For now, raise an error
@@ -389,24 +401,23 @@ def resolve_csv_file_path(
                 error_detail=f"HTTP/HTTPS URLs are not yet supported: {file_url}",
             )
         else:
-            # Try relative to DATA_VOLUME/train/thread_id if thread_id provided
+            # Try relative to DATA_VOLUME/train/thread_id if thread_id provided, then the current folder
             if thread_id:
-                file_path = DATA_VOLUME / "train" / thread_id / file_url
-                # If not found, try as absolute path
-                if not file_path.exists():
-                    file_path = Path(file_url)
+                candidates = [DATA_VOLUME / "train" / thread_id / file_url, os.path.abspath(file_url)]
             else:
-                # Try relative to DATA_VOLUME/train (common location for CSV files)
-                file_path = DATA_VOLUME / "train" / file_url
-                # If not found, try as absolute path
-                if not file_path.exists():
-                    file_path = Path(file_url)
-                # If still not found, try directly in DATA_VOLUME
-                if not file_path.exists():
-                    file_path = DATA_VOLUME / file_url
+                # Try relative to DATA_VOLUME/train (common location for CSV files),
+                # then the current folder, then directly in DATA_VOLUME
+                candidates = [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
+
+        # Only files inside the data volume can be read
+        file_path = None
+        for candidate in candidates:
+            file_path = _csv_path_inside_data_volume(candidate)
+            if file_path is not None:
+                break
 
         # Validate file exists
-        if not file_path.exists():
+        if file_path is None:
             raise AppException(
                 error_key=ErrorKey.FILE_NOT_FOUND,
                 error_detail=f"File not found: {file_url}",
