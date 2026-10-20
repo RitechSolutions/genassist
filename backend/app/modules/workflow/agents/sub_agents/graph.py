@@ -18,6 +18,7 @@ TOOLS_TARGET_HANDLE = "input_tools"
 STARTER_SOURCE_HANDLE = "starter_processor"
 
 MAX_DELEGATION_DEPTH = 3
+MAX_TOOL_NAME_LENGTH = 64
 RESERVED_TOOL_NAMES = frozenset({"finish_task", "return_to_parent"})
 
 
@@ -42,13 +43,17 @@ def _validate_sub_agent_isolation(nodes: List[Dict[str, Any]], edges: List[Dict[
     sub_ids = {n.get("id") for n in nodes if n.get("type") == "subAgentNode"}
     if not sub_ids:
         return []
+    names = {n.get("id"): (n.get("data") or {}).get("name") or n.get("id") for n in nodes}
     violations: List[str] = []
     for edge in edges:
         source, target = edge.get("source"), edge.get("target")
         if source in sub_ids and edge.get("sourceHandle") != SUB_AGENT_SOURCE_HANDLE:
-            violations.append(f"sub-agent '{source}' can only connect through its delegation handle, not the main flow")
+            violations.append(
+                f"sub-agent '{names.get(source, source)}' can only connect through its delegation handle, "
+                "not the main flow"
+            )
         if target in sub_ids and edge.get("targetHandle") not in (SUB_AGENT_TARGET_HANDLE, TOOLS_TARGET_HANDLE):
-            violations.append(f"sub-agent '{target}' cannot receive a main-flow connection")
+            violations.append(f"sub-agent '{names.get(target, target)}' cannot receive a main-flow connection")
     return violations
 
 
@@ -61,7 +66,7 @@ def _clamp_tool_name(name: str) -> str:
 
 def delegation_tool_name(child_name: str) -> str:
     """Runtime name of the tool the parent calls to delegate to this child."""
-    return f"request_task_{_clamp_tool_name(child_name)}"
+    return f"request_task_{_clamp_tool_name(child_name)}"[:MAX_TOOL_NAME_LENGTH]
 
 
 class SubAgentGraph:
@@ -91,6 +96,9 @@ class SubAgentGraph:
 
     def child_name(self, child_id: str) -> str:
         return self.nodes_by_id.get(child_id, {}).get("data", {}).get("name", child_id)
+
+    def _label(self, node_id: str) -> str:
+        return self.child_name(node_id) or node_id
 
     def descendants(self, node_id: str, _seen: set | None = None) -> List[str]:
         _seen = _seen if _seen is not None else set()
@@ -174,24 +182,26 @@ class SubAgentGraph:
 
         for child_id, parents in self.parents_of.items():
             if self.node_type(child_id) != "subAgentNode":
-                violations.append(f"'{child_id}' feeds a sub-agent handle but is not a subAgentNode")
+                violations.append(f"'{self._label(child_id)}' feeds a sub-agent handle but is not a subAgentNode")
             if len(parents) > 1:
-                violations.append(f"sub-agent '{child_id}' is attached to more than one parent")
+                violations.append(f"sub-agent '{self._label(child_id)}' is attached to more than one parent")
             for parent_id in parents:
                 if self.node_type(parent_id) not in ("agentNode", "subAgentNode"):
                     violations.append(
-                        f"sub-agent '{child_id}' must attach to an agent or sub-agent, not "
+                        f"sub-agent '{self._label(child_id)}' must attach to an agent or sub-agent, not "
                         f"'{self.node_type(parent_id)}'"
                     )
                 if parent_id == child_id:
-                    violations.append(f"sub-agent '{child_id}' cannot attach to itself")
+                    violations.append(f"sub-agent '{self._label(child_id)}' cannot attach to itself")
 
         if self._has_cycle():
             violations.append("sub-agent wiring contains a cycle")
         else:
             for child_id in self.parents_of:
                 if self.depth_of(child_id) > MAX_DELEGATION_DEPTH:
-                    violations.append(f"sub-agent '{child_id}' exceeds max delegation depth {MAX_DELEGATION_DEPTH}")
+                    violations.append(
+                        f"sub-agent '{self._label(child_id)}' exceeds max delegation depth {MAX_DELEGATION_DEPTH}"
+                    )
 
         # sibling delegation-name uniqueness + collisions with parent tools / reserved
         for parent_id, children in self.children_of.items():
@@ -214,18 +224,20 @@ class SubAgentGraph:
         for child_id in self.parents_of:
             mode = self.child_mode(child_id)
             if mode == "task" and self.children_of.get(child_id):
-                violations.append(f"task sub-agent '{child_id}' cannot have its own sub-agents")
+                violations.append(f"task sub-agent '{self._label(child_id)}' cannot have its own sub-agents")
             if mode in ("task", "chat") and any(
                 self.node_type(p) == "subAgentNode" for p in self.parents_of.get(child_id, [])
             ):
                 violations.append(
-                    f"persistent (task/chat) sub-agent '{child_id}' must attach to a top-level agent, "
+                    f"persistent (task/chat) sub-agent '{self._label(child_id)}' must attach to a top-level agent, "
                     "not another sub-agent"
                 )
             if mode == "single_turn":
                 for desc in self.descendants(child_id):
                     if self.child_mode(desc) != "single_turn":
-                        violations.append(f"single_turn sub-agent '{child_id}' cannot contain a persistent sub-agent")
+                        violations.append(
+                            f"single_turn sub-agent '{self._label(child_id)}' cannot contain a persistent sub-agent"
+                        )
                         break
 
         violations.extend(self._validate_subflows())
@@ -241,7 +253,7 @@ class SubAgentGraph:
         for child_id in self.parents_of:
             for tb_id in self._tool_builders_of(child_id):
                 if any(self.node_type(nid) == "humanInTheLoopNode" for nid in self._subflow_node_ids(tb_id)):
-                    violations.append(f"sub-agent '{child_id}' has a Human-in-the-Loop node in its tools")
+                    violations.append(f"sub-agent '{self._label(child_id)}' has a Human-in-the-Loop node in its tools")
                     break
 
         # a parent inside a tool sub-flow cannot host a task/chat child
@@ -251,7 +263,9 @@ class SubAgentGraph:
         for child_id, parents in self.parents_of.items():
             if self.child_mode(child_id) in ("task", "chat"):
                 if any(p in subflow_nodes for p in parents):
-                    violations.append(f"task/chat sub-agent '{child_id}' cannot run under a tool sub-flow parent")
+                    violations.append(
+                        f"task/chat sub-agent '{self._label(child_id)}' cannot run under a tool sub-flow parent"
+                    )
         return violations
 
 
