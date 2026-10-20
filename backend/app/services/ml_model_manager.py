@@ -6,8 +6,12 @@ avoiding repeated file I/O and deserialization overhead.
 """
 
 import asyncio
+import glob
+import hashlib
 import logging
 import os
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, Optional, Set
@@ -16,6 +20,7 @@ from uuid import UUID
 from injector import inject
 
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.model_validator import resolve_model_path
 from app.core.utils.safe_pickle import safe_pickle_load
 
 logger = logging.getLogger(__name__)
@@ -41,22 +46,26 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     at the point of deserialization itself, independent of the pre-load
     opcode scan performed by ``validate_pickle_file_safe``.
     """
+    safe_path = resolve_model_path(pkl_file)
+    if safe_path is None:
+        raise ValueError("Model file is not inside the ML models folder")
+
     load_errors = []
 
     # Method 1: restricted unpickler with default encoding
     try:
-        with open(pkl_file, "rb") as f:
+        with open(safe_path, "rb") as f:
             model = safe_pickle_load(f)
-        logger.info("Loaded model from %s", pkl_file)
+        logger.info("Loaded model from %s", safe_path)
         return model
     except Exception as e:
         load_errors.append(f"pickle (default) failed: {type(e).__name__}")
 
     # Method 2: restricted unpickler with latin1 encoding (legacy Python 2 pickles)
     try:
-        with open(pkl_file, "rb") as f:
+        with open(safe_path, "rb") as f:
             model = safe_pickle_load(f, encoding="latin1")
-        logger.info("Loaded model (latin1) from %s", pkl_file)
+        logger.info("Loaded model (latin1) from %s", safe_path)
         return model
     except Exception as e:
         load_errors.append(f"pickle (latin1) failed: {type(e).__name__}")
@@ -353,4 +362,36 @@ async def download_pkl_file(pkl_file_id: UUID, destination_path: str) -> str:
     # download the file to destination path
     await file_manager_service.download_file_to_path(file.id, destination_path)
     logger.info(f"Downloaded PKL file to: {destination_path}")
+    return destination_path
+
+
+def _downloaded_model_path(model_id: Any, pkl_file_id: Any) -> str:
+    file_code = hashlib.sha256(str(pkl_file_id).encode()).hexdigest()[:16]
+    return os.path.join(ML_MODELS_UPLOAD_DIR, f"{UUID(str(model_id))}_{file_code}.pkl")
+
+
+def _remove_stale_partial_downloads(destination_path: str) -> None:
+    for partial_path in glob.glob(f"{glob.escape(destination_path)}.*.part"):
+        try:
+            is_stale = time.time() - os.path.getmtime(partial_path) > 3600
+            if is_stale:
+                os.remove(partial_path)
+        except OSError:
+            pass
+
+
+async def download_model_file(model_id: Any, pkl_file_id: Any) -> str:
+    """Download an uploaded model file into the ML models folder once, writing it under a temporary name first."""
+    destination_path = _downloaded_model_path(model_id, pkl_file_id)
+    if os.path.isfile(destination_path):
+        return destination_path
+
+    _remove_stale_partial_downloads(destination_path)
+    temporary_path = f"{destination_path}.{uuid.uuid4().hex}.part"
+    try:
+        await download_pkl_file(pkl_file_id, temporary_path)
+        os.replace(temporary_path, destination_path)
+    finally:
+        if os.path.exists(temporary_path):
+            os.remove(temporary_path)
     return destination_path
