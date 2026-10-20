@@ -27,6 +27,7 @@ const item = (over: Partial<ReportedFeedbackItem> = {}): ReportedFeedbackItem =>
   message_id: "m1",
   conversation_id: "c1",
   agent_id: null,
+  agent_name: null,
   workflow_name: null,
   text: "Hello",
   speaker: "agent",

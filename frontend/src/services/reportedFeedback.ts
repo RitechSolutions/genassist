@@ -6,6 +6,7 @@ export interface ReportedFeedbackItem {
   message_id: string;
   conversation_id: string;
   agent_id: string | null;
+  agent_name: string | null;
   workflow_name: string | null;
   text: string;
   speaker: string;
@@ -34,7 +35,7 @@ export interface FeedbackFilters {
   /** Filter by when the comment was added (reported time). */
   from_date?: string;
   to_date?: string;
-  workflow_id?: string;
+  agent_id?: string;
   topic?: string;
   subtopic?: string;
   search?: string;
