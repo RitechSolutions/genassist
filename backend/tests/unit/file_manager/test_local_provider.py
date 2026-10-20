@@ -3,6 +3,7 @@ import tempfile
 import shutil
 import logging
 import io
+import os
 from uuid import uuid4
 from unittest.mock import AsyncMock, MagicMock, create_autospec, patch
 
@@ -14,6 +15,8 @@ from app.schemas.file import FileBase
 from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
 from app.db.models.file import FileModel
 from app.core.tenant_scope import set_tenant_context, clear_tenant_context
+from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.exception_classes import AppException
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +26,8 @@ def create_mock_upload_file(filename: str = "test.txt", content: bytes = b"test 
     mock_file = MagicMock(spec=UploadFile)
     mock_file.filename = filename
     mock_file.file = io.BytesIO(content)
-    mock_file.read = AsyncMock(return_value=content)
+    # One chunk, then b"" to end the stream (a constant return value never ends it).
+    mock_file.read = AsyncMock(side_effect=[content, b""])
     mock_file.seek = AsyncMock()
     return mock_file
 
@@ -92,6 +96,31 @@ def create_mock_file_model(
 
 # ==================== Unit Tests ====================
 
+class TestLocalProviderContainment:
+    """Every provider operation stays inside base_path."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", ["../outside.txt", "a/../../outside.txt", "/etc/hosts"])
+    async def test_operations_refuse_paths_outside_base(self, local_provider, temp_storage_dir, path):
+        await local_provider.initialize()
+
+        assert await local_provider.upload_file(b"x", path) is False
+        assert await local_provider.delete_file(path) is False
+        assert await local_provider.file_exists(path) is False
+        with pytest.raises(ValueError):
+            await local_provider.download_file(path)
+        parent = os.path.dirname(os.path.abspath(temp_storage_dir))
+        assert not os.path.exists(os.path.join(parent, "outside.txt"))
+
+    @pytest.mark.asyncio
+    async def test_absolute_path_inside_base_still_works(self, local_provider, temp_storage_dir):
+        """get_file_content passes '<base>/<path>', which must keep working."""
+        await local_provider.initialize()
+        await local_provider.upload_file(b"inside", "docs/a.txt")
+
+        assert await local_provider.download_file(os.path.join(temp_storage_dir, "docs", "a.txt")) == b"inside"
+
+
 class TestLocalFileManagerService:
     """Test file manager service with real local storage provider."""
 
@@ -137,12 +166,120 @@ class TestLocalFileManagerService:
         mock_repository.create_file.assert_called_once()
 
         # Verify file was actually uploaded to storage
+        # Stored under a uuid name, not the name from the request.
         created_file_data = mock_repository.create_file.call_args[0][0]
-        storage_path = created_file_data.storage_path
+        stored_path = created_file_data.path
+        assert stored_path != file_name and stored_path.endswith(".txt")
 
-        assert await local_provider.file_exists(storage_path)
-        stored_content = await local_provider.download_file(storage_path)
+        assert await local_provider.file_exists(stored_path)
+        stored_content = await local_provider.download_file(stored_path)
         assert stored_content == file_content
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", ["../../..", "a/../../b", "..\\..\\x"])
+    async def test_create_file_rejects_path_traversal(
+        self, mock_repository, local_provider, temp_storage_dir, path
+    ):
+        """A path that climbs out of the storage folder is rejected and nothing is written."""
+        service = FileManagerService(repository=mock_repository)
+        await service.set_storage_provider(local_provider)
+
+        with pytest.raises(AppException) as exc:
+            await service.create_file(
+                file=create_mock_upload_file("evil.txt", b"x"),
+                file_base=FileBase(name="evil.txt", path=path, storage_path="", storage_provider="local"),
+            )
+
+        assert exc.value.error_key == ErrorKey.INVALID_FILE_PATH
+        assert exc.value.status_code == 400
+        mock_repository.create_file.assert_not_called()
+        parent = os.path.dirname(os.path.abspath(temp_storage_dir))
+        assert not os.path.exists(os.path.join(parent, "evil.txt"))
+
+    @pytest.mark.asyncio
+    async def test_create_file_ignores_name_and_cleans_folder(
+        self, mock_repository, local_provider, temp_storage_dir
+    ):
+        """The request's name never becomes the stored file name; the folder is kept, cleaned."""
+        mock_repository.create_file.side_effect = lambda data: data
+        service = FileManagerService(repository=mock_repository)
+        await service.set_storage_provider(local_provider)
+
+        upload = create_mock_upload_file("report.pdf", b"pdf")
+        upload.content_type = "application/pdf"
+        result = await service.create_file(
+            file=upload,
+            file_base=FileBase(
+                name="../../outside.pdf", path="/docs//./2026/", storage_path="", storage_provider="local"
+            ),
+        )
+
+        folder, stored_name = result.path.rsplit("/", 1)
+        assert folder == "docs/2026"
+        assert stored_name.endswith(".pdf") and "outside" not in stored_name
+        assert result.name == "../../outside.pdf"  # kept only as the display name
+        assert os.path.isfile(os.path.join(temp_storage_dir, "docs", "2026", stored_name))
+
+    @pytest.mark.asyncio
+    async def test_create_file_from_local_path_rejects_path_traversal(
+        self, mock_repository, local_provider, temp_storage_dir
+    ):
+        """The chunked-upload path rejects a climbing folder and leaves the source file alone."""
+        service = FileManagerService(repository=mock_repository)
+        await service.set_storage_provider(local_provider)
+        source_dir = tempfile.mkdtemp()
+        try:
+            source = os.path.join(source_dir, "chunked.txt")
+            with open(source, "wb") as handle:
+                handle.write(b"x")
+
+            with pytest.raises(AppException) as exc:
+                await service.create_file_from_local_path(
+                    source,
+                    FileBase(name="evil.txt", path="../../..", storage_path="", storage_provider="local"),
+                    original_filename="evil.txt",
+                )
+
+            assert exc.value.error_key == ErrorKey.INVALID_FILE_PATH
+            mock_repository.create_file.assert_not_called()
+            assert os.path.isfile(source)
+        finally:
+            shutil.rmtree(source_dir, ignore_errors=True)
+
+    @pytest.mark.asyncio
+    async def test_create_file_from_local_path_stores_uuid_name_in_folder(
+        self, mock_repository, local_provider, temp_storage_dir
+    ):
+        """The copy lands in the cleaned folder under a uuid name."""
+        mock_repository.create_file.side_effect = lambda data: data
+        service = FileManagerService(repository=mock_repository)
+        await service.set_storage_provider(local_provider)
+        source_dir = tempfile.mkdtemp()
+        try:
+            source = os.path.join(source_dir, "chunked.png")
+            with open(source, "wb") as handle:
+                handle.write(b"png")
+
+            result = await service.create_file_from_local_path(
+                source,
+                FileBase(name="../shot.png", path="./shots/", storage_path="", storage_provider="local"),
+                original_filename="shot.png",
+            )
+
+            folder, stored_name = result.path.rsplit("/", 1)
+            assert folder == "shots"
+            assert stored_name.endswith(".png") and "shot" not in stored_name
+            assert os.path.isfile(os.path.join(temp_storage_dir, "shots", stored_name))
+            assert not os.path.exists(source)  # delete_source defaults to True
+        finally:
+            shutil.rmtree(source_dir, ignore_errors=True)
+
+    @pytest.mark.parametrize(
+        "filename, expected",
+        [("a.PDF", "pdf"), ("noext", "txt"), (None, "txt"), ("x.b/../../y", "txt"), ("x.p/df", "txt"), ("a.t-x_t", "txt")],
+    )
+    def test_clean_file_extension(self, filename, expected):
+        assert FileManagerService._clean_file_extension(filename) == expected
 
     @pytest.mark.asyncio
     async def test_get_file_content_reads_from_local_storage(
