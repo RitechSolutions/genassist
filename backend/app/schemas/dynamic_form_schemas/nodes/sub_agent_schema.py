@@ -36,8 +36,8 @@ SUB_AGENT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
             {"value": "chat", "label": "Chat (owns turns until return_to_parent)"},
         ],
         description=(
-            "single_turn returns one answer to the parent; task may ask the user one "
-            "clarifying question before calling finish_task; chat takes over the conversation "
+            "single_turn returns one answer to the parent; task may ask the user clarifying "
+            "questions before calling finish_task; chat takes over the conversation "
             "until it calls return_to_parent."
         ),
     ),

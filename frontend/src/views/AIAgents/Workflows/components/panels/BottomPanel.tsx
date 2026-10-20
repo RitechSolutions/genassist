@@ -64,28 +64,28 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   }, [workflow.executionState, loadExecutionState]);
 
   // Handle save to server
-  const handleSaveToServer = async () => {
-    if (!onSaveWorkflow || !workflow) return;
+  const handleSaveToServer = async (): Promise<boolean> => {
+    if (!onSaveWorkflow || !workflow) return true;
 
     // If workflow has no ID, open agent form first
     if (!workflow.id) {
       setAgentFormOpen(true);
-      return;
+      return true;
     }
 
     try {
       setIsSaving(true);
       await onSaveWorkflow(workflow);
-    } catch (error) {
-      // ignore
+      return true;
+    } catch {
+      return false;
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleNavigation = async () => {
-    await handleSaveToServer();
-    blocker.proceed();
+    if (await handleSaveToServer()) blocker.proceed();
   };
 
   const handleDiscard = () => {
