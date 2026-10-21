@@ -302,6 +302,7 @@ async def analyze_csv(
             - max: Maximum value (for numeric)
     """
     try:
+        allowed_directories = await ml_utils.extra_csv_directories()
         # Resolve and validate file path using shared utility
         try:
             # check if the file_url includes a valid file id
@@ -310,7 +311,7 @@ async def analyze_csv(
                 await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
                 file_path = dest_path
             else:
-                file_path = ml_utils.resolve_csv_file_path(file_url)
+                file_path = ml_utils.resolve_csv_file_path(file_url, allowed_directories=allowed_directories)
 
         except AppException as e:
             # Convert AppException to HTTPException for API endpoint
@@ -333,7 +334,7 @@ async def analyze_csv(
 
             try:
                 # Load the CSV file using shared utility
-                data, df = ml_utils.load_csv_file(file_url)
+                data, df = ml_utils.load_csv_file(file_url, allowed_directories=allowed_directories)
 
                 # Execute preprocessing code using shared utility
                 # Use raise_on_error=True to raise exceptions for API endpoint
@@ -420,7 +421,7 @@ async def profile_csv(
                 await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
                 file_path = dest_path
             else:
-                file_path = ml_utils.resolve_csv_file_path(file_url)
+                file_path = ml_utils.resolve_csv_file_path(file_url, allowed_directories=await ml_utils.extra_csv_directories())
         except AppException as e:
             if e.error_key == ErrorKey.FILE_NOT_FOUND:
                 raise HTTPException(
