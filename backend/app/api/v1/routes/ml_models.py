@@ -246,6 +246,13 @@ async def validate_model_file(
                 detail="PKL file not found"
             )
 
+    # Fetch the uploaded file into the ML models folder when the saved path is not usable
+    from app.services.ml_model_manager import local_model_file
+    try:
+        await local_model_file(ml_model, service)
+    except Exception as e:
+        logger.warning(f"Could not fetch the model file for {ml_model_id}: {e}")
+
     # Get model info
     info = get_model_info(ml_model.pkl_file)
 
