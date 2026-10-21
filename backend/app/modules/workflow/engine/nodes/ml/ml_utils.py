@@ -13,12 +13,9 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import HTTPException
-
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
-from app.core.utils.file_system_utils import get_safe_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -363,17 +360,46 @@ def parse_csv_file(file_path: str) -> List[Dict[str, Any]]:
         ) from e
 
 
-def _csv_path_inside_data_volume(candidate: Any) -> Optional[Path]:
-    """Return the candidate as a path inside the data volume, or None if it is outside it or missing."""
+def _csv_path_inside(candidate: Any, allowed_directories: List[Path]) -> Optional[Path]:
+    """Return the real path of the candidate if it is a file inside one of the allowed folders, otherwise None."""
     try:
-        return Path(get_safe_file_path(str(candidate), DATA_VOLUME))
-    except (HTTPException, ValueError, RuntimeError):
-        # Outside the volume, missing, or a path the OS cannot resolve (NUL byte, symlink loop)
+        real_path = os.path.realpath(str(candidate))
+    except (ValueError, OSError):
+        # A path the OS cannot resolve (NUL byte, symlink loop)
         return None
+    if not os.path.isfile(real_path):
+        return None
+    for directory in allowed_directories:
+        if real_path.startswith(os.path.realpath(str(directory)) + os.sep):
+            return Path(real_path)
+    return None
+
+
+async def extra_csv_directories(settings_service=None) -> List[Path]:
+    """The local file manager folder, for installs that keep uploads outside the data volume."""
+    try:
+        if settings_service is None:
+            from app.dependencies.injector import injector
+            from app.services.app_settings import AppSettingsService
+
+            settings_service = injector.get(AppSettingsService)
+        file_manager_settings = await settings_service.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+    except Exception as e:
+        logger.warning(f"Could not read the file manager settings: {e}")
+        return []
+
+    from app.core.config.settings import file_storage_settings
+
+    values = file_manager_settings.values if file_manager_settings and isinstance(file_manager_settings.values, dict) else {}
+    provider = values.get("file_manager_provider") or file_storage_settings.default_provider_name
+    base_path = values.get("base_path")
+    if provider == "local" and isinstance(base_path, str) and base_path:
+        return [Path(base_path)]
+    return []
 
 
 def resolve_csv_file_path(
-    file_url: str, thread_id: Optional[str] = None
+    file_url: str, thread_id: Optional[str] = None, allowed_directories: Optional[List[Path]] = None
 ) -> Path:
     """
     Resolve a CSV file path from a file URL/path.
@@ -381,6 +407,7 @@ def resolve_csv_file_path(
     Args:
         file_url: URL or path to the file (CSV expected)
         thread_id: Optional thread ID for relative path resolution
+        allowed_directories: Folders besides the data volume that files may be read from
 
     Returns:
         Resolved Path object
@@ -409,10 +436,11 @@ def resolve_csv_file_path(
                 # then the current folder, then directly in DATA_VOLUME
                 candidates = [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
 
-        # Only files inside the data volume can be read
+        # Only files inside the data volume, or the configured storage folder, can be read
+        directories = [DATA_VOLUME, *(allowed_directories or [])]
         file_path = None
         for candidate in candidates:
-            file_path = _csv_path_inside_data_volume(candidate)
+            file_path = _csv_path_inside(candidate, directories)
             if file_path is not None:
                 break
 
@@ -450,7 +478,7 @@ def resolve_csv_file_path(
 
 
 def load_csv_file(
-    file_url: str, thread_id: Optional[str] = None
+    file_url: str, thread_id: Optional[str] = None, allowed_directories: Optional[List[Path]] = None
 ) -> Tuple[List[Dict[str, Any]], pd.DataFrame]:
     """
     Load data from a CSV file URL/path.
@@ -466,7 +494,7 @@ def load_csv_file(
         AppException: If file cannot be loaded
     """
     try:
-        file_path = resolve_csv_file_path(file_url, thread_id)
+        file_path = resolve_csv_file_path(file_url, thread_id, allowed_directories)
 
         # Load CSV file using pandas
         df = pd.read_csv(file_path, encoding="utf-8")

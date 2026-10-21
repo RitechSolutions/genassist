@@ -233,8 +233,9 @@ class TrainDataSourceNode(BaseNode):
                 # set the csv file path to the destination path
                 csv_file_path = dest_file_path
 
-            # Only CSV files inside the data volume can be read
-            csv_file_path = str(ml_utils.resolve_csv_file_path(csv_file_path, self.state.thread_id))
+            # Only CSV files inside the data volume, or the configured storage folder, can be read
+            allowed_directories = await ml_utils.extra_csv_directories()
+            csv_file_path = str(ml_utils.resolve_csv_file_path(csv_file_path, self.state.thread_id, allowed_directories))
 
             # Parse CSV file
             results = ml_utils.parse_csv_file(csv_file_path)
