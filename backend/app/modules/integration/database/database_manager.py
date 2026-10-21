@@ -154,7 +154,7 @@ class DatabaseManager:
                     )
                 else:
                     connection_string = self.connection_string
-                logger.info(f"Connecting to PostgreSQL with connection string: {connection_string}")
+                logger.info("Connecting to PostgreSQL...")
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
@@ -180,7 +180,7 @@ class DatabaseManager:
                     f"{decrypt_key(self.config.get('database_password'))}@{host}:"
                     f"{port}/{self.config.get('database_name')}"
                 )
-                logger.info(f"Connecting to MySQL with connection string: {connection_string}")
+                logger.info("Connecting to MySQL...")
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
