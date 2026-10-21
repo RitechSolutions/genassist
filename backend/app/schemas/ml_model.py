@@ -1,8 +1,21 @@
+import os
 from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Optional
 from datetime import datetime
 from enum import Enum
+
+from app.core.project_path import DATA_VOLUME
+
+# Local .pkl files of ML models must stay inside this folder.
+ML_MODELS_DIR = str(DATA_VOLUME / "ml_models")
+
+
+def is_in_ml_models_dir(path: str) -> bool:
+    """True if path, with symlinks and '..' resolved, is a file path inside ML_MODELS_DIR."""
+    root = os.path.realpath(ML_MODELS_DIR)
+    resolved = os.path.realpath(path)
+    return resolved != root and os.path.commonpath([root, resolved]) == root
 
 
 class ModelType(str, Enum):
@@ -23,7 +36,18 @@ class MLModelBase(BaseModel):
     target_variable: Optional[str] = Field(None, max_length=255, description="The prediction target variable")
 
 
-class MLModelCreate(MLModelBase):
+class _PklFileInMlModelsDir(BaseModel):
+    """Checks pkl_file on create and update only, so models already stored elsewhere still read."""
+
+    @field_validator('pkl_file', check_fields=False)
+    @classmethod
+    def validate_pkl_file_in_ml_models_dir(cls, v):
+        if v and not is_in_ml_models_dir(v):
+            raise ValueError('pkl_file must be a file inside the ML models folder')
+        return v
+
+
+class MLModelCreate(_PklFileInMlModelsDir, MLModelBase):
     name: str = Field(..., max_length=255, description="Unique name for the ML model")
     description: str = Field(..., description="Description of what the model does")
     model_type: ModelType = Field(..., description="Type of machine learning model")
@@ -38,7 +62,7 @@ class MLModelCreate(MLModelBase):
         return v
 
 
-class MLModelUpdate(MLModelBase):
+class MLModelUpdate(_PklFileInMlModelsDir, MLModelBase):
     """Update schema - all fields are optional"""
 
 

@@ -18,7 +18,7 @@ from app.core.permissions.constants import Permissions as P
 from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.schemas.file import FileBase, FileUploadResponse
-from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate
+from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate, is_in_ml_models_dir
 from app.services.app_settings import AppSettingsService
 from app.services.file_manager import FileManagerService
 from app.services.ml_model_manager import get_ml_model_manager
@@ -155,6 +155,10 @@ async def upload_pkl_file(
 
         if created_file.storage_provider == "local":
             file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
+            # A custom file manager folder puts the file outside the ML models folder, where
+            # pkl_file is not accepted; the model is then loaded through file_id instead.
+            if not is_in_ml_models_dir(file_path):
+                file_path = None
             # file_path = await file_manager_service.get_file_url(created_file)
 
         file_id = str(created_file.id)
