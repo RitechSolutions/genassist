@@ -395,3 +395,39 @@ async def download_model_file(model_id: Any, pkl_file_id: Any) -> str:
         if os.path.exists(temporary_path):
             os.remove(temporary_path)
     return destination_path
+
+
+def is_outdated_download(model_id: Any, pkl_file_id: Any, path: str) -> bool:
+    """True when the path is one of our downloaded copies, but not the copy of the currently uploaded file."""
+    if not pkl_file_id:
+        return False
+    model_uuid = str(UUID(str(model_id)))
+    file_name = os.path.basename(path)
+    # Copies are named "<model id>_<file code>.pkl" now and "<name>_<model id>.pkl" by older releases
+    is_download_copy = file_name.startswith(f"{model_uuid}_") or file_name.endswith(f"_{model_uuid}.pkl")
+    if not is_download_copy:
+        return False
+    return os.path.realpath(path) != os.path.realpath(_downloaded_model_path(model_id, pkl_file_id))
+
+
+async def local_model_file(ml_model: Any, ml_service: Any) -> Optional[str]:
+    """Return the model file inside the ML models folder, downloading the uploaded file first when needed."""
+    local_path = resolve_model_path(ml_model.pkl_file)
+    has_current_copy = (
+        local_path is not None
+        and os.path.isfile(local_path)
+        and not is_outdated_download(ml_model.id, ml_model.pkl_file_id, local_path)
+    )
+    if has_current_copy:
+        return local_path
+    if not ml_model.pkl_file_id:
+        return None
+
+    pkl_file_path = await download_model_file(ml_model.id, ml_model.pkl_file_id)
+    # Save the new path so the next load finds the file without a download
+    if ml_model.pkl_file != pkl_file_path:
+        from app.schemas.ml_model import MLModelBase
+
+        await ml_service.update(ml_model.id, MLModelBase(pkl_file=str(pkl_file_path)))
+    ml_model.pkl_file = str(pkl_file_path)
+    return pkl_file_path

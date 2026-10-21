@@ -250,3 +250,50 @@ async def test_download_rejects_a_model_id_that_is_not_a_uuid(folders, downloads
         await download_model_file("../../escape", "file-1")
 
     assert downloads == []
+
+
+@pytest.mark.asyncio
+async def test_node_downloads_again_when_the_receipt_changed_but_an_old_copy_is_in_the_folder(folders, downloads):
+    ml_model = _model(pkl_file_id="file-2")
+    old_copy = _write_pickle(Path(ml_model_manager._downloaded_model_path(ml_model.id, "file-1")))
+    ml_model.pkl_file = old_copy
+    ml_service = AsyncMock()
+
+    await _node()._ensure_pkl_file(ml_model, ml_service)
+
+    assert ml_model.pkl_file == ml_model_manager._downloaded_model_path(ml_model.id, "file-2")
+    assert len(downloads) == 1
+    ml_service.update.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_node_keeps_a_direct_upload_even_when_a_receipt_is_present(folders, downloads):
+    inside_file = _write_pickle(folders.models / f"{uuid.uuid4()}.pkl")
+    ml_model = _model(pkl_file=inside_file, pkl_file_id="file-9")
+
+    await _node()._ensure_pkl_file(ml_model, AsyncMock())
+
+    assert ml_model.pkl_file == inside_file
+    assert downloads == []
+
+
+@pytest.mark.asyncio
+async def test_a_model_stored_outside_validates_after_fetching_it_by_receipt(folders, downloads):
+    ml_model = _model(pkl_file="my-bucket/ml_models/remote.pkl", pkl_file_id="file-1")
+
+    local_path = await ml_model_manager.local_model_file(ml_model, AsyncMock())
+
+    assert local_path is not None
+    assert validate_pickle_file_safe(ml_model.pkl_file) == (True, None)
+    assert get_model_info(ml_model.pkl_file)["is_valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_node_replaces_a_copy_downloaded_by_an_older_release_when_the_receipt_changed(folders, downloads):
+    ml_model = _model(pkl_file_id="file-2")
+    ml_model.pkl_file = _write_pickle(folders.models / f"{ml_model.name}_{ml_model.id}.pkl")
+
+    await _node()._ensure_pkl_file(ml_model, AsyncMock())
+
+    assert ml_model.pkl_file == ml_model_manager._downloaded_model_path(ml_model.id, "file-2")
+    assert len(downloads) == 1

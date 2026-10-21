@@ -4,7 +4,6 @@ ML Model Inference node implementation using the BaseNode class.
 
 import json
 import logging
-import os
 from typing import Any, Dict, List, Optional, Sequence
 from uuid import UUID
 
@@ -12,11 +11,9 @@ import numpy as np
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.model_validator import resolve_model_path
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
-from app.schemas.ml_model import MLModelBase
-from app.services.ml_model_manager import download_model_file, get_ml_model_manager
+from app.services.ml_model_manager import get_ml_model_manager, local_model_file
 from app.services.ml_models import MLModelsService
 
 logger = logging.getLogger(__name__)
@@ -384,18 +381,8 @@ class MLModelInferenceNode(BaseNode):
         Raises:
             AppException: If the PKL file is not found and cannot be downloaded
         """
-        local_path = resolve_model_path(ml_model.pkl_file)
-        has_local_copy = local_path is not None and os.path.isfile(local_path)
-        if has_local_copy:
-            return
-
-        # If pkl file id is provided, download the pkl file into the ML models folder
-        if ml_model.pkl_file_id:
-            pkl_file_path = await download_model_file(ml_model.id, ml_model.pkl_file_id)
-            # Update the ml_model with the new pkl file path
-            if ml_model.pkl_file != pkl_file_path:
-                await ml_service.update(ml_model.id, MLModelBase(pkl_file=str(pkl_file_path)))
-            ml_model.pkl_file = str(pkl_file_path)
+        # Use the copy in the ML models folder, downloading the uploaded file first when needed
+        if await local_model_file(ml_model, ml_service) is not None:
             return
 
         error_msg = f"PKL file not found for model {ml_model.name}"
