@@ -2,12 +2,14 @@ from typing import Dict, List, Any, Tuple, Optional
 import logging
 import yaml
 import os
+from urllib.parse import unquote_plus
 from sshtunnel import SSHTunnelForwarder
 from app.core.utils.encryption_utils import decrypt_key
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import column as sql_column
 from sqlalchemy import func, literal_column, quoted_name, select, text
 from sqlalchemy import table as sql_table
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.pool import NullPool
 import asyncio
 from app.modules.integration.snowflake import SnowflakeManager
@@ -17,6 +19,31 @@ logger = logging.getLogger(__name__)
 
 
 POSTGRES_SCHEMA = "public"
+INVALID_CONNECTION_STRING = "Invalid database connection string"
+
+
+def _database_url(drivername: str, config: Dict[str, Any], host: str, port, query: Optional[Dict[str, str]] = None):
+    return URL.create(
+        drivername,
+        username=config.get("database_user"),
+        password=decrypt_key(config.get("database_password")),
+        host=host,
+        port=port,
+        database=config.get("database_name"),
+        query=query or {},
+    )
+
+
+def _parse_connection_string(connection_string: str):
+    # Parse errors can repeat the password, so they are replaced outside the except block
+    parsed_url = None
+    try:
+        parsed_url = make_url(connection_string)
+    except Exception:
+        pass
+    if parsed_url is None:
+        raise ValueError(INVALID_CONNECTION_STRING)
+    return parsed_url
 
 
 # Schema query builders; SQLAlchemy quotes and escapes the table and column names.
@@ -179,18 +206,15 @@ class DatabaseManager:
                         if (hasattr(self, "tunnel") and self.tunnel)
                         else self.config.get("database_host", "localhost")
                     )
-                    connection_string = (
-                        f"postgresql+asyncpg://{self.config.get('database_user')}:"
-                        f"{decrypt_key(self.config.get('database_password'))}@{host}:"
-                        f"{port}/{self.config.get('database_name')}"
+                    connection_url = _database_url("postgresql+asyncpg", self.config, host, port)
+                    logger.info(
+                        f"Connecting to PostgreSQL at {host}:{port}/{self.config.get('database_name')}"
                     )
                 else:
-                    connection_string = self.connection_string
-                logger.info(
-                    f"Connecting to PostgreSQL with connection string: {connection_string}"
-                )
+                    connection_url = _parse_connection_string(self.connection_string)
+                    logger.info("Connecting to PostgreSQL with the configured connection string")
                 self.engine = create_async_engine(
-                    connection_string,
+                    connection_url,
                     echo=False,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
@@ -208,16 +232,12 @@ class DatabaseManager:
                     if (hasattr(self, "tunnel") and self.tunnel)
                     else self.config.get("database_host", "localhost")
                 )
-                connection_string = (
-                    f"mysql+aiomysql://{self.config.get('database_user')}:"
-                    f"{decrypt_key(self.config.get('database_password'))}@{host}:"
-                    f"{port}/{self.config.get('database_name')}"
-                )
+                connection_url = _database_url("mysql+aiomysql", self.config, host, port)
                 logger.info(
-                    f"Connecting to MySQL with connection string: {connection_string}"
+                    f"Connecting to MySQL at {host}:{port}/{self.config.get('database_name')}"
                 )
                 self.engine = create_async_engine(
-                    connection_string,
+                    connection_url,
                     echo=False,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
@@ -239,19 +259,21 @@ class DatabaseManager:
 
                 # MSSQL connection string with ODBC driver
                 # ODBC Driver 18 requires explicit SSL settings
-                driver = settings.MSSQL_DRIVER
+                # The setting is URL-encoded (spaces as "+"), so decode it for the URL object
+                driver = unquote_plus(settings.MSSQL_DRIVER)
 
-                connection_string = (
-                    f"mssql+aioodbc://{self.config.get('database_user')}:"
-                    f"{decrypt_key(self.config.get('database_password'))}@{host}:{port}/"
-                    f"{self.config.get('database_name')}?"
-                    f"driver={driver}&Encrypt=yes&TrustServerCertificate=yes"
+                connection_url = _database_url(
+                    "mssql+aioodbc",
+                    self.config,
+                    host,
+                    port,
+                    query={"driver": driver, "Encrypt": "yes", "TrustServerCertificate": "yes"},
                 )
 
                 logger.info("Connecting to MSSQL...")
 
                 self.engine = create_async_engine(
-                    connection_string,
+                    connection_url,
                     echo=False,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
