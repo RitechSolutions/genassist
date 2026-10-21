@@ -1,10 +1,10 @@
 import json
 from datetime import date, datetime
-from typing import Optional
+from typing import Annotated, Optional
 from uuid import UUID
 
 from fastapi import Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.sentiment_enum import Sentiment
@@ -103,13 +103,18 @@ class ConversationFilter(BaseFilterModel):
 class MessageIssueSummaryFilter(BaseModel):
     from_date: Optional[date] = Field(None, description="Start date (YYYY-MM-DD)")
     to_date: Optional[datetime] = Field(None, description="End datetime (YYYY-MM-DD 23:59)")
-    workflow_id: Optional[UUID] = Field(None, description="Filter by the workflow used by the agent")
+    agent_id: Optional[UUID] = Field(None, description="Filter by agent ID")
     topic: Optional[str] = Field(None, description="Conversation topic, as shown in the list")
     subtopic: Optional[str] = Field(None, description="Conversation sub-topic, as shown in the list")
+    search: Optional[Annotated[str, StringConstraints(strip_whitespace=True)]] = Field(
+        None,
+        description="Case-insensitive match on the comment or any of its notes",
+    )
 
 
 class MessageIssueFilter(BaseFilterModel, MessageIssueSummaryFilter):
     status: Optional[str] = Field(None, max_length=50, description="Filter by tracked resolution status")
+    feedback_id: Optional[UUID] = Field(None, description="Only this comment, for a shared link")
 
 
 class ApiKeysFilter(BaseFilterModel):

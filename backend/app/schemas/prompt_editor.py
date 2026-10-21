@@ -94,6 +94,7 @@ class PromptHistoryRead(BaseModel):
 # Plain strings to avoid importing the engine.
 PromptCaseStatus = Literal["scored", "execution_failed", "scoring_failed", "skipped"]
 PromptCaseVerdict = Literal["passed", "failed", "inconclusive"]
+SuggestionOutcome = Literal["changed", "whitespace_only", "unchanged"]
 
 MAX_PROMPT_CONTENT = 200_000  # same bound as PromptVersionCreate.content
 MAX_CHECK_CASES = 25  # ceiling for max_cases, case_ids and the hold-out list
@@ -313,6 +314,12 @@ class FailedCaseRef(BaseModel):
     feedback: Optional[
         Annotated[str, StringConstraints(strip_whitespace=True, max_length=MAX_FAILURE_FEEDBACK_CHARS)]
     ] = Field(default=None, description="What the graders said about this reply.")
+    judge_score: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=1,
+        description="The judge's score for this reply, so the rewrite can tell a near miss from a miss.",
+    )
 
     @field_validator("failed_metrics")
     @classmethod
@@ -380,6 +387,11 @@ class PromptOptimizeRequest(BaseModel):
         max_length=MAX_PREVIOUS_ATTEMPTS,
         description="Earlier rewrites of this prompt and how they scored, so the model can build on them.",
     )
+    passing_case_ids: Optional[List[UUID]] = Field(
+        default=None,
+        max_length=MAX_CHECK_CASES,
+        description="Cases that pass the last check with the current prompt, so the rewrite knows what already works.",
+    )
 
     @field_validator("techniques")
     @classmethod
@@ -393,10 +405,23 @@ class PromptOptimizeRequest(BaseModel):
             _reject_duplicates([entry.case_id for entry in value])
         return value
 
+    @field_validator("passing_case_ids")
+    @classmethod
+    def _unique_passing(cls, value: Optional[List[UUID]]) -> Optional[List[UUID]]:
+        return _reject_duplicates(value)
+
+    @model_validator(mode="after")
+    def _a_case_passes_or_fails(self) -> Self:
+        failed = {entry.case_id for entry in self.failed_cases or []}
+        if failed.intersection(self.passing_case_ids or []):
+            raise ValueError("a case cannot be both passing and failed")
+        return self
+
 
 class PromptOptimizeResponse(BaseModel):
     suggested_prompt: str
     explanation: str
+    outcome: SuggestionOutcome
     exposure: Dict[str, List[UUID]]
     examples_truncated: bool = False
     holdout_case_ids: List[UUID]

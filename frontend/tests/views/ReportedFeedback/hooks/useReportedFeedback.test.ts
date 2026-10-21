@@ -10,7 +10,11 @@ import type {
   ReportedFeedbackItem,
   ReportedFeedbackResult,
 } from "@/services/reportedFeedback";
-import { issuePatchMutation } from "@/views/ReportedFeedback/hooks/useReportedFeedback";
+import {
+  cacheIssue,
+  issuePatchMutation,
+  issueQuery,
+} from "@/views/ReportedFeedback/hooks/useReportedFeedback";
 
 const mockApiRequest = vi.mocked(apiRequest);
 beforeEach(() => vi.clearAllMocks());
@@ -23,6 +27,7 @@ const item = (over: Partial<ReportedFeedbackItem> = {}): ReportedFeedbackItem =>
   message_id: "m1",
   conversation_id: "c1",
   agent_id: null,
+  agent_name: null,
   workflow_name: null,
   text: "Hello",
   speaker: "agent",
@@ -36,6 +41,7 @@ const item = (over: Partial<ReportedFeedbackItem> = {}): ReportedFeedbackItem =>
   conversation_date: null,
   fix_version: null,
   target_rollout_date: null,
+  matched_note: null,
   ...over,
 });
 
@@ -93,6 +99,29 @@ describe("issuePatchMutation", () => {
     expect(countsStale()).toBe(false);
   });
 
+  it("refreshes the report's history after a save", async () => {
+    const { client, save } = setup();
+    const historyKey = (feedbackId: string) => ["reported-feedback", "history", feedbackId];
+    client.setQueryData(historyKey("f1"), []);
+    client.setQueryData(historyKey("f2"), []);
+    mockApiRequest.mockResolvedValue(saved({ fix_version: "2.4.1" }) as never);
+
+    await save({ fix_version: "2.4.1" });
+
+    expect(client.getQueryState(historyKey("f1"))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(historyKey("f2"))?.isInvalidated).toBe(false);
+  });
+
+  it("shows a save in the open report", async () => {
+    const { client, save } = setup();
+    cacheIssue(client, item());
+    mockApiRequest.mockResolvedValue(saved({ status: "resolved" }) as never);
+
+    await save({ status: "resolved" });
+
+    expect(client.getQueryData(issueQuery("f1").queryKey)?.items[0].status).toBe("resolved");
+  });
+
   it("puts the patched status back when the save fails", async () => {
     const { save, listed } = setup();
     mockApiRequest.mockRejectedValue(new Error("Network down"));
@@ -120,6 +149,22 @@ describe("issuePatchMutation", () => {
 
     await vi.waitFor(() => expect(observer.getCurrentResult().data).toEqual(loaded));
     expect(queryFn).toHaveBeenCalledTimes(2);
+    unsubscribe();
+  });
+});
+
+describe("issueQuery", () => {
+  it("shows the cached row at once and then the server's copy", async () => {
+    const client = new QueryClient();
+    cacheIssue(client, item({ status: "open" }));
+    mockApiRequest.mockResolvedValue(page([item({ status: "resolved" })]) as never);
+
+    const observer = new QueryObserver(client, issueQuery("f1"));
+    const unsubscribe = observer.subscribe(() => {});
+
+    expect(observer.getCurrentResult().data?.status).toBe("open");
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "conversations/issues?limit=1&feedback_id=f1");
+    await vi.waitFor(() => expect(observer.getCurrentResult().data?.status).toBe("resolved"));
     unsubscribe();
   });
 });

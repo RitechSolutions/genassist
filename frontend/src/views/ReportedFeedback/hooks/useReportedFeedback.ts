@@ -2,6 +2,7 @@ import {
   keepPreviousData,
   mutationOptions,
   QueryClient,
+  queryOptions,
   useMutation,
   useQuery,
   useQueryClient,
@@ -11,6 +12,7 @@ import {
   addIssueNote,
   EMPTY_SUMMARY,
   FeedbackFilters,
+  fetchIssueHistory,
   fetchIssueNotes,
   fetchReportedFeedback,
   fetchReportedFeedbackSummary,
@@ -32,6 +34,8 @@ const LIST_QUERY_KEY = ["reported-feedback", "list"] as const;
 const SUMMARY_QUERY_KEY = ["reported-feedback", "summary"] as const;
 const notesQueryKey = (feedbackId: string) =>
   ["reported-feedback", "notes", feedbackId] as const;
+const historyQueryKey = (feedbackId: string) =>
+  ["reported-feedback", "history", feedbackId] as const;
 
 export const useReportedFeedback = (params: FetchReportedFeedbackParams) =>
   useQuery({
@@ -44,6 +48,37 @@ export const useReportedFeedback = (params: FetchReportedFeedbackParams) =>
     refetchOnReconnect: false,
   });
 
+// Under the list key so the patch mutation's optimistic update, rollback and refetch cover it too
+export const issueQuery = (feedbackId: string | null) =>
+  queryOptions({
+    queryKey: [...LIST_QUERY_KEY, { feedback_id: feedbackId, limit: 1 }] as const,
+    queryFn: () =>
+      fetchReportedFeedback({ feedback_id: feedbackId ?? undefined, limit: 1 }),
+    enabled: Boolean(feedbackId),
+    select: (result) => result.items[0] ?? null,
+    // A malformed id is a 422, which the default policy retries twice before the failure toast
+    retry: false,
+    // Refetched only when seeded from a row (cacheIssue); a link's copy is fetched once, then patched on save
+    staleTime: Infinity,
+  });
+
+/** The open report, whatever the page's filters */
+export const useIssue = (feedbackId: string | null) =>
+  useQuery(issueQuery(feedbackId));
+
+/** Shows a listed row in the dialog at once, then refetches it so the dialog is current */
+export const cacheIssue = (queryClient: QueryClient, issue: ReportedFeedbackItem) => {
+  const { queryKey } = issueQuery(issue.feedback_id);
+  queryClient.setQueryData(queryKey, {
+    items: [issue],
+    total: 1,
+    page: 1,
+    page_size: 1,
+    total_pages: 1,
+  });
+  void queryClient.invalidateQueries({ queryKey, exact: true, refetchType: "none" });
+};
+
 /** Total and per-category counts under the given filters */
 export const useFeedbackSummary = (filters: FeedbackFilters) => {
   const statuses = useIssueStatuses();
@@ -55,6 +90,7 @@ export const useFeedbackSummary = (filters: FeedbackFilters) => {
   const data = summary.data ?? EMPTY_SUMMARY;
   return {
     total: data.total,
+    byStatus: data.by_status,
     totals: categoryTotals(data, statuses.data ?? []),
     isLoading: statuses.isLoading || summary.isLoading,
     isError: statuses.isError || summary.isError,
@@ -90,6 +126,9 @@ export const issuePatchMutation = (queryClient: QueryClient) => {
     },
     onSuccess: (saved, { issue, patch }) => {
       patchRows(issue.feedback_id, pickPatchedFields(saved, patch));
+      void queryClient.invalidateQueries({
+        queryKey: historyQueryKey(issue.feedback_id),
+      });
       if ("status" in patch) {
         void queryClient.invalidateQueries({ queryKey: SUMMARY_QUERY_KEY });
       }
@@ -115,6 +154,14 @@ export const useIssueNotes = (feedbackId: string) =>
     queryFn: () => fetchIssueNotes(feedbackId),
   });
 
+export const useIssueHistory = (feedbackId: string) =>
+  useQuery({
+    queryKey: historyQueryKey(feedbackId),
+    queryFn: () => fetchIssueHistory(feedbackId),
+    // Refetch on every open, so History shows changes other users made since the last view
+    staleTime: 0,
+  });
+
 export const useAddIssueNote = (feedbackId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -122,6 +169,11 @@ export const useAddIssueNote = (feedbackId: string) => {
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: notesQueryKey(feedbackId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: LIST_QUERY_KEY,
+        predicate: (query) =>
+          Boolean((query.queryKey[2] as FetchReportedFeedbackParams).search),
       });
     },
   });

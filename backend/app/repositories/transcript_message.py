@@ -1,11 +1,10 @@
-from datetime import date, datetime
 from typing import Iterable, List, Optional
 from uuid import UUID
 from injector import inject
-from sqlalchemy import case, func
+from sqlalchemy import and_, case, func, null, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import defer, load_only, selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
@@ -14,6 +13,7 @@ from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.issue_status_enum import DEFAULT_ISSUE_STATUS_KEY
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models.agent import AgentModel
+from app.db.models.audit_log import AuditLogModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
 from app.db.models.message_issue import MessageIssueModel, MessageIssueNoteModel
 from app.db.models.message_model import MessageFeedbackModel, TranscriptMessageModel
@@ -22,6 +22,7 @@ from app.db.models.user import UserModel
 from app.db.models.workflow import WorkflowModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.conversation_transcript import TranscriptSegmentFeedback
+from app.schemas.filter import MessageIssueFilter, MessageIssueSummaryFilter
 
 
 @inject
@@ -199,49 +200,48 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         return result.scalar_one()
 
 
-    async def get_message_issues(
-            self,
-            skip: int = 0,
-            limit: int = 20,
-            status: Optional[str] = None,
-            from_date: Optional[date] = None,
-            to_date: Optional[datetime] = None,
-            workflow_id: Optional[UUID] = None,
-            topic: Optional[str] = None,
-            subtopic: Optional[str] = None,
-            ) -> tuple[list, int]:
+    async def get_message_issues(self, filter_obj: MessageIssueFilter) -> tuple[list, int]:
         """List messages that carry an admin/supervisor comment (a reported
         "issue"), newest first, with the context needed to act on them.
 
-        Returns ``(rows, total)`` where each row is the tuple
-        ``(MessageFeedbackModel, TranscriptMessageModel, ConversationModel,
-        reported_by_username, workflow_name, agent_id, status, issue, topic,
-        subtopic)``. ``status`` defaults to 'open' for comments that have no
-        tracked issue row yet, in which case ``issue`` is None. The agent id /
-        workflow name are resolved through the conversation's operator -> agent
-        -> workflow chain (left-joined). ``topic``/``subtopic`` follow the
-        Conversations page: the final analysis once finalized, the live topic
-        before. All filters (``status``, ``from_date``/``to_date`` on when the
-        comment was added, ``workflow_id``, ``topic`` and ``subtopic``) are
-        applied server-side. The query is group-scoped to the requesting user
-        via the conversation.
+        Returns ``(rows, total)``; each row is labelled with the fields of
+        ``ReportedIssueRead``. ``status`` defaults to 'open' for comments that
+        have no tracked issue row yet.
+        ``matched_note`` is the newest note matching ``search``, else None.
+        The agent id and name / workflow name are resolved through the conversation's
+        operator -> agent -> workflow chain (left-joined). ``topic``/``subtopic``
+        follow the Conversations page: the final analysis once finalized, the
+        live topic before. The query is group-scoped to the requesting user via
+        the conversation.
         """
-        status_col = _issue_status_col()
-        base_filters = _issue_filters(status, from_date, to_date, workflow_id, topic, subtopic)
+        base_filters = _issue_filters(filter_obj)
+        if filter_obj.status:
+            base_filters.append(_issue_status_col() == filter_obj.status)
+        if filter_obj.feedback_id:
+            base_filters.append(MessageFeedbackModel.id == filter_obj.feedback_id)
 
         rows_query = (
                 _issue_joins(
                         select(
-                                MessageFeedbackModel,
-                                TranscriptMessageModel,
-                                ConversationModel,
-                                UserModel.username,
-                                WorkflowModel.name,
-                                AgentModel.id,
-                                status_col,
-                                MessageIssueModel,
-                                _issue_topic_col(),
-                                _issue_subtopic_col(),
+                                MessageFeedbackModel.id.label("feedback_id"),
+                                TranscriptMessageModel.id.label("message_id"),
+                                ConversationModel.id.label("conversation_id"),
+                                AgentModel.id.label("agent_id"),
+                                AgentModel.name.label("agent_name"),
+                                WorkflowModel.name.label("workflow_name"),
+                                TranscriptMessageModel.text,
+                                TranscriptMessageModel.speaker,
+                                MessageFeedbackModel.feedback_message.label("comment"),
+                                MessageFeedbackModel.feedback.label("rating"),
+                                _issue_status_col().label("status"),
+                                UserModel.username.label("reported_by"),
+                                MessageFeedbackModel.feedback_timestamp.label("reported_at"),
+                                _issue_topic_col().label("conversation_topic"),
+                                _issue_subtopic_col().label("conversation_subtopic"),
+                                ConversationModel.conversation_date,
+                                MessageIssueModel.fix_version,
+                                MessageIssueModel.target_rollout_date,
+                                _matched_note_col(filter_obj.search),
                                 )
                         )
                 .outerjoin(
@@ -251,13 +251,9 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                         WorkflowModel, WorkflowModel.id == AgentModel.workflow_id
                         )
                 .where(*base_filters)
-                .options(
-                        load_only(TranscriptMessageModel.text, TranscriptMessageModel.speaker),
-                        load_only(ConversationModel.conversation_date),
-                        )
                 .order_by(MessageFeedbackModel.feedback_timestamp.desc())
-                .offset(skip)
-                .limit(limit)
+                .offset(filter_obj.skip)
+                .limit(filter_obj.limit)
                 .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
                 )
         rows = (await self.db.execute(rows_query)).all()
@@ -273,19 +269,14 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
 
 
     async def count_message_issues_by_status(
-            self,
-            from_date: Optional[date] = None,
-            to_date: Optional[datetime] = None,
-            workflow_id: Optional[UUID] = None,
-            topic: Optional[str] = None,
-            subtopic: Optional[str] = None,
+            self, filter_obj: MessageIssueSummaryFilter
             ) -> list[tuple[str, int]]:
         """``(status, count)`` pairs over the same rows, filters and group scope
         as ``get_message_issues``."""
         status_col = _issue_status_col()
         query = (
                 _issue_joins(select(status_col, func.count()).select_from(MessageFeedbackModel))
-                .where(*_issue_filters(None, from_date, to_date, workflow_id, topic, subtopic))
+                .where(*_issue_filters(filter_obj))
                 .group_by(status_col)
                 .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
                 )
@@ -328,6 +319,33 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         return [(note, username) for note, username in (await self.db.execute(query)).all()]
 
 
+    async def list_issue_history(
+            self, message_feedback_id: UUID
+            ) -> list[tuple[AuditLogModel, Optional[str]]]:
+        await self._require_feedback(message_feedback_id)
+        issue_id = (
+                select(MessageIssueModel.id)
+                .where(MessageIssueModel.message_feedback_id == message_feedback_id)
+                .scalar_subquery()
+                )
+        query = (
+                select(AuditLogModel, UserModel.username)
+                .outerjoin(UserModel, UserModel.id == AuditLogModel.modified_by)
+                .where(or_(
+                        and_(
+                                AuditLogModel.table_name == MessageIssueModel.__tablename__,
+                                AuditLogModel.record_id == issue_id,
+                                ),
+                        and_(
+                                AuditLogModel.table_name == MessageFeedbackModel.__tablename__,
+                                AuditLogModel.record_id == message_feedback_id,
+                                ),
+                        ))
+                .order_by(AuditLogModel.modified_at.asc(), AuditLogModel.id.asc())
+                )
+        return [(log, username) for log, username in (await self.db.execute(query)).all()]
+
+
     async def get_issue_notes_by_conversation_id(self, conversation_id: UUID) -> list[MessageIssueNoteModel]:
         query = (
                 select(MessageIssueNoteModel)
@@ -366,7 +384,10 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                                 ConversationModel,
                                 ConversationModel.id == TranscriptMessageModel.conversation_id,
                                 )
-                        .where(MessageFeedbackModel.id == message_feedback_id, *_issue_filters())
+                        .where(
+                                MessageFeedbackModel.id == message_feedback_id,
+                                *_visible_issue_filters(),
+                                )
                         .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
                         )
                 ).scalars().first()
@@ -391,35 +412,54 @@ def _issue_subtopic_col():
             )
 
 
-def _issue_filters(
-        status: Optional[str] = None,
-        from_date: Optional[date] = None,
-        to_date: Optional[datetime] = None,
-        workflow_id: Optional[UUID] = None,
-        topic: Optional[str] = None,
-        subtopic: Optional[str] = None,
-        ) -> list:
+def _matching_notes(search: str):
+    return select(MessageIssueNoteModel.body).where(
+            MessageIssueNoteModel.message_feedback_id == MessageFeedbackModel.id,
+            MessageIssueNoteModel.body.icontains(search, autoescape=True),
+            )
+
+
+def _matched_note_col(search: Optional[str]):
+    if not search:
+        return null().label("matched_note")
+    return (
+            _matching_notes(search)
+            .order_by(MessageIssueNoteModel.created_at.desc(), MessageIssueNoteModel.id.desc())
+            .limit(1)
+            .scalar_subquery()
+            .label("matched_note")
+            )
+
+
+def _visible_issue_filters() -> list:
     filters = [
             MessageFeedbackModel.feedback_message.isnot(None),
             func.trim(MessageFeedbackModel.feedback_message) != "",
             ConversationModel.is_deleted == 0,
             ]
-    if status:
-        filters.append(_issue_status_col() == status)
-    if from_date:
-        filters.append(MessageFeedbackModel.feedback_timestamp >= from_date)
-    if to_date:
-        filters.append(MessageFeedbackModel.feedback_timestamp <= to_date)
-    if workflow_id:
-        filters.append(AgentModel.workflow_id == workflow_id)
-    if topic:
-        filters.append(func.lower(func.trim(_issue_topic_col())) == topic.strip().lower())
-    if subtopic:
-        filters.append(func.lower(func.trim(_issue_subtopic_col())) == subtopic.strip().lower())
-
     group_clause = get_group_scope_clause(ConversationModel)
     if group_clause is not None:
         filters.append(group_clause)
+    return filters
+
+
+def _issue_filters(filter_obj: MessageIssueSummaryFilter) -> list:
+    filters = _visible_issue_filters()
+    if filter_obj.from_date:
+        filters.append(MessageFeedbackModel.feedback_timestamp >= filter_obj.from_date)
+    if filter_obj.to_date:
+        filters.append(MessageFeedbackModel.feedback_timestamp <= filter_obj.to_date)
+    if filter_obj.agent_id:
+        filters.append(AgentModel.id == filter_obj.agent_id)
+    if filter_obj.topic:
+        filters.append(func.lower(func.trim(_issue_topic_col())) == filter_obj.topic.strip().lower())
+    if filter_obj.subtopic:
+        filters.append(func.lower(func.trim(_issue_subtopic_col())) == filter_obj.subtopic.strip().lower())
+    if filter_obj.search:
+        filters.append(or_(
+                MessageFeedbackModel.feedback_message.icontains(filter_obj.search, autoescape=True),
+                _matching_notes(filter_obj.search).exists(),
+                ))
     return filters
 
 

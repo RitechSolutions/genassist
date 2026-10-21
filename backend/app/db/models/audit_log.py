@@ -1,7 +1,7 @@
 import json
 import uuid
 
-from sqlalchemy import UUID, Column, DateTime, Integer, String, Text, event
+from sqlalchemy import UUID, Column, DateTime, Index, Integer, String, Text, event
 from sqlalchemy.ext.declarative import DeclarativeMeta
 from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Session, attributes
@@ -15,6 +15,7 @@ from app.db.base import Base
 # Define the AuditLog model
 class AuditLogModel(Base):
     __tablename__ = "audit_log"
+    __table_args__ = (Index("ix_audit_log_record_id_table_name", "record_id", "table_name"),)
     id = Column(Integer, primary_key=True)  # Autoincrementing integer ID
     table_name = Column(String(255), nullable=False)
     record_id = Column(UUID(as_uuid=True), nullable=False)
@@ -56,7 +57,7 @@ class AlchemyEncoder(json.JSONEncoder):
 
 
 def _redact_if_sensitive(field_name: str, value):
-    looking_fields = ["text", "message", "text_search"]
+    looking_fields = ["text", "message", "text_search", "body"]
 
     if field_name not in looking_fields:
         return value
@@ -121,6 +122,25 @@ def model_to_dict(obj) -> dict:
         c.key: stringify_value(getattr(obj, c.key))
         for c in inspect(obj).mapper.column_attrs
     }
+
+
+def field_changes(log: AuditLogModel) -> dict[str, tuple]:
+    try:
+        payload = json.loads(log.json_changes or "{}")
+    except ValueError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    if log.action_name == "Insert":
+        values = payload.get("values")
+        return {field: (None, value) for field, value in values.items()} if isinstance(values, dict) else {}
+    if log.action_name == "Update":
+        return {
+            field: (change.get("old"), change.get("new"))
+            for field, change in payload.items()
+            if isinstance(change, dict)
+        }
+    return {}
 
 
 # Event listener for logging changes

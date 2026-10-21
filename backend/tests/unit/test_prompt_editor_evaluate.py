@@ -9,10 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 from langchain_core.messages import AIMessage
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils import background_tasks
 from app.schemas.prompt_editor import MAX_ACTUAL_CHARS, PromptCallUsage, PromptEvalRequest
 from app.services.llm_usage_recorder import _resolve_cost
 from app.services.prompt_editor import (
@@ -27,6 +29,17 @@ FIELD = "systemPrompt"
 SUITE_ID = uuid4()
 AGENT_NODE = {"id": NODE_ID, "type": "agentNode", "data": {"name": "A"}}
 PROVIDER = SimpleNamespace(id=uuid4(), llm_model_provider="openai", llm_model="gpt-4o")
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _no_stray_repairs():
+    background_tasks._TASKS.clear()
+    yield
+    tasks = list(background_tasks._TASKS)
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    background_tasks._TASKS.clear()
 
 
 def _access_row(nodes=None):
@@ -270,7 +283,7 @@ class TestProviderFailures:
         result = await _run(service, injector)
 
         llm_provider = injector.get.side_effect(SimpleNamespace(__name__="LLMProvider"))
-        llm_provider.get_model_from_provider.assert_awaited_once_with(PROVIDER)
+        llm_provider.get_model_from_provider.assert_awaited_once_with(PROVIDER, call_timeout_seconds=120)
         assert result.provenance.provider_key == "openai"
         assert result.provenance.model == "gpt-4o"
 
@@ -491,6 +504,7 @@ class TestBudget:
             return AIMessage(content="m0")
 
         llm.ainvoke.side_effect = slow_invoke
+        service._persist_usage = AsyncMock(return_value="recorded")
 
         class ShortBudget(module.Budget):
             def __init__(self, _seconds):
@@ -502,6 +516,45 @@ class TestBudget:
         assert llm.ainvoke.call_count == concurrency
         assert result.summary.skipped == 2
         assert result.provenance.deadline_hit is True
+
+    @pytest.mark.asyncio
+    async def test_a_call_cut_by_its_timeout_keeps_its_slot_while_it_runs(self):
+        import app.services.prompt_editor as module
+
+        concurrency = module.PROMPT_CHECK_CONCURRENCY
+        cases = [_case(f"m{index}", {"value": f"m{index}"}) for index in range(concurrency + 2)]
+        service = _service(cases)
+        _persist_spy(service)
+        release = asyncio.Event()
+        in_flight = {"now": 0, "peak": 0}
+        llm = AsyncMock()
+
+        async def stalled_invoke(_messages):
+            in_flight["now"] += 1
+            in_flight["peak"] = max(in_flight["peak"], in_flight["now"])
+            try:
+                await release.wait()
+                return AIMessage(content="m0")
+            finally:
+                in_flight["now"] -= 1
+
+        llm.ainvoke.side_effect = stalled_invoke
+
+        class ShortBudget(module.Budget):
+            def __init__(self, _seconds):
+                super().__init__(0.5)
+
+        with (
+            patch.object(module, "Budget", ShortBudget),
+            patch.object(module, "PROMPT_CHECK_CALL_TIMEOUT_SECONDS", 0.1),
+        ):
+            result = await asyncio.wait_for(_run(service, _injector(llm)), 5)
+        release.set()
+        await asyncio.gather(*background_tasks._TASKS)
+
+        assert in_flight["peak"] == concurrency
+        assert llm.ainvoke.call_count == concurrency
+        assert result.summary.skipped == 2
 
 
     @pytest.mark.asyncio
@@ -516,6 +569,7 @@ class TestBudget:
             return AIMessage(content="a")
 
         llm.ainvoke.side_effect = slow_invoke
+        service._persist_usage = AsyncMock(return_value="recorded")
 
         class ShortBudget(module.Budget):
             def __init__(self, _seconds):
@@ -679,6 +733,42 @@ class TestMetering:
         assert result.provenance.metering_handoff_failed is True
         assert result.results[0].verdict == "passed"
 
+    @pytest.mark.asyncio
+    async def test_a_case_cut_by_the_deadline_is_handed_over_as_tokens_unknown_then_repaired(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+        calls = _persist_spy(service)
+        release = asyncio.Event()
+        llm = AsyncMock()
+
+        async def gated_invoke(_messages):
+            await release.wait()
+            return AIMessage(content="a", usage_metadata=_LATE_USAGE)
+
+        llm.ainvoke.side_effect = gated_invoke
+
+        class ShortBudget(module.Budget):
+            def __init__(self, _seconds):
+                super().__init__(0.05)
+
+        with patch.object(module, "Budget", ShortBudget):
+            result = await _run(service, _injector(llm))
+
+        assert result.results[0].status == "execution_failed"
+        assert result.provenance.unpriced_calls == 1
+        assert calls[0]["entries"] == [
+            {"call_index": 0, "purpose": "prompt_check", "provider_id": str(PROVIDER.id), "usage": None}
+        ]
+
+        release.set()
+        await asyncio.gather(*background_tasks._TASKS)
+
+        assert len(calls) == 2
+        assert calls[1]["replace_usage"] is True
+        assert calls[1]["entries"][0]["call_index"] == 0
+        assert calls[1]["entries"][0]["usage"]["total_tokens"] == 15
+
     def test_a_judge_row_is_renumbered_out_of_the_model_call_band(self):
         import app.services.prompt_editor as module
 
@@ -730,6 +820,20 @@ def _judge_fake(calls, metric=None):
         return metric if metric is not None else _judge_metric()
 
     return _judge
+
+
+_LATE_USAGE = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+
+
+def _persist_spy(service):
+    calls = []
+
+    async def _persist(ref, *, replace_usage=False):
+        calls.append({"entries": list(ref.entries), "replace_usage": replace_usage})
+        return "recorded"
+
+    service._persist_usage = _persist
+    return calls
 
 
 def _judge_request(source_type="none", **overrides):
@@ -795,6 +899,45 @@ class TestJudgeCheck:
         assert row.metrics["llm_judge"]["error"] is True
         assert "judge" in row.metrics["llm_judge"]["comment"]
         assert result.provenance.deadline_hit is True
+
+    @pytest.mark.asyncio
+    async def test_a_judge_cut_by_the_deadline_is_handed_over_under_its_own_index(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+        calls = _persist_spy(service)
+        release = asyncio.Event()
+        llm = AsyncMock()
+
+        async def invoke(messages):
+            if messages == ["grade"]:
+                await release.wait()
+                return AIMessage(content='{"score": 1}', usage_metadata=_LATE_USAGE)
+            return AIMessage(content="a")
+
+        llm.ainvoke.side_effect = invoke
+
+        async def _judge(*, inputs, outputs, reference_outputs, payload, config):
+            await payload["_judge_model"].ainvoke(["grade"])
+            return _judge_metric()
+
+        service.evaluators._evaluators["llm_judge"] = _judge
+
+        with patch.object(module, "Budget", _spent_score_budget(0.01)):
+            result = await _run(service, _injector(llm), _judge_request())
+
+        entries = calls[0]["entries"]
+        assert [(entry["call_index"], entry["purpose"]) for entry in entries] == [
+            (0, "prompt_check"),
+            (1000, "llm_judge"),
+        ]
+        assert entries[1]["usage"] is None
+        assert result.provenance.grader_calls == 1
+        release.set()
+        await asyncio.gather(*background_tasks._TASKS)
+
+        assert [entry["call_index"] for entry in calls[1]["entries"]] == [1000]
+        assert calls[1]["replace_usage"] is True
 
     @pytest.mark.asyncio
     async def test_a_spent_score_budget_never_pays_for_the_judge(self):
@@ -864,7 +1007,7 @@ class TestJudgeCheck:
         service.evaluators._evaluators["llm_judge"] = _judge
         await _run(service, _injector(llm), _judge_request())
 
-        assert seen == [llm, llm]
+        assert [model.llm for model in seen] == [llm, llm]
         assert service.db.rollback.await_count == 1
 
     @pytest.mark.asyncio

@@ -21,7 +21,7 @@ import { Card, CardContent } from "@/components/card";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ExportButton } from "@/components/ui/ExportButton";
 import { formatUsd } from "@/helpers/formatCurrency";
-import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
+import { toExactActivityParams, toUtcBucketDateParams } from "@/helpers/dateRange";
 import { cn } from "@/helpers/utils";
 import { useDismissibleNotice } from "@/hooks/useDismissibleNotice";
 import { COMPARE_DATE_RANGE_STORAGE_KEY, usePersistedDateRange } from "@/hooks/usePersistedDateRange";
@@ -56,6 +56,7 @@ import {
   subRowCountLabel,
   type SourceSubRowParent,
 } from "../helpers/llmUsageSubRows";
+import { pricedCostPerCall } from "../helpers/llmUsageMetrics";
 
 // Provider is covered by the always-on Provider share card, so it stays out of this selector
 const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: string }> = [
@@ -71,8 +72,9 @@ const MIN_UNPRICED_TOKEN_PCT = 0.1;
 const FALLBACK_NOTICE = "llm-fallback-rates";
 const PARTIAL_COST_HELP =
   "Some calls here ran on a model with no configured rate. " +
-  "This figure is the priced subtotal, real spend may be higher. Add the missing rates under " +
-  "LLM Settings › LLM Providers to price them.";
+  "This figure is the priced subtotal, real spend may be higher. Rates added under " +
+  "LLM Settings › LLM Providers apply to new calls only.";
+const LOAD_ERROR = "Failed to load cost data.";
 
 interface LlmUsageKpi {
   label: string;
@@ -148,28 +150,28 @@ function LlmUsagePage() {
   const { groups, showGroupFilter, groupFilter, setGroupFilter, agentFilter, setAgentFilter, agents, filterParams } =
     useAnalyticsFilters();
 
-  const [provider, setProvider] = useState(ALL);
   const [model, setModel] = useState(ALL);
   const [dimension, setDimension] = useState<LlmUsageDimension>("model");
   const [spendMetric, setSpendMetric] = useState<SpendMetric>("cost");
   const [expandedSources, setExpandedSources] = useState<string[]>([]);
 
-  const dateParams = useMemo(() => toExpandedUTCDateRange(dateRange), [dateRange]);
+  const dateParams = useMemo(
+    () => ({ ...toUtcBucketDateParams(dateRange), ...toExactActivityParams(dateRange) }),
+    [dateRange]
+  );
   const queryFilters = useMemo<LlmUsageQueryFilters>(
     () => ({
       ...filterParams,
       ...dateParams,
-      provider: provider !== ALL ? provider : undefined,
       model: model !== ALL ? model : undefined,
     }),
-    [filterParams, dateParams, provider, model]
+    [filterParams, dateParams, model]
   );
   const filterKey = [
-    dateParams.from_date,
-    dateParams.to_date,
+    dateParams.activity_from_datetime,
+    dateParams.activity_to_datetime,
     filterParams.group_id,
     filterParams.agent_id,
-    provider,
     model,
   ];
 
@@ -220,7 +222,11 @@ function LlmUsagePage() {
 
   const hasCompare = Boolean(compareDateRange?.from && compareDateRange?.to);
   const compareParams = useMemo<LlmUsageQueryFilters>(
-    () => ({ ...queryFilters, ...toExpandedUTCDateRange(compareDateRange) }),
+    () => ({
+      ...queryFilters,
+      ...toUtcBucketDateParams(compareDateRange),
+      ...toExactActivityParams(compareDateRange),
+    }),
     [queryFilters, compareDateRange]
   );
 
@@ -228,11 +234,10 @@ function LlmUsagePage() {
     queryKey: [
       "llm-usage",
       "compare",
-      compareParams.from_date,
-      compareParams.to_date,
+      compareParams.activity_from_datetime,
+      compareParams.activity_to_datetime,
       filterParams.group_id,
       filterParams.agent_id,
-      provider,
       model,
     ],
     queryFn: () => fetchLlmUsageSummary(compareParams),
@@ -247,15 +252,15 @@ function LlmUsagePage() {
 
   const overviewLoading = overview.isPending || overview.isPlaceholderData;
   const tableLoading = breakdown.isPending || breakdown.isPlaceholderData;
-  const error = overview.error || breakdown.error ? "Failed to load cost data." : null;
+  const overviewError = overview.error ? LOAD_ERROR : null;
+  const error = overviewError ?? (breakdown.error ? LOAD_ERROR : null);
 
   const options = filterOptions.isPlaceholderData ? undefined : filterOptions.data;
 
   useEffect(() => {
     if (!options) return;
-    if (provider !== ALL && !options.providers.includes(provider)) setProvider(ALL);
     if (model !== ALL && !options.models.includes(model)) setModel(ALL);
-  }, [options, provider, model]);
+  }, [options, model]);
 
   const exportParams = useMemo(() => ({ ...queryFilters, dimension }), [queryFilters, dimension]);
 
@@ -330,9 +335,8 @@ function LlmUsagePage() {
     {
       header: "Avg / Call",
       key: "avg",
-      cell: (i) => (
-        <span className="tabular-nums text-muted-foreground">{formatUsd(i.calls ? i.cost_usd / i.calls : 0)}</span>
-      ),
+      description: "Priced cost divided by priced calls. Unpriced calls are left out.",
+      cell: (i) => <span className="tabular-nums text-muted-foreground">{formatUsd(pricedCostPerCall(i))}</span>,
     },
     {
       header: "Share",
@@ -350,6 +354,7 @@ function LlmUsagePage() {
       value: formatUsd(summary?.total_cost_usd),
       icon: DollarSign,
       sub: `Workflow ${formatUsd(costFor("workflow"), 2)} · Analyst ${formatUsd(costFor("llm_analyst"), 2)}`,
+      description: summary?.cost_is_partial ? PARTIAL_COST_HELP : undefined,
       delta:
         summary && previous ? <KpiDelta delta={pctChange(summary.total_cost_usd, previous.total_cost_usd)} /> : null,
     },
@@ -447,8 +452,8 @@ function LlmUsagePage() {
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>
               <span className="font-semibold">{unpricedTokenPct.toFixed(1)}% of tokens have no configured rate.</span>{" "}
-              Totals below are the priced subtotal, add rates under LLM Settings › LLM Providers to complete cost
-              coverage.
+              Totals below are the priced subtotal. Rates added under LLM Settings › LLM Providers apply to new
+              calls only.
             </span>
             <button
               type="button"
@@ -468,7 +473,7 @@ function LlmUsagePage() {
               <span className="font-semibold text-foreground">
                 {summary.fallback_calls.toLocaleString()} calls used bundled fallback rates.
               </span>{" "}
-              Add matching rates to price them from your own configuration.
+              Add matching rates to price new calls from your own configuration.
             </span>
             <button
               type="button"
@@ -509,11 +514,12 @@ function LlmUsagePage() {
             <LlmUsageTimeseriesChart
               items={timeseries}
               loading={overviewLoading}
+              error={overviewError}
               metric={spendMetric}
               onMetricChange={setSpendMetric}
             />
           </div>
-          <LlmUsageProviderDonut items={providerItems} loading={overviewLoading} />
+          <LlmUsageProviderDonut items={providerItems} loading={overviewLoading} error={overviewError} />
         </div>
 
         <Card className={cn("bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>

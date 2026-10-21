@@ -7,6 +7,7 @@ const item = (feedback_id: string, over: Partial<ReportedFeedbackItem> = {}): Re
   message_id: `m-${feedback_id}`,
   conversation_id: "c1",
   agent_id: null,
+  agent_name: null,
   workflow_name: null,
   text: "Hello",
   speaker: "agent",
@@ -20,6 +21,7 @@ const item = (feedback_id: string, over: Partial<ReportedFeedbackItem> = {}): Re
   conversation_date: null,
   fix_version: null,
   target_rollout_date: null,
+  matched_note: null,
   ...over,
 });
 

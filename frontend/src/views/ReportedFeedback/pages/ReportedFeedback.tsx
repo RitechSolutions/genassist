@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { MessageSquareDot, Settings } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { MessageSquareDot, NotebookPen, Settings } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 
@@ -12,30 +12,38 @@ import { PaginationBar } from "@/components/PaginationBar";
 import { FilterMenu, type FilterMenuGroup } from "@/components/FilterMenu";
 import { TruncatedText } from "@/components/TruncatedText";
 import { DateRangePicker } from "@/components/date-range-picker";
+import { SearchInput } from "@/components/SearchInput";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { useTopicFilter } from "@/hooks/useTopicFilter";
 import { usePermissions } from "@/context/PermissionContext";
-import { getWorkflowsMinimal } from "@/services/workflows";
 import { ISSUE_CATEGORIES } from "@/services/issueStatuses";
 import { extractErrorMessage } from "@/helpers/apiError";
 import { toInclusiveDateParams } from "@/helpers/dateRange";
 
 import { ReportedFeedbackItem } from "@/services/reportedFeedback";
 import { StatsOverviewCard } from "@/views/Analytics/components/StatsOverviewCard";
+import { useAgentsList } from "@/views/Analytics/hooks/useAgentsList";
 import {
+  cacheIssue,
   useFeedbackSummary,
+  useIssue,
   useIssuePatch,
   useReportedFeedback,
 } from "../hooks/useReportedFeedback";
+import { useReportLink } from "../hooks/useReportLink";
 import { useIssueStatuses } from "../hooks/useIssueStatuses";
 import { ReportedFeedbackDialog } from "../components/ReportedFeedbackDialog";
 import { StatusBadge, StatusSelect } from "../components/StatusSelect";
 import { CATEGORY_LABELS } from "../constants";
 import { statusMeta, withCurrentStatus } from "../helpers/issueStatuses";
 import { topicLabel } from "../helpers/triageDraft";
+import { HighlightedExcerpt } from "../components/HighlightedExcerpt";
 import { formatDateTime } from "@/helpers/utils";
 
 const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
+const LAST_OPENED_ROW_ID = "reported-feedback-last-opened";
 
 export default function ReportedFeedback() {
   const permissions = usePermissions();
@@ -45,15 +53,14 @@ export default function ReportedFeedback() {
     permissions.includes("*") || permissions.includes("write:app_settings");
   const [currentPage, setCurrentPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [workflowFilter, setWorkflowFilter] = useState<string>("all");
+  const [agentFilter, setAgentFilter] = useState("all");
   // Shared global range (same component/store as the dashboard).
   const [dateRange, setDateRange] = usePersistedDateRange(undefined);
+  const [searchQuery, setSearchQuery] = useState("");
+  const search = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS).trim();
+  const appliedRange = search ? undefined : dateRange;
 
-  const { data: workflowsData } = useQuery({
-    queryKey: ["workflows-minimal"],
-    queryFn: getWorkflowsMinimal,
-  });
-  const workflows = workflowsData ?? [];
+  const { agents } = useAgentsList();
 
   const { data: statuses = [] } = useIssueStatuses();
   const {
@@ -67,10 +74,11 @@ export default function ReportedFeedback() {
 
   // Server-side time filter on the reported time (when the comment was added).
   const filters = {
-    workflow_id: workflowFilter !== "all" ? workflowFilter : undefined,
-    ...toInclusiveDateParams(dateRange),
+    agent_id: agentFilter !== "all" ? agentFilter : undefined,
+    ...toInclusiveDateParams(appliedRange),
     topic: topicFilter !== "all" ? topicFilter : undefined,
     subtopic: subtopicFilter !== "all" ? subtopicFilter : undefined,
+    search: search || undefined,
   };
 
   const filterKey = JSON.stringify({ status: statusFilter, ...filters });
@@ -82,7 +90,7 @@ export default function ReportedFeedback() {
 
   const {
     data: list,
-    isFetching: loading,
+    isFetching,
     error,
   } = useReportedFeedback({
     skip: (currentPage - 1) * PAGE_SIZE,
@@ -92,6 +100,11 @@ export default function ReportedFeedback() {
   });
   const rows = list?.items ?? [];
   const total = list?.total ?? 0;
+  // A new search term keeps the last rows up while it loads, so typing doesn't flash
+  const [listedSearch, setListedSearch] = useState(search);
+  if (!isFetching && listedSearch !== search) setListedSearch(search);
+  const keepRows = Boolean(search) && search !== listedSearch && rows.length > 0;
+  const loading = isFetching && !keepRows;
 
   const summary = useFeedbackSummary(filters);
   const statusMetrics = [
@@ -102,19 +115,30 @@ export default function ReportedFeedback() {
     })),
   ];
 
-  const [selectedIssue, setSelectedIssue] = useState<ReportedFeedbackItem | null>(
-    null,
-  );
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = useIssue(selectedId);
+  const dialogIssue =
+    selected.data ?? rows.find((row) => row.feedback_id === selectedId) ?? null;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  // Follows the cached row, and keeps the last copy if a range change in another tab drops it
-  const listedIssue = rows.find(
-    (row) => row.feedback_id === selectedIssue?.feedback_id,
-  );
-  if (listedIssue && listedIssue !== selectedIssue) setSelectedIssue(listedIssue);
+  const [lastOpenedId, setLastOpenedId] = useState<string | null>(null);
 
-  const openDialog = (issue: ReportedFeedbackItem) => {
-    setSelectedIssue(issue);
+  const openDialog = (feedbackId: string) => {
+    setSelectedId(feedbackId);
+    setLastOpenedId(feedbackId);
     setIsDialogOpen(true);
+  };
+
+  const openRow = (issue: ReportedFeedbackItem) => {
+    cacheIssue(queryClient, issue);
+    openDialog(issue.feedback_id);
+  };
+
+  const link = useReportLink(openDialog, !isDialogOpen);
+
+  const focusLastOpenedRow = (event: Event) => {
+    event.preventDefault();
+    document.getElementById(LAST_OPENED_ROW_ID)?.focus();
   };
 
   // The dialog embeds the conversation itself; these are the "see everything" escape
@@ -153,9 +177,20 @@ export default function ReportedFeedback() {
       key: "comment",
       headerClassName: "w-[300px]",
       cell: (item) => (
-        <span className="block max-w-[280px] truncate text-sm">
-          {item.comment}
-        </span>
+        <>
+          <span className="block max-w-[280px] truncate text-sm">
+            <HighlightedExcerpt text={item.comment} search={search} />
+          </span>
+          {item.matched_note && (
+            <p className="mt-1 flex max-w-[280px] gap-1.5 text-xs text-muted-foreground">
+              <NotebookPen className="mt-0.5 h-3 w-3 shrink-0" />
+              <span className="sr-only">Matching note: </span>
+              <span className="line-clamp-2 break-words">
+                <HighlightedExcerpt text={item.matched_note} search={search} />
+              </span>
+            </p>
+          )}
+        </>
       ),
     },
     {
@@ -172,12 +207,12 @@ export default function ReportedFeedback() {
       ),
     },
     {
-      header: "Workflow",
-      key: "workflow",
+      header: "Agent",
+      key: "agent",
       headerClassName: "w-[150px]",
       cell: (item) => (
         <span className="block max-w-[140px] truncate text-sm">
-          {item.workflow_name || (
+          {item.agent_name || (
             <span className="italic text-muted-foreground">—</span>
           )}
         </span>
@@ -207,10 +242,13 @@ export default function ReportedFeedback() {
       header: "Status",
       key: "status",
       headerClassName: "w-[160px]",
-      // Editable inline; stop row-click so the dropdown doesn't open the dialog.
+      // Editable inline; stop row events so the dropdown doesn't open the dialog.
       cell: (item) =>
         canTriage ? (
-          <div onClick={(e) => e.stopPropagation()}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <StatusSelect
               value={item.status}
               statuses={statuses}
@@ -228,12 +266,12 @@ export default function ReportedFeedback() {
 
   const filterGroups: FilterMenuGroup[] = [
     {
-      key: "workflow",
-      label: "Workflow",
-      allLabel: "All workflows",
-      value: workflowFilter,
-      options: workflows.map((wf) => ({ value: wf.id, label: wf.name })),
-      onChange: setWorkflowFilter,
+      key: "agent",
+      label: "Agent",
+      allLabel: "All agents",
+      value: agentFilter,
+      options: agents.map((a) => ({ value: a.id, label: a.name })),
+      onChange: setAgentFilter,
     },
     {
       key: "topic",
@@ -266,9 +304,14 @@ export default function ReportedFeedback() {
       label: "Status",
       allLabel: "All statuses",
       value: statusFilter,
-      options: withCurrentStatus(statuses, statusFilter, {
-        includeRetired: true,
-      }).map((status) => ({
+      options: withCurrentStatus(
+        statuses.filter(
+          (status) =>
+            status.is_active === 1 || (summary.byStatus[status.key] ?? 0) > 0,
+        ),
+        statusFilter,
+        { includeRetired: true },
+      ).map((status) => ({
         value: status,
         label: statusMeta(statuses, status).label,
       })),
@@ -280,8 +323,9 @@ export default function ReportedFeedback() {
     statusFilter !== "all" ||
     topicFilter !== "all" ||
     subtopicFilter !== "all" ||
-    workflowFilter !== "all" ||
-    Boolean(dateRange?.from || dateRange?.to);
+    agentFilter !== "all" ||
+    Boolean(appliedRange?.from || appliedRange?.to) ||
+    Boolean(search);
 
   return (
     <PageLayout>
@@ -296,9 +340,16 @@ export default function ReportedFeedback() {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <DateRangePicker
-            value={dateRange}
+            value={appliedRange}
             onChange={setDateRange}
+            placeholder={search ? "All dates" : undefined}
+            disabled={Boolean(search)}
             disableFutureDates
+          />
+          <SearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search reports..."
           />
           <FilterMenu groups={filterGroups} className="h-10 text-sm" />
           {canManageStatuses && (
@@ -323,10 +374,12 @@ export default function ReportedFeedback() {
         data={rows}
         columns={columns}
         keyExtractor={(item) => item.feedback_id}
-        onRowClick={openDialog}
+        onRowClick={openRow}
+        getRowProps={(item) =>
+          item.feedback_id === lastOpenedId ? { id: LAST_OPENED_ROW_ID } : undefined
+        }
         loading={loading}
         error={error ? error.message : null}
-        searchQuery={statusFilter === "all" ? "" : statusFilter}
         emptyState={
           <ListEmptyState
             icon={<MessageSquareDot className="h-12 w-12 text-muted-foreground" />}
@@ -334,9 +387,11 @@ export default function ReportedFeedback() {
               hasActiveFilters ? "No matching feedback yet" : "No reported feedback yet"
             }
             description={
-              hasActiveFilters
-                ? "No reported feedback matches the current filters. Try widening the date range or clearing a filter."
-                : "When an admin or supervisor leaves a comment on a message, it shows up here as feedback you can track and resolve."
+              search
+                ? "No comment or note matches this search. Try other words or clear a filter."
+                : hasActiveFilters
+                  ? "No reported feedback matches the current filters. Try widening the date range or clearing a filter."
+                  : "When an admin or supervisor leaves a comment on a message, it shows up here as feedback you can track and resolve."
             }
           />
         }
@@ -353,13 +408,17 @@ export default function ReportedFeedback() {
       )}
 
       <ReportedFeedbackDialog
-        key={selectedIssue?.feedback_id}
-        issue={selectedIssue}
+        key={selectedId}
+        issue={dialogIssue}
         isOpen={isDialogOpen}
         onOpenChange={(open) => {
           setIsDialogOpen(open);
-          if (!open) setSelectedIssue(null);
+          if (!open) {
+            setSelectedId(null);
+            link.clear();
+          }
         }}
+        onCloseAutoFocus={focusLastOpenedRow}
         statuses={statuses}
         canTriage={canTriage}
         onStatusChange={handleStatusChange}
