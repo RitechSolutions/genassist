@@ -273,7 +273,12 @@ class DataSourceService:
                 return AzureStorageService.test_connection(cd)
             elif source_type_lower == "url":
                 from app.core.utils.web_scraping_utils import fetch_from_url
-                await fetch_from_url(cd["url"], use_http_request=True)
+                try:
+                    await fetch_from_url(cd["url"], use_http_request=True)
+                except ValueError as e:
+                    # The check's own message names the resolved address, so it stays in the logs only
+                    logger.error(f"Test connection refused the URL for {source_type}: {e}")
+                    return {"success": False, "message": "URL is not allowed or cannot be reached."}
                 return {"success": True, "message": "URL is accessible."}
             else:
                 return {

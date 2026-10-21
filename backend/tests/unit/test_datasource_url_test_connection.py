@@ -1,15 +1,20 @@
 """Unit tests that the URL data source test connection refuses internal addresses."""
 
 import socket
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
+from app.api.v1.routes import datasources as datasource_routes
+from app.core.exceptions.exception_classes import AppException
+from app.core.permissions.constants import Permissions as P
 from app.core.utils import web_scraping_utils
 from app.repositories.datasources import DataSourcesRepository
 from app.services.datasources import DataSourceService
 
+BLOCKED_MESSAGE = "URL is not allowed or cannot be reached."
 PUBLIC_IP = "93.184.216.34"
 HOST_ADDRESSES = {
     "public.example": PUBLIC_IP,
@@ -67,6 +72,7 @@ async def test_internal_urls_are_refused_without_a_request(service, resolver, re
     result = await service.test_connection("url", {"url": url})
 
     assert result["success"] is False
+    assert result["message"] == BLOCKED_MESSAGE
     assert requested_urls == []
 
 
@@ -78,6 +84,7 @@ async def test_a_redirect_to_an_internal_address_is_refused(service, resolver, r
     result = await service.test_connection("url", {"url": "https://public.example/doc"})
 
     assert result["success"] is False
+    assert result["message"] == BLOCKED_MESSAGE
     assert requested_urls == ["https://public.example/doc"]
 
 
@@ -121,3 +128,27 @@ async def test_a_missing_page_is_still_reported_as_a_failure(service, resolver, 
 
     assert result["success"] is False
     assert "404" in result["message"]
+
+
+def _request(permissions):
+    return SimpleNamespace(state=SimpleNamespace(user=SimpleNamespace(permissions=permissions)))
+
+
+@pytest.mark.asyncio
+async def test_test_connection_requires_login_and_the_data_source_read_permission():
+    route = next(r for r in datasource_routes.router.routes if r.path == "/test-connection")
+    calls = [dependency.dependency for dependency in route.dependencies]
+    assert datasource_routes.auth in calls
+    permission_checks = [call for call in calls if call is not datasource_routes.auth]
+    assert permission_checks
+
+    for check in permission_checks:
+        await check(_request([P.DataSource.READ]))
+
+    denied = 0
+    for check in permission_checks:
+        try:
+            await check(_request([]))
+        except AppException:
+            denied += 1
+    assert denied == len(permission_checks)

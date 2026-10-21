@@ -57,13 +57,11 @@ def _request_hostname(url: str) -> str:
 
 
 async def _validate_url(url: str) -> None:
+    url = url.strip()
     parsed = urlparse(url)
     if parsed.scheme not in _ALLOWED_SCHEMES:
         raise ValueError(f"Disallowed URL scheme: {parsed.scheme!r}")
-    hostname = parsed.hostname
-    is_non_ascii_hostname = bool(hostname) and not hostname.isascii()
-    if is_non_ascii_hostname:
-        hostname = _request_hostname(url)
+    hostname = _request_hostname(url)
     if not hostname:
         raise ValueError("URL has no hostname")
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
