@@ -22,6 +22,13 @@ from app.services.file_manager import FileManagerService
 
 def _file_manager() -> MagicMock:
     manager = MagicMock()
+    manager.get_file_by_id = AsyncMock(
+        return_value=SimpleNamespace(
+            name="training.csv",
+            path="uploads/training.csv",
+            file_extension="csv",
+        )
+    )
     manager.download_file_to_path = AsyncMock()
     manager.download_file_from_url_to_path = AsyncMock()
     manager.extract_file_id_from_url = AsyncMock(return_value=None)
@@ -40,6 +47,220 @@ def _request(*granted_permissions: str) -> Request:
     )
     request.state.user = SimpleNamespace(permissions=set(granted_permissions))
     return request
+
+
+@pytest.mark.asyncio
+async def test_analyze_csv_file_id_requires_file_manager_read_permission():
+    file_manager = _file_manager()
+
+    with pytest.raises(AppException) as exc_info:
+        await ml_models.analyze_csv(
+            request=_request(P.MlModel.READ),
+            file_url=None,
+            file_id=uuid4(),
+            file_name="training.csv",
+            python_code=None,
+            file_manager_service=file_manager,
+        )
+
+    assert exc_info.value.status_code == 403
+    file_manager.get_file_by_id.assert_not_awaited()
+    file_manager.download_file_to_path.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_analyze_csv_local_path_does_not_require_file_manager_read(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "local.csv"
+    source.write_text("id,name\n1,Ada\n", encoding="utf-8")
+    analyze = MagicMock(return_value={"row_count": 1})
+    monkeypatch.setattr(ml_models.ml_utils, "analyze_csv_data", analyze)
+
+    result = await ml_models.analyze_csv(
+        request=_request(P.MlModel.READ),
+        file_url=str(source),
+        file_id=None,
+        file_name=None,
+        python_code=None,
+        file_manager_service=_file_manager(),
+    )
+
+    assert result == {"row_count": 1}
+    analyze.assert_called_once_with(str(source))
+
+
+@pytest.mark.asyncio
+async def test_profile_data_file_id_requires_file_manager_read_permission():
+    file_manager = _file_manager()
+
+    with pytest.raises(AppException) as exc_info:
+        await ml_models.profile_data(
+            ml_models.ProfileDataRequest(file_id=uuid4(), file_name="remote.csv"),
+            _request(P.MlModel.READ),
+            file_manager,
+        )
+
+    assert exc_info.value.status_code == 403
+    file_manager.download_file_to_path.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_oversized_stored_file_is_rejected_before_download(monkeypatch):
+    file_manager = _file_manager()
+    file_manager.get_file_by_id.return_value = SimpleNamespace(
+        name="training.csv",
+        path="uploads/training.csv",
+        file_extension="csv",
+        size=10,
+    )
+    monkeypatch.setattr(ml_models.settings, "ML_EXTRACT_MAX_BYTES", 1)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models._resolve_csv_input(
+            request=_request(P.FileManager.READ),
+            file_url=None,
+            file_id=uuid4(),
+            file_name="training.csv",
+            file_manager_service=file_manager,
+        )
+
+    assert exc_info.value.status_code == 413
+    file_manager.download_file_to_path.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_analyze_csv_downloads_s3_file_by_id_and_cleans_up(monkeypatch):
+    file_id = uuid4()
+    downloaded_paths: list[Path] = []
+
+    async def download_file(_file_id, destination):
+        assert _file_id == file_id
+        path = Path(destination)
+        path.write_text("id,name\n1,Ada\n", encoding="utf-8")
+        downloaded_paths.append(path)
+
+    file_manager = _file_manager()
+    file_manager.download_file_to_path.side_effect = download_file
+    analyze = MagicMock(return_value={"row_count": 1})
+    monkeypatch.setattr(ml_models.ml_utils, "analyze_csv_data", analyze)
+
+    result = await ml_models.analyze_csv(
+        request=_request(P.MlModel.READ, P.FileManager.READ),
+        file_url="https://app.example/api/file-manager/files/source",
+        file_id=file_id,
+        file_name="training.csv",
+        python_code=None,
+        file_manager_service=file_manager,
+    )
+
+    assert result == {"row_count": 1}
+    file_manager.download_file_to_path.assert_awaited_once()
+    assert downloaded_paths and not downloaded_paths[0].exists()
+    analyze.assert_called_once_with(str(downloaded_paths[0]))
+
+
+@pytest.mark.asyncio
+async def test_analyze_csv_returns_safe_s3_access_error_and_removes_partial_file():
+    downloaded_paths: list[Path] = []
+
+    async def fail_download(_file_id, destination):
+        path = Path(destination)
+        path.write_bytes(b"partial")
+        downloaded_paths.append(path)
+        raise RuntimeError("AccessDenied bucket=private-training key=secret.csv")
+
+    file_manager = _file_manager()
+    file_manager.download_file_to_path.side_effect = fail_download
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.analyze_csv(
+            request=_request(P.MlModel.READ, P.FileManager.READ),
+            file_url=None,
+            file_id=uuid4(),
+            file_name="training.csv",
+            python_code=None,
+            file_manager_service=file_manager,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == (
+        "Could not access the selected CSV file. Check that it still exists "
+        "and that the storage configuration is valid."
+    )
+    assert "AccessDenied" not in exc_info.value.detail
+    assert downloaded_paths and not downloaded_paths[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_analyze_csv_rejects_server_recorded_non_csv_despite_client_name():
+    file_manager = _file_manager()
+    file_manager.get_file_by_id.return_value = SimpleNamespace(
+        name="payload.exe",
+        path="uploads/payload.exe",
+        file_extension="exe",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.analyze_csv(
+            request=_request(P.MlModel.READ, P.FileManager.READ),
+            file_url=None,
+            file_id=uuid4(),
+            file_name="training.csv",
+            python_code=None,
+            file_manager_service=file_manager,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Only CSV files can be previewed or profiled."
+    file_manager.download_file_to_path.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_oversized_local_csv_is_not_deleted(monkeypatch, tmp_path):
+    source = tmp_path / "large.csv"
+    source.write_text("id,name\n1,Ada\n", encoding="utf-8")
+    original = source.read_bytes()
+    monkeypatch.setattr(ml_models.settings, "ML_EXTRACT_MAX_BYTES", 1)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models._resolve_csv_input(
+            request=_request(P.FileManager.READ),
+            file_url=str(source),
+            file_id=None,
+            file_name="large.csv",
+            file_manager_service=_file_manager(),
+        )
+
+    assert exc_info.value.status_code == 413
+    assert source.exists()
+    assert source.read_bytes() == original
+
+
+@pytest.mark.asyncio
+async def test_oversized_s3_download_is_cleaned_up(monkeypatch):
+    downloaded_paths: list[Path] = []
+
+    async def download_file(_file_id, destination):
+        path = Path(destination)
+        path.write_bytes(b"too large")
+        downloaded_paths.append(path)
+
+    file_manager = _file_manager()
+    file_manager.download_file_to_path.side_effect = download_file
+    monkeypatch.setattr(ml_models.settings, "ML_EXTRACT_MAX_BYTES", 1)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models._resolve_csv_input(
+            request=_request(P.FileManager.READ),
+            file_url=None,
+            file_id=uuid4(),
+            file_name="training.csv",
+            file_manager_service=file_manager,
+        )
+
+    assert exc_info.value.status_code == 413
+    assert downloaded_paths and not downloaded_paths[0].exists()
 
 
 @pytest.mark.asyncio
@@ -125,7 +346,7 @@ async def test_profile_data_downloads_non_local_csv_by_file_id(monkeypatch):
             file_id=file_id,
             file_name="remote.csv",
         ),
-        _request(),
+        _request(P.FileManager.READ),
         file_manager,
     )
 
@@ -148,7 +369,7 @@ async def test_profile_data_uses_stable_name_for_download_without_file_name(monk
 
     response = await ml_models.profile_data(
         ml_models.ProfileDataRequest(file_id=uuid4()),
-        _request(),
+        _request(P.FileManager.READ),
         file_manager,
     )
 
@@ -275,7 +496,7 @@ async def test_profile_data_cleans_download_when_profiling_fails(monkeypatch):
                 file_id=uuid4(),
                 file_name="remote.csv",
             ),
-            _request(),
+            _request(P.FileManager.READ),
             file_manager,
         )
 
@@ -296,6 +517,13 @@ async def test_profile_data_recovers_file_id_from_source_url(monkeypatch):
         downloaded_paths.append(path)
 
     file_manager = object.__new__(FileManagerService)
+    file_manager.get_file_by_id = AsyncMock(
+        return_value=SimpleNamespace(
+            name="s3.csv",
+            path="uploads/s3.csv",
+            file_extension="csv",
+        )
+    )
     file_manager.download_file_to_path = AsyncMock(side_effect=download_file)
     file_manager.download_file_from_url_to_path = AsyncMock()
     monkeypatch.setattr(
@@ -312,7 +540,7 @@ async def test_profile_data_recovers_file_id_from_source_url(monkeypatch):
             ),
             file_name="s3.csv",
         ),
-        _request(),
+        _request(P.FileManager.READ),
         file_manager,
     )
 
@@ -343,7 +571,7 @@ async def test_profile_data_prefers_file_id_over_existing_local_path(monkeypatch
 
     response = await ml_models.profile_data(
         ml_models.ProfileDataRequest(file_url=str(local_path), file_id=file_id),
-        _request(),
+        _request(P.FileManager.READ),
         file_manager,
     )
 
@@ -393,13 +621,14 @@ async def test_profile_data_rejects_failed_file_manager_download(monkeypatch, tm
     with pytest.raises(HTTPException) as exc_info:
         await ml_models.profile_data(
             ml_models.ProfileDataRequest(file_id=uuid4()),
-            _request(),
+            _request(P.FileManager.READ),
             file_manager,
         )
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == (
-        "Could not fetch the CSV file from File Manager."
+        "Could not access the selected CSV file. Check that it still exists "
+        "and that the storage configuration is valid."
     )
     assert created_paths and not created_paths[0].exists()
 

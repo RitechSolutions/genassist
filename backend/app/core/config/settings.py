@@ -572,6 +572,7 @@ class FileStorageSettings(BaseSettings):
 
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_SESSION_TOKEN: Optional[str] = None
     AWS_STORAGE_BUCKET: Optional[str] = None
     AWS_REGION: Optional[str] = None
     AWS_S3_ENDPOINT_URL: Optional[str] = None
