@@ -26,6 +26,7 @@ from app.schemas.app_settings import AppSettingsRead
 from app.core.utils.cache_headers import no_store_headers
 from app.core.utils.file_manager_url_utils import first_file_manager_uuid_from_url
 from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
+from app.core.utils.file_system_utils import get_safe_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,30 @@ class FileManagerService:
 
         return headers, media_type
 
+    @staticmethod
+    def _clean_file_extension(filename: Optional[str]) -> str:
+        """Lowercase extension of the file's base name, letters and digits only ("txt" if none)."""
+        base_name = re.split(r"[\\/]", filename or "")[-1]
+        extension = base_name.rsplit(".", 1)[-1] if "." in base_name else ""
+        return re.sub(r"[^a-z0-9]", "", extension.lower()) or "txt"
+
+    @staticmethod
+    def _build_file_path(folder: Optional[str], file_extension: str) -> str:
+        """
+        Storage path for a new file: the cleaned folder plus a uuid file name.
+
+        The folder comes from the request, so empty and "." parts are dropped and ".." is
+        rejected; the file name is never taken from the request.
+        """
+        parts = []
+        for part in re.split(r"[\\/]+", folder or ""):
+            if part in ("", "."):
+                continue
+            if part == "..":
+                raise AppException(ErrorKey.INVALID_FILE_PATH, 400)
+            parts.append(part)
+        return "/".join([*parts, f"{uuid.uuid4()}.{file_extension}"])
+
     # ==================== File Methods ====================
 
     async def create_file(
@@ -133,8 +158,7 @@ class FileManagerService:
         file_path = "unknown"
         file_name = file.filename or "unnamed"
         try:
-            file_extension = file.filename.split(".")[-1] if "." in (file.filename or "") else ""
-            file_extension = file_extension.lower() if file_extension else "txt"
+            file_extension = self._clean_file_extension(file.filename)
 
             if allowed_extensions is not None:
                 self._validate_file_extension(file_extension, allowed_extensions)
@@ -145,8 +169,7 @@ class FileManagerService:
                 or "local"
             )
 
-            unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
-            file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
+            file_path = self._build_file_path(file_base.path, file_extension)
 
             provider_name = file_storage_provider or "local"
             await self._initialize_storage_provider(provider_name)
@@ -157,9 +180,8 @@ class FileManagerService:
 
             # Stream bytes to storage (avoid loading entire file into memory).
             if self.storage_provider.name == "local":
-                dest = os.path.join(
-                    self.storage_provider.get_base_path(),
-                    file_path.replace("\\", "/").lstrip("/"),
+                dest = get_safe_file_path(
+                    file_path, self.storage_provider.get_base_path(), must_exist=False
                 )
                 file_size, streamed_mime = await async_stream_uploadfile_to_path(
                     file, dest, max_file_size
@@ -248,11 +270,7 @@ class FileManagerService:
             if max_file_size is not None:
                 self._validate_file_size(file_size, max_file_size)
 
-            file_extension = (
-                original_filename.split(".")[-1].lower()
-                if "." in original_filename
-                else "txt"
-            )
+            file_extension = self._clean_file_extension(original_filename)
             if allowed_extensions is not None:
                 self._validate_file_extension(file_extension, allowed_extensions)
 
@@ -262,8 +280,7 @@ class FileManagerService:
                 or "local"
             )
 
-            unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
-            file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
+            file_path = self._build_file_path(file_base.path, file_extension)
 
             provider_name = file_storage_provider or "local"
             await self._initialize_storage_provider(provider_name)
@@ -273,9 +290,8 @@ class FileManagerService:
             storage_path = file_base.storage_path or self.storage_provider.get_base_path()
 
             if self.storage_provider.name == "local":
-                dest = os.path.join(
-                    self.storage_provider.get_base_path(),
-                    file_path.replace("\\", "/").lstrip("/"),
+                dest = get_safe_file_path(
+                    file_path, self.storage_provider.get_base_path(), must_exist=False
                 )
                 import shutil
 
@@ -451,11 +467,19 @@ class FileManagerService:
             delete_from_storage: Whether to delete from storage provider as well
         """
         file = await self.repository.get_file_by_id(file_id)
+        # Before uuid names, uploads with the same folder and name shared one stored
+        # object; keep it while another live record still points at it.
+        if delete_from_storage and await self.repository.is_path_shared(
+            file_id, file.storage_provider, file.path
+        ):
+            logger.info(f"Keeping stored object for file {file_id}: its path is shared by another file")
+            delete_from_storage = False
         if delete_from_storage:
             try:
                 await self._initialize_storage_provider(file.storage_provider)
                 if self.storage_provider and self.storage_provider.is_initialized():
-                    await self.storage_provider.delete_file(file.storage_path)
+                    # storage_path is the provider's base folder; path is the file's key inside it
+                    await self.storage_provider.delete_file(file.path)
             except Exception as e:
                 logger.warning(f"Failed to delete file from storage: {e}")
 

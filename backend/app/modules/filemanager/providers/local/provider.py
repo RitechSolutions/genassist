@@ -71,8 +71,15 @@ class LocalFileSystemProvider(BaseStorageProvider):
 
         Returns:
             Absolute Path object
+
+        Raises:
+            ValueError: If the path resolves outside base_path
         """
-        return (self.base_path / Path(file_path)).resolve()
+        base = self.base_path.resolve()
+        full_path = (base / Path(file_path)).resolve()
+        if not full_path.is_relative_to(base):
+            raise ValueError(f"Path is outside the storage folder: {file_path}")
+        return full_path
 
 
     async def upload_file_from_local_path(
