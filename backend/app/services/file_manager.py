@@ -10,6 +10,7 @@ from injector import inject
 from typing import Optional, List
 import logging
 import base64
+from contextlib import suppress
 from urllib.parse import quote
 import os
 from app.modules.filemanager.providers.base import BaseStorageProvider
@@ -385,31 +386,77 @@ class FileManagerService:
             logger.error(f"Failed to download file to path {path}: {e}")
             raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(e))
 
+    @staticmethod
+    def _own_file_id(file_url: str) -> Optional[UUID]:
+        if "/file-manager/files/" not in file_url:
+            return None
+        return first_file_manager_uuid_from_url(file_url)
+
+    @staticmethod
+    def _download_error_message(error: Exception) -> str:
+        """Describe a failed download without server paths; only web errors and the size limit are specific."""
+        if isinstance(error, (httpx.HTTPError, ValueError)):
+            first_line = (str(error).strip().splitlines() or [type(error).__name__])[0]
+            return f"Could not download the file: {first_line}"
+        return "Could not download the file."
+
+    async def _copy_own_file_to_path(self, file_id: UUID, path: str) -> None:
+        try:
+            file = await self.get_file_by_id(file_id)
+            content = await self.get_file_content(file)
+        except AppException as e:
+            if e.error_key == ErrorKey.DATASOURCE_NOT_FOUND:
+                raise AppException(ErrorKey.FILE_NOT_FOUND, 404, "File not found.")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to read file {file_id} from storage: {e}")
+            raise AppException(ErrorKey.FILE_NOT_FOUND, 404, "The file could not be read from storage.")
+
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(content)
+        except OSError as e:
+            logger.error(f"Failed to write file {file_id} to path {path}: {e}")
+            with suppress(OSError):
+                os.remove(path)
+            raise AppException(ErrorKey.INVALID_FILE_PATH, 400, "Could not download the file.")
+
     async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
-        """Download file from URL to path, refusing internal addresses and files over the upload size limit."""
+        """Download a file from a URL to a path. Our own file links are read from storage; other URLs are checked first."""
+        own_file_id = self._own_file_id(file_url)
+        if own_file_id is not None:
+            await self._copy_own_file_to_path(own_file_id, path)
+            return True
+
         try:
             await _validate_url(file_url)
-            # create the directory if it doesn't exist
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+        except ValueError as e:
+            logger.error(f"Refused to download from URL {file_url}: {e}")
+            raise AppException(ErrorKey.INVALID_FILE_PATH, 400, "URL is not allowed or cannot be reached.")
 
+        file_created = False
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream("GET", file_url) as response:
                     response.raise_for_status()
 
                     downloaded_size = 0
                     with open(path, "wb") as f:
+                        file_created = True
                         async for chunk in response.aiter_bytes(chunk_size=8192):
                             downloaded_size += len(chunk)
                             if downloaded_size > settings.MAX_CONTENT_LENGTH:
-                                raise ValueError(f"File is larger than {settings.MAX_CONTENT_LENGTH} bytes")
+                                raise ValueError("File is larger than the allowed upload size")
                             f.write(chunk)
-
             return True
         except Exception as e:
             logger.error(f"Failed to download file from URL {file_url} to path {path}: {e}")
-            if os.path.exists(path):
-                os.remove(path)
-            return False
+            if file_created:
+                with suppress(OSError):
+                    os.remove(path)
+            raise AppException(ErrorKey.INVALID_FILE_PATH, 400, self._download_error_message(e))
 
     async def get_file_content_from_url(self, file_url: str) -> bytes:
         """Get file content from URL."""
