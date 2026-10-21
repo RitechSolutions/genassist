@@ -129,6 +129,17 @@ async def test_feedback_id_narrows_the_list_to_one_report():
 
 
 @pytest.mark.asyncio
+async def test_agent_filter_narrows_the_rows_count_and_summary():
+    agent_id = uuid4()
+    statements = [*await _list_statements(agent_id=agent_id), await _summary_statement(agent_id=agent_id)]
+
+    for stmt in statements:
+        sql = _sql(stmt)
+        assert "LEFT OUTER JOIN agents ON agents.operator_id = operators.id" in sql
+        assert f"agents.id = '{agent_id}'" in sql
+
+
+@pytest.mark.asyncio
 async def test_topic_filters_follow_the_conversations_page():
     statements = [
         *await _list_statements(topic="Refund", subtopic="Wrong plate"),
