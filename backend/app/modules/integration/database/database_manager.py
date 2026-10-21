@@ -16,36 +16,39 @@ from app.core.config.settings import settings
 logger = logging.getLogger(__name__)
 
 
+POSTGRES_SCHEMA = "public"
+
+
 # Schema query builders; SQLAlchemy quotes and escapes the table and column names.
-def _quoted_table(table_name: str):
-    return sql_table(quoted_name(table_name, quote=True))
+def _quoted_table(table_name: str, schema: Optional[str] = None):
+    return sql_table(quoted_name(table_name, quote=True), schema=schema)
 
 
 def _quoted_column(column_name: str):
     return sql_column(quoted_name(column_name, quote=True))
 
 
-def _sample_rows_query(table_name: str, sample_size: int):
-    return select(literal_column("*")).select_from(_quoted_table(table_name)).limit(sample_size)
+def _sample_rows_query(table_name: str, sample_size: int, schema: Optional[str] = None):
+    return select(literal_column("*")).select_from(_quoted_table(table_name, schema)).limit(sample_size)
 
 
-def _distinct_values_query(table_name: str, column_name: str, max_values: int):
+def _distinct_values_query(table_name: str, column_name: str, max_values: int, schema: Optional[str] = None):
     target_column = _quoted_column(column_name)
     return (
         select(target_column)
         .distinct()
-        .select_from(_quoted_table(table_name))
+        .select_from(_quoted_table(table_name, schema))
         .where(target_column.is_not(None))
         .order_by(target_column)
         .limit(max_values)
     )
 
 
-def _distinct_count_query(table_name: str, column_name: str):
+def _distinct_count_query(table_name: str, column_name: str, schema: Optional[str] = None):
     target_column = _quoted_column(column_name)
     return (
         select(func.count(target_column.distinct()))
-        .select_from(_quoted_table(table_name))
+        .select_from(_quoted_table(table_name, schema))
         .where(target_column.is_not(None))
     )
 
@@ -506,9 +509,10 @@ class DatabaseManager:
                         text("""
                         SELECT table_name
                         FROM information_schema.tables
-                        WHERE table_schema = 'public'
+                        WHERE table_schema = :table_schema
                         AND table_type = 'BASE TABLE'
-                    """)
+                    """),
+                        {"table_schema": POSTGRES_SCHEMA},
                     )
                     tables = [row[0] for row in result.fetchall()]
 
@@ -537,10 +541,10 @@ class DatabaseManager:
                                 numeric_scale
                             FROM information_schema.columns
                             WHERE table_name = :table_name
-                            AND table_schema = 'public'
+                            AND table_schema = :table_schema
                             ORDER BY ordinal_position
                         """),
-                            {"table_name": table},
+                            {"table_name": table, "table_schema": POSTGRES_SCHEMA},
                         )
 
                         columns = result.fetchall()
@@ -555,9 +559,9 @@ class DatabaseManager:
                                 AND tc.table_schema = kcu.table_schema
                             WHERE tc.constraint_type = 'PRIMARY KEY'
                             AND tc.table_name = :table_name
-                            AND tc.table_schema = 'public'
+                            AND tc.table_schema = :table_schema
                         """),
-                            {"table_name": table},
+                            {"table_name": table, "table_schema": POSTGRES_SCHEMA},
                         )
 
                         primary_keys = [pk[0] for pk in result.fetchall()]
@@ -580,32 +584,21 @@ class DatabaseManager:
                                 and self._is_categorical_column(column[1], column[4])
                             ):
                                 try:
-                                    # Get distinct values for categorical columns
-                                    result = await conn.execute(
-                                        text(f"""
-                                        SELECT DISTINCT "{column[0]}"
-                                        FROM "{table}"
-                                        WHERE "{column[0]}" IS NOT NULL
-                                        ORDER BY "{column[0]}"
-                                        LIMIT :limit
-                                    """),
-                                        {"limit": max_categorical_values},
-                                    )
+                                    # Savepoint so a failed query does not abort the rest of the read
+                                    async with conn.begin_nested():
+                                        # Get distinct values for categorical columns
+                                        result = await conn.execute(
+                                            _distinct_values_query(
+                                                table, column[0], max_categorical_values, schema=POSTGRES_SCHEMA
+                                            )
+                                        )
+                                        col_info["possible_values"] = [row[0] for row in result.fetchall()]
 
-                                    distinct_values = [
-                                        row[0] for row in result.fetchall()
-                                    ]
-                                    col_info["possible_values"] = distinct_values
-
-                                    # Get count of distinct values to know if we hit the limit
-                                    result = await conn.execute(
-                                        text(f"""
-                                        SELECT COUNT(DISTINCT "{column[0]}")
-                                        FROM "{table}"
-                                        WHERE "{column[0]}" IS NOT NULL
-                                    """)
-                                    )
-                                    total_distinct = result.fetchone()[0]
+                                        # Get count of distinct values to know if we hit the limit
+                                        result = await conn.execute(
+                                            _distinct_count_query(table, column[0], schema=POSTGRES_SCHEMA)
+                                        )
+                                        total_distinct = result.fetchone()[0]
                                     col_info["total_distinct_count"] = total_distinct
 
                                     if total_distinct > max_categorical_values:
@@ -625,14 +618,13 @@ class DatabaseManager:
                         # Add sample data if requested
                         if include_samples and sample_size > 0:
                             try:
-                                # Get sample rows (using double quotes for PostgreSQL)
-                                sample_query = f'SELECT * FROM "{table}" LIMIT :limit'
-                                result = await conn.execute(
-                                    text(sample_query), {"limit": sample_size}
-                                )
-
-                                rows = result.fetchall()
-                                columns = list(result.keys())
+                                # Get sample rows, in a savepoint like the categorical queries
+                                async with conn.begin_nested():
+                                    result = await conn.execute(
+                                        _sample_rows_query(table, sample_size, schema=POSTGRES_SCHEMA)
+                                    )
+                                    rows = result.fetchall()
+                                    columns = list(result.keys())
 
                                 # Convert to list of dicts for better readability
                                 samples = []
@@ -659,7 +651,7 @@ class DatabaseManager:
                                 table_info["samples"] = samples
 
                                 logger.info(
-                                    f"Samples fetched for table {table}: {samples}"
+                                    f"Samples fetched for table {table}: {len(samples)} rows"
                                 )
 
                             except Exception as e:
@@ -690,9 +682,9 @@ class DatabaseManager:
                                 AND ccu.table_schema = tc.table_schema
                             WHERE tc.constraint_type = 'FOREIGN KEY'
                             AND tc.table_name = :table_name
-                            AND tc.table_schema = 'public'
+                            AND tc.table_schema = :table_schema
                         """),
-                            {"table_name": table},
+                            {"table_name": table, "table_schema": POSTGRES_SCHEMA},
                         )
 
                         foreign_keys = result.fetchall()
@@ -950,12 +942,7 @@ class DatabaseManager:
                                 try:
                                     # Get distinct values for categorical columns
                                     result = await conn.execute(
-                                        text(f"""
-                                        SELECT DISTINCT TOP {max_categorical_values} [{column[0]}]
-                                        FROM [{table}]
-                                        WHERE [{column[0]}] IS NOT NULL
-                                        ORDER BY [{column[0]}]
-                                    """)
+                                        _distinct_values_query(table, column[0], max_categorical_values)
                                     )
 
                                     distinct_values = [
@@ -965,11 +952,7 @@ class DatabaseManager:
 
                                     # Get count of distinct values to know if we hit the limit
                                     result = await conn.execute(
-                                        text(f"""
-                                        SELECT COUNT(DISTINCT [{column[0]}])
-                                        FROM [{table}]
-                                        WHERE [{column[0]}] IS NOT NULL
-                                    """)
+                                        _distinct_count_query(table, column[0])
                                     )
                                     total_distinct = result.fetchone()[0]
                                     col_info["total_distinct_count"] = total_distinct
@@ -991,11 +974,10 @@ class DatabaseManager:
                         # Add sample data if requested
                         if include_samples and sample_size > 0:
                             try:
-                                # Get sample rows (using TOP for MSSQL)
-                                sample_query = (
-                                    f"SELECT TOP {sample_size} * FROM [{table}]"
+                                # Get sample rows (rendered with TOP for MSSQL)
+                                result = await conn.execute(
+                                    _sample_rows_query(table, sample_size)
                                 )
-                                result = await conn.execute(text(sample_query))
 
                                 rows = result.fetchall()
                                 columns_list = list(result.keys())
@@ -1024,7 +1006,7 @@ class DatabaseManager:
                                 table_info["samples"] = samples
 
                                 logger.info(
-                                    f"Samples fetched for table {table}: {samples}"
+                                    f"Samples fetched for table {table}: {len(samples)} rows"
                                 )
 
                             except Exception as e:
