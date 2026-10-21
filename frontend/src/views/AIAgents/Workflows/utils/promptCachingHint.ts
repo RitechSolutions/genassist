@@ -32,8 +32,15 @@ const MIXED_CHAIN_HINT: PromptCachingHint = {
   tone: "warning",
 };
 
+const TEMPLATE_VAR = /\{\{[^\s{}]+\}\}/;
+
+const VOLATILE_PROMPT_HINT: PromptCachingHint = {
+  text: "The system prompt contains {{variables}}, so nothing is cached.",
+  tone: "warning",
+};
+
 /**
- * Every provider the chain references excep the primary, 
+ * Every provider the chain references except the primary,
  * resolved from the COMPLETE provider list, the runtime does not skip a
  * provider an existing chain references merely because it is inactive.
  */
@@ -65,6 +72,7 @@ export function promptCachingHint(
   nodeKind: "agent" | "model",
   type: string | undefined,
   fallbackProviders: Array<PromptCachingHintProvider | undefined> = [],
+  systemPrompt?: string,
 ): PromptCachingHint | null {
   if (promptCaching !== true) return null;
 
@@ -93,6 +101,8 @@ export function promptCachingHint(
       tone: "warning",
     };
   }
+
+  if (systemPrompt && TEMPLATE_VAR.test(systemPrompt)) return VOLATILE_PROMPT_HINT;
 
   return null;
 }

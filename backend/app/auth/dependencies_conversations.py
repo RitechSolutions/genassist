@@ -94,6 +94,7 @@ async def _handle_guest_token(
     context["auth_mode"] = "guest_token"
     context["user_id"] = user_id_uuid
     context["user_roles"] = []
+    context["user_permissions"] = guest_token_data.get("permissions", [])
     context["operator_id"] = agent.operator.id if agent and agent.operator else None
 
     return True
@@ -133,6 +134,7 @@ async def _handle_authenticated_agent(
     context["auth_mode"] = "token"
     context["user_id"] = user.id
     context["user_roles"] = user.roles
+    context["user_permissions"] = user.permissions
     context["operator_id"] = user.operator.id if user.operator else None
 
 
@@ -328,7 +330,7 @@ def socket_auth_conversation(required_permissions: list[str]):
                         user.id,
                         guest_perms,
                     )
-                    _set_user_context(user, user.roles)
+                    _set_user_context(user, user.roles, guest_perms)
                     guest_handled = True
                 except AppException:
                     guest_handled = False
@@ -344,7 +346,7 @@ def socket_auth_conversation(required_permissions: list[str]):
                     key_obj.user.id,
                     key_obj.permissions,
                 )
-                _set_user_context(key_obj.user, key_obj.roles)
+                _set_user_context(key_obj.user, key_obj.roles, key_obj.permissions)
                 token_based_auth = await _conversation_token_based_auth(
                     conversation_id, conversation_service, agent_config_service
                 )

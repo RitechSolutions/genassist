@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.constants import DEFAULT_NLI_MODEL
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.background_tasks import spawn
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.llm_json import parse_json_object_reply
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
@@ -52,6 +53,7 @@ from app.schemas.prompt_editor import (
     PromptRunProvenance,
     PromptVersionCreate,
     PromptVersionRead,
+    SuggestionOutcome,
 )
 from app.services.evaluation_nli import evaluation_nli_model
 from app.services.evaluation_text import normalize_text
@@ -77,6 +79,7 @@ PROMPT_CHECK_SCORE_BUDGET_SECONDS = 30
 PROMPT_CHECK_METERING_SECONDS = 20
 PROMPT_CHECK_CALL_TIMEOUT_SECONDS = 45
 OPTIMIZE_CALL_TIMEOUT_SECONDS = 80
+PROMPT_EDITOR_CALL_TIMEOUT_SECONDS = 120
 MAX_OPTIMIZE_FAILED = 10
 MAX_OPTIMIZE_FAILED_ACTUAL_CHARS = 4_000
 MAX_OPTIMIZE_EXAMPLES = 20
@@ -119,6 +122,14 @@ class PreparedCase:
 
 
 @dataclass
+class AbandonedCall:
+    task: "asyncio.Task[Any]"
+    call_index: int
+    purpose: str
+    provider_id: UUID
+
+
+@dataclass
 class PromptUsageRef:
 
     execution_id: str
@@ -126,6 +137,7 @@ class PromptUsageRef:
     agent_id: Optional[UUID] = None
     entries: List[Dict[str, Any]] = field(default_factory=list)
     costs: Dict[int, Optional[Decimal]] = field(default_factory=dict)
+    abandoned: List[AbandonedCall] = field(default_factory=list)
 
 
 @dataclass
@@ -290,7 +302,7 @@ def _case_outcome(metrics: Dict[str, Any]) -> Dict[str, Any]:
 
 def _usage_total(ref: "PromptUsageRef") -> Dict[str, Any]:
     """What the run actually spent. Entries with no usage are counted, not dropped:
-    the provider answered, it just did not report tokens"""
+    the provider answered without reporting tokens, or the deadline cut the call"""
     totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "responses_without_usage": 0}
     for entry in ref.entries:
         usage = entry.get("usage")
@@ -380,6 +392,37 @@ def _usage_entry(response: Any, call_index: int, purpose: str, provider_id: UUID
     }
 
 
+class _MeteredCall:
+    def __init__(self, llm: Any, ref: "PromptUsageRef", call_index: int, purpose: str, provider_id: UUID) -> None:
+        self.llm, self.ref, self.call_index, self.purpose, self.provider_id = llm, ref, call_index, purpose, provider_id
+        self.cut: Optional["asyncio.Task[Any]"] = None
+
+    async def ainvoke(self, messages: Any) -> Any:
+        task = asyncio.ensure_future(self.llm.ainvoke(messages))
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            self.cut = task
+            self.ref.abandoned.append(AbandonedCall(task, self.call_index, self.purpose, self.provider_id))
+            raise
+
+    def hold_until_done(self, slot: asyncio.Semaphore, budget: "Budget") -> bool:
+        """Holds ``slot`` during a cut call until the budget ends; False if no cut call is running"""
+        if self.cut is None or self.cut.done():
+            return False
+        released = False
+
+        def release(*_args: Any) -> None:
+            nonlocal released
+            if not released:
+                released = True
+                slot.release()
+
+        self.cut.add_done_callback(release)
+        asyncio.get_running_loop().call_later(max(budget.remaining(), 0), release)
+        return True
+
+
 def _collect_usage(ref: "PromptUsageRef", runs: List["_CaseRun"], provider_id: UUID) -> None:
     """Response is metered before scoring, so failures don't skip it"""
     for run in runs:
@@ -395,6 +438,17 @@ def _collect_judge_usage(ref: "PromptUsageRef", case_ref: "PromptUsageRef", posi
     for offset, entry in enumerate(case_ref.entries):
         call_index = PROMPT_JUDGE_CALL_INDEX_BASE + position * MAX_JUDGE_RULES + offset
         ref.entries.append({**entry, "call_index": call_index})
+
+
+def _settle_abandoned(ref: "PromptUsageRef") -> List[AbandonedCall]:
+    for call in ref.abandoned:
+        task = call.task
+        # exception() raises on a cancelled task; reading it also marks a late failure as retrieved
+        answered = task.done() and not task.cancelled() and task.exception() is None
+        ref.entries.append(
+            _usage_entry(task.result() if answered else None, call.call_index, call.purpose, call.provider_id)
+        )
+    return [call for call in ref.abandoned if not call.task.done()]
 
 
 def _summarise(rows: List[PromptEvalCaseResult]) -> PromptEvalSummary:
@@ -433,16 +487,16 @@ def _split_refused(detail: str) -> AppException:
 def validate_case_split(
     split: Optional[CaseSplit],
     index: List[Tuple[UUID, Optional[UUID], Optional[int]]],
-    failed_ids: List[UUID],
+    result_ids: List[UUID],
 ) -> ValidatedSplit:
     """Validated against suite index; refused request builds no model.
     Both sides str()-ed to prevent one conversation appearing as two groups"""
     known = {str(entry[0]) for entry in index}
     ordered = [entry[0] for entry in index]
 
-    if any(str(case_id) not in known for case_id in failed_ids):
+    if any(str(case_id) not in known for case_id in result_ids):
         raise _split_refused(
-            "Some failed cases are no longer in the dataset. Reload the cases and run again."
+            "Some evaluated cases are no longer in the dataset. Reload the cases and run again."
         )
 
     if split is None:
@@ -462,9 +516,9 @@ def validate_case_split(
         if 0 < held < len(members):
             raise _split_refused("A conversation is split across the development and hold-out sets.")
 
-    if any(str(case_id) in holdout for case_id in failed_ids):
+    if any(str(case_id) in holdout for case_id in result_ids):
         raise _split_refused(
-            "A failed case is in the hold-out set; only development failures can be sent."
+            "An evaluated case is in the hold-out set; only development results can be sent."
         )
 
     held_groups = sum(1 for members in groups.values() if members[0] in holdout)
@@ -500,18 +554,29 @@ def _unusable_suggestion(detail: str) -> AppException:
     )
 
 
-def _parse_suggestion(text: str) -> Tuple[str, str]:
-    """Non-matching envelope refused; never returned as suggestion"""
+@dataclass(frozen=True)
+class ParsedSuggestion:
+    prompt: str
+    explanation: str
+    keep: bool
+
+
+def _parse_suggestion(text: str, current_prompt: str) -> ParsedSuggestion:
+    """Non-matching envelope refused; never returned as suggestion. A keep with no
+    prompt text means the current one; an unknown decision reads as change"""
     envelope = (
-        "The model did not return the agreed reply: a single JSON object with an "
-        "improved_prompt and an explanation. Try again or pick another provider."
+        "The model did not return the agreed reply: a single JSON object with a diagnosis, "
+        "a decision, an improved_prompt and an explanation. Try again or pick another provider."
     )
     try:
-        parsed = parse_json_object_reply(text)
+        parsed = parse_json_object_reply(text, strict=False)
     except ValueError as exc:
         raise _unusable_suggestion(envelope) from exc
 
+    keep = str(parsed.get("decision") or "").strip().lower() == "keep"
     suggested, explanation = parsed.get("improved_prompt"), parsed.get("explanation")
+    if keep and not (isinstance(suggested, str) and suggested.strip()):
+        suggested = current_prompt
     if not isinstance(suggested, str) or not isinstance(explanation, str):
         raise _unusable_suggestion(envelope)
     if not suggested.strip():
@@ -520,7 +585,16 @@ def _parse_suggestion(text: str) -> Tuple[str, str]:
         raise _unusable_suggestion(
             f"The suggested prompt is longer than the {MAX_PROMPT_CONTENT} character limit."
         )
-    return suggested, explanation
+    return ParsedSuggestion(suggested, explanation, keep)
+
+
+def suggestion_outcome(current: str, suggested: str) -> SuggestionOutcome:
+    r"""The frontend mirrors this with trim().split(/\s+/).join(" ")"""
+    if suggested == current:
+        return "unchanged"
+    if " ".join(suggested.split()) == " ".join(current.split()):
+        return "whitespace_only"
+    return "changed"
 
 
 @dataclass(frozen=True)
@@ -537,26 +611,32 @@ class _Examples:
 
 
 _OPTIMIZE_SYSTEM_PROMPT = (
-    "You are an expert prompt engineer. Your task is to improve a system prompt "
-    "so that when an LLM uses it, the LLM produces responses that match the "
-    "gold dataset expected outputs as closely as possible.\n\n"
+    "You are an expert prompt engineer. You are given a system prompt, the graders its "
+    "replies must satisfy, and the results of the last check. The goal is replies that PASS "
+    "THE GRADERS described under GRADING: an expected output is a reference the grader "
+    "compares against under its rule, never text to copy.\n\n"
     "Rules:\n"
-    "- Study each gold dataset pair carefully: the Input is what the user will say, "
-    "and the Expected output is what the grader compares the reply against, which is "
-    "often a fragment or a reference rather than the whole reply\n"
-    "- Rewrite the system prompt so the LLM would naturally produce replies the "
-    "grader accepts, following the grading rules where they are given\n"
-    "- If there are failed cases, pay special attention to fixing those patterns\n"
+    "- Diagnose first: name what in the current prompt causes the listed failures, or say "
+    "why nothing needs to change\n"
+    "- Patch, do not rewrite: change only what the diagnosis calls for and keep the rules "
+    "that work. Make the smallest change that fixes the listed failures\n"
     "- Preserve the original intent and domain of the prompt\n"
-    "- Make the smallest change that fixes the listed failures. Do not restate what already works\n"
     "- You may remove or merge rules that no longer earn their place; a shorter prompt that "
     "passes is better than a longer one\n"
     "- Do not embed case-specific answers or input-to-answer lookup rules. Keep literal tokens "
     "only when they are task-wide format, schema or behavioural requirements\n"
+    "- Keep every {{placeholder}} exactly as written: the check sends the prompt with the "
+    "placeholders literal and no tools available\n"
+    "- A failure graded by an LLM judge is a single sample. A score just under the pass mark "
+    "may be noise or a rubric the reply cannot satisfy, so prefer a minimal clarification or "
+    "no change over rewriting rules that work\n"
     "- If previous attempts are listed, build on what improved and avoid what regressed\n"
-    "- Return your response as JSON with two fields:\n"
-    '  {"improved_prompt": "the full improved prompt text", '
-    '"explanation": "brief explanation of what you changed and why"}\n'
+    "- Reply with ONE JSON object with these fields in this order:\n"
+    '  {"diagnosis": "one or two sentences: the cause, or why nothing needs to change", '
+    '"decision": "change" or "keep", '
+    '"improved_prompt": "the full improved prompt text", '
+    '"explanation": "what changed and why, or why the prompt should stay"}\n'
+    "  When the decision is keep, improved_prompt may be empty\n"
     "- Return ONLY the JSON object, no other text"
 )
 
@@ -571,8 +651,10 @@ def _render_attempt(attempt: PreviousAttempt, labels: Dict[str, str]) -> str:
     ]
     if attempt.diff_summary:
         lines.append(f"Change:\n{attempt.diff_summary}")
-    if attempt.explanation:
-        lines.append(f"Explanation: {attempt.explanation}")
+        if attempt.explanation:
+            lines.append(f"Explanation: {attempt.explanation}")
+    else:
+        lines.append("Change: none (the prompt was returned unchanged)")
     if attempt.regressions:
         refs = [
             labels.get(str(ref.case_id), "a case not shown above")
@@ -597,6 +679,17 @@ def _render_history(attempts: List[PreviousAttempt], labels: Dict[str, str]) -> 
     return "\n\n---\n".join(blocks)
 
 
+def _pass_state(passing: Optional[List[UUID]], failed: int) -> str:
+    if not passing:
+        return ""
+    if not failed:
+        return "No evaluated case failed. Keep the prompt unless the additional instructions ask for a change."
+    return (
+        f"{len(passing)} evaluated case(s) pass with the current prompt; "
+        f"{failed} failing case(s) are listed under FAILED CASES."
+    )
+
+
 def _optimize_request_text(
     current_prompt: str,
     gold_examples: str,
@@ -604,6 +697,7 @@ def _optimize_request_text(
     history_section: str,
     instructions: Optional[str],
     grading_rules: str,
+    pass_state: str = "",
 ) -> str:
     grading = (
         "\n\n## GRADING\n"
@@ -625,11 +719,13 @@ def _optimize_request_text(
         else ""
     )
     extra = f"\n\n## ADDITIONAL INSTRUCTIONS\n{instructions}" if instructions else ""
+    results = f"\n\n## RESULTS OF THE LAST CHECK\n{pass_state}" if pass_state else ""
     return (
         f"## CURRENT SYSTEM PROMPT\n{current_prompt}\n\n"
         f"## GOLD DATASET (Input → Expected Output)\n"
         f"The improved prompt must guide the LLM to produce replies the grader accepts:\n\n"
         f"{gold_examples}"
+        f"{results}"
         f"{grading}"
         f"{failed}"
         f"{history}"
@@ -974,7 +1070,9 @@ class PromptEditorService:
         from app.modules.workflow.llm.provider import LLMProvider
 
         try:
-            return await injector.get(LLMProvider).get_model_from_provider(provider)
+            return await injector.get(LLMProvider).get_model_from_provider(
+                provider, call_timeout_seconds=PROMPT_EDITOR_CALL_TIMEOUT_SECONDS
+            )
         except AppException:
             raise
         except Exception as exc:
@@ -1034,7 +1132,9 @@ class PromptEditorService:
         semaphore: asyncio.Semaphore,
         check_id: UUID,
     ) -> _CaseRun:
-        async with semaphore:
+        await semaphore.acquire()
+        handed_over = False
+        try:
             remaining = budget.remaining()
             if remaining <= 0:
                 return _CaseRun(
@@ -1059,6 +1159,8 @@ class PromptEditorService:
                 actual = response.text
             except asyncio.TimeoutError:
                 budget_cut = call_timeout < PROMPT_CHECK_CALL_TIMEOUT_SECONDS
+                # The cut call still runs to be metered, so it keeps the slot until it ends
+                handed_over = llm.hold_until_done(semaphore, budget)
                 return _CaseRun(
                     case=case, position=position, status="execution_failed",
                     error=(
@@ -1076,6 +1178,9 @@ class PromptEditorService:
                 return _CaseRun(
                     case=case, position=position, status="execution_failed", error=_INTERNAL_FAILURE,
                 )
+        finally:
+            if not handed_over:
+                semaphore.release()
         return _CaseRun(
             case=case, position=position, status="scored", actual=actual, response=response, latency_ms=latency_ms
         )
@@ -1156,7 +1261,15 @@ class PromptEditorService:
                 budget=budget,
                 techniques=request.techniques,
                 metrics=metrics,
-                judge_model=judge_model,
+                judge_model=judge_model
+                if usage_ref is None
+                else _MeteredCall(
+                    judge_model,
+                    usage_ref,
+                    PROMPT_JUDGE_CALL_INDEX_BASE + run.position * MAX_JUDGE_RULES,
+                    _JUDGE_TECHNIQUE,
+                    request.provider_id,
+                ),
                 usage_ref=usage_ref,
             )
 
@@ -1294,7 +1407,7 @@ class PromptEditorService:
                 logger.warning("Pricing prompt-editor call %s failed", index, exc_info=True)
                 ref.costs[index] = None
 
-    async def _persist_usage(self, ref: PromptUsageRef) -> "RecordingStatus":
+    async def _persist_usage(self, ref: PromptUsageRef, *, replace_usage: bool = False) -> "RecordingStatus":
         from app.modules.workflow.engine.llm_usage_tracking import resolve_provider_model
         from app.services.llm_usage_recorder import LlmUsageRecorder
 
@@ -1316,20 +1429,48 @@ class PromptEditorService:
             agent_id=ref.agent_id,
             source="prompt_editor",
             configured_rates=self._rates,
+            replace_usage=replace_usage,
         )
 
     async def _flush_usage(self, ref: PromptUsageRef) -> bool:
         """One hand-over per run (per-case would exceed budget). True unless the ledger
         reported the batch written, capture switched off, or nothing to write. Anything
-        else, including an unknown status, reads as not recorded"""
+        else, including an unknown status, reads as not recorded. Calls the deadline cut
+        are handed over as tokens-unknown rows now and repaired once they answer"""
+        pending = _settle_abandoned(ref)
         if not ref.entries:
             return False
+        await self._price_usage(ref)
         try:
             status = await asyncio.wait_for(self._persist_usage(ref), PROMPT_CHECK_METERING_SECONDS)
         except Exception:
             logger.warning("Recording prompt-editor LLM usage failed", exc_info=True)
-            return True
+            status = None
+        for call in pending:
+            try:
+                spawn(
+                    self._repair_usage(ref, call),
+                    name=f"prompt-editor-late-usage:{ref.execution_id}:{call.call_index}",
+                )
+            except Exception:
+                logger.warning("Scheduling the late usage repair failed; the call stays unpriced", exc_info=True)
         return status not in _HANDED_OVER
+
+    async def _repair_usage(self, ref: PromptUsageRef, call: AbandonedCall) -> None:
+        try:
+            response = await asyncio.wait_for(call.task, PROMPT_EDITOR_CALL_TIMEOUT_SECONDS)
+        except Exception:
+            logger.warning(
+                "Prompt editor: late %s call %s never answered", call.purpose, call.call_index, exc_info=True
+            )
+            return
+        late = PromptUsageRef(
+            ref.execution_id,
+            ref.workflow_id,
+            ref.agent_id,
+            entries=[_usage_entry(response, call.call_index, call.purpose, call.provider_id)],
+        )
+        await self._persist_usage(late, replace_usage=True)
 
     async def evaluate_prompt(
         self,
@@ -1365,7 +1506,13 @@ class PromptEditorService:
             runs = await asyncio.gather(
                 *(
                     self._call_model(
-                        case, position, request.prompt_content, llm, model_budget, semaphore, check_id
+                        case,
+                        position,
+                        request.prompt_content,
+                        _MeteredCall(llm, ref, position, "prompt_check", request.provider_id),
+                        model_budget,
+                        semaphore,
+                        check_id,
                     )
                     for position, case in enumerate(cases)
                 )
@@ -1458,9 +1605,11 @@ class PromptEditorService:
         suite_id: Optional[UUID],
         split: ValidatedSplit,
         failed: List[FailedCaseRef],
+        passing: Optional[List[UUID]] = None,
     ) -> _Examples:
         """Failures first, dev cases next, shared budget. No duplicate failed cases.
         Re-read input/expectation for optimizer accuracy."""
+        passes = {str(case_id) for case_id in passing or []}
         shown_failed = failed[:MAX_OPTIMIZE_FAILED]
         failure_ids = [entry.case_id for entry in shown_failed]
         already_shown = {str(case_id) for case_id in failure_ids}
@@ -1507,6 +1656,8 @@ class PromptEditorService:
                 block += f"\nFailed: {', '.join(entry.failed_metrics)}"
             if entry.feedback:
                 block += f"\nFeedback: {entry.feedback}"
+            if entry.judge_score is not None:
+                block += f"\nJudge score: {entry.judge_score:.2f}"
             if not _fits(block):
                 truncated = True
                 continue
@@ -1535,7 +1686,8 @@ class PromptEditorService:
                     truncated = True
                     continue
                 labels[str(row.id)] = f"Case {label_index}"
-                gold_blocks.append(f"Case {label_index}\n{block}")
+                heading = f"Case {label_index} (passes now)" if str(row.id) in passes else f"Case {label_index}"
+                gold_blocks.append(f"{heading}\n{block}")
                 label_index += 1
                 case_ids.append(row.id)
             scanned += len(window)
@@ -1578,9 +1730,13 @@ class PromptEditorService:
 
         failed = list(request.failed_cases or [])
         reject_unsupported_techniques([m for entry in failed for m in entry.failed_metrics])
-        split = validate_case_split(request.case_split, index, [entry.case_id for entry in failed])
+        split = validate_case_split(
+            request.case_split,
+            index,
+            [entry.case_id for entry in failed] + list(request.passing_case_ids or []),
+        )
         _reject_holdout_regressions(request.previous_attempts, split)
-        examples = await self._build_examples(suite_id, split, failed)
+        examples = await self._build_examples(suite_id, split, failed, request.passing_case_ids)
 
         provider = await injector.get(LlmProviderService).get_by_id(request.provider_id)
         self._remember_provider(provider)
@@ -1622,6 +1778,7 @@ class PromptEditorService:
                     _render_history(request.previous_attempts or [], examples.labels),
                     request.instructions,
                     describe_expectations(request.techniques, configs),
+                    pass_state=_pass_state(request.passing_case_ids, len(request.failed_cases or [])),
                 )
             ),
         ]
@@ -1629,7 +1786,8 @@ class PromptEditorService:
         try:
             try:
                 response = await asyncio.wait_for(
-                    llm.ainvoke(messages), timeout=OPTIMIZE_CALL_TIMEOUT_SECONDS
+                    _MeteredCall(llm, ref, 0, "prompt_optimize", request.provider_id).ainvoke(messages),
+                    timeout=OPTIMIZE_CALL_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError as exc:
                 raise AppException(
@@ -1650,14 +1808,20 @@ class PromptEditorService:
 
             ref.entries.append(_usage_entry(response, 0, "prompt_optimize", request.provider_id))
             await self._price_usage(ref)
-            suggested_prompt, explanation = _parse_suggestion(response.text)
+            parsed = _parse_suggestion(response.text, request.current_prompt)
+            outcome = suggestion_outcome(request.current_prompt, parsed.prompt)
+            logger.info(
+                "Prompt optimize %s: outcome %s, keep %s, %d -> %d chars",
+                str(op_id)[:8], outcome, parsed.keep, len(request.current_prompt), len(parsed.prompt),
+            )
         finally:
             metering_handoff_failed = await self._flush_usage(ref)
 
         cost_usd, unpriced_calls = _cost_total(ref)
         return PromptOptimizeResponse(
-            suggested_prompt=suggested_prompt,
-            explanation=explanation,
+            suggested_prompt=parsed.prompt,
+            explanation=parsed.explanation if (outcome == "changed") != parsed.keep else "",
+            outcome=outcome,
             exposure={
                 "case_ids": examples.case_ids,
                 "failure_case_ids": examples.failure_case_ids,

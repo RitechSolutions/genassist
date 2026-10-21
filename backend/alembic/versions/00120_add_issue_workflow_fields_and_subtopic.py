@@ -39,10 +39,10 @@ def _audit_columns() -> list[sa.Column]:
 
 
 def upgrade() -> None:
+    op.add_column(
+        "conversation_analysis", sa.Column("subtopic", sa.String(length=255), nullable=True), if_not_exists=True
+    )
     with op.get_context().autocommit_block():
-        op.add_column(
-            "conversation_analysis", sa.Column("subtopic", sa.String(length=255), nullable=True), if_not_exists=True
-        )
         left_invalid = op.get_bind().scalar(
             sa.text("SELECT NOT indisvalid FROM pg_index WHERE indexrelid = to_regclass(:name)"),
             {"name": _INDEX},

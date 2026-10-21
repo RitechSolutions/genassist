@@ -192,7 +192,8 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
     allProviders.find((p) => p.id === config.providerId),
     typeSelect,
     config.type,
-    fallbackChainProviders(allProviders, config.providerId, selectedFallbackChain)
+    fallbackChainProviders(allProviders, config.providerId, selectedFallbackChain),
+    systemPrompt
   );
 
   const handleMemoryTrimmingModeChange = (mode: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval") => {
@@ -519,8 +520,9 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
               Enable Prompt Caching
             </Label>
             <span className="text-xs text-muted-foreground">
-              Caches the stable start of the system prompt for 5 minutes so
-              repeat calls read it at a reduced rate
+              Caches the stable start of the system prompt for 5 minutes on
+              Anthropic and supported Bedrock models. Cache writes can cost
+              more than input.
             </span>
           </div>
           <div className="flex-1" />

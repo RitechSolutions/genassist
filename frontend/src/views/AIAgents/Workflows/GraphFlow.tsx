@@ -36,6 +36,7 @@ import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
 import { useParams, useSearchParams } from "react-router-dom";
 import { WorkflowLoadingOverlay } from "./components/WorkflowLoadingOverlay";
 import { getWorkflowById, updateWorkflow } from "@/services/workflows";
+import { extractErrorMessage } from "@/helpers/apiError";
 import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
 import { WorkflowProvider } from "./context/WorkflowContext";
@@ -791,7 +792,8 @@ const GraphFlowContent: React.FC = () => {
       setHasUnsavedChanges(false);
       setRefreshKey((prevKey) => prevKey + 1);
     } catch (error) {
-      // ignore
+      toast.error(extractErrorMessage(error, "Could not save the workflow."));
+      throw error;
     }
   };
   const handleUpdateWorkflowTestInputs = (inputs: Record<string, string>) => {

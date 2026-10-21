@@ -4,10 +4,9 @@ import tempfile
 from uuid import UUID
 import uuid
 from fastapi import UploadFile
-from fastapi_injector import Injected
 import httpx
 from injector import inject
-from typing import Optional, List
+from typing import Optional
 import logging
 import base64
 from urllib.parse import quote
@@ -348,7 +347,10 @@ class FileManagerService:
     async def get_file_content(self, file: FileModel) -> bytes:
         """Get file content from storage provider."""
         # initialize the storage provider
-        await self._initialize_storage_provider(file.storage_provider)
+        await self._initialize_storage_provider(
+            file.storage_provider,
+            file.storage_path,
+        )
 
         # make sure the storage provider is initialized
         if not self.storage_provider.is_initialized():
@@ -371,16 +373,52 @@ class FileManagerService:
         return file, content
 
     async def download_file_to_path(self, file_id: UUID, path: str) -> None:
-        """Download file to path."""
+        """Download a File Manager file to disk without buffering it here."""
+        partial_path: Optional[str] = None
         try:
             # create the directory if it doesn't exist
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            destination_dir = os.path.dirname(path) or "."
+            os.makedirs(destination_dir, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                dir=destination_dir,
+                prefix=f".{os.path.basename(path)}.",
+                suffix=".part",
+                delete=False,
+            ) as partial_file:
+                partial_path = partial_file.name
 
             file = await self.get_file_by_id(file_id)
-            content = await self.get_file_content(file)
-            with open(path, "wb") as f:
-                f.write(content)
+            await self._initialize_storage_provider(
+                file.storage_provider,
+                file.storage_path,
+            )
+            if not self.storage_provider or not self.storage_provider.is_initialized():
+                raise ValueError("Storage provider not initialized")
+
+            download_path = (
+                file.path
+                if file.storage_provider == "s3"
+                else f"{self.storage_provider.get_base_path()}/{file.path}"
+            )
+            downloaded = await self.storage_provider.download_file_to_path(
+                download_path,
+                partial_path,
+            )
+            if not downloaded:
+                raise OSError("Storage provider did not download the file")
+            os.replace(partial_path, path)
+            partial_path = None
         except Exception as e:
+            if partial_path is not None:
+                try:
+                    os.unlink(partial_path)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    logger.warning(
+                        "Failed to remove partial downloaded file",
+                        exc_info=True,
+                    )
             logger.error(f"Failed to download file to path {path}: {e}")
             raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(e))
 
@@ -509,13 +547,29 @@ class FileManagerService:
 
 
     # ==================== Helper Methods ====================
-    async def _initialize_storage_provider(self, storage_provider_name: str) -> BaseStorageProvider:
+    async def _initialize_storage_provider(
+        self,
+        storage_provider_name: str,
+        storage_path: Optional[str] = None,
+    ) -> BaseStorageProvider:
         """Initialize the storage provider."""
         current_name = getattr(self.storage_provider, "name", None) if self.storage_provider else None
+        expected_s3_bucket = (
+            storage_path if storage_provider_name == "s3" and storage_path else None
+        )
+        current_base_path = (
+            self.storage_provider.get_base_path()
+            if self.storage_provider and expected_s3_bucket is not None
+            else None
+        )
         if (
             self.storage_provider
             and self.storage_provider.is_initialized()
             and current_name == storage_provider_name
+            and (
+                expected_s3_bucket is None
+                or current_base_path == expected_s3_bucket
+            )
         ):
             return self.storage_provider
 
@@ -527,6 +581,11 @@ class FileManagerService:
         # get the storage provider configuration for the file storage provider
         # convert pydantic settings object to a plain dict for providers
         config = file_storage_settings.model_dump()
+        if expected_s3_bucket is not None:
+            # The File Manager record captures the bucket selected in File
+            # Manager Settings when the file was created. Use it for reads so
+            # downloads do not silently fall back to the environment bucket.
+            config["AWS_BUCKET_NAME"] = expected_s3_bucket
 
         # initialize the storage provider with the resolved configuration
         await self.set_storage_provider(
