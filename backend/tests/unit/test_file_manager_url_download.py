@@ -224,3 +224,17 @@ async def test_a_public_link_that_merely_contains_a_uuid_is_still_downloaded(ser
 
     assert await service.download_file_from_url_to_path(public_link, str(destination)) is True
     assert requested_urls == [public_link]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_own_file_write_never_deletes_a_file_that_was_already_there(service, resolver, responses, tmp_path, monkeypatch):
+    monkeypatch.setattr(service, "get_file_by_id", AsyncMock(return_value=SimpleNamespace(id=uuid.uuid4())))
+    monkeypatch.setattr(service, "get_file_content", AsyncMock(return_value=b"own,file\n1,2\n"))
+    monkeypatch.setattr(file_manager.os, "makedirs", lambda *args, **kwargs: (_ for _ in ()).throw(PermissionError(13, "Permission denied")))
+    destination = tmp_path / "existing.csv"
+    destination.write_bytes(b"keep me")
+
+    with pytest.raises(AppException):
+        await service.download_file_from_url_to_path(f"http://app:8000/api/file-manager/files/{uuid.uuid4()}/source", str(destination))
+
+    assert destination.read_bytes() == b"keep me"

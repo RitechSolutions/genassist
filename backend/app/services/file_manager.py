@@ -412,14 +412,17 @@ class FileManagerService:
             logger.error(f"Failed to read file {file_id} from storage: {e}")
             raise AppException(ErrorKey.FILE_NOT_FOUND, 404, "The file could not be read from storage.")
 
+        file_created = False
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "wb") as f:
+                file_created = True
                 f.write(content)
         except OSError as e:
             logger.error(f"Failed to write file {file_id} to path {path}: {e}")
-            with suppress(OSError):
-                os.remove(path)
+            if file_created:
+                with suppress(OSError):
+                    os.remove(path)
             raise AppException(ErrorKey.INVALID_FILE_PATH, 400, "Could not download the file.")
 
     async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
