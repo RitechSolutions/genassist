@@ -68,6 +68,90 @@ async def test_connect_passes_the_password_to_the_driver_without_logging_it(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("database_type", "port"), [("postgresql", 5432), ("mysql", 3306), ("mssql", 1433)])
+@pytest.mark.parametrize(
+    ("saved_user", "saved_password", "expected_user", "expected_password"),
+    [
+        ("reader", "p%40ss", "reader", "p@ss"),
+        ("reader%40acme", "S3cret%25", "reader@acme", "S3cret%"),
+        ("reader", "p+ss", "reader", "p+ss"),
+        ("re:ader/x", "p@ss:S3cret/1", "re:ader/x", "p@ss:S3cret/1"),
+    ],
+    ids=["encoded-at", "encoded-user-and-percent", "plus-kept", "raw-separators"],
+)
+async def test_connect_decodes_url_encoded_credentials_like_a_connection_string(
+    database_type, port, saved_user, saved_password, expected_user, expected_password
+):
+    config = _host_config(database_type, port, saved_password)
+    config["database_user"] = saved_user
+    manager = DatabaseManager(config)
+    engine_factory = MagicMock()
+
+    with patch.object(database_manager_module, "create_async_engine", engine_factory):
+        await manager.connect()
+
+    connection_url = engine_factory.call_args.args[0]
+    assert connection_url.username == expected_user
+    assert connection_url.password == expected_password
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("database_type", "port"), [("postgresql", 5432), ("mysql", 3306)])
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({"database_name": "shop?ssl=require"}, {"database": "shop", "query": {"ssl": "require"}}),
+        ({"database_host": "[::1]"}, {"host": "::1"}),
+        ({"database_user": 1234, "database_name": 2024}, {"username": "1234", "database": "2024"}),
+    ],
+    ids=["options-in-database-name", "bracketed-ipv6-host", "number-values"],
+)
+async def test_connect_reads_host_settings_like_a_connection_string(database_type, port, overrides, expected):
+    manager = DatabaseManager({**_host_config(database_type, port), **overrides})
+    engine_factory = MagicMock()
+
+    with patch.object(database_manager_module, "create_async_engine", engine_factory):
+        await manager.connect()
+
+    connection_url = engine_factory.call_args.args[0]
+    for field, value in expected.items():
+        assert getattr(connection_url, field) == value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("database_type", "port"), [("postgresql", 5432), ("mysql", 3306), ("mssql", 1433)])
+@pytest.mark.parametrize(
+    "overrides",
+    [{"database_host": "db.internal:5433"}, {"database_port": None}],
+    ids=["port-in-host", "missing-port"],
+)
+async def test_connect_rejects_a_host_and_port_that_do_not_form_an_address(caplog, database_type, port, overrides):
+    manager = DatabaseManager({**_host_config(database_type, port), **overrides})
+
+    with caplog.at_level(logging.INFO), pytest.raises(ValueError, match="Invalid database connection string"):
+        await manager.connect()
+
+    assert SECRET_FRAGMENT not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("database_type", "port"), [("postgresql", 5432), ("mysql", 3306), ("mssql", 1433)])
+async def test_connect_never_leaves_missing_credentials_to_driver_defaults(database_type, port):
+    config = {**_host_config(database_type, port), "database_user": None, "database_name": None}
+    config.pop("database_password")
+    manager = DatabaseManager(config)
+    engine_factory = MagicMock()
+
+    with patch.object(database_manager_module, "create_async_engine", engine_factory):
+        await manager.connect()
+
+    connection_url = engine_factory.call_args.args[0]
+    assert connection_url.username is not None
+    assert connection_url.password is not None
+    assert connection_url.database is not None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "connection_string",
     [
