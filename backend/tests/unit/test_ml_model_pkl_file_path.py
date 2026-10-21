@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.schemas import ml_model as ml_model_schema
 from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate, is_in_ml_models_dir
+from app.core.exceptions.exception_classes import AppException
 from app.services.ml_models import MLModelsService
 
 
@@ -47,34 +48,63 @@ class TestIsInMlModelsDir:
         assert not is_in_ml_models_dir(str(link))
 
 
-class TestPklFileValidator:
+class TestCreateValidator:
+    def _create(self, pkl_file):
+        return MLModelCreate(
+            name="m", description="d", model_type="other", features=["a"],
+            target_variable="t", pkl_file=pkl_file,
+        )
+
     def test_accepts_path_inside(self, ml_models_dir):
         path = str(ml_models_dir / "model.pkl")
-        assert MLModelUpdate(pkl_file=path).pkl_file == path
+        assert self._create(path).pkl_file == path
 
     def test_accepts_none(self, ml_models_dir):
-        assert MLModelUpdate(pkl_file=None).pkl_file is None
+        assert self._create(None).pkl_file is None
 
     def test_rejects_path_outside(self, ml_models_dir):
         with pytest.raises(ValidationError):
-            MLModelUpdate(pkl_file="/etc/passwd")
+            self._create("/etc/passwd")
 
     def test_rejects_dot_dot_escape(self, ml_models_dir):
         with pytest.raises(ValidationError):
-            MLModelUpdate(pkl_file=str(ml_models_dir / ".." / ".." / "app.db"))
-
-    def test_create_rejects_path_outside(self, ml_models_dir):
-        with pytest.raises(ValidationError):
-            MLModelCreate(
-                name="m", description="d", model_type="other", features=["a"],
-                target_variable="t", pkl_file="/etc/passwd",
-            )
+            self._create(str(ml_models_dir / ".." / ".." / "app.db"))
 
     def test_read_accepts_stored_path_outside(self, ml_models_dir):
         # rows saved before the check, or by another deployment, must still list
         now = datetime.now()
         model = MLModelRead(id=uuid4(), created_at=now, updated_at=now, pkl_file="/src/datavolume/ml_models/x.pkl")
         assert model.pkl_file == "/src/datavolume/ml_models/x.pkl"
+
+
+class TestUpdatePklFile:
+    async def _update(self, stored_pkl_file, new_pkl_file):
+        repository = AsyncMock()
+        repository.get_by_name.return_value = None
+        repository.get_by_id.return_value = SimpleNamespace(id=uuid4(), pkl_file=stored_pkl_file)
+        await MLModelsService(repository).update(uuid4(), MLModelUpdate(pkl_file=new_pkl_file, description="new"))
+        return repository
+
+    @pytest.mark.asyncio
+    async def test_accepts_new_path_inside(self, ml_models_dir):
+        repository = await self._update(None, str(ml_models_dir / "model.pkl"))
+        repository.update.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_rejects_new_path_outside(self, ml_models_dir):
+        with pytest.raises(AppException):
+            await self._update(str(ml_models_dir / "model.pkl"), "/etc/passwd")
+
+    @pytest.mark.asyncio
+    async def test_rejects_dot_dot_escape(self, ml_models_dir):
+        with pytest.raises(AppException):
+            await self._update(None, str(ml_models_dir / ".." / ".." / "app.db"))
+
+    @pytest.mark.asyncio
+    async def test_accepts_unchanged_stored_path_outside(self, ml_models_dir):
+        # the edit form sends an older model's stored path back with a description change
+        repository = await self._update("/src/datavolume/ml_models/x.pkl", "/src/datavolume/ml_models/x.pkl")
+        repository.update.assert_awaited_once()
 
 
 class TestDeleteKeepsFilesOutsideMlModelsDir:
@@ -131,8 +161,17 @@ class TestUploadFilePath:
         assert response.file_path == f"{ml_models_dir.parent}/ml_models/abc.pkl"
 
     @pytest.mark.asyncio
-    async def test_drops_file_path_outside_ml_models_dir(self, ml_models_dir, tmp_path):
-        # a custom file manager folder: the model is loaded through file_id instead
-        response = await self._upload(tmp_path / "custom")
-        assert response.file_path is None
-        assert response.file_id
+    async def test_copies_file_outside_ml_models_dir_into_it(self, ml_models_dir, tmp_path, monkeypatch):
+        # a custom file manager folder: the model gets a copy inside the ML models folder
+        from app.api.v1.routes import ml_models as ml_models_routes
+
+        monkeypatch.setattr(ml_models_routes, "ML_MODELS_UPLOAD_DIR", str(ml_models_dir))
+        custom = tmp_path / "custom"
+        (custom / "ml_models").mkdir(parents=True)
+        (custom / "ml_models" / "abc.pkl").write_bytes(b"model")
+
+        response = await self._upload(custom)
+
+        assert response.file_path == str(ml_models_dir / f"{response.file_id}.pkl")
+        assert (ml_models_dir / f"{response.file_id}.pkl").read_bytes() == b"model"
+        assert is_in_ml_models_dir(response.file_path)

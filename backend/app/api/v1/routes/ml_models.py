@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import tempfile
 import uuid
 from pathlib import Path
@@ -156,9 +157,11 @@ async def upload_pkl_file(
         if created_file.storage_provider == "local":
             file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
             # A custom file manager folder puts the file outside the ML models folder, where
-            # pkl_file is not accepted; the model is then loaded through file_id instead.
+            # pkl_file is not accepted, so the model gets a copy inside it.
             if not is_in_ml_models_dir(file_path):
-                file_path = None
+                copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
+                await asyncio.to_thread(shutil.copyfile, file_path, copy_path)
+                file_path = copy_path
             # file_path = await file_manager_service.get_file_url(created_file)
 
         file_id = str(created_file.id)

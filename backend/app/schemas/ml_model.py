@@ -36,18 +36,7 @@ class MLModelBase(BaseModel):
     target_variable: Optional[str] = Field(None, max_length=255, description="The prediction target variable")
 
 
-class _PklFileInMlModelsDir(BaseModel):
-    """Checks pkl_file on create and update only, so models already stored elsewhere still read."""
-
-    @field_validator('pkl_file', check_fields=False)
-    @classmethod
-    def validate_pkl_file_in_ml_models_dir(cls, v):
-        if v and not is_in_ml_models_dir(v):
-            raise ValueError('pkl_file must be a file inside the ML models folder')
-        return v
-
-
-class MLModelCreate(_PklFileInMlModelsDir, MLModelBase):
+class MLModelCreate(MLModelBase):
     name: str = Field(..., max_length=255, description="Unique name for the ML model")
     description: str = Field(..., description="Description of what the model does")
     model_type: ModelType = Field(..., description="Type of machine learning model")
@@ -61,8 +50,17 @@ class MLModelCreate(_PklFileInMlModelsDir, MLModelBase):
             raise ValueError('Features list must not be empty')
         return v
 
+    # Update is checked in MLModelsService.update instead, where the stored path is known:
+    # the edit form sends an older model's stored pkl_file back unchanged.
+    @field_validator('pkl_file')
+    @classmethod
+    def validate_pkl_file_in_ml_models_dir(cls, v):
+        if v and not is_in_ml_models_dir(v):
+            raise ValueError('pkl_file must be a file inside the ML models folder')
+        return v
 
-class MLModelUpdate(_PklFileInMlModelsDir, MLModelBase):
+
+class MLModelUpdate(MLModelBase):
     """Update schema - all fields are optional"""
 
 
