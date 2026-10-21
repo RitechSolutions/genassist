@@ -126,6 +126,21 @@ class TestTotalLlmUsageCacheTokens:
         assert usage["cost_is_partial"] is True
         assert usage["cost_usd"] == round(1000 / 1000 * 0.003, 6), "only the priced call is counted"
 
+    def test_bedrock_cache_tokens_count_toward_the_run_input_like_the_ledger(self, monkeypatch):
+        import app.core.config.llm_pricing as llm_pricing
+
+        monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+        s = _state()
+        s.add_llm_usage(
+            100, 10, provider="bedrock", model="us.amazon.nova-2-lite-v1:0", total_tokens=1010,
+            token_details={"input_token_details": {"cache_read": 900, "cache_creation": 0}},
+        )
+
+        usage = s.get_total_llm_usage()
+        assert usage["input_tokens"] == 1000, "Converse reports inputTokens without the cached tokens"
+        assert usage["total_tokens"] == 1010
+        assert usage["cost_usd"] == 0.000023, "pricing still sees the raw 100 uncached tokens"
+
     def test_a_fully_priced_run_is_not_partial(self, monkeypatch):
         import app.core.config.llm_pricing as llm_pricing
 
