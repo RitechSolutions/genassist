@@ -109,6 +109,16 @@ async def test_a_public_url_is_accessible(service, resolver, responses):
 
 
 @pytest.mark.asyncio
+async def test_surrounding_spaces_are_ignored(service, resolver, responses):
+    requested_urls, _ = responses
+
+    result = await service.test_connection("url", {"url": "  https://public.example/doc  "})
+
+    assert result["success"] is True
+    assert requested_urls == ["https://public.example/doc"]
+
+
+@pytest.mark.asyncio
 async def test_a_public_redirect_is_followed(service, resolver, responses):
     requested_urls, replies = responses
     replies["http://public.example/doc"] = (301, {"location": "https://public.example/doc"})

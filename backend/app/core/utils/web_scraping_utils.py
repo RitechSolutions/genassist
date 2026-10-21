@@ -138,6 +138,7 @@ async def fetch_from_url(
     wait_for_ms: int = 0,
     scroll_to_bottom: bool = False,
 ) -> FetchResult:
+    url = url.strip()
     await _validate_url(url)
     safe_headers = _safe_headers(headers)
     if wait_until not in _WAIT_UNTIL_STATES:
