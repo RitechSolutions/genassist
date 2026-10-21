@@ -396,6 +396,7 @@ class WorkflowState:
         total_cache_creation = 0
         unpriced_calls = 0
         fallback_calls = 0
+        fallback_models = set()
         from app.core.config.llm_pricing import resolve_live_pricing
         from app.services.llm_cost_calculator import LlmCostCalculator
         self.llm_cost_calculator = LlmCostCalculator()
@@ -419,6 +420,8 @@ class WorkflowState:
                 total_cost_usd += cost
                 if cost > 0 and not pricing.configured:
                     fallback_calls += 1
+                    provider_key, model_key = ((u.get(k) or "").strip().lower() for k in ("provider", "model"))
+                    fallback_models.add(f"{provider_key}/{model_key}")
         totals = {
             "input_tokens": total_input,
             "output_tokens": total_output,
@@ -428,6 +431,7 @@ class WorkflowState:
             "cost_usd": round(total_cost_usd, 6),
             "cost_is_partial": unpriced_calls > 0,
             "fallback_calls": fallback_calls,
+            "fallback_models": sorted(fallback_models),
             "calls": len(self.llm_usage),
         }
         if not (total_cache_read or total_cache_creation or self._prompt_caching_requested()):

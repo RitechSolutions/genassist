@@ -529,11 +529,11 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
     }
   };
 
-  const hasFallbackCosts = (response?.token_usage?.fallback_calls ?? 0) > 0;
+  const fallbackModels = response?.token_usage?.fallback_models ?? [];
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
-      {hasFallbackCosts && <FallbackRatesNotice />}
+      {fallbackModels.length > 0 && <FallbackRatesNotice models={fallbackModels} />}
       {/* Three-column layout: history | inputs | results. The page title lives
           in the Executions header row (rendered by GraphFlow), not here. */}
       <div className="min-h-0 flex-1">

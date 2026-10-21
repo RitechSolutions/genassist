@@ -147,12 +147,14 @@ class TestTotalLlmUsageFallbackCalls:
         )
         s = _state()
         s.add_llm_usage(10, 5, provider="openai", model="gpt-4o")
-        s.add_llm_usage(10, 5, provider="openai", model="gpt-3.5-turbo")
         s.add_llm_usage(10, 5, provider="openai", model="unknown-model-xyz")
+        s.add_llm_usage(10, 5, provider="openai", model="gpt-3.5-turbo")
+        s.add_llm_usage(10, 5, provider="OpenAI ", model=" GPT-3.5-Turbo")
         s.add_llm_usage(10, 5, provider="ollama", model="llama3")
         usage = s.get_total_llm_usage()
-        assert usage["fallback_calls"] == 2
-        assert usage["calls"] == 4
+        assert usage["fallback_calls"] == 3
+        assert usage["fallback_models"] == ["openai/gpt-3.5-turbo", "openai/unknown-model-xyz"]
+        assert usage["calls"] == 5
         assert usage["cost_usd"] > 0
 
 

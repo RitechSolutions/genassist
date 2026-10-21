@@ -7,10 +7,13 @@ import { cn } from "@/helpers/utils";
 import { useDismissibleNotice } from "@/hooks/useDismissibleNotice";
 
 const NOTICE = "workflow-test-fallback-rates";
-const NOTICE_DATE = "2026-10-20";
 
-export function FallbackRatesNotice() {
-  const notice = useDismissibleNotice(NOTICE, NOTICE_DATE);
+interface FallbackRatesNoticeProps {
+  models: string[];
+}
+
+export function FallbackRatesNotice({ models }: FallbackRatesNoticeProps) {
+  const notice = useDismissibleNotice(NOTICE, JSON.stringify(models));
   const permissions = usePermissions();
   const canManageCosts =
     permissions.includes("*") || permissions.includes("read:llm_provider");
