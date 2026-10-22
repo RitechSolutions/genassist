@@ -3,7 +3,7 @@ import logging
 import os
 import re
 
-from fastapi import Request, WebSocket, WebSocketException
+from fastapi import HTTPException, Request, WebSocket, WebSocketException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
@@ -27,19 +27,32 @@ def _response_error_detail(error: AppException) -> str | None:
     return client_safe_error_detail(error)
 
 
+def _app_exception_body(request: Request, error: AppException) -> dict:
+    if error.error_detail:
+        logger.exception(error.error_detail)
+    logger.info(f"Handled bad request: {error}")
+    return {
+        'error': get_error_message(request=request, error_key=error.error_key, error_variables=error.error_variables),
+        'error_code': error.status_code,
+        'error_key': error.error_key.value,
+        'error_detail': _response_error_detail(error),
+        }
+
+
+def stream_error_body(request: Request, error: Exception) -> dict:
+    """The ``error`` frame a streamed chat turn sends in place of the JSON error response."""
+    if isinstance(error, AppException):
+        return _app_exception_body(request, error)
+    if isinstance(error, HTTPException):
+        return {'error': error.detail, 'error_code': error.status_code}
+    logger.exception("Streamed chat turn failed")
+    return {'error': get_error_message(request=request, error_key=ErrorKey.INTERNAL_ERROR), 'error_code': 500}
+
+
 def init_error_handlers(app):
     @app.exception_handler(AppException)
     def handle_app_exception(request: Request, error: AppException):
-        if error.error_detail:
-            logger.exception(error.error_detail)
-        logger.info(f"Handled bad request: {error}")
-        response = {
-            'error': get_error_message(request=request, error_key=error.error_key, error_variables=error.error_variables),
-            'error_code': error.status_code,
-            'error_key': error.error_key.value,
-            'error_detail': _response_error_detail(error),
-            }
-        return JSONResponse(content=jsonable_encoder(response), status_code=error.status_code)
+        return JSONResponse(content=jsonable_encoder(_app_exception_body(request, error)), status_code=error.status_code)
 
     @app.exception_handler(UpstreamServiceError)
     def handle_upstream_service_error(request: Request, error: UpstreamServiceError):

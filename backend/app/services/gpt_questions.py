@@ -69,7 +69,7 @@ class QuestionAnswerer:
                 SystemMessage(content="You are a helpful assistant."),
                 HumanMessage(content=prompt)
             ])
-            return response.content.strip()
+            return response.text.strip()
         except Exception as e:
             logger.error(f"Error while calling ChatGPT for question answering: {e}")
             raise AppException(error_key=ErrorKey.GPT_TRANSCRIPT_QUESTION_ERROR)

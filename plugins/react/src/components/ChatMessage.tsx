@@ -8,6 +8,7 @@ import { InteractiveContent } from './InteractiveContent';
 import { parseInteractiveContentBlocks } from '../utils/interactiveContent';
 import { defaultTranslations, getTranslationString, mergeTranslations } from '../utils/i18n';
 import { UploadFilePreview } from './common/UploadFilePreview';
+import { LATEST_QUESTION_ATTR } from '../hooks/useScrollManagement';
 
 interface ChatMessageProps {
   message: ChatMessage;
@@ -47,6 +48,7 @@ interface ChatMessageProps {
   /** Read-receipt status to show under this (visitor's) message. Only the latest
    *  visitor message receives one; undefined hides the indicator entirely. */
   receiptStatus?: MessageReceiptStatus;
+  isLatestQuestion?: boolean;
 }
 
 export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
@@ -61,6 +63,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   possibleQueries,
   onQuickQuery,
   isLastMessage = false,
+  isLatestQuestion = false,
   onQuickAction,
   onScheduleConfirm,
   translations: customTranslations,
@@ -378,6 +381,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   return (
     <div 
       style={messageContainerStyle}
+      {...{ [LATEST_QUESTION_ATTR]: isLatestQuestion || undefined }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => { if (!editingFeedback) setIsHovered(false); }}
     >
