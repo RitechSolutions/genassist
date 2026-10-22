@@ -6,7 +6,7 @@ from contextlib import aclosing
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
-from urllib.parse import unquote_plus
+from urllib.parse import unquote, unquote_plus
 
 import yaml
 from sqlalchemy import URL, text
@@ -21,6 +21,10 @@ from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.snowflake import SnowflakeManager
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_credential(value: Optional[str]) -> Optional[str]:
+    return unquote(value) if value else value
 
 
 class DatabaseManager:
@@ -150,8 +154,8 @@ class DatabaseManager:
                     )
                     connection_string = URL.create(
                         "postgresql+asyncpg",
-                        username=self.config.get("database_user"),
-                        password=decrypt_key(self.config.get("database_password")),
+                        username=_decode_credential(self.config.get("database_user")),
+                        password=_decode_credential(decrypt_key(self.config.get("database_password"))),
                         host=host,
                         port=port,
                         database=self.config.get("database_name"),
@@ -181,8 +185,8 @@ class DatabaseManager:
                 )
                 connection_string = URL.create(
                     "mysql+aiomysql",
-                    username=self.config.get("database_user"),
-                    password=decrypt_key(self.config.get("database_password")),
+                    username=_decode_credential(self.config.get("database_user")),
+                    password=_decode_credential(decrypt_key(self.config.get("database_password"))),
                     host=host,
                     port=port,
                     database=self.config.get("database_name"),
@@ -216,8 +220,8 @@ class DatabaseManager:
 
                 connection_string = URL.create(
                     "mssql+aioodbc",
-                    username=self.config.get("database_user"),
-                    password=decrypt_key(self.config.get("database_password")),
+                    username=_decode_credential(self.config.get("database_user")),
+                    password=_decode_credential(decrypt_key(self.config.get("database_password"))),
                     host=host,
                     port=port,
                     database=self.config.get("database_name"),
