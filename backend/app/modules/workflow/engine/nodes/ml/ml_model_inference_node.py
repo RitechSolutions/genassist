@@ -602,8 +602,12 @@ def _mapped_transform(
 
 def _json_safe_scalar(value: Any) -> Any:
     """Convert NumPy scalars to JSON-safe Python scalar values."""
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
     if isinstance(value, np.generic):
         value = value.item()
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_scalar(item) for item in value]
 
     if isinstance(value, float) and not np.isfinite(value):
         return None
@@ -615,6 +619,114 @@ def _json_safe_scalar(value: Any) -> Any:
     except (TypeError, ValueError):
         return str(value)
     return value
+
+
+def _prediction_array(raw_predictions: Any) -> np.ndarray:
+    """Normalize model output without coercing mixed Python values to text."""
+    try:
+        predictions = np.asarray(raw_predictions)
+    except ValueError:
+        return np.asarray(raw_predictions, dtype=object)
+
+    if (
+        isinstance(raw_predictions, (list, tuple))
+        and predictions.dtype.kind in {"S", "U"}
+    ):
+        object_predictions = np.asarray(raw_predictions, dtype=object)
+        if any(
+            not isinstance(value, (str, np.str_))
+            for value in object_predictions.flat
+        ):
+            return object_predictions
+    return predictions
+
+
+def _validated_ratio_baseline_values(
+    normalized_inputs: Dict[str, List[Any]],
+    baseline_column: Any,
+    batch_size: int,
+    target_variable: Any,
+) -> np.ndarray:
+    """Return finite, non-zero numeric baseline values aligned to the batch."""
+    if not isinstance(baseline_column, str) or not baseline_column:
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail="Ratio-target metadata does not identify a baseline column.",
+        )
+
+    if baseline_column not in normalized_inputs:
+        raise AppException(
+            error_key=ErrorKey.MISSING_PARAMETER,
+            error_detail=(
+                "This model was trained on a ratio target "
+                f"('{target_variable}' / '{baseline_column}'); "
+                f"'{baseline_column}' must be supplied as an inference input so "
+                "predictions can be converted back to real units."
+            ),
+        )
+
+    raw_values = _broadcast_column(
+        normalized_inputs[baseline_column],
+        batch_size,
+        baseline_column,
+    )
+    baseline_values = np.empty(len(raw_values), dtype=float)
+    invalid_rows = []
+    for row_number, value in enumerate(raw_values, start=1):
+        reason = None
+        if _is_missing_value(value):
+            reason = "missing"
+        elif isinstance(value, (bool, np.bool_)):
+            reason = "not numeric"
+        else:
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError, OverflowError):
+                reason = "not numeric"
+            else:
+                if not np.isfinite(numeric_value):
+                    reason = "not finite"
+                elif numeric_value == 0:
+                    reason = "zero"
+                else:
+                    baseline_values[row_number - 1] = numeric_value
+        if reason is not None:
+            invalid_rows.append(f"{row_number} ({reason})")
+
+    if invalid_rows:
+        displayed_rows = invalid_rows[:10]
+        omitted_row_count = len(invalid_rows) - len(displayed_rows)
+        invalid_rows_detail = ", ".join(displayed_rows)
+        if omitted_row_count:
+            invalid_rows_detail += f", and {omitted_row_count} more"
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                f"Invalid value(s) for ratio baseline '{baseline_column}' at row(s): "
+                f"{invalid_rows_detail}. Baseline values must be numeric, finite, and non-zero."
+            ),
+        )
+
+    return baseline_values
+
+
+def _apply_ratio_target_transform(
+    predictions: np.ndarray,
+    baseline_values: np.ndarray,
+) -> np.ndarray:
+    """Scale each prediction row by its corresponding ratio baseline."""
+    if predictions.ndim == 0 or predictions.shape[0] != len(baseline_values):
+        prediction_rows = 0 if predictions.ndim == 0 else predictions.shape[0]
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=(
+                "Ratio-target model returned "
+                f"{prediction_rows} prediction row(s) for "
+                f"{len(baseline_values)} baseline row(s)."
+            ),
+        )
+    baseline_shape = (len(baseline_values),) + (1,) * max(predictions.ndim - 1, 0)
+    return predictions * baseline_values.reshape(baseline_shape)
 
 
 def _describe_feature_names(names: Any) -> str:
@@ -817,14 +929,20 @@ def _build_prediction_outputs(
 def _build_probability_outputs(
     probabilities: np.ndarray,
     class_labels: Sequence[Any],
-    predictions: Sequence[Any],
+    prediction_values: Sequence[Any],
 ) -> tuple[List[Dict[str, Any]], Optional[List[Any]]]:
     """Build probability dictionaries and confidence for each predicted class."""
     probabilities = np.asarray(probabilities)
     json_class_labels = [_json_safe_scalar(class_label) for class_label in class_labels]
+    class_indexes = {}
+    for index, class_label in enumerate(json_class_labels):
+        try:
+            class_indexes[class_label] = index
+        except TypeError:
+            continue
     if probabilities.ndim != 2:
         raise ValueError("Probability output must be a two-dimensional array")
-    if probabilities.shape[0] != len(predictions):
+    if probabilities.shape[0] != len(prediction_values):
         raise ValueError(
             "Probability output row count does not match prediction row count"
         )
@@ -837,11 +955,12 @@ def _build_probability_outputs(
         for row in probabilities
     ]
     confidences = []
-    for row, prediction in zip(probabilities, predictions, strict=True):
-        json_prediction = _json_safe_scalar(prediction)
+    for row, prediction in zip(probabilities, prediction_values, strict=True):
         try:
-            predicted_class_index = json_class_labels.index(json_prediction)
-        except ValueError:
+            predicted_class_index = class_indexes.get(prediction)
+        except TypeError:
+            return probability_outputs, None
+        if predicted_class_index is None:
             return probability_outputs, None
         confidences.append(_json_safe_scalar(row[predicted_class_index]))
     return probability_outputs, confidences
@@ -944,6 +1063,7 @@ class MLModelInferenceNode(BaseNode):
 
             # Prepare input array for prediction (always batch format)
             defaults_applied: List[str] = []
+            ratio_baseline_values: Optional[np.ndarray] = None
             try:
                 inference_params = getattr(ml_model, "inference_params", None) or {}
                 target_transform = metadata.get("target_transform")
@@ -1047,6 +1167,13 @@ class MLModelInferenceNode(BaseNode):
                 # build the model-ready matrix and the echoed "input_data".
                 raw_input_data = _build_input_array(normalized_inputs, feature_names)
                 batch_size = raw_input_data.shape[0]
+                if target_transform is not None:
+                    ratio_baseline_values = _validated_ratio_baseline_values(
+                        normalized_inputs,
+                        target_transform.get("baselineColumn"),
+                        batch_size,
+                        ml_model.target_variable,
+                    )
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
                     batch_size, raw_input_data.shape[1] if raw_input_data.ndim == 2 else 0, list(feature_names),
@@ -1236,8 +1363,9 @@ class MLModelInferenceNode(BaseNode):
                 # Get model-derived class labels. Regressors do not expose classes_.
                 class_labels = getattr(model, "classes_", None)
 
-                predictions = np.asarray(model.predict(prediction_input))
-                if class_labels is not None and predictions.ndim == 2 and predictions.shape[1] == 1:
+                raw_predictions = model.predict(prediction_input)
+                predictions = _prediction_array(raw_predictions)
+                if predictions.ndim == 2 and predictions.shape[1] == 1:
                     predictions = predictions[:, 0]
 
                 # Probability outputs are optional and do not determine the predicted class.
@@ -1261,22 +1389,11 @@ class MLModelInferenceNode(BaseNode):
                 # raw ratio (e.g. 0.73) instead of the real-unit value the
                 # caller expects (e.g. 54750). No-op for models with no
                 # targetTransform or legacy models that predate this metadata.
-                if target_transform is not None:
-                    baseline_column = target_transform.get("baselineColumn")
-                    if baseline_column not in normalized_inputs:
-                        raise AppException(
-                            error_key=ErrorKey.MISSING_PARAMETER,
-                            error_detail=(
-                                f"This model was trained on a ratio target "
-                                f"('{ml_model.target_variable}' / '{baseline_column}'); "
-                                f"'{baseline_column}' must be supplied as an inference input so "
-                                "predictions can be converted back to real units."
-                            ),
-                        )
-                    baseline_values = _build_input_array(
-                        normalized_inputs, [baseline_column]
-                    ).astype(float)[:, 0]
-                    predictions = predictions * baseline_values
+                if ratio_baseline_values is not None:
+                    predictions = _apply_ratio_target_transform(
+                        predictions,
+                        ratio_baseline_values,
+                    )
 
                 # Build response (always batch format)
                 # Convert the raw (pre-encoding) input to a column-wise dictionary
@@ -1319,7 +1436,7 @@ class MLModelInferenceNode(BaseNode):
                         probability_outputs, confidences = _build_probability_outputs(
                             probabilities,
                             class_labels,
-                            predictions,
+                            prediction_values,
                         )
                     except (IndexError, TypeError, ValueError) as exc:
                         logger.warning(
