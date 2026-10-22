@@ -178,7 +178,7 @@ class GptKpiAnalyzer:
                     purpose="conversation_analysis",
                 )
 
-                response_text = response.content.strip()
+                response_text = response.text.strip()
                 last_response = response_text
 
                 summary_data = self._extract_summary_and_title(response_text)
@@ -372,7 +372,7 @@ Please make sure your response strictly follows the requested format and especia
                 purpose="hostility_analysis",
             )
 
-            response_text = response.content.strip()
+            response_text = response.text.strip()
 
             # Remove json ticks
             response_text = clean_gpt_json_response(response_text)

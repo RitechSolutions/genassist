@@ -49,7 +49,11 @@
       "Verificando detalles…",
       "Uniendo todo…",
       "Casi listo…"
-    ]
+    ],
+    "activity": {
+      "knowledge": "Buscando en la base de conocimiento…",
+      "tool": "Trabajando en tu solicitud…"
+    }
   },
   "time": {
     "justNow": "Ahora",

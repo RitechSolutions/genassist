@@ -747,6 +747,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 chat_history=chat_history,
                 stable_volatile_parts=stable_volatile_parts,
                 prompt_caching_enabled=prompt_caching_enabled,
+                on_token=self.chat_token_sink(),
             )
 
             # The agent caught an error internally and returned a standardized error response

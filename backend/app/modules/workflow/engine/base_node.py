@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Literal, Optional
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
+from app.core import turn_stream
 from app.core.exceptions.error_messages import ErrorKey, get_error_message
 from app.core.exceptions.error_policy import (
     client_safe_error_detail,
@@ -31,6 +32,35 @@ from app.modules.workflow.engine.utils import describe_exception, extract_code_p
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
+
+# Node types whose work the chat widget may label. Only the coarse kind leaves the backend;
+# node names, ids and types never do, and unlisted types send nothing.
+_NODE_ACTIVITY_KINDS: dict[str, turn_stream.ActivityKind] = {
+    "knowledgeBaseNode": "knowledge",
+    "apiToolNode": "tool",
+    "openApiNode": "tool",
+    "pythonCodeNode": "tool",
+    "sqlNode": "tool",
+    "webSearchNode": "tool",
+    "webScraperNode": "tool",
+    "slackMessageNode": "tool",
+    "gmailNode": "tool",
+    "readMailsNode": "tool",
+    "calendarEventNode": "tool",
+    "whatsappToolNode": "tool",
+    "zendeskTicketNode": "tool",
+    "salesforceCaseNode": "tool",
+    "jiraNode": "tool",
+    "createWorkflowScheduleNode": "tool",
+    "mlModelInferenceNode": "tool",
+    "toolBuilderNode": "tool",
+}
+
+
+def _emit_node_activity(node_type: str, phase: turn_stream.ActivityPhase) -> None:
+    kind = _NODE_ACTIVITY_KINDS.get(node_type)
+    if kind:
+        turn_stream.emit_activity(kind, phase)
 
 
 class BaseNode(ABC):
@@ -438,6 +468,8 @@ class BaseNode(ABC):
             else nullcontext()
         )
 
+        path_token = turn_stream.node_path.set((*turn_stream.node_path.get(), self.node_id))
+        _emit_node_activity(self.get_type(), "start")
         try:
             with span_cm as span:
                 try:
@@ -571,6 +603,9 @@ class BaseNode(ABC):
                     return node_failure(error_msg, code=500)
         finally:
             record_workflow_node_duration(self.get_type(), time.perf_counter() - t0, success)
+            _emit_node_activity(self.get_type(), "end")
+            turn_stream.end_reply(self.node_id)
+            turn_stream.node_path.reset(path_token)
 
     @abstractmethod
     async def process(self, config: Dict[str, Any]) -> Any:
@@ -588,6 +623,17 @@ class BaseNode(ABC):
             The processed output from the node
         """
         raise NotImplementedError("Subclasses must implement the process method")
+
+    def chat_token_sink(self) -> Optional[turn_stream.TokenSink]:
+        """Where this node streams its reply text in a streamed chat turn, or None"""
+        stream = turn_stream.current_stream.get()
+        if stream is None or not self.state.registry_managed:
+            return None
+        types = {node["id"]: node.get("type") for node in self.state.workflow.get("nodes", [])}
+        feeds_output = any(
+            types.get(edge.get("target")) == "chatOutputNode" for edge in self.state.source_edges.get(self.node_id, [])
+        )
+        return stream.text_sink(self.node_id) if feeds_output else None
 
     def get_input_from_source(self) -> Any:
         """

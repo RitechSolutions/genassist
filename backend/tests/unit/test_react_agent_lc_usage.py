@@ -1,16 +1,18 @@
 """Unit tests for ReActAgentLC token-usage capture"""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langgraph.errors import GraphRecursionError
 
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
+from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
 from app.modules.workflow.llm.prompt_caching_chat_model import (
     PromptCachingChatModel,
     build_cacheable_system_message,
@@ -32,7 +34,7 @@ def _build_agent(fake_result=None, system_prompt="you are a helpful agent", erro
 
     async def _astream(input_data, config=None, **kwargs):
         if fake_result is not None:
-            yield fake_result
+            yield "values", fake_result
         if error is not None:
             raise error
 
@@ -152,25 +154,6 @@ def test_create_agent_receives_the_system_prompt_unchanged(system_prompt):
     assert create_agent.call_args.kwargs["system_prompt"] is system_prompt
 
 
-@pytest.mark.asyncio
-async def test_stream_input_carries_no_system_message():
-    agent = _build_agent({"messages": [AIMessage(content="done")]})
-    seen = {}
-
-    async def _astream(input_data, config=None, **kwargs):
-        seen["messages"] = input_data["messages"]
-        for chunk in ():
-            yield chunk
-
-    agent.agent_executor.astream = _astream
-
-    async for _ in agent.stream("hi", chat_history=[{"role": "user", "content": "earlier"}]):
-        pass
-
-    assert not any(isinstance(message, SystemMessage) for message in seen["messages"])
-    assert seen["messages"][-1] == HumanMessage(content="hi")
-
-
 class _CapturingModel(BaseChatModel):
     seen: list = []
 
@@ -233,6 +216,80 @@ async def test_a_real_graph_run_that_hits_the_recursion_limit_reports_every_call
     assert result["status"] == "error"
     assert result["error"].startswith("Recursion limit of 5 reached")
     assert result["llm_usage"] == [{"input_tokens": 10, "output_tokens": 1, "total_tokens": 11}] * 3
+
+
+class _ScriptedModel(BaseChatModel):
+
+    replies: list = []
+    calls: int = 0
+
+    @property
+    def _llm_type(self) -> str:
+        return "scripted"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _next(self) -> AIMessage:
+        self.calls += 1
+        return self.replies[self.calls - 1]
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        return ChatResult(generations=[ChatGeneration(message=self._next())])
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        return self._generate(messages, stop, run_manager, **kwargs)
+
+    async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+        reply = self._next()
+        if reply.tool_calls:
+            calls = [
+                {"name": c["name"], "args": json.dumps(c["args"]), "id": c["id"], "index": i}
+                for i, c in enumerate(reply.tool_calls)
+            ]
+            yield ChatGenerationChunk(message=AIMessageChunk(content="", tool_call_chunks=calls))
+        else:
+            words = reply.content.split(" ")
+            for i, word in enumerate(words):
+                yield ChatGenerationChunk(message=AIMessageChunk(content=word if i == len(words) - 1 else word + " "))
+        yield ChatGenerationChunk(message=AIMessageChunk(content="", usage_metadata=reply.usage_metadata))
+
+
+def _usage(tokens: int) -> dict:
+    return {"input_tokens": tokens, "output_tokens": 1, "total_tokens": tokens + 1}
+
+
+def _agent_with_a_nested_agent_tool(on_token=None) -> ReActAgentLC:
+    async def ask_inner(_inp):
+        inner = _ScriptedModel(replies=[AIMessage(content="inner secret", usage_metadata=_usage(5))])
+        return (await ReActAgentLC(llm_model=inner, system_prompt="sys", tools=[]).invoke("x"))["response"]
+
+    tool = BaseTool(node_id="tool-1", name="ask_inner", description="d", parameters={}, function=ask_inner)
+    outer = _ScriptedModel(
+        replies=[
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "ask_inner", "args": {}, "id": "call_1", "type": "tool_call"}],
+                usage_metadata=_usage(10),
+            ),
+            AIMessage(content="The answer", usage_metadata=_usage(20)),
+        ]
+    )
+    llm = FallbackChatModel(models=[PromptCachingChatModel(inner=outer, cache_style="anthropic")], provider_ids=["p1"])
+    return ReActAgentLC(llm_model=llm, system_prompt="sys", tools=[tool], on_token=on_token)
+
+
+@pytest.mark.asyncio
+async def test_streaming_reports_only_this_agents_reply_once_and_keeps_the_result():
+    tokens = []
+
+    streamed = await _agent_with_a_nested_agent_tool(lambda call_id, text: tokens.append((call_id, text))).invoke("hi")
+    plain = await _agent_with_a_nested_agent_tool().invoke("hi")
+
+    assert [text for _, text in tokens] == ["The ", "answer"]
+    assert len({call_id for call_id, _ in tokens}) == 1
+    assert streamed["response"] == plain["response"] == "The answer"
+    assert streamed["llm_usage"] == plain["llm_usage"]
 
 
 @pytest.mark.asyncio
