@@ -248,23 +248,18 @@ def _validate_ordinal_inputs(
             continue
         mapping = ordinal_encodings.get(col) or {}
         known_keys = {ordinal_key(k) for k in mapping}
-        invalid_values: List[str] = []
-        invalid_rows: List[int] = []
+        invalid_value_rows: Dict[str, List[int]] = {}
         for row, value in enumerate(normalized_inputs[col], start=1):
             key = ordinal_key(value)
             if key is None or key in known_keys:
                 continue
-            invalid_rows.append(row)
-            if str(value) not in invalid_values:
-                invalid_values.append(str(value))
-        if invalid_values:
-            row_label = "row" if len(invalid_rows) == 1 else "rows"
+            invalid_value_rows.setdefault(str(value), []).append(row)
+        if invalid_value_rows:
             raise AppException(
                 error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
                 error_detail=(
                     f"Invalid value(s) for ordinal feature '{_format_error_value(col)}': "
-                    f"{_format_value_list(invalid_values)} at {row_label} "
-                    f"{_format_value_list(invalid_rows)}. The request was rejected because "
+                    f"{_format_value_rows(invalid_value_rows)}. The request was rejected because "
                     "one or more values have no configured ordinal position."
                 ),
             )
@@ -279,7 +274,7 @@ def _format_error_value(value: Any) -> str:
     text = str(value)
     if len(text) <= _MAX_DISPLAY_VALUE_LENGTH:
         return text
-    return f"{text[: _MAX_DISPLAY_VALUE_LENGTH - 3]}..."
+    return f"{text[: _MAX_DISPLAY_VALUE_LENGTH - 1]}…"
 
 
 def _format_value_list(values: Sequence[Any], limit: int = _MAX_LISTED_VALUES) -> str:
@@ -288,6 +283,22 @@ def _format_value_list(values: Sequence[Any], limit: int = _MAX_LISTED_VALUES) -
     if len(items) <= limit:
         return ", ".join(items)
     return f"{', '.join(items[:limit])} … {len(items) - limit} more"
+
+
+def _format_value_rows(
+    value_rows: Dict[str, List[int]], limit: int = _MAX_LISTED_VALUES
+) -> str:
+    """Pair each bounded invalid value with its affected input rows."""
+    entries = list(value_rows.items())
+    formatted = []
+    for value, rows in entries[:limit]:
+        row_label = "row" if len(rows) == 1 else "rows"
+        formatted.append(
+            f"{_format_error_value(value)} ({row_label} {_format_value_list(rows)})"
+        )
+    if len(entries) > limit:
+        formatted.append(f"… {len(entries) - limit} more values")
+    return "; ".join(formatted)
 
 
 def _category_key(value: Any, normalize: bool = False) -> Any:

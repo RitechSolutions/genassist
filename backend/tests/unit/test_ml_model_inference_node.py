@@ -2079,7 +2079,7 @@ class TestOrdinalInputValidation:
             )
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
-        assert "Urgent at row 2" in exc.value.error_detail
+        assert "Urgent (row 2)" in exc.value.error_detail
         assert "Low" not in exc.value.error_detail
         assert model.received is None
 
@@ -2096,7 +2096,24 @@ class TestOrdinalInputValidation:
             )
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
-        assert "Urgent at rows 1, 2, 3" in exc.value.error_detail
+        assert "Urgent (rows 1, 2, 3)" in exc.value.error_detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_each_invalid_ordinal_value_is_paired_with_its_rows(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": ["Low", "Urgent", "Blocked", "Urgent"]},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Urgent (rows 2, 4)" in exc.value.error_detail
+        assert "Blocked (row 3)" in exc.value.error_detail
         assert model.received is None
 
 
@@ -2135,6 +2152,7 @@ class TestCategoricalErrorMessages:
         assert "invalid-0" in detail
         assert "invalid-5" not in detail
         assert "… 5 more" in detail
+        assert "..." not in detail
         assert len(detail) < 450
 
     @pytest.mark.asyncio
