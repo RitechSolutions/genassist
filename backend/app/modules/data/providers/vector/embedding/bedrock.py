@@ -12,6 +12,11 @@ from .base import BaseEmbedder, EmbeddingConfig
 logger = logging.getLogger(__name__)
 
 
+def _close_connection_after_call(request, **kwargs):
+    """Close each Bedrock connection after its answer so a connection dropped while idle is never reused"""
+    request.headers["Connection"] = "close"
+
+
 class BedrockEmbedder(BaseEmbedder):
     """AWS Bedrock embedding provider using LangChain"""
 
@@ -36,11 +41,13 @@ class BedrockEmbedder(BaseEmbedder):
     async def initialize(self) -> bool:
         """Initialize the Bedrock client"""
         try:
+            from botocore.config import Config
             from langchain_aws import BedrockEmbeddings
 
             # Use model_id from config or default
             model_id = self.config.model_id or "amazon.titan-embed-text-v2:0"
             region_name = self.config.region_name or "ca-central-1"
+            timeout_seconds = settings.BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS
 
             # Initialize Bedrock embeddings
             # Credentials are automatically loaded from boto3's credential chain:
@@ -50,8 +57,10 @@ class BedrockEmbedder(BaseEmbedder):
             # 4. IAM role (Lambda/ECS with task role)
             self.client = BedrockEmbeddings(
                 model_id=model_id,
-                region_name=region_name
+                region_name=region_name,
+                config=Config(connect_timeout=timeout_seconds),
             )
+            self.client.client.meta.events.register("before-send.bedrock-runtime", _close_connection_after_call)
 
             logger.info(
                 f"Initialized Bedrock embeddings with model: {model_id} in region: {region_name}")
@@ -106,7 +115,6 @@ class BedrockEmbedder(BaseEmbedder):
 
         for attempt in range(max_retries):
             try:
-                # TEST: Using slow operation (15s) instead of actual Bedrock call
                 embedding = await asyncio.wait_for(
                     self.client.aembed_query(query),
                     timeout=timeout_seconds
