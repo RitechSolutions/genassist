@@ -17,6 +17,7 @@ from app.db.models.conversation import ConversationModel
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.core.tenant_scope import get_tenant_context
+from app.core.turn_stream import current_stream
 from app.schemas.conversation import ConversationRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
@@ -364,6 +365,9 @@ async def process_conversation_update_with_agent(
 
     if conversation.status == ConversationStatus.IN_PROGRESS.value:
         agent = await agent_config_service.get_by_user_id(current_user_id, with_workflow=True)
+        hidden_keys = get_hidden_keys(agent.workflow.get("nodes") if agent.workflow else None)
+        if hidden_keys and (stream := current_stream.get()):
+            stream.withhold_text()
 
         session_data = {"metadata": model.metadata if model.metadata else {}}
         session_data["thread_id"] = str(conversation_id)
@@ -411,7 +415,6 @@ async def process_conversation_update_with_agent(
         # real values (and Redis functional stores already hold them), so this only
         # affects stored/displayed data: agent_response_logs.raw_response,
         # transcript_messages.text, and conversations.custom_attributes.
-        hidden_keys = get_hidden_keys(agent.workflow.get("nodes") if agent.workflow else None)
         if hidden_keys:
             node_statuses = (
                 agent_response.get("row_agent_response", {})
