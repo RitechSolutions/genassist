@@ -1980,3 +1980,124 @@ class TestEnsurePklFile:
         service.record_local_pkl_file.assert_awaited_once_with(model_id, expected_path)
         service.update.assert_not_awaited()
         assert ml_model.pkl_file == expected_path
+
+
+class _CapturingModel:
+    def __init__(self):
+        self.received = None
+
+    def predict(self, X):
+        self.received = np.asarray(X)
+        return np.zeros(len(X), dtype=int)
+
+
+class TestOrdinalInputValidation:
+    """MI-9: an ordinal value outside the fitted order is rejected, as training
+    rejects it, instead of being encoded as NaN."""
+
+    ORDER = {"Low": 0, "Medium": 1, "High": 2}
+
+    @pytest.mark.asyncio
+    async def test_unknown_ordinal_value_is_rejected(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": "Urgent"},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        detail = exc.value.error_detail
+        assert "'priority'" in detail
+        assert "Urgent" in detail
+        assert "Low, Medium, High" in detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_normalised_matches_are_accepted(self, monkeypatch):
+        model = _CapturingModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"priority": [" High", "Low"], "grade": [2, 3.0]},
+            feature_names=["priority", "grade"],
+            ordinal_encodings={"priority": self.ORDER, "grade": {"2": 1, "3": 2}},
+        )
+
+        assert result["status"] == "success"
+        np.testing.assert_array_equal(model.received, [[2, 1], [0, 2]])
+
+    @pytest.mark.asyncio
+    async def test_mixed_type_batch_preserves_normalised_matches(self, monkeypatch):
+        model = _CapturingModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"rank": [2.0, "High"]},
+            feature_names=["rank"],
+            ordinal_encodings={"rank": {"2": 0, "High": 1}},
+        )
+
+        assert result["status"] == "success"
+        np.testing.assert_array_equal(model.received, [[0], [1]])
+
+    @pytest.mark.asyncio
+    async def test_one_invalid_row_in_a_batch_rejects_the_request_and_names_the_row(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": ["Low", "Urgent", "High"]},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Urgent (row 2)" in exc.value.error_detail
+        assert "Low," not in exc.value.error_detail.split("Allowed order")[0]
+        assert model.received is None
+
+
+class TestCategoricalErrorMessages:
+    """MI-11: unknown categories say the request was rejected, use the
+    input-invalid key, and cap the list of allowed values."""
+
+    def test_unknown_category_says_rejected_with_input_invalid_key(self):
+        with pytest.raises(AppException) as exc:
+            _validate_categorical_inputs(
+                {"color": ["purple"]},
+                ["color"],
+                [np.array(["red", "green"], dtype=object)],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        detail = exc.value.error_detail
+        assert "will be ignored" not in detail
+        assert "rejected" in detail
+        assert "purple" in detail
+        assert "Allowed values: red, green" in detail
+
+    def test_allowed_values_are_capped(self):
+        known = np.array([f"c{i}" for i in range(25)], dtype=object)
+        with pytest.raises(AppException) as exc:
+            _validate_categorical_inputs({"color": ["x"]}, ["color"], [known])
+
+        detail = exc.value.error_detail
+        assert "c19" in detail
+        assert "c20" not in detail
+        assert "… 5 more" in detail
+
+    @pytest.mark.asyncio
+    async def test_invalid_model_id_format_is_an_input_error(self):
+        node = MLModelInferenceNode("ml1", {"id": "ml1", "type": "mlModelInferenceNode", "data": {}}, MagicMock())
+        with pytest.raises(AppException) as exc:
+            await node.process({"modelId": "not-a-uuid", "inferenceInputs": {}})
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "not-a-uuid" in exc.value.error_detail
