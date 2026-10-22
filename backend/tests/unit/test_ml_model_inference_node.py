@@ -2013,7 +2013,27 @@ class TestOrdinalInputValidation:
         detail = exc.value.error_detail
         assert "'priority'" in detail
         assert "Urgent" in detail
-        assert "Low, Medium, High" in detail
+        assert "Low" not in detail
+        assert "Medium" not in detail
+        assert "High" not in detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_mixed_or_missing_ordinal_codes_still_return_an_input_error(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": "Urgent"},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": {"Low": None, "Medium": 1, "High": "last"}},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "configured ordinal position" in exc.value.error_detail
         assert model.received is None
 
     @pytest.mark.asyncio
@@ -2059,21 +2079,37 @@ class TestOrdinalInputValidation:
             )
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
-        assert "Urgent (row 2)" in exc.value.error_detail
-        assert "Low," not in exc.value.error_detail.split("Allowed order")[0]
+        assert "Urgent at row 2" in exc.value.error_detail
+        assert "Low" not in exc.value.error_detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_broadcast_invalid_ordinal_names_every_affected_row(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": "Urgent", "amount": [1, 2, 3]},
+                feature_names=["priority", "amount"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Urgent at rows 1, 2, 3" in exc.value.error_detail
         assert model.received is None
 
 
 class TestCategoricalErrorMessages:
-    """MI-11: unknown categories say the request was rejected, use the
-    input-invalid key, and cap the list of allowed values."""
+    """Unknown categories return bounded client-safe errors without exposing
+    values learned from training data."""
 
     def test_unknown_category_says_rejected_with_input_invalid_key(self):
         with pytest.raises(AppException) as exc:
             _validate_categorical_inputs(
                 {"color": ["purple"]},
                 ["color"],
-                [np.array(["red", "green"], dtype=object)],
+                [np.array(["training-red", "training-green"], dtype=object)],
             )
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
@@ -2081,17 +2117,25 @@ class TestCategoricalErrorMessages:
         assert "will be ignored" not in detail
         assert "rejected" in detail
         assert "purple" in detail
-        assert "Allowed values: red, green" in detail
+        assert "training-red" not in detail
+        assert "training-green" not in detail
 
-    def test_allowed_values_are_capped(self):
-        known = np.array([f"c{i}" for i in range(25)], dtype=object)
+    def test_training_values_are_not_exposed_and_caller_values_are_bounded(self):
+        known = np.array([f"customer-{i}" for i in range(25)], dtype=object)
+        invalid_values = [f"invalid-{index}-" + "x" * 100 for index in range(10)]
         with pytest.raises(AppException) as exc:
-            _validate_categorical_inputs({"color": ["x"]}, ["color"], [known])
+            _validate_categorical_inputs(
+                {"account_name": invalid_values},
+                ["account_name"],
+                [known],
+            )
 
         detail = exc.value.error_detail
-        assert "c19" in detail
-        assert "c20" not in detail
+        assert "customer-0" not in detail
+        assert "invalid-0" in detail
+        assert "invalid-5" not in detail
         assert "… 5 more" in detail
+        assert len(detail) < 450
 
     @pytest.mark.asyncio
     async def test_invalid_model_id_format_is_an_input_error(self):
@@ -2100,4 +2144,4 @@ class TestCategoricalErrorMessages:
             await node.process({"modelId": "not-a-uuid", "inferenceInputs": {}})
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
-        assert "not-a-uuid" in exc.value.error_detail
+        assert exc.value.error_detail == "modelId must be a valid UUID."

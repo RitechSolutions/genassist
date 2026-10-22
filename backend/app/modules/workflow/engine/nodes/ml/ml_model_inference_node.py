@@ -222,10 +222,9 @@ def _validate_categorical_inputs(
             raise AppException(
                 error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
                 error_detail=(
-                    f"Invalid value(s) for feature '{col}': {_format_value_list(invalid_values)}. "
-                    f"The request was rejected because the model was not trained on "
-                    f"{'this value' if len(invalid_values) == 1 else 'these values'}. "
-                    f"Allowed values: {_format_value_list(known.tolist())}."
+                    f"Invalid value(s) for feature '{_format_error_value(col)}': "
+                    f"{_format_value_list(invalid_values)}. The request was rejected "
+                    "because one or more values are not configured for this model."
                 ),
             )
 
@@ -259,26 +258,33 @@ def _validate_ordinal_inputs(
             if str(value) not in invalid_values:
                 invalid_values.append(str(value))
         if invalid_values:
+            row_label = "row" if len(invalid_rows) == 1 else "rows"
             raise AppException(
                 error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
                 error_detail=(
-                    f"Invalid value(s) for ordinal feature '{col}': "
-                    f"{_format_value_list(invalid_values)} "
-                    f"(row{'s' if len(invalid_rows) > 1 else ''} {_format_value_list(invalid_rows)}). "
-                    f"The request was rejected because the value has no position in the "
-                    f"order the model was trained on. Allowed order: "
-                    f"{_format_value_list(sorted(mapping, key=mapping.get))}."
+                    f"Invalid value(s) for ordinal feature '{_format_error_value(col)}': "
+                    f"{_format_value_list(invalid_values)} at {row_label} "
+                    f"{_format_value_list(invalid_rows)}. The request was rejected because "
+                    "one or more values have no configured ordinal position."
                 ),
             )
 
 
-_MAX_LISTED_VALUES = 20
+_MAX_LISTED_VALUES = 5
+_MAX_DISPLAY_VALUE_LENGTH = 40
+
+
+def _format_error_value(value: Any) -> str:
+    """Bound an input value before including it in a client-safe error."""
+    text = str(value)
+    if len(text) <= _MAX_DISPLAY_VALUE_LENGTH:
+        return text
+    return f"{text[: _MAX_DISPLAY_VALUE_LENGTH - 3]}..."
 
 
 def _format_value_list(values: Sequence[Any], limit: int = _MAX_LISTED_VALUES) -> str:
-    """Join values for an error message, capped so a feature with many
-    categories doesn't produce an unreadable message."""
-    items = [str(v) for v in values]
+    """Join bounded caller values without exceeding the client detail budget."""
+    items = [_format_error_value(value) for value in values]
     if len(items) <= limit:
         return ", ".join(items)
     return f"{', '.join(items[:limit])} … {len(items) - limit} more"
@@ -1071,7 +1077,7 @@ class MLModelInferenceNode(BaseNode):
             except (ValueError, AttributeError) as e:
                 raise AppException(
                     error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-                    error_detail=f"Invalid modelId format: {model_id_str}",
+                    error_detail="modelId must be a valid UUID.",
                 ) from e
 
             # Get ML model from database
