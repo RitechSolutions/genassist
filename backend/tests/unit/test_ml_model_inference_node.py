@@ -385,26 +385,169 @@ class TestInferenceOutput:
         json.dumps(result)
 
     @pytest.mark.asyncio
-    async def test_preserves_string_classes_and_uses_them_consistently(self, monkeypatch):
+    async def test_preserves_column_shaped_regression_output(self, monkeypatch):
+        class ColumnRegressionModel:
+            def predict(self, _input_data):
+                return np.array([[np.float32(12.75)]])
+
+        result = await _run_inference(
+            monkeypatch,
+            ColumnRegressionModel(),
+            "linear_regression",
+        )
+
+        assert result["prediction"] == ["[12.75]"]
+        assert result["prediction_label"] == [None]
+        assert result["prediction_details"] == [{"result": "[12.75]", "label": None}]
+
+    @pytest.mark.asyncio
+    async def test_uses_predict_for_class_when_probabilities_disagree(self, monkeypatch):
         class StringClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def __init__(self):
+                self.predict_calls = 0
+                self.predict_proba_calls = 0
+
+            def predict(self, _input_data):
+                self.predict_calls += 1
+                return np.array(["denied"])
+
+            def predict_proba(self, _input_data):
+                self.predict_proba_calls += 1
+                return np.array([[0.25, 0.75]], dtype=np.float32)
+
+        model = StringClassifier()
+        result = await _run_inference(monkeypatch, model, "logistic_regression")
+
+        assert model.predict_calls == 1
+        assert model.predict_proba_calls == 1
+        assert result["prediction"] == ["denied"]
+        assert result["prediction_label"] == ["denied"]
+        assert result["prediction_details"] == [{"result": "denied", "label": "denied"}]
+        assert [detail["label"] for detail in result["prediction_details"]] == result["prediction_label"]
+        assert result["probabilities"] == [{"Class_denied": 0.25, "Class_approved": 0.75}]
+        assert result["confidences"] == [0.25]
+        assert result["batch_size"] == 1
+        json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_flattens_single_column_classifier_predictions(self, monkeypatch):
+        class SingleColumnClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array([["approved"]])
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.125, 0.875]], dtype=np.float32)
+
+        result = await _run_inference(
+            monkeypatch,
+            SingleColumnClassifier(),
+            "catboost",
+        )
+
+        assert result["prediction"] == ["approved"]
+        assert result["prediction_label"] == ["approved"]
+        assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
+        assert result["probabilities"] == [{"Class_denied": 0.125, "Class_approved": 0.875}]
+        assert result["confidences"] == [0.875]
+
+    @pytest.mark.asyncio
+    async def test_returns_prediction_when_probability_generation_fails(self, monkeypatch, caplog):
+        class ProbabilityFailureClassifier:
             classes_ = np.array(["denied", "approved"])
 
             def predict(self, _input_data):
                 return np.array(["approved"])
 
             def predict_proba(self, _input_data):
-                return np.array([[0.25, 0.75]], dtype=np.float32)
+                raise RuntimeError("probabilities unavailable")
 
-        result = await _run_inference(monkeypatch, StringClassifier(), "logistic_regression")
+        with caplog.at_level(logging.WARNING):
+            result = await _run_inference(
+                monkeypatch,
+                ProbabilityFailureClassifier(),
+                "logistic_regression",
+            )
 
         assert result["prediction"] == ["approved"]
         assert result["prediction_label"] == ["approved"]
         assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
-        assert [detail["label"] for detail in result["prediction_details"]] == result["prediction_label"]
+        assert "probabilities" not in result
+        assert "confidences" not in result
+        assert "Probabilities unavailable" in caplog.text
+        assert "RuntimeError: probabilities unavailable" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_classifier_without_probability_support_uses_predict(self, monkeypatch):
+        class PredictionOnlyClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["approved"])
+
+        result = await _run_inference(
+            monkeypatch,
+            PredictionOnlyClassifier(),
+            "logistic_regression",
+        )
+
+        assert result["prediction"] == ["approved"]
+        assert result["prediction_label"] == ["approved"]
+        assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
+        assert "probabilities" not in result
+        assert "confidences" not in result
+
+    @pytest.mark.asyncio
+    async def test_omits_confidence_when_prediction_is_not_in_class_list(self, monkeypatch, caplog):
+        class UnknownClassClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["review"])
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.25, 0.75]], dtype=np.float32)
+
+        with caplog.at_level(logging.WARNING):
+            result = await _run_inference(
+                monkeypatch,
+                UnknownClassClassifier(),
+                "logistic_regression",
+            )
+
+        assert result["prediction"] == ["review"]
         assert result["probabilities"] == [{"Class_denied": 0.25, "Class_approved": 0.75}]
-        assert result["confidences"] == [0.75]
-        assert result["batch_size"] == 1
-        json.dumps(result)
+        assert "confidences" not in result
+        assert "predicted class" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_ignores_probability_row_count_mismatch(self, monkeypatch, caplog):
+        class MismatchedProbabilityClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["approved"])
+
+            def predict_proba(self, _input_data):
+                return np.array(
+                    [[0.25, 0.75], [0.75, 0.25]],
+                    dtype=np.float32,
+                )
+
+        with caplog.at_level(logging.WARNING):
+            result = await _run_inference(
+                monkeypatch,
+                MismatchedProbabilityClassifier(),
+                "logistic_regression",
+            )
+
+        assert result["prediction"] == ["approved"]
+        assert "probabilities" not in result
+        assert "confidences" not in result
+        assert "row count" in caplog.text
 
 
 class _StubModel:

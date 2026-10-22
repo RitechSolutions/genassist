@@ -801,19 +801,6 @@ def _replay_feature_engineering(
     return computed
 
 
-def _label_for_prediction(value: Any) -> str:
-    """Map a model prediction to an availability label."""
-    if value is None:
-        return "Not Available"
-    if isinstance(value, (bool, np.bool_)):
-        return "Available" if value else "Not Available"
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        return "Available" if float(value) != 0 else "Not Available"
-    if isinstance(value, str):
-        return "Available" if value.strip() else "Not Available"
-    return "Available" if value else "Not Available"
-
-
 def _build_prediction_outputs(
     predictions: Sequence[Any], class_labels: Optional[Sequence[Any]]
 ) -> tuple[List[Any], List[Any], List[Dict[str, Any]]]:
@@ -828,15 +815,35 @@ def _build_prediction_outputs(
 
 
 def _build_probability_outputs(
-    probabilities: np.ndarray, class_labels: Sequence[Any]
-) -> tuple[List[Dict[str, Any]], List[Any]]:
-    """Build probability dictionaries without assuming numeric class labels."""
+    probabilities: np.ndarray,
+    class_labels: Sequence[Any],
+    predictions: Sequence[Any],
+) -> tuple[List[Dict[str, Any]], Optional[List[Any]]]:
+    """Build probability dictionaries and confidence for each predicted class."""
+    probabilities = np.asarray(probabilities)
     json_class_labels = [_json_safe_scalar(class_label) for class_label in class_labels]
+    if probabilities.ndim != 2:
+        raise ValueError("Probability output must be a two-dimensional array")
+    if probabilities.shape[0] != len(predictions):
+        raise ValueError(
+            "Probability output row count does not match prediction row count"
+        )
+    if probabilities.shape[1] != len(json_class_labels):
+        raise ValueError(
+            "Probability output column count does not match model class count"
+        )
     probability_outputs = [
         {f"Class_{json_class_labels[index]}": _json_safe_scalar(probability) for index, probability in enumerate(row)}
         for row in probabilities
     ]
-    confidences = [_json_safe_scalar(max(row)) for row in probabilities]
+    confidences = []
+    for row, prediction in zip(probabilities, predictions, strict=True):
+        json_prediction = _json_safe_scalar(prediction)
+        try:
+            predicted_class_index = json_class_labels.index(json_prediction)
+        except ValueError:
+            return probability_outputs, None
+        confidences.append(_json_safe_scalar(row[predicted_class_index]))
     return probability_outputs, confidences
 
 
@@ -1229,17 +1236,24 @@ class MLModelInferenceNode(BaseNode):
                 # Get model-derived class labels. Regressors do not expose classes_.
                 class_labels = getattr(model, "classes_", None)
 
-                # Use predict_proba when available to avoid a redundant forward pass
+                predictions = np.asarray(model.predict(prediction_input))
+                if class_labels is not None and predictions.ndim == 2 and predictions.shape[1] == 1:
+                    predictions = predictions[:, 0]
+
+                # Probability outputs are optional and do not determine the predicted class.
                 probabilities: Optional[np.ndarray] = None
                 if hasattr(model, "predict_proba") and class_labels is not None:
                     try:
                         probabilities = model.predict_proba(prediction_input)
-                        predictions = np.asarray(class_labels)[np.argmax(probabilities, axis=1)]
-                    except Exception:
+                    except Exception as exc:
+                        logger.warning(
+                            "Probabilities unavailable for model %s; returning predictions "
+                            "without probabilities/confidences: %s: %s",
+                            model_id,
+                            type(exc).__name__,
+                            _summarize_error(exc),
+                        )
                         probabilities = None
-                        predictions = model.predict(prediction_input)
-                else:
-                    predictions = model.predict(prediction_input)
 
                 # Reconstruct real-unit predictions for a model trained on a
                 # ratio target (target / baselineColumn - see TrainModelNode's
@@ -1301,9 +1315,28 @@ class MLModelInferenceNode(BaseNode):
 
                 # Add probabilities and confidence
                 if probabilities is not None:
-                    probability_outputs, confidences = _build_probability_outputs(probabilities, class_labels)
-                    result["probabilities"] = probability_outputs
-                    result["confidences"] = confidences
+                    try:
+                        probability_outputs, confidences = _build_probability_outputs(
+                            probabilities,
+                            class_labels,
+                            predictions,
+                        )
+                    except (IndexError, TypeError, ValueError) as exc:
+                        logger.warning(
+                            "Ignoring invalid probability output for model %s: %s",
+                            model_id,
+                            exc,
+                        )
+                    else:
+                        result["probabilities"] = probability_outputs
+                        if confidences is None:
+                            logger.warning(
+                                "Confidence omitted for model %s because a predicted class "
+                                "is not present in the model class list",
+                                model_id,
+                            )
+                        else:
+                            result["confidences"] = confidences
                 if inference_warnings:
                     result["warnings"] = inference_warnings
                 logger.info(
