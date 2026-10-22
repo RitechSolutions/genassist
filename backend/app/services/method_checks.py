@@ -113,14 +113,10 @@ def converted_evaluation(
     provider = current.get("llm_provider_id")
     if provider and None in graders:
         # A method with no grader used the default model, so the evaluation's grader moves onto its own checks.
-        own = [
-            {**check, "llm_provider_id": provider}
-            if isinstance(check, dict) and _graded_by_ai(check) and not check.get("llm_provider_id")
-            else check
-            for check in own
-        ]
+        own = [{**check, "llm_provider_id": provider} if _without_grader(check) else check for check in own]
         provider = None
-    elif not provider and len(graders) == 1 and None not in graders:
+    elif not provider and len(graders) == 1 and None not in graders and not any(map(_without_grader, own)):
+        # One grader for every method grades the evaluation, unless its own checks use the default model.
         provider = next(iter(graders))
     converted = [
         {key: value for key, value in check.items() if not (key == "llm_provider_id" and value == provider)}
@@ -149,6 +145,11 @@ def _graded_by_ai(check: Dict[str, Any]) -> bool:
         return Check.model_validate({"id": "candidate", **check}).ai_graded
     except ValueError:
         return False
+
+
+def _without_grader(check: Any) -> bool:
+    """An AI-graded check with no grader of its own, graded by the evaluation's grader or the default model."""
+    return isinstance(check, dict) and _graded_by_ai(check) and not check.get("llm_provider_id")
 
 
 def _merged(current: List[Dict[str, Any]], added: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

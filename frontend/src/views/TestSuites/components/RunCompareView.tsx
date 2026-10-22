@@ -9,6 +9,7 @@ import {
   CircleDashed,
   CircleEqual,
   GitCompareArrows,
+  Minus,
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
@@ -312,6 +313,25 @@ export const RunCompareView: React.FC<RunCompareViewProps> = ({
                 <span className="flex items-center gap-1.5 text-destructive">
                   <TrendingDown className="h-4 w-4 shrink-0" aria-hidden="true" />
                   {comparison.checks.worse} used to pass, now fail{comparison.checks.worse === 1 ? "s" : ""}
+                </span>
+              )}
+            </span>
+          </Fact>
+        )}
+        {/* Not compared below, but a lost pass makes the verdict worse, so the header says why. */}
+        {comparison && (comparison.noLongerEvaluated.passed > 0 || comparison.noLongerEvaluated.failed > 0) && (
+          <Fact label="No longer evaluated">
+            <span className="flex flex-col gap-0.5">
+              {comparison.noLongerEvaluated.passed > 0 && (
+                <span className="flex items-center gap-1.5 text-destructive">
+                  <TrendingDown className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {comparison.noLongerEvaluated.passed} used to pass
+                </span>
+              )}
+              {comparison.noLongerEvaluated.failed > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <Minus className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  {comparison.noLongerEvaluated.failed} used to fail
                 </span>
               )}
             </span>

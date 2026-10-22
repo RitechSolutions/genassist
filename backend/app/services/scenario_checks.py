@@ -1458,7 +1458,8 @@ async def run_judge(
     """Run the judge over every request, a few at a time; a failed or late call is an error verdict."""
     limit = asyncio.Semaphore(concurrency)
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + budget_seconds if budget_seconds else None
+    # No budget means no deadline; a budget of 0 means no time is left to grade.
+    deadline = loop.time() + budget_seconds if budget_seconds is not None else None
 
     async def one(request: JudgeRequest) -> Tuple[Any, JudgeVerdict]:
         name = grader_name(request.check)

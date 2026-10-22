@@ -94,6 +94,25 @@ class TestBuildRunOutcome:
         assert [c.key for c in outcome.conversations] == ["conv-a", "conv-b", "c4"]
         assert [(t.case.id, t.number) for t in outcome.conversations[0].turns] == [("c1", 1), ("c2", 2)]
 
+    def test_conversations_come_back_in_the_order_the_runner_plays_them(self):
+        from app.services.test_suite import _group_cases_into_conversations
+
+        cases = [
+            _case("c2", "conv-a", 0),  # a first turn added after the conversation's second
+            _case("c1", "conv-a", 1),
+            _case("c3", "conv-b", 0),
+            _case("c0"),
+        ]
+        # The runner reads the dataset ordered by id and plays the conversations as it groups them.
+        played = _group_cases_into_conversations(sorted(cases, key=lambda case: case.id))
+
+        outcome = build_run_outcome(list(reversed(cases)), [], [])
+
+        assert [[t.case.id for t in c.turns] for c in outcome.conversations] == [
+            [case.id for case in group] for group in played
+        ]
+        assert [[t.case.id for t in c.turns] for c in outcome.conversations] == [["c0"], ["c2", "c1"], ["c3"]]
+
     def test_rows_sit_on_their_turn_or_conversation(self):
         cases = [_case("c1", "conv", 0), _case("c2", "conv", 1), _case("m1")]
         results = [StoredResult(case_id=case.id, status="scored") for case in cases]
