@@ -266,7 +266,8 @@ def _validate_ordinal_inputs(
                     f"{_format_value_list(invalid_values)} "
                     f"(row{'s' if len(invalid_rows) > 1 else ''} {_format_value_list(invalid_rows)}). "
                     f"The request was rejected because the value has no position in the "
-                    f"order the model was trained on. Allowed order: {_format_value_list(list(mapping))}."
+                    f"order the model was trained on. Allowed order: "
+                    f"{_format_value_list(sorted(mapping, key=mapping.get))}."
                 ),
             )
 

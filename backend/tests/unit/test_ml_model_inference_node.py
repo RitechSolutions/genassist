@@ -1995,7 +1995,7 @@ class TestOrdinalInputValidation:
     """MI-9: an ordinal value outside the fitted order is rejected, as training
     rejects it, instead of being encoded as NaN."""
 
-    ORDER = {"Low": 0, "Medium": 1, "High": 2}
+    ORDER = {"High": 2, "Low": 0, "Medium": 1}
 
     @pytest.mark.asyncio
     async def test_unknown_ordinal_value_is_rejected(self, monkeypatch):
