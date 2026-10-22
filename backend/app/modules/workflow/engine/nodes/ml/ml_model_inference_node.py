@@ -674,7 +674,7 @@ def _validated_ratio_baseline_values(
     invalid_rows = []
     for row_number, value in enumerate(raw_values, start=1):
         reason = None
-        if _is_missing_value(value):
+        if (isinstance(value, str) and not value.strip()) or _is_missing_value(value):
             reason = "missing"
         elif isinstance(value, (bool, np.bool_)):
             reason = "not numeric"
@@ -937,7 +937,7 @@ def _build_probability_outputs(
     class_indexes = {}
     for index, class_label in enumerate(json_class_labels):
         try:
-            class_indexes[class_label] = index
+            class_indexes.setdefault(class_label, index)
         except TypeError:
             continue
     if probabilities.ndim != 2:

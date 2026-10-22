@@ -493,6 +493,26 @@ class TestInferenceOutput:
         json.dumps(result)
 
     @pytest.mark.asyncio
+    async def test_confidence_uses_first_equal_class_label(self, monkeypatch):
+        class EqualClassLabelsClassifier:
+            classes_ = np.array([1, 1.0, True], dtype=object)
+
+            def predict(self, _input_data):
+                return np.array([True], dtype=object)
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.125, 0.25, 0.625]], dtype=np.float32)
+
+        result = await _run_inference(
+            monkeypatch,
+            EqualClassLabelsClassifier(),
+            "logistic_regression",
+        )
+
+        assert result["prediction"] == [True]
+        assert result["confidences"] == [0.125]
+
+    @pytest.mark.asyncio
     async def test_flattens_single_column_classifier_predictions(self, monkeypatch):
         class SingleColumnClassifier:
             classes_ = np.array(["denied", "approved"])
@@ -1822,6 +1842,8 @@ class TestInferenceFeatureContract:
     @pytest.mark.parametrize(
         ("baseline", "expected_reason"),
         [
+            ([100, ""], "2 (missing)"),
+            ([100, "   "], "2 (missing)"),
             ([100, "abc"], "2 (not numeric)"),
             ([100, 0], "2 (zero)"),
             ([100, float("inf")], "2 (not finite)"),
