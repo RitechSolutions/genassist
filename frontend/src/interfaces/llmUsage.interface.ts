@@ -6,6 +6,9 @@ export interface LlmUsageSummaryResponse {
   total_cost_usd: number;
   cost_is_partial: boolean;
   cost_per_conversation_usd: number | null;
+  distinct_conversations?: number;
+  conversation_cost_usd?: number;
+  non_conversation_cost_usd?: number;
   agent_studio_test_cost_usd: number;
   /** Prompt tokens sent, normalized across providers */
   total_input_tokens: number;
@@ -81,6 +84,8 @@ export interface LlmUsageQueryFilters {
   group_id?: string;
   from_date?: string;
   to_date?: string;
+  activity_from_datetime?: string;
+  activity_to_datetime?: string;
   provider?: string;
   model?: string;
 }

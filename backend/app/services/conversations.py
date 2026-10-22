@@ -116,6 +116,7 @@ class ConversationService:
         conversation_id: UUID,
         message_ids: list[UUID],
         recording_id: UUID | None,
+        note_ids: list[UUID],
     ) -> None:
         # Redis conversation memory (thread-scoped)
         await clear_conversation_memory_cache(conversation_id)
@@ -142,7 +143,7 @@ class ConversationService:
                 await self.recordings_repo.delete_recording(rec)
 
         # Audit log snapshots (delete both pre- and post-delete trail for these ids)
-        record_ids: list[UUID] = [conversation_id, *message_ids]
+        record_ids: list[UUID] = [conversation_id, *message_ids, *note_ids]
         if recording_id:
             record_ids.append(recording_id)
         deleted = await self.audit_log_repo.delete_by_record_ids(record_ids)
@@ -733,6 +734,8 @@ class ConversationService:
         if mode == GdprDeleteMode.HARD:
             message_ids = [m.id for m in (conversation.messages or []) if getattr(m, "id", None)]
             recording_id = getattr(conversation, "recording_id", None)
+            notes = await self.transcript_message_repo.get_issue_notes_by_conversation_id(conversation_id)
+            note_ids = [note.id for note in notes]
             fm_ids = self._collect_gdpr_file_manager_attachment_ids(conversation)
             await self._gdpr_purge_file_manager_attachments(
                 fm_ids, conversation_id=conversation_id
@@ -742,6 +745,7 @@ class ConversationService:
                 conversation_id=conversation_id,
                 message_ids=message_ids,
                 recording_id=recording_id,
+                note_ids=note_ids,
             )
             await invalidate_conversation_cache(conversation_id)
             logger.info(

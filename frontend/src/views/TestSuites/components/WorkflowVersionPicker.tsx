@@ -15,8 +15,7 @@ interface WorkflowVersionPickerProps {
 }
 
 /** Workflows as collapsible groups, each listing its versions with the live one
- * marked. Shared by the evaluation wizard and the import dialog so both agree
- * on what "current" means. */
+ * marked. */
 export const WorkflowVersionPicker: React.FC<WorkflowVersionPickerProps> = ({
   workflows,
   selectedWorkflowId,

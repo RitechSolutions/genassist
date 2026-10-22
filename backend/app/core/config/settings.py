@@ -39,8 +39,8 @@ class ProjectSettings(BaseSettings):
     # Each publish takes ~5ms, so connections are rapidly reused
 
     # Celery Redis connection pool settings
-    CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for Celery broker & backend
-    # Socket bounds for Celery's broker/result-backend Redis connections; without
+    CELERY_REDIS_MAX_CONNECTIONS: int = 50  # Max connections for the Celery broker
+    # Socket bounds for Celery's broker Redis connections; without
     # them a silently dead connection blocks the worker or beat indefinitely.
     CELERY_REDIS_SOCKET_TIMEOUT: int = 30
     CELERY_REDIS_SOCKET_CONNECT_TIMEOUT: int = 15
@@ -143,13 +143,6 @@ class ProjectSettings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     HUGGINGFACE_TOKEN: Optional[str] = None
 
-    # === Model call concurrency ===
-    # API process only: threads in the event loop's default pool, where synchronous model clients run; 0 keeps Python's default.
-    LLM_EXECUTOR_THREADS: int = 32
-    # Agent turns one process runs at once; a turn waiting longer than the timeout gets 503. 0 disables the cap.
-    CHAT_TURN_MAX_INFLIGHT: int = 24
-    CHAT_TURN_QUEUE_TIMEOUT_SECONDS: float = 10.0
-
     # === Whisper Model Defaults ===
     DEFAULT_WHISPER_MODEL: str = "base.en"
     SUPPORTED_AUDIO_FORMATS: Tuple[str, ...] = (
@@ -242,6 +235,9 @@ class ProjectSettings(BaseSettings):
     # Hard ceiling on how long a single interactive (FastAPI) query may run.
     # Prevents runaway searches from pinning DB CPU indefinitely. 0 disables.
     DB_STATEMENT_TIMEOUT: int = 1800  # seconds (30 minutes)
+    # Lock wait cap for startup migrations (0 waits forever) and the retries after a lock timeout
+    MIGRATION_LOCK_TIMEOUT_SECONDS: int = Field(default=5, ge=0, le=2147483)  # Postgres maximum
+    MIGRATION_LOCK_RETRIES: int = Field(default=5, ge=0)
 
     # === Multi-Tenancy ===
     MULTI_TENANT_ENABLED: bool = False
@@ -576,6 +572,7 @@ class FileStorageSettings(BaseSettings):
 
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_SESSION_TOKEN: Optional[str] = None
     AWS_STORAGE_BUCKET: Optional[str] = None
     AWS_REGION: Optional[str] = None
     AWS_S3_ENDPOINT_URL: Optional[str] = None

@@ -60,6 +60,12 @@ export const updateTestEvaluation = (
 export const deleteTestEvaluation = (id: string) =>
   apiRequest<void>("DELETE", `${BASE}/evaluations/${id}`);
 
+/** These evaluations' older methods read as checks, without saving them. */
+export const previewEvaluationChecks = (evaluationIds: string[]) =>
+  apiRequest<{ evaluations: TestEvaluationConfig[] }>("POST", `${BASE}/evaluations/checks-preview`, {
+    evaluation_ids: evaluationIds,
+  });
+
 export const runTestEvaluation = (
   evaluationId: string,
   targetWorkflowId?: string,
@@ -80,11 +86,11 @@ export const runWorkflowEvaluations = (
     targetWorkflowId ? { target_workflow_id: targetWorkflowId } : undefined,
   );
 
-export const getWorkflowEvaluationSummaries = () =>
-  apiRequest<WorkflowEvaluationSummary[]>(
-    "GET",
-    `${BASE}/workflows/evaluation-summaries`,
-  );
+/** Every workflow's summary; with a search, only workflows whose evaluations match it. */
+export const getWorkflowEvaluationSummaries = (search?: string) => {
+  const query = search?.trim() ? `?${new URLSearchParams({ search: search.trim() }).toString()}` : "";
+  return apiRequest<WorkflowEvaluationSummary[]>("GET", `${BASE}/workflows/evaluation-summaries${query}`);
+};
 
 export const getWorkflowEvaluationsPage = (
   workflowId: string,

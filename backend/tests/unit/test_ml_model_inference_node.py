@@ -348,7 +348,10 @@ async def _run_inference(monkeypatch, model, model_type):
             return_value={
                 "version": "v2.0",
                 "model": model,
-                "metadata": {"feature_columns": ["feature"]},
+                "metadata": {
+                    "metadata_schema_version": 2,
+                    "feature_columns": ["feature"],
+                },
             }
         )
     )
@@ -382,26 +385,169 @@ class TestInferenceOutput:
         json.dumps(result)
 
     @pytest.mark.asyncio
-    async def test_preserves_string_classes_and_uses_them_consistently(self, monkeypatch):
+    async def test_preserves_column_shaped_regression_output(self, monkeypatch):
+        class ColumnRegressionModel:
+            def predict(self, _input_data):
+                return np.array([[np.float32(12.75)]])
+
+        result = await _run_inference(
+            monkeypatch,
+            ColumnRegressionModel(),
+            "linear_regression",
+        )
+
+        assert result["prediction"] == ["[12.75]"]
+        assert result["prediction_label"] == [None]
+        assert result["prediction_details"] == [{"result": "[12.75]", "label": None}]
+
+    @pytest.mark.asyncio
+    async def test_uses_predict_for_class_when_probabilities_disagree(self, monkeypatch):
         class StringClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def __init__(self):
+                self.predict_calls = 0
+                self.predict_proba_calls = 0
+
+            def predict(self, _input_data):
+                self.predict_calls += 1
+                return np.array(["denied"])
+
+            def predict_proba(self, _input_data):
+                self.predict_proba_calls += 1
+                return np.array([[0.25, 0.75]], dtype=np.float32)
+
+        model = StringClassifier()
+        result = await _run_inference(monkeypatch, model, "logistic_regression")
+
+        assert model.predict_calls == 1
+        assert model.predict_proba_calls == 1
+        assert result["prediction"] == ["denied"]
+        assert result["prediction_label"] == ["denied"]
+        assert result["prediction_details"] == [{"result": "denied", "label": "denied"}]
+        assert [detail["label"] for detail in result["prediction_details"]] == result["prediction_label"]
+        assert result["probabilities"] == [{"Class_denied": 0.25, "Class_approved": 0.75}]
+        assert result["confidences"] == [0.25]
+        assert result["batch_size"] == 1
+        json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_flattens_single_column_classifier_predictions(self, monkeypatch):
+        class SingleColumnClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array([["approved"]])
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.125, 0.875]], dtype=np.float32)
+
+        result = await _run_inference(
+            monkeypatch,
+            SingleColumnClassifier(),
+            "catboost",
+        )
+
+        assert result["prediction"] == ["approved"]
+        assert result["prediction_label"] == ["approved"]
+        assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
+        assert result["probabilities"] == [{"Class_denied": 0.125, "Class_approved": 0.875}]
+        assert result["confidences"] == [0.875]
+
+    @pytest.mark.asyncio
+    async def test_returns_prediction_when_probability_generation_fails(self, monkeypatch, caplog):
+        class ProbabilityFailureClassifier:
             classes_ = np.array(["denied", "approved"])
 
             def predict(self, _input_data):
                 return np.array(["approved"])
 
             def predict_proba(self, _input_data):
-                return np.array([[0.25, 0.75]], dtype=np.float32)
+                raise RuntimeError("probabilities unavailable")
 
-        result = await _run_inference(monkeypatch, StringClassifier(), "logistic_regression")
+        with caplog.at_level(logging.WARNING):
+            result = await _run_inference(
+                monkeypatch,
+                ProbabilityFailureClassifier(),
+                "logistic_regression",
+            )
 
         assert result["prediction"] == ["approved"]
         assert result["prediction_label"] == ["approved"]
         assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
-        assert [detail["label"] for detail in result["prediction_details"]] == result["prediction_label"]
+        assert "probabilities" not in result
+        assert "confidences" not in result
+        assert "Probabilities unavailable" in caplog.text
+        assert "RuntimeError: probabilities unavailable" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_classifier_without_probability_support_uses_predict(self, monkeypatch):
+        class PredictionOnlyClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["approved"])
+
+        result = await _run_inference(
+            monkeypatch,
+            PredictionOnlyClassifier(),
+            "logistic_regression",
+        )
+
+        assert result["prediction"] == ["approved"]
+        assert result["prediction_label"] == ["approved"]
+        assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
+        assert "probabilities" not in result
+        assert "confidences" not in result
+
+    @pytest.mark.asyncio
+    async def test_omits_confidence_when_prediction_is_not_in_class_list(self, monkeypatch, caplog):
+        class UnknownClassClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["review"])
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.25, 0.75]], dtype=np.float32)
+
+        with caplog.at_level(logging.WARNING):
+            result = await _run_inference(
+                monkeypatch,
+                UnknownClassClassifier(),
+                "logistic_regression",
+            )
+
+        assert result["prediction"] == ["review"]
         assert result["probabilities"] == [{"Class_denied": 0.25, "Class_approved": 0.75}]
-        assert result["confidences"] == [0.75]
-        assert result["batch_size"] == 1
-        json.dumps(result)
+        assert "confidences" not in result
+        assert "predicted class" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_ignores_probability_row_count_mismatch(self, monkeypatch, caplog):
+        class MismatchedProbabilityClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["approved"])
+
+            def predict_proba(self, _input_data):
+                return np.array(
+                    [[0.25, 0.75], [0.75, 0.25]],
+                    dtype=np.float32,
+                )
+
+        with caplog.at_level(logging.WARNING):
+            result = await _run_inference(
+                monkeypatch,
+                MismatchedProbabilityClassifier(),
+                "logistic_regression",
+            )
+
+        assert result["prediction"] == ["approved"]
+        assert "probabilities" not in result
+        assert "confidences" not in result
+        assert "row count" in caplog.text
 
 
 class _StubModel:
@@ -423,6 +569,8 @@ async def _predict(
     registered_feature_names=None,
     inference_params=None,
     legacy=False,
+    artifact_version="v2.0",
+    include_metadata_schema_version=True,
     **metadata,
 ):
     expected_features = list(inputs) if feature_names is None else list(feature_names)
@@ -443,10 +591,19 @@ async def _predict(
     service = MagicMock(get_by_id=AsyncMock(return_value=ml_model))
     model_response = {"model": model}
     if not legacy:
+        artifact_metadata = {
+            "feature_columns": expected_features,
+            **metadata,
+        }
+        if (
+            include_metadata_schema_version
+            and "metadata_schema_version" not in artifact_metadata
+        ):
+            artifact_metadata["metadata_schema_version"] = 2
         model_response = {
-            "version": "v2.0",
+            "version": artifact_version,
             "model": model,
-            "metadata": {"feature_columns": expected_features, **metadata},
+            "metadata": artifact_metadata,
         }
     manager = MagicMock(get_model=AsyncMock(return_value=model_response))
     monkeypatch.setattr(inference_module, "injector", MagicMock(get=MagicMock(return_value=service)))
@@ -457,6 +614,109 @@ async def _predict(
 
 
 class TestInferenceFeatureContract:
+    @pytest.mark.parametrize(
+        "artifact_version",
+        ["v2.0", "sha256:4f83c0a", "v2.1", ""],
+    )
+    @pytest.mark.asyncio
+    async def test_artifact_version_does_not_control_metadata_schema(
+        self,
+        monkeypatch,
+        artifact_version,
+    ):
+        class RecordingModel(_StubModel):
+            received = None
+
+            def predict(self, input_data):
+                self.received = input_data
+                return np.zeros(len(input_data), dtype=int)
+
+        model = RecordingModel()
+        await _predict(
+            monkeypatch,
+            model,
+            {"lag_24": 12, "hour": 8},
+            feature_names=["hour", "lag_24"],
+            artifact_version=artifact_version,
+        )
+
+        assert list(model.received.columns) == ["hour", "lag_24"]
+        np.testing.assert_array_equal(model.received, [[8, 12]])
+
+    @pytest.mark.asyncio
+    async def test_metadata_without_schema_version_is_refused(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8},
+                feature_names=["hour"],
+                include_metadata_schema_version=False,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert (
+            "has metadata but does not declare a metadata schema version"
+            in exc.value.error_detail
+        )
+        assert "cannot be read safely" in exc.value.error_detail
+        assert "Retrain the model" in exc.value.error_detail
+
+    @pytest.mark.parametrize("schema_version", [True, "2", 0])
+    @pytest.mark.asyncio
+    async def test_invalid_artifact_schema_is_refused(
+        self,
+        monkeypatch,
+        schema_version,
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8},
+                feature_names=["hour"],
+                metadata_schema_version=schema_version,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "invalid metadata schema version" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_schema_one_artifact_uses_metadata(self, monkeypatch):
+        class RecordingModel(_StubModel):
+            received = None
+
+            def predict(self, input_data):
+                self.received = input_data
+                return np.zeros(len(input_data), dtype=int)
+
+        model = RecordingModel()
+        await _predict(
+            monkeypatch,
+            model,
+            {"lag_24": 12, "hour": 8},
+            feature_names=["hour", "lag_24"],
+            metadata_schema_version=1,
+        )
+
+        assert list(model.received.columns) == ["hour", "lag_24"]
+        np.testing.assert_array_equal(model.received, [[8, 12]])
+
+    @pytest.mark.asyncio
+    async def test_future_artifact_schema_is_refused(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8},
+                feature_names=["hour"],
+                metadata_schema_version=3,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "artifact schema v3" in exc.value.error_detail
+        assert "supports up to v2" in exc.value.error_detail
+
     @pytest.mark.asyncio
     async def test_missing_feature_is_rejected_before_prediction(self, monkeypatch):
         model = _StubModel()
@@ -1425,3 +1685,25 @@ class TestInferenceFeatureContract:
         )
 
         np.testing.assert_array_equal(model.received, [[8, 12]])
+
+
+class TestEnsurePklFile:
+    @pytest.mark.asyncio
+    async def test_downloaded_copy_is_recorded_without_registry_revalidation(self, monkeypatch, tmp_path):
+        model_id = uuid4()
+        ml_model = SimpleNamespace(id=model_id, name="forecast", pkl_file=None, pkl_file_id=str(uuid4()))
+        service = MagicMock(record_local_pkl_file=AsyncMock(), update=AsyncMock())
+
+        async def fake_download(_file_id, destination_path):
+            return destination_path
+
+        monkeypatch.setattr(inference_module, "download_pkl_file", fake_download)
+        monkeypatch.setattr(inference_module, "ML_MODELS_UPLOAD_DIR", str(tmp_path))
+        node = MLModelInferenceNode("ml1", {"id": "ml1", "type": "mlModelInferenceNode", "data": {}}, MagicMock())
+
+        await node._ensure_pkl_file(ml_model, service)
+
+        expected_path = str(tmp_path / f"forecast_{model_id}.pkl")
+        service.record_local_pkl_file.assert_awaited_once_with(model_id, expected_path)
+        service.update.assert_not_awaited()
+        assert ml_model.pkl_file == expected_path

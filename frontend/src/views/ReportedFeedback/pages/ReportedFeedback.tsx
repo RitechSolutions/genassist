@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MessageSquareDot, NotebookPen, Settings } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 
@@ -17,13 +17,13 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { useTopicFilter } from "@/hooks/useTopicFilter";
 import { usePermissions } from "@/context/PermissionContext";
-import { getWorkflowsMinimal } from "@/services/workflows";
 import { ISSUE_CATEGORIES } from "@/services/issueStatuses";
 import { extractErrorMessage } from "@/helpers/apiError";
 import { toInclusiveDateParams } from "@/helpers/dateRange";
 
 import { ReportedFeedbackItem } from "@/services/reportedFeedback";
 import { StatsOverviewCard } from "@/views/Analytics/components/StatsOverviewCard";
+import { useAgentsList } from "@/views/Analytics/hooks/useAgentsList";
 import {
   cacheIssue,
   useFeedbackSummary,
@@ -53,18 +53,14 @@ export default function ReportedFeedback() {
     permissions.includes("*") || permissions.includes("write:app_settings");
   const [currentPage, setCurrentPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [workflowFilter, setWorkflowFilter] = useState<string>("all");
+  const [agentFilter, setAgentFilter] = useState("all");
   // Shared global range (same component/store as the dashboard).
   const [dateRange, setDateRange] = usePersistedDateRange(undefined);
   const [searchQuery, setSearchQuery] = useState("");
   const search = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS).trim();
   const appliedRange = search ? undefined : dateRange;
 
-  const { data: workflowsData } = useQuery({
-    queryKey: ["workflows-minimal"],
-    queryFn: getWorkflowsMinimal,
-  });
-  const workflows = workflowsData ?? [];
+  const { agents } = useAgentsList();
 
   const { data: statuses = [] } = useIssueStatuses();
   const {
@@ -78,7 +74,7 @@ export default function ReportedFeedback() {
 
   // Server-side time filter on the reported time (when the comment was added).
   const filters = {
-    workflow_id: workflowFilter !== "all" ? workflowFilter : undefined,
+    agent_id: agentFilter !== "all" ? agentFilter : undefined,
     ...toInclusiveDateParams(appliedRange),
     topic: topicFilter !== "all" ? topicFilter : undefined,
     subtopic: subtopicFilter !== "all" ? subtopicFilter : undefined,
@@ -123,7 +119,7 @@ export default function ReportedFeedback() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useIssue(selectedId);
   const dialogIssue =
-    rows.find((row) => row.feedback_id === selectedId) ?? selected.data ?? null;
+    selected.data ?? rows.find((row) => row.feedback_id === selectedId) ?? null;
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [lastOpenedId, setLastOpenedId] = useState<string | null>(null);
 
@@ -211,12 +207,12 @@ export default function ReportedFeedback() {
       ),
     },
     {
-      header: "Workflow",
-      key: "workflow",
+      header: "Agent",
+      key: "agent",
       headerClassName: "w-[150px]",
       cell: (item) => (
         <span className="block max-w-[140px] truncate text-sm">
-          {item.workflow_name || (
+          {item.agent_name || (
             <span className="italic text-muted-foreground">—</span>
           )}
         </span>
@@ -246,10 +242,13 @@ export default function ReportedFeedback() {
       header: "Status",
       key: "status",
       headerClassName: "w-[160px]",
-      // Editable inline; stop row-click so the dropdown doesn't open the dialog.
+      // Editable inline; stop row events so the dropdown doesn't open the dialog.
       cell: (item) =>
         canTriage ? (
-          <div onClick={(e) => e.stopPropagation()}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <StatusSelect
               value={item.status}
               statuses={statuses}
@@ -267,12 +266,12 @@ export default function ReportedFeedback() {
 
   const filterGroups: FilterMenuGroup[] = [
     {
-      key: "workflow",
-      label: "Workflow",
-      allLabel: "All workflows",
-      value: workflowFilter,
-      options: workflows.map((wf) => ({ value: wf.id, label: wf.name })),
-      onChange: setWorkflowFilter,
+      key: "agent",
+      label: "Agent",
+      allLabel: "All agents",
+      value: agentFilter,
+      options: agents.map((a) => ({ value: a.id, label: a.name })),
+      onChange: setAgentFilter,
     },
     {
       key: "topic",
@@ -324,7 +323,7 @@ export default function ReportedFeedback() {
     statusFilter !== "all" ||
     topicFilter !== "all" ||
     subtopicFilter !== "all" ||
-    workflowFilter !== "all" ||
+    agentFilter !== "all" ||
     Boolean(appliedRange?.from || appliedRange?.to) ||
     Boolean(search);
 

@@ -125,11 +125,19 @@ export interface CSVAnalysisResult {
 export const analyzeCSV = async (
   fileUrl: string,
   pythonCode?: string,
+  file?: { id?: string; name?: string },
 ): Promise<CSVAnalysisResult> => {
   try {
-    const body: { file_url: string; python_code?: string } = {
+    const body: {
+      file_url: string;
+      file_id?: string;
+      file_name?: string;
+      python_code?: string;
+    } = {
       file_url: fileUrl,
     };
+    if (file?.id) body.file_id = file.id;
+    if (file?.name) body.file_name = file.name;
     if (pythonCode) {
       body.python_code = pythonCode;
     }

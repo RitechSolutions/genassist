@@ -14,6 +14,13 @@ import pandas as pd
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.ml_model_feature_contract import (
+    _match_registered_feature_names,
+    _model_feature_count,
+    _normalize_estimator_feature_names,
+    _resolve_artifact_metadata,
+    _resolve_estimator_feature_names,
+)
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml.ml_utils import (
@@ -23,7 +30,7 @@ from app.modules.workflow.engine.nodes.ml.ml_utils import (
     normalize_feature_expression,
     ordinal_key,
 )
-from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM, MLModelBase
+from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM
 from app.services.ml_model_manager import download_pkl_file, get_ml_model_manager
 from app.services.ml_models import MLModelsService
 
@@ -610,142 +617,6 @@ def _json_safe_scalar(value: Any) -> Any:
     return value
 
 
-_UNREADABLE_MODEL_ATTRIBUTE = object()
-
-
-def _read_model_attribute(model: Any, attribute: str) -> Any:
-    try:
-        return getattr(model, attribute, None)
-    except Exception:
-        return _UNREADABLE_MODEL_ATTRIBUTE
-
-
-def _model_feature_count(model: Any) -> Optional[int]:
-    count_values = [_read_model_attribute(model, "n_features_in_")]
-
-    found_invalid_count = False
-    valid_counts = []
-    for value in count_values:
-        if value is None:
-            continue
-        if (
-            value is _UNREADABLE_MODEL_ATTRIBUTE
-            or isinstance(value, (bool, np.bool_))
-            or not isinstance(value, (int, np.integer))
-            or value < 1
-        ):
-            found_invalid_count = True
-            continue
-        valid_counts.append(int(value))
-
-    if valid_counts:
-        return valid_counts[0] if len(set(valid_counts)) == 1 else -1
-
-    return -1 if found_invalid_count else None
-
-
-def _normalize_estimator_feature_names(
-    names: Any,
-    expected_feature_count: Optional[int],
-) -> Optional[List[str]]:
-    if isinstance(names, np.ndarray):
-        names = names.tolist()
-    if not isinstance(names, (list, tuple)):
-        return None
-
-    normalized_names = list(names)
-    if (
-        not normalized_names
-        or any(
-            not isinstance(name, str) or not name.strip()
-            for name in normalized_names
-        )
-        or len(set(normalized_names)) != len(normalized_names)
-        or (
-            expected_feature_count is not None
-            and len(normalized_names) != expected_feature_count
-        )
-    ):
-        return None
-    return normalized_names
-
-
-def _resolve_estimator_feature_names(
-    model: Any,
-    module_root: str,
-    expected_feature_count: Optional[int],
-) -> Optional[List[str]]:
-    if module_root == "xgboost" and type(model).__name__ == "Booster":
-        return None
-
-    resolved_orders = []
-    for attribute, required_module in (
-        ("feature_names_in_", None),
-        ("feature_names_", "catboost"),
-        ("feature_name_", "lightgbm"),
-    ):
-        if required_module is not None and module_root != required_module:
-            continue
-        normalized_names = _normalize_estimator_feature_names(
-            _read_model_attribute(model, attribute),
-            expected_feature_count,
-        )
-        if normalized_names is not None:
-            resolved_orders.append(normalized_names)
-
-    if module_root == "xgboost":
-        get_booster = _read_model_attribute(model, "get_booster")
-        if not callable(get_booster):
-            return None
-        try:
-            booster = get_booster()
-        except Exception:
-            return None
-        native_names = _normalize_estimator_feature_names(
-            _read_model_attribute(booster, "feature_names"),
-            expected_feature_count,
-        )
-        if native_names is None:
-            return None
-        resolved_orders.append(native_names)
-
-    if resolved_orders and all(
-        names == resolved_orders[0] for names in resolved_orders[1:]
-    ):
-        return resolved_orders[0]
-    return None
-
-
-def _lightgbm_feature_name(name: str) -> str:
-    return "".join("_" if character.isspace() else character for character in name)
-
-
-def _match_registered_feature_names(
-    estimator_names: List[str],
-    registered_names: Any,
-    module_root: str,
-) -> Optional[List[str]]:
-    normalized_registered_names = _normalize_estimator_feature_names(
-        registered_names,
-        len(estimator_names),
-    )
-    if normalized_registered_names is None:
-        return None
-
-    if set(normalized_registered_names) == set(estimator_names):
-        return list(estimator_names)
-
-    if module_root != "lightgbm":
-        return None
-
-    registered_by_estimator_name = {
-        _lightgbm_feature_name(name): name for name in normalized_registered_names
-    }
-    if set(registered_by_estimator_name) != set(estimator_names):
-        return None
-    return [registered_by_estimator_name[name] for name in estimator_names]
-
-
 def _describe_feature_names(names: Any) -> str:
     if isinstance(names, np.ndarray):
         names = names.tolist()
@@ -930,19 +801,6 @@ def _replay_feature_engineering(
     return computed
 
 
-def _label_for_prediction(value: Any) -> str:
-    """Map a model prediction to an availability label."""
-    if value is None:
-        return "Not Available"
-    if isinstance(value, (bool, np.bool_)):
-        return "Available" if value else "Not Available"
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        return "Available" if float(value) != 0 else "Not Available"
-    if isinstance(value, str):
-        return "Available" if value.strip() else "Not Available"
-    return "Available" if value else "Not Available"
-
-
 def _build_prediction_outputs(
     predictions: Sequence[Any], class_labels: Optional[Sequence[Any]]
 ) -> tuple[List[Any], List[Any], List[Dict[str, Any]]]:
@@ -957,15 +815,35 @@ def _build_prediction_outputs(
 
 
 def _build_probability_outputs(
-    probabilities: np.ndarray, class_labels: Sequence[Any]
-) -> tuple[List[Dict[str, Any]], List[Any]]:
-    """Build probability dictionaries without assuming numeric class labels."""
+    probabilities: np.ndarray,
+    class_labels: Sequence[Any],
+    predictions: Sequence[Any],
+) -> tuple[List[Dict[str, Any]], Optional[List[Any]]]:
+    """Build probability dictionaries and confidence for each predicted class."""
+    probabilities = np.asarray(probabilities)
     json_class_labels = [_json_safe_scalar(class_label) for class_label in class_labels]
+    if probabilities.ndim != 2:
+        raise ValueError("Probability output must be a two-dimensional array")
+    if probabilities.shape[0] != len(predictions):
+        raise ValueError(
+            "Probability output row count does not match prediction row count"
+        )
+    if probabilities.shape[1] != len(json_class_labels):
+        raise ValueError(
+            "Probability output column count does not match model class count"
+        )
     probability_outputs = [
         {f"Class_{json_class_labels[index]}": _json_safe_scalar(probability) for index, probability in enumerate(row)}
         for row in probabilities
     ]
-    confidences = [_json_safe_scalar(max(row)) for row in probabilities]
+    confidences = []
+    for row, prediction in zip(probabilities, predictions, strict=True):
+        json_prediction = _json_safe_scalar(prediction)
+        try:
+            predicted_class_index = json_class_labels.index(json_prediction)
+        except ValueError:
+            return probability_outputs, None
+        confidences.append(_json_safe_scalar(row[predicted_class_index]))
     return probability_outputs, confidences
 
 
@@ -1047,17 +925,12 @@ class MLModelInferenceNode(BaseNode):
                     error_detail=f"Could not load model: {e}. Ensure all dependencies are installed.",
                 ) from e
 
-            # Check if model_response has a "version" key for v2.0 format vs legacy
-            metadata: Dict[str, Any] = {}
+            # Artifact identity/version may be a fingerprint and does not describe
+            # the metadata layout. Only the metadata schema is load-bearing here.
             inference_warnings: List[str] = []
-            metadata_is_authoritative = False
-            if "version" in model_response and model_response["version"] == "v2.0":
-                model = model_response.get("model", {})
-                metadata = model_response.get("metadata", {})
-                metadata_is_authoritative = True
-            else:
-                # legacy model response is the raw model object
-                model = model_response.get("model", {})
+            model = model_response.get("model", {})
+            metadata = _resolve_artifact_metadata(model_response)
+            metadata_is_authoritative = bool(metadata)
 
             feature_names, estimator_feature_names, feature_order_source = (
                 _resolve_feature_order(
@@ -1363,17 +1236,24 @@ class MLModelInferenceNode(BaseNode):
                 # Get model-derived class labels. Regressors do not expose classes_.
                 class_labels = getattr(model, "classes_", None)
 
-                # Use predict_proba when available to avoid a redundant forward pass
+                predictions = np.asarray(model.predict(prediction_input))
+                if class_labels is not None and predictions.ndim == 2 and predictions.shape[1] == 1:
+                    predictions = predictions[:, 0]
+
+                # Probability outputs are optional and do not determine the predicted class.
                 probabilities: Optional[np.ndarray] = None
                 if hasattr(model, "predict_proba") and class_labels is not None:
                     try:
                         probabilities = model.predict_proba(prediction_input)
-                        predictions = np.asarray(class_labels)[np.argmax(probabilities, axis=1)]
-                    except Exception:
+                    except Exception as exc:
+                        logger.warning(
+                            "Probabilities unavailable for model %s; returning predictions "
+                            "without probabilities/confidences: %s: %s",
+                            model_id,
+                            type(exc).__name__,
+                            _summarize_error(exc),
+                        )
                         probabilities = None
-                        predictions = model.predict(prediction_input)
-                else:
-                    predictions = model.predict(prediction_input)
 
                 # Reconstruct real-unit predictions for a model trained on a
                 # ratio target (target / baselineColumn - see TrainModelNode's
@@ -1435,9 +1315,28 @@ class MLModelInferenceNode(BaseNode):
 
                 # Add probabilities and confidence
                 if probabilities is not None:
-                    probability_outputs, confidences = _build_probability_outputs(probabilities, class_labels)
-                    result["probabilities"] = probability_outputs
-                    result["confidences"] = confidences
+                    try:
+                        probability_outputs, confidences = _build_probability_outputs(
+                            probabilities,
+                            class_labels,
+                            predictions,
+                        )
+                    except (IndexError, TypeError, ValueError) as exc:
+                        logger.warning(
+                            "Ignoring invalid probability output for model %s: %s",
+                            model_id,
+                            exc,
+                        )
+                    else:
+                        result["probabilities"] = probability_outputs
+                        if confidences is None:
+                            logger.warning(
+                                "Confidence omitted for model %s because a predicted class "
+                                "is not present in the model class list",
+                                model_id,
+                            )
+                        else:
+                            result["confidences"] = confidences
                 if inference_warnings:
                     result["warnings"] = inference_warnings
                 logger.info(
@@ -1491,7 +1390,7 @@ class MLModelInferenceNode(BaseNode):
             destination_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{ml_model.name}_{ml_model.id}.pkl")
             pkl_file_path = await download_pkl_file(ml_model.pkl_file_id, destination_path)
             # Update the ml_model with the new pkl file path
-            await ml_service.update(ml_model.id, MLModelBase(pkl_file=str(pkl_file_path)))
+            await ml_service.record_local_pkl_file(ml_model.id, str(pkl_file_path))
             ml_model.pkl_file = str(pkl_file_path)
             return
 
