@@ -39,6 +39,12 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 import { calculateNextVersion, findPreviousVersion, isVersionDuplicate } from "../../utils/helpers";
 
 interface WorkflowsSavedPanelProps {
@@ -567,27 +573,37 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                         <span>Edit</span>
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleActivateClick(workflow);
-                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onSelect={() => handleActivateClick(workflow)}
                         disabled={workflow.id === activeWorkflowId}
                       >
                         <Power className="mr-2 h-4 w-4" />
                         <span>Activate</span>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteClick(workflow);
-                        }}
-                        className="text-destructive focus:text-destructive"
-                        disabled={workflow.id === activeWorkflowId}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        <span>Delete</span>
-                      </DropdownMenuItem>
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="block">
+                              <DropdownMenuItem
+                                onClick={(e) => e.stopPropagation()}
+                                onSelect={() => handleDeleteClick(workflow)}
+                                className="text-destructive focus:text-destructive"
+                                disabled={workflow.id === activeWorkflowId}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Delete</span>
+                              </DropdownMenuItem>
+                            </span>
+                          </TooltipTrigger>
+                          {workflow.id === activeWorkflowId && (
+                            <TooltipContent side="left">
+                              This version is active. Activate another version
+                              before deleting it.
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
                     </DropdownMenuContent>
                   </DropdownMenu>
                   )}
