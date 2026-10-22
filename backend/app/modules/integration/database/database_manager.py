@@ -6,9 +6,10 @@ from contextlib import aclosing
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from urllib.parse import unquote, unquote_plus
 
 import yaml
-from sqlalchemy import text
+from sqlalchemy import URL, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 from sshtunnel import SSHTunnelForwarder
@@ -20,6 +21,10 @@ from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.snowflake import SnowflakeManager
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_credential(value: Optional[str]) -> Optional[str]:
+    return unquote(value) if value else value
 
 
 class DatabaseManager:
@@ -147,14 +152,17 @@ class DatabaseManager:
                         if (hasattr(self, "tunnel") and self.tunnel)
                         else self.config.get("database_host", "localhost")
                     )
-                    connection_string = (
-                        f"postgresql+asyncpg://{self.config.get('database_user')}:"
-                        f"{decrypt_key(self.config.get('database_password'))}@{host}:"
-                        f"{port}/{self.config.get('database_name')}"
+                    connection_string = URL.create(
+                        "postgresql+asyncpg",
+                        username=_decode_credential(self.config.get("database_user")),
+                        password=_decode_credential(decrypt_key(self.config.get("database_password"))),
+                        host=host,
+                        port=port,
+                        database=self.config.get("database_name"),
                     )
                 else:
                     connection_string = self.connection_string
-                logger.info(f"Connecting to PostgreSQL with connection string: {connection_string}")
+                logger.info("Connecting to PostgreSQL...")
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
@@ -175,12 +183,15 @@ class DatabaseManager:
                     if (hasattr(self, "tunnel") and self.tunnel)
                     else self.config.get("database_host", "localhost")
                 )
-                connection_string = (
-                    f"mysql+aiomysql://{self.config.get('database_user')}:"
-                    f"{decrypt_key(self.config.get('database_password'))}@{host}:"
-                    f"{port}/{self.config.get('database_name')}"
+                connection_string = URL.create(
+                    "mysql+aiomysql",
+                    username=_decode_credential(self.config.get("database_user")),
+                    password=_decode_credential(decrypt_key(self.config.get("database_password"))),
+                    host=host,
+                    port=port,
+                    database=self.config.get("database_name"),
                 )
-                logger.info(f"Connecting to MySQL with connection string: {connection_string}")
+                logger.info("Connecting to MySQL...")
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
@@ -207,11 +218,15 @@ class DatabaseManager:
                 # ODBC Driver 18 requires explicit SSL settings
                 driver = settings.MSSQL_DRIVER
 
-                connection_string = (
-                    f"mssql+aioodbc://{self.config.get('database_user')}:"
-                    f"{decrypt_key(self.config.get('database_password'))}@{host}:{port}/"
-                    f"{self.config.get('database_name')}?"
-                    f"driver={driver}&Encrypt=yes&TrustServerCertificate=yes"
+                connection_string = URL.create(
+                    "mssql+aioodbc",
+                    username=_decode_credential(self.config.get("database_user")),
+                    password=_decode_credential(decrypt_key(self.config.get("database_password"))),
+                    host=host,
+                    port=port,
+                    database=self.config.get("database_name"),
+                    # MSSQL_DRIVER is stored URL-encoded ("ODBC+Driver+18+...")
+                    query={"driver": unquote_plus(driver), "Encrypt": "yes", "TrustServerCertificate": "yes"},
                 )
 
                 logger.info("Connecting to MSSQL...")

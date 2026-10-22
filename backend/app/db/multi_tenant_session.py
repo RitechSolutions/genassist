@@ -67,7 +67,7 @@ class MultiTenantSessionManager:
         if ktenant not in self._engines:
             tenant_url = settings.get_tenant_database_url(tenant)
             logger.debug(
-                    f"Creating new engine for tenant {tenant} with URL: {tenant_url}"
+                    f"Creating new engine for tenant {tenant}"
                     )
 
             if background_task:
@@ -198,7 +198,7 @@ class MultiTenantSessionManager:
 
             # Now create the schema in the tenant database using async engine
             tenant_url = settings.get_tenant_database_url(tenant)
-            logger.info(f"Creating schema for tenant database with URL: {tenant_url}")
+            logger.info(f"Creating schema for tenant database: {tenant_db_name}")
 
             # Create all tables from Base.metadata using async engine
             async_engine = create_async_engine(tenant_url, echo=False)
