@@ -1,10 +1,11 @@
-from typing import Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 from injector import inject
 from sqlalchemy import select, func, asc, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
+from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.db.models import AgentModel, OperatorModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.filter import BaseFilterModel
@@ -31,6 +32,17 @@ class AgentRepository(DbRepository[AgentModel]):
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
+
+    async def get_by_ids(
+        self, ids: List[UUID], *, eager: Sequence[str] | None = None, include_deleted: bool = False
+    ) -> List[AgentModel]:
+        if not ids:
+            return []
+        stmt = self._apply_eager_options(select(AgentModel), eager).where(AgentModel.id.in_(ids))
+        if include_deleted:
+            stmt = stmt.execution_options(**{SOFT_DELETE_FLAG: True})
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
 
     async def get_by_operator_id(
         self, operator_id: UUID, eager: Sequence[str] | None = None

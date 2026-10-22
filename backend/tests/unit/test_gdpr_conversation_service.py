@@ -155,6 +155,20 @@ async def test_gdpr_delete_conversation_hard_calls_repository_delete(mock_reposi
 
 
 @pytest.mark.asyncio
+async def test_gdpr_delete_conversation_hard_purges_note_audit_rows(mock_repository):
+    conversation = _build_conversation()
+    mock_repository.fetch_conversation_by_id.return_value = conversation
+    transcript_repo = AsyncMock(spec=TranscriptMessageRepository)
+    note_id = uuid4()
+    transcript_repo.get_issue_notes_by_conversation_id.return_value = [MagicMock(id=note_id)]
+    service = _build_service(mock_repository, transcript_repo)
+
+    await service.gdpr_delete_conversation(conversation.id, GdprDeleteMode.HARD)
+
+    service.audit_log_repo.delete_by_record_ids.assert_awaited_once_with([conversation.id, note_id])
+
+
+@pytest.mark.asyncio
 async def test_gdpr_delete_conversation_soft_with_no_pii_namespace_is_noop_safe(mock_repository):
     """Conversations without the ``pii`` key should still soft-delete cleanly."""
     conversation = _build_conversation(custom_attributes={"region": "EU"})

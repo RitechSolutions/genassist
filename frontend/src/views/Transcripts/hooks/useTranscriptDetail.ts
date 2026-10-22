@@ -119,6 +119,7 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
     input_tokens: 0,
     output_tokens: 0,
   });
+  const [costIncomplete, setCostIncomplete] = useState(false);
 
   useEffect(() => {
     setLocalTranscript(transcript);
@@ -243,6 +244,7 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
 
       setCostsByMessageId(map);
       setTotalCost(totals);
+      setCostIncomplete(logs.some((log) => log.cost_usd == null));
     });
   }, [isActive, localTranscript?.id]);
 
@@ -431,6 +433,7 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
     setShowCosts,
     costsByMessageId,
     totalCost,
+    costIncomplete,
     userFeedback,
     isEditing,
     feedbackType,

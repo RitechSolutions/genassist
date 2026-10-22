@@ -246,7 +246,7 @@ These rules are **non-negotiable**. Violating any of them produces a broken work
 - Attach it with a SINGLE edge from the child to the parent: `{"from": "<subAgent_id>", "to": "<parent_id>", "sourceHandle": "output_sub_agent", "targetHandle": "input_sub_agents"}`. The parent then gains a delegation tool named after the child.
 - Each child has exactly ONE parent. Depth is limited (parent → child → grandchild, up to 3). No cycles or self-links.
 - Choose a sub-agent over a tool for stateful, multi-step work that may need to clarify with the user; choose a plain `toolBuilderNode` tool for stateless, atomic operations.
-- The `mode` decides how control returns: `single_turn` answers once, `task` may ask one clarifying question then finishes, `chat` owns the conversation until it hands back. A `task` child must be a leaf (no further children).
+- The `mode` decides how control returns: `single_turn` answers once, `task` may ask clarifying questions then finishes, `chat` owns the conversation until it hands back. A `task` child must be a leaf (no further children).
 
 ### Integration Rules
 - Use dedicated nodes where available: `zendeskTicketNode` for Zendesk, `slackMessageNode` for Slack, `jiraNode` for Jira, `gmailNode` for Gmail, `knowledgeBaseNode` for document search, `calendarEventNode` for calendar, `readMailsNode` for reading emails, `whatsappToolNode` for WhatsApp. Only use `apiToolNode` for APIs without a dedicated node.
@@ -399,7 +399,7 @@ Downstream prompts reference the delivery with `{{session.webhook.body.<field>}}
 
 ### subAgentNode — Sub-Agent
 **Category:** AI
-**Purpose:** A specialist child agent that a parent `agentNode` (or another `subAgentNode`) delegates to. It never sits in the main flow — attach it by wiring its `output_sub_agent` port to the parent's `input_sub_agents` port, and the parent gains a delegation tool named after it. The `mode` controls how control returns: `single_turn` answers once and returns (like an agent-as-tool), `task` does a bounded job and may ask ONE clarifying question before calling `finish_task`, `chat` owns the conversation until it calls `return_to_parent`.
+**Purpose:** A specialist child agent that a parent `agentNode` (or another `subAgentNode`) delegates to. It never sits in the main flow — attach it by wiring its `output_sub_agent` port to the parent's `input_sub_agents` port, and the parent gains a delegation tool named after it. The `mode` controls how control returns: `single_turn` answers once and returns (like an agent-as-tool), `task` does a bounded job and may ask clarifying questions before calling `finish_task`, `chat` owns the conversation until it calls `return_to_parent`.
 **Use cases:** Flight-search specialist that asks "Is a layover okay?" before booking (task), billing-support agent that takes over the chat until resolved (chat), isolated summarizer the parent calls for one answer (single_turn). Prefer a plain `toolBuilderNode` tool for stateless, atomic work.
 
 **Handlers:**

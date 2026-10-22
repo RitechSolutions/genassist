@@ -36,6 +36,7 @@ import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
 import { useParams, useSearchParams } from "react-router-dom";
 import { WorkflowLoadingOverlay } from "./components/WorkflowLoadingOverlay";
 import { getWorkflowById, updateWorkflow } from "@/services/workflows";
+import { extractErrorMessage } from "@/helpers/apiError";
 import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
 import { WorkflowProvider } from "./context/WorkflowContext";
@@ -227,11 +228,14 @@ const GraphFlowContent: React.FC = () => {
   const isSetupFlow = searchParams.get("setup") === "true";
   const [showSetupWizard, setShowSetupWizard] = useState(isSetupFlow);
   const [wizardWasShown] = useState(isSetupFlow);
+  // A saved version to open instead of the live one, such as the one an evaluation run played; read once.
+  const askedVersion = useRef(searchParams.get("version"));
 
-  // Clean up the ?setup=true param from URL without navigation
+  // Clean up the ?setup=true and ?version= params from URL without navigation
   useEffect(() => {
-    if (searchParams.get("setup") === "true") {
+    if (searchParams.get("setup") === "true" || searchParams.has("version")) {
       searchParams.delete("setup");
+      searchParams.delete("version");
       setSearchParams(searchParams, { replace: true });
     }
   }, []);
@@ -582,14 +586,23 @@ const GraphFlowContent: React.FC = () => {
       try {
         const agent = await getAgentConfig(agentId);
         setAgent(agent);
-        await loadWorkflow(agent.workflow_id);
+        const asked = askedVersion.current;
+        askedVersion.current = null;
+        // Only a version of this agent; anything else opens the live one.
+        const version = asked && asked !== agent.workflow_id ? await getWorkflowById(asked).catch(() => null) : null;
+        if (version?.agent_id === agentId) {
+          setWorkflow(version);
+          handleWorkflowLoaded(version);
+        } else {
+          await loadWorkflow(agent.workflow_id);
+        }
       } catch (error) {
         // Nothing to mount — don't leave the overlay up forever.
         setIsLoadingWorkflow(false);
         throw error;
       }
     },
-    [loadWorkflow]
+    [handleWorkflowLoaded, loadWorkflow, setWorkflow]
   );
 
   const handleAgentUpdated = useCallback(async () => {
@@ -791,7 +804,8 @@ const GraphFlowContent: React.FC = () => {
       setHasUnsavedChanges(false);
       setRefreshKey((prevKey) => prevKey + 1);
     } catch (error) {
-      // ignore
+      toast.error(extractErrorMessage(error, "Could not save the workflow."));
+      throw error;
     }
   };
   const handleUpdateWorkflowTestInputs = (inputs: Record<string, string>) => {
@@ -1907,7 +1921,11 @@ const GraphFlowContent: React.FC = () => {
                 The tab handles its own list/detail navigation in-place. */}
             {activeTab === "evaluations" && (
               <div className="absolute inset-0 z-20 bg-background">
-                <WorkflowEvaluationsTab workflowId={agent?.workflow_id} />
+                <WorkflowEvaluationsTab
+                  workflowId={agent?.workflow_id}
+                  // Only a saved version of this agent can be run, not an uploaded file.
+                  openWorkflowId={workflow?.id && workflow.agent_id === agent?.id ? workflow.id : undefined}
+                />
               </div>
             )}
 

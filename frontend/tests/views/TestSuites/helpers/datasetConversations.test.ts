@@ -1,17 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  caseLabel,
   conversationLabel,
   conversationLabels,
   groupCasesByConversation,
   countConversations,
-  indexConversations,
-  ruleConversations,
-  ruleTargetLabel,
   searchConversations,
 } from "@/views/TestSuites/helpers/datasetConversations";
 import type { TestCase } from "@/interfaces/testSuite.interface";
-import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
 
 const tc = (overrides: Partial<TestCase>): TestCase => ({
   suite_id: "suite",
@@ -308,64 +303,5 @@ describe("searchConversations", () => {
 
   it("drops conversations with no matching turn", () => {
     expect(searchConversations(groups, "nothing like this")).toEqual([]);
-  });
-});
-
-describe("ruleConversations", () => {
-  it("labels conversations like the dataset page and turns by position", () => {
-    const conversations = ruleConversations([
-      turn("a1", "conv-a", 4, "Second"),
-      turn("a0", "conv-a", 2, "Where is my order?"),
-      turn("b0", "conv-b", 0, "Hello"),
-    ]);
-    expect(conversations.map((c) => c.label)).toEqual([
-      "Where is my order? (2 turns)",
-      "Hello (1 turn)",
-    ]);
-    // Labels follow position; the targeted value stays the stored turn_index.
-    expect(conversations[0].turns).toEqual([
-      { caseId: "a0", turnIndex: 2, label: "Turn 1" },
-      { caseId: "a1", turnIndex: 4, label: "Turn 2" },
-    ]);
-  });
-
-  it("leaves out legacy turns that have no conversation to target", () => {
-    expect(ruleConversations([turn("x", null, 0, "Hi")])).toEqual([]);
-  });
-});
-
-describe("indexConversations", () => {
-  const cases = [
-    turn("a0", "conv-a", 3, "Where is my order?"),
-    turn("a1", "conv-a", 7, "Thanks"),
-    turn("legacy-123456", null, 0, "Single question"),
-  ];
-  const index = indexConversations(cases);
-
-  it("names a case by its conversation and its turn position", () => {
-    expect(caseLabel(index, "a1")).toBe("Where is my order? · Turn 2");
-    expect(caseLabel(index, "legacy-123456")).toBe("Single question · Turn 1");
-  });
-
-  it("keeps a short id for a case no longer in the dataset", () => {
-    expect(caseLabel(index, "gone-abcd")).toBe("Case #abcd");
-  });
-
-  it("names rule results by the dataset rather than the stored turn index", () => {
-    const rule = (overrides: Partial<TestToolRuleResult>): TestToolRuleResult => ({
-      id: "r",
-      run_id: "run",
-      technique: "tool_used",
-      rule_id: "rule-1",
-      scope: "every_turn",
-      status: "passed",
-      created_at: "",
-      ...overrides,
-    });
-    expect(ruleTargetLabel(rule({ case_id: "a1" }), index)).toBe("Turn 2");
-    expect(
-      ruleTargetLabel(rule({ scope: "conversation", source_conversation_id: "conv-a" }), index),
-    ).toBe("Where is my order? · 2 turns");
-    expect(ruleTargetLabel(rule({ case_id: "gone" }), index)).toBeNull();
   });
 });

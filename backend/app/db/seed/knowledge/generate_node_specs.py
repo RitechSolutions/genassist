@@ -71,7 +71,7 @@ NODE_DESCRIPTIONS = {
             "It never sits in the main flow: attach it to a parent by wiring its output_sub_agent "
             "port to the parent's input_sub_agents port, and the parent gains a delegation tool for it. "
             "Three collaboration modes: single_turn (answers once and returns to the parent, like an "
-            "agent-as-tool), task (does a bounded job, may ask the user one clarifying question, then "
+            "agent-as-tool), task (does a bounded job, may ask the user clarifying questions, then "
             "calls finish_task), and chat (owns the conversation until it calls return_to_parent)."
         ),
         "when_to_use": (

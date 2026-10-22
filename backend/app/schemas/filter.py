@@ -103,7 +103,7 @@ class ConversationFilter(BaseFilterModel):
 class MessageIssueSummaryFilter(BaseModel):
     from_date: Optional[date] = Field(None, description="Start date (YYYY-MM-DD)")
     to_date: Optional[datetime] = Field(None, description="End datetime (YYYY-MM-DD 23:59)")
-    workflow_id: Optional[UUID] = Field(None, description="Filter by the workflow used by the agent")
+    agent_id: Optional[UUID] = Field(None, description="Filter by agent ID")
     topic: Optional[str] = Field(None, description="Conversation topic, as shown in the list")
     subtopic: Optional[str] = Field(None, description="Conversation sub-topic, as shown in the list")
     search: Optional[Annotated[str, StringConstraints(strip_whitespace=True)]] = Field(

@@ -1,9 +1,16 @@
 import logging
 import os
+import time
 from sqlalchemy import engine_from_config, inspect
+from sqlalchemy.exc import OperationalError
 
 
 logger = logging.getLogger(__name__)
+
+# Postgres SQLSTATE raised when lock_timeout expires
+LOCK_NOT_AVAILABLE = "55P03"
+RETRY_BASE_DELAY_SECONDS = 2
+RETRY_MAX_DELAY_SECONDS = 32
 
 
 def alembic_ensure_version() -> None:
@@ -47,6 +54,46 @@ def get_table_names(url):
     return all_table_names
 
 
+class MigrationLockRetriesExhausted(RuntimeError):
+    """A migration could not take its lock within the configured retries."""
+
+
+def _is_lock_timeout(error: Exception) -> bool:
+    return getattr(getattr(error, "orig", None), "pgcode", None) == LOCK_NOT_AVAILABLE
+
+
+def upgrade_head_with_lock_retry(alembic_cfg, database_name: str) -> None:
+    """
+    Run `alembic upgrade head`, retrying only when a migration could not take its lock.
+    Each migration commits on its own, so a retry resumes at the migration that failed.
+    """
+    from alembic import command
+    from app.core.config.settings import settings
+
+    attempts = settings.MIGRATION_LOCK_RETRIES + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            command.upgrade(alembic_cfg, "head")
+            return
+        except OperationalError as error:
+            if not _is_lock_timeout(error):
+                raise
+            is_last_attempt = attempt == attempts
+            if is_last_attempt:
+                raise MigrationLockRetriesExhausted(
+                    f"Migration for {database_name} could not take its lock after {attempts} attempts"
+                ) from error
+            delay = min(RETRY_BASE_DELAY_SECONDS * 2 ** (attempt - 1), RETRY_MAX_DELAY_SECONDS)
+            logger.warning(
+                "Migration for %s could not take its lock (attempt %s/%s), retrying in %ss",
+                database_name,
+                attempt,
+                attempts,
+                delay,
+            )
+            time.sleep(delay)
+
+
 def run_migrations(url) -> bool:
     """
     Programmatically executes `alembic upgrade head`.
@@ -70,7 +117,6 @@ def run_migrations(url) -> bool:
         command.stamp(alembic_cfg, "head")
         return True
 
-    from alembic import command
     from alembic.config import Config
 
     # Point Alembic at our alembic.ini configurations
@@ -84,7 +130,7 @@ def run_migrations(url) -> bool:
     db_name = db_name_match.group(1) if db_name_match else "unknown"
 
     logger.info(f"Running database migrations for: {db_name}")
-    command.upgrade(alembic_cfg, "head")
+    upgrade_head_with_lock_retry(alembic_cfg, db_name)
     logger.info(f"Migrations complete for: {db_name}")
     return True
 
@@ -94,7 +140,6 @@ def run_migrations_for_database(url: str, database_name: str) -> bool:
     Programmatically executes `alembic upgrade head` for a specific database.
     """
     try:
-        from alembic import command
         from alembic.config import Config
 
         # Point Alembic at our alembic.ini configurations
@@ -102,7 +147,7 @@ def run_migrations_for_database(url: str, database_name: str) -> bool:
         alembic_cfg.set_main_option("sqlalchemy.url", url)
 
         logger.info(f"Running database migrations for {database_name}...")
-        command.upgrade(alembic_cfg, "head")
+        upgrade_head_with_lock_retry(alembic_cfg, database_name)
         logger.info(f"Migrations complete for {database_name}.")
         return True
     except Exception as e:
@@ -175,7 +220,6 @@ def run_migrations_for_all_tenants() -> bool:
         logger.info(
             f"Tenant migrations complete: {success_count} successful, {failed_count} failed"
         )
-
         return failed_count == 0
 
     except Exception as e:

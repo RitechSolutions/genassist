@@ -49,11 +49,11 @@ describe("fetchReportedFeedback", () => {
       status: "open",
       from_date: "2025-01-01",
       to_date: "2025-02-01",
-      workflow_id: "w1",
+      agent_id: "a1",
     });
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
-      "conversations/issues?skip=10&limit=50&status=open&from_date=2025-01-01&to_date=2025-02-01&workflow_id=w1"
+      "conversations/issues?skip=10&limit=50&status=open&from_date=2025-01-01&to_date=2025-02-01&agent_id=a1"
     );
   });
 
@@ -61,13 +61,13 @@ describe("fetchReportedFeedback", () => {
     mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
     await fetchReportedFeedback({
       status: "open",
-      workflow_id: "w1",
+      agent_id: "a1",
       topic: "Payment issue",
       subtopic: "Declined payment",
     });
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
-      "conversations/issues?limit=20&status=open&workflow_id=w1&topic=Payment+issue&subtopic=Declined+payment"
+      "conversations/issues?limit=20&status=open&agent_id=a1&topic=Payment+issue&subtopic=Declined+payment"
     );
   });
 

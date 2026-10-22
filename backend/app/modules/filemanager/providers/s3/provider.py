@@ -24,6 +24,7 @@ class S3StorageProvider(BaseStorageProvider):
     aws_bucket_name: str
     aws_access_key_id: Optional[str]
     aws_secret_access_key: Optional[str]
+    aws_session_token: Optional[str]
     aws_region_name: Optional[str]
 
     def __init__(self, config: Dict[str, Any]):
@@ -35,15 +36,17 @@ class S3StorageProvider(BaseStorageProvider):
         """
         super().__init__(config)
         self.aws_bucket_name = config.get("AWS_BUCKET_NAME", "")
-        # self.aws_access_key_id = config.get("AWS_ACCESS_KEY_ID", None)
-        # self.aws_secret_access_key = config.get("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_access_key_id = config.get("AWS_ACCESS_KEY_ID", None)
+        self.aws_secret_access_key = config.get("AWS_SECRET_ACCESS_KEY", None)
+        self.aws_session_token = config.get("AWS_SESSION_TOKEN", None)
         self.aws_region_name = config.get("AWS_REGION", None)
 
         # Initialize S3 client
         self.s3_client = S3Client(
             bucket_name=self.aws_bucket_name,
-            # aws_access_key_id=self.aws_access_key_id,
-            # aws_secret_access_key=self.aws_secret_access_key,
+            aws_access_key_id=self.aws_access_key_id,
+            aws_secret_access_key=self.aws_secret_access_key,
+            aws_session_token=self.aws_session_token,
             region_name=self.aws_region_name,
         )
 
@@ -85,6 +88,14 @@ class S3StorageProvider(BaseStorageProvider):
         except Exception as e:
             logger.error(f"Failed to download file {file_path}: {e}")
             raise
+
+    async def download_file_to_path(self, file_path: str, local_path: str) -> bool:
+        """Stream an S3 object directly to a local file."""
+
+        def _download() -> bool:
+            return self.s3_client.download_file(file_path, local_path)
+
+        return await asyncio.to_thread(_download)
 
     async def delete_file(self, file_path: str) -> bool:
         """Delete a file from S3."""

@@ -3,6 +3,7 @@ import { TableCell, TableRow } from "@/components/table";
 import { formatUsd } from "@/helpers/formatCurrency";
 import type { LlmUsageBreakdownItem } from "@/interfaces/llmUsage.interface";
 
+import { pricedCostPerCall } from "../../helpers/llmUsageMetrics";
 import { LlmUsageCostShare } from "./LlmUsageCostShare";
 
 interface LlmUsageSourceSubRowsProps {
@@ -78,7 +79,7 @@ export function LlmUsageSourceSubRows({
           </TableCell>
           <TableCell className="py-2">
             <span className="tabular-nums text-muted-foreground">
-              {formatUsd(item.calls ? item.cost_usd / item.calls : 0)}
+              {formatUsd(pricedCostPerCall(item))}
             </span>
           </TableCell>
           <TableCell className="py-2">

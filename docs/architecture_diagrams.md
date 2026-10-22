@@ -10,7 +10,7 @@ This diagram illustrates the high-level communication between major system compo
 
 ```mermaid
 graph TD
-    Client["User Browser (Frontend)"] -- "REST API (HTTP/JSON)" --> API["FastAPI (Backend)"]
+    Client["User Browser (Frontend)"] -- "REST API (HTTP/JSON, SSE for chat turns)" --> API["FastAPI (Backend)"]
     Client -- "WebSocket (JSON)" --> WS["WebSocket Service"]
 
     API -- "CRUD Operations" --> DB["PostgreSQL"]
@@ -20,8 +20,10 @@ graph TD
 
     WS -- "Pub/Sub (websocket:*, ws_upstream:*)" --> Redis
 
+    API -- "Chat turns (inside the request)" --> LangGraph["LangGraph / LLMs"]
+
     CeleryWorker["Celery Worker"] -- "Process Tasks" --> Redis
-    CeleryWorker -- "AI Orchestration" --> LangGraph["LangGraph / LLMs"]
+    CeleryWorker -- "Scheduled workflows, analyses" --> LangGraph
     CeleryWorker -- "Transcribe" --> Whisper["Whisper Service"]
 
     API -- "Enqueues Tasks" --> Redis
@@ -39,33 +41,42 @@ graph TD
 
 ## 🔄 Data Flow: Chat Interaction
 
-This sequence diagram shows the flow of a typical chat request, highlighting the asynchronous task processing.
+This sequence diagram shows one chat turn. The turn runs inside the update request; Celery handles background work (transcription, scheduled workflows, analysis backfills), not chat replies.
 
 ```mermaid
 sequenceDiagram
     participant User as User (UI)
     participant API as FastAPI Backend
     participant WS as WebSocket Service
-    participant Redis as Redis Queue / PubSub
-    participant Worker as Celery Worker
+    participant Redis as Redis PubSub
     participant LLM as LLM (OpenAI/Anthropic)
-    participant DB as Vector/Graph DB
+    participant DB as PostgreSQL / Vector DB
 
-    User->>API: Send Message (start conversation)
-    API->>API: Authenticate & Validate
-    API->>Redis: Enqueue Processing Task
-    API-->>User: Acknowledge (Task ID / conversation_id)
+    User->>API: Start conversation
+    API-->>User: conversation_id + guest token
 
-    User->>WS: Open WebSocket (conversation_id, topics)
-    WS->>API: Verify token (internal /api/internal/ws/verify-token)
-    API-->>WS: Authenticated user + tenant
+    opt WebSocket enabled (USE_WS)
+        User->>WS: Open WebSocket (conversation_id, topics)
+        WS->>API: Verify token (internal /api/internal/ws/verify-token)
+        API-->>WS: Authenticated user + tenant
+    end
 
-    Worker->>Redis: Fetch Task
-    Worker->>DB: Retrieve Context (RAG)
-    Worker->>LLM: Generate Response with Context
-    LLM-->>Worker: Provide AI Response
-    Worker->>DB: Store Conversation History
-    Worker->>Redis: Publish event (websocket:{tenant_id}:{conversation_id})
+    User->>API: PATCH /api/conversations/in-progress/update/{conversation_id}
+    API->>API: Authenticate, rate limit, reCAPTCHA
+    API->>DB: Retrieve context (RAG)
+    API->>LLM: Generate response with context
+    LLM-->>API: AI response
+    API->>DB: Store messages, response log, stats
 
-    WS->>User: Stream AI Response over WebSocket
+    opt WebSocket enabled (USE_WS)
+        API->>Redis: Publish event (websocket:{tenant_id}:{conversation_id})
+        Redis-->>WS: Event
+        WS-->>User: Message over WebSocket
+    end
+
+    alt Accept: text/event-stream
+        API-->>User: SSE activity frames while it works, then done with the updated conversation
+    else
+        API-->>User: Updated conversation (JSON)
+    end
 ```

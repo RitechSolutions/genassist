@@ -61,11 +61,6 @@ class BaseToolAgent(ABC):
         """Execute a query using the agent's specific implementation"""
         pass
 
-    @abstractmethod
-    async def stream(self, query: str, chat_history: Optional[List] = None, **kwargs):
-        """Stream the agent's execution process"""
-        pass
-
     # ==================== TOOL EXECUTION ====================
 
     async def execute_tool_by_name(self, tool_name: str, **kwargs) -> Dict[str, Any]:

@@ -34,13 +34,13 @@ import {
   updateMLModel,
   uploadModelFile,
 } from "@/services/mlModels";
-import { extractErrorMessage } from "@/helpers/apiError";
 import { MLModelType, MODEL_TYPE_OPTIONS, modelTypeLabel } from "../helpers/modelTypes";
 import { ModelFilePicker } from "./ModelFilePicker";
 import {
   buildInferenceParams,
   featureDefaultsUpdate,
   latestInferenceParams,
+  mlModelSaveErrorMessage,
 } from "./mlModelForm";
 
 const ALL_TYPES = "all";
@@ -297,17 +297,7 @@ const MLModelsManager: React.FC = () => {
       closeForm();
       void refetch();
     } catch (err) {
-      const status =
-        (err as { status?: number })?.status ??
-        (err as { response?: { status?: number } })?.response?.status;
-      toast.error(
-        status === 400
-          ? "An ML model with this name already exists."
-          : extractErrorMessage(
-              err,
-              `Failed to ${editingItem ? "update" : "create"} ML model.`
-            )
-      );
+      toast.error(mlModelSaveErrorMessage(err, editingItem ? "update" : "create"));
     } finally {
       setIsSaving(false);
     }

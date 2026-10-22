@@ -14,6 +14,7 @@ class ReportedIssueRead(BaseModel):
     message_id: UUID
     conversation_id: UUID
     agent_id: Optional[UUID] = None
+    agent_name: Optional[str] = None
     workflow_name: Optional[str] = None
     text: str
     speaker: str

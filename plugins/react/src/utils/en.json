@@ -52,7 +52,11 @@
       "Double‑checking details…",
       "Tying it together…",
       "Almost there…"
-    ]
+    ],
+    "activity": {
+      "knowledge": "Searching the knowledge base…",
+      "tool": "Working on your request…"
+    }
   },
   "time": {
     "justNow": "Just now",

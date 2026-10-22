@@ -11,6 +11,8 @@ import {
   ReadReceiptState,
   SendMessageOutcome,
   ConversationAvailability,
+  StreamEvent,
+  StreamingReply,
 } from "../types";
 import {
   ConversationGoneError,
@@ -111,6 +113,25 @@ export function mergeRestoredMessages(stored: ChatMessage[], current: ChatMessag
   return [...stored, ...current.filter((message) => !isAlreadyStored(message))];
 }
 
+/**
+ * Adds a stream frame to the reply. A tool `start` clears the text so far,
+ * since text before a tool call is scratch, not the answer.
+ */
+export function applyStreamEvent(
+  prev: StreamingReply | null,
+  event: StreamEvent,
+  nowSeconds: number = Date.now() / 1000,
+): StreamingReply {
+  const base = prev ?? { text: "", callId: null, running: [], createTime: nowSeconds };
+  if (event.type === "delta") {
+    const sameCall = base.callId === event.call_id;
+    return { ...base, callId: event.call_id, text: (sameCall ? base.text : "") + event.text };
+  }
+  if (event.phase === "start") return { ...base, text: "", callId: null, running: [...base.running, event.kind] };
+  const index = base.running.lastIndexOf(event.kind);
+  return index < 0 ? base : { ...base, running: base.running.filter((_, i) => i !== index) };
+}
+
 /** True when the availability check says the conversation can no longer be continued. */
 export function isConversationGone(availability: ConversationAvailability): boolean {
   return availability === "finalized" || availability === "unavailable";
@@ -197,6 +218,7 @@ export const useChat = ({
     "connecting" | "connected" | "disconnected"
   >("disconnected");
   const [isAgentTyping, setIsAgentTyping] = useState<boolean>(false);
+  const [streaming, setStreaming] = useState<StreamingReply | null>(null);
   const chatServiceRef = useRef<ChatService | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [guestToken, setGuestToken] = useState<string | null>(null);
@@ -435,6 +457,7 @@ export const useChat = ({
         chatServiceRef.current.disconnect();
         chatServiceRef.current.setWelcomeDataHandler(null);
         chatServiceRef.current.setConversationGoneHandler(null);
+        chatServiceRef.current.setStreamHandler(null);
       }
       // A restore started by the previous service no longer applies
       isRestoringRef.current = false;
@@ -543,6 +566,10 @@ export const useChat = ({
         if (state !== "connected") {
           setIsAgentTyping(false);
         }
+      });
+
+      chatServiceRef.current.setStreamHandler((event) => {
+        setStreaming((prev) => applyStreamEvent(prev, event));
       });
 
       chatServiceRef.current.setWelcomeDataHandler((data) => {
@@ -1269,6 +1296,7 @@ export const useChat = ({
 
       try {
         setIsLoading(true);
+        setStreaming(null);
 
         const isConversationOpen = await ensureConversationIsOpen(reCaptchaToken);
         if (!isConversationOpen) return "conversation_restarted";
@@ -1338,6 +1366,7 @@ export const useChat = ({
         return "failed";
       } finally {
         setIsLoading(false);
+        setStreaming(null);
       }
     },
     [
@@ -1394,6 +1423,7 @@ export const useChat = ({
     if (!chatServiceRef.current) return;
     const staleConversationId = chatServiceRef.current.getConversationId();
     try {
+      setStreaming(null);
       if (!isTakenOver) {
         setIsAgentTyping(true);
       }
@@ -1404,6 +1434,8 @@ export const useChat = ({
         discardConversation(staleConversationId);
       }
       // Best-effort: if it fails the visitor can still type normally.
+    } finally {
+      setStreaming(null);
     }
   }, [isTakenOver, discardConversation]);
 
@@ -1476,6 +1508,7 @@ export const useChat = ({
     isTakenOver,
     isFinalized,
     isAgentTyping,
+    streaming: isAgentTyping ? streaming : null,
     addFeedback,
     readState,
     markRead,

@@ -1,21 +1,13 @@
 import { describe, it, expect } from "vitest";
-import {
-  methodDefaults,
-  methodSettingsComplete,
-  remapToolRuleNames,
-} from "@/views/TestSuites/helpers/methodSettings";
+import { methodDefaults, remapToolRuleNames } from "@/views/TestSuites/helpers/methodSettings";
 import { buildTechniqueConfigs, getEditInitialData } from "@/views/TestSuites/helpers/evaluationForm";
 import {
-  checkResultsSummary,
   checksConversations,
   checksVerdictText,
-  groupByTechnique,
-  isConversationScope,
   isTurnScope,
   runGradesTurns,
 } from "@/views/TestSuites/helpers/runResults";
-import { indexConversations, ruleTargetLabel } from "@/views/TestSuites/helpers/datasetConversations";
-import type { EvaluationAgentInfo, TestEvaluationConfig, TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
+import type { EvaluationAgentInfo, TestEvaluationConfig, ToolUsageRule } from "@/interfaces/testEvaluation.interface";
 import type { TestRun } from "@/interfaces/testSuite.interface";
 
 const AGENTS: EvaluationAgentInfo[] = [
@@ -24,39 +16,28 @@ const AGENTS: EvaluationAgentInfo[] = [
   ] },
 ];
 
+const RULE: ToolUsageRule = {
+  id: "r",
+  agent_id: null,
+  tool_ids: [],
+  operator: "all",
+  require_success: false,
+  scope: "every_turn",
+};
+
 describe("method settings", () => {
   it("start from what was saved, or each method's defaults", () => {
     const fresh = methodDefaults(undefined, [{ id: "p1" } as never]);
     expect(fresh.nliMinEntailScore).toBe("0.5");
     expect(fresh.judgeProviderId).toBe("p1");
-    expect(fresh.toolRules).toHaveLength(1);
+    expect(fresh.toolRules).toEqual([]);
     expect(methodDefaults({ notContainsText: "RingGo" }, []).notContainsText).toBe("RingGo");
   });
 
-  it("block saving until each picked method is filled in", () => {
-    const settings = methodDefaults(undefined, []);
-    const catalog = { agents: AGENTS, routers: [] };
-    expect(methodSettingsComplete([], settings, catalog)).toBe(true);
-    expect(methodSettingsComplete(["not_contains"], settings, catalog)).toBe(false);
-    expect(methodSettingsComplete(["not_contains"], { ...settings, notContainsText: "RingGo" }, catalog)).toBe(true);
-    expect(methodSettingsComplete(["tool_used"], settings, catalog)).toBe(false);
-    expect(methodSettingsComplete(["tool_used"], {
-      ...settings,
-      toolRules: [{ ...settings.toolRules[0], tool_ids: ["tool-1"] }],
-    }, catalog)).toBe(true);
-    // A tool name that never resolved to an id blocks saving.
-    expect(methodSettingsComplete(["tool_used"], {
-      ...settings,
-      toolRules: [{ ...settings.toolRules[0], tool_ids: ["gone"] }],
-    }, catalog)).toBe(false);
-    expect(methodSettingsComplete(["nli_eval"], { ...settings, nliMinEntailScore: "2" }, catalog)).toBe(false);
-  });
-
   it("rewrite legacy tool names to ids, and keep the same rules when nothing changed", () => {
-    const settings = methodDefaults(undefined, []);
-    const named = [{ ...settings.toolRules[0], tool_ids: ["Save region"], agent_id: "refund agent" }];
+    const named = [{ ...RULE, tool_ids: ["Save region"], agent_id: "refund agent" }];
     expect(remapToolRuleNames(named, AGENTS)[0]).toMatchObject({ tool_ids: ["tool-1"], agent_id: "agent-1" });
-    const canonical = [{ ...settings.toolRules[0], tool_ids: ["tool-1"] }];
+    const canonical = [{ ...RULE, tool_ids: ["tool-1"] }];
     expect(remapToolRuleNames(canonical, AGENTS)).toBe(canonical);
     expect(remapToolRuleNames(named, [])).toBe(named);
   });
@@ -95,31 +76,9 @@ describe("checks in the evaluation form", () => {
 });
 
 describe("check results", () => {
-  const row = (scope: string, technique: TestToolRuleResult["technique"] = "checks"): TestToolRuleResult => ({
-    id: `${technique}-${scope}`,
-    run_id: "r",
-    technique,
-    rule_id: "c1",
-    scope,
-    status: "passed",
-    created_at: "",
-  });
-
-  it("sit with their turn or their conversation, checks first", () => {
+  it("sit with their turn", () => {
     expect(isTurnScope("turn")).toBe(true);
-    expect(isConversationScope("every_conversation")).toBe(true);
-    expect(isConversationScope("turn")).toBe(false);
-    expect(groupByTechnique([row("every_turn", "tool_used"), row("turn")]).map(([technique]) => technique)).toEqual([
-      "checks",
-      "tool_used",
-    ]);
-  });
-
-  it("name the conversation a check for every conversation graded", () => {
-    const index = indexConversations([
-      { id: "a1", suite_id: "s", input_data: { message: "Hi" }, source_conversation_id: "conv-a", turn_index: 0 },
-    ]);
-    expect(ruleTargetLabel({ ...row("every_conversation"), source_conversation_id: "conv-a" }, index)).toBe("Hi · 1 turn");
+    expect(isTurnScope("every_conversation")).toBe(false);
   });
 
   it("read the run's verdict by conversation", () => {
@@ -137,19 +96,6 @@ describe("check results", () => {
       "No conversation could be checked · 1 not checked",
     );
     expect(checksVerdictText(undefined)).toBeNull();
-  });
-
-  it("count checks apart from their results, under the run's verdict", () => {
-    const rows: TestToolRuleResult[] = [
-      row("turn"),
-      { ...row("every_conversation"), id: "b", rule_id: "c2", status: "failed" },
-      { ...row("every_conversation"), id: "c", rule_id: "c2" },
-    ];
-    expect(checkResultsSummary(rows, "1 of 2 conversations passed · 1 failed")).toEqual({
-      headline: "1 of 2 conversations passed · 1 failed",
-      subline: "2 checks · 3 results",
-    });
-    expect(checkResultsSummary(rows, null).headline).toBe("2 of 3 results passed");
   });
 
   it("lead the run's summary when no older method graded turns", () => {

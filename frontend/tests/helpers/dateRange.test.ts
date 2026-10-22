@@ -1,15 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   normalizeDateRange,
   toExactActivityParams,
   toExactInterval,
   toInclusiveDateParams,
   toUtcBucketDateParams,
+  utcDayEnd,
+  utcDayStart,
 } from "@/helpers/dateRange";
 
-const day = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h);
+const originalTz = process.env.TZ;
+beforeAll(() => {
+  process.env.TZ = "America/Vancouver";
+});
+afterAll(() => {
+  if (originalTz === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTz;
+});
 
-const offsetMinutes = (d: Date) => d.getTimezoneOffset();
+const day = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h);
 
 describe("normalizeDateRange", () => {
   it("leaves a complete range untouched", () => {
@@ -29,47 +38,32 @@ describe("normalizeDateRange", () => {
 });
 
 describe("toExactInterval", () => {
-  it("spans whole local days, end exclusive", () => {
+  it("spans whole UTC days of the picked dates, end exclusive", () => {
     const interval = toExactInterval({ from: day(2026, 8, 1, 13), to: day(2026, 8, 3, 9) })!;
-    expect(interval.start).toEqual(day(2026, 8, 1));
-    expect(interval.endExclusive).toEqual(day(2026, 8, 4));
+    expect(interval.start.toISOString()).toBe("2026-08-01T00:00:00.000Z");
+    expect(interval.endExclusive.toISOString()).toBe("2026-08-04T00:00:00.000Z");
   });
 
-  it("covers exactly one day for a from-only range", () => {
+  it("covers exactly one UTC day for a from-only range", () => {
     const interval = toExactInterval({ from: day(2026, 8, 1), to: undefined })!;
-    expect(interval.start).toEqual(day(2026, 8, 1));
-    expect(interval.endExclusive).toEqual(day(2026, 8, 2));
-  });
-
-  it("keeps local midnight across a DST transition", () => {
-    for (const [from, to] of [
-      [day(2026, 3, 28), day(2026, 3, 30)],
-      [day(2026, 11, 1), day(2026, 11, 3)],
-    ]) {
-      const interval = toExactInterval({ from, to })!;
-      expect(interval.start.getHours()).toBe(0);
-      expect(interval.endExclusive.getHours()).toBe(0);
-      expect(interval.endExclusive.getDate()).toBe(to.getDate() + 1);
-    }
+    expect(interval.start.toISOString()).toBe("2026-08-01T00:00:00.000Z");
+    expect(interval.endExclusive.toISOString()).toBe("2026-08-02T00:00:00.000Z");
   });
 });
 
 describe("toExactActivityParams", () => {
-  it("emits both boundaries as UTC ISO strings", () => {
-    const params = toExactActivityParams({ from: day(2026, 8, 1), to: day(2026, 8, 7) });
-    expect(params.activity_from_datetime).toBe(day(2026, 8, 1).toISOString());
-    expect(params.activity_to_datetime).toBe(day(2026, 8, 8).toISOString());
+  it("emits the picked days as UTC midnights", () => {
+    expect(toExactActivityParams({ from: day(2026, 8, 1), to: day(2026, 8, 7) })).toEqual({
+      activity_from_datetime: "2026-08-01T00:00:00.000Z",
+      activity_to_datetime: "2026-08-08T00:00:00.000Z",
+    });
   });
 
-  it("emits a complete one-day interval for a from-only range", () => {
-    const params = toExactActivityParams({ from: day(2026, 8, 1), to: undefined });
-    expect(params.activity_from_datetime).toBeDefined();
-    expect(params.activity_to_datetime).toBeDefined();
-    const spanMs =
-      new Date(params.activity_to_datetime!).getTime() -
-      new Date(params.activity_from_datetime!).getTime();
-    expect(spanMs).toBeGreaterThan(0);
-    expect(spanMs).toBeLessThanOrEqual(25 * 60 * 60 * 1000);
+  it("keeps a 24-hour day across the local DST change", () => {
+    expect(toExactActivityParams({ from: day(2026, 11, 1), to: day(2026, 11, 1) })).toEqual({
+      activity_from_datetime: "2026-11-01T00:00:00.000Z",
+      activity_to_datetime: "2026-11-02T00:00:00.000Z",
+    });
   });
 
   it("returns nothing for an empty range so callers can fall back to all-time", () => {
@@ -78,29 +72,18 @@ describe("toExactActivityParams", () => {
 });
 
 describe("toUtcBucketDateParams", () => {
-  it("always returns both bounds for a from-only range", () => {
-    const params = toUtcBucketDateParams({ from: day(2026, 8, 1), to: undefined });
-    expect(params.from_date).toBeDefined();
-    expect(params.to_date).toBeDefined();
+  it("sends exactly the picked days", () => {
+    expect(toUtcBucketDateParams({ from: day(2026, 8, 1), to: day(2026, 8, 7) })).toEqual({
+      from_date: "2026-08-01",
+      to_date: "2026-08-07",
+    });
   });
 
-  it("expands to the UTC dates the local interval touches", () => {
-    const range = { from: day(2026, 8, 1), to: day(2026, 8, 7) };
-    const params = toUtcBucketDateParams(range);
-    const west = offsetMinutes(range.from) > 0;
-    const east = offsetMinutes(range.from) < 0;
-    expect(params.from_date).toBe(east ? "2026-07-31" : "2026-08-01");
-    expect(params.to_date).toBe(west ? "2026-08-08" : "2026-08-07");
-  });
-
-  it("matches the exact interval it is derived from", () => {
-    const range = { from: day(2026, 8, 1), to: day(2026, 8, 7) };
-    const interval = toExactInterval(range)!;
-    const params = toUtcBucketDateParams(range);
-    expect(params.from_date).toBe(interval.start.toISOString().slice(0, 10));
-    expect(params.to_date).toBe(
-      new Date(interval.endExclusive.getTime() - 1).toISOString().slice(0, 10),
-    );
+  it("sends the one picked day for a from-only range", () => {
+    expect(toUtcBucketDateParams({ from: day(2026, 8, 1), to: undefined })).toEqual({
+      from_date: "2026-08-01",
+      to_date: "2026-08-01",
+    });
   });
 
   it("returns nothing for an empty range", () => {
@@ -125,6 +108,13 @@ describe("agent performance parameter families", () => {
     expect(new Date(params.activity_from_datetime!).getTime()).toBeLessThan(
       new Date(params.activity_to_datetime!).getTime(),
     );
+  });
+});
+
+describe("UTC day bounds", () => {
+  it("brackets the picked calendar day whatever the local time of the Date", () => {
+    expect(utcDayStart(day(2026, 11, 1, 23))).toBe("2026-11-01T00:00:00.000Z");
+    expect(utcDayEnd(day(2026, 11, 1, 23))).toBe("2026-11-01T23:59:59.999999Z");
   });
 });
 

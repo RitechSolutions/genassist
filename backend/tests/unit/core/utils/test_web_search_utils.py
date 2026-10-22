@@ -91,6 +91,22 @@ async def test_invalid_uddg_destinations_are_skipped(monkeypatch):
     assert results[0].position == 1
 
 
+@pytest.mark.asyncio
+async def test_uddg_unwrapped_only_on_duckduckgo_hosts(monkeypatch):
+    page = _html_page(
+        _html_result("https://links.duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Freal", title="Real"),
+        _html_result("https://evilduckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Ffake", title="Lookalike"),
+    )
+    monkeypatch.setattr(web_search_utils, "_fetch_serp", AsyncMock(return_value=page))
+
+    results = await search_web("lookalike")
+
+    assert [r.url for r in results] == [
+        "https://example.com/real",
+        "https://evilduckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Ffake",
+    ]
+
+
 def test_parse_lite_serp_extracts_title_href_and_snippet():
     entries = web_search_utils._parse_lite_serp(_LITE_SERP)
 

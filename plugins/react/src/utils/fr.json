@@ -49,7 +49,11 @@
       "Vérification des détails…",
       "Assemblage de tout…",
       "Presque terminé…"
-    ]
+    ],
+    "activity": {
+      "knowledge": "Recherche dans la base de connaissances…",
+      "tool": "Traitement de votre demande…"
+    }
   },
   "time": {
     "justNow": "À l'instant",

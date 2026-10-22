@@ -48,6 +48,7 @@ import { getAudioUrl, stripAudioDataForDisplay } from "../hooks/useAudioTest";
 import { STTAudioInput } from "./TestInputFields";
 import JsonViewer from "@/components/JsonViewer";
 import NodeExecutionView from "./execution/NodeExecutionView";
+import { FallbackRatesNotice } from "./FallbackRatesNotice";
 
 type TestViewMode = "response" | "debug" | "execution";
 
@@ -528,8 +529,11 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
     }
   };
 
+  const fallbackModels = response?.token_usage?.fallback_models ?? [];
+
   return (
     <div className="flex h-full w-full flex-col overflow-hidden">
+      {fallbackModels.length > 0 && <FallbackRatesNotice models={fallbackModels} />}
       {/* Three-column layout: history | inputs | results. The page title lives
           in the Executions header row (rendered by GraphFlow), not here. */}
       <div className="min-h-0 flex-1">

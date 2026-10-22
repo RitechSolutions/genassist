@@ -26,13 +26,17 @@ class SubAgentNode(AgentNode):
         fallback_chain_id = config.get("fallbackChainId")
         agent_type = config.get("type", "ToolSelector")
         max_iterations = config.get("maxIterations", 7)
-        memory_enabled = config.get("memory", False)
+        memory_enabled = config.get("memory", True)
         mode = config.get("mode", "single_turn")
         prompt_caching_enabled = config.get("promptCaching") is True
 
-        system_prompt = config.get("systemPrompt") or "You are a helpful assistant."
+        system_prompt = config.get("systemPrompt") or "You are a helpful specialist sub-agent."
         system_prompt += self._completion_instructions(mode)
-        prompt = config.get("userPrompt") or "{{session.message}}"
+        prompt = config.get("userPrompt")
+        if not prompt:
+            prompt = self.get_state().get_session().get("message", "")
+            if config.get("piiMasking"):
+                prompt = self._mask_for_llm(prompt)
 
         tools = self.get_connected_nodes("tools")
         from app.modules.workflow.agents.sub_agents.graph import SubAgentTopologyError
@@ -129,15 +133,18 @@ class SubAgentNode(AgentNode):
     def _completion_instructions(mode: str) -> str:
         if mode == "task":
             return (
-                "\n\nYou are a task sub-agent. Do the requested task. If you need one "
-                "clarification from the user, reply with only your question as plain text. "
-                "When the task is finished, call the finish_task tool with your final result."
+                "\n\nYou are a task sub-agent. Do the requested task. If you need the user to clarify "
+                "something, reply with only your question as plain text. When the task is finished, call "
+                "the finish_task tool with your final result. If the user asks for something outside your "
+                "task, call finish_task with a short summary that includes the user's latest request."
             )
         if mode == "chat":
             return (
-                "\n\nYou are a conversational sub-agent and own this conversation until you "
-                "hand back. Reply to the user directly. When you are done, call the "
-                "return_to_parent tool with a short summary to return control to the main agent."
+                "\n\nYou are a conversational sub-agent and own this conversation until you hand back. "
+                "Reply to the user directly. When you are done, call the return_to_parent tool with a "
+                "short summary to return control to the main agent. If the user asks for something outside "
+                "your responsibility, call return_to_parent with a short summary that includes the user's "
+                "latest request."
             )
         return (
             "\n\nYou are a single-turn sub-agent. Give one complete answer to the task and "

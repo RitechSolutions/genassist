@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql.dml import OnConflictDoNothing, OnConflictDoUpdate
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.dml import Insert
 
@@ -18,6 +19,7 @@ from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.agent import AgentModel
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.services.llm_usage_recorder import (
+    _USAGE_COLUMNS,
     LlmUsageRecorder,
     _clamp,
     _clamp_run_status,
@@ -816,8 +818,33 @@ class TestRecordEvaluationCalls:
 
         events = _insert_for(session.statements, "llm_usage_events")
         receipt = _insert_for(session.statements, "llm_usage_capture_runs")
-        assert events._post_values_clause is not None, "events must be ON CONFLICT DO NOTHING"
+        assert isinstance(events._post_values_clause, OnConflictDoNothing), "events must be ON CONFLICT DO NOTHING"
         assert receipt._post_values_clause is not None, "the receipt must be ON CONFLICT DO NOTHING"
+
+    @pytest.mark.asyncio
+    async def test_replacing_usage_upgrades_an_existing_row_and_writes_no_receipt(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession(persisted=1))
+
+        status = await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()], replace_usage=True)
+
+        clause = _insert_for(session.statements, "llm_usage_events")._post_values_clause
+        assert status == "recorded"
+        assert isinstance(clause, OnConflictDoUpdate)
+        assert {key for key, _ in clause.update_values_to_set} == set(_USAGE_COLUMNS) | {"updated_at"}
+        assert not [s for s in session.statements if isinstance(s, Insert) and s.table.name == "llm_usage_capture_runs"]
+        assert session.committed is True
+
+    @pytest.mark.asyncio
+    async def test_replacing_usage_stays_inert_while_capture_is_disabled(self, evaluation_scope):
+        session = evaluation_scope(EvaluationSession(capture_enabled=False))
+
+        status = await LlmUsageRecorder().record_evaluation_calls("eval:abc", [_entry()], replace_usage=True)
+
+        assert status == "disabled"
+        assert not [s for s in session.statements if isinstance(s, Insert)]
+
+    def test_the_usage_columns_are_exactly_what_pricing_writes(self):
+        assert set(price_usage("openai", "gpt-4o", None)) == set(_USAGE_COLUMNS)
 
     @pytest.mark.asyncio
     async def test_a_write_failure_rolls_back_and_never_raises(self, evaluation_scope):

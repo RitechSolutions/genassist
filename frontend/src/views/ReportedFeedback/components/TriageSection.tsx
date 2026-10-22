@@ -23,15 +23,18 @@ import { useIssuePatch } from "../hooks/useReportedFeedback";
 import { SectionLabel } from "./SectionLabel";
 
 export function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
-  const [draft, setDraft] = useState<TriageDraft>(() => toDraft(issue));
+  const [edits, setEdits] = useState<Partial<TriageDraft>>({});
+  const draft = { ...toDraft(issue), ...edits };
+  const edit = (change: Partial<TriageDraft>) =>
+    setEdits((current) => ({ ...current, ...change }));
   const saveTriage = useIssuePatch();
   const triageDirty = isDraftDirty(issue, draft);
 
   const save = () => {
-    const submitted = draft;
+    const submitted = edits;
     void saveTriage.mutateAsync({ issue, patch: draftToPatch(issue, draft) }).then(
-      (saved) => {
-        setDraft((current) => (current === submitted ? toDraft(saved) : current));
+      () => {
+        setEdits((current) => (current === submitted ? {} : current));
         toast.success("Triage saved");
       },
       (err) => toast.error(extractErrorMessage(err, "Failed to update feedback")),
@@ -52,12 +55,7 @@ export function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
             maxLength={100}
             placeholder="e.g. 2.4.1"
             value={draft.fix_version}
-            onChange={(e) =>
-              setDraft((current) => ({
-                ...current,
-                fix_version: e.target.value,
-              }))
-            }
+            onChange={(e) => edit({ fix_version: e.target.value })}
           />
         </div>
         <div className="space-y-1.5">
@@ -99,12 +97,7 @@ export function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
                       : undefined
                   }
                   onSelect={(day) =>
-                    setDraft((current) => ({
-                      ...current,
-                      target_rollout_date: day
-                        ? toDateOnly(day)
-                        : null,
-                    }))
+                    edit({ target_rollout_date: day ? toDateOnly(day) : null })
                   }
                   initialFocus
                 />
@@ -118,12 +111,7 @@ export function TriageSection({ issue }: { issue: ReportedFeedbackItem }) {
                 className="h-9 w-9 shrink-0 rounded-full"
                 title="Clear the target rollout date"
                 aria-label="Clear the target rollout date"
-                onClick={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    target_rollout_date: null,
-                  }))
-                }
+                onClick={() => edit({ target_rollout_date: null })}
               >
                 <X className="h-4 w-4" />
               </Button>

@@ -208,7 +208,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         ``ReportedIssueRead``. ``status`` defaults to 'open' for comments that
         have no tracked issue row yet.
         ``matched_note`` is the newest note matching ``search``, else None.
-        The agent id / workflow name are resolved through the conversation's
+        The agent id and name / workflow name are resolved through the conversation's
         operator -> agent -> workflow chain (left-joined). ``topic``/``subtopic``
         follow the Conversations page: the final analysis once finalized, the
         live topic before. The query is group-scoped to the requesting user via
@@ -227,6 +227,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
                                 TranscriptMessageModel.id.label("message_id"),
                                 ConversationModel.id.label("conversation_id"),
                                 AgentModel.id.label("agent_id"),
+                                AgentModel.name.label("agent_name"),
                                 WorkflowModel.name.label("workflow_name"),
                                 TranscriptMessageModel.text,
                                 TranscriptMessageModel.speaker,
@@ -448,8 +449,8 @@ def _issue_filters(filter_obj: MessageIssueSummaryFilter) -> list:
         filters.append(MessageFeedbackModel.feedback_timestamp >= filter_obj.from_date)
     if filter_obj.to_date:
         filters.append(MessageFeedbackModel.feedback_timestamp <= filter_obj.to_date)
-    if filter_obj.workflow_id:
-        filters.append(AgentModel.workflow_id == filter_obj.workflow_id)
+    if filter_obj.agent_id:
+        filters.append(AgentModel.id == filter_obj.agent_id)
     if filter_obj.topic:
         filters.append(func.lower(func.trim(_issue_topic_col())) == filter_obj.topic.strip().lower())
     if filter_obj.subtopic:

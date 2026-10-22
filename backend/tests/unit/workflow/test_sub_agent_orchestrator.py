@@ -87,6 +87,7 @@ async def test_run_child_turn_uses_derived_thread_and_persists_history():
     assert kwargs["thread_id"] == "root:sub:child:inv"
     assert kwargs["persist"] is False
     assert kwargs["input_data"]["message"] == "do it"
+    assert kwargs["input_data"]["session"] == {"message": "do it"}
     child_state.get_memory().add_input_output.assert_awaited_once_with("do it", "done")
     session.close.assert_awaited_once()
     set_tenant.assert_called_once_with("tenant-1")
@@ -161,7 +162,7 @@ async def test_run_child_turn_passes_canonical_nested_session():
     input_data = engine.execute_from_node.call_args.kwargs["input_data"]
     assert input_data["message"] == "task"
     assert not any(isinstance(k, str) and k.startswith("session.") for k in input_data)
-    assert input_data["session"] == {"message": "orig", "thread_id": "t", "agent_id": "a"}
+    assert input_data["session"] == {"message": "task", "thread_id": "t", "agent_id": "a"}
 
 
 @pytest.mark.asyncio

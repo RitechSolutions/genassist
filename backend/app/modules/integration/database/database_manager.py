@@ -6,9 +6,10 @@ from contextlib import aclosing
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from urllib.parse import unquote, unquote_plus
 
 import yaml
-from sqlalchemy import text
+from sqlalchemy import URL, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 from sshtunnel import SSHTunnelForwarder
@@ -20,6 +21,10 @@ from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.snowflake import SnowflakeManager
 
 logger = logging.getLogger(__name__)
+
+
+def _decode_credential(value: Optional[str]) -> Optional[str]:
+    return unquote(value) if value else value
 
 
 class DatabaseManager:
@@ -147,14 +152,17 @@ class DatabaseManager:
                         if (hasattr(self, "tunnel") and self.tunnel)
                         else self.config.get("database_host", "localhost")
                     )
-                    connection_string = (
-                        f"postgresql+asyncpg://{self.config.get('database_user')}:"
-                        f"{decrypt_key(self.config.get('database_password'))}@{host}:"
-                        f"{port}/{self.config.get('database_name')}"
+                    connection_string = URL.create(
+                        "postgresql+asyncpg",
+                        username=_decode_credential(self.config.get("database_user")),
+                        password=_decode_credential(decrypt_key(self.config.get("database_password"))),
+                        host=host,
+                        port=port,
+                        database=self.config.get("database_name"),
                     )
                 else:
                     connection_string = self.connection_string
-                logger.info(f"Connecting to PostgreSQL with connection string: {connection_string}")
+                logger.info("Connecting to PostgreSQL...")
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
@@ -175,12 +183,15 @@ class DatabaseManager:
                     if (hasattr(self, "tunnel") and self.tunnel)
                     else self.config.get("database_host", "localhost")
                 )
-                connection_string = (
-                    f"mysql+aiomysql://{self.config.get('database_user')}:"
-                    f"{decrypt_key(self.config.get('database_password'))}@{host}:"
-                    f"{port}/{self.config.get('database_name')}"
+                connection_string = URL.create(
+                    "mysql+aiomysql",
+                    username=_decode_credential(self.config.get("database_user")),
+                    password=_decode_credential(decrypt_key(self.config.get("database_password"))),
+                    host=host,
+                    port=port,
+                    database=self.config.get("database_name"),
                 )
-                logger.info(f"Connecting to MySQL with connection string: {connection_string}")
+                logger.info("Connecting to MySQL...")
                 self.engine = create_async_engine(
                     connection_string,
                     echo=False,
@@ -207,11 +218,15 @@ class DatabaseManager:
                 # ODBC Driver 18 requires explicit SSL settings
                 driver = settings.MSSQL_DRIVER
 
-                connection_string = (
-                    f"mssql+aioodbc://{self.config.get('database_user')}:"
-                    f"{decrypt_key(self.config.get('database_password'))}@{host}:{port}/"
-                    f"{self.config.get('database_name')}?"
-                    f"driver={driver}&Encrypt=yes&TrustServerCertificate=yes"
+                connection_string = URL.create(
+                    "mssql+aioodbc",
+                    username=_decode_credential(self.config.get("database_user")),
+                    password=_decode_credential(decrypt_key(self.config.get("database_password"))),
+                    host=host,
+                    port=port,
+                    database=self.config.get("database_name"),
+                    # MSSQL_DRIVER is stored URL-encoded ("ODBC+Driver+18+...")
+                    query={"driver": unquote_plus(driver), "Encrypt": "yes", "TrustServerCertificate": "yes"},
                 )
 
                 logger.info("Connecting to MSSQL...")
@@ -1089,14 +1104,21 @@ class DatabaseManager:
                             if include_categorical_values and self._is_categorical_column(column[1]):
                                 try:
                                     # Get distinct values for categorical columns
+                                    quoted_column = (
+                                        self.engine.dialect.identifier_preparer.quote(
+                                            column[0]
+                                        )
+                                    )
                                     query = f"""
-                                        SELECT DISTINCT `{column[0]}`
-                                        FROM `{table}`
-                                        WHERE `{column[0]}` IS NOT NULL
-                                        ORDER BY `{column[0]}`
-                                        LIMIT {max_categorical_values}
+                                        SELECT DISTINCT {quoted_column}
+                                        FROM {quoted_table}
+                                        WHERE {quoted_column} IS NOT NULL
+                                        ORDER BY {quoted_column}
+                                        LIMIT :limit
                                     """
-                                    result = await conn.execute(text(query))
+                                    result = await conn.execute(
+                                        text(query), {"limit": max_categorical_values}
+                                    )
 
                                     distinct_values = [row[0] for row in result.fetchall()]
                                     col_info["possible_values"] = distinct_values
@@ -1104,9 +1126,9 @@ class DatabaseManager:
                                     # Get count of distinct values
                                     result = await conn.execute(
                                         text(f"""
-                                        SELECT COUNT(DISTINCT `{column[0]}`)
-                                        FROM `{table}`
-                                        WHERE `{column[0]}` IS NOT NULL
+                                        SELECT COUNT(DISTINCT {quoted_column})
+                                        FROM {quoted_table}
+                                        WHERE {quoted_column} IS NOT NULL
                                     """)
                                     )
                                     total_distinct = result.fetchone()[0]
@@ -1127,9 +1149,11 @@ class DatabaseManager:
                         # Add sample data if requested
                         if include_samples and sample_size > 0:
                             try:
-                                # Get sample rows
-                                sample_query = f"SELECT * FROM `{table}` LIMIT :limit"
-                                result = await conn.execute(text(sample_query), {"limit": sample_size})
+                                # Get sample rows, reusing the dialect-quoted name
+                                sample_query = f"SELECT * FROM {quoted_table} LIMIT :limit"
+                                result = await conn.execute(
+                                    text(sample_query), {"limit": sample_size}
+                                )
 
                                 rows = result.fetchall()
                                 columns = list(result.keys())

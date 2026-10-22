@@ -64,12 +64,20 @@ async def test_pagination_and_search_run_in_the_database(db_session):
         one = await eval_repo.get_page_for_workflow(None, 0, 50, search=f"{prefix}eval_07")
         assert len(one) == 1 and one[0].name == f"{prefix}eval_07"
         assert await eval_repo.count_for_workflow(None, search=f"{prefix}nope") == 0
+        # % and _ are searched as typed, not as wildcards.
+        assert await eval_repo.count_for_workflow(None, search=f"{prefix}eval%7") == 0
+        assert await eval_repo.count_by_effective_workflow(f"{prefix}eval_0_") == []
 
         # Run all scope (full, unpaginated) and the summary group-by — the paths
         all_scope = await eval_repo.get_all_for_workflow(None)
         assert {e.id for e in created} <= {e.id for e in all_scope}
         summary = dict(await eval_repo.count_by_effective_workflow())
         assert summary.get(None, 0) >= 25  # unassigned bucket includes ours
+
+        # A search counts only what it matches, and drops workflows with no match.
+        assert dict(await eval_repo.count_by_effective_workflow(f"{prefix}eval_07")) == {None: 1}
+        assert await eval_repo.count_by_effective_workflow(f"{prefix}nope") == []
+        assert len(await eval_repo.get_latest_run_pointers(f"{prefix}eval_1")) == 10
     finally:
         for evaluation in created:
             await session.delete(evaluation)

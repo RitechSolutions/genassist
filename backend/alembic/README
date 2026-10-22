@@ -34,3 +34,11 @@ alembic downgrade -1
 
 ## 5 The database migration is called before app startup on run.py
 
+## 6 Migrations run while the old pods still serve traffic
+
+A migration waits at most `MIGRATION_LOCK_TIMEOUT_SECONDS` for a lock and is retried
+`MIGRATION_LOCK_RETRIES` times, so live requests never queue behind a waiting migration.
+Keep table changes in the migration body: `autocommit_block()` is outside that cap and is
+only for `CONCURRENTLY` index work. Batch large backfills. For a manual `alembic upgrade`,
+set `MIGRATION_LOCK_TIMEOUT_SECONDS=0`.
+

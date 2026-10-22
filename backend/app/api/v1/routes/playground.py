@@ -168,11 +168,6 @@ async def redis_health():
                 "status": "unknown",
                 "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,
                 "note": "Managed by Celery, not directly accessible"
-            },
-            "backend": {
-                "status": "unknown",
-                "max_connections": settings.CELERY_REDIS_MAX_CONNECTIONS,
-                "note": "Managed by Celery, not directly accessible"
             }
         }
 

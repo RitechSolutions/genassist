@@ -5,8 +5,7 @@ from injector import inject
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils.topic_settings import DEFAULT_TOPIC_SPECS, TopicSpec, configured_topic_specs, merge_topic_specs
-from app.repositories.conversation_analysis import ConversationAnalysisRepository
+from app.core.utils.topic_settings import DEFAULT_TOPIC_SPECS, configured_topic_specs, merge_topic_specs
 from app.repositories.llm_analysts import LlmAnalystRepository
 from app.repositories.llm_providers import LlmProviderRepository
 from app.schemas.llm import LlmAnalyst, LlmAnalystCreate, LlmAnalystUpdate
@@ -14,11 +13,9 @@ from app.schemas.topic_options import TopicOption, TopicOptionsRead
 
 @inject
 class LlmAnalystService:
-    def __init__(self, repository: LlmAnalystRepository, llm_provider_repository: LlmProviderRepository  = Injected(LlmProviderRepository),
-                 conversation_analysis_repository: ConversationAnalysisRepository = Injected(ConversationAnalysisRepository)):
+    def __init__(self, repository: LlmAnalystRepository, llm_provider_repository: LlmProviderRepository  = Injected(LlmProviderRepository)):
         self.repository = repository
         self.llm_provider_repository = llm_provider_repository
-        self.conversation_analysis_repository = conversation_analysis_repository
 
     async def create(self, data: LlmAnalystCreate):
         # Check if the LLM provider exists
@@ -51,14 +48,10 @@ class LlmAnalystService:
         return models
 
     async def get_topic_options(self) -> TopicOptionsRead:
-        """Topics of the active analysts, then any others still stored on finalized conversations"""
+        """Topics of the active analysts, then the default topics"""
         analysts = await self.get_all()
-        configured = merge_topic_specs(configured_topic_specs(a.settings) for a in analysts if a.is_active == 1)
-        stored = [
-            TopicSpec(topic, (subtopic,) if subtopic else ())
-            for topic, subtopic in await self.conversation_analysis_repository.list_distinct_topics()
-        ]
-        specs = merge_topic_specs([configured or list(DEFAULT_TOPIC_SPECS), stored])
+        configured = (configured_topic_specs(a.settings) for a in analysts if a.is_active == 1)
+        specs = merge_topic_specs([*configured, list(DEFAULT_TOPIC_SPECS)])
         return TopicOptionsRead(topics=[TopicOption(name=s.name, subtopics=list(s.subtopics)) for s in specs])
 
     async def update(self, llm_analyst_id: UUID, data: LlmAnalystUpdate):

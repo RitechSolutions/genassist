@@ -1,9 +1,11 @@
 """Should / Should not checks: the model, sentences and grading, without a run."""
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.services.scenario_checks import (
+    UNREADABLE_TURN,
     Check,
     JudgeRequest,
     JudgeVerdict,
@@ -98,6 +100,16 @@ class TestModel:
     def test_an_empty_state_value_is_a_value(self):
         assert check(kind="state_equals", key="mode", value="").value == ""
 
+    def test_one_conversation_stored_the_older_way_is_chosen(self):
+        assert check(level="conversation", conversation_id="a").conversation_ids == ["a"]
+        merged = check(level="conversation", conversation_ids=["b", "b", " "], conversation_id="a")
+        assert merged.conversation_ids == ["b", "a"]
+        assert check(conversation_ids=["a"]).per_turn is False
+
+    def test_chosen_conversations_can_hold_on_every_turn(self):
+        assert check(level="conversation", conversation_ids=["a"], when="every_turn").per_turn is True
+        assert check(level="conversation", conversation_ids=["a"]).per_turn is False
+
 
 class TestSentences:
     @pytest.mark.parametrize(
@@ -108,6 +120,10 @@ class TestSentences:
             ({"level": "conversation", "conversation_id": "a"}, 'At some point, the reply should mention "London".'),
             ({"level": "conversation", "conversation_id": "a", "expect": "should_not"},
              'The reply should never mention "London".'),
+            ({"level": "conversation", "conversation_ids": ["a", "b"], "when": "every_turn"},
+             'On every turn, the reply should mention "London".'),
+            ({"level": "conversation", "conversation_ids": ["a"], "when": "every_turn", "expect": "should_not"},
+             'On every turn, the reply should not mention "London".'),
             ({}, 'In every conversation, at some point, the reply should mention "London".'),
             ({"expect": "should_not"}, 'In every conversation, the reply should never mention "London".'),
             ({"when": "every_turn"}, 'On every turn, the reply should mention "London".'),
@@ -154,8 +170,11 @@ class TestOneTurn:
               "arguments": {"email": "[EMAIL]"}, "status": "succeeded"}],
             raw_arguments={"e1": {"email": "Ana@Example.com", "count": 2}},
         )
-        item = check(kind="tool_called", tool="tool-1", args={"email": "ana@example.com", "count": "2.0"})
+        item = check(kind="tool_called", tool="tool-1", args={"email": "Ana@Example.com", "count": "2.0"})
         assert turn_fact(item, resolve_targets(item, CATALOG), turn(tool_calls=calls))[0] is True
+        # Text compares with its case, as Tool Usage compared it.
+        lower = check(kind="tool_called", tool="tool-1", args={"email": "ana@example.com"})
+        assert turn_fact(lower, resolve_targets(lower, CATALOG), turn(tool_calls=calls))[0] is False
 
     def test_a_call_with_other_values_shows_the_stored_ones(self):
         calls = tool_calls_from_events([{"event_id": "e1", "tool_id": "tool-1", "tool_name": "save_region",
@@ -188,14 +207,21 @@ class TestOneTurn:
         item = check(kind="tool_called", tool="tool-1", agent="agent-1")
         assert turn_fact(item, resolve_targets(item, CATALOG), turn(tool_calls=calls))[0] is False
 
-    def test_a_step_counts_every_run_of_a_loop(self):
+    def test_a_step_that_should_run_is_judged_by_its_latest_run_of_a_loop(self):
+        # As Action Taken did: the step's latest run is the one that counts.
         item = check(kind="step_runs", step="step-1")
         steps = [{"id": "step-1_0", "status": "success"}, {"id": "step-1", "status": "failed", "error": "boom"}]
-        assert turn_fact(item, resolve_targets(item, CATALOG), turn(steps=steps))[0] is True
-        assert turn_fact(item, resolve_targets(item, CATALOG), turn(steps=steps[1:])) == (
+        assert turn_fact(item, resolve_targets(item, CATALOG), turn(steps=steps)) == (
             False, "The step started but did not finish."
         )
+        fixed = [{"id": "step-1_0", "status": "failed", "error": "boom"}, {"id": "step-1", "status": "success"}]
+        assert turn_fact(item, resolve_targets(item, CATALOG), turn(steps=fixed))[0] is True
         assert turn_fact(item, resolve_targets(item, CATALOG), turn(steps=[{"id": "step-10", "status": "success"}]))[0] is False
+
+    def test_a_step_that_should_not_run_counts_every_run_of_a_loop(self):
+        item = check(kind="step_runs", step="step-1", expect="should_not")
+        steps = [{"id": "step-1_0", "status": "success"}, {"id": "step-1", "status": "failed", "error": "boom"}]
+        assert turn_fact(item, resolve_targets(item, CATALOG), turn(steps=steps))[0] is True
 
     def test_a_router_matches_its_branch_by_value_or_label(self):
         item = check(kind="route_taken", router="router-1", branch="case-9", branch_label="Refund")
@@ -228,15 +254,18 @@ class TestOneTurn:
 
 class TestNames:
     def test_ids_win_then_names(self):
-        assert resolve_targets(check(kind="step_runs", step="step-1", step_name="Renamed"), CATALOG).node_id == "step-1"
-        assert resolve_targets(check(kind="step_runs", step="gone", step_name="create ticket"), CATALOG).node_id == "step-1"
+        assert resolve_targets(check(kind="step_runs", step="step-1", step_name="Renamed"), CATALOG).node_ids == ["step-1"]
+        assert resolve_targets(check(kind="step_runs", step="gone", step_name="create ticket"), CATALOG).node_ids == ["step-1"]
         assert resolve_targets(check(kind="tool_called", tool_name="Save region"), CATALOG).tool_ids == ["tool-1"]
 
-    def test_a_missing_or_ambiguous_name_is_a_problem(self):
-        assert resolve_targets(check(kind="step_runs", step_name="Nope"), CATALOG).problem == (
-            'The step "Nope" is not in the workflow that ran.'
-        )
-        assert "more than one" in resolve_targets(check(kind="step_runs", step_name="Log"), CATALOG).problem
+    def test_a_missing_name_did_not_run_and_a_shared_one_is_any_of_them(self):
+        missing = resolve_targets(check(kind="step_runs", step_name="Nope"), CATALOG)
+        assert missing.problem is None
+        assert missing.missing == 'The step "Nope" is not in the workflow that ran, so it did not run.'
+        shared = resolve_targets(check(kind="step_runs", step_name="Log"), CATALOG)
+        assert shared.problem is None and len(shared.node_ids) == 2
+        ran = turn(steps=[{"id": shared.node_ids[1], "status": "success"}])
+        assert turn_fact(check(kind="step_runs", step_name="Log"), shared, ran)[0] is True
 
     def test_a_tool_name_on_several_agents_means_any_of_them(self):
         catalog = {"agents": [
@@ -247,9 +276,12 @@ class TestNames:
         assert resolve_targets(check(kind="tool_called", tool="gone", tool_name="log"), catalog).tool_ids == ["t1", "t2"]
         by_agent = resolve_targets(check(kind="tool_called", tool_name="log", agent_name="Ticket agent"), catalog)
         assert by_agent.tool_ids == ["t2"] and by_agent.agent_id == "agent-2"
-        assert resolve_targets(check(kind="tool_called", tool_name="log", agent_name="Region agent"), catalog).problem == (
-            'The agent "Region agent" does not use the tool "log" in the workflow that ran.'
-        )
+        # The agent cannot call a tool it does not have, so the check is graded and a Should misses.
+        lacking = check(kind="tool_called", tool_name="log", agent_name="Region agent")
+        targets = resolve_targets(lacking, catalog)
+        assert targets.problem is None and targets.missing_tools == ["log"]
+        ran = turn(steps=[{"id": "agent-3"}])
+        assert turn_fact(lacking, targets, ran) == (False, "log was not called. It is not in the workflow that ran.")
 
     def test_without_a_catalog_names_match_the_events(self):
         item = check(kind="tool_called", tool_name="save_region")
@@ -277,6 +309,14 @@ class TestGrading:
         assert entry["result"]["status"] == "failed"
         assert entry["result"]["turns"] == [2, 3]
 
+    def test_says_which_turns_it_read_so_a_page_can_show_where_it_held(self):
+        conversations = [[turn("a1", "a", 0, reply="London"), turn("a2", "a", 1, reply="Paris"),
+                          turn("a3", "a", 2, reply="London")]]
+        broke, held = grade([check(when="every_turn"), check(id="c2", text="Rome", expect="should_not")], conversations)
+        assert broke["result"]["turns"] == [2] and broke["result"]["checked"] == [1, 2, 3]
+        assert held["result"]["status"] == "passed" and held["result"]["checked"] == [1, 2, 3]
+        assert broke["result"]["checked_facts"][1] == 'The reply did not mention "London".'
+
     def test_should_not_fails_on_the_first_time_it_happens(self):
         conversations = [[turn("a1", "a", 0, reply="Use RingGo"), turn("a2", "a", 1, reply="or RingGo")]]
         (entry,) = grade([check(text="ringgo", expect="should_not", level="conversation", conversation_id="a")],
@@ -289,6 +329,40 @@ class TestGrading:
         conversations = [[turn("a1", "a", 0, reply="London")], [turn("b1", "b", 0, reply="London")]]
         entries = grade([check(level="conversation", conversation_id="b")], conversations)
         assert [entry["source_conversation_id"] for entry in entries] == ["b"]
+
+    def test_chosen_conversations_grade_only_those(self):
+        conversations = [[turn("a1", "a", 0, reply="London")], [turn("b1", "b", 0, reply="Paris")],
+                         [turn("c1", "c", 0, reply="Rome")]]
+        entries = grade([check(level="conversation", conversation_ids=["c", "a"])], conversations)
+        assert [entry["source_conversation_id"] for entry in entries] == ["a", "c"]
+        assert [entry["result"]["status"] for entry in entries] == ["passed", "failed"]
+        assert conversation_verdicts(entries, conversations) == {"a": "passed", "b": "not_evaluated", "c": "failed"}
+
+    def test_chosen_conversations_on_every_turn_name_the_turns_that_missed(self):
+        conversations = [[turn("a1", "a", 0, reply="London"), turn("a2", "a", 1, reply="Paris")],
+                         [turn("b1", "b", 0, reply="London")]]
+        first, second = grade([check(level="conversation", conversation_ids=["a", "b"], when="every_turn")],
+                              conversations)
+        assert first["result"]["status"] == "failed" and first["result"]["turns"] == [2]
+        assert second["result"]["status"] == "passed"
+
+    @pytest.mark.parametrize(
+        "chosen, comment",
+        [
+            (["gone"], "The conversation this check is about is no longer in the dataset."),
+            (["gone", "lost"], "The conversations this check is about are no longer in the dataset."),
+            (["a", "gone"], "1 of the 2 conversations this check is about is no longer in the dataset."),
+            (["a", "gone", "lost"], "2 of the 3 conversations this check is about are no longer in the dataset."),
+        ],
+    )
+    def test_chosen_conversations_the_dataset_lost_are_said_once(self, chosen, comment):
+        conversations = [[turn("a1", "a", 0, reply="London")]]
+        entries = grade([check(level="conversation", conversation_ids=chosen)], conversations)
+        lost = [entry for entry in entries if entry["source_conversation_id"] is None]
+        assert len(lost) == 1 and lost[0]["case_id"] is None
+        assert lost[0]["result"]["status"] == "not_evaluated" and lost[0]["result"]["comment"] == comment
+        graded = [entry["source_conversation_id"] for entry in entries if entry["source_conversation_id"]]
+        assert graded == (["a"] if "a" in chosen else [])
 
     def test_a_turn_is_found_by_case_then_by_conversation_and_position(self):
         conversations = [[turn("a1", "a", 0, reply="x", message="Hi"), turn("a2", "a", 1, reply="London", message="I am in London")]]
@@ -336,22 +410,62 @@ class TestGrading:
         planned = grade([check(level="conversation", conversation_id="a")], conversations)
         assert conversation_verdicts(planned, conversations) == {"a": "passed", "b": "not_evaluated"}
 
+    def test_a_conversation_that_did_not_run_to_the_end_is_not_a_pass(self):
+        conversations = [[
+            turn("a1", "a", 0, reply="London"),
+            turn("a2", "a", 1, ran=False, skip_reason="This turn did not run because the conversation was waiting for a person."),
+        ]]
+        planned = grade([check(level="conversation", conversation_id="a")], conversations)
+        assert planned[0]["result"]["status"] == "passed"
+        assert conversation_verdicts(planned, conversations) == {"a": "not_evaluated"}
+
+    def test_a_turn_that_could_not_be_read_still_played(self):
+        conversations = [[
+            turn("a1", "a", 0, reply="London"),
+            turn("a2", "a", 1, ran=False, skip_reason=UNREADABLE_TURN),
+        ]]
+        planned = grade([check(level="conversation", conversation_id="a")], conversations)
+        assert conversation_verdicts(planned, conversations) == {"a": "passed"}
+
+    def test_a_crash_whose_turn_could_not_be_read_still_fails(self):
+        conversations = [[
+            turn("a1", "a", 0, reply="London"),
+            turn("a2", "a", 1, crashed=True, error="boom", ran=False, skip_reason=UNREADABLE_TURN),
+        ]]
+        planned = grade([check(level="conversation", conversation_id="a")], conversations)
+        assert conversation_verdicts(planned, conversations) == {"a": "failed"}
+
+    def test_a_crash_whose_turn_could_not_be_read_fails_no_step_fails(self):
+        conversations = [[
+            turn("a1", "a", 0, reply="London"),
+            turn("a2", "a", 1, crashed=True, error="boom", ran=False, skip_reason=UNREADABLE_TURN),
+        ]]
+        (entry,) = grade([check(kind="step_fails", expect="should_not")], conversations)
+        assert entry["result"]["status"] == "failed"
+        assert entry["result"]["observed"].endswith("Turn 2 did not finish: boom")
+        # Any other check says the turn did not finish, not that it could not be read.
+        (other,) = grade([check(kind="reply_mentions", text="Paris", expect="should_not")], conversations)
+        assert other["result"]["comment"] == "Turn 2 did not finish: boom"
+
     def test_a_manual_turn_is_its_own_conversation(self):
         conversations = [[turn("m1", "m1", 0, reply="London")]]
         (entry,) = grade([check()], conversations)
         assert entry["case_id"] == "m1" and entry["source_conversation_id"] is None
         assert conversation_verdicts([entry], conversations) == {"m1": "passed"}
 
-    def test_a_check_on_a_missing_step_is_not_evaluated(self):
+    def test_a_step_the_workflow_lacks_did_not_run(self):
+        # As Action Taken did, a step that is not there did not complete: a Should fails, a Should not holds.
         conversations = [[turn("a1", "a", 0)]]
-        (entry,) = grade([check(kind="step_runs", step_name="Nope")], conversations)
-        assert entry["result"]["status"] == "not_evaluated"
-        assert entry["result"]["comment"] == 'The step "Nope" is not in the workflow that ran.'
+        (should,) = grade([check(kind="step_runs", step_name="Nope")], conversations)
+        assert should["result"]["status"] == "failed"
+        assert should["result"]["observed"].endswith('The step "Nope" is not in the workflow that ran, so it did not run.')
+        (should_not,) = grade([check(kind="step_runs", step_name="Nope", expect="should_not")], conversations)
+        assert should_not["result"]["status"] == "passed"
 
     def test_a_turn_check_on_a_missing_step_stays_on_its_turn(self):
         conversations = [[turn("a1", "a", 0)]]
         (entry,) = grade([check(kind="step_runs", step_name="Nope", level="turn", case_id="a1")], conversations)
-        assert entry["result"]["status"] == "not_evaluated"
+        assert entry["result"]["status"] == "failed"
         assert entry["case_id"] == "a1" and entry["source_conversation_id"] == "a"
 
 
@@ -366,6 +480,17 @@ class TestJudge:
         assert [request.key for request in requests] == [
             ("p", ("a1",)), ("p", ("a2",)), ("w", ("a1", "a2")), ("o", ("a2",)),
         ]
+
+    def test_chosen_conversations_ask_the_grader_only_about_them(self):
+        conversations = [[turn("a1", "a", 0, reply="x"), turn("a2", "a", 1, reply="y")],
+                         [turn("b1", "b", 0, reply="z")], [turn("c1", "c", 0, reply="w")]]
+        per_turn = check(id="p", kind="reply_meets", rubric="Be polite", level="conversation", conversation_ids=["a"],
+                         when="every_turn")
+        whole = check(id="w", kind="reply_meets", rubric="Ask for the plate", level="conversation",
+                      conversation_ids=["b"])
+        targets = {item.id: Targets() for item in (per_turn, whole)}
+        requests = judge_requests([per_turn, whole], conversations, targets)
+        assert [request.key for request in requests] == [("p", ("a1",)), ("p", ("a2",)), ("w", ("b1",))]
 
     def test_verdicts_become_results(self):
         conversations = [[turn("a1", "a", 0, reply="x"), turn("a2", "a", 1, reply="y")]]
@@ -437,3 +562,11 @@ class TestJudge:
         assert verdicts[("c1", ("a1",))].met
         for case_id in ("a2", "a3"):
             assert verdicts[("c1", (case_id,))].reason == "The AI grader ran out of time for this run."
+
+    @pytest.mark.asyncio
+    async def test_with_no_time_left_nothing_is_sent_to_the_grader(self):
+        judge = AsyncMock(return_value=JudgeVerdict(score=1.0))
+        item = check(kind="reply_meets", rubric="Greet", when="every_turn")
+        verdicts = await run_judge([JudgeRequest(item, [turn("a1")])], judge, budget_seconds=0)
+        judge.assert_not_awaited()
+        assert verdicts[("c1", ("a1",))].reason == "The AI grader ran out of time for this run."

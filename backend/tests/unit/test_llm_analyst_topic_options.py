@@ -9,10 +9,9 @@ from app.api.v1.routes.conversations import router
 from app.services.llm_analysts import LlmAnalystService
 
 
-def _service(*analysts, stored=()):
+def _service(*analysts):
     repo = MagicMock(get_all=AsyncMock(return_value=list(analysts)))
-    analysis_repo = MagicMock(list_distinct_topics=AsyncMock(return_value=list(stored)))
-    return LlmAnalystService(repo, MagicMock(), analysis_repo)
+    return LlmAnalystService(repo, MagicMock())
 
 
 def _analyst(topics, is_active=1):
@@ -29,7 +28,13 @@ async def test_options_are_the_union_of_active_analysts():
     )
     options = await service.get_topic_options()
     assert options.model_dump() == {
-        "topics": [{"name": "Refund", "subtopics": ["Wrong plate", "Duplicate"]}, {"name": "Other", "subtopics": []}]
+        "topics": [
+            {"name": "Refund", "subtopics": ["Wrong plate", "Duplicate"]},
+            {"name": "Other", "subtopics": []},
+            {"name": "Product Inquiry", "subtopics": []},
+            {"name": "Technical Support", "subtopics": []},
+            {"name": "Billing Questions", "subtopics": []},
+        ]
     }
 
 
@@ -41,16 +46,14 @@ async def test_no_active_topic_list_falls_back_to_the_default_topics(analyst):
 
 
 @pytest.mark.asyncio
-async def test_stored_topics_follow_the_configured_ones_without_duplicates():
-    service = _service(
-        _analyst(["Refund", "Refund > Wrong plate"]),
-        stored=[("Billing Questions", "Invoices"), ("Billing Questions", None), ("refund", "Duplicate"), ("Other", "")],
-    )
-    options = await service.get_topic_options()
+async def test_defaults_follow_the_configured_topics_keeping_the_configured_spelling():
+    options = await _service(_analyst(["billing questions > Invoices", "Refund"])).get_topic_options()
     assert options.model_dump() == {
         "topics": [
-            {"name": "Refund", "subtopics": ["Wrong plate", "Duplicate"]},
-            {"name": "Billing Questions", "subtopics": ["Invoices"]},
+            {"name": "billing questions", "subtopics": ["Invoices"]},
+            {"name": "Refund", "subtopics": []},
+            {"name": "Product Inquiry", "subtopics": []},
+            {"name": "Technical Support", "subtopics": []},
             {"name": "Other", "subtopics": []},
         ]
     }

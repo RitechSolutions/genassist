@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
+import { utcDayEnd, utcDayStart } from "@/helpers/dateRange";
 
 export type MetricsApiParams = {
   from_date?: string;
@@ -10,37 +11,16 @@ export type MetricsApiParams = {
 };
 
 /**
- * Convert a local date to the start-of-day in UTC (ISO 8601).
- * E.g. March 30 00:00 Pacific (UTC-7) → "2025-03-30T07:00:00Z"
- */
-function localStartOfDayUTC(d: Date): string {
-  const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-  return start.toISOString();
-}
-
-/**
- * Convert a local date to the end-of-day in UTC (ISO 8601).
- * E.g. March 30 23:59:59.999 Pacific (UTC-7) → "2025-03-31T06:59:59Z"
- */
-function localEndOfDayUTC(d: Date): string {
-  const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 0);
-  return end.toISOString();
-}
-
-/**
  * Legacy date-string params (yyyy-MM-dd) for the menus that still send day filters.
  */
 export function toExpandedUTCDateRange(
   dateRange: DateRange | undefined,
 ): { from_date?: string; to_date?: string } {
   if (!dateRange) return {};
-  const from_date = dateRange.from
-    ? format(new Date(localStartOfDayUTC(dateRange.from)), "yyyy-MM-dd")
-    : undefined;
-  const to_date = dateRange.to
-    ? format(new Date(localEndOfDayUTC(dateRange.to)), "yyyy-MM-dd")
-    : undefined;
-  return { from_date, to_date };
+  return {
+    from_date: dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
+    to_date: dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined,
+  };
 }
 
 export function toMetricsApiParams(
@@ -52,8 +32,8 @@ export function toMetricsApiParams(
   const group_id =
     groupId && groupId !== "all" && !agent_id ? groupId : undefined;
   return {
-    from_date: dateRange?.from ? localStartOfDayUTC(dateRange.from) : undefined,
-    to_date: dateRange?.to ? localEndOfDayUTC(dateRange.to) : undefined,
+    from_date: dateRange?.from ? utcDayStart(dateRange.from) : undefined,
+    to_date: dateRange?.to ? utcDayEnd(dateRange.to) : undefined,
     agent_id,
     group_id,
   };

@@ -1,15 +1,16 @@
-import React, { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { TestCase } from "@/interfaces/testSuite.interface";
 import type {
   EvaluationActionNodeInfo,
   EvaluationAgentInfo,
   EvaluationRouterInfo,
   EvaluationStateKeyInfo,
-  RuleConversation,
 } from "@/interfaces/testEvaluation.interface";
 import { getEvaluationToolCatalog } from "@/services/testEvaluations";
 import { listTestCases } from "@/services/testSuites";
-import { ruleConversations } from "../helpers/datasetConversations";
+
+/** The evaluations page's per-workflow summaries; refreshed when a workflow's evaluations change. */
+export const WORKFLOW_SUMMARIES_QUERY_KEY = ["workflow-evaluation-summaries"];
 
 export interface EvaluationCatalog {
   agents: EvaluationAgentInfo[];
@@ -68,35 +69,40 @@ export const useEvaluationCatalog = (workflowId: string | undefined, enabled: bo
   return { ...rest, ready: enabled && Boolean(workflowId) && loadedFor === workflowId };
 };
 
+const NO_CASES: TestCase[] = [];
+
 /** The dataset's turns, loaded while enabled; ready once this dataset's turns have arrived. */
 export const useDatasetCases = (
   suiteId: string | undefined,
   enabled: boolean,
-): { cases: TestCase[]; ready: boolean } => {
-  const [state, setState] = useState<{ cases: TestCase[]; loadedFor: string | null }>({
+): { cases: TestCase[]; ready: boolean; failed: boolean; retry: () => void } => {
+  const [state, setState] = useState<{ cases: TestCase[]; loadedFor: string | null; failedFor: string | null }>({
     cases: [],
     loadedFor: null,
+    failedFor: null,
   });
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!enabled || !suiteId || suiteId === "none") {
-      setState({ cases: [], loadedFor: null });
+      setState({ cases: [], loadedFor: null, failedFor: null });
       return;
     }
     let cancelled = false;
+    setState((previous) => ({ ...previous, failedFor: null }));
     listTestCases(suiteId)
       .then((loaded) => {
-        if (!cancelled) setState({ cases: loaded ?? [], loadedFor: suiteId });
+        if (!cancelled) setState({ cases: loaded ?? [], loadedFor: suiteId, failedFor: null });
       })
       .catch(() => {
-        if (!cancelled) setState({ cases: [], loadedFor: null });
+        if (!cancelled) setState({ cases: [], loadedFor: null, failedFor: suiteId });
       });
     return () => {
       cancelled = true;
     };
-  }, [suiteId, enabled]);
-  return { cases: state.cases, ready: enabled && Boolean(suiteId) && state.loadedFor === suiteId };
+  }, [suiteId, enabled, attempt]);
+  // Another dataset's turns are never handed out while this one loads.
+  const ready = enabled && Boolean(suiteId) && state.loadedFor === suiteId;
+  const failed = enabled && Boolean(suiteId) && state.failedFor === suiteId;
+  const retry = useCallback(() => setAttempt((count) => count + 1), []);
+  return { cases: ready ? state.cases : NO_CASES, ready, failed, retry };
 };
-
-/** Imported conversations for specific-turn targeting, derived from the dataset's turns. */
-export const useRuleConversations = (cases: TestCase[]): RuleConversation[] =>
-  React.useMemo(() => ruleConversations(cases), [cases]);

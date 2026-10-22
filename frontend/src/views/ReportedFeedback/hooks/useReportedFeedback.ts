@@ -58,7 +58,7 @@ export const issueQuery = (feedbackId: string | null) =>
     select: (result) => result.items[0] ?? null,
     // A malformed id is a 422, which the default policy retries twice before the failure toast
     retry: false,
-    // Never refetched: cached from its row or fetched once for a link, then patched on save
+    // Refetched only when seeded from a row (cacheIssue); a link's copy is fetched once, then patched on save
     staleTime: Infinity,
   });
 
@@ -66,15 +66,18 @@ export const issueQuery = (feedbackId: string | null) =>
 export const useIssue = (feedbackId: string | null) =>
   useQuery(issueQuery(feedbackId));
 
-/** Shows a listed row in the dialog at once, without a request */
-export const cacheIssue = (queryClient: QueryClient, issue: ReportedFeedbackItem) =>
-  queryClient.setQueryData(issueQuery(issue.feedback_id).queryKey, {
+/** Shows a listed row in the dialog at once, then refetches it so the dialog is current */
+export const cacheIssue = (queryClient: QueryClient, issue: ReportedFeedbackItem) => {
+  const { queryKey } = issueQuery(issue.feedback_id);
+  queryClient.setQueryData(queryKey, {
     items: [issue],
     total: 1,
     page: 1,
     page_size: 1,
     total_pages: 1,
   });
+  void queryClient.invalidateQueries({ queryKey, exact: true, refetchType: "none" });
+};
 
 /** Total and per-category counts under the given filters */
 export const useFeedbackSummary = (filters: FeedbackFilters) => {

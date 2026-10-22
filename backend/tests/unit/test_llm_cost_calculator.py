@@ -66,6 +66,19 @@ class TestCalculateCost:
         assert cost == round(0.0001 + 0.0004, 6)
 
 
+class TestLivePricingConfigured:
+    def test_only_a_tenant_row_reports_configured(self, monkeypatch):
+        monkeypatch.setattr(
+            llm_pricing,
+            "get_db_pricing_nested",
+            lambda tenant: {"openai": {"gpt-4o": {"input_per_1k": 0.001, "output_per_1k": 0.002}}},
+        )
+        assert llm_pricing.resolve_live_pricing("openai", "gpt-4o").configured is True
+        assert llm_pricing.resolve_live_pricing("openai", "gpt-4o-mini").configured is False
+        assert llm_pricing.resolve_live_pricing("openai", "gpt-3.5-turbo").configured is False
+        assert llm_pricing.resolve_live_pricing("openai", "unknown-model-xyz").configured is False
+
+
 class TestCalculateCostWithCacheTokens:
     @pytest.fixture(autouse=True)
     def _no_db_rates(self, no_db_rates):
@@ -189,6 +202,9 @@ class TestResolvePricingBundledLayer:
         assert resolve_pricing("openai", "gpt-4o").status is PricingStatus.FALLBACK
 
 
+_RATE = {"input_per_1k": "0.001", "output_per_1k": "0.002"}
+
+
 class TestResolvePricingConfiguredLayer:
     def test_configured_exact_overrides_bundled(self):
         configured = {"openai": {"gpt-4o": {"input_per_1k": "0.005", "output_per_1k": "0.02"}}}
@@ -197,11 +213,12 @@ class TestResolvePricingConfiguredLayer:
         assert res.input_per_1k == Decimal("0.005")
         assert res.output_per_1k == Decimal("0.02")
 
-    def test_configured_prefix_beats_bundled_exact(self):
+    def test_a_configured_sibling_key_never_prices_a_different_model(self):
         configured = {"openai": {"gpt-4o": {"input_per_1k": "0.009", "output_per_1k": "0.02"}}}
         res = resolve_pricing("openai", "gpt-4o-mini", configured)
-        assert res.status is PricingStatus.CONFIGURED
-        assert res.matched_model_key == "gpt-4o"
+        assert res.status is PricingStatus.FALLBACK
+        assert res.matched_model_key == "gpt-4o-mini"
+        assert res.input_per_1k == Decimal("0.00015")
 
     def test_configured_longest_prefix_wins(self):
         configured = {"openai": {"gpt-4o-mini-2024": {"input_per_1k": "0.0002", "output_per_1k": "0.0008"}}}
@@ -235,6 +252,60 @@ class TestResolvePricingConfiguredLayer:
         res = resolve_pricing("openai", "gpt-4o", configured)
         assert res.status is PricingStatus.CONFIGURED
         assert res.input_per_1k == Decimal("0")
+
+    @pytest.mark.parametrize(
+        ("provider", "model", "configured", "status", "matched"),
+        [
+            ("openai", "gpt-4o-mini-2024-07-18", {}, PricingStatus.FALLBACK, "gpt-4o-mini"),
+            ("anthropic", "claude-3-sonnet-20240229", {}, PricingStatus.FALLBACK, "claude-3-sonnet"),
+            ("openai", "gpt-4-turbo-preview", {}, PricingStatus.FALLBACK, "gpt-4-turbo"),
+            (
+                "bedrock",
+                "us.amazon.nova-2-lite-v1:0",
+                {"bedrock": {"amazon.nova-2-lite": _RATE}},
+                PricingStatus.CONFIGURED,
+                "amazon.nova-2-lite",
+            ),
+            (
+                "bedrock",
+                "anthropic.claude-3-5-sonnet-20241022-v2:0",
+                {"bedrock": {"anthropic.claude-3-5-sonnet": _RATE}},
+                PricingStatus.CONFIGURED,
+                "anthropic.claude-3-5-sonnet",
+            ),
+            ("anthropic", "claude-3-5-sonnet-latest", {}, PricingStatus.FALLBACK, "claude-3-5-sonnet"),
+            ("google_genai", "gemini-1.5-flash-002", {}, PricingStatus.FALLBACK, "gemini-1.5-flash"),
+            ("openai", "o1-preview", {}, PricingStatus.FALLBACK, "o1"),
+            ("openai", "gpt-4-0613", {}, PricingStatus.FALLBACK, "gpt-4"),
+            ("ollama", "llama3.1:8b", {"ollama": {"llama3.1": _RATE}}, PricingStatus.CONFIGURED, "llama3.1"),
+            ("google_genai", "gemini-1.5-pro@001", {}, PricingStatus.FALLBACK, "gemini-1.5-pro"),
+            ("openai", "gpt-4o-mini", {"openai": {"gpt-4o": _RATE}}, PricingStatus.FALLBACK, "gpt-4o-mini"),
+            ("openai", "gpt-4o", {"openai": {"gpt-4": _RATE}}, PricingStatus.FALLBACK, "gpt-4o"),
+            ("openai", "gpt-4-32k", {}, PricingStatus.UNPRICED, None),
+            ("openai", "gpt-4.1", {}, PricingStatus.UNPRICED, None),
+            ("openai", "o1-pro", {}, PricingStatus.UNPRICED, None),
+            ("google_genai", "gemini-1.5-flash-8b", {}, PricingStatus.UNPRICED, None),
+            ("openai", "gpt-4o-audio-preview", {}, PricingStatus.UNPRICED, None),
+            ("openai", "gpt-4-turbo", {"openai": {"gpt-4": _RATE}}, PricingStatus.FALLBACK, "gpt-4-turbo"),
+            (
+                "anthropic",
+                "claude-opus-4-5-20251101",
+                {"anthropic": {"claude-opus-4": _RATE}},
+                PricingStatus.UNPRICED,
+                None,
+            ),
+            (
+                "bedrock",
+                "us.anthropic.claude-opus-4-5-20251101-v1:0",
+                {"bedrock": {"anthropic.claude-opus-4": _RATE}},
+                PricingStatus.UNPRICED,
+                None,
+            ),
+        ],
+    )
+    def test_a_rate_key_covers_only_its_variant_tails(self, provider, model, configured, status, matched):
+        res = resolve_pricing(provider, model, configured)
+        assert (res.status, res.matched_model_key) == (status, matched)
 
     @pytest.mark.parametrize("bad", ["abc", "-1", "NaN", "Infinity", None])
     def test_unusable_configured_row_falls_through_to_bundled(self, bad):
@@ -293,6 +364,13 @@ class TestResolvePricingBedrockRegions:
         assert res.status is PricingStatus.CONFIGURED
         assert res.matched_model_key == "amazon.nova-2-lite-v1:0"
         assert res.input_per_1k == Decimal("0.009")
+
+    @pytest.mark.parametrize("model", ["jp.amazon.nova-2-lite-v1:0", "global.amazon.nova-2-lite-v1:0"])
+    def test_a_configured_region_less_key_covers_every_geography(self, model):
+        configured = {"bedrock": {"amazon.nova-2-lite-v1:0": {"input_per_1k": "0.009", "output_per_1k": "0.02"}}}
+        res = resolve_pricing("bedrock", model, configured)
+        assert res.status is PricingStatus.CONFIGURED
+        assert res.matched_model_key == "amazon.nova-2-lite-v1:0"
 
     def test_bundled_exact_hit_still_beats_a_configured_default(self):
         configured = {"bedrock": {"_default": {"input_per_1k": "9", "output_per_1k": "9"}}}
@@ -415,13 +493,13 @@ class TestDisplayRatesContract:
         )
         assert display_rates("bedrock", "us.amazon.nova-2-lite-v1:0")["input_per_1k"] == 0.009
 
-    def test_configured_prefix_beats_a_bundled_exact_hit(self, monkeypatch):
+    def test_a_configured_sibling_key_never_prices_a_different_model_on_the_display_path(self, monkeypatch):
         monkeypatch.setattr(
             llm_pricing,
             "get_db_pricing_nested",
             lambda tenant: {"openai": {"gpt-4": {"input_per_1k": 0.111, "output_per_1k": 0.222}}},
         )
-        assert display_rates("openai", "gpt-4o")["input_per_1k"] == 0.111
+        assert display_rates("openai", "gpt-4o")["input_per_1k"] == 0.0025
 
     def test_unusable_configured_row_falls_through_to_bundled(self, monkeypatch):
         monkeypatch.setattr(
@@ -532,7 +610,7 @@ class TestBundledCacheRateProvenance:
     @pytest.mark.parametrize(
         ("provider", "model", "expected_base", "expected_cache"),
         [
-            ("bedrock", "us.amazon.nova-2-lite-v1:0-future", Decimal("0.001"), Decimal("0.0001")),
+            ("bedrock", "us.amazon.nova-2-lite-v1:0-latest", Decimal("0.001"), Decimal("0.0001")),
             ("openai", "gpt-4o-mini-2024-07-18", Decimal("0.00015"), None),
         ],
     )

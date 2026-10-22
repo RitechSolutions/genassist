@@ -12,7 +12,7 @@ from app.services.test_suite import TestSuiteService as EvalService
 
 
 def _service() -> EvalService:
-    return EvalService(
+    service = EvalService(
         suite_repo=AsyncMock(),
         case_repo=AsyncMock(),
         run_repo=AsyncMock(),
@@ -22,6 +22,9 @@ def _service() -> EvalService:
         workflow_service=AsyncMock(),
         conversation_repo=AsyncMock(),
     )
+    # Older methods run as they are here; test_method_checks covers converting them.
+    service._checks_for_older_methods = AsyncMock(return_value=None)
+    return service
 
 
 def _eval(*, suite_id=None, workflow_id=None, technique_configs=None):

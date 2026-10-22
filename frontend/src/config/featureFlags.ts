@@ -50,12 +50,6 @@ export const FeatureFlags = {
       WEBHOOK_TRIGGER: 'workflow.webhookTrigger',
     },
 
-    // Evaluations
-    EVALUATIONS: {
-      // One-page editor with Should / Should not checks, and Results, Checks and Settings tabs.
-      CHECKS: 'evaluations.checks',
-    },
-
     // Specific UI components within features
     COMPONENTS: {
       CHAT: 'components.chat',

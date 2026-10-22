@@ -57,7 +57,7 @@ class AlchemyEncoder(json.JSONEncoder):
 
 
 def _redact_if_sensitive(field_name: str, value):
-    looking_fields = ["text", "message", "text_search"]
+    looking_fields = ["text", "message", "text_search", "body"]
 
     if field_name not in looking_fields:
         return value

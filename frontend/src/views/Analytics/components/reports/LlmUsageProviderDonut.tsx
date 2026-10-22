@@ -12,6 +12,7 @@ import { LlmProviderChartEmptyState } from "../AnalyticsEmptyStates";
 interface LlmUsageProviderDonutProps {
   items: LlmUsageBreakdownItem[];
   loading?: boolean;
+  error?: string | null;
 }
 
 const TOP_N = 8;
@@ -88,7 +89,7 @@ function ProviderSliceTooltip({ active, payload, total, digits }: ProviderSliceT
 }
 
 /** Provider share of LLM spend: the slice tooltip carries the per-provider detail */
-export function LlmUsageProviderDonut({ items, loading }: LlmUsageProviderDonutProps) {
+export function LlmUsageProviderDonut({ items, loading, error }: LlmUsageProviderDonutProps) {
   const ranked = [...items].sort((a, b) => b.cost_usd - a.cost_usd);
   const top = ranked.slice(0, TOP_N);
   const rest = ranked.slice(TOP_N);
@@ -110,6 +111,8 @@ export function LlmUsageProviderDonut({ items, loading }: LlmUsageProviderDonutP
               </Skeleton>
             </div>
           </div>
+        ) : error ? (
+          <div className={cn(RING_BOX, "flex items-center justify-center text-sm text-destructive")}>{error}</div>
         ) : slices.length === 0 ? (
           <div className={cn(RING_BOX, "flex items-center justify-center")}>
             <LlmProviderChartEmptyState />

@@ -5,7 +5,8 @@ import { AuditLogDetailsDialog } from "@/views/AuditLogs/components/AuditLogDeta
 import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
 import { ALL_FILTER_VALUE, FilterMenu, type FilterMenuGroup } from "@/components/FilterMenu";
-import { format, startOfDay, subDays, endOfDay, addDays } from "date-fns";
+import { startOfDay, subDays, endOfDay, addDays } from "date-fns";
+import { utcDayEnd, utcDayStart } from "@/helpers/dateRange";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { useHasPermission } from "@/hooks/useHasPermission";
@@ -50,8 +51,8 @@ export default function AuditLogs() {
     return () => clearTimeout(timeout);
   }, [tableName]);
 
-  const dateFrom = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : "";
-  const dateTo = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : "";
+  const dateFrom = dateRange?.from ? utcDayStart(dateRange.from) : "";
+  const dateTo = dateRange?.to ? utcDayEnd(dateRange.to) : "";
 
   const fetchPage = useCallback(
     (offset: number) =>
@@ -123,22 +124,14 @@ export default function AuditLogs() {
     return () => observer.disconnect();
   }, [hasMore, isRefreshing, isLoadingMore, error, loadMore]);
 
-  // The search box and the exact time range (the API filters by whole days) apply client-side.
   const visibleAuditLogs = useMemo(() => {
     const query = searchQuery.toLowerCase();
-    return auditLogs.filter((log) => {
-      const matchesSearchQuery =
+    return auditLogs.filter(
+      (log) =>
         log.table_name.toLowerCase().includes(query) ||
-        log.action_name.toLowerCase().includes(query);
-
-      const logDate = new Date(log.modified_at);
-      const isWithinDateRange =
-        (!dateRange?.from || logDate >= dateRange.from) &&
-        (!dateRange?.to || logDate <= dateRange.to);
-
-      return matchesSearchQuery && isWithinDateRange;
-    });
-  }, [auditLogs, searchQuery, dateRange?.from, dateRange?.to]);
+        log.action_name.toLowerCase().includes(query)
+    );
+  }, [auditLogs, searchQuery]);
 
   useEffect(() => {
     if (!canReadUsers) {

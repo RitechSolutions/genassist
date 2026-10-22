@@ -13,7 +13,6 @@ import app.db.models.test_suite  # noqa: F401
 from app.core.exceptions.exception_classes import AppException
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.models.message_issue import MessageIssueModel
-from app.repositories.conversation_analysis import ConversationAnalysisRepository
 from app.repositories.transcript_message import TranscriptMessageRepository
 from app.schemas.filter import MessageIssueFilter, MessageIssueSummaryFilter
 from app.schemas.message_issue import ReportedIssueRead
@@ -110,22 +109,22 @@ async def test_group_scope_is_applied_explicitly_to_every_query(roles, scoped):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("roles, scoped", [(("operator",), True), (("admin",), False)])
-async def test_stored_topic_options_only_come_from_conversations_the_caller_can_see(roles, scoped):
-    db = CapturingDb()
-    with caller(roles=roles):
-        await ConversationAnalysisRepository(db).list_distinct_topics()
-
-    sql = _sql(db.statements[0])
-    assert ("JOIN conversations" in sql and "conversations.group_id" in sql) is scoped
-
-
-@pytest.mark.asyncio
 async def test_feedback_id_narrows_the_list_to_one_report():
     feedback_id = uuid4()
     rows, count = await _list_statements(feedback_id=feedback_id)
     for stmt in (rows, count):
         assert f"message_feedback.id = '{feedback_id}'" in _sql(stmt)
+
+
+@pytest.mark.asyncio
+async def test_agent_filter_narrows_the_rows_count_and_summary():
+    agent_id = uuid4()
+    statements = [*await _list_statements(agent_id=agent_id), await _summary_statement(agent_id=agent_id)]
+
+    for stmt in statements:
+        sql = _sql(stmt)
+        assert "LEFT OUTER JOIN agents ON agents.operator_id = operators.id" in sql
+        assert f"agents.id = '{agent_id}'" in sql
 
 
 @pytest.mark.asyncio

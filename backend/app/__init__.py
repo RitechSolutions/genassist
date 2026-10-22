@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import os
@@ -210,18 +209,6 @@ async def _cleanup_websocket_services():
 # --------------------------------------------------------------------------- #
 # Lifespan handler                                                            #
 # --------------------------------------------------------------------------- #
-def _configure_model_call_executor() -> None:
-    """Size the default executor so synchronous model calls are not capped by the node's CPU count."""
-    from app.core.concurrency import configure_default_executor
-
-    configure_default_executor(asyncio.get_running_loop(), settings.LLM_EXECUTOR_THREADS)
-    logger.info(
-        "Default executor threads: %s (0 keeps Python's default; node cpu_count=%s)",
-        settings.LLM_EXECUTOR_THREADS,
-        os.cpu_count(),
-    )
-
-
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """
@@ -233,13 +220,10 @@ async def _lifespan(app: FastAPI):
     - Database services (multi-tenant sessions)
     - Application services (permissions, tenants)
     """
-    from app.db.effective_settings import log_effective_statement_timeout
     from app.db.multi_tenant_session import multi_tenant_manager
     from app.dependencies.tenant_dependencies import pre_wormup_tenant_singleton
 
     logger.debug("Running lifespan startup tasks...")
-
-    _configure_model_call_executor()
 
     # Generate OpenAPI schema
     await output_open_api(app)
@@ -250,7 +234,6 @@ async def _lifespan(app: FastAPI):
 
     # Initialize database and application services
     await multi_tenant_manager.initialize()
-    await log_effective_statement_timeout(multi_tenant_manager.get_tenant_engine())
     await pre_wormup_tenant_singleton()
 
     from app.core.permissions import sync_permissions_on_startup
@@ -368,14 +351,14 @@ def create_celery():
     celery_app = Celery(
         "genassist_celery_tasks",
         broker=settings.REDIS_URL,
-        backend=settings.REDIS_URL,
         include=include,
     )
+    # Task results are never read; pinned so no CELERY_RESULT_BACKEND env var can enable them
+    celery_app.backend_cls = "disabled"
 
     # Configure Celery
     celery_app.conf.update(
         broker_url=settings.REDIS_URL,  # Explicitly set broker URL
-        result_backend=settings.REDIS_URL,  # Explicitly set result backend
         broker_connection_retry_on_startup=True,  # Retain pre-Celery 6.0 startup retry behavior
         broker_transport_options={
             "visibility_timeout": settings.CELERY_BROKER_VISIBILITY_TIMEOUT,
@@ -391,23 +374,11 @@ def create_celery():
             "retry_on_timeout": True,
             "health_check_interval": 30,
         },
-        result_backend_transport_options={
-            "global_keyprefix": "{celery}",  # Force all keys to same Redis Cluster hash slot
-        },
-        # Same socket bounds for the result-backend client
-        redis_socket_timeout=settings.CELERY_REDIS_SOCKET_TIMEOUT,
-        redis_socket_connect_timeout=settings.CELERY_REDIS_SOCKET_CONNECT_TIMEOUT,
-        redis_socket_keepalive=True,
-        redis_retry_on_timeout=True,
-        redis_backend_health_check_interval=25,
-        redis_max_connections=settings.CELERY_REDIS_MAX_CONNECTIONS,  # Limit result backend connection pool
         worker_enable_mingle=False,  # Disable mingle to avoid cross-slot errors on startup
         task_serializer="json",
         accept_content=["json"],
-        result_serializer="json",
         timezone="UTC",
         enable_utc=True,
-        task_track_started=True,
         # Ack after completion so a job survives a worker killed or moved mid-task.
         # A job whose child process dies is not requeued: that death is usually
         # deterministic for the job, and requeueing it would loop forever. A redelivered
@@ -420,8 +391,6 @@ def create_celery():
         task_time_limit=480,
         task_soft_time_limit=420,
         task_annotations=_long_task_time_limits(),
-        # Bound result-backend growth so a slow/wedged worker doesn't pile up Redis keys
-        result_expires=3600,
         worker_max_tasks_per_child=1000,
         worker_prefetch_multiplier=1,
         worker_pool=settings.CELERY_WORKER_POOL,

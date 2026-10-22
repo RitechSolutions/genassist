@@ -816,6 +816,8 @@ _TRAINING_FILE_PARSERS = {
     ".parquet": parse_parquet_file,
 }
 
+SUPPORTED_TRAINING_FILE_SUFFIXES = frozenset({".csv", *_TRAINING_FILE_PARSERS})
+
 
 def parse_training_file(file_path: str) -> List[Dict[str, Any]]:
     """
