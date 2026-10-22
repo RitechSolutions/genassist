@@ -17,6 +17,7 @@ import {
   getWorkflowById,
   deleteWorkflow,
 } from "@/services/workflows";
+import { extractErrorMessage } from "@/helpers/apiError";
 import VersionDiffDialog from "../diff/VersionDiffDialog";
 import {
   Dialog,
@@ -358,6 +359,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   // Handle delete workflow
   const handleDeleteWorkflow = async () => {
     try {
+      setError(null);
       setIsDeleting(true);
       const workflowId = workflowToDelete.id;
       const isCurrentlySelected = workflowId === selectedWorkflowId;
@@ -380,7 +382,12 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
         setSelectedWorkflowId(null);
       }
     } catch (err) {
-      setError("Failed to delete workflow. Please try again.");
+      setError(
+        extractErrorMessage(
+          err,
+          "Failed to delete the version. Please try again."
+        )
+      );
     } finally {
       setWorkflowToDelete(null);
       setIsDeleteDialogOpen(false);
@@ -679,7 +686,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
         onConfirm={handleDeleteWorkflow}
         isInProgress={isDeleting}
         itemName={workflowToDelete?.name || ""}
-        description={`This action cannot be undone. This will permanently delete workflow "${workflowToDelete?.name}".`}
+        description={`This action cannot be undone. It deletes v${workflowToDelete?.version} of "${workflowToDelete?.name}" and its saved prompt versions. Test runs and evaluations stay.`}
       />
 
       {/* Activate Workflow Dialog */}
