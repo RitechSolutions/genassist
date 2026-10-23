@@ -17,6 +17,7 @@ import {
   getWorkflowById,
   deleteWorkflow,
 } from "@/services/workflows";
+import { extractErrorMessage } from "@/helpers/apiError";
 import VersionDiffDialog from "../diff/VersionDiffDialog";
 import {
   Dialog,
@@ -38,6 +39,12 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/RadixTooltip";
 import { calculateNextVersion, findPreviousVersion, isVersionDuplicate } from "../../utils/helpers";
 
 interface WorkflowsSavedPanelProps {
@@ -358,6 +365,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   // Handle delete workflow
   const handleDeleteWorkflow = async () => {
     try {
+      setError(null);
       setIsDeleting(true);
       const workflowId = workflowToDelete.id;
       const isCurrentlySelected = workflowId === selectedWorkflowId;
@@ -380,7 +388,12 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
         setSelectedWorkflowId(null);
       }
     } catch (err) {
-      setError("Failed to delete workflow. Please try again.");
+      setError(
+        extractErrorMessage(
+          err,
+          "Failed to delete the version. Please try again."
+        )
+      );
     } finally {
       setWorkflowToDelete(null);
       setIsDeleteDialogOpen(false);
@@ -560,27 +573,37 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
                         <span>Edit</span>
                       </DropdownMenuItem>
                       <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleActivateClick(workflow);
-                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onSelect={() => handleActivateClick(workflow)}
                         disabled={workflow.id === activeWorkflowId}
                       >
                         <Power className="mr-2 h-4 w-4" />
                         <span>Activate</span>
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteClick(workflow);
-                        }}
-                        className="text-destructive focus:text-destructive"
-                        disabled={workflow.id === activeWorkflowId}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        <span>Delete</span>
-                      </DropdownMenuItem>
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="block">
+                              <DropdownMenuItem
+                                onClick={(e) => e.stopPropagation()}
+                                onSelect={() => handleDeleteClick(workflow)}
+                                className="text-destructive focus:text-destructive"
+                                disabled={workflow.id === activeWorkflowId}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                <span>Delete</span>
+                              </DropdownMenuItem>
+                            </span>
+                          </TooltipTrigger>
+                          {workflow.id === activeWorkflowId && (
+                            <TooltipContent side="left">
+                              This version is active. Activate another version
+                              before deleting it.
+                            </TooltipContent>
+                          )}
+                        </Tooltip>
+                      </TooltipProvider>
                     </DropdownMenuContent>
                   </DropdownMenu>
                   )}
@@ -679,7 +702,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
         onConfirm={handleDeleteWorkflow}
         isInProgress={isDeleting}
         itemName={workflowToDelete?.name || ""}
-        description={`This action cannot be undone. This will permanently delete workflow "${workflowToDelete?.name}".`}
+        description={`This action cannot be undone. It deletes v${workflowToDelete?.version} of "${workflowToDelete?.name}" and its saved prompt versions. Test runs and evaluations stay.`}
       />
 
       {/* Activate Workflow Dialog */}

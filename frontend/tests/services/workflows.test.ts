@@ -74,7 +74,13 @@ describe("workflows service", () => {
 
   it("deleteWorkflow DELETEs by id", async () => {
     await deleteWorkflow("wf-3");
-    expect(mockApiRequest).toHaveBeenCalledWith("DELETE", "genagent/workflow/wf-3");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "DELETE",
+      "genagent/workflow/wf-3",
+      undefined,
+      {},
+      { rethrowForbidden: true }
+    );
   });
 
   it("getAllNodeSchemas GETs the schemas and returns them", async () => {
