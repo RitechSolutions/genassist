@@ -48,11 +48,20 @@ def _is_blocked_ip(addr: str) -> bool:
         return True
 
 
+def _request_hostname(url: str) -> str:
+    """Return the ASCII hostname httpx connects to, so the check resolves the same name."""
+    try:
+        return httpx.URL(url).raw_host.decode("ascii")
+    except httpx.InvalidURL as exc:
+        raise ValueError(f"Invalid URL: {exc}") from exc
+
+
 async def _validate_url(url: str) -> None:
+    url = url.strip()
     parsed = urlparse(url)
     if parsed.scheme not in _ALLOWED_SCHEMES:
         raise ValueError(f"Disallowed URL scheme: {parsed.scheme!r}")
-    hostname = parsed.hostname
+    hostname = _request_hostname(url)
     if not hostname:
         raise ValueError("URL has no hostname")
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -129,6 +138,7 @@ async def fetch_from_url(
     wait_for_ms: int = 0,
     scroll_to_bottom: bool = False,
 ) -> FetchResult:
+    url = url.strip()
     await _validate_url(url)
     safe_headers = _safe_headers(headers)
     if wait_until not in _WAIT_UNTIL_STATES:
