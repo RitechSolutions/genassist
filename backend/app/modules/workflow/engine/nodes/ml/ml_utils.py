@@ -7,12 +7,14 @@ This module contains shared functionality used across ML-related nodes.
 import ast
 import asyncio
 import csv
+import io
 import json
 import keyword
 import logging
 import math
 import os
 import re
+import tokenize
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
@@ -144,6 +146,10 @@ def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budg
         return sanitize_for_json(obj.to_dict("records"), _seen, _depth + 1, _budget)
     elif pd.isna(obj):
         return None
+    elif isinstance(obj, datetime):
+        # pd.Timestamp subclasses datetime. Without this it falls through to
+        # the __dict__ branch below and serializes as an empty {}.
+        return obj.isoformat()
     elif isinstance(obj, (str, int, bool, type(None))):
         # Basic JSON-serializable types
         return obj
@@ -508,6 +514,142 @@ def ordinal_key(value: Any) -> Optional[str]:
     if isinstance(value, (float, np.floating)) and float(value).is_integer():
         return str(int(value))
     return str(value).strip()
+
+
+
+_BACKTICK_NAME = re.compile(r"`([^`]*)`")
+
+
+def _with_pandas_boolean_precedence(expression: str) -> str:
+    """Swap & and | for `and` / `or`, as DataFrame.eval's parser does.
+
+    pandas binds & and | looser than comparisons, so size == "High" & price > 3
+    means (size == "High") & (price > 3). Python binds them tighter - it reads
+    size == ("High" & price) > 3 - so without this the text would never be
+    seen as compared to size.
+    """
+    tokens = tokenize.generate_tokens(io.StringIO(expression).readline)
+    swapped = {"&": "and", "|": "or"}
+    return tokenize.untokenize(
+        (tokenize.NAME, swapped[tok.string]) if tok.type == tokenize.OP and tok.string in swapped
+        else (tok.type, tok.string)
+        for tok in tokens
+    )
+
+
+class _BoolOpToBitwise(ast.NodeTransformer):
+    """Turn `and` / `or` back into & / |, which unparse wraps in parentheses."""
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> ast.AST:
+        self.generic_visit(node)
+        op = ast.BitAnd() if isinstance(node.op, ast.And) else ast.BitOr()
+        result = node.values[0]
+        for value in node.values[1:]:
+            result = ast.BinOp(left=result, op=op, right=value)
+        return result
+
+
+def translate_category_literals(
+    expression: str,
+    label_encodings: Dict[str, Dict[Any, int]],
+    ordinal_encodings: Dict[str, Dict[Any, Any]],
+) -> str:
+    """Rewrite text compared against a label/ordinal column into its code.
+
+    Label/ordinal encoding runs before feature engineering, so in a Custom
+    Expression those columns hold codes, not categories - size == "High"
+    would compare numbers to a string and be False on every row. Each string
+    in a comparison with an encoded column (==, !=, <, >, in, not in, either
+    side) becomes that category's code, so the expression means what it
+    says. Numbers are left alone (they are already codes). Raises ValueError
+    for text that isn't one of the column's categories.
+
+    The result is what training evaluates and stores for inference, which
+    replays it on the same codes. Expressions with nothing to translate come
+    back unchanged.
+    """
+    if not expression or not (label_encodings or ordinal_encodings):
+        return expression
+
+    # `name with spaces` isn't valid Python - parse with placeholders instead.
+    backtick_names: Dict[str, str] = {}
+
+    def to_placeholder(match: "re.Match[str]") -> str:
+        placeholder = f"__col{len(backtick_names)}__"
+        backtick_names[placeholder] = match.group(1)
+        return placeholder
+
+    try:
+        tree = ast.parse(
+            _with_pandas_boolean_precedence(_BACKTICK_NAME.sub(to_placeholder, expression)), mode="eval"
+        )
+    except (SyntaxError, tokenize.TokenError):
+        return expression  # DataFrame.eval reports the real error
+
+    def column_of(node: ast.AST) -> Optional[str]:
+        if isinstance(node, ast.Name):
+            name = backtick_names.get(node.id, node.id)
+            if name in label_encodings or name in ordinal_encodings:
+                return name
+        return None
+
+    def to_code(column: str, value: str) -> Any:
+        if column in label_encodings:
+            mapping = label_encodings[column]
+            code = mapping.get(value, mapping.get(value.strip()))
+        else:
+            code = ordinal_encodings[column].get(ordinal_key(value))
+        if code is None:
+            known = list(label_encodings.get(column) or ordinal_encodings.get(column) or {})
+            raise ValueError(
+                f"compares '{column}' with '{value}', which is not one of its categories (known: {known[:10]}"
+                f"{' ...' if len(known) > 10 else ''})"
+            )
+        return code.item() if isinstance(code, np.generic) else code
+
+    translated_any = False
+
+    def translate(node: ast.AST, column: str) -> ast.AST:
+        nonlocal translated_any
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            translated_any = True
+            return ast.Constant(value=to_code(column, node.value))
+        if isinstance(node, (ast.List, ast.Tuple)):
+            node.elts = [translate(elt, column) for elt in node.elts]
+        return node
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        operands = [node.left] + node.comparators
+        for i, operand in enumerate(operands):
+            neighbours = operands[max(i - 1, 0):i] + operands[i + 1:i + 2]
+            column = next((c for c in map(column_of, neighbours) if c), None)
+            if column is None:
+                continue
+            translated = translate(operand, column)
+            if i == 0:
+                node.left = translated
+            else:
+                node.comparators[i - 1] = translated
+            # Text left inside the operand (e.g. "High" + x) would still
+            # compare a string to codes and quietly be False on every row.
+            leftover = next(
+                (n.value for n in ast.walk(translated) if isinstance(n, ast.Constant) and isinstance(n.value, str)),
+                None,
+            )
+            if leftover is not None:
+                raise ValueError(
+                    f"compares '{column}' with an expression containing '{leftover}', which can't be matched "
+                    f"to one of its categories - wrap each comparison in parentheses, e.g. ({column} == \"{leftover}\")"
+                )
+
+    if not translated_any:
+        return expression
+    result = ast.unparse(_BoolOpToBitwise().visit(tree))
+    for placeholder, name in backtick_names.items():
+        result = re.sub(rf"\b{placeholder}\b", f"`{name}`", result)
+    return result
 
 
 async def save_data_to_csv(
