@@ -470,7 +470,8 @@ class TestFileManagerServiceBuildFileHeaders:
         assert "content-disposition" in headers
         assert 'filename="test.txt"' in headers["content-disposition"]
         assert headers["x-content-type-options"] == "nosniff"
-        assert headers["cache-control"] == "public, max-age=31536000"
+        # File bytes can be user or tenant scoped, so responses are never publicly cached
+        assert headers["Cache-Control"] == "private, no-store"
 
     def test_build_file_headers_with_content(self, mock_repository):
         """Test building headers with content provided."""
