@@ -2,12 +2,14 @@ from typing import Dict, List, Any, Tuple, Optional
 import logging
 import yaml
 import os
+from urllib.parse import quote
 from sshtunnel import SSHTunnelForwarder
 from app.core.utils.encryption_utils import decrypt_key
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
 from sqlalchemy import column as sql_column
 from sqlalchemy import func, literal_column, quoted_name, select, text
 from sqlalchemy import table as sql_table
+from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 import asyncio
 from app.modules.integration.snowflake import SnowflakeManager
@@ -16,36 +18,66 @@ from app.core.config.settings import settings
 logger = logging.getLogger(__name__)
 
 
+POSTGRES_SCHEMA = "public"
+INVALID_CONNECTION_STRING = "Invalid database connection string"
+
+
+def _escaped_credential(value: Any) -> str:
+    # Keeps existing %-escapes, so a saved "%40" still means "@", while a raw "@", ":" or "/" can't break the URL
+    return quote(str(value), safe="%")
+
+
+def _database_url(drivername: str, config: Dict[str, Any], host, port, query: str = ""):
+    # Parsed from text like a connection string, so every field is read the way it always was
+    username = _escaped_credential(config.get("database_user"))
+    password = _escaped_credential(decrypt_key(config.get("database_password")))
+    return _parse_connection_string(
+        f"{drivername}://{username}:{password}@{host}:{port}/{config.get('database_name')}{query}"
+    )
+
+
+def _parse_connection_string(connection_string: str):
+    # Parse errors can repeat the password, so they are replaced outside the except block
+    parsed_url = None
+    try:
+        parsed_url = make_url(connection_string)
+    except Exception:
+        pass
+    if parsed_url is None:
+        raise ValueError(INVALID_CONNECTION_STRING)
+    return parsed_url
+
+
 # Schema query builders; SQLAlchemy quotes and escapes the table and column names.
-def _quoted_table(table_name: str):
-    return sql_table(quoted_name(table_name, quote=True))
+def _quoted_table(table_name: str, schema: Optional[str] = None):
+    return sql_table(quoted_name(table_name, quote=True), schema=schema)
 
 
 def _quoted_column(column_name: str):
     return sql_column(quoted_name(column_name, quote=True))
 
 
-def _sample_rows_query(table_name: str, sample_size: int):
-    return select(literal_column("*")).select_from(_quoted_table(table_name)).limit(sample_size)
+def _sample_rows_query(table_name: str, sample_size: int, schema: Optional[str] = None):
+    return select(literal_column("*")).select_from(_quoted_table(table_name, schema)).limit(sample_size)
 
 
-def _distinct_values_query(table_name: str, column_name: str, max_values: int):
+def _distinct_values_query(table_name: str, column_name: str, max_values: int, schema: Optional[str] = None):
     target_column = _quoted_column(column_name)
     return (
         select(target_column)
         .distinct()
-        .select_from(_quoted_table(table_name))
+        .select_from(_quoted_table(table_name, schema))
         .where(target_column.is_not(None))
         .order_by(target_column)
         .limit(max_values)
     )
 
 
-def _distinct_count_query(table_name: str, column_name: str):
+def _distinct_count_query(table_name: str, column_name: str, schema: Optional[str] = None):
     target_column = _quoted_column(column_name)
     return (
         select(func.count(target_column.distinct()))
-        .select_from(_quoted_table(table_name))
+        .select_from(_quoted_table(table_name, schema))
         .where(target_column.is_not(None))
     )
 
@@ -176,18 +208,15 @@ class DatabaseManager:
                         if (hasattr(self, "tunnel") and self.tunnel)
                         else self.config.get("database_host", "localhost")
                     )
-                    connection_string = (
-                        f"postgresql+asyncpg://{self.config.get('database_user')}:"
-                        f"{decrypt_key(self.config.get('database_password'))}@{host}:"
-                        f"{port}/{self.config.get('database_name')}"
+                    connection_url = _database_url("postgresql+asyncpg", self.config, host, port)
+                    logger.info(
+                        f"Connecting to PostgreSQL at {host}:{port}/{self.config.get('database_name')}"
                     )
                 else:
-                    connection_string = self.connection_string
-                logger.info(
-                    f"Connecting to PostgreSQL with connection string: {connection_string}"
-                )
+                    connection_url = _parse_connection_string(self.connection_string)
+                    logger.info("Connecting to PostgreSQL with the configured connection string")
                 self.engine = create_async_engine(
-                    connection_string,
+                    connection_url,
                     echo=False,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
@@ -205,16 +234,12 @@ class DatabaseManager:
                     if (hasattr(self, "tunnel") and self.tunnel)
                     else self.config.get("database_host", "localhost")
                 )
-                connection_string = (
-                    f"mysql+aiomysql://{self.config.get('database_user')}:"
-                    f"{decrypt_key(self.config.get('database_password'))}@{host}:"
-                    f"{port}/{self.config.get('database_name')}"
-                )
+                connection_url = _database_url("mysql+aiomysql", self.config, host, port)
                 logger.info(
-                    f"Connecting to MySQL with connection string: {connection_string}"
+                    f"Connecting to MySQL at {host}:{port}/{self.config.get('database_name')}"
                 )
                 self.engine = create_async_engine(
-                    connection_string,
+                    connection_url,
                     echo=False,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
@@ -238,17 +263,18 @@ class DatabaseManager:
                 # ODBC Driver 18 requires explicit SSL settings
                 driver = settings.MSSQL_DRIVER
 
-                connection_string = (
-                    f"mssql+aioodbc://{self.config.get('database_user')}:"
-                    f"{decrypt_key(self.config.get('database_password'))}@{host}:{port}/"
-                    f"{self.config.get('database_name')}?"
-                    f"driver={driver}&Encrypt=yes&TrustServerCertificate=yes"
+                connection_url = _database_url(
+                    "mssql+aioodbc",
+                    self.config,
+                    host,
+                    port,
+                    query=f"?driver={driver}&Encrypt=yes&TrustServerCertificate=yes",
                 )
 
                 logger.info("Connecting to MSSQL...")
 
                 self.engine = create_async_engine(
-                    connection_string,
+                    connection_url,
                     echo=False,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
@@ -506,9 +532,10 @@ class DatabaseManager:
                         text("""
                         SELECT table_name
                         FROM information_schema.tables
-                        WHERE table_schema = 'public'
+                        WHERE table_schema = :table_schema
                         AND table_type = 'BASE TABLE'
-                    """)
+                    """),
+                        {"table_schema": POSTGRES_SCHEMA},
                     )
                     tables = [row[0] for row in result.fetchall()]
 
@@ -537,10 +564,10 @@ class DatabaseManager:
                                 numeric_scale
                             FROM information_schema.columns
                             WHERE table_name = :table_name
-                            AND table_schema = 'public'
+                            AND table_schema = :table_schema
                             ORDER BY ordinal_position
                         """),
-                            {"table_name": table},
+                            {"table_name": table, "table_schema": POSTGRES_SCHEMA},
                         )
 
                         columns = result.fetchall()
@@ -555,9 +582,9 @@ class DatabaseManager:
                                 AND tc.table_schema = kcu.table_schema
                             WHERE tc.constraint_type = 'PRIMARY KEY'
                             AND tc.table_name = :table_name
-                            AND tc.table_schema = 'public'
+                            AND tc.table_schema = :table_schema
                         """),
-                            {"table_name": table},
+                            {"table_name": table, "table_schema": POSTGRES_SCHEMA},
                         )
 
                         primary_keys = [pk[0] for pk in result.fetchall()]
@@ -580,32 +607,21 @@ class DatabaseManager:
                                 and self._is_categorical_column(column[1], column[4])
                             ):
                                 try:
-                                    # Get distinct values for categorical columns
-                                    result = await conn.execute(
-                                        text(f"""
-                                        SELECT DISTINCT "{column[0]}"
-                                        FROM "{table}"
-                                        WHERE "{column[0]}" IS NOT NULL
-                                        ORDER BY "{column[0]}"
-                                        LIMIT :limit
-                                    """),
-                                        {"limit": max_categorical_values},
-                                    )
+                                    # Savepoint so a failed query does not abort the rest of the read
+                                    async with conn.begin_nested():
+                                        # Get distinct values for categorical columns
+                                        result = await conn.execute(
+                                            _distinct_values_query(
+                                                table, column[0], max_categorical_values, schema=POSTGRES_SCHEMA
+                                            )
+                                        )
+                                        col_info["possible_values"] = [row[0] for row in result.fetchall()]
 
-                                    distinct_values = [
-                                        row[0] for row in result.fetchall()
-                                    ]
-                                    col_info["possible_values"] = distinct_values
-
-                                    # Get count of distinct values to know if we hit the limit
-                                    result = await conn.execute(
-                                        text(f"""
-                                        SELECT COUNT(DISTINCT "{column[0]}")
-                                        FROM "{table}"
-                                        WHERE "{column[0]}" IS NOT NULL
-                                    """)
-                                    )
-                                    total_distinct = result.fetchone()[0]
+                                        # Get count of distinct values to know if we hit the limit
+                                        result = await conn.execute(
+                                            _distinct_count_query(table, column[0], schema=POSTGRES_SCHEMA)
+                                        )
+                                        total_distinct = result.fetchone()[0]
                                     col_info["total_distinct_count"] = total_distinct
 
                                     if total_distinct > max_categorical_values:
@@ -625,14 +641,13 @@ class DatabaseManager:
                         # Add sample data if requested
                         if include_samples and sample_size > 0:
                             try:
-                                # Get sample rows (using double quotes for PostgreSQL)
-                                sample_query = f'SELECT * FROM "{table}" LIMIT :limit'
-                                result = await conn.execute(
-                                    text(sample_query), {"limit": sample_size}
-                                )
-
-                                rows = result.fetchall()
-                                columns = list(result.keys())
+                                # Get sample rows, in a savepoint like the categorical queries
+                                async with conn.begin_nested():
+                                    result = await conn.execute(
+                                        _sample_rows_query(table, sample_size, schema=POSTGRES_SCHEMA)
+                                    )
+                                    rows = result.fetchall()
+                                    columns = list(result.keys())
 
                                 # Convert to list of dicts for better readability
                                 samples = []
@@ -659,7 +674,7 @@ class DatabaseManager:
                                 table_info["samples"] = samples
 
                                 logger.info(
-                                    f"Samples fetched for table {table}: {samples}"
+                                    f"Samples fetched for table {table}: {len(samples)} rows"
                                 )
 
                             except Exception as e:
@@ -690,9 +705,9 @@ class DatabaseManager:
                                 AND ccu.table_schema = tc.table_schema
                             WHERE tc.constraint_type = 'FOREIGN KEY'
                             AND tc.table_name = :table_name
-                            AND tc.table_schema = 'public'
+                            AND tc.table_schema = :table_schema
                         """),
-                            {"table_name": table},
+                            {"table_name": table, "table_schema": POSTGRES_SCHEMA},
                         )
 
                         foreign_keys = result.fetchall()
@@ -950,12 +965,7 @@ class DatabaseManager:
                                 try:
                                     # Get distinct values for categorical columns
                                     result = await conn.execute(
-                                        text(f"""
-                                        SELECT DISTINCT TOP {max_categorical_values} [{column[0]}]
-                                        FROM [{table}]
-                                        WHERE [{column[0]}] IS NOT NULL
-                                        ORDER BY [{column[0]}]
-                                    """)
+                                        _distinct_values_query(table, column[0], max_categorical_values)
                                     )
 
                                     distinct_values = [
@@ -965,11 +975,7 @@ class DatabaseManager:
 
                                     # Get count of distinct values to know if we hit the limit
                                     result = await conn.execute(
-                                        text(f"""
-                                        SELECT COUNT(DISTINCT [{column[0]}])
-                                        FROM [{table}]
-                                        WHERE [{column[0]}] IS NOT NULL
-                                    """)
+                                        _distinct_count_query(table, column[0])
                                     )
                                     total_distinct = result.fetchone()[0]
                                     col_info["total_distinct_count"] = total_distinct
@@ -991,11 +997,10 @@ class DatabaseManager:
                         # Add sample data if requested
                         if include_samples and sample_size > 0:
                             try:
-                                # Get sample rows (using TOP for MSSQL)
-                                sample_query = (
-                                    f"SELECT TOP {sample_size} * FROM [{table}]"
+                                # Get sample rows (rendered with TOP for MSSQL)
+                                result = await conn.execute(
+                                    _sample_rows_query(table, sample_size)
                                 )
-                                result = await conn.execute(text(sample_query))
 
                                 rows = result.fetchall()
                                 columns_list = list(result.keys())
@@ -1024,7 +1029,7 @@ class DatabaseManager:
                                 table_info["samples"] = samples
 
                                 logger.info(
-                                    f"Samples fetched for table {table}: {samples}"
+                                    f"Samples fetched for table {table}: {len(samples)} rows"
                                 )
 
                             except Exception as e:

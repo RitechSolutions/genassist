@@ -6,7 +6,7 @@ from typing import Optional
 
 from app.db.models.ml_model import MLModel
 from app.repositories.ml_models import MLModelsRepository
-from app.schemas.ml_model import MLModelCreate, MLModelUpdate
+from app.schemas.ml_model import MLModelCreate, MLModelUpdate, is_in_ml_models_dir
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.file import FileModel
@@ -55,6 +55,16 @@ class MLModelsService:
                     error_key=ErrorKey.ML_MODEL_NAME_EXISTS
                 )
 
+        # A new pkl_file must be inside the ML models folder. An unchanged one is let through,
+        # since the edit form sends back paths stored before this check existed.
+        new_pkl_file = update_data.get('pkl_file')
+        if new_pkl_file and not is_in_ml_models_dir(new_pkl_file):
+            existing_model = await self.repository.get_by_id(ml_model_id)
+            if new_pkl_file != existing_model.pkl_file:
+                raise AppException(
+                    error_key=ErrorKey.INVALID_FILE_PATH
+                )
+
         db_ml_model = await self.repository.update(ml_model_id, update_data)
         return db_ml_model
 
@@ -63,8 +73,11 @@ class MLModelsService:
         # Get the model first to access the pkl_file path
         ml_model = await self.repository.get_by_id(ml_model_id)
 
-        # If there's a pkl_file, attempt to delete it
-        if ml_model.pkl_file and os.path.exists(ml_model.pkl_file):
+        # If there's a pkl_file, attempt to delete it. Rows saved before pkl_file was
+        # validated may point anywhere, so only remove files inside the ML models folder.
+        if ml_model.pkl_file and not is_in_ml_models_dir(ml_model.pkl_file):
+            logger.warning(f"Not deleting pkl file outside the ML models folder: {ml_model.pkl_file}")
+        elif ml_model.pkl_file and os.path.exists(ml_model.pkl_file):
             try:
                 os.remove(ml_model.pkl_file)
                 logger.info(f"Deleted pkl file: {ml_model.pkl_file}")

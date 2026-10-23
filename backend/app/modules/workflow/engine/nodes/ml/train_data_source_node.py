@@ -6,8 +6,6 @@ This node fetches training data from databases or CSV files for ML model trainin
 
 import asyncio
 import logging
-import os
-from pathlib import Path
 from typing import Any, Dict
 from uuid import UUID
 
@@ -235,19 +233,9 @@ class TrainDataSourceNode(BaseNode):
                 # set the csv file path to the destination path
                 csv_file_path = dest_file_path
 
-            # Validate file exists and is accessible
-            csv_path = Path(csv_file_path)
-            if not csv_path.exists():
-                raise AppException(
-                    error_key=ErrorKey.FILE_NOT_FOUND,
-                    error_detail=f"CSV file not found: {csv_file_path}",
-                )
-
-            if not os.access(csv_file_path, os.R_OK):
-                raise AppException(
-                    error_key=ErrorKey.FILE_NOT_FOUND,
-                    error_detail=f"CSV file not readable: {csv_file_path}",
-                )
+            # Only CSV files inside the data volume, or the configured storage folder, can be read
+            allowed_directories = await ml_utils.extra_csv_directories()
+            csv_file_path = str(ml_utils.resolve_csv_file_path(csv_file_path, self.state.thread_id, allowed_directories))
 
             # Parse CSV file
             results = ml_utils.parse_csv_file(csv_file_path)

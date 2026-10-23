@@ -11,7 +11,22 @@ import os
 import pickletools
 from typing import Tuple, Optional
 
+from app.core.project_path import DATA_VOLUME
+
 logger = logging.getLogger(__name__)
+
+ML_MODELS_DIR = os.path.realpath(DATA_VOLUME / "ml_models")
+
+
+def resolve_model_path(pkl_file: Optional[str]) -> Optional[str]:
+    """Return the real path of a model file if it is inside the ML models folder, otherwise None."""
+    if not pkl_file:
+        return None
+    real_path = os.path.realpath(pkl_file)
+    if not real_path.startswith(ML_MODELS_DIR + os.sep):
+        return None
+    return real_path
+
 
 _BLOCKED_MODULES: frozenset[str] = frozenset({
     "os", "posix", "nt", "posixpath", "ntpath",
@@ -42,11 +57,14 @@ def validate_pickle_file_safe(pkl_file: str, **_kwargs) -> Tuple[bool, Optional[
     Returns:
         Tuple of (is_valid, error_message)
     """
-    if not os.path.exists(pkl_file):
-        return False, f"File not found: {pkl_file}"
+    safe_path = resolve_model_path(pkl_file)
+    if safe_path is None:
+        return False, "Model file is not inside the ML models folder"
+    if not os.path.isfile(safe_path):
+        return False, "Model file not found"
 
     try:
-        with open(pkl_file, "rb") as f:
+        with open(safe_path, "rb") as f:
             data = f.read()
 
         ops = list(pickletools.genops(data))
@@ -97,19 +115,29 @@ def get_model_info(pkl_file: str) -> dict:
     """
     info = {
         "file_path": pkl_file,
-        "file_exists": os.path.exists(pkl_file),
+        "file_exists": False,
         "file_size": 0,
         "is_valid": False,
         "error": None
     }
 
+    if not pkl_file:
+        info["error"] = "File not found"
+        return info
+
+    safe_path = resolve_model_path(pkl_file)
+    if safe_path is None:
+        info["error"] = "Model file is not inside the ML models folder"
+        return info
+
+    info["file_exists"] = os.path.isfile(safe_path)
     if not info["file_exists"]:
         info["error"] = "File not found"
         return info
 
-    info["file_size"] = os.path.getsize(pkl_file)
+    info["file_size"] = os.path.getsize(safe_path)
 
-    is_valid, error = validate_pickle_file_safe(pkl_file)
+    is_valid, error = validate_pickle_file_safe(safe_path)
     info["is_valid"] = is_valid
     info["error"] = error
 
