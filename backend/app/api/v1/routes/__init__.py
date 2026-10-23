@@ -22,6 +22,7 @@ from app.api.v1.routes import (
     file_manager,
     gmail,
     internal,
+    issue_statuses,
     llm_analysts,
     llm_cost_rates,
     llm_model_catalog,
@@ -63,6 +64,7 @@ from app.api.v1.routes import (
     workflow_builder,
     workflow_manager,
     workflow_schedule,
+    workflow_triggers,
     workflows,
     zendesk,
     support_tickets,
@@ -88,6 +90,9 @@ router.include_router(
 router.include_router(app_settings.router, prefix="/app-settings", tags=["AppSettings"])
 router.include_router(
     feature_flags.router, prefix="/feature-flags", tags=["FeatureFlags"]
+)
+router.include_router(
+    issue_statuses.router, prefix="/issue-statuses", tags=["IssueStatuses"]
 )
 router.include_router(
     translations.router, prefix="/translations", tags=["Translations"]
@@ -124,6 +129,11 @@ router.include_router(
     workflow_schedule.router,
     prefix="/genagent/workflow-schedules",
     tags=["Workflow Schedules"],
+)
+router.include_router(
+    workflow_triggers.router,
+    prefix="/genagent/workflow-triggers",
+    tags=["Workflow Triggers"],
 )
 
 router.include_router(reports.router, tags=["Reports"])

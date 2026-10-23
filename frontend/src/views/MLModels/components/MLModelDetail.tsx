@@ -47,13 +47,6 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/resizable";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/select";
 import { cn } from "@/lib/utils";
 
 import { getMLModel } from "@/services/mlModels";
@@ -440,6 +433,9 @@ const MLModelDetail: React.FC = () => {
           ? "Run promoted. The model now uses this run's file, target and features."
           : "Run promoted. Its pipeline is now the default (the run produced no model file)."
       );
+      for (const warning of result?.warnings ?? []) {
+        toast(warning, { icon: "⚠️", duration: 8000 });
+      }
       await Promise.all([
         invalidateConfigs(),
         invalidateRuns(),
@@ -1127,7 +1123,7 @@ const MLModelDetail: React.FC = () => {
                 value={newWorkflowDescription}
                 onChange={(e) => setNewWorkflowDescription(e.target.value)}
                 placeholder="What this training workflow does"
-                rows={3}
+                size="hint"
               />
             </FormField>
           </div>

@@ -48,12 +48,12 @@ const LoginSsoCallbackPage = () => {
         }
 
         try {
-          await refreshFlags();
+          await fetchUserPermissions();
         } catch {
           // ignore
         }
         try {
-          await fetchUserPermissions();
+          await refreshFlags();
         } catch {
           // ignore
         }

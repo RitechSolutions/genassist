@@ -1,4 +1,5 @@
 import { useContext, useEffect, useRef, useState } from "react";
+import { isEntryNodeType } from "../utils/entryNodes";
 import { NodeData, NodeHelpContent } from "../types/nodes";
 import { useReactFlow } from "reactflow";
 import { WorkflowContext } from "../context/WorkflowContext";
@@ -12,7 +13,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import nodeRegistry from "../registry/nodeRegistry";
 import { useNodeValidation } from "../hooks/useNodeValidation";
 import { NodeContent, NodeContentRow } from "./nodeContent";
-import { NodeAlert } from "./nodeAlert";
+import { CompactNodeAlert, NodeAlert } from "./nodeAlert";
 import {
   Dialog,
   DialogClose,
@@ -37,7 +38,6 @@ import {
 } from "../utils/helpHeaderGradients";
 import { getNodeDocsUrl } from "../utils/nodeDocsLinks";
 import {
-  CircleAlert,
   ExternalLink,
   MoreVertical,
   Play,
@@ -60,6 +60,11 @@ interface BaseNodeContainerProps<T extends NodeData> {
   nodeContent?: NodeContentRow[];
   onSettings?: () => void;
   children?: React.ReactNode;
+  /**
+   * Replaces the default handle layout for a node style (e.g. a Switch whose
+   * outputs don't fit on the node's edge). Return undefined to keep the default.
+   */
+  renderHandles?: (variant: "compact" | "detailed") => React.ReactNode;
 }
 
 const BaseNodeContainer = <T extends NodeData>({
@@ -74,6 +79,7 @@ const BaseNodeContainer = <T extends NodeData>({
   nodeContent,
   onSettings,
   children,
+  renderHandles,
 }: BaseNodeContainerProps<T>) => {
   const nodeDefinition = nodeRegistry.getNodeType(nodeType);
 
@@ -148,8 +154,8 @@ const BaseNodeContainer = <T extends NodeData>({
   const hasError = isDeactivated
     ? false
     : !hasNodeBeenExecuted(id) || hasValidationError;
-  const isSpecialNode =
-    nodeType === "chatInputNode" || nodeType === "chatOutputNode";
+  // Entry nodes (Start / Webhook Trigger) and the Finish node.
+  const isSpecialNode = isEntryNodeType(nodeType) || nodeType === "chatOutputNode";
   // Sub-agents share the agent's gradient treatment
   const isAgentNode =
     nodeType === "agentNode" || nodeType === "subAgentNode";
@@ -335,7 +341,7 @@ const BaseNodeContainer = <T extends NodeData>({
       {children}
 
       {/* Handlers */}
-      <HandlersRenderer id={id} data={data} />
+      {renderHandles?.("detailed") ?? <HandlersRenderer id={id} data={data} />}
 
       {hasError && (
         <NodeAlert
@@ -475,11 +481,15 @@ const BaseNodeContainer = <T extends NodeData>({
         {/* Not-tested / validation indicator — a small alert badge in the
             bottom-right corner; the node keeps its own centered icon. */}
         {hasError && (
-          <CircleAlert className="absolute bottom-2.5 right-2.5 h-5 w-5 text-red-500" />
+          <CompactNodeAlert
+            missingFields={missingFields}
+            onFix={onSettings}
+            onTest={handleTest}
+          />
         )}
 
         {/* Handlers anchor to this tile */}
-        <HandlersRenderer id={id} data={data} />
+        {renderHandles?.("compact") ?? <HandlersRenderer id={id} data={data} />}
       </div>
 
       {/* Node name below the tile */}

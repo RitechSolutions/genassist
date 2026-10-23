@@ -37,19 +37,20 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
-import { useState, useEffect, useMemo, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from "react";
 import { BackendTranscript, Transcript } from "@/interfaces/transcript.interface";
 import { TranscriptDialog } from "../components/TranscriptDialog";
 import { ActiveConversationDialog } from "@/views/ActiveConversations/components/ActiveConversationDialog";
 import { enrichConversationItem } from "@/views/ActiveConversations/pages/ActiveConversations";
 import { useWebSocketDashboardContext } from "@/context/WebSocketDashboardContext";
 import { useTranscriptData } from "../hooks/useTranscriptData";
-import { formatDuration, getEffectiveSentiment, HOSTILITY_POSITIVE_MAX, HOSTILITY_NEUTRAL_MAX } from "../helpers/formatting";
+import { formatDuration, getEffectiveSentiment, isLiveTranscript, HOSTILITY_POSITIVE_MAX, HOSTILITY_NEUTRAL_MAX } from "../helpers/formatting";
 import { Badge } from "@/components/badge";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/useToast";
 import { conversationService } from "@/services/liveConversations";
-import { transformTranscript } from "../helpers/transformers";
+import { applyConversationUpdate, transformTranscript } from "../helpers/transformers";
+import type { ConversationDataPayload } from "@/interfaces/websocket.interface";
 import { UploadMediaDialog } from "@/views/MediaUpload";
 import { getPaginationMeta } from "@/helpers/pagination";
 import { PaginationBar } from "@/components/PaginationBar";
@@ -58,18 +59,34 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixToolt
 import { useAgentsList } from "@/views/Analytics/hooks/useAgentsList";
 import { DateRangePicker } from "@/components/date-range-picker";
 import type { DateRange } from "react-day-picker";
-import { format, subDays } from "date-fns";
+import { subDays } from "date-fns";
+import { toInclusiveDateParams } from "@/helpers/dateRange";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
+import { useHasPermission } from "@/hooks/useHasPermission";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
 import { apiRequest } from "@/config/api";
 import { PageListSkeleton } from "@/components/skeletons";
+import { SentimentBadge } from "../components/SentimentBadge";
+import { ConversationsWorkspace } from "../components/workspace/ConversationsWorkspace";
+import { ConversationsViewSwitch } from "../components/workspace/ConversationsViewSwitch";
+import {
+  CONVERSATIONS_VIEW_STORAGE_KEY,
+  readConversationsViewMode,
+  type ConversationsViewMode,
+} from "../helpers/conversationsView";
+import { useTopicFilter } from "@/hooks/useTopicFilter";
+import { topicLabel } from "@/views/ReportedFeedback/helpers/triageDraft";
 
 const ITEMS_PER_PAGE = 10;
 // Minimum characters required before a search is sent to the backend. Short
 // queries (1-2 chars) match nearly everything and are extremely slow server-side.
 const MIN_SEARCH_LENGTH = 3;
+
+// Old links carry "Billing Question" from the former fixed topic list
+const topicFromParam = (value: string | null) =>
+  value === "Billing Question" ? "Billing Questions" : value || "all";
 
 type QualityFilterKey = "customer_satisfaction" | "quality_of_service" | "resolution_rate" | "efficiency";
 type QualityLevel = "all" | "low" | "medium" | "high";
@@ -101,14 +118,6 @@ type StatusFilter = "all" | "live" | "finalized";
 const formatScorePercentage = (value: number) =>
   value > 0 ? `${Math.round((value / 10) * 100)}%` : "—";
 
-const SENTIMENT_CONFIG: Record<string, { icon: ReactNode; bg: string; text: string; border: string }> = {
-  positive: { icon: <CheckCircle className="w-3 h-3" />, bg: "bg-emerald-50 dark:bg-emerald-500/15", text: "text-emerald-700 dark:text-emerald-400", border: "border-emerald-200 dark:border-emerald-500/30" },
-  neutral: { icon: <MinusCircle className="w-3 h-3" />, bg: "bg-amber-50 dark:bg-amber-500/15", text: "text-amber-700 dark:text-amber-400", border: "border-amber-200 dark:border-amber-500/30" },
-  negative: { icon: <AlertCircle className="w-3 h-3" />, bg: "bg-rose-50 dark:bg-rose-500/15", text: "text-rose-600 dark:text-rose-400", border: "border-rose-200 dark:border-rose-500/30" },
-  "very-bad": { icon: <AlertCircle className="w-3 h-3" />, bg: "bg-rose-50 dark:bg-rose-500/15", text: "text-rose-600 dark:text-rose-400", border: "border-rose-200 dark:border-rose-500/30" },
-};
-const DEFAULT_SENTIMENT = { icon: <MinusCircle className="w-3 h-3" />, bg: "bg-muted", text: "text-muted-foreground", border: "border-border" };
-
 const Transcripts = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -119,8 +128,34 @@ const Transcripts = () => {
   const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLiveTranscriptSelected, setIsLiveTranscriptSelected] = useState(false);
+  // Conversations finalized from this page. The live list can be websocket-driven, where a row
+  // only disappears once the server announces it — until then it would still read as live.
+  const [locallyFinalizedIds, setLocallyFinalizedIds] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<ConversationsViewMode>(() =>
+    readConversationsViewMode(searchParams)
+  );
+  const isSplitView = viewMode === "split";
+  // Set when the user backs out of a conversation on a narrow screen, so the split view
+  // does not immediately re-select the first row for them.
+  const [selectionDismissed, setSelectionDismissed] = useState(false);
+  // The deep-link effect must not reopen the dialog while the split view is showing the
+  // same conversation inline, but it should not re-run when the view mode flips either.
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
   const [activeTab, setActiveTab] = useState(searchParams.get("sentiment") || "all");
-  const [supportType, setSupportType] = useState(searchParams.get("type") || "all");
+  const {
+    topic: supportType,
+    subtopic: subtopicFilter,
+    topicChoices,
+    subtopicChoices,
+    setFilter: setTopicFilter,
+    changeTopic,
+    changeSubtopic,
+    matchesTopic,
+  } = useTopicFilter(
+    topicFromParam(searchParams.get("type")),
+    searchParams.get("subtype") || "all",
+  );
   const [searchQuery, setSearchQuery] = useState(searchParams.get("query") || "");
   // The value actually sent to the backend. Only updated when the user submits
   // the search (Enter / button) so we never query on partial input.
@@ -143,6 +178,8 @@ const Transcripts = () => {
   // Custom attribute filters
   const [customAttrFilters, setCustomAttrFilters] = useState<Record<string, string>>({});
   const [availableAttrKeys, setAvailableAttrKeys] = useState<string[]>([]);
+  // Custom attribute keys are served by the analytics API
+  const canReadCustomAttributes = useHasPermission("read:dashboard");
 
   // Derive initial status filter from URL
   const initStatusFilter = (): StatusFilter => {
@@ -195,13 +232,25 @@ const Transcripts = () => {
 
   // Fetch available custom attribute keys when agent changes
   useEffect(() => {
+    if (!canReadCustomAttributes) {
+      setAvailableAttrKeys([]);
+      return;
+    }
+    // Drop the answer if the agent or access changed while the request was running
+    let isOutdated = false;
     const agentId = selectedAgentId !== "all" ? selectedAgentId : undefined;
-    fetchCustomAttributeKeys(agentId).then(setAvailableAttrKeys);
-  }, [selectedAgentId]);
+    fetchCustomAttributeKeys(agentId).then((keys) => {
+      if (!isOutdated) setAvailableAttrKeys(keys);
+    });
+    return () => {
+      isOutdated = true;
+    };
+  }, [selectedAgentId, canReadCustomAttributes]);
 
   const {
     conversations: wsConversations,
     resyncHint,
+    lastConversationUpdate,
   } = useWebSocketDashboardContext();
 
   const { data, total, loading, error, refetch } = useTranscriptData({
@@ -211,12 +260,13 @@ const Transcripts = () => {
     hostility_positive_max: hostilityParams.hostility_positive_max,
     hostility_neutral_max: hostilityParams.hostility_neutral_max,
     conversation_status: conversationStatus,
+    conversation_topics: supportType !== "all" ? [supportType] : undefined,
+    conversation_subtopics: subtopicFilter !== "all" ? [subtopicFilter] : undefined,
     order_by: orderBy || undefined,
     sort_direction: orderBy ? sortDirection : undefined,
     agent_id: selectedAgentId !== "all" ? selectedAgentId : undefined,
     scoreFilters,
-    from_date: dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined,
-    to_date: dateRange?.to ? format(dateRange.to, "yyyy-MM-dd 23:59:59") : undefined,
+    ...toInclusiveDateParams(dateRange),
     exclude_empty: hideEmpty || undefined,
     custom_attributes: activeCustomAttrCount > 0 ? customAttrFilters : undefined,
     search: committedSearch.trim() || undefined,
@@ -226,18 +276,64 @@ const Transcripts = () => {
   const apiTranscripts = Array.isArray(data) ? data : [];
   const apiTotal = typeof total === "number" ? total : apiTranscripts.length;
 
+  // Latest websocket `update` per live conversation, overlaid on its row. The server sends one
+  // for every message, so patching rows replaces a list refetch (and skeleton) per message.
+  // A freshly fetched page already includes them, so it starts clean.
+  const [rowUpdates, setRowUpdates] = useState<Record<string, ConversationDataPayload>>({});
+  useEffect(() => {
+    setRowUpdates({});
+  }, [data]);
+
+  const isLiveFeed =
+    statusFilter === "live" && Array.isArray(wsConversations) && wsConversations.length > 0;
+
   // When statusFilter is "live", use WebSocket dashboard data for real-time updates
   const transcripts = useMemo(() => {
-    if (statusFilter !== "live" || !Array.isArray(wsConversations) || wsConversations.length === 0) {
-      return apiTranscripts;
-    }
-    return wsConversations.map(enrichConversationItem);
-  }, [statusFilter, wsConversations, apiTranscripts]);
+    const base = isLiveFeed ? wsConversations.map(enrichConversationItem) : apiTranscripts;
 
-  const totalCount =
-    statusFilter === "live" && Array.isArray(wsConversations) && wsConversations.length > 0
-      ? wsConversations.length
-      : apiTotal;
+    if (locallyFinalizedIds.length === 0 && Object.keys(rowUpdates).length === 0) return base;
+
+    const finalized = new Set(locallyFinalizedIds);
+    return base.map((transcript) => {
+      if (!isLiveTranscript(transcript)) return transcript;
+      if (finalized.has(transcript.id)) return { ...transcript, status: "finalized" };
+      const update = rowUpdates[transcript.id];
+      return update ? applyConversationUpdate(transcript, update) : transcript;
+    });
+  }, [isLiveFeed, wsConversations, apiTranscripts, locallyFinalizedIds, rowUpdates]);
+
+  // Read by the websocket effects below, which must fire per event rather than per render.
+  const transcriptsRef = useRef(transcripts);
+  transcriptsRef.current = transcripts;
+  const refetchRef = useRef(refetch);
+  refetchRef.current = refetch;
+  const statusFilterRef = useRef(statusFilter);
+  statusFilterRef.current = statusFilter;
+  // Conversations not on the page that already cost one background refetch.
+  const lookedUpConversationIdsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    const payload = lastConversationUpdate?.payload;
+    const conversationId = payload?.conversation_id != null ? String(payload.conversation_id) : "";
+    if (!payload || !conversationId) return;
+
+    if (transcriptsRef.current.some((transcript) => transcript.id === conversationId)) {
+      setRowUpdates((prev) => ({
+        ...prev,
+        [conversationId]: { ...prev[conversationId], ...payload },
+      }));
+      return;
+    }
+
+    // Not on this page: it may be a new conversation, so look once. Only once — a conversation
+    // the filters exclude would otherwise refetch the list on each of its messages.
+    if (statusFilterRef.current === "finalized") return;
+    if (lookedUpConversationIdsRef.current.has(conversationId)) return;
+    lookedUpConversationIdsRef.current.add(conversationId);
+    void refetchRef.current({ silent: true });
+  }, [lastConversationUpdate]);
+
+  const totalCount = isLiveFeed ? wsConversations.length : apiTotal;
 
   const updateUrlParams = (params: Record<string, string | number | string[] | null>) => {
     const newSearchParams = new URLSearchParams(location.search);
@@ -270,6 +366,19 @@ const Transcripts = () => {
     [location.search, navigate]
   );
 
+  const handleViewModeChange = (mode: ConversationsViewMode) => {
+    setViewMode(mode);
+    setSelectionDismissed(false);
+    try {
+      localStorage.setItem(CONVERSATIONS_VIEW_STORAGE_KEY, mode);
+    } catch {
+      // a blocked localStorage only costs the remembered preference
+    }
+    // The selection carries across views, but its dialog must not linger behind them.
+    setIsModalOpen(false);
+    updateUrlParams({ view: mode === "list" ? null : mode });
+  };
+
   const handleStatusFilterChange = (value: string) => {
     const v = value as StatusFilter;
     setStatusFilter(v);
@@ -281,10 +390,6 @@ const Transcripts = () => {
     } else {
       updateUrlParams({ status: null, page: 1 });
     }
-  };
-
-  const isLiveTranscript = (transcript: Transcript) => {
-    return transcript?.status === "in_progress" || transcript?.status === "takeover";
   };
 
   const conversationDeepLinkId = useMemo(() => {
@@ -308,12 +413,10 @@ const Transcripts = () => {
         );
         if (cancelled) return;
         const transformed = transformTranscript(backend);
-        const live =
-          transformed?.status === "in_progress" ||
-          transformed?.status === "takeover";
+        const live = isLiveTranscript(transformed);
         setSelectedTranscript(transformed);
         setIsLiveTranscriptSelected(live);
-        setIsModalOpen(true);
+        if (viewModeRef.current === "list") setIsModalOpen(true);
       } catch {
         if (!cancelled) {
           toast({
@@ -346,7 +449,10 @@ const Transcripts = () => {
 
     // Update filter states based on URL
     setActiveTab(params.get("sentiment") || "all");
-    setSupportType(params.get("type") || "all");
+    setTopicFilter({
+      topic: topicFromParam(params.get("type")),
+      subtopic: params.get("subtype") || "all",
+    });
     setSearchQuery(params.get("query") || "");
     setCurrentPage(
       Math.max(1, parseInt(params.get("page") || "1", 10) || 1)
@@ -361,16 +467,20 @@ const Transcripts = () => {
     } else {
       setStatusFilter("all");
     }
-  }, [location.search]);
 
-  // Refetch when dashboard WebSocket suggests resync (e.g. finalize with missing ID)
-  useEffect(() => {
-    if (resyncHint > 0) refetch();
-  }, [resyncHint, refetch]);
+    setViewMode(readConversationsViewMode(params));
+  }, [location.search, setTopicFilter]);
 
-  // Fetch latest conversation data when opening the dialog
+  // Refetch when dashboard WebSocket suggests resync (e.g. finalize with missing ID). Keyed on
+  // the hint alone: `refetch` changes with every filter, which already fetches on its own.
   useEffect(() => {
-    if (!isModalOpen || !selectedTranscript?.id) return;
+    if (resyncHint > 0) void refetchRef.current({ silent: true });
+  }, [resyncHint]);
+
+  // Fetch latest conversation data whenever a conversation detail becomes visible —
+  // the dialog in list view, the detail columns in split view.
+  useEffect(() => {
+    if ((!isModalOpen && !isSplitView) || !selectedTranscript?.id) return;
 
     let cancelled = false;
     const conversationId = selectedTranscript.id;
@@ -395,7 +505,7 @@ const Transcripts = () => {
     return () => {
       cancelled = true;
     };
-  }, [isModalOpen, selectedTranscript?.id]);
+  }, [isModalOpen, isSplitView, selectedTranscript?.id]);
 
   // Handle filter changes
   const handleSentimentChange = (value: string) => {
@@ -412,8 +522,15 @@ const Transcripts = () => {
   };
 
   const handleSupportTypeChange = (value: string) => {
-    setSupportType(value);
-    updateUrlParams({ type: value === "all" ? null : value, page: 1 });
+    changeTopic(value);
+    setCurrentPage(1);
+    updateUrlParams({ type: value === "all" ? null : value, subtype: null, page: 1 });
+  };
+
+  const handleSubTypeChange = (value: string) => {
+    changeSubtopic(value);
+    setCurrentPage(1);
+    updateUrlParams({ subtype: value === "all" ? null : value, page: 1 });
   };
 
   const handleAgentChange = (value: string) => {
@@ -525,14 +642,9 @@ const Transcripts = () => {
     });
   };
 
-  const filteredTranscripts = transcripts.filter((transcript) => {
-    const topic = transcript?.metadata?.topic?.toLowerCase() || "";
-
-    const matchesSupportType =
-      supportType === "all" || topic.includes(supportType.toLowerCase());
-
-    return matchesSupportType;
-  });
+  const filteredTranscripts = isLiveFeed
+    ? transcripts.filter((transcript) => matchesTopic(transcript?.metadata))
+    : transcripts;
 
   const pagination = getPaginationMeta(
     totalCount,
@@ -542,6 +654,63 @@ const Transcripts = () => {
   // API already returns the correct page via skip/limit — no client-side slicing needed
   const paginatedTranscripts = filteredTranscripts;
   const pageItemCount = paginatedTranscripts.length;
+  const firstTranscriptId = paginatedTranscripts[0]?.id ?? null;
+
+  // Split view always shows a conversation, so fall back to the first row of the page —
+  // unless the user explicitly went back to the list on a narrow screen.
+  useEffect(() => {
+    if (selectionDismissed) return;
+    if (!isSplitView || conversationDeepLinkId || !firstTranscriptId) return;
+    updateUrlParams({ conversation: firstTranscriptId });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionDismissed, isSplitView, conversationDeepLinkId, firstTranscriptId]);
+
+  const handleSelectConversation = (transcript: Transcript) => {
+    setSelectionDismissed(false);
+    // Show the row's own data straight away — the deep-link effect replaces it with the
+    // full record once it lands, and keeps whatever is already loaded for the same id.
+    setSelectedTranscript((prev) => (prev?.id === transcript.id ? prev : transcript));
+    setIsLiveTranscriptSelected(isLiveTranscript(transcript));
+
+    // Re-selecting the conversation already in the URL leaves the params untouched, so the
+    // deep-link effect never fires — open the dialog from the row we already have.
+    if (conversationDeepLinkId === transcript.id) {
+      if (!isSplitView) setIsModalOpen(true);
+      return;
+    }
+    updateUrlParams({ conversation: transcript.id });
+  };
+
+  // Finalizing swaps the live surface for the finalized one in place. Awaited by the detail
+  // pane, which keeps its "finalizing" overlay up until this resolves.
+  const handleConversationFinalized = useCallback(async (transcriptId: string) => {
+    // Drop the live badge immediately — the row must not keep offering a finished
+    // conversation as live while the refreshed data is on its way.
+    setLocallyFinalizedIds((prev) =>
+      prev.includes(transcriptId) ? prev : [...prev, transcriptId]
+    );
+
+    try {
+      const backend =
+        await conversationService.fetchConversationsTranscriptsAndData(transcriptId);
+      const transformed = transformTranscript(backend);
+      setSelectedTranscript(transformed);
+      setIsLiveTranscriptSelected(isLiveTranscript(transformed));
+    } catch {
+      // The finalize itself succeeded, so fall back to the finalized surface regardless.
+      setSelectedTranscript((prev) =>
+        prev?.id === transcriptId ? { ...prev, status: "finalized" } : prev
+      );
+      setIsLiveTranscriptSelected(false);
+    }
+  }, []);
+
+  const handleClearSelection = () => {
+    setSelectionDismissed(true);
+    setSelectedTranscript(null);
+    setIsLiveTranscriptSelected(false);
+    updateUrlParams({ conversation: null });
+  };
 
   const handleTakeOver = async (transcriptId: string): Promise<boolean> => {
     try {
@@ -583,8 +752,21 @@ const Transcripts = () => {
 
   return (
     <>
-          <div className="flex-1 p-4 sm:p-6 lg:p-8">
-            <div className="max-w-7xl mx-auto space-y-4 w-full">
+          <div
+            className={
+              isSplitView
+                ? "flex h-screen flex-col overflow-hidden p-4 sm:p-6 lg:p-8"
+                : "flex-1 p-4 sm:p-6 lg:p-8"
+            }
+          >
+            <div
+              className={
+                isSplitView
+                  ? "mx-auto flex h-full w-full min-h-0 max-w-[1800px] flex-col gap-4"
+                  : "max-w-7xl mx-auto space-y-4 w-full"
+              }
+            >
+              <div className={isSplitView ? "shrink-0 space-y-4" : "space-y-4"}>
               {/* Top row: Title/Upload | Agent, Date Range, Search */}
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:flex-wrap">
                 <div className="min-w-0">
@@ -627,6 +809,11 @@ const Transcripts = () => {
                     minLength={MIN_SEARCH_LENGTH}
                     placeholder="Search conversations..."
                     className="sm:w-[420px]"
+                  />
+                  <ConversationsViewSwitch
+                    value={viewMode}
+                    onChange={handleViewModeChange}
+                    className="self-start sm:self-auto"
                   />
                 </div>
               </div>
@@ -681,16 +868,38 @@ const Transcripts = () => {
                   </Select>
                   <Select value={supportType} onValueChange={handleSupportTypeChange}>
                     <SelectTrigger className="w-[130px] bg-card h-8 rounded-full text-xs">
-                      <SelectValue placeholder="Support Type" />
+                      <SelectValue placeholder="Topic" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="Product Inquiry">Product Inquiry</SelectItem>
-                      <SelectItem value="Technical Support">Technical Support</SelectItem>
-                      <SelectItem value="Billing Question">Billing Questions</SelectItem>
-                      <SelectItem value="Other">Other</SelectItem>
+                      <SelectItem value="all">All Topics</SelectItem>
+                      {topicChoices.map((option) => (
+                        <SelectItem key={option.name} value={option.name}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  {subtopicChoices.length > 0 && (
+                    <Select
+                      value={isLiveFeed ? "all" : subtopicFilter}
+                      onValueChange={handleSubTypeChange}
+                    >
+                      <SelectTrigger
+                        className="w-[130px] bg-card h-8 rounded-full text-xs"
+                        disabled={isLiveFeed}
+                      >
+                        <SelectValue placeholder="Sub-topic" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sub-topics</SelectItem>
+                        {subtopicChoices.map((subtopic) => (
+                          <SelectItem key={subtopic} value={subtopic}>
+                            {subtopic}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {/* Quality filter dropdown */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -992,7 +1201,35 @@ const Transcripts = () => {
                   </Tooltip>
                 </div>
               </div>
+              </div>
 
+              {isSplitView ? (
+                <ConversationsWorkspace
+                  className="flex-1"
+                  transcripts={paginatedTranscripts}
+                  loading={loading}
+                  error={error}
+                  selectedTranscript={selectedTranscript}
+                  selectedId={conversationDeepLinkId}
+                  isLiveSelected={isLiveTranscriptSelected}
+                  onSelect={handleSelectConversation}
+                  onClearSelection={handleClearSelection}
+                  agentName={
+                    selectedAgentId !== "all"
+                      ? agents.find((a) => a.id === selectedAgentId)?.name
+                      : undefined
+                  }
+                  total={totalCount}
+                  page={pagination.safePage}
+                  pageSize={ITEMS_PER_PAGE}
+                  onPageChange={handlePageChange}
+                  hasNarrowingFilters={hasNarrowingFilters}
+                  refetchConversations={refetch}
+                  onTakeOver={handleTakeOver}
+                  onConversationFinalized={handleConversationFinalized}
+                />
+              ) : (
+                <>
               <Card className="divide-y divide-border bg-card dark:bg-zinc-900 shadow-sm rounded-lg overflow-hidden">
                 {loading ? (
                   <PageListSkeleton variant="conversation" rows={6} bordered={false} />
@@ -1006,9 +1243,7 @@ const Transcripts = () => {
                     return (
                     <div
                       key={transcript.id}
-                      onClick={() => {
-                        updateUrlParams({ conversation: transcript.id });
-                      }}
+                      onClick={() => handleSelectConversation(transcript)}
                       className="p-4 sm:p-6 cursor-pointer transition-colors hover:bg-muted/80"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1025,7 +1260,10 @@ const Transcripts = () => {
                             <h3 className="font-semibold">
                               {isCallTranscript(transcript) ? "Call" : "Chat"} #
                               {(transcript?.metadata?.title ?? "----").slice(-4) || "Untitled"}{" - "}
-                              {transcript?.metadata?.topic}
+                              {topicLabel(
+                                transcript?.metadata?.topic ?? "",
+                                transcript?.metadata?.subtopic,
+                              )}
                             </h3>
                             {isLiveTranscript(transcript) && (
                               <Badge variant="outline" className="bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/30 flex items-center gap-1 animate-pulse">
@@ -1079,16 +1317,9 @@ const Transcripts = () => {
                       </div>
                         <div className="mt-1 flex items-center justify-between gap-2 sm:mt-0 sm:shrink-0 sm:flex-col sm:items-end">
                           {/* Sentiment badge */}
-                          {(() => {
-                            const sentiment = transcript ? getEffectiveSentiment(transcript) : "Unknown";
-                            const cfg = SENTIMENT_CONFIG[sentiment.toLowerCase()] || DEFAULT_SENTIMENT;
-                            return (
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
-                                {cfg.icon}
-                                {sentiment}
-                              </span>
-                            );
-                          })()}
+                          <SentimentBadge
+                            sentiment={transcript ? getEffectiveSentiment(transcript) : "Unknown"}
+                          />
                           {/* Thumbs + supervisor feedback */}
                           <div className="flex items-center gap-2">
                             {transcript?.feedback && transcript.feedback.length > 0 && (() => {
@@ -1154,6 +1385,8 @@ const Transcripts = () => {
                 pageItemCount={pageItemCount}
                 onPageChange={handlePageChange}
               />
+                </>
+              )}
             </div>
           </div>
       <UploadMediaDialog
@@ -1167,6 +1400,7 @@ const Transcripts = () => {
           onOpenChange={handleConversationModalOpenChange}
           refetchConversations={refetch}
           onTakeOver={handleTakeOver}
+          onFinalized={handleConversationFinalized}
         />
       ) : (
         <TranscriptDialog

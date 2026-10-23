@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  conversationLabel,
+  conversationLabels,
   groupCasesByConversation,
   countConversations,
+  searchConversations,
 } from "@/views/TestSuites/helpers/datasetConversations";
 import type { TestCase } from "@/interfaces/testSuite.interface";
 
@@ -27,35 +30,7 @@ describe("groupCasesByConversation", () => {
     expect(groups[0].cases.map((c) => c.id)).toEqual(["c1", "c2"]);
   });
 
-  it("takes the preview from the first turn's message after sorting", () => {
-    const groups = groupCasesByConversation([
-      tc({
-        id: "c2",
-        source_conversation_id: "conv-1",
-        turn_index: 1,
-        input_data: { message: "second" },
-      }),
-      tc({
-        id: "c1",
-        source_conversation_id: "conv-1",
-        turn_index: 0,
-        input_data: { message: "first" },
-      }),
-    ]);
-    expect(groups[0].preview).toBe("first");
-  });
 
-  it("falls back to JSON of input_data when the first turn has no string message", () => {
-    const groups = groupCasesByConversation([
-      tc({
-        id: "c1",
-        source_conversation_id: "conv-1",
-        turn_index: 0,
-        input_data: { foo: "bar" },
-      }),
-    ]);
-    expect(groups[0].preview).toBe(JSON.stringify({ foo: "bar" }));
-  });
 
   it("treats records without a source conversation as independent, keyed by id", () => {
     const groups = groupCasesByConversation([
@@ -64,7 +39,6 @@ describe("groupCasesByConversation", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].conversationId).toBeNull();
     expect(groups[0].key).toBe("independent:x");
-    expect(groups[0].preview).toBe("hi");
   });
 
   it("keeps separate independent records in their own groups", () => {
@@ -79,12 +53,106 @@ describe("groupCasesByConversation", () => {
     ]);
   });
 
-  it("orders imported conversations before independent records", () => {
+  it("orders conversations by when they joined the dataset, not by source", () => {
     const groups = groupCasesByConversation([
-      tc({ id: "i1", input_data: { message: "independent" } }),
-      tc({ id: "c0", source_conversation_id: "conv-1", turn_index: 0 }),
+      tc({
+        id: "c0",
+        source_conversation_id: "conv-1",
+        turn_index: 0,
+        tags: ["imported"],
+        created_at: "2026-09-02T10:00:00Z",
+      }),
+      tc({
+        id: "m0",
+        source_conversation_id: "thread-1",
+        turn_index: 0,
+        created_at: "2026-09-01T10:00:00Z",
+      }),
     ]);
-    expect(groups.map((g) => g.conversationId)).toEqual(["conv-1", null]);
+    // The hand-authored thread was added first, so it stays first.
+    expect(groups.map((g) => g.conversationId)).toEqual(["thread-1", "conv-1"]);
+  });
+
+  it("uses a conversation's earliest turn, so a later turn does not move it", () => {
+    const groups = groupCasesByConversation([
+      tc({
+        id: "b0",
+        source_conversation_id: "thread-2",
+        turn_index: 0,
+        created_at: "2026-09-02T10:00:00Z",
+      }),
+      tc({
+        id: "a0",
+        source_conversation_id: "thread-1",
+        turn_index: 0,
+        created_at: "2026-09-01T10:00:00Z",
+      }),
+      // Appended to thread-1 long after thread-2 was created.
+      tc({
+        id: "a1",
+        source_conversation_id: "thread-1",
+        turn_index: 1,
+        created_at: "2026-09-03T10:00:00Z",
+      }),
+    ]);
+    expect(groups.map((g) => g.conversationId)).toEqual(["thread-1", "thread-2"]);
+  });
+
+  it("marks a group imported only when its cases carry the imported tag", () => {
+    const groups = groupCasesByConversation([
+      tc({
+        id: "c0",
+        source_conversation_id: "conv-1",
+        turn_index: 0,
+        tags: ["imported"],
+      }),
+      // A hand-authored thread also has a conversation id — that is what makes
+      // its turns replay together — so only the tag tells the two apart.
+      tc({ id: "m0", source_conversation_id: "thread-1", turn_index: 0 }),
+    ]);
+    expect(groups.map((g) => g.origin)).toEqual(["conversation", "manual"]);
+  });
+
+  it("marks a group imported from a file by its own tag", () => {
+    const groups = groupCasesByConversation([
+      tc({
+        id: "f0",
+        source_conversation_id: "file-1",
+        turn_index: 0,
+        tags: ["refund", "imported-file"],
+      }),
+    ]);
+    expect(groups[0].origin).toBe("file");
+  });
+
+  it("does not hoist imported conversations above hand-authored ones", () => {
+    const groups = groupCasesByConversation([
+      tc({ id: "m0", source_conversation_id: "thread-1", turn_index: 0 }),
+      tc({
+        id: "c0",
+        source_conversation_id: "conv-1",
+        turn_index: 0,
+        tags: ["imported"],
+      }),
+      tc({ id: "m1", source_conversation_id: "thread-2", turn_index: 0 }),
+    ]);
+    // No timestamps, so insertion order holds for all three.
+    expect(groups.map((g) => g.conversationId)).toEqual([
+      "thread-1",
+      "conv-1",
+      "thread-2",
+    ]);
+    expect(groups.map((g) => g.origin)).toEqual(["manual", "conversation", "manual"]);
+  });
+
+  it("keeps a hand-authored thread's turns in one group, ordered by turn", () => {
+    const groups = groupCasesByConversation([
+      tc({ id: "m1", source_conversation_id: "thread-1", turn_index: 1 }),
+      tc({ id: "m0", source_conversation_id: "thread-1", turn_index: 0 }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].origin).toBe("manual");
+    expect(groups[0].cases.map((c) => c.id)).toEqual(["m0", "m1"]);
   });
 
   it("defaults a missing turn_index to 0 for ordering", () => {
@@ -110,5 +178,130 @@ describe("countConversations", () => {
 
   it("returns 0 for no cases", () => {
     expect(countConversations([])).toBe(0);
+  });
+});
+
+const turn = (
+  id: string,
+  conversationId: string | null,
+  turnIndex: number,
+  message?: string,
+  expected?: string,
+): TestCase =>
+  tc({
+    id,
+    source_conversation_id: conversationId,
+    turn_index: turnIndex,
+    input_data: message === undefined ? {} : { message },
+    ...(expected === undefined ? {} : { expected_output: { value: expected } }),
+  });
+
+const onlyGroup = (cases: TestCase[]) => groupCasesByConversation(cases)[0];
+
+describe("conversationLabel", () => {
+  it("uses the earliest turn's user message", () => {
+    const group = onlyGroup([
+      turn("c2", "conv-1", 1, "And for refunds?"),
+      turn("c1", "conv-1", 0, "How do I reset my password?"),
+    ]);
+    expect(conversationLabel(group)).toBe("How do I reset my password?");
+  });
+
+  it("collapses whitespace", () => {
+    const group = onlyGroup([turn("c1", "conv-1", 0, "  Hello\n\n  there\tfriend  ")]);
+    expect(conversationLabel(group)).toBe("Hello there friend");
+  });
+
+  it("cuts a long message at 60 characters on a word boundary", () => {
+    const message =
+      "I ordered a pair of running shoes last week and the parcel never arrived at my door";
+    const label = conversationLabel(onlyGroup([turn("c1", "conv-1", 0, message)]));
+    expect(label).toBe("I ordered a pair of running shoes last week and the parcel…");
+    expect(label.length - 1).toBeLessThanOrEqual(60);
+  });
+
+  it("keeps a word that ends exactly at the limit", () => {
+    const message = `${"a".repeat(59)}b and more`;
+    expect(conversationLabel(onlyGroup([turn("c1", "conv-1", 0, message)]))).toBe(
+      `${"a".repeat(59)}b…`,
+    );
+  });
+
+  it("hard-cuts a single word longer than the limit", () => {
+    const message = "x".repeat(80);
+    expect(conversationLabel(onlyGroup([turn("c1", "conv-1", 0, message)]))).toBe(
+      `${"x".repeat(60)}…`,
+    );
+  });
+
+  it("leaves a message of exactly 60 characters whole", () => {
+    const message = "y".repeat(60);
+    expect(conversationLabel(onlyGroup([turn("c1", "conv-1", 0, message)]))).toBe(message);
+  });
+
+  it("falls back to the conversation's short id without a text message", () => {
+    const group = onlyGroup([
+      tc({ id: "c1", source_conversation_id: "thread-abc123", turn_index: 0, input_data: { q: 1 } }),
+    ]);
+    expect(conversationLabel(group)).toBe("Conversation #abc123");
+    expect(conversationLabel(onlyGroup([turn("c1", "thread-9z9z9z", 0, "   ")]))).toBe(
+      "Conversation #9z9z9z",
+    );
+  });
+
+  it("uses the case id for a legacy turn with no conversation", () => {
+    expect(conversationLabel(onlyGroup([turn("case-0f0f0f", null, 0)]))).toBe(
+      "Conversation #0f0f0f",
+    );
+  });
+});
+
+describe("conversationLabels", () => {
+  it("appends the short id only to labels that clash", () => {
+    const groups = groupCasesByConversation([
+      turn("a0", "thread-aaaaaa", 0, "Hi"),
+      turn("b0", "thread-bbbbbb", 0, "Hi"),
+      turn("c0", "thread-cccccc", 0, "Where is my order?"),
+    ]);
+    const labels = conversationLabels(groups);
+    expect(labels.get("thread-aaaaaa")).toBe("Hi #aaaaaa");
+    expect(labels.get("thread-bbbbbb")).toBe("Hi #bbbbbb");
+    expect(labels.get("thread-cccccc")).toBe("Where is my order?");
+  });
+});
+
+describe("searchConversations", () => {
+  const cases = [
+    turn("a0", "conv-a", 0, "Hello", "Hi there"),
+    turn("a1", "conv-a", 1, "Refund please", "Sure"),
+    turn("a2", "conv-a", 2, "Thanks", "Bye"),
+    turn("b0", "conv-b", 0, "Track my parcel", "It ships today"),
+  ];
+  const groups = groupCasesByConversation(cases);
+
+  it("shows every turn, numbered by position, without a query", () => {
+    const matches = searchConversations(groups, "  ");
+    expect(matches).toHaveLength(2);
+    expect(matches[0].turns.map((t) => [t.entry.id, t.position])).toEqual([
+      ["a0", 1],
+      ["a1", 2],
+      ["a2", 3],
+    ]);
+  });
+
+  it("keeps a matching turn's position in the whole conversation", () => {
+    const matches = searchConversations(groups, "REFUND");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].group.cases).toHaveLength(3);
+    expect(matches[0].turns.map((t) => [t.entry.id, t.position])).toEqual([["a1", 2]]);
+  });
+
+  it("matches the expected reply too", () => {
+    const matches = searchConversations(groups, "ships today");
+    expect(matches.map((m) => m.group.key)).toEqual(["conv-b"]);
+  });
+
+  it("drops conversations with no matching turn", () => {
+    expect(searchConversations(groups, "nothing like this")).toEqual([]);
   });
 });

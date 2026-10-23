@@ -32,8 +32,12 @@ _pii_redactor = PIIAnonymizer(entities=["CREDIT_CARD", "IBAN_CODE", "US_SSN"])
 # Supported node types
 SUPPORTED_NODE_TYPES = [
     "chatInputNode",
+    "webhookTriggerNode",
     "chatOutputNode",
     "routerNode",
+    "switchNode",
+    "filterNode",
+    "loopNode",
     "agentNode",
     "subAgentNode",
     "apiToolNode",

@@ -8,7 +8,7 @@ services:
     image: busybox:latest
     container_name: genassist-volume-init-dev
     volumes:
-      - app_data_volume:/data
+      - ${APP_DATA_VOLUME:-app_data_volume}:/data
     command: sh -c "mkdir -p /data/logs /data/uploads /data/recordings && chown -R 1000:1000 /data"
     networks:
       - genassist-network-dev
@@ -81,7 +81,7 @@ services:
       whisper:
         condition: service_started
     volumes:
-      - app_data_volume:/src/datavolume
+      - ${APP_DATA_VOLUME:-app_data_volume}:/src/datavolume
     networks:
       - genassist-network-dev
     restart: unless-stopped
@@ -218,6 +218,8 @@ services:
         condition: service_healthy
       db:
         condition: service_healthy
+    volumes:
+      - ${APP_DATA_VOLUME:-app_data_volume}:/src/datavolume
     networks:
       - genassist-network-dev
     restart: unless-stopped
@@ -229,6 +231,10 @@ services:
     image: genassist-app-image
     container_name: genassist-celery-worker-ml-dev
     command: python /src/run_celery.py worker -l DEBUG --pool=solo -Q ml
+    volumes:
+      # Shares uploads/model artifacts with the API container. To share them with a
+      # host-run API server (backend/run.py) instead, set APP_DATA_VOLUME=./backend/datavolume.
+      - ${APP_DATA_VOLUME:-app_data_volume}:/src/datavolume
     env_file:
       - ./backend/.env
     environment:

@@ -6,10 +6,10 @@
 
 export type PreprocessingStepType =
   | "column_filter"
-  | "missing_value_handling"
-  | "outlier_handling"
-  | "categorical_encoding"
-  | "feature_engineering";
+  | "remove_duplicates"
+  | "drop_column_or_row"
+  | "drop_high_null_columns"
+  | "change_dtype";
 
 export interface PreprocessingStep {
   id: string; // Unique identifier for this step
@@ -20,10 +20,10 @@ export interface PreprocessingStep {
 
 export type StepConfig =
   | ColumnFilterStepConfig
-  | MissingValueHandlingStepConfig
-  | OutlierHandlingStepConfig
-  | CategoricalEncodingStepConfig
-  | FeatureEngineeringStepConfig;
+  | RemoveDuplicatesStepConfig
+  | DropColumnOrRowStepConfig
+  | DropHighNullColumnsStepConfig
+  | ChangeDtypeStepConfig;
 
 export interface PreprocessingConfig {
   steps: PreprocessingStep[]; // Ordered list of preprocessing steps
@@ -39,85 +39,96 @@ export interface ColumnFilterItem {
   selected: boolean;
 }
 
-// Missing Value Handling Step
-export type MissingValueStrategy =
-  | "no_action"
-  | "drop_column"
-  | "drop_rows"
-  | "impute_constant"
-  | "impute_mean"
-  | "impute_median"
-  | "impute_mode";
-
-export interface MissingValueHandlingStepConfig {
-  columns: MissingValueHandlingItem[];
+// Remove Duplicate Rows Step
+export interface RemoveDuplicatesStepConfig {
+  subsetColumns: string[]; // empty = compare all columns
+  keep: "first" | "last";
 }
 
-export interface MissingValueHandlingItem {
+// Remove Column/Row Step
+export interface DropColumnOrRowStepConfig {
+  target: "column" | "row";
+  columns: string[]; // used when target === "column"
+  rowIndices: number[]; // used when target === "row"
+}
+
+// Remove High-Null Columns Step
+export interface DropHighNullColumnsStepConfig {
+  thresholdPercent: number; // default 80 - columns with a higher missing % are dropped
+}
+
+// Change Column Data Type Step
+export type ChangeDtypeTarget = "int" | "float" | "string" | "bool" | "datetime" | "category";
+
+export interface ChangeDtypeItem {
   columnName: string;
-  missingCount: number;
-  missingPercentage: number;
-  strategy: MissingValueStrategy;
-  imputeValue?: string | number;
+  dtype: ChangeDtypeTarget;
 }
 
-// Outlier Handling Step
-export type OutlierStrategy = "no_action" | "remove_outliers" | "cap_outliers";
-export type OutlierMethod = "iqr" | "zscore";
-
-export interface OutlierHandlingStepConfig {
-  columns: OutlierHandlingItem[];
+export interface ChangeDtypeStepConfig {
+  conversions: ChangeDtypeItem[];
 }
 
-export interface OutlierHandlingItem {
-  columnName: string;
-  strategy: OutlierStrategy;
-  method?: OutlierMethod;
-  iqrMultiplier?: number;
-  zScoreThreshold?: number;
+// "bool" isn't here: astype("bool") turns any non-empty string (including
+// "false") into True, so bool conversion gets its own generated code.
+// "Int64" (capital I) is pandas' nullable integer type - "int64" fails
+// outright on any column with a missing value.
+const DTYPE_TO_PANDAS: Record<Exclude<ChangeDtypeTarget, "datetime" | "bool">, string> = {
+  int: "Int64",
+  float: "float64",
+  string: "str",
+  category: "category",
+};
+
+// Also accepts the older "int64"/"bool" forms so code saved before this
+// change still parses back into the dialog.
+const PANDAS_TO_DTYPE: Record<string, Exclude<ChangeDtypeTarget, "datetime">> = {
+  Int64: "int",
+  int64: "int",
+  float64: "float",
+  str: "string",
+  bool: "bool",
+  category: "category",
+};
+
+// Text values (case-insensitive, trimmed) accepted as booleans. Anything else
+// is left as-is, so astype("boolean") fails with a clear error instead of
+// silently guessing.
+const PYTHON_BOOL_MAP =
+  '{"true": True, "false": False, "1": True, "0": False, "1.0": True, "0.0": False, "yes": True, "no": False}';
+
+/**
+ * Render a column name as a Python string literal. A JSON string literal is
+ * also a valid Python one, so quotes and backslashes in a column name are
+ * escaped instead of breaking (or changing) the generated code.
+ */
+function pyStr(value: string): string {
+  return JSON.stringify(value);
 }
 
-// Categorical Encoding Step
-export type CategoricalEncodingStrategy =
-  | "no_action"
-  | "one_hot"
-  | "label"
-  | "ordinal";
+// One double- or single-quoted Python string literal, escapes included.
+const PY_STR_SOURCE = String.raw`"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'`;
 
-export interface CategoricalEncodingStepConfig {
-  columns: CategoricalEncodingItem[];
+function unquotePyStr(literal: string): string {
+  if (literal.startsWith('"')) {
+    try {
+      return JSON.parse(literal);
+    } catch {
+      // Not valid JSON escaping (hand-edited code) - fall through.
+    }
+  }
+  return literal.slice(1, -1);
 }
 
-export interface CategoricalEncodingItem {
-  columnName: string;
-  strategy: CategoricalEncodingStrategy;
-  dropFirst?: boolean;
-  ordinalMapping?: Record<string, number>;
+/** Every string literal in a Python list body, e.g. `"a", "b,c"` -> ["a", "b,c"]. */
+function parsePyStringList(listBody: string): string[] {
+  return (listBody.match(new RegExp(PY_STR_SOURCE, "g")) || [])
+    .map(unquotePyStr)
+    .filter((col) => col.length > 0);
 }
 
-// Feature Engineering Step
-export type FeatureEngineeringStrategy =
-  | "custom_expression"
-  | "bin_numeric"
-  | "normalize"
-  | "standardize"
-  | "polynomial";
-
-export interface FeatureEngineeringStepConfig {
-  features: FeatureEngineeringItem[];
-}
-
-export interface FeatureEngineeringItem {
-  id: string;
-  newColumnName: string;
-  strategy: FeatureEngineeringStrategy;
-  expression?: string;
-  sourceColumns?: string[];
-  numBins?: number;
-  binColumn?: string;
-  polynomialDegree?: number;
-  polynomialColumns?: string[];
-}
+// `[ ... ]` whose body may contain string literals with "]" in them.
+const PY_STR_LIST_SOURCE = String.raw`\[((?:${PY_STR_SOURCE}|[^\]"'])*)\]`;
 
 /**
  * Base template for Python preprocessing code
@@ -182,32 +193,28 @@ export function generatePythonCodeFromConfig(
   autogenBodyLines.push("    df = df.copy()");
   autogenBodyLines.push("");
 
-  // Track columns that will be dropped (across all steps)
-  const columnsToDropSet = new Set<string>();
-
-  // First pass: collect all columns to drop
-  config.steps.forEach((step) => {
-    if (step.type === "missing_value_handling" && step.enabled) {
-      const stepConfig = step.config as MissingValueHandlingStepConfig;
-      stepConfig.columns.forEach((item) => {
-        if (item.strategy === "drop_column") {
-          columnsToDropSet.add(item.columnName);
-        }
-      });
-    }
-  });
-
   // Generate code for each step
   config.steps.forEach((step, index) => {
-    if (!step.enabled) return;
-
     if (index > 0 || autogenBodyLines.length > 3) {
       autogenBodyLines.push("");
     }
 
     // Step marker with ID and type
     autogenBodyLines.push(`    # STEP_START:${step.id}:${step.type}`);
-    
+
+    // A disabled step generates no code, but its markers stay - with its full
+    // config in STEP_CONFIG, since there's no code left to parse it back
+    // from. Without this, the dialog (which rebuilds its steps from this
+    // code) would lose a disabled step on the next reopen.
+    if (!step.enabled) {
+      autogenBodyLines.push(
+        `    # STEP_CONFIG:${JSON.stringify({ enabled: false, config: step.config })}`
+      );
+      autogenBodyLines.push("    # Step disabled - skipped");
+      autogenBodyLines.push(`    # STEP_END:${step.id}:${step.type}`);
+      return;
+    }
+
     // Add minimal step configuration as JSON comment for robust parsing
     // Only store data that's ambiguous or hard to parse from code
     try {
@@ -224,32 +231,17 @@ export function generatePythonCodeFromConfig(
       case "column_filter":
         generateColumnFilterCode(step.config as ColumnFilterStepConfig, autogenBodyLines);
         break;
-      case "missing_value_handling":
-        generateMissingValueHandlingCode(
-          step.config as MissingValueHandlingStepConfig,
-          autogenBodyLines,
-          columnsToDropSet
-        );
+      case "remove_duplicates":
+        generateRemoveDuplicatesCode(step.config as RemoveDuplicatesStepConfig, autogenBodyLines);
         break;
-      case "outlier_handling":
-        generateOutlierHandlingCode(
-          step.config as OutlierHandlingStepConfig,
-          autogenBodyLines,
-          columnsToDropSet
-        );
+      case "drop_column_or_row":
+        generateDropColumnOrRowCode(step.config as DropColumnOrRowStepConfig, autogenBodyLines);
         break;
-      case "categorical_encoding":
-        generateCategoricalEncodingCode(
-          step.config as CategoricalEncodingStepConfig,
-          autogenBodyLines,
-          columnsToDropSet
-        );
+      case "drop_high_null_columns":
+        generateDropHighNullColumnsCode(step.config as DropHighNullColumnsStepConfig, autogenBodyLines);
         break;
-      case "feature_engineering":
-        generateFeatureEngineeringCode(
-          step.config as FeatureEngineeringStepConfig,
-          autogenBodyLines
-        );
+      case "change_dtype":
+        generateChangeDtypeCode(step.config as ChangeDtypeStepConfig, autogenBodyLines);
         break;
     }
     
@@ -283,47 +275,10 @@ function extractMinimalConfig(
           .map((c) => c.name),
       };
     }
-    case "missing_value_handling": {
-      const mvConfig = config as MissingValueHandlingStepConfig;
-      // Only store strategy and imputeValue - missingCount/percentage can be recalculated
-      return {
-        columns: mvConfig.columns.map((col) => ({
-          columnName: col.columnName,
-          strategy: col.strategy,
-          imputeValue: col.imputeValue, // Critical: preserves string vs number
-        })),
-      };
-    }
-    case "outlier_handling": {
-      const outConfig = config as OutlierHandlingStepConfig;
-      // Store strategy, method, and parameters
-      return {
-        columns: outConfig.columns.map((col) => ({
-          columnName: col.columnName,
-          strategy: col.strategy,
-          method: col.method,
-          iqrMultiplier: col.iqrMultiplier,
-          zScoreThreshold: col.zScoreThreshold,
-        })),
-      };
-    }
-    case "categorical_encoding": {
-      const catConfig = config as CategoricalEncodingStepConfig;
-      // Store strategy and parameters
-      return {
-        columns: catConfig.columns.map((col) => ({
-          columnName: col.columnName,
-          strategy: col.strategy,
-          dropFirst: col.dropFirst,
-        })),
-      };
-    }
-    case "feature_engineering": {
-      const feConfig = config as FeatureEngineeringStepConfig;
-      // Store the features array
-      return {
-        features: feConfig.features,
-      };
+    case "drop_column_or_row": {
+      // An empty row step generates no code, so its target would otherwise
+      // read back as the default ("column").
+      return { target: (config as DropColumnOrRowStepConfig).target };
     }
     default:
       return null;
@@ -354,110 +309,10 @@ function restoreConfigFromMinimal(
       }
       return parsed;
     }
-    case "missing_value_handling": {
-      const parsed = parsedConfig as MissingValueHandlingStepConfig;
-      const minimal = minimalConfig as {
-        columns?: Array<{
-          columnName: string;
-          strategy: MissingValueStrategy;
-          imputeValue?: string | number;
-        }>;
-      };
-      if (minimal.columns) {
-        // Use minimal config as source of truth for columns, strategies, and imputeValues
-        // Only use parsed data to fill in missingCount/percentage if available
-        const parsedMap = new Map(
-          parsed.columns.map((c) => [c.columnName, c])
-        );
-        
-        // Build columns from minimal config (source of truth)
-        const mergedColumns: MissingValueHandlingItem[] = minimal.columns.map((minimalCol) => {
-          const parsedCol = parsedMap.get(minimalCol.columnName);
-          // Use parsed data for missingCount/percentage if available, otherwise default to 0
-          return {
-            columnName: minimalCol.columnName,
-            missingCount: parsedCol?.missingCount ?? 0,
-            missingPercentage: parsedCol?.missingPercentage ?? 0,
-            strategy: minimalCol.strategy,
-            imputeValue: minimalCol.imputeValue,
-          };
-        });
-        
-        return {
-          columns: mergedColumns,
-        };
-      }
-      return parsed;
-    }
-    case "outlier_handling": {
-      const parsed = parsedConfig as OutlierHandlingStepConfig;
-      const minimal = minimalConfig as {
-        columns?: Array<{
-          columnName: string;
-          strategy: OutlierStrategy;
-          method?: OutlierMethod;
-          iqrMultiplier?: number;
-          zScoreThreshold?: number;
-        }>;
-      };
-      if (minimal.columns) {
-        // Use minimal config as source of truth for columns, strategies, methods, and parameters
-        // Build columns from minimal config (source of truth)
-        const mergedColumns: OutlierHandlingItem[] = minimal.columns.map((minimalCol) => {
-          return {
-            columnName: minimalCol.columnName,
-            strategy: minimalCol.strategy,
-            method: minimalCol.method,
-            iqrMultiplier: minimalCol.iqrMultiplier,
-            zScoreThreshold: minimalCol.zScoreThreshold,
-          };
-        });
-        
-        return {
-          columns: mergedColumns,
-        };
-      }
-      return parsed;
-    }
-    case "categorical_encoding": {
-      const parsed = parsedConfig as CategoricalEncodingStepConfig;
-      const minimal = minimalConfig as {
-        columns?: Array<{
-          columnName: string;
-          strategy: CategoricalEncodingStrategy;
-          dropFirst?: boolean;
-        }>;
-      };
-      if (minimal.columns) {
-        // Use minimal config as source of truth for columns, strategies, and parameters
-        // Only use parsed data to fill in ordinalMapping if available
-        const parsedMap = new Map(
-          parsed.columns.map((c) => [c.columnName, c])
-        );
-        
-        // Build columns from minimal config (source of truth)
-        const mergedColumns: CategoricalEncodingItem[] = minimal.columns.map((minimalCol) => {
-          const parsedCol = parsedMap.get(minimalCol.columnName);
-          return {
-            columnName: minimalCol.columnName,
-            strategy: minimalCol.strategy,
-            dropFirst: minimalCol.dropFirst,
-            ordinalMapping: parsedCol?.ordinalMapping, // Keep ordinalMapping from parsed if available
-          };
-        });
-        
-        return {
-          columns: mergedColumns,
-        };
-      }
-      return parsed;
-    }
-    case "feature_engineering": {
-      const minimal = minimalConfig as { features?: FeatureEngineeringItem[] };
-      if (minimal.features) {
-        return { features: minimal.features };
-      }
-      return parsedConfig;
+    case "drop_column_or_row": {
+      const parsed = parsedConfig as DropColumnOrRowStepConfig;
+      const minimal = minimalConfig as { target?: DropColumnOrRowStepConfig["target"] };
+      return minimal.target ? { ...parsed, target: minimal.target } : parsed;
     }
     default:
       return parsedConfig;
@@ -480,204 +335,91 @@ function generateColumnFilterCode(
   }
 }
 
-function generateMissingValueHandlingCode(
-  config: MissingValueHandlingStepConfig,
-  lines: string[],
-  columnsToDrop: Set<string>
-): void {
-  lines.push("    # Handle missing values");
-
-  const columnsToDropList: string[] = [];
-  const columnsToImpute: Array<{
-    column: string;
-    strategy: MissingValueStrategy;
-    value?: string | number;
-  }> = [];
-
-  config.columns.forEach((item) => {
-    if (item.strategy === "no_action") return;
-    
-    if (item.strategy === "drop_column") {
-      columnsToDropList.push(item.columnName);
-    } else if (item.strategy === "drop_rows") {
-      lines.push(`    if "${item.columnName}" in df.columns:`);
-      lines.push(`        df = df.dropna(subset=["${item.columnName}"])`);
-    } else {
-      if (!columnsToDrop.has(item.columnName)) {
-        columnsToImpute.push({
-          column: item.columnName,
-          strategy: item.strategy,
-          value: item.imputeValue,
-        });
-      }
-    }
-  });
-
-  if (columnsToDropList.length > 0) {
-    lines.push(`    df = df.drop(columns=[${columnsToDropList.map((c) => `"${c}"`).join(", ")}], errors='ignore')`);
-  }
-
-  columnsToImpute.forEach((item) => {
-    lines.push(`    if "${item.column}" in df.columns:`);
-    if (item.strategy === "impute_constant") {
-      let valueStr: string;
-      if (item.value === undefined || item.value === null) {
-        valueStr = "0";
-      } else if (typeof item.value === "string") {
-        const numValue = parseFloat(item.value);
-        if (!isNaN(numValue) && numValue.toString() === item.value) {
-          valueStr = numValue.toString();
-        } else {
-          valueStr = `"${item.value.replace(/"/g, '\\"')}"`;
-        }
-      } else {
-        valueStr = item.value.toString();
-      }
-      // Add comment with impute value for state preservation
-      const imputeValueJson = JSON.stringify(item.value ?? "0");
-      lines.push(`        # IMPUTE_VALUE:${item.column}:${imputeValueJson}`);
-      lines.push(`        df.loc[:, "${item.column}"] = df["${item.column}"].fillna(${valueStr})`);
-    } else if (item.strategy === "impute_mean") {
-      lines.push(`        df.loc[:, "${item.column}"] = df["${item.column}"].fillna(df["${item.column}"].mean())`);
-    } else if (item.strategy === "impute_median") {
-      lines.push(`        df.loc[:, "${item.column}"] = df["${item.column}"].fillna(df["${item.column}"].median())`);
-    } else if (item.strategy === "impute_mode") {
-      lines.push(`        df.loc[:, "${item.column}"] = df["${item.column}"].fillna(df["${item.column}"].mode()[0] if len(df["${item.column}"].mode()) > 0 else None)`);
-    }
-  });
-}
-
-function generateOutlierHandlingCode(
-  config: OutlierHandlingStepConfig,
-  lines: string[],
-  columnsToDrop: Set<string>
-): void {
-  lines.push("    # Handle outliers");
-
-  config.columns.forEach((item) => {
-    if (item.strategy === "no_action" || columnsToDrop.has(item.columnName)) {
-      return;
-    }
-
-    lines.push(`    if "${item.columnName}" in df.columns:`);
-    const method = item.method || "iqr";
-    const iqrMultiplier = item.iqrMultiplier ?? 1.5;
-    const zScoreThreshold = item.zScoreThreshold ?? 3;
-
-    if (method === "iqr") {
-      lines.push(`        # Handle outliers in ${item.columnName} using IQR method`);
-      lines.push(`        Q1 = df["${item.columnName}"].quantile(0.25)`);
-      lines.push(`        Q3 = df["${item.columnName}"].quantile(0.75)`);
-      lines.push(`        IQR = Q3 - Q1`);
-      lines.push(`        lower_bound = Q1 - ${iqrMultiplier} * IQR`);
-      lines.push(`        upper_bound = Q3 + ${iqrMultiplier} * IQR`);
-
-      if (item.strategy === "remove_outliers") {
-        lines.push(`        df = df[(df["${item.columnName}"] >= lower_bound) & (df["${item.columnName}"] <= upper_bound)]`);
-      } else if (item.strategy === "cap_outliers") {
-        lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].clip(lower=lower_bound, upper=upper_bound)`);
-      }
-    } else if (method === "zscore") {
-      lines.push(`        # Handle outliers in ${item.columnName} using Z-score method`);
-      lines.push(`        mean = df["${item.columnName}"].mean()`);
-      lines.push(`        std = df["${item.columnName}"].std()`);
-      lines.push(`        z_scores = (df["${item.columnName}"] - mean) / std`);
-
-      if (item.strategy === "remove_outliers") {
-        lines.push(`        df = df[(z_scores.abs() <= ${zScoreThreshold})]`);
-      } else if (item.strategy === "cap_outliers") {
-        lines.push(`        lower_bound = mean - ${zScoreThreshold} * std`);
-        lines.push(`        upper_bound = mean + ${zScoreThreshold} * std`);
-        lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].clip(lower=lower_bound, upper=upper_bound)`);
-      }
-    }
-  });
-}
-
-function generateCategoricalEncodingCode(
-  config: CategoricalEncodingStepConfig,
-  lines: string[],
-  columnsToDrop: Set<string>
-): void {
-  lines.push("    # Encode categorical columns");
-
-  config.columns.forEach((item) => {
-    if (item.strategy === "no_action" || columnsToDrop.has(item.columnName)) {
-      return;
-    }
-
-    lines.push(`    if "${item.columnName}" in df.columns:`);
-    if (item.strategy === "one_hot") {
-      const dropFirst = item.dropFirst ?? false;
-      lines.push(`        # One-hot encode ${item.columnName}`);
-      if (dropFirst) {
-        lines.push(`        df = pd.get_dummies(df, columns=["${item.columnName}"], prefix="${item.columnName}", drop_first=True)`);
-      } else {
-        lines.push(`        df = pd.get_dummies(df, columns=["${item.columnName}"], prefix="${item.columnName}")`);
-      }
-    } else if (item.strategy === "label") {
-      lines.push(`        # Label encode ${item.columnName}`);
-      lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].astype('category').cat.codes`);
-    } else if (item.strategy === "ordinal") {
-      if (item.ordinalMapping && Object.keys(item.ordinalMapping).length > 0) {
-        lines.push(`        # Ordinal encode ${item.columnName}`);
-        lines.push(`        mapping = ${JSON.stringify(item.ordinalMapping)}`);
-        lines.push(`        df.loc[:, "${item.columnName}"] = df["${item.columnName}"].map(mapping)`);
-      }
-    }
-  });
-}
-
-function generateFeatureEngineeringCode(
-  config: FeatureEngineeringStepConfig,
+function generateRemoveDuplicatesCode(
+  config: RemoveDuplicatesStepConfig,
   lines: string[]
 ): void {
-  lines.push("    # Feature engineering");
+  const subset = (config.subsetColumns || [])
+    .filter((col) => col.trim().length > 0)
+    .map((col) => pyStr(col.trim()))
+    .join(", ");
+  const keep = config.keep === "last" ? "last" : "first";
 
-  config.features.forEach((item) => {
-    if (item.strategy === "custom_expression" && item.expression && item.newColumnName) {
-      lines.push(`    # Create feature: ${item.newColumnName}`);
-      lines.push(`    df["${item.newColumnName}"] = ${item.expression}`);
-    } else if (item.strategy === "bin_numeric" && item.binColumn && item.numBins) {
-      lines.push(`    # Bin numeric column: ${item.binColumn}`);
-      lines.push(`    if "${item.binColumn}" in df.columns:`);
-      lines.push(`        # Check if column is numeric before binning`);
-      lines.push(`        if pd.api.types.is_numeric_dtype(df["${item.binColumn}"]):`);
-      lines.push(`            df["${item.newColumnName}"] = pd.cut(df["${item.binColumn}"], bins=${item.numBins}, labels=False, duplicates='drop')`);
-    } else if (item.strategy === "normalize" && item.sourceColumns && item.sourceColumns.length > 0) {
-      lines.push(`    # Normalize columns: ${item.sourceColumns.join(", ")}`);
-      item.sourceColumns.forEach((col) => {
-        lines.push(`    if "${col}" in df.columns:`);
-        lines.push(`        # Check if column is numeric before normalizing`);
-        lines.push(`        if pd.api.types.is_numeric_dtype(df["${col}"]):`);
-        lines.push(`            min_val = df["${col}"].min()`);
-        lines.push(`            max_val = df["${col}"].max()`);
-        lines.push(`            if max_val != min_val:`);
-        lines.push(`                df["${item.newColumnName || col + "_normalized"}"] = (df["${col}"] - min_val) / (max_val - min_val)`);
-      });
-    } else if (item.strategy === "standardize" && item.sourceColumns && item.sourceColumns.length > 0) {
-      lines.push(`    # Standardize columns: ${item.sourceColumns.join(", ")}`);
-      item.sourceColumns.forEach((col) => {
-        lines.push(`    if "${col}" in df.columns:`);
-        lines.push(`        # Check if column is numeric before standardizing`);
-        lines.push(`        if pd.api.types.is_numeric_dtype(df["${col}"]):`);
-        lines.push(`            mean_val = df["${col}"].mean()`);
-        lines.push(`            std_val = df["${col}"].std()`);
-        lines.push(`            if std_val != 0:`);
-        lines.push(`                df["${item.newColumnName || col + "_standardized"}"] = (df["${col}"] - mean_val) / std_val`);
-      });
-    } else if (item.strategy === "polynomial" && item.polynomialColumns && item.polynomialColumns.length > 0 && item.polynomialDegree) {
-      lines.push(`    # Create polynomial features from: ${item.polynomialColumns.join(", ")}`);
-      lines.push(`    from sklearn.preprocessing import PolynomialFeatures`);
-      lines.push(`    # Filter to only numeric columns`);
-      lines.push(`    poly_cols = [col for col in ${JSON.stringify(item.polynomialColumns)} if col in df.columns and pd.api.types.is_numeric_dtype(df[col])]`);
-      lines.push(`    if len(poly_cols) > 0:`);
-      lines.push(`        poly = PolynomialFeatures(degree=${item.polynomialDegree}, include_bias=False)`);
-      lines.push(`        poly_features = poly.fit_transform(df[poly_cols])`);
-      lines.push(`        poly_df = pd.DataFrame(poly_features, columns=poly.get_feature_names_out(poly_cols), index=df.index)`);
-      lines.push(`        df = pd.concat([df, poly_df], axis=1)`);
+  lines.push("    # Remove duplicate rows");
+  if (subset) {
+    lines.push(`    df = df.drop_duplicates(subset=[${subset}], keep="${keep}")`);
+  } else {
+    lines.push(`    df = df.drop_duplicates(keep="${keep}")`);
+  }
+  lines.push("    df = df.reset_index(drop=True)");
+}
+
+function generateDropColumnOrRowCode(
+  config: DropColumnOrRowStepConfig,
+  lines: string[]
+): void {
+  if (config.target === "row") {
+    const indices = (config.rowIndices || []).join(", ");
+    if (config.rowIndices && config.rowIndices.length > 0) {
+      lines.push("    # Remove row(s) by index");
+      lines.push(`    df = df.drop(index=[${indices}], errors="ignore")`);
+      lines.push("    df = df.reset_index(drop=True)");
     }
-  });
+    return;
+  }
+
+  const columns = (config.columns || [])
+    .filter((col) => col.trim().length > 0)
+    .map((col) => pyStr(col.trim()))
+    .join(", ");
+  if (columns) {
+    lines.push("    # Remove column(s)");
+    lines.push(`    df = df.drop(columns=[${columns}], errors="ignore")`);
+  }
+}
+
+function generateDropHighNullColumnsCode(
+  config: DropHighNullColumnsStepConfig,
+  lines: string[]
+): void {
+  const threshold = config.thresholdPercent ?? 80;
+  lines.push(`    # Remove columns with more than ${threshold}% missing values`);
+  lines.push(`    df = df.loc[:, df.isnull().mean() * 100 <= ${threshold}]`);
+}
+
+function generateChangeDtypeCode(
+  config: ChangeDtypeStepConfig,
+  lines: string[]
+): void {
+  for (const item of config.conversions || []) {
+    const column = (item.columnName || "").trim();
+    if (!column) continue;
+
+    const col = pyStr(column);
+    // Comment text is escaped too, so a newline in a column name can't end
+    // the comment and inject a line of code.
+    lines.push(`    # Change data type of column ${col}`);
+    if (item.dtype === "datetime") {
+      // format="mixed" parses each value on its own - no "Could not infer
+      // format" warning on mixed date formats. A value that still can't be
+      // read fails the run with the values that failed, instead of silently
+      // becoming NaT (empty).
+      lines.push(`    _parsed_dates = pd.to_datetime(df[${col}], errors="coerce", format="mixed")`);
+      lines.push(`    _unparsed = df[${col}].notna() & _parsed_dates.isna()`);
+      lines.push(`    if _unparsed.any():`);
+      lines.push(
+        `        raise ValueError("Change Column Data Type: %d value(s) in column %s could not be read as dates, e.g. %s" % (int(_unparsed.sum()), ${pyStr(JSON.stringify(column))}, df.loc[_unparsed, ${col}].head(3).tolist()))`
+      );
+      lines.push(`    df[${col}] = _parsed_dates`);
+    } else if (item.dtype === "bool") {
+      lines.push(
+        `    df[${col}] = df[${col}].map(lambda v: v if pd.isna(v) else ${PYTHON_BOOL_MAP}.get(str(v).strip().lower(), v)).astype("boolean")`
+      );
+    } else {
+      const pandasDtype = DTYPE_TO_PANDAS[item.dtype];
+      lines.push(`    df[${col}] = df[${col}].astype("${pandasDtype}")`);
+    }
+  }
 }
 
 /**
@@ -712,18 +454,25 @@ export function parsePythonCodeToConfig(code: string): PreprocessingConfig {
       case "column_filter":
         parsedFromCode = parseColumnFilterStep(stepCode);
         break;
-      case "missing_value_handling":
-        parsedFromCode = parseMissingValueHandlingStep(stepCode);
+      case "remove_duplicates":
+        parsedFromCode = parseRemoveDuplicatesStep(stepCode);
         break;
-      case "outlier_handling":
-        parsedFromCode = parseOutlierHandlingStep(stepCode);
+      case "drop_column_or_row":
+        parsedFromCode = parseDropColumnOrRowStep(stepCode);
         break;
-      case "categorical_encoding":
-        parsedFromCode = parseCategoricalEncodingStep(stepCode);
+      case "drop_high_null_columns":
+        parsedFromCode = parseDropHighNullColumnsStep(stepCode);
         break;
-      case "feature_engineering":
-        parsedFromCode = parseFeatureEngineeringStep(stepCode);
+      case "change_dtype":
+        parsedFromCode = parseChangeDtypeStep(stepCode);
         break;
+    }
+
+    // A step with markers but nothing to parse (e.g. a Change Type step with
+    // no columns picked yet) is kept with its default config, instead of
+    // silently disappearing on the next reopen.
+    if (!parsedFromCode && stepType !== "column_filter" && isKnownStepType(stepType)) {
+      parsedFromCode = createDefaultStepConfig(stepType);
     }
 
     // Then, try to merge with minimal config from comment if available
@@ -732,6 +481,18 @@ export function parsePythonCodeToConfig(code: string): PreprocessingConfig {
       try {
         const configJson = configCommentMatch[1].trim();
         const minimalConfig = JSON.parse(configJson) as Record<string, unknown>;
+        if (minimalConfig.enabled === false) {
+          // Disabled step: no code to parse, full config is in the comment.
+          config.steps.push({
+            id: stepId,
+            type: stepType,
+            enabled: false,
+            config:
+              (minimalConfig.config as StepConfig | undefined) ??
+              createDefaultStepConfig(stepType),
+          });
+          continue;
+        }
         // Restore full config by merging minimal config with parsed code
         stepConfig = restoreConfigFromMinimal(stepType, minimalConfig, parsedFromCode);
       } catch (e) {
@@ -785,367 +546,92 @@ function parseColumnFilterStep(code: string): ColumnFilterStepConfig | null {
   };
 }
 
-function parseMissingValueHandlingStep(code: string): MissingValueHandlingStepConfig | null {
-  const items: MissingValueHandlingItem[] = [];
-  const processedColumns = new Set<string>(); // Track which columns have been processed
+function parseRemoveDuplicatesStep(code: string): RemoveDuplicatesStepConfig | null {
+  const line = code.split("\n").find((l) => /df\s*=\s*df\.drop_duplicates\(/.test(l));
+  if (!line) return null;
 
-  // First, extract impute values from comments (more reliable)
-  const imputeValueComments: Map<string, string | number> = new Map();
-  const imputeCommentPattern = /#\s*IMPUTE_VALUE:([^:]+):(.+)/g;
-  let commentMatch;
-  while ((commentMatch = imputeCommentPattern.exec(code)) !== null) {
-    const columnName = commentMatch[1].trim();
-    try {
-      const value = JSON.parse(commentMatch[2].trim());
-      imputeValueComments.set(columnName, value);
-    } catch (e) {
-      // If JSON parse fails, treat as string
-      imputeValueComments.set(columnName, commentMatch[2].trim());
-    }
+  const subsetMatch = line.match(new RegExp(String.raw`subset\s*=\s*${PY_STR_LIST_SOURCE}`));
+  const keepMatch = line.match(/keep\s*=\s*["'](first|last)["']\s*\)\s*$/);
+
+  const subsetColumns = subsetMatch ? parsePyStringList(subsetMatch[1]) : [];
+
+  return {
+    subsetColumns,
+    keep: keepMatch ? (keepMatch[1] as "first" | "last") : "first",
+  };
+}
+
+function parseDropColumnOrRowStep(code: string): DropColumnOrRowStepConfig | null {
+  const columnMatch = code.match(
+    new RegExp(String.raw`df\s*=\s*df\.drop\(columns\s*=\s*${PY_STR_LIST_SOURCE}`)
+  );
+  if (columnMatch) {
+    const columns = parsePyStringList(columnMatch[1]);
+    if (columns.length === 0) return null;
+    return { target: "column", columns, rowIndices: [] };
   }
 
-  // Drop rows - must check before impute to avoid conflicts
-  const dropRowsPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?df\s*=\s*df\.dropna\(subset\s*=\s*\["([^"]+)"\]\)/g;
-  let match;
-  while ((match = dropRowsPattern.exec(code)) !== null) {
-    const columnName = match[1];
-    if (!processedColumns.has(columnName)) {
-      items.push({
-        columnName,
-        missingCount: 0,
-        missingPercentage: 0,
-        strategy: "drop_rows",
-      });
-      processedColumns.add(columnName);
-    }
-  }
-
-  // Drop columns
-  const dropColumnPattern = /df\s*=\s*df\.drop\(columns\s*=\s*\[([^\]]+)\]/g;
-  while ((match = dropColumnPattern.exec(code)) !== null) {
-    const columns = match[1]
+  const rowMatch = code.match(/df\s*=\s*df\.drop\(index\s*=\s*\[([^\]]*)\]/);
+  if (rowMatch) {
+    const rowIndices = rowMatch[1]
       .split(",")
-      .map((c) => c.trim().replace(/^["']|["']$/g, ""));
-    columns.forEach((col) => {
-      if (!processedColumns.has(col)) {
-        items.push({
-          columnName: col,
-          missingCount: 0,
-          missingPercentage: 0,
-          strategy: "drop_column",
-        });
-        processedColumns.add(col);
-      }
-    });
+      .map((v) => parseInt(v.trim(), 10))
+      .filter((n) => !isNaN(n));
+    if (rowIndices.length === 0) return null;
+    return { target: "row", columns: [], rowIndices };
   }
 
-  // Impute operations - only match if it's actually a fillna operation, not dropna
-  // Pattern must ensure it's df.loc[:, "..."] = df["..."].fillna(...) and NOT dropna
-  const imputePattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?(?:#\s*IMPUTE_VALUE:[^:]+:[^\n]+\n\s*)?df\.loc\[:,\s*"([^"]+)"\]\s*=\s*df\["([^"]+)"\]\.fillna\(([^)]+)\)/g;
-  while ((match = imputePattern.exec(code)) !== null) {
-    const columnName = match[1];
-    // Skip if already processed (as drop_rows or drop_column)
-    if (processedColumns.has(columnName)) {
+  return null;
+}
+
+function parseDropHighNullColumnsStep(code: string): DropHighNullColumnsStepConfig | null {
+  const match = code.match(/df\.isnull\(\)\.mean\(\)\s*\*\s*100\s*<=\s*([\d.]+)/);
+  if (!match) return null;
+  return { thresholdPercent: parseFloat(match[1]) };
+}
+
+function parseChangeDtypeStep(code: string): ChangeDtypeStepConfig | null {
+  const conversions: ChangeDtypeItem[] = [];
+
+  // Scan line by line (rather than one regex with a global flag) so multiple
+  // conversions in a single step are collected in the order they were
+  // generated in.
+  const col = String.raw`df\[(${PY_STR_SOURCE})\]\s*=\s*`;
+  // Current form (_parsed_dates = pd.to_datetime(df[col], ...)) and the
+  // older one-line form (df[col] = pd.to_datetime(df[col], ...)).
+  const datetimeRe = new RegExp(
+    String.raw`^\s*(?:_parsed_dates\s*=\s*pd\.to_datetime\(df\[(${PY_STR_SOURCE})\]|${col}pd\.to_datetime\(df\[\2\])`
+  );
+  const boolRe = new RegExp(String.raw`^\s*${col}df\[\1\]\.map\(.*\)\.astype\("boolean"\)\s*$`);
+  const astypeRe = new RegExp(String.raw`^\s*${col}df\[\1\]\.astype\("([^"]+)"\)\s*$`);
+
+  for (const line of code.split("\n")) {
+    const datetimeMatch = line.match(datetimeRe);
+    if (datetimeMatch) {
+      conversions.push({
+        columnName: unquotePyStr(datetimeMatch[1] ?? datetimeMatch[2]),
+        dtype: "datetime",
+      });
       continue;
     }
-    
-    const valueStr = match[4].trim();
-    
-    let strategy: MissingValueStrategy = "impute_constant";
-    let imputeValue: string | number | undefined;
 
-    if (valueStr.includes(".mean()")) {
-      strategy = "impute_mean";
-    } else if (valueStr.includes(".median()")) {
-      strategy = "impute_median";
-    } else if (valueStr.includes(".mode()")) {
-      strategy = "impute_mode";
-    } else {
-      // First, try to get value from comment (most reliable)
-      if (imputeValueComments.has(columnName)) {
-        imputeValue = imputeValueComments.get(columnName);
-      } else {
-        // Fallback to parsing from code
-        // Check if value is quoted (string) or unquoted (number)
-        const hasQuotes = (valueStr.startsWith('"') && valueStr.endsWith('"')) || 
-                          (valueStr.startsWith("'") && valueStr.endsWith("'"));
-        
-        if (hasQuotes) {
-          // Quoted value - treat as string
-          imputeValue = valueStr.slice(1, -1); // Remove quotes
-        } else {
-          // Unquoted value - try to parse as number
-          const trimmed = valueStr.trim();
-          const numValue = parseFloat(trimmed);
-          
-          if (!isNaN(numValue) && isFinite(numValue)) {
-            // Check if the trimmed string exactly represents this number
-            // This handles "0", "5", "10.5", "-3", etc.
-            const numStr = numValue.toString();
-            const numStrWithDecimal = numValue % 1 === 0 ? numStr : numValue.toFixed(10).replace(/\.?0+$/, "");
-            
-            if (trimmed === numStr || trimmed === numStrWithDecimal || 
-                parseFloat(trimmed) === numValue && trimmed.match(/^-?\d+(\.\d+)?$/)) {
-              imputeValue = numValue;
-            } else {
-              // Looks like a number but has extra characters, treat as string
-              imputeValue = trimmed;
-            }
-          } else {
-            // Not a valid number, treat as string
-            imputeValue = trimmed;
-          }
-        }
-      }
-      
-      // Ensure impute_constant always has a value
-      if (imputeValue === undefined || imputeValue === null || 
-          (typeof imputeValue === "string" && imputeValue === "")) {
-        imputeValue = "0";
-      }
+    const boolMatch = line.match(boolRe);
+    if (boolMatch) {
+      conversions.push({ columnName: unquotePyStr(boolMatch[1]), dtype: "bool" });
+      continue;
     }
 
-    items.push({
-      columnName,
-      missingCount: 0,
-      missingPercentage: 0,
-      strategy,
-      imputeValue,
-    });
-    processedColumns.add(columnName);
-  }
-
-  return items.length > 0 ? { columns: items } : null;
-}
-
-function parseOutlierHandlingStep(code: string): OutlierHandlingStepConfig | null {
-  const items: OutlierHandlingItem[] = [];
-
-  // IQR method
-  const iqrPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?Q1\s*=\s*df\["([^"]+)"\]\.quantile\(0\.25\)[\s\S]*?lower_bound\s*=\s*Q1\s*-\s*([\d.]+)\s*\*\s*IQR/g;
-  let match;
-  while ((match = iqrPattern.exec(code)) !== null) {
-    const columnName = match[1];
-    const multiplier = parseFloat(match[3]);
-    const afterCode = code.substring(match.index + match[0].length, match.index + match[0].length + 100);
-    
-    let strategy: OutlierStrategy = "no_action";
-    if (afterCode.includes("df = df[(")) {
-      strategy = "remove_outliers";
-    } else if (afterCode.includes(".clip(")) {
-      strategy = "cap_outliers";
-    }
-
-    items.push({
-      columnName,
-      strategy,
-      method: "iqr",
-      iqrMultiplier: multiplier,
-    });
-  }
-
-  // Z-score method
-  const zscorePattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?z_scores\s*=\s*\(df\["([^"]+)"\]\s*-\s*mean\)\s*\/\s*std/g;
-  while ((match = zscorePattern.exec(code)) !== null) {
-    const columnName = match[1];
-    const afterCode = code.substring(match.index + match[0].length, match.index + match[0].length + 100);
-    const thresholdMatch = afterCode.match(/z_scores\.abs\(\)\s*<=\s*([\d.]+)/);
-    const threshold = thresholdMatch ? parseFloat(thresholdMatch[1]) : 3;
-    
-    let strategy: OutlierStrategy = "no_action";
-    if (afterCode.includes("df = df[(")) {
-      strategy = "remove_outliers";
-    } else if (afterCode.includes(".clip(")) {
-      strategy = "cap_outliers";
-    }
-
-    items.push({
-      columnName,
-      strategy,
-      method: "zscore",
-      zScoreThreshold: threshold,
-    });
-  }
-
-  return items.length > 0 ? { columns: items } : null;
-}
-
-function parseCategoricalEncodingStep(code: string): CategoricalEncodingStepConfig | null {
-  const items: CategoricalEncodingItem[] = [];
-
-  // One-hot encoding
-  const oneHotPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?pd\.get_dummies\(df,\s*columns\s*=\s*\["([^"]+)"\][\s\S]*?prefix\s*=\s*"([^"]+)"(?:,\s*drop_first\s*=\s*True)?\)/g;
-  let match;
-  while ((match = oneHotPattern.exec(code)) !== null) {
-    items.push({
-      columnName: match[1],
-      strategy: "one_hot",
-      dropFirst: match[0].includes("drop_first=True"),
-    });
-  }
-
-  // Label encoding
-  const labelPattern = /if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?df\.loc\[:,\s*"([^"]+)"\]\s*=\s*df\["([^"]+)"\]\.astype\(['"]category['"]\)\.cat\.codes/g;
-  while ((match = labelPattern.exec(code)) !== null) {
-    items.push({
-      columnName: match[1],
-      strategy: "label",
-    });
-  }
-
-  // Ordinal encoding
-  const ordinalPattern = /mapping\s*=\s*(\{[^}]+\})[\s\S]*?df\.loc\[:,\s*"([^"]+)"\]\s*=\s*df\["([^"]+)"\]\.map\(mapping\)/g;
-  while ((match = ordinalPattern.exec(code)) !== null) {
-    try {
-      const mapping = JSON.parse(match[1]);
-      items.push({
-        columnName: match[2],
-        strategy: "ordinal",
-        ordinalMapping: mapping,
-      });
-    } catch (e) {
-      // Skip if parsing fails
-    }
-  }
-
-  return items.length > 0 ? { columns: items } : null;
-}
-
-function parseFeatureEngineeringStep(code: string): FeatureEngineeringStepConfig | null {
-  const items: FeatureEngineeringItem[] = [];
-
-  // Custom expression
-  const customPattern = /# Create feature:\s*([^\n]+)[\s\S]*?df\["([^"]+)"\]\s*=\s*([^\n]+)/g;
-  let match;
-  while ((match = customPattern.exec(code)) !== null) {
-    const newColumnName = match[2];
-    const expression = match[3].trim();
-    if (expression && !expression.includes('df["' + newColumnName + '"]')) {
-      items.push({
-        id: `custom_${newColumnName}_${Date.now()}`,
-        newColumnName,
-        strategy: "custom_expression",
-        expression,
+    const astypeMatch = line.match(astypeRe);
+    if (astypeMatch) {
+      conversions.push({
+        columnName: unquotePyStr(astypeMatch[1]),
+        dtype: PANDAS_TO_DTYPE[astypeMatch[2]] || "string",
       });
     }
   }
 
-  // Bin numeric
-  const binPattern = /# Bin numeric column:\s*([^\n]+)[\s\S]*?if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?df\["([^"]+)"\]\s*=\s*pd\.cut\(df\["([^"]+)"\],\s*bins\s*=\s*(\d+)/g;
-  while ((match = binPattern.exec(code)) !== null) {
-    items.push({
-      id: `bin_${match[3]}_${Date.now()}`,
-      newColumnName: match[3],
-      strategy: "bin_numeric",
-      binColumn: match[4],
-      numBins: parseInt(match[5], 10),
-    });
-  }
-
-  // Normalize
-  const normalizeSection = code.match(/# Normalize columns:\s*([^\n]+)([\s\S]*?)(?=# |$)/);
-  if (normalizeSection) {
-    const normalizeOps = normalizeSection[2].matchAll(/if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?df\["([^"]+)"\]\s*=\s*\(df\["([^"]+)"\]\s*-\s*min_val\)\s*\/\s*\(max_val\s*-\s*min_val\)/g);
-    const normalizeMap = new Map<string, string[]>();
-    const autoGeneratedCols: string[] = [];
-    
-    for (const op of normalizeOps) {
-      const sourceCol = op[1];
-      const newCol = op[2];
-      const expectedAutoName = sourceCol + "_normalized";
-      
-      if (newCol === expectedAutoName) {
-        autoGeneratedCols.push(sourceCol);
-      } else {
-        if (!normalizeMap.has(newCol)) {
-          normalizeMap.set(newCol, []);
-        }
-        normalizeMap.get(newCol)!.push(sourceCol);
-      }
-    }
-    
-    if (autoGeneratedCols.length > 0) {
-      items.push({
-        id: `normalize_auto_${Date.now()}`,
-        newColumnName: "",
-        strategy: "normalize",
-        sourceColumns: autoGeneratedCols,
-      });
-    }
-    
-    normalizeMap.forEach((sourceCols, newCol) => {
-      items.push({
-        id: `normalize_${newCol}_${Date.now()}`,
-        newColumnName: newCol,
-        strategy: "normalize",
-        sourceColumns: sourceCols,
-      });
-    });
-  }
-
-  // Standardize
-  const standardizeSection = code.match(/# Standardize columns:\s*([^\n]+)([\s\S]*?)(?=# |$)/);
-  if (standardizeSection) {
-    const standardizeOps = standardizeSection[2].matchAll(/if\s+"([^"]+)"\s+in\s+df\.columns:[\s\S]*?df\["([^"]+)"\]\s*=\s*\(df\["([^"]+)"\]\s*-\s*mean_val\)\s*\/\s*std_val/g);
-    const standardizeMap = new Map<string, string[]>();
-    const autoGeneratedCols: string[] = [];
-    
-    for (const op of standardizeOps) {
-      const sourceCol = op[1];
-      const newCol = op[2];
-      const expectedAutoName = sourceCol + "_standardized";
-      
-      if (newCol === expectedAutoName) {
-        autoGeneratedCols.push(sourceCol);
-      } else {
-        if (!standardizeMap.has(newCol)) {
-          standardizeMap.set(newCol, []);
-        }
-        standardizeMap.get(newCol)!.push(sourceCol);
-      }
-    }
-    
-    if (autoGeneratedCols.length > 0) {
-      items.push({
-        id: `standardize_auto_${Date.now()}`,
-        newColumnName: "",
-        strategy: "standardize",
-        sourceColumns: autoGeneratedCols,
-      });
-    }
-    
-    standardizeMap.forEach((sourceCols, newCol) => {
-      items.push({
-        id: `standardize_${newCol}_${Date.now()}`,
-        newColumnName: newCol,
-        strategy: "standardize",
-        sourceColumns: sourceCols,
-      });
-    });
-  }
-
-  // Polynomial
-  const polyPattern = /# Create polynomial features from:\s*([^\n]+)[\s\S]*?poly_cols\s*=\s*\[col\s+for\s+col\s+in\s+(\[[^\]]+\])\s+if\s+col\s+in\s+df\.columns\][\s\S]*?poly\s*=\s*PolynomialFeatures\(degree\s*=\s*(\d+)/g;
-  const polyMatch = polyPattern.exec(code);
-  if (polyMatch) {
-    try {
-      const columns = JSON.parse(polyMatch[2]);
-      const degree = parseInt(polyMatch[3], 10);
-      if (Array.isArray(columns) && columns.length > 0) {
-        items.push({
-          id: `polynomial_${Date.now()}`,
-          newColumnName: "polynomial_features",
-          strategy: "polynomial",
-          polynomialColumns: columns,
-          polynomialDegree: degree,
-        });
-      }
-    } catch (e) {
-      // Skip if parsing fails
-    }
-  }
-
-  return items.length > 0 ? { features: items } : null;
+  if (conversions.length === 0) return null;
+  return { conversions };
 }
 
 /**
@@ -1166,32 +652,39 @@ export function createPreprocessingStep(
   id?: string
 ): PreprocessingStep {
   const stepId = id || `step_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
-  let config: StepConfig;
-  switch (type) {
-    case "column_filter":
-      config = { columns: [] };
-      break;
-    case "missing_value_handling":
-      config = { columns: [] };
-      break;
-    case "outlier_handling":
-      config = { columns: [] };
-      break;
-    case "categorical_encoding":
-      config = { columns: [] };
-      break;
-    case "feature_engineering":
-      config = { features: [] };
-      break;
-  }
 
   return {
     id: stepId,
     type,
     enabled: true,
-    config,
+    config: createDefaultStepConfig(type),
   };
+}
+
+function isKnownStepType(type: string): type is PreprocessingStepType {
+  return [
+    "column_filter",
+    "remove_duplicates",
+    "drop_column_or_row",
+    "drop_high_null_columns",
+    "change_dtype",
+  ].includes(type);
+}
+
+function createDefaultStepConfig(type: PreprocessingStepType): StepConfig {
+  switch (type) {
+    case "remove_duplicates":
+      return { subsetColumns: [], keep: "first" };
+    case "drop_column_or_row":
+      return { target: "column", columns: [], rowIndices: [] };
+    case "drop_high_null_columns":
+      return { thresholdPercent: 80 };
+    case "change_dtype":
+      return { conversions: [] };
+    case "column_filter":
+    default:
+      return { columns: [] };
+  }
 }
 
 /**
@@ -1200,10 +693,10 @@ export function createPreprocessingStep(
 export function getStepTypeDisplayName(type: PreprocessingStepType): string {
   const names: Record<PreprocessingStepType, string> = {
     column_filter: "Column Filter",
-    missing_value_handling: "Handle Missing Values",
-    outlier_handling: "Handle Outliers",
-    categorical_encoding: "Categorical Encoding",
-    feature_engineering: "Feature Engineering",
+    remove_duplicates: "Remove Duplicate Rows",
+    drop_column_or_row: "Remove Column/Row",
+    drop_high_null_columns: "Remove High-Null Columns",
+    change_dtype: "Change Column Data Type",
   };
   return names[type] || type;
 }
@@ -1214,22 +707,3 @@ export interface ColumnFilterConfig {
   columns: ColumnFilterItem[];
 }
 
-export interface MissingValueHandlingConfig {
-  enabled: boolean;
-  columns: MissingValueHandlingItem[];
-}
-
-export interface OutlierHandlingConfig {
-  enabled: boolean;
-  columns: OutlierHandlingItem[];
-}
-
-export interface CategoricalEncodingConfig {
-  enabled: boolean;
-  columns: CategoricalEncodingItem[];
-}
-
-export interface FeatureEngineeringConfig {
-  enabled: boolean;
-  features: FeatureEngineeringItem[];
-}

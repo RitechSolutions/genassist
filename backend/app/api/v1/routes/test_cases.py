@@ -1,17 +1,24 @@
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
 from app.schemas.test_suite import (
+    AddConversationToSuitesRequest,
+    AddConversationToSuitesResult,
+    ConversationSuiteMembership,
     ImportCasesFromConversationRequest,
+    ImportCasesFromConversationsRequest,
+    ImportCasesFromConversationsResult,
+    ImportCasesFromFilesResult,
     TestCase,
     TestCaseCreate,
     TestCaseUpdate,
 )
+from app.services.dataset_file import read_uploads
 from app.services.test_suite import TestSuiteService
 
 
@@ -62,6 +69,95 @@ async def import_cases_from_conversation(
     return await service.import_cases_from_conversation(
         suite_id, data.conversation_id, data.replace
     )
+
+
+@router.post(
+    "/suites/{suite_id}/cases/import-from-conversations",
+    response_model=ImportCasesFromConversationsResult,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+)
+async def import_cases_from_conversations(
+    suite_id: UUID,
+    data: ImportCasesFromConversationsRequest,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """
+    Import the Q&A pairs of several conversations into the given suite at once.
+
+    A conversation that cannot be imported is reported in ``results`` rather than
+    failing the request, so one bad pick does not discard the rest of the batch.
+    """
+    return await service.import_cases_from_conversations(
+        suite_id, data.conversation_ids, data.replace
+    )
+
+
+@router.post(
+    "/suites/{suite_id}/cases/import-from-files/preview",
+    response_model=ImportCasesFromFilesResult,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+)
+async def preview_cases_from_files(
+    suite_id: UUID,
+    files: List[UploadFile] = File(...),
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """Report what importing these dataset files would add, without saving anything."""
+    return await service.preview_cases_from_files(suite_id, await read_uploads(files))
+
+
+@router.post(
+    "/suites/{suite_id}/cases/import-from-files",
+    response_model=ImportCasesFromFilesResult,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+)
+async def import_cases_from_files(
+    suite_id: UUID,
+    files: List[UploadFile] = File(...),
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """Add the conversations in these dataset files; unreadable files are reported, not fatal."""
+    return await service.import_cases_from_files(suite_id, await read_uploads(files))
+
+
+@router.get(
+    "/conversations/{conversation_id}/suites",
+    response_model=List[ConversationSuiteMembership],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def list_suites_for_conversation(
+    conversation_id: UUID,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """
+    List every dataset, with how much of this conversation each already holds.
+
+    Gated like ``GET /suites``, which it is a per-conversation view of.
+    """
+    return await service.list_suites_for_conversation(conversation_id)
+
+
+@router.post(
+    "/conversations/{conversation_id}/suites",
+    response_model=AddConversationToSuitesResult,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+)
+async def add_conversation_to_suites(
+    conversation_id: UUID,
+    data: AddConversationToSuitesRequest,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """
+    Add one conversation's Q&A pairs to several datasets at once.
+
+    A dataset that already holds the conversation has its turns refreshed. A
+    dataset that cannot be written is reported in ``results`` rather than failing
+    the request, so one bad pick does not discard the rest.
+    """
+    return await service.add_conversation_to_suites(conversation_id, data.suite_ids)
 
 
 @router.delete(

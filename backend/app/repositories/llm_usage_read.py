@@ -53,10 +53,14 @@ class LlmUsageReadRepository:
             conds.append(
                 LlmUsageEventModel.agent_id == scope[0] if len(scope) == 1 else LlmUsageEventModel.agent_id.in_(scope)
             )
-        if params.from_date is not None:
-            conds.append(LlmUsageEventModel.occurred_at >= _day_start(params.from_date))
-        if params.to_date is not None:
-            conds.append(LlmUsageEventModel.occurred_at < _day_start(params.to_date) + timedelta(days=1))
+        if params.activity_from_datetime is not None:
+            conds.append(LlmUsageEventModel.occurred_at >= params.activity_from_datetime)
+            conds.append(LlmUsageEventModel.occurred_at < params.activity_to_datetime)
+        else:
+            if params.from_date is not None:
+                conds.append(LlmUsageEventModel.occurred_at >= _day_start(params.from_date))
+            if params.to_date is not None:
+                conds.append(LlmUsageEventModel.occurred_at < _day_start(params.to_date) + timedelta(days=1))
         if use_provider and params.provider:
             conds.append(LlmUsageEventModel.provider_key == params.provider.strip().lower())
         if use_model and params.model:
@@ -89,6 +93,13 @@ class LlmUsageReadRepository:
         """Return when the tenant last recorded an unpriced call, ignoring read filters"""
         stmt = select(func.max(LlmUsageEventModel.created_at)).where(
             LlmUsageEventModel.is_deleted == 0, _COST.is_(None)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def last_fallback_at(self) -> datetime | None:
+        """Return when the tenant last recorded a fallback-priced call, ignoring read filters"""
+        stmt = select(func.max(LlmUsageEventModel.created_at)).where(
+            LlmUsageEventModel.is_deleted == 0, _STATUS == PricingStatus.FALLBACK.value
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 

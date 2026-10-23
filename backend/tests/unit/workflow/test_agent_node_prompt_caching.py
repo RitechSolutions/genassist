@@ -23,7 +23,7 @@ _VOLATILE_VARS = [
 ]
 
 _AGENT_CONFIG = {"providerId": "prov-1", "type": "ToolSelector", "memory": False}
-_SUB_CONFIG = {"providerId": "prov-1", "mode": "single_turn", "timeoutSeconds": 120}
+_SUB_CONFIG = {"providerId": "prov-1", "mode": "single_turn", "timeoutSeconds": 120, "memory": False}
 
 
 def _state():
@@ -32,6 +32,7 @@ def _state():
         workflow={"nodes": [], "edges": []},
         initial_values={},
         get_memory=MagicMock(return_value=None),
+        get_session=MagicMock(return_value={}),
     )
 
 
@@ -95,7 +96,8 @@ class TestVolatilityGate:
         kwargs = await _run(node_cls, module, config, node_data={"name": "Agent"})
 
         assert kwargs["stable_volatile_parts"] is not None
-        assert kwargs["system_prompt"].startswith("You are a helpful assistant.")
+        expected = "You are a helpful specialist sub-agent." if node_cls is SubAgentNode else "You are a helpful assistant."
+        assert kwargs["system_prompt"].startswith(expected)
 
 
 class TestTimestampedSystemPromptHelper:

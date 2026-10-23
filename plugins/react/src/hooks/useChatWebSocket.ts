@@ -19,6 +19,10 @@ export interface UseChatWebSocketOptions {
   reconnect?: boolean;
   maxReconnectAttempts?: number;
   reconnectBaseDelayMs?: number;
+  /** Whether the guest token has expired; an expired token is never used to connect. */
+  isGuestTokenExpired?: () => boolean;
+  /** Called instead of connecting when the guest token has expired. */
+  onGuestTokenExpired?: () => void;
 }
 
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
@@ -42,6 +46,8 @@ export function useChatWebSocket({
   reconnect = true,
   maxReconnectAttempts = DEFAULT_MAX_RECONNECT_ATTEMPTS,
   reconnectBaseDelayMs = DEFAULT_RECONNECT_BASE_DELAY_MS,
+  isGuestTokenExpired,
+  onGuestTokenExpired,
 }: UseChatWebSocketOptions): {
   connectionState: ConnectionState;
   connect: () => void;
@@ -55,8 +61,13 @@ export function useChatWebSocket({
   const onMessageRef = useRef(onMessage);
   const onConnectionStateRef = useRef(onConnectionState);
 
+  const isGuestTokenExpiredRef = useRef(isGuestTokenExpired);
+  const onGuestTokenExpiredRef = useRef(onGuestTokenExpired);
+
   onMessageRef.current = onMessage;
   onConnectionStateRef.current = onConnectionState;
+  isGuestTokenExpiredRef.current = isGuestTokenExpired;
+  onGuestTokenExpiredRef.current = onGuestTokenExpired;
 
   const updateConnectionState = useCallback(
     (state: ConnectionState) => {
@@ -81,6 +92,11 @@ export function useChatWebSocket({
 
   const connect = useCallback(() => {
     if (!useWs || !conversationId) {
+      return;
+    }
+    const isUsingExpiredGuestToken = Boolean(guestToken) && Boolean(isGuestTokenExpiredRef.current?.());
+    if (isUsingExpiredGuestToken) {
+      onGuestTokenExpiredRef.current?.();
       return;
     }
 

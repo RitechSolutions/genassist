@@ -1,4 +1,3 @@
-import { getApiUrlString } from "@/config/api";
 
 // Single source of truth for `cn` lives in @/lib/utils; re-exported here so the
 // existing `@/helpers/utils` import path keeps working.

@@ -13,6 +13,7 @@ export type SpendMetric = "cost" | "tokens";
 interface LlmUsageTimeseriesChartProps {
   items: LlmUsageTimeseriesItem[];
   loading?: boolean;
+  error?: string | null;
   metric: SpendMetric;
   onMetricChange: (metric: SpendMetric) => void;
 }
@@ -56,7 +57,13 @@ function SpendTooltip({ active, label, payload, color, metricLabel, format }: Sp
 }
 
 /** Daily LLM spend over time, toggled between cost and tokens */
-export function LlmUsageTimeseriesChart({ items, loading, metric, onMetricChange }: LlmUsageTimeseriesChartProps) {
+export function LlmUsageTimeseriesChart({
+  items,
+  loading,
+  error = null,
+  metric,
+  onMetricChange,
+}: LlmUsageTimeseriesChartProps) {
   const isCost = metric === "cost";
   const color = isCost ? COST_COLOR : TOKEN_COLOR;
   const data = items.map((i) => ({ date: formatChartDate(i.stat_date), value: isCost ? i.cost_usd : i.total_tokens }));
@@ -64,7 +71,7 @@ export function LlmUsageTimeseriesChart({ items, loading, metric, onMetricChange
   const peak = data.reduce((max, d) => Math.max(max, d.value), 0);
   const fmt = (v: number) => (isCost ? formatUsd(v) : v.toLocaleString());
   const fmtAverage = (v: number) => (isCost ? formatUsd(v) : Math.round(v).toLocaleString());
-  const showStats = !loading && data.length > 0;
+  const showStats = !loading && !error && data.length > 0;
 
   return (
     <Card className={cn("flex h-full flex-col bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
@@ -112,6 +119,8 @@ export function LlmUsageTimeseriesChart({ items, loading, metric, onMetricChange
         </div>
         {loading ? (
           <Skeleton className={cn("w-full rounded-lg", PLOT_HEIGHT)} />
+        ) : error ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-destructive">{error}</div>
         ) : data.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
             <LlmSpendChartEmptyState />

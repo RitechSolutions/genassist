@@ -29,12 +29,14 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import send_socket_error
 from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
+from app.core.turn_stream_response import stream_turn
 from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.enums.reader_role_enum import ReaderRole
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
+from app.dependencies.injector import injector
 from app.middlewares.rate_limit_middleware import (
     get_agent_rate_limit_start,
     get_agent_rate_limit_start_hour,
@@ -62,12 +64,18 @@ from app.schemas.conversation_transcript import (
     TranscriptSegmentFeedback,
 )
 from app.schemas.common import PaginatedResponse
-from app.schemas.filter import ConversationFilter, MessageIssueFilter
+from app.schemas.filter import ConversationFilter, MessageIssueFilter, MessageIssueSummaryFilter
 from app.schemas.message_issue import (
-    IssueStatusUpdate,
+    IssueHistoryEvent,
+    IssueNoteCreate,
+    IssueNoteRead,
+    IssueStatusSummary,
+    IssueUpdate,
+    MessageIssueRead,
     ReportedIssueRead,
 )
 from app.schemas.socket_principal import SocketPrincipal
+from app.schemas.topic_options import TopicOptionsRead
 from app.services.agent_config import AgentConfigService
 from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import (
@@ -79,6 +87,7 @@ from app.services.auth import AuthService
 from app.services.conversations import ConversationService
 from app.services.dashboard import DashboardService
 from app.services.file_manager import FileManagerService
+from app.services.llm_analysts import LlmAnalystService
 from app.services.realtime_notifications import (
     emit_notification,
     conversation_started_notification_description,
@@ -335,6 +344,32 @@ async def get_message_issues(
     issues), newest first, with conversation + agent/workflow context and the
     tracked resolution status. Group-scoped; all filters applied server-side."""
     return await transcript_message_service.get_message_issues(filter_obj)
+
+
+@router.get(
+    "/issues/summary",
+    response_model=IssueStatusSummary,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def get_message_issue_summary(
+    filter_obj: MessageIssueSummaryFilter = Depends(),
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    """Reported issues counted per status, with the list's filters and group scope."""
+    return await transcript_message_service.get_issue_status_summary(filter_obj)
+
+
+@router.get(
+    "/topic-options",
+    response_model=TopicOptionsRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def get_topic_options(
+    llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService),
+):
+    return await llm_analyst_service.get_topic_options()
 
 
 @router.get(
@@ -782,7 +817,6 @@ async def update_no_agent(
 async def update(
     request: Request,
     conversation_id: UUID,
-    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Append segments to an existing in-progress conversation.
@@ -820,36 +854,44 @@ async def update(
         logger.warning(f"reCAPTCHA verification failed: {reason}")
         raise AppException(error_key=ErrorKey.RECAPTCHA_VERIFICATION_FAILED, status_code=403)
 
-    # process attachments from metadata
-    await process_attachments_from_metadata(
-        base_url=str(request.base_url).rstrip("/"),
-        conversation_id=conversation_id,
-        model=model,
-        tenant_id=tenant_id,
-        current_user_id=get_current_user_id(),
-        file_manager_service=file_manager_service,
-    )
+    current_user_id = get_current_user_id()
+    base_url = str(request.base_url).rstrip("/")
 
-    updated_conversation = await process_conversation_update_with_agent(
-        conversation_id=conversation_id,
-        model=model,
-        tenant_id=tenant_id,
-        current_user_id=get_current_user_id(),
-        audio_bytes=audio_bytes,
-        audio_format=audio_format,
-    )
+    async def run_turn() -> dict:
+        # process attachments from metadata
+        await process_attachments_from_metadata(
+            base_url=base_url,
+            conversation_id=conversation_id,
+            model=model,
+            tenant_id=tenant_id,
+            current_user_id=current_user_id,
+            file_manager_service=injector.get(FileManagerService),
+        )
 
-    # invalidate the cache for the conversation
-    await invalidate_cache("conversations:in_progress_poll", conversation_id)
+        updated_conversation = await process_conversation_update_with_agent(
+            conversation_id=conversation_id,
+            model=model,
+            tenant_id=tenant_id,
+            current_user_id=current_user_id,
+            audio_bytes=audio_bytes,
+            audio_format=audio_format,
+        )
 
-    upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
+        # invalidate the cache for the conversation
+        await invalidate_cache("conversations:in_progress_poll", conversation_id)
+
+        upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
+        return upd_conv_pyd.model_dump(mode="json")
+
+    if "text/event-stream" in request.headers.get("accept", ""):
+        response = stream_turn(request, run_turn, conversation_id)
+    else:
+        response = JSONResponse(content=await run_turn())
 
     agent_security_settings = agent.security_settings if agent and hasattr(agent, "security_settings") else None
+    apply_agent_cors_headers(request, response, agent_security_settings)
 
-    json_response = JSONResponse(content=upd_conv_pyd.model_dump(mode="json"))
-    apply_agent_cors_headers(request, json_response, agent_security_settings)
-
-    return json_response
+    return response
 
 
 async def _any_conversation_read(request: Request):
@@ -929,14 +971,11 @@ async def finalize(
                 msg_type="finalize",
                 room_id=roomId,
                 current_user_id=get_current_user_id(),
+                payload={"conversation_id": str(conversation_id)},
                 required_topic="finalize",
                 tenant_id=tenant_id,
             )
         )
-
-    # Notify dashboard and conversation room
-    notify_socket(conversation_id)
-    notify_socket(SocketRoomType.DASHBOARD)
 
     # Resolve analyst: explicit override > agent's configured analyst > default seed
     analyst_id = finalize.llm_analyst_id
@@ -951,6 +990,11 @@ async def finalize(
         conversation_id=conversation_id,
         llm_analyst_id=analyst_id,
     )
+
+    # Notify dashboard and conversation room only once the conversation is really finalized —
+    # announcing it up front makes listeners drop a conversation a failed finalize left running.
+    notify_socket(conversation_id)
+    notify_socket(SocketRoomType.DASHBOARD)
 
     # Increment finalized conversation counters in background
     _ = asyncio.create_task(update_conversation_finalized(conversation_id))
@@ -1038,21 +1082,63 @@ async def get_conversation_count(
 
 
 @router.patch(
-    "/issues/{message_feedback_id}/status",
-    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+    "/issues/{message_feedback_id}",
+    response_model=MessageIssueRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.UPDATE))],
 )
-async def update_message_issue_status(
+async def update_message_issue(
     message_feedback_id: UUID,
-    payload: IssueStatusUpdate,
+    payload: IssueUpdate,
     transcript_message_service: TranscriptMessageService = Injected(
         TranscriptMessageService
     ),
 ):
-    """Set the resolution status of a reported issue (a message comment)."""
-    issue = await transcript_message_service.set_issue_status(
-        message_feedback_id, payload.status
-    )
-    return {"message_feedback_id": str(message_feedback_id), "status": issue.status}
+    """Partially update a reported issue: omitted fields are kept, null clears."""
+    return await transcript_message_service.update_issue(message_feedback_id, payload)
+
+
+@router.get(
+    "/issues/{message_feedback_id}/notes",
+    response_model=list[IssueNoteRead],
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def list_message_issue_notes(
+    message_feedback_id: UUID,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    return await transcript_message_service.list_issue_notes(message_feedback_id)
+
+
+@router.post(
+    "/issues/{message_feedback_id}/notes",
+    response_model=IssueNoteRead,
+    status_code=201,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.UPDATE))],
+)
+async def add_message_issue_note(
+    message_feedback_id: UUID,
+    payload: IssueNoteCreate,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    return await transcript_message_service.add_issue_note(message_feedback_id, payload)
+
+
+@router.get(
+    "/issues/{message_feedback_id}/history",
+    response_model=list[IssueHistoryEvent],
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def list_message_issue_history(
+    message_feedback_id: UUID,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    return await transcript_message_service.list_issue_history(message_feedback_id)
 
 
 @router.delete(

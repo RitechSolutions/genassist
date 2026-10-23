@@ -25,16 +25,16 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const { status, isOffline } = useServerStatus();
   // Removed proactive refresh to avoid duplicate API calls when server is down
 
+  const needsPermissions =
+    isAuthenticated() &&
+    permissions.length === 0 &&
+    !isLoading &&
+    !(status.down || isOffline);
+
+  // The permission loader spaces and limits the requests, so remounted guards cannot loop on /auth/me
   useEffect(() => {
-    if (
-      isAuthenticated() &&
-      permissions.length === 0 &&
-      !isLoading &&
-      !(status.down || isOffline)
-    ) {
-      refreshPermissions();
-    }
-  }, [permissions, isLoading, refreshPermissions, status.down, isOffline]);
+    if (needsPermissions) void refreshPermissions();
+  }, [needsPermissions, refreshPermissions]);
 
   if (!isAuthenticated()) {
     return <Navigate to="/login" state={{ from: location }} replace />;

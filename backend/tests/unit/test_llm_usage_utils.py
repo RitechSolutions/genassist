@@ -250,6 +250,35 @@ class TestExtractUsageFromAIMessage:
 
         assert extract_usage_from_aimessage(MockMessage()) is None
 
+    def test_openai_cache_writes_are_read_from_the_raw_token_usage(self):
+        class MockMessage:
+            usage_metadata = {
+                "input_tokens": 10000, "output_tokens": 50, "total_tokens": 10050,
+                "input_token_details": {"cache_read": 0},
+            }
+            response_metadata = {
+                "token_usage": {
+                    "prompt_tokens": 10000, "completion_tokens": 50, "total_tokens": 10050,
+                    "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 9000},
+                },
+                "model_provider": "openai",
+            }
+
+        result = extract_usage_from_aimessage(MockMessage())
+        assert result["input_tokens"] == 10000, "OpenAI prompt_tokens already include the written tokens"
+        assert result["token_details"] == {"input_token_details": {"cache_read": 0, "cache_creation": 9000}}
+
+    def test_a_cache_creation_the_library_already_mapped_is_kept(self):
+        class MockMessage:
+            usage_metadata = {
+                "input_tokens": 10000, "output_tokens": 50,
+                "input_token_details": {"cache_read": 0, "cache_creation": 9000},
+            }
+            response_metadata = {"token_usage": {"prompt_tokens_details": {"cache_write_tokens": 1}}}
+
+        result = extract_usage_from_aimessage(MockMessage())
+        assert result["token_details"]["input_token_details"]["cache_creation"] == 9000
+
 
 class TestUsagePlaceholder:
     def test_missing_usage_becomes_zero_token_marked_entry(self):

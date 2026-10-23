@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects import postgresql
 from starlette_context import context, request_cycle_context
 
@@ -13,6 +13,7 @@ import app.db.models  # noqa: F401 — registers mappers for ORM compilation
 import app.db.models.test_suite  # noqa: F401
 from app.db.events.group_scope import _group_scope_filter, get_group_scope_clause
 from app.db.models.agent import AgentModel
+from app.db.models.api_key import ApiKeyModel
 from app.db.models.conversation import ConversationModel
 
 
@@ -21,18 +22,23 @@ def _sql(stmt) -> str:
 
 
 @contextmanager
-def caller(*, user_id=None, group_id=None, supervised=()):
+def caller(*, user_id=None, group_id=None, supervised=(), roles=("operator",)):
     with request_cycle_context():
         context["user_id"] = user_id
         context["group_id"] = group_id
         context["supervised_group_ids"] = list(supervised)
-        context["user_roles"] = [SimpleNamespace(name="operator")]
+        context["user_roles"] = [SimpleNamespace(name=role) for role in roles]
         yield
 
 
 def _listener_sql(model_cls):
     """Run the do_orm_execute listener over a bare ORM select and compile the result."""
-    state = SimpleNamespace(is_select=True, execution_options={}, statement=select(model_cls))
+    return _listener_sql_for(select(model_cls))
+
+
+def _listener_sql_for(stmt):
+    """Run the do_orm_execute listener over an arbitrary ORM select and compile the result."""
+    state = SimpleNamespace(is_select=True, execution_options={}, statement=stmt)
     _group_scope_filter(state)
     return _sql(state.statement)
 
@@ -79,3 +85,43 @@ def test_non_supervisors_keep_the_group_equality_form(model_cls):
     group_id = uuid4()
     with caller(user_id=uuid4(), group_id=group_id):
         assert f"users.group_id = '{group_id}'" in _listener_sql(model_cls)
+
+
+def _api_key_statements():
+    return {"page": select(ApiKeyModel), "count": select(func.count(ApiKeyModel.id))}
+
+
+@pytest.mark.parametrize("kind", ["page", "count"])
+def test_api_key_page_and_count_receive_the_ungrouped_criteria(kind):
+    user_id = uuid4()
+    with caller(user_id=user_id):
+        sql = _listener_sql_for(_api_key_statements()[kind])
+
+    assert f"api_keys.created_by = '{user_id}'" in sql
+
+
+@pytest.mark.parametrize("kind", ["page", "count"])
+def test_api_key_page_and_count_receive_the_group_criteria(kind):
+    group_id = uuid4()
+    with caller(user_id=uuid4(), group_id=group_id):
+        sql = _listener_sql_for(_api_key_statements()[kind])
+
+    assert "api_keys.created_by IN (SELECT users.id" in sql
+    assert f"users.group_id = '{group_id}'" in sql
+
+
+@pytest.mark.parametrize("kind", ["page", "count"])
+def test_api_key_page_and_count_receive_the_supervised_criteria(kind):
+    own_group, supervised = uuid4(), uuid4()
+    with caller(user_id=uuid4(), group_id=own_group, supervised=[supervised]):
+        sql = _listener_sql_for(_api_key_statements()[kind])
+
+    assert "api_keys.created_by IN (SELECT users.id" in sql
+    for group_id in (own_group, supervised):
+        assert f"'{group_id}'" in sql
+
+
+@pytest.mark.parametrize("kind", ["page", "count"])
+def test_admins_leave_both_api_key_statements_untouched(kind):
+    with caller(user_id=uuid4(), group_id=uuid4(), roles=("admin",)):
+        assert _listener_sql_for(_api_key_statements()[kind]) == _sql(_api_key_statements()[kind])

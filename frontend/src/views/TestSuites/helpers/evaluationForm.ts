@@ -1,11 +1,10 @@
-import {
-  EvaluationWizardData,
-  GradingSourceSelection,
-} from "../components/EvaluationWizard";
+import type { GradingSourceSelection } from "./methodSettings";
 import {
   ActionRuleDraft,
   JudgeRuleDraft,
+  OlderMethods,
   RouteRuleDraft,
+  ScenarioCheck,
   TestEvaluationConfig,
   RuleScope,
   RuleScopeTarget,
@@ -14,6 +13,44 @@ import {
   ToolUsageRule,
 } from "@/interfaces/testEvaluation.interface";
 import { LLMProviderMinimal } from "@/interfaces/llmProvider.interface";
+import { CHECKS_TECHNIQUE, parseChecks, serializeChecks } from "./checks";
+
+/** What the evaluation editor edits: its checks, and older methods kept as they are. */
+export interface EvaluationFormData {
+  name: string;
+  description: string;
+  suiteId: string;
+  workflowId: string;
+  metrics: string[];
+  inputMetadataText: string;
+  useMemory: boolean;
+  nliModelName: string;
+  nliMinEntailScore: string;
+  nliFailOnContradiction: boolean;
+  nliEvidenceSource: GradingSourceSelection;
+  nliEvidenceField: string;
+  provMode: "embeddings" | "llm";
+  provContextSource: GradingSourceSelection;
+  provContextField: string;
+  provEmbeddingType: "openai" | "huggingface" | "bedrock";
+  provEmbeddingModelName: string;
+  provMinScore: string;
+  provFailOnViolation: boolean;
+  provLlmProviderId: string;
+  provLlmJudgeSystemPromptSuffix: string;
+  toolRules: ToolUsageRule[];
+  notContainsText: string;
+  fieldEqualsField: string;
+  fieldEqualsExpected: string;
+  routeRules: RouteRuleDraft[];
+  actionRules: ActionRuleDraft[];
+  judgeRules: JudgeRuleDraft[];
+  judgeProviderId: string;
+  checks: ScenarioCheck[];
+  checksProviderId: string;
+  /** What the checks were made from, kept as it is. */
+  checksOlderMethods?: OlderMethods | null;
+}
 
 const GRADING_SOURCES = new Set<GradingSourceSelection>([
   "expected_output",
@@ -83,12 +120,6 @@ const legacyPerTool = (cfg: Record<string, unknown>): Record<string, ToolUsagePe
   };
 };
 
-// A rule id the builder can key on; the backend keeps whatever it is sent.
-export const newRuleId = (): string =>
-  typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `rule-${Math.random().toString(36).slice(2)}`;
-
 const numberList = (value: unknown): number[] =>
   Array.isArray(value) ? value.filter((item): item is number => typeof item === "number") : [];
 
@@ -125,7 +156,7 @@ const serializeScope = (rule: RuleScopeTarget): Record<string, unknown> => {
 };
 
 // Keep only plain-object rule entries; the backend tolerates junk entries, so
-// the wizard must too instead of crashing the page render.
+// the editor must too instead of crashing the page render.
 const objectRules = (rules: unknown[]): Record<string, unknown>[] =>
   rules.filter(
     (rule): rule is Record<string, unknown> =>
@@ -269,7 +300,7 @@ const parseJsonObject = (
 
 // One forbidden phrase per textarea line: trimmed, empties dropped, ASCII-case dedupe.
 // The backend re-dedupes with Unicode casefold, which is the authoritative pass.
-const splitForbiddenPhrases = (text: string): string[] => {
+export const splitForbiddenPhrases = (text: string): string[] => {
   const phrases: string[] = [];
   const seen = new Set<string>();
   for (const line of text.split("\n")) {
@@ -289,9 +320,18 @@ const forbiddenPhrasesToText = (config: Record<string, unknown> | undefined): st
   return (config?.text as string) ?? "";
 };
 
-// Parse the wizard's metadata textarea and fold in the "use memory" flag.
-export const wizardMetadata = (
-  data: EvaluationWizardData,
+// Starting values for a new evaluation.
+export const newEvaluationDefaults = (
+  lockedWorkflowId?: string,
+): Pick<EvaluationFormData, "workflowId" | "metrics" | "useMemory"> => ({
+  workflowId: lockedWorkflowId ?? "",
+  metrics: [],
+  useMemory: true,
+});
+
+// Parse the starting inputs and fold in the "use memory" flag.
+export const formMetadata = (
+  data: EvaluationFormData,
 ): Record<string, unknown> | undefined => {
   let metadata = parseJsonObject(data.inputMetadataText || "{}");
   if (data.useMemory) {
@@ -303,7 +343,7 @@ export const wizardMetadata = (
 };
 
 export const buildTechniqueConfigs = (
-  data: EvaluationWizardData,
+  data: EvaluationFormData,
 ): Record<string, Record<string, unknown>> => {
   const configs: Record<string, Record<string, unknown>> = {};
 
@@ -384,6 +424,10 @@ export const buildTechniqueConfigs = (
     };
   }
 
+  if (data.metrics.includes(CHECKS_TECHNIQUE)) {
+    configs.checks = serializeChecks(data.checks ?? [], data.checksProviderId, data.checksOlderMethods);
+  }
+
   if (data.metrics.includes("llm_judge")) {
     configs.llm_judge = {
       ...(data.judgeProviderId.trim() ? { llm_provider_id: data.judgeProviderId.trim() } : {}),
@@ -404,7 +448,7 @@ export const buildTechniqueConfigs = (
 export const getEditInitialData = (
   evaluation: TestEvaluationConfig,
   providers: LLMProviderMinimal[],
-): Partial<EvaluationWizardData> => {
+): Partial<EvaluationFormData> => {
   const notContainsCfg = evaluation.technique_configs?.["not_contains"] as Record<string, unknown> | undefined;
   const fieldEqualsCfg = evaluation.technique_configs?.["field_equals"] as Record<string, unknown> | undefined;
   const nliCfg = evaluation.technique_configs?.["nli_eval"] as Record<string, unknown> | undefined;
@@ -425,6 +469,7 @@ export const getEditInitialData = (
     "context_field",
     "expected_output",
   );
+  const savedChecks = parseChecks(evaluation.technique_configs?.[CHECKS_TECHNIQUE]);
   const metaWithoutMemory = evaluation.input_metadata
     ? Object.fromEntries(Object.entries(evaluation.input_metadata).filter(([k]) => k !== "use_memory"))
     : {};
@@ -459,5 +504,8 @@ export const getEditInitialData = (
     actionRules: parseActionRules(actionCfg),
     judgeRules: parseJudgeRules(judgeCfg),
     judgeProviderId: (judgeCfg?.llm_provider_id as string) ?? providers[0]?.id ?? "",
+    checks: savedChecks.checks,
+    checksProviderId: savedChecks.providerId || providers[0]?.id || "",
+    checksOlderMethods: savedChecks.olderMethods,
   };
 };

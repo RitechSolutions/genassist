@@ -5,7 +5,9 @@ from uuid import UUID
 from fastapi import HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-BreakdownDimension = Literal["provider", "model", "agent", "source", "llm", "evaluation_method", "node"]
+BreakdownDimension = Literal[
+    "provider", "model", "agent", "source", "llm", "evaluation_method", "analyst_purpose", "node"
+]
 BREAKDOWN_DIMENSIONS: tuple[str, ...] = get_args(BreakdownDimension)
 ExportDimension = Literal["provider", "model", "agent", "source"]
 EXPORT_DIMENSIONS: tuple[str, ...] = get_args(ExportDimension)
@@ -14,7 +16,8 @@ ExportFormat = Literal["csv", "xlsx", "pdf"]
 
 
 class LlmUsageQueryParams:
-    """Shared query params for every LLM usage read endpoint"""
+    """Shared query params for every LLM usage read endpoint. ``activity_*`` are exact
+    instants and take precedence over the ``from_date``/``to_date`` UTC days."""
 
     def __init__(
         self,
@@ -24,15 +27,35 @@ class LlmUsageQueryParams:
         group_id: Annotated[Optional[UUID], Query()] = None,
         provider: Annotated[Optional[str], Query()] = None,
         model: Annotated[Optional[str], Query()] = None,
+        activity_from_datetime: Annotated[Optional[datetime], Query()] = None,
+        activity_to_datetime: Annotated[Optional[datetime], Query()] = None,
     ):
         if from_date is not None and to_date is not None and from_date > to_date:
             raise HTTPException(status_code=400, detail="from_date must be on or before to_date")
+        if (activity_from_datetime is None) != (activity_to_datetime is None):
+            raise HTTPException(
+                status_code=400,
+                detail="activity_from_datetime and activity_to_datetime must be supplied together",
+            )
+        if activity_from_datetime is not None:
+            if activity_from_datetime.utcoffset() is None or activity_to_datetime.utcoffset() is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="activity_from_datetime and activity_to_datetime must include a timezone offset",
+                )
+            if activity_from_datetime >= activity_to_datetime:
+                raise HTTPException(
+                    status_code=400,
+                    detail="activity_from_datetime must be earlier than activity_to_datetime",
+                )
         self.from_date = from_date
         self.to_date = to_date
         self.agent_id = agent_id
         self.group_id = group_id
         self.provider = provider
         self.model = model
+        self.activity_from_datetime = activity_from_datetime
+        self.activity_to_datetime = activity_to_datetime
 
 
 class LlmUsageSummaryResponse(BaseModel):
@@ -41,9 +64,15 @@ class LlmUsageSummaryResponse(BaseModel):
 
     ``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only.
 
+    ``conversation_cost_usd`` is the priced spend on rows with a conversation;
+    ``non_conversation_cost_usd`` is the rest (evaluations, analyst runs, API,
+    schedules, studio tests, and rows whose conversation was purged).
+
     ``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,
     ignoring the filters, so a client can tell whether one has landed since it last
     reported the gap. It is only populated when the filtered window has unpriced calls.
+    ``last_fallback_at`` follows the same rules for calls priced from the bundled
+    fallback rates.
 
     Prompt tokens sent, normalized across providers. Includes cache (already
     in total_input_tokens). If provider reports input minus cache, we add it back
@@ -56,6 +85,9 @@ class LlmUsageSummaryResponse(BaseModel):
     total_cost_usd: float
     cost_is_partial: bool
     cost_per_conversation_usd: Optional[float] = None
+    distinct_conversations: int = 0
+    conversation_cost_usd: float = 0.0
+    non_conversation_cost_usd: float = 0.0
     agent_studio_test_cost_usd: float
     total_input_tokens: int
     total_output_tokens: int
@@ -69,6 +101,7 @@ class LlmUsageSummaryResponse(BaseModel):
     unpriced_calls: int
     priced_token_coverage_pct: float
     last_unpriced_at: Optional[datetime] = None
+    last_fallback_at: Optional[datetime] = None
 
 
 class LlmUsageTimeseriesItem(BaseModel):

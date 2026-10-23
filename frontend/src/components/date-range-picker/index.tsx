@@ -18,6 +18,7 @@ import { Button } from "@/components/button";
 import { Calendar } from "@/components/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
 import { cn } from "@/helpers/utils";
+import { formatDateRangeLabel } from "@/helpers/dateRange";
 
 export interface DatePreset {
   label: string;
@@ -64,6 +65,8 @@ export interface DateRangePickerProps {
   triggerClassName?: string;
   /** When true, dates after today cannot be selected (default: false). */
   disableFutureDates?: boolean;
+  /** When true, the trigger is disabled and the picker cannot be opened (default: false). */
+  disabled?: boolean;
 }
 
 function clampRangeToToday(range: DateRange | undefined): DateRange | undefined {
@@ -90,6 +93,7 @@ export const DateRangePicker = ({
   numberOfMonths = 2,
   triggerClassName,
   disableFutureDates = false,
+  disabled = false,
 }: DateRangePickerProps) => {
   const presets = useMemo(() => customPresets ?? getDefaultPresets(), [customPresets]);
   const todayEnd = useMemo(() => endOfDay(new Date()), []);
@@ -111,7 +115,7 @@ export const DateRangePicker = ({
 
   const label = value?.from
     ? value.to
-      ? `${format(value.from, "MMM d")} – ${format(value.to, "MMM d, yyyy")}`
+      ? formatDateRangeLabel(value.from, value.to)
       : format(value.from, "MMM d, yyyy")
     : placeholder;
 
@@ -121,6 +125,7 @@ export const DateRangePicker = ({
         <Button
           variant="outline"
           className={cn("gap-2 min-w-[200px] justify-start", triggerClassName)}
+          disabled={disabled}
         >
           <CalendarIcon className="h-4 w-4 text-muted-foreground" />
           <span>{label}</span>

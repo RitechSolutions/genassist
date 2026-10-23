@@ -203,7 +203,7 @@ export const handleNodeDoubleClick = (
 
   const dimensions = getNodeDimensions(fullNode);
 
-  const center = getNodeCenter(fullNode.position, dimensions);
+  const center = getNodeCenter(fullNode.positionAbsolute ?? fullNode.position, dimensions);
 
   reactFlowInstance.setCenter(center.x, center.y, {
     zoom: 1.5,
@@ -506,7 +506,7 @@ export const parseInputValue = (value: string, type: SchemaType): unknown => {
     }
   } catch (error) {
     // Return the original string if parsing fails
-    console.warn(`Failed to parse value "${value}" as ${type}:`, error);
+    console.warn('Failed to parse value "%s" as %s:', value, type, error);
     return value;
   }
 };

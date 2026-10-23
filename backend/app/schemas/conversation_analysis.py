@@ -7,6 +7,7 @@ from typing import Optional, Dict
 class ConversationAnalysisBase(BaseModel):
     conversation_id: UUID = Field(default_factory=uuid4)
     topic: str
+    subtopic: Optional[str] = None
     summary: str
     negative_sentiment: int
     positive_sentiment: int
@@ -45,3 +46,14 @@ class AnalysisResult:
     title: str
     kpi_metrics: Dict[str, int]  # Example: {"Response Time": 8, "Customer Satisfaction": 9}
 
+
+KPI_METRIC_KEYS = (
+    "Response Time",
+    "Customer Satisfaction",
+    "Quality of Service",
+    "Efficiency",
+    "Resolution Rate",
+    "Operator Knowledge",
+    "Tone",
+    "Sentiment",
+)
