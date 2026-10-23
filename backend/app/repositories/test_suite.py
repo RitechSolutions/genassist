@@ -1,9 +1,9 @@
 from datetime import datetime
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Set, Tuple
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import and_, delete, exists, func, literal, or_, select, update
+from sqlalchemy import and_, delete, exists, func, literal, or_, select, union, update
 from sqlalchemy import case as sa_case
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -432,17 +432,56 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         evaluation = TestEvaluationModel
         return self._contains_condition(search, evaluation.name, func.coalesce(evaluation.description, ""))
 
+    @staticmethod
+    def _category_condition(category: Optional[str]):
+        """None: any category; "": none set; else that category, whatever its case."""
+        if category is None:
+            return None
+        if category == "":
+            return TestEvaluationModel.category.is_(None)
+        # Both sides lowered by the database, so they share one case mapping.
+        return func.lower(TestEvaluationModel.category) == func.lower(category)
+
+    def _filtered(self, stmt, search: Optional[str], category: Optional[str]):
+        for condition in (self._search_condition(search), self._category_condition(category)):
+            if condition is not None:
+                stmt = stmt.where(condition)
+        return stmt
+
+    async def categories(self) -> List[str]:
+        """Every category a live dataset or evaluation has."""
+        evaluations = select(TestEvaluationModel.category).where(
+            TestEvaluationModel.is_deleted == 0, TestEvaluationModel.category.is_not(None)
+        )
+        suites = select(TestSuiteModel.category).where(
+            TestSuiteModel.is_deleted == 0, TestSuiteModel.category.is_not(None)
+        )
+        result = await self.db.execute(union(evaluations, suites))
+        return [row[0] for row in result.all()]
+
+    async def category_spelling(self, category: str) -> Optional[str]:
+        """How a live dataset or evaluation already spells this category, whatever its case."""
+        wanted = func.lower(category)
+        evaluations = select(TestEvaluationModel.category).where(
+            TestEvaluationModel.is_deleted == 0, func.lower(TestEvaluationModel.category) == wanted
+        )
+        suites = select(TestSuiteModel.category).where(
+            TestSuiteModel.is_deleted == 0, func.lower(TestSuiteModel.category) == wanted
+        )
+        result = await self.db.execute(union(evaluations, suites))
+        # Two spellings only if two saves raced; the list shows the same one.
+        return min((row[0] for row in result.all()), default=None)
+
     async def get_page_for_workflow(
         self,
         workflow_id: Optional[UUID],
         offset: int,
         limit: int,
         search: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> List[TestEvaluationModel]:
         stmt = select(TestEvaluationModel).where(self._workflow_condition(workflow_id))
-        search_condition = self._search_condition(search)
-        if search_condition is not None:
-            stmt = stmt.where(search_condition)
+        stmt = self._filtered(stmt, search, category)
         stmt = (
             stmt.order_by(TestEvaluationModel.created_at.desc())
             .offset(offset)
@@ -452,51 +491,52 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         return result.scalars().all()
 
     async def count_for_workflow(
-        self, workflow_id: Optional[UUID], search: Optional[str] = None
+        self, workflow_id: Optional[UUID], search: Optional[str] = None, category: Optional[str] = None
     ) -> int:
         stmt = (
             select(func.count())
             .select_from(TestEvaluationModel)
             .where(self._workflow_condition(workflow_id))
         )
-        search_condition = self._search_condition(search)
-        if search_condition is not None:
-            stmt = stmt.where(search_condition)
+        stmt = self._filtered(stmt, search, category)
         result = await self.db.execute(stmt)
         return int(result.scalar() or 0)
 
     async def get_all_for_workflow(
-        self, workflow_id: Optional[UUID]
+        self, workflow_id: Optional[UUID], category: Optional[str] = None
     ) -> List[TestEvaluationModel]:
-        """Every evaluation for a workflow (no paging) — the Run all scope."""
-        stmt = (
-            select(TestEvaluationModel)
-            .where(self._workflow_condition(workflow_id))
-            .order_by(TestEvaluationModel.created_at.desc())
-        )
+        """Every evaluation for a workflow (no paging), or in one category — the Run all scope."""
+        stmt = select(TestEvaluationModel).where(self._workflow_condition(workflow_id))
+        stmt = self._filtered(stmt, None, category).order_by(TestEvaluationModel.created_at.desc())
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
+    async def ids_in_category(self, category: str) -> Set[UUID]:
+        """Live evaluations in this category ("" = none set), as the lists filter them."""
+        stmt = select(TestEvaluationModel.id).where(
+            TestEvaluationModel.is_deleted == 0, self._category_condition(category)
+        )
+        result = await self.db.execute(stmt)
+        return set(result.scalars().all())
+
     async def count_by_effective_workflow(
-        self, search: Optional[str] = None
+        self, search: Optional[str] = None, category: Optional[str] = None
     ) -> List[Tuple[Optional[UUID], int]]:
         """(workflow_id, count) per workflow; ``None`` = unassigned bucket.
 
         Versions collapse onto one row, so a workflow never appears twice. A search
-        counts only the evaluations it matches, and leaves out workflows with none.
+        or category counts only the evaluations it matches, and leaves out workflows with none.
         """
         group_key, _ = self._grouped_effective_workflow()
         stmt = self._grouped_select(
             group_key.label("workflow_id"), func.count().label("count")
         ).group_by(group_key)
-        matches = self._search_condition(search)
-        if matches is not None:
-            stmt = stmt.where(matches)
+        stmt = self._filtered(stmt, search, category)
         result = await self.db.execute(stmt)
         return [(row.workflow_id, int(row.count)) for row in result.all()]
 
     async def get_latest_run_pointers(
-        self, search: Optional[str] = None
+        self, search: Optional[str] = None, category: Optional[str] = None
     ) -> List[Tuple[Optional[UUID], List[str]]]:
         """(workflow_id, run_ids) for every live evaluation, or those a search matches.
 
@@ -509,9 +549,7 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         stmt = self._grouped_select(
             group_key.label("workflow_id"), TestEvaluationModel.run_ids
         )
-        matches = self._search_condition(search)
-        if matches is not None:
-            stmt = stmt.where(matches)
+        stmt = self._filtered(stmt, search, category)
         result = await self.db.execute(stmt)
         return [(row.workflow_id, list(row.run_ids or [])) for row in result.all()]
 

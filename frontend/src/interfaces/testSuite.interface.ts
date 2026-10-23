@@ -5,6 +5,8 @@ export interface TestSuite {
   id?: string;
   name: string;
   description?: string;
+  /** A team's own label, shared with evaluations; null when none is set. */
+  category?: string | null;
   workflow_id?: string;
   default_input_metadata?: Record<string, unknown>;
   created_at?: string;
@@ -216,6 +218,8 @@ export interface RunConversations {
 export interface CreateTestSuitePayload {
   name: string;
   description?: string;
+  /** On an update, "" clears it. */
+  category?: string;
   workflow_id?: string;
   default_input_metadata?: Record<string, unknown>;
 }

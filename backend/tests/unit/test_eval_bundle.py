@@ -1348,6 +1348,20 @@ class TestRoundTrip:
         assert created.technique_configs["route_taken"]["rules"][0]["router"] == "tgt-router"
         assert result.case_count == 1
 
+    @pytest.mark.asyncio
+    async def test_categories_go_out_and_come_back_with_the_bundle(self):
+        export_service, evaluation, _, _ = _export_fixture()
+        suite = export_service.suites.get_suite.return_value
+        export_service.suites.get_evaluation.return_value = evaluation.model_copy(update={"category": "Refunds"})
+        export_service.suites.get_suite.return_value = suite.model_copy(update={"category": "Refund flows"})
+        bundle = await export_service.export_evaluation(uuid4())
+        assert (bundle.evaluation.category, bundle.dataset.category) == ("Refunds", "Refund flows")
+
+        import_service = _import_service(uuid4())
+        await import_service.import_bundle(EvaluationImportRequest(bundle=bundle, target_workflow_id=uuid4()))
+        assert import_service.suites.create_evaluation.await_args.args[0].category == "Refunds"
+        assert import_service.suites.create_suite.await_args.args[0].category == "Refund flows"
+
 
 def _route_only_evaluation(name: str) -> BundleEvaluation:
     return BundleEvaluation(
@@ -1501,6 +1515,55 @@ class TestBundleSetExport:
         shared, other = bundle_set.evaluations[0], bundle_set.evaluations[1]
         assert shared.dataset_local_id == other.dataset_local_id
         assert bundle_set.evaluations[2].dataset_local_id != shared.dataset_local_id
+
+    @pytest.mark.asyncio
+    async def test_export_set_keeps_only_the_evaluations_in_the_category(self):
+        workflow_id, suite_id = uuid4(), uuid4()
+        evaluations = [
+            _stored_evaluation("A checks", suite_id, workflow_id),
+            _stored_evaluation("B checks", suite_id, workflow_id),
+        ]
+        service = _service()
+        service.suites.list_evaluations.return_value = evaluations
+        service.suites.evaluation_ids_in_category.return_value = {evaluations[1].id}
+        service.suites.get_evaluation.side_effect = lambda eid: next(
+            e for e in evaluations if e.id == eid
+        )
+        service.suites.get_suite.return_value = TestSuiteInDB(
+            id=suite_id, name="Shared dataset", workflow_id=workflow_id,
+            created_at=NOW, updated_at=NOW,
+        )
+        service.suites.list_cases_for_suite.return_value = [
+            TestCaseInDB(
+                id=uuid4(), suite_id=suite_id, input_data={"message": "hi"},
+                created_at=NOW, updated_at=NOW,
+            )
+        ]
+        service.suites.get_evaluation_tool_catalog.return_value = (
+            EvaluationToolCatalog(**_catalog("src"))
+        )
+        service.workflows.get_by_id.return_value = SimpleNamespace(
+            id=workflow_id, name="HR Assistant", version="1.0"
+        )
+        service.workflows.get_all_minimal.return_value = []
+        service.providers.get_all_minimal.return_value = []
+
+        bundle_set = await service.export_workflow_evaluations(workflow_id, "refunds")
+
+        assert [i.evaluation.name for i in bundle_set.evaluations] == ["B checks"]
+        service.suites.evaluation_ids_in_category.assert_awaited_once_with("refunds")
+
+        # None in the category: nothing to export, said as such.
+        service.suites.evaluation_ids_in_category.return_value = set()
+        with pytest.raises(AppException) as excinfo:
+            await service.export_workflow_evaluations(workflow_id, "refunds")
+        assert excinfo.value.status_code == 404
+        assert excinfo.value.error_detail == "This workflow has no evaluations in this category to export."
+
+        # None without a category: the message doesn't speak of a category.
+        with pytest.raises(AppException) as excinfo:
+            await service.export_workflow_evaluations(workflow_id, "")
+        assert excinfo.value.error_detail == "This workflow has no evaluations without a category to export."
 
     @pytest.mark.asyncio
     async def test_export_set_with_no_evaluations_404s(self):

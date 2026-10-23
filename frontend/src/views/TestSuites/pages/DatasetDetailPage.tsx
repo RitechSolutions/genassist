@@ -30,6 +30,7 @@ import { SearchInput } from "@/components/SearchInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { PageListSkeleton } from "@/components/skeletons";
+import { CategoryBadge } from "../components/CategoryBadge";
 import { ConversationRecordGroup } from "../components/ConversationRecordGroup";
 import { ImportFromConversationDialog } from "../components/ImportFromConversationDialog";
 import { ImportFromFilesDialog } from "../components/ImportFromFilesDialog";
@@ -241,6 +242,7 @@ const DatasetDetailPage: React.FC = () => {
               </span>
             )}
           </h1>
+          {suite?.category && <CategoryBadge name={suite.category} className="mt-1.5" />}
           {suite?.description && (
             <p className="mt-1 text-sm text-muted-foreground animate-fade-up">
               {suite.description}

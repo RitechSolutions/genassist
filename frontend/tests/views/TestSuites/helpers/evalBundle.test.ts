@@ -76,6 +76,15 @@ describe("bundleSetFilename", () => {
     expect(bundleSetFilename("")).toBe("evaluations-workflow.json");
     expect(bundleSetFilename("***")).toBe("evaluations-workflow.json");
   });
+
+  it("names a file with one category's evaluations after the category", () => {
+    expect(bundleSetFilename("Support Bot", {})).toBe("evaluations-support-bot.json");
+    expect(bundleSetFilename("Support Bot", { category: "Refund flows" })).toBe(
+      "evaluations-support-bot-refund-flows.json",
+    );
+    expect(bundleSetFilename("Support Bot", { uncategorized: true })).toBe("evaluations-support-bot-no-category.json");
+    expect(bundleSetFilename("Support Bot", { category: "日本" })).toBe("evaluations-support-bot-category.json");
+  });
 });
 
 describe("apiErrorDetail", () => {

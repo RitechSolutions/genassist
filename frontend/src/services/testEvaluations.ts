@@ -76,31 +76,53 @@ export const runTestEvaluation = (
     targetWorkflowId ? { target_workflow_id: targetWorkflowId } : {},
   );
 
+/** Runs every evaluation of the workflow, or only those in one category. */
 export const runWorkflowEvaluations = (
   workflowId: string,
   targetWorkflowId?: string,
-) =>
-  apiRequest<StartedEvaluationRun[]>(
+  filter: CategoryQuery = {},
+) => {
+  const body = { ...(targetWorkflowId ? { target_workflow_id: targetWorkflowId } : {}), ...filter };
+  return apiRequest<StartedEvaluationRun[]>(
     "POST",
     `${BASE}/workflows/${workflowId}/evaluations/run`,
-    targetWorkflowId ? { target_workflow_id: targetWorkflowId } : undefined,
+    Object.keys(body).length ? body : undefined,
   );
+};
 
-/** Every workflow's summary; with a search, only workflows whose evaluations match it. */
-export const getWorkflowEvaluationSummaries = (search?: string) => {
-  const query = search?.trim() ? `?${new URLSearchParams({ search: search.trim() }).toString()}` : "";
+/** Only evaluations in a category, or with none set; neither means every one. */
+export interface CategoryQuery {
+  category?: string;
+  uncategorized?: boolean;
+}
+
+const addCategory = (query: URLSearchParams, filter?: CategoryQuery) => {
+  if (filter?.uncategorized) query.set("uncategorized", "true");
+  else if (filter?.category) query.set("category", filter.category);
+};
+
+/** The categories datasets and evaluations use, in alphabetical order. */
+export const listEvaluationCategories = () => apiRequest<string[]>("GET", `${BASE}/categories`);
+
+/** Every workflow's summary; with a search or category, only workflows whose evaluations match it. */
+export const getWorkflowEvaluationSummaries = (search?: string, filter?: CategoryQuery) => {
+  const params = new URLSearchParams();
+  if (search?.trim()) params.set("search", search.trim());
+  addCategory(params, filter);
+  const query = params.toString() ? `?${params.toString()}` : "";
   return apiRequest<WorkflowEvaluationSummary[]>("GET", `${BASE}/workflows/evaluation-summaries${query}`);
 };
 
 export const getWorkflowEvaluationsPage = (
   workflowId: string,
-  params: { page: number; pageSize: number; search?: string },
+  params: { page: number; pageSize: number; search?: string } & CategoryQuery,
 ) => {
   const query = new URLSearchParams({
     page: String(params.page),
     page_size: String(params.pageSize),
   });
   if (params.search?.trim()) query.set("search", params.search.trim());
+  addCategory(query, params);
   return apiRequest<PaginatedEvaluations>(
     "GET",
     `${BASE}/workflows/${workflowId}/evaluations?${query.toString()}`,
@@ -146,11 +168,13 @@ export const importEvaluation = (payload: EvaluationImportPayload) =>
     payload as unknown as Record<string, unknown>,
   );
 
-export const exportWorkflowEvaluations = (workflowId: string) =>
-  apiRequest<EvaluationBundleSet>(
-    "GET",
-    `${BASE}/workflows/${workflowId}/evaluations/export`,
-  );
+/** Every evaluation of the workflow in one file, or only those in one category. */
+export const exportWorkflowEvaluations = (workflowId: string, filter?: CategoryQuery) => {
+  const query = new URLSearchParams();
+  addCategory(query, filter);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiRequest<EvaluationBundleSet>("GET", `${BASE}/workflows/${workflowId}/evaluations/export${suffix}`);
+};
 
 export interface EvaluationSetImportPayload {
   bundle_set: EvaluationBundleSet;

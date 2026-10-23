@@ -35,6 +35,7 @@ from app.schemas.test_suite import (
     TestEvaluationUpdate,
     TestRun,
     WorkflowEvaluationSummary,
+    tidy_category,
 )
 from app.services.eval_bundle import EvalBundleService
 from app.services.test_suite import TestSuiteService
@@ -196,10 +197,12 @@ async def export_evaluation(
 )
 async def export_workflow_evaluations(
     workflow_id: UUID,
+    category: Optional[str] = Query(None, max_length=50),
+    uncategorized: bool = Query(False, description="Only evaluations without a category."),
     service: EvalBundleService = Injected(EvalBundleService),
 ):
-    """Every evaluation of this workflow as one portable bundle set."""
-    return await service.export_workflow_evaluations(workflow_id)
+    """Every evaluation of this workflow, or those in one category, as one portable bundle set."""
+    return await service.export_workflow_evaluations(workflow_id, _category_filter(category, uncategorized))
 
 
 @router.patch(
@@ -302,9 +305,10 @@ async def run_workflow_evaluations(
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     """
-    Queue a run for every evaluation that targets this workflow. Returns the
-    per-evaluation outcome immediately; execution is handled by background
-    workers. Evaluations that could not be queued are reported individually.
+    Queue a run for every evaluation that targets this workflow, or for those
+    in one category. Returns the per-evaluation outcome immediately; execution
+    is handled by background workers. Evaluations that could not be queued are
+    reported individually.
 
     A Redis ``SET NX`` lock makes the "no active run?" check and the batch start
     one atomic operation, so two concurrent requests cannot both start a batch.
@@ -358,6 +362,7 @@ async def run_workflow_evaluations(
             workflow_id,
             dispatch,
             data.target_workflow_id if data else None,
+            _category_filter(data.category, data.uncategorized) if data else None,
         )
     finally:
         # Compare-and-delete so we only release our own lock; never let a release
@@ -368,6 +373,23 @@ async def run_workflow_evaluations(
             logger.warning("Failed to release Run-all lock %s", lock_key, exc_info=True)
 
 
+def _category_filter(category: Optional[str], uncategorized: bool) -> Optional[str]:
+    """None for any category, "" for none set, else the category."""
+    if uncategorized:
+        return ""
+    return tidy_category(category) or None
+
+
+@router.get(
+    "/categories",
+    response_model=List[str],
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def list_categories(service: TestSuiteService = Injected(TestSuiteService)):
+    """The categories datasets and evaluations use, for pickers and filters."""
+    return await service.list_categories()
+
+
 @router.get(
     "/workflows/evaluation-summaries",
     response_model=List[WorkflowEvaluationSummary],
@@ -375,13 +397,15 @@ async def run_workflow_evaluations(
 )
 async def list_workflow_evaluation_summaries(
     search: Optional[str] = Query(None, max_length=200),
+    category: Optional[str] = Query(None, max_length=50),
+    uncategorized: bool = Query(False, description="Only evaluations without a category."),
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     """One row per workflow (and the unassigned bucket): count, health, running.
 
-    With a search, only workflows with evaluations whose name or description match.
+    With a search or category, only workflows with evaluations that match.
     """
-    return await service.get_workflow_evaluation_summaries(search)
+    return await service.get_workflow_evaluation_summaries(search, _category_filter(category, uncategorized))
 
 
 @router.get(
@@ -394,6 +418,8 @@ async def list_workflow_evaluations(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None),
+    category: Optional[str] = Query(None, max_length=50),
+    uncategorized: bool = Query(False, description="Only evaluations without a category."),
     service: TestSuiteService = Injected(TestSuiteService),
 ):
     """A page of one workflow's evaluations. Use ``unassigned`` for evals with no workflow."""
@@ -404,4 +430,6 @@ async def list_workflow_evaluations(
             resolved = UUID(workflow_id)
         except ValueError:
             raise HTTPException(status_code=422, detail="Invalid workflow_id")
-    return await service.list_workflow_evaluations(resolved, page, page_size, search)
+    return await service.list_workflow_evaluations(
+        resolved, page, page_size, search, _category_filter(category, uncategorized)
+    )

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 
 class TestCaseBase(BaseModel):
@@ -172,9 +172,33 @@ class AddConversationToSuitesResult(BaseModel):
     failed: int = 0
 
 
+CATEGORY_MAX_LENGTH = 50
+
+
+def tidy_category(value: Any, *, clearing: bool = False) -> Optional[str]:
+    """A category with its spaces tidied; empty means none, or on an update, clear it."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("A category is text.")
+    tidy = " ".join(value.split())
+    if len(tidy) > CATEGORY_MAX_LENGTH:
+        raise ValueError(f"A category is at most {CATEGORY_MAX_LENGTH} characters.")
+    if not tidy:
+        return "" if clearing else None
+    return tidy
+
+
+# A category wherever one comes in: spaces tidied and its length checked.
+Category = Annotated[Optional[str], BeforeValidator(tidy_category)]
+# On an update "" stays, which clears it.
+ClearableCategory = Annotated[Optional[str], BeforeValidator(lambda value: tidy_category(value, clearing=True))]
+
+
 class TestSuiteBase(BaseModel):
     name: str
     description: Optional[str] = None
+    category: Category = Field(default=None, description="Its category, shared with evaluations.")
     workflow_id: Optional[UUID] = Field(
         default=None,
         description=(
@@ -197,6 +221,7 @@ class TestSuiteCreate(TestSuiteBase):
 class TestSuiteUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    category: ClearableCategory = Field(default=None, description='"" clears it.')
     workflow_id: Optional[UUID] = None
     default_input_metadata: Optional[Dict[str, Any]] = None
 
@@ -426,6 +451,25 @@ class RunWorkflowEvaluationsRequest(BaseModel):
             "own. Must be a version of the same workflow (same agent)."
         ),
     )
+    category: Optional[str] = Field(
+        default=None, description="Only the evaluations in this category, whatever its case."
+    )
+    uncategorized: bool = Field(default=False, description="Only the evaluations without a category.")
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _tidy_category(cls, value: Any) -> Optional[str]:
+        tidy = tidy_category(value)
+        # Blank text would widen Run all to every evaluation, which leaving it out already asks for.
+        if value is not None and tidy is None:
+            raise ValueError("A category can't be blank. Leave it out to run every evaluation.")
+        return tidy
+
+    @model_validator(mode="after")
+    def _one_filter(self) -> "RunWorkflowEvaluationsRequest":
+        if self.category and self.uncategorized:
+            raise ValueError("Ask for a category or for no category, not both.")
+        return self
 
 
 class StartedEvaluationRun(BaseModel):
@@ -445,6 +489,7 @@ class StartedEvaluationRun(BaseModel):
 class TestEvaluationBase(BaseModel):
     name: str
     description: Optional[str] = None
+    category: Category = Field(default=None, description="Its category, shared with datasets.")
     suite_id: UUID
     workflow_id: Optional[UUID] = None
     techniques: List[str] = Field(default_factory=list)
@@ -459,6 +504,7 @@ class TestEvaluationCreate(TestEvaluationBase):
 class TestEvaluationUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    category: ClearableCategory = Field(default=None, description='"" clears it.')
     suite_id: Optional[UUID] = None
     workflow_id: Optional[UUID] = None
     techniques: Optional[List[str]] = None

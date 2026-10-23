@@ -7,6 +7,7 @@ export type MethodSettingsValue = Omit<
   EvaluationFormData,
   | "name"
   | "description"
+  | "category"
   | "suiteId"
   | "workflowId"
   | "metrics"

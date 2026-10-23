@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListChecks, Plus, Upload } from "lucide-react";
 
 import { PageLayout } from "@/components/PageLayout";
@@ -14,11 +14,20 @@ import { getWorkflowEvaluationSummaries } from "@/services/testEvaluations";
 import { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import { WorkflowEvaluationsPanel } from "../components/WorkflowEvaluationsPanel";
 import { ImportEvaluationDialog } from "../components/ImportEvaluationDialog";
+import { CategoryFilter } from "../components/CategoryFilter";
 import { WORKFLOW_SUMMARIES_QUERY_KEY } from "../hooks/useEvaluationData";
+import { CATEGORIES_QUERY_KEY, useCategories } from "../hooks/useCategories";
 import { planSections, sectionKeyFor } from "../helpers/evaluationSections";
+import { ALL_CATEGORIES, categoryQuery } from "../helpers/categories";
 
 const UNASSIGNED = "unassigned";
 const RUNNING_POLL_MS = 5000;
+
+// The workflows with evaluations that match a search, within a category.
+const matchingQuery = (query: string, category: string) => ({
+  queryKey: [...WORKFLOW_SUMMARIES_QUERY_KEY, "search", query, category],
+  queryFn: async () => (await getWorkflowEvaluationSummaries(query, categoryQuery(category))) ?? [],
+});
 // Which workflows the person opened or folded, kept in this browser only.
 const OPENED_KEY = "genassist.evaluations.openedWorkflows";
 
@@ -111,32 +120,45 @@ const EvaluationsPage: React.FC = () => {
     keys: new Set(),
   });
   const focusWorkflow = searchParams.get("workflow");
+  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
+  const categories = useCategories();
+  const filteringByCategory = categoryFilter !== ALL_CATEGORIES;
 
   // Summaries carry the live health and running state. staleTime 0 makes
   // react-query refetch them when the tab regains focus; the interval only runs
   // while a batch is active and react-query pauses it in a hidden tab.
   const {
-    data: summaries = [],
+    data: summariesData,
     isPending: isSummariesLoading,
     isError: hasSummariesError,
     refetch: refetchSummaries,
   } = useQuery({
-    queryKey: WORKFLOW_SUMMARIES_QUERY_KEY,
-    queryFn: async () => (await getWorkflowEvaluationSummaries()) ?? [],
+    queryKey: [...WORKFLOW_SUMMARIES_QUERY_KEY, "category", categoryFilter],
+    queryFn: async () => ({
+      category: categoryFilter,
+      rows: (await getWorkflowEvaluationSummaries(undefined, categoryQuery(categoryFilter))) ?? [],
+    }),
+    // The sections stay while another category loads.
+    placeholderData: keepPreviousData,
     staleTime: 0,
     refetchInterval: (query) =>
-      (query.state.data ?? []).some((summary) => summary.any_running)
+      (query.state.data?.rows ?? []).some((summary) => summary.any_running)
         ? RUNNING_POLL_MS
         : false,
   });
+  const summaries = useMemo(() => summariesData?.rows ?? [], [summariesData]);
+  // Sections take the category their counts are for, so they switch together with them.
+  const sectionCategory = summariesData?.category ?? categoryFilter;
 
   // One request finds the workflows with matching evaluations, instead of one per section.
-  const matching = useQuery({
-    queryKey: [...WORKFLOW_SUMMARIES_QUERY_KEY, "search", query],
-    queryFn: async () => (await getWorkflowEvaluationSummaries(query)) ?? [],
-    enabled: Boolean(query),
-    staleTime: 0,
-  });
+  // It follows the sections' category too, so the match counts agree with them.
+  const matching = useQuery({ ...matchingQuery(query, sectionCategory), enabled: Boolean(query), staleTime: 0 });
+  // A new category's matches load alongside its summaries, ready when the sections switch to it.
+  useEffect(() => {
+    if (query && categoryFilter !== sectionCategory) {
+      void queryClient.prefetchQuery(matchingQuery(query, categoryFilter));
+    }
+  }, [query, categoryFilter, sectionCategory, queryClient]);
   const matches = useMemo(() => {
     if (!query) return null;
     // A failed search falls back to the workflow names.
@@ -174,6 +196,7 @@ const EvaluationsPage: React.FC = () => {
   const afterImport = () => {
     void queryClient.invalidateQueries({ queryKey: WORKFLOW_SUMMARIES_QUERY_KEY });
     void queryClient.invalidateQueries({ queryKey: ["workflow-evaluations"] });
+    void queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
     loadReference()
       .then(setWorkflows)
       .catch(() => undefined);
@@ -300,6 +323,7 @@ const EvaluationsPage: React.FC = () => {
       <PageHeader
         title="Evaluations"
         subtitle="Your evaluations, grouped by workflow."
+        filters={<CategoryFilter value={categoryFilter} onChange={setCategoryFilter} categories={categories} />}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchPlaceholder="Search evaluations..."
@@ -330,6 +354,7 @@ const EvaluationsPage: React.FC = () => {
                   onOpenChange={(next) => (query ? setOpenInSearch(row.key, next) : setOpen(row.key, next))}
                   search={search}
                   running={row.anyRunning}
+                  category={sectionCategory}
                   reference={reference}
                   onOpenEvaluation={(evaluationId) => navigate(`/tests/evaluations/${evaluationId}`)}
                 />
@@ -347,7 +372,15 @@ const EvaluationsPage: React.FC = () => {
         </div>
       ) : (
         <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
-          {isLoading ? <PageListSkeleton variant="evaluation" bordered={false} /> : hasError ? errorState : emptyState}
+          {isLoading ? (
+            <PageListSkeleton variant="evaluation" bordered={false} />
+          ) : hasError ? (
+            errorState
+          ) : filteringByCategory ? (
+            <p className="py-12 text-center text-sm text-muted-foreground">No evaluations in this category.</p>
+          ) : (
+            emptyState
+          )}
         </div>
       )}
 
