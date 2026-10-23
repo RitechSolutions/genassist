@@ -5,6 +5,7 @@ ML Model Inference node implementation using the BaseNode class.
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional, Sequence
 from uuid import UUID
 
@@ -40,6 +41,9 @@ ML_MODELS_UPLOAD_DIR = str(DATA_VOLUME / "ml_models")
 
 _BOOL_TRUE = frozenset({"true"})
 _BOOL_FALSE = frozenset({"false"})
+_INT_PATTERN = re.compile(r"[+-]?[0-9]+")
+_FLOAT_PATTERN = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_NON_FINITE_NUMBER_TEXT = frozenset({"inf", "infinity", "nan"})
 
 
 def convert_value(val: Any) -> Any:
@@ -73,17 +77,17 @@ def convert_value(val: Any) -> Any:
         return True
     if val_lower in _BOOL_FALSE:
         return False
-    # Try float conversion
-    if "." in stripped:
-        try:
-            return float(stripped)
-        except ValueError:
-            return val
-    # Try integer conversion
-    try:
+    # One rule for numbers: plain integers become int, other decimal or
+    # scientific notation becomes float. Python's own int()/float() would
+    # also accept "1_000", "inf" and "nan", which are not valid inputs, so
+    # those stay text and are rejected where a number is required.
+    if _INT_PATTERN.fullmatch(stripped):
         return int(stripped)
-    except ValueError:
-        return val
+    if _FLOAT_PATTERN.fullmatch(stripped):
+        # An overflow such as "1e400" parses to inf; the numeric checks
+        # reject non-finite values with a specific message.
+        return float(stripped)
+    return val
 
 
 def _convert_categorical_input(
@@ -598,6 +602,68 @@ def _prepare_inference_inputs(
         prepared_inputs[name] = values
 
     return prepared_inputs, defaults_applied
+
+
+def _validate_numeric_inputs(
+    normalized_inputs: Dict[str, List[Any]],
+    numeric_features: Sequence[str],
+    reject_arbitrary_text: bool,
+) -> None:
+    """Reject text and non-finite values in numeric features before they are
+    cast to float - numpy's cast would otherwise accept "1_000", "inf" and
+    "Infinity" that convert_value deliberately left as text."""
+    problems = []
+    for name in numeric_features:
+        bad = []
+        for value in normalized_inputs.get(name, []):
+            if isinstance(value, np.generic):
+                value = value.item()
+            invalid = isinstance(value, float) and not np.isfinite(value)
+            if isinstance(value, str):
+                stripped = value.strip()
+                unsigned = stripped.lower().lstrip("+-")
+                without_underscores = stripped.replace("_", "")
+                invalid = (
+                    reject_arbitrary_text
+                    or unsigned in _NON_FINITE_NUMBER_TEXT
+                    or (
+                        "_" in stripped
+                        and (
+                            _INT_PATTERN.fullmatch(without_underscores)
+                            or _FLOAT_PATTERN.fullmatch(without_underscores)
+                        )
+                    )
+                )
+            if invalid:
+                if str(value) not in bad:
+                    bad.append(str(value))
+        if bad:
+            problems.append(f"'{name}': {', '.join(bad[:5])}{' …' if len(bad) > 5 else ''}")
+    if problems:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "Numeric feature(s) received values that are not finite numbers: "
+                f"{'; '.join(problems)}. Use plain numbers such as 1000, 2.5 or 1e5."
+            ),
+        )
+
+
+def _echo_input_columns(
+    normalized_inputs: Dict[str, List[Any]],
+    feature_names: Sequence[str],
+    batch_size: int,
+) -> Dict[str, List[Any]]:
+    """Echo the prepared inputs column by column, so each value keeps its own
+    type. A single combined numpy array would turn every value into a string
+    as soon as one feature is text (1.5 -> "1.5", True -> "True")."""
+    return {
+        name: [
+            value.item() if isinstance(value, np.generic) else value
+            for value in _broadcast_column(normalized_inputs[name], batch_size, name)
+        ]
+        for name in feature_names
+    }
 
 
 def _build_input_array(
@@ -1267,6 +1333,12 @@ class MLModelInferenceNode(BaseNode):
                 encoded_feature_columns = (
                     categorical_columns + categorical_columns_no_drop + label_columns + ordinal_columns
                 )
+                numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
+                _validate_numeric_inputs(
+                    normalized_inputs,
+                    numeric_order,
+                    reject_arbitrary_text=bool(encoded_feature_columns),
+                )
 
                 # Build every output column by name first, then assemble the
                 # final matrix in the exact order the model was actually fit
@@ -1280,7 +1352,6 @@ class MLModelInferenceNode(BaseNode):
                 column_arrays: Dict[str, np.ndarray] = {}
 
                 if encoded_feature_columns:
-                    numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
                     numeric_data = (
                         _build_input_array(normalized_inputs, numeric_order).astype(float)
                         if numeric_order else np.empty((batch_size, 0))
@@ -1478,10 +1549,9 @@ class MLModelInferenceNode(BaseNode):
                 # (columns ordered by feature_names) so the echoed input reflects
                 # what the caller actually submitted, not the expanded matrix
                 # handed to the model.
-                input_data_by_column = {
-                    feature_names[i]: raw_input_data[:, i].tolist()
-                    for i in range(len(feature_names))
-                }
+                input_data_by_column = _echo_input_columns(
+                    normalized_inputs, feature_names, batch_size
+                )
 
                 prediction_values, prediction_labels, prediction_entries = _build_prediction_outputs(
                     predictions, class_labels

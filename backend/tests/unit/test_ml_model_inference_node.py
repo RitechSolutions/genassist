@@ -21,6 +21,7 @@ from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
     _prepare_inference_inputs,
     _validate_categorical_inputs,
     convert_input_types,
+    convert_value,
 )
 from app.modules.workflow.engine.utils import describe_exception
 
@@ -2163,3 +2164,131 @@ class TestCategoricalErrorMessages:
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
         assert exc.value.error_detail == "modelId must be a valid UUID."
+
+
+class TestConvertValueNumbers:
+    """MI-12: one parsing rule - int for plain integer strings, otherwise float;
+    underscores and non-finite values stay text."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("42", 42),
+            ("-7", -7),
+            ("+5", 5),
+            (" 12 ", 12),
+            ("2.5", 2.5),
+            ("2.5E-3", 0.0025),
+            ("1e5", 100000.0),
+            ("-1.5e2", -150.0),
+            (".5", 0.5),
+            ("-.5", -0.5),
+            ("3.", 3.0),
+            ("1_000", "1_000"),
+            ("1_0.5", "1_0.5"),
+            ("inf", "inf"),
+            ("-Infinity", "-Infinity"),
+            ("nan", "nan"),
+            ("1e400", float("inf")),
+            ("abc", "abc"),
+            ("1.2.3", "1.2.3"),
+            ("e5", "e5"),
+        ],
+    )
+    def test_parses_numbers_with_one_rule(self, raw, expected):
+        result = convert_value(raw)
+        assert result == expected
+        assert type(result) is type(expected)
+
+    def test_numeric_default_in_scientific_notation_is_accepted(self):
+        prepared, applied = _prepare_inference_inputs(
+            {"hour": [8]},
+            ["hour", "lag_24"],
+            defaults={"lag_24": "1e5"},
+            categorical_features=[],
+            categorical_values={},
+        )
+
+        assert prepared["lag_24"] == [100000.0]
+        assert applied == ["lag_24"]
+
+    @pytest.mark.parametrize("default", ["1_000", "inf"])
+    def test_numeric_default_with_underscores_or_inf_is_rejected(self, default):
+        with pytest.raises(AppException) as exc:
+            _prepare_inference_inputs(
+                {"hour": [8]},
+                ["hour", "lag_24"],
+                defaults={"lag_24": default},
+                categorical_features=[],
+                categorical_values={},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "lag_24" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["inf", "1_000", float("inf")])
+    async def test_numeric_input_that_is_not_a_finite_number_is_rejected(self, monkeypatch, value):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"area": value, "kind": "a"},
+                feature_names=["area", "kind"],
+                label_encodings={"kind": {"a": 0, "b": 1}},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "'area'" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["inf", "1_000", float("inf")])
+    async def test_invalid_numeric_like_input_without_encoders_is_rejected(
+        self, monkeypatch, value
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"area": value},
+                feature_names=["area"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "'area'" in exc.value.error_detail
+
+
+class TestEchoedInputTypes:
+    """MI-13: input_data keeps each value's own type when a text feature is
+    present."""
+
+    @pytest.mark.asyncio
+    async def test_mixed_inputs_keep_their_types_with_encoded_text(self, monkeypatch):
+        result = await _predict(
+            monkeypatch,
+            _StubModel(),
+            {"area": [1.5, 2], "flag": True, "color": ["red", "blue"]},
+            feature_names=["area", "flag", "color"],
+            label_encodings={"color": {"red": 0, "blue": 1}},
+        )
+
+        assert result["input_data"] == {
+            "area": [1.5, 2],
+            "flag": [True, True],
+            "color": ["red", "blue"],
+        }
+        assert [type(v) for v in result["input_data"]["area"]] == [float, int]
+        assert type(result["input_data"]["flag"][0]) is bool
+        json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_mixed_inputs_keep_their_types_without_encoders(self, monkeypatch):
+        result = await _predict(
+            monkeypatch,
+            _StubModel(),
+            {"area": 1.5, "region": "east"},
+            feature_names=["area", "region"],
+        )
+
+        assert result["input_data"] == {"area": [1.5], "region": ["east"]}
+        assert type(result["input_data"]["area"][0]) is float
