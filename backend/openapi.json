@@ -1763,6 +1763,125 @@
         }
       }
     },
+    "/api/roles/{role_id}/permissions": {
+      "get": {
+        "tags": [
+          "v1",
+          "Roles"
+        ],
+        "summary": "Get Permissions",
+        "description": "The permission IDs held by one role.",
+        "operationId": "get_permissions_api_roles__role_id__permissions_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Role Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "title": "Response Get Permissions Api Roles  Role Id  Permissions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "v1",
+          "Roles"
+        ],
+        "summary": "Set Permissions",
+        "description": "Replace a role's permissions in one transaction.",
+        "operationId": "set_permissions_api_roles__role_id__permissions_put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Role Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RolePermissionsSet"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolePermissionsSetResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/api-keys": {
       "post": {
         "tags": [
@@ -1966,6 +2085,88 @@
                     "$ref": "#/components/schemas/ApiKeySafeRead"
                   },
                   "title": "Response Get All Api Api Keys Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/api-keys/list": {
+      "get": {
+        "tags": [
+          "v1",
+          "ApiKeys"
+        ],
+        "summary": "Get List",
+        "description": "Paginated API key list, newest first, with optional name search",
+        "operationId": "get_list_api_api_keys_list_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponse_ApiKeySafeRead_"
                 }
               }
             }
@@ -3408,6 +3609,204 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issue-statuses": {
+      "get": {
+        "tags": [
+          "v1",
+          "IssueStatuses"
+        ],
+        "summary": "List Issue Statuses",
+        "operationId": "list_issue_statuses_api_issue_statuses_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IssueStatusRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Issue Statuses Api Issue Statuses Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "IssueStatuses"
+        ],
+        "summary": "Create Issue Status",
+        "operationId": "create_issue_status_api_issue_statuses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueStatusCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueStatusRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/issue-statuses/order": {
+      "put": {
+        "tags": [
+          "v1",
+          "IssueStatuses"
+        ],
+        "summary": "Reorder Issue Statuses",
+        "operationId": "reorder_issue_statuses_api_issue_statuses_order_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueStatusOrder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IssueStatusRead"
+                  },
+                  "type": "array",
+                  "title": "Response Reorder Issue Statuses Api Issue Statuses Order Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/issue-statuses/{status_id}": {
+      "patch": {
+        "tags": [
+          "v1",
+          "IssueStatuses"
+        ],
+        "summary": "Update Issue Status",
+        "operationId": "update_issue_status_api_issue_statuses__status_id__patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Status Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueStatusEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueStatusRead"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -5551,29 +5950,6 @@
         ],
         "parameters": [
           {
-            "name": "skip",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Skip"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 20,
-              "title": "Limit"
-            }
-          },
-          {
             "name": "from_date",
             "in": "query",
             "required": false,
@@ -5605,6 +5981,94 @@
                 }
               ],
               "title": "To Date"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          },
+          {
+            "name": "subtopic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subtopic"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
             }
           },
           {
@@ -5665,7 +6129,8 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/IssueStatus"
+                  "type": "string",
+                  "maxLength": 50
                 },
                 {
                   "type": "null"
@@ -5675,7 +6140,7 @@
             }
           },
           {
-            "name": "workflow_id",
+            "name": "feedback_id",
             "in": "query",
             "required": false,
             "schema": {
@@ -5688,7 +6153,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Workflow Id"
+              "title": "Feedback Id"
             }
           }
         ],
@@ -5714,6 +6179,178 @@
             }
           }
         }
+      }
+    },
+    "/api/conversations/issues/summary": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Get Message Issue Summary",
+        "description": "Reported issues counted per status, with the list's filters and group scope.",
+        "operationId": "get_message_issue_summary_api_conversations_issues_summary_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "from_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From Date"
+            }
+          },
+          {
+            "name": "to_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To Date"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          },
+          {
+            "name": "subtopic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subtopic"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueStatusSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/topic-options": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Get Topic Options",
+        "operationId": "get_topic_options_api_conversations_topic_options_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicOptionsRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/conversations/{conversation_id}": {
@@ -5881,7 +6518,7 @@
                 {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/ConversationTopic"
+                    "type": "string"
                   }
                 },
                 {
@@ -5890,6 +6527,27 @@
               ],
               "title": "Conversation Topics"
             }
+          },
+          {
+            "name": "conversation_subtopics",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sub-topics decided by llm, only finalized conversations have one",
+              "title": "Conversation Subtopics"
+            },
+            "description": "Sub-topics decided by llm, only finalized conversations have one"
           },
           {
             "name": "sentiment",
@@ -6916,7 +7574,7 @@
                 {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/ConversationTopic"
+                    "type": "string"
                   }
                 },
                 {
@@ -6925,6 +7583,27 @@
               ],
               "title": "Conversation Topics"
             }
+          },
+          {
+            "name": "conversation_subtopics",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sub-topics decided by llm, only finalized conversations have one",
+              "title": "Conversation Subtopics"
+            },
+            "description": "Sub-topics decided by llm, only finalized conversations have one"
           },
           {
             "name": "sentiment",
@@ -7500,7 +8179,7 @@
                 {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/ConversationTopic"
+                    "type": "string"
                   }
                 },
                 {
@@ -7509,6 +8188,27 @@
               ],
               "title": "Conversation Topics"
             }
+          },
+          {
+            "name": "conversation_subtopics",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Sub-topics decided by llm, only finalized conversations have one",
+              "title": "Conversation Subtopics"
+            },
+            "description": "Sub-topics decided by llm, only finalized conversations have one"
           },
           {
             "name": "sentiment",
@@ -7927,15 +8627,15 @@
         }
       }
     },
-    "/api/conversations/issues/{message_feedback_id}/status": {
+    "/api/conversations/issues/{message_feedback_id}": {
       "patch": {
         "tags": [
           "v1",
           "Conversations"
         ],
-        "summary": "Update Message Issue Status",
-        "description": "Set the resolution status of a reported issue (a message comment).",
-        "operationId": "update_message_issue_status_api_conversations_issues__message_feedback_id__status_patch",
+        "summary": "Update Message Issue",
+        "description": "Partially update a reported issue: omitted fields are kept, null clears.",
+        "operationId": "update_message_issue_api_conversations_issues__message_feedback_id__patch",
         "security": [
           {
             "APIKeyHeader": []
@@ -7961,7 +8661,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/IssueStatusUpdate"
+                "$ref": "#/components/schemas/IssueUpdate"
               }
             }
           }
@@ -7971,7 +8671,181 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MessageIssueRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/issues/{message_feedback_id}/notes": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "List Message Issue Notes",
+        "operationId": "list_message_issue_notes_api_conversations_issues__message_feedback_id__notes_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "message_feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Feedback Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IssueNoteRead"
+                  },
+                  "title": "Response List Message Issue Notes Api Conversations Issues  Message Feedback Id  Notes Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "Add Message Issue Note",
+        "operationId": "add_message_issue_note_api_conversations_issues__message_feedback_id__notes_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "message_feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Feedback Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueNoteCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueNoteRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/conversations/issues/{message_feedback_id}/history": {
+      "get": {
+        "tags": [
+          "v1",
+          "Conversations"
+        ],
+        "summary": "List Message Issue History",
+        "operationId": "list_message_issue_history_api_conversations_issues__message_feedback_id__history_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "message_feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Feedback Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IssueHistoryEvent"
+                  },
+                  "title": "Response List Message Issue History Api Conversations Issues  Message Feedback Id  History Get"
+                }
               }
             }
           },
@@ -8534,7 +9408,7 @@
         ],
         "parameters": [
           {
-            "name": "X-Tenant-Id",
+            "name": "x-tenant-id",
             "in": "header",
             "required": false,
             "schema": {
@@ -11170,88 +12044,49 @@
             }
           },
           {
-            "name": "from_date",
+            "name": "search",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "format": "date"
+                  "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "From Date"
+              "title": "Search"
             }
           },
           {
-            "name": "to_date",
+            "name": "type",
             "in": "query",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string",
-                  "format": "date-time"
+                  "enum": [
+                    "file",
+                    "url",
+                    "text",
+                    "datasource",
+                    "s3",
+                    "database",
+                    "sharepoint",
+                    "smb_share_folder",
+                    "azure_blob",
+                    "google_bucket",
+                    "zendesk",
+                    "salesforce"
+                  ],
+                  "type": "string"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "title": "To Date"
-            }
-          },
-          {
-            "name": "operator_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Operator Id"
-            }
-          },
-          {
-            "name": "order_by",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/SortField"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": "created_at",
-              "title": "Order By"
-            }
-          },
-          {
-            "name": "sort_direction",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "$ref": "#/components/schemas/SortDirection"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": "desc",
-              "title": "Sort Direction"
+              "title": "Type"
             }
           }
         ],
@@ -13766,6 +14601,594 @@
         }
       }
     },
+    "/api/genagent/workflow-triggers/provision": {
+      "post": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "Provision Workflow Trigger",
+        "description": "Create the endpoint for a trigger node, or return the existing one.",
+        "operationId": "provision_workflow_trigger_api_genagent_workflow_triggers_provision_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowTriggerProvision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTriggerProvisionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/workflow-triggers/by-agent/{agent_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "List Workflow Triggers By Agent",
+        "operationId": "list_workflow_triggers_by_agent_api_genagent_workflow_triggers_by_agent__agent_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowTriggerRead"
+                  },
+                  "title": "Response List Workflow Triggers By Agent Api Genagent Workflow Triggers By Agent  Agent Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/workflow-triggers/{trigger_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "Get Workflow Trigger",
+        "operationId": "get_workflow_trigger_api_genagent_workflow_triggers__trigger_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trigger_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trigger Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTriggerRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "Update Workflow Trigger",
+        "operationId": "update_workflow_trigger_api_genagent_workflow_triggers__trigger_id__put",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trigger_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trigger Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowTriggerUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTriggerRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "Delete Workflow Trigger",
+        "operationId": "delete_workflow_trigger_api_genagent_workflow_triggers__trigger_id__delete",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trigger_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trigger Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/workflow-triggers/{trigger_id}/rotate-secret": {
+      "post": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "Rotate Workflow Trigger Secret",
+        "operationId": "rotate_workflow_trigger_secret_api_genagent_workflow_triggers__trigger_id__rotate_secret_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trigger_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trigger Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTriggerSecret"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/workflow-triggers/{trigger_id}/reveal-secret": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "Reveal Workflow Trigger Secret",
+        "operationId": "reveal_workflow_trigger_secret_api_genagent_workflow_triggers__trigger_id__reveal_secret_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trigger_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trigger Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTriggerSecret"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/workflow-triggers/{trigger_id}/runs": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "List Workflow Trigger Runs",
+        "operationId": "list_workflow_trigger_runs_api_genagent_workflow_triggers__trigger_id__runs_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trigger_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trigger Id"
+            }
+          },
+          {
+            "name": "run_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/WorkflowScheduleRunStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by run status",
+              "title": "Run Status"
+            },
+            "description": "Filter by run status"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowTriggerRunSummary"
+                  },
+                  "title": "Response List Workflow Trigger Runs Api Genagent Workflow Triggers  Trigger Id  Runs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/workflow-triggers/{trigger_id}/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "Get Workflow Trigger Run",
+        "operationId": "get_workflow_trigger_run_api_genagent_workflow_triggers__trigger_id__runs__run_id__get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trigger_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trigger Id"
+            }
+          },
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTriggerRunRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/workflow-triggers/{trigger_id}/test": {
+      "post": {
+        "tags": [
+          "v1",
+          "Workflow Triggers"
+        ],
+        "summary": "Test Workflow Trigger",
+        "description": "Queue a run with a sample delivery, skipping auth and rate limiting.",
+        "operationId": "test_workflow_trigger_api_genagent_workflow_triggers__trigger_id__test_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trigger_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trigger Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowTriggerTestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowTriggerDeliveryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/topics-report": {
       "get": {
         "tags": [
@@ -16040,7 +17463,7 @@
           "Analytics"
         ],
         "summary": "Trigger a one-time re-aggregation (backfill) of agent/node daily stats",
-        "description": "Enqueue the one-time backfill task on the Celery worker.\n\nRecomputes agent and node daily stats for the caller's tenant over the given\nwindow, repopulating columns that were added after rows were first aggregated\n(e.g. ``unique_conversations``, which made Containment Rate read 100%). Runs\nasynchronously and is idempotent \u2014 at large scale, call it in slices (e.g. one\nmonth per request). Returns the Celery task id for monitoring (e.g. in Flower).",
+        "description": "Enqueue the one-time backfill task on the Celery worker.\n\nRecomputes agent and node daily stats for the caller's tenant over the given\nwindow, repopulating columns that were added after rows were first aggregated\n(e.g. ``unique_conversations``, which made Containment Rate read 100%). Runs\nasynchronously, at large scale, call it in slices (e.g. one month per request).\nReturns the Celery task id, which identifies the run in the worker logs (task\nresults are not stored).\nIdempotent, but not non-destructive: with ``ANALYTICS_AGG_V2`` enabled every past\ndate in the window is rebuilt authoritatively and reconciled, so stats rows that\nthe current non-deleted source data no longer supports are soft-deleted (or zeroed,\nwhen they carry token/cost data). With the flag off the backfill is upsert-only.",
         "operationId": "trigger_analytics_backfill_api_analytics_backfill_post",
         "security": [
           {
@@ -17488,6 +18911,40 @@
               ],
               "title": "Model"
             }
+          },
+          {
+            "name": "activity_from_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity From Datetime"
+            }
+          },
+          {
+            "name": "activity_to_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity To Datetime"
+            }
           }
         ],
         "responses": {
@@ -17630,6 +19087,40 @@
               ],
               "title": "Model"
             }
+          },
+          {
+            "name": "activity_from_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity From Datetime"
+            }
+          },
+          {
+            "name": "activity_to_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity To Datetime"
+            }
           }
         ],
         "responses": {
@@ -17662,7 +19153,7 @@
           "v1",
           "LLM Usage"
         ],
-        "summary": "LLM cost / tokens grouped by provider, model, agent, usage type, LLM, evaluation method, or node",
+        "summary": "LLM cost / tokens grouped by provider, model, agent, usage type, LLM, evaluation method, analyst purpose, or node",
         "operationId": "get_breakdown_api_analytics_llm_usage_breakdown_get",
         "security": [
           {
@@ -17685,6 +19176,7 @@
                 "source",
                 "llm",
                 "evaluation_method",
+                "analyst_purpose",
                 "node"
               ],
               "type": "string",
@@ -17790,6 +19282,40 @@
                 }
               ],
               "title": "Model"
+            }
+          },
+          {
+            "name": "activity_from_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity From Datetime"
+            }
+          },
+          {
+            "name": "activity_to_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity To Datetime"
             }
           }
         ],
@@ -17932,6 +19458,40 @@
                 }
               ],
               "title": "Model"
+            }
+          },
+          {
+            "name": "activity_from_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity From Datetime"
+            }
+          },
+          {
+            "name": "activity_to_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity To Datetime"
             }
           }
         ],
@@ -18106,6 +19666,40 @@
               ],
               "title": "Model"
             }
+          },
+          {
+            "name": "activity_from_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity From Datetime"
+            }
+          },
+          {
+            "name": "activity_to_datetime",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity To Datetime"
+            }
           }
         ],
         "responses": {
@@ -18130,14 +19724,14 @@
         }
       }
     },
-    "/api/genagent/prompt-editor/versions/{workflow_id}/{node_id}/{prompt_field}": {
+    "/api/genagent/prompt-editor/history/{workflow_id}/{node_id}/{prompt_field}": {
       "get": {
         "tags": [
           "v1",
           "Prompt Editor"
         ],
-        "summary": "List Versions",
-        "operationId": "list_versions_api_genagent_prompt_editor_versions__workflow_id___node_id___prompt_field__get",
+        "summary": "Get History",
+        "operationId": "get_history_api_genagent_prompt_editor_history__workflow_id___node_id___prompt_field__get",
         "security": [
           {
             "APIKeyHeader": []
@@ -18163,6 +19757,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 100,
               "title": "Node Id"
             }
           },
@@ -18172,6 +19767,98 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 50,
+              "title": "Prompt Field"
+            }
+          },
+          {
+            "name": "node_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Node Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptHistoryRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/prompt-editor/versions/{workflow_id}/{node_id}/{prompt_field}": {
+      "get": {
+        "tags": [
+          "v1",
+          "Prompt Editor"
+        ],
+        "summary": "List Versions",
+        "description": "Deprecated in favour of /history; kept one release for un-reloaded tabs",
+        "operationId": "list_versions_api_genagent_prompt_editor_versions__workflow_id___node_id___prompt_field__get",
+        "deprecated": true,
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "title": "Node Id"
+            }
+          },
+          {
+            "name": "prompt_field",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 50,
               "title": "Prompt Field"
             }
           }
@@ -18235,6 +19922,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 100,
               "title": "Node Id"
             }
           },
@@ -18244,6 +19932,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 50,
               "title": "Prompt Field"
             }
           }
@@ -18282,58 +19971,6 @@
         }
       }
     },
-    "/api/genagent/prompt-editor/versions/{version_id}/restore": {
-      "post": {
-        "tags": [
-          "v1",
-          "Prompt Editor"
-        ],
-        "summary": "Restore Version",
-        "operationId": "restore_version_api_genagent_prompt_editor_versions__version_id__restore_post",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "version_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Version Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptVersionRead"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/genagent/prompt-editor/versions/{version_id}": {
       "delete": {
         "tags": [
@@ -18342,51 +19979,6 @@
         ],
         "summary": "Delete Version",
         "operationId": "delete_version_api_genagent_prompt_editor_versions__version_id__delete",
-        "security": [
-          {
-            "APIKeyHeader": []
-          },
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "version_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Version Id"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/genagent/prompt-editor/versions/{version_id}/hard": {
-      "delete": {
-        "tags": [
-          "v1",
-          "Prompt Editor"
-        ],
-        "summary": "Hard Delete Version",
-        "operationId": "hard_delete_version_api_genagent_prompt_editor_versions__version_id__hard_delete",
         "security": [
           {
             "APIKeyHeader": []
@@ -18457,6 +20049,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 100,
               "title": "Node Id"
             }
           },
@@ -18466,6 +20059,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 50,
               "title": "Prompt Field"
             }
           }
@@ -18527,6 +20121,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 100,
               "title": "Node Id"
             }
           },
@@ -18536,6 +20131,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 50,
               "title": "Prompt Field"
             }
           }
@@ -18607,6 +20203,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 100,
               "title": "Node Id"
             }
           },
@@ -18616,6 +20213,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 50,
               "title": "Prompt Field"
             }
           }
@@ -18687,6 +20285,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 100,
               "title": "Node Id"
             }
           },
@@ -18696,6 +20295,7 @@
             "required": true,
             "schema": {
               "type": "string",
+              "maxLength": 50,
               "title": "Prompt Field"
             }
           }
@@ -19137,6 +20737,313 @@
                     "$ref": "#/components/schemas/TestCase"
                   },
                   "title": "Response Import Cases From Conversation Api Genagent Eval Suites  Suite Id  Cases Import From Conversation Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/suites/{suite_id}/cases/import-from-conversations": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Cases"
+        ],
+        "summary": "Import Cases From Conversations",
+        "description": "Import the Q&A pairs of several conversations into the given suite at once.\n\nA conversation that cannot be imported is reported in ``results`` rather than\nfailing the request, so one bad pick does not discard the rest of the batch.",
+        "operationId": "import_cases_from_conversations_api_genagent_eval_suites__suite_id__cases_import_from_conversations_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "suite_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Suite Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportCasesFromConversationsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportCasesFromConversationsResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/suites/{suite_id}/cases/import-from-files/preview": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Cases"
+        ],
+        "summary": "Preview Cases From Files",
+        "description": "Report what importing these dataset files would add, without saving anything.",
+        "operationId": "preview_cases_from_files_api_genagent_eval_suites__suite_id__cases_import_from_files_preview_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "suite_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Suite Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_preview_cases_from_files_api_genagent_eval_suites__suite_id__cases_import_from_files_preview_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportCasesFromFilesResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/suites/{suite_id}/cases/import-from-files": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Cases"
+        ],
+        "summary": "Import Cases From Files",
+        "description": "Add the conversations in these dataset files; unreadable files are reported, not fatal.",
+        "operationId": "import_cases_from_files_api_genagent_eval_suites__suite_id__cases_import_from_files_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "suite_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Suite Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_cases_from_files_api_genagent_eval_suites__suite_id__cases_import_from_files_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportCasesFromFilesResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/conversations/{conversation_id}/suites": {
+      "get": {
+        "tags": [
+          "v1",
+          "Test Cases"
+        ],
+        "summary": "List Suites For Conversation",
+        "description": "List every dataset, with how much of this conversation each already holds.\n\nGated like ``GET /suites``, which it is a per-conversation view of.",
+        "operationId": "list_suites_for_conversation_api_genagent_eval_conversations__conversation_id__suites_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationSuiteMembership"
+                  },
+                  "title": "Response List Suites For Conversation Api Genagent Eval Conversations  Conversation Id  Suites Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "v1",
+          "Test Cases"
+        ],
+        "summary": "Add Conversation To Suites",
+        "description": "Add one conversation's Q&A pairs to several datasets at once.\n\nA dataset that already holds the conversation has its turns refreshed. A\ndataset that cannot be written is reported in ``results`` rather than failing\nthe request, so one bad pick does not discard the rest.",
+        "operationId": "add_conversation_to_suites_api_genagent_eval_conversations__conversation_id__suites_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddConversationToSuitesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AddConversationToSuitesResult"
                 }
               }
             }
@@ -19652,6 +21559,122 @@
         }
       }
     },
+    "/api/genagent/eval/runs/{run_id}/conversations": {
+      "get": {
+        "tags": [
+          "v1",
+          "Test Runs"
+        ],
+        "summary": "Get Run Conversations",
+        "description": "A run's results by conversation: each one's verdict, its turns and its checks, without traces.",
+        "operationId": "get_run_conversations_api_genagent_eval_runs__run_id__conversations_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunConversations"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/genagent/eval/runs/{run_id}/results/{case_id}/trace": {
+      "get": {
+        "tags": [
+          "v1",
+          "Test Runs"
+        ],
+        "summary": "Get Run Turn Trace",
+        "description": "One turn's execution trace, for the steps it took.",
+        "operationId": "get_run_turn_trace_api_genagent_eval_runs__run_id__results__case_id__trace_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunTurnTrace"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/genagent/eval/workflows/{workflow_id}/evaluation-tool-catalog": {
       "get": {
         "tags": [
@@ -19762,6 +21785,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TestEvaluation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/genagent/eval/evaluations/checks-preview": {
+      "post": {
+        "tags": [
+          "v1",
+          "Test Evaluations"
+        ],
+        "summary": "Preview Evaluation Checks",
+        "description": "These evaluations' older methods read as checks, without saving them.",
+        "operationId": "preview_evaluation_checks_api_genagent_eval_evaluations_checks_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChecksPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChecksPreviewResult"
                 }
               }
             }
@@ -20467,24 +22541,8 @@
           "Test Evaluations"
         ],
         "summary": "List Workflow Evaluation Summaries",
-        "description": "One row per workflow (and the unassigned bucket): count, health, running.",
+        "description": "One row per workflow (and the unassigned bucket): count, health, running.\n\nWith a search, only workflows with evaluations whose name or description match.",
         "operationId": "list_workflow_evaluation_summaries_api_genagent_eval_workflows_evaluation_summaries_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/WorkflowEvaluationSummary"
-                  },
-                  "type": "array",
-                  "title": "Response List Workflow Evaluation Summaries Api Genagent Eval Workflows Evaluation Summaries Get"
-                }
-              }
-            }
-          }
-        },
         "security": [
           {
             "APIKeyHeader": []
@@ -20492,7 +22550,52 @@
           {
             "OAuth2PasswordBearer": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowEvaluationSummary"
+                  },
+                  "title": "Response List Workflow Evaluation Summaries Api Genagent Eval Workflows Evaluation Summaries Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/genagent/eval/workflows/{workflow_id}/evaluations": {
@@ -21046,7 +23149,7 @@
           "ML Models"
         ],
         "summary": "Analyze Csv",
-        "description": "Analyze a CSV file and return a comprehensive report.\n\nThe file_url can be:\n- An absolute path (starting with /)\n- A relative path (will be checked in DATA_VOLUME/train directories)\n- A path within DATA_VOLUME\n\nIf python_code is provided, the data will be preprocessed using the Python code\nbefore analysis. The code should accept params with 'data' (list of dicts), 'df' (DataFrame),\nand 'fileUrl' (string), and return a result that can be converted to a DataFrame.\n\nReturns:\n    - row_count: Number of rows\n    - column_count: Number of columns\n    - column_names: List of column names\n    - sample_data: First 3 and last 3 records\n    - columns_info: Detailed info per column including:\n        - name: Column name\n        - type: \"numeric\", \"categorical\", or \"other\"\n        - dtype: Pandas data type\n        - missing_count: Number of missing/null/empty values\n        - unique_count: Number of unique values\n        - category_count: Number of categories (for non-numeric)\n        - min: Minimum value (for numeric)\n        - max: Maximum value (for numeric)",
+        "description": "Analyze a CSV file and return a comprehensive report.\n\nThe file_url can be:\n- An absolute path (starting with /)\n- A relative path (will be checked in DATA_VOLUME/train directories)\n- A path within DATA_VOLUME\n- A File Manager URL (resolved by ID, including S3-backed files)\n\nA file_id can be supplied directly so non-local files do not need to be\nfetched through their HTTP source URL.\n\nIf python_code is provided, the data will be preprocessed using the Python code\nbefore analysis. The code should accept params with 'data' (list of dicts), 'df' (DataFrame),\nand 'fileUrl' (string), and return a result that can be converted to a DataFrame.\n\nReturns:\n    - row_count: Number of rows\n    - column_count: Number of columns\n    - column_names: List of column names\n    - sample_data: First 3 and last 3 records\n    - columns_info: Detailed info per column including:\n        - name: Column name\n        - type: \"numeric\", \"categorical\", or \"other\"\n        - dtype: Pandas data type\n        - missing_count: Number of missing/null/empty values\n        - unique_count: Number of unique values\n        - category_count: Number of categories (for non-numeric)\n        - min: Minimum value (for numeric)\n        - max: Maximum value (for numeric)",
         "operationId": "analyze_csv_api_ml_models_analyze_csv_post",
         "requestBody": {
           "content": {
@@ -21055,8 +23158,7 @@
                 "$ref": "#/components/schemas/Body_analyze_csv_api_ml_models_analyze_csv_post"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -21088,20 +23190,20 @@
         ]
       }
     },
-    "/api/ml-models/profile-csv": {
+    "/api/ml-models/profile-data": {
       "post": {
         "tags": [
           "v1",
           "ML Models"
         ],
-        "summary": "Profile Csv",
-        "description": "Run pandas/ydata data profiling on a CSV file and return the report as a\ndownloadable HTML file.\n\nThe file_url can be:\n- An absolute path (starting with /)\n- A relative path (will be checked in DATA_VOLUME/train directories)\n- A path within DATA_VOLUME\n- An HTTP(S) URL (downloaded before profiling)",
-        "operationId": "profile_csv_api_ml_models_profile_csv_post",
+        "summary": "Profile Data",
+        "description": "Profile a local/non-local CSV file or the result of a read-only SQL query.",
+        "operationId": "profile_data_api_ml_models_profile_data_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Body_profile_csv_api_ml_models_profile_csv_post"
+                "$ref": "#/components/schemas/ProfileDataRequest"
               }
             }
           },
@@ -22786,7 +24888,15 @@
               }
             }
           }
-        }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          },
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
       }
     },
     "/api/tenants": {
@@ -26936,6 +29046,54 @@
         "title": "ActiveConversationsResponse",
         "description": "Active conversations section response with pagination."
       },
+      "AddConversationToSuitesRequest": {
+        "properties": {
+          "suite_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Suite Ids",
+            "description": "Datasets to add the conversation to. Repeats are collapsed."
+          }
+        },
+        "type": "object",
+        "required": [
+          "suite_ids"
+        ],
+        "title": "AddConversationToSuitesRequest"
+      },
+      "AddConversationToSuitesResult": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationSuiteImportResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "imported": {
+            "type": "integer",
+            "title": "Imported",
+            "default": 0
+          },
+          "replaced": {
+            "type": "integer",
+            "title": "Replaced",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "AddConversationToSuitesResult"
+      },
       "AdoWebhookPayload": {
         "properties": {
           "subscriptionId": {
@@ -29849,9 +32007,41 @@
       "Body_analyze_csv_api_ml_models_analyze_csv_post": {
         "properties": {
           "file_url": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "File Url",
             "description": "Path or URL to CSV file"
+          },
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id",
+            "description": "File Manager ID"
+          },
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Name",
+            "description": "Original CSV file name"
           },
           "python_code": {
             "anyOf": [
@@ -29867,9 +32057,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "file_url"
-        ],
         "title": "Body_analyze_csv_api_ml_models_analyze_csv_post"
       },
       "Body_auth_token_api_auth_token_post": {
@@ -30115,6 +32302,23 @@
         ],
         "title": "Body_files_upload_session_chunk_api_file_manager_upload_session__session_id__chunk_post"
       },
+      "Body_import_cases_from_files_api_genagent_eval_suites__suite_id__cases_import_from_files_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "format": "binary"
+            },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_import_cases_from_files_api_genagent_eval_suites__suite_id__cases_import_from_files_post"
+      },
       "Body_import_cost_rates_csv_api_llm_cost_rates_import_post": {
         "properties": {
           "file": {
@@ -30148,6 +32352,23 @@
         ],
         "title": "Body_kb_upload_session_chunk_api_genagent_knowledge_upload_session__session_id__chunk_post"
       },
+      "Body_preview_cases_from_files_api_genagent_eval_suites__suite_id__cases_import_from_files_preview_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string",
+              "format": "binary"
+            },
+            "type": "array",
+            "title": "Files"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files"
+        ],
+        "title": "Body_preview_cases_from_files_api_genagent_eval_suites__suite_id__cases_import_from_files_preview_post"
+      },
       "Body_process_files_api_genagent_knowledge_process_files_post": {
         "properties": {
           "files": {
@@ -30164,20 +32385,6 @@
           "files"
         ],
         "title": "Body_process_files_api_genagent_knowledge_process_files_post"
-      },
-      "Body_profile_csv_api_ml_models_profile_csv_post": {
-        "properties": {
-          "file_url": {
-            "type": "string",
-            "title": "File Url",
-            "description": "Path or URL to CSV file"
-          }
-        },
-        "type": "object",
-        "required": [
-          "file_url"
-        ],
-        "title": "Body_profile_csv_api_ml_models_profile_csv_post"
       },
       "Body_refresh_token_api_auth_refresh_token_post": {
         "properties": {
@@ -31151,6 +33358,56 @@
         "title": "BundleSource",
         "description": "Where the bundle came from \u2014 display-only, never used for linking."
       },
+      "CaseSplit": {
+        "properties": {
+          "holdout_case_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 25,
+            "minItems": 1,
+            "title": "Holdout Case Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "holdout_case_ids"
+        ],
+        "title": "CaseSplit",
+        "description": "Absent = exploratory. The development set is never sent, it is the suite\nminus the hold-out"
+      },
+      "ChecksPreviewRequest": {
+        "properties": {
+          "evaluation_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Evaluation Ids"
+          }
+        },
+        "type": "object",
+        "title": "ChecksPreviewRequest",
+        "description": "Evaluations whose older methods to read as checks."
+      },
+      "ChecksPreviewResult": {
+        "properties": {
+          "evaluations": {
+            "items": {
+              "$ref": "#/components/schemas/TestEvaluation"
+            },
+            "type": "array",
+            "title": "Evaluations"
+          }
+        },
+        "type": "object",
+        "title": "ChecksPreviewResult",
+        "description": "Those with older methods, as checks; nothing is saved."
+      },
       "ConnectionStatus": {
         "properties": {
           "status": {
@@ -31201,6 +33458,17 @@
           "topic": {
             "type": "string",
             "title": "Topic"
+          },
+          "subtopic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtopic"
           },
           "summary": {
             "type": "string",
@@ -31281,6 +33549,32 @@
           "quality_of_service"
         ],
         "title": "ConversationAnalysisRead"
+      },
+      "ConversationCounts": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "passed": {
+            "type": "integer",
+            "title": "Passed",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "default": 0
+          },
+          "not_evaluated": {
+            "type": "integer",
+            "title": "Not Evaluated",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ConversationCounts"
       },
       "ConversationPaginatedResponse": {
         "properties": {
@@ -31870,15 +34164,88 @@
         ],
         "title": "ConversationStatus"
       },
-      "ConversationTopic": {
-        "type": "string",
-        "enum": [
-          "Product Inquiry",
-          "Technical Support",
-          "Billing Questions",
-          "Other"
+      "ConversationSuiteImportResult": {
+        "properties": {
+          "suite_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Suite Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns",
+            "default": 0
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "suite_id",
+          "status"
         ],
-        "title": "ConversationTopic"
+        "title": "ConversationSuiteImportResult"
+      },
+      "ConversationSuiteMembership": {
+        "properties": {
+          "suite_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Suite Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns",
+            "default": 0
+          },
+          "added_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "suite_id",
+          "name"
+        ],
+        "title": "ConversationSuiteMembership",
+        "description": "One dataset, and what it already holds of a given conversation."
       },
       "ConversationTranscriptCreate": {
         "properties": {
@@ -32787,6 +35154,58 @@
         "type": "object",
         "title": "DataSourceUpdate"
       },
+      "DatasetFileResult": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "conversations": {
+            "type": "integer",
+            "title": "Conversations",
+            "default": 0
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns",
+            "default": 0
+          },
+          "duplicates": {
+            "type": "integer",
+            "title": "Duplicates",
+            "default": 0
+          },
+          "repeated": {
+            "type": "integer",
+            "title": "Repeated",
+            "default": 0
+          },
+          "repeated_from": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Repeated From"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "status"
+        ],
+        "title": "DatasetFileResult"
+      },
       "DeleteJobFilesResponse": {
         "properties": {
           "job_id": {
@@ -33316,6 +35735,17 @@
               }
             ],
             "title": "Destination"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
           }
         },
         "type": "object",
@@ -33334,6 +35764,17 @@
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
           },
           "workflow_path": {
             "items": {
@@ -33645,6 +36086,37 @@
         ],
         "title": "EvaluationSetItemResult"
       },
+      "EvaluationStateKeyInfo": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "node_label": {
+            "type": "string",
+            "title": "Node Label"
+          },
+          "workflow_path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Workflow Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "source",
+          "node_label"
+        ],
+        "title": "EvaluationStateKeyInfo",
+        "description": "A value the workflow remembers: a stateful Chat Input field or a key Set State writes."
+      },
       "EvaluationToolCatalog": {
         "properties": {
           "workflow_id": {
@@ -33672,6 +36144,13 @@
             },
             "type": "array",
             "title": "Action Nodes"
+          },
+          "state_keys": {
+            "items": {
+              "$ref": "#/components/schemas/EvaluationStateKeyInfo"
+            },
+            "type": "array",
+            "title": "State Keys"
           }
         },
         "type": "object",
@@ -33792,6 +36271,64 @@
         },
         "type": "object",
         "title": "ExistsRequest"
+      },
+      "FailedCaseRef": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "actual": {
+            "type": "string",
+            "maxLength": 16000,
+            "title": "Actual"
+          },
+          "failed_metrics": {
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Failed Metrics",
+            "description": "Techniques that rejected this reply, so the rewrite knows which rule to satisfy."
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback",
+            "description": "What the graders said about this reply."
+          },
+          "judge_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Score",
+            "description": "The judge's score for this reply, so the rewrite can tell a near miss from a miss."
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "actual"
+        ],
+        "title": "FailedCaseRef",
+        "description": "Failed case for the optimizer. Only actual travels;\ninput and expectation are re-read server-side"
       },
       "FallbackChainCreate": {
         "properties": {
@@ -34155,6 +36692,35 @@
           "very_bad"
         ],
         "title": "Feedback"
+      },
+      "FieldEqualsConfig": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "maxLength": 200,
+            "pattern": "^(outputs|(reference_outputs|inputs)(\\.[A-Za-z0-9_\\-]{1,64}){0,8})$",
+            "title": "Field"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "field"
+        ],
+        "title": "FieldEqualsConfig"
       },
       "FileRequest": {
         "properties": {
@@ -34859,7 +37425,7 @@
           "hard"
         ],
         "title": "GdprDeleteMode",
-        "description": "Modes supported by the admin GDPR conversation deletion endpoint.\n\n- ``SOFT``: flip the existing ``is_deleted`` flag and scrub\n  ``custom_attributes.pii``. File Manager blobs are not removed so the\n  row can be reconciled without losing uploads. The row is hidden from\n  standard reads by the global soft-delete ORM filter. Default mode.\n- ``ANONYMIZE``: keep the row visible (analytics drilldowns continue to\n  work), but scrub ``custom_attributes.pii``, purge File Manager objects\n  referenced by the transcript (and related fields), replace ``type=file``\n  payloads with placeholders, and run ``redact_sensitive_substrings`` on\n  other message text. Stamps ``conversations.pii_redacted_at`` for auditing.\n- ``HARD``: purge File Manager attachments, then remove the conversation row\n  (cascades to ``transcript_messages`` and ``conversation_analysis``) and\n  supporting stores (Redis memory, RAG, recordings, audit snapshots).\n  Already-aggregated daily analytics counts are unaffected."
+        "description": "Modes supported by the admin GDPR conversation deletion endpoint.\n\n- ``SOFT``: flip the existing ``is_deleted`` flag and scrub\n  ``custom_attributes.pii``. File Manager blobs are not removed so the\n  row can be reconciled without losing uploads. The row is hidden from\n  standard reads by the global soft-delete ORM filter. Default mode.\n- ``ANONYMIZE``: keep the row visible (analytics drilldowns continue to\n  work), but scrub ``custom_attributes.pii``, purge File Manager objects\n  referenced by the transcript (and related fields), replace ``type=file``\n  payloads with placeholders, and run ``redact_sensitive_substrings`` on\n  other message text. Stamps ``conversations.pii_redacted_at`` for auditing.\n- ``HARD``: purge File Manager attachments, then remove the conversation row\n  (cascades to ``transcript_messages``, ``conversation_analysis`` and\n  ``agent_response_logs``) and supporting stores (Redis memory, RAG,\n  recordings, audit snapshots). Daily analytics are rebuilt from the\n  remaining logs: with ``ANALYTICS_AGG_V2`` on, the conversation drops out\n  of today's and yesterday's counts on the next scheduled runs, and out of\n  older dates whenever those are backfilled. Legacy aggregation only\n  revisits a date that receives new logs, so older counts usually keep it."
       },
       "GenerateBedrockTrainingFileRequest": {
         "properties": {
@@ -34992,7 +37558,8 @@
           "name": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 200
               },
               {
                 "type": "null"
@@ -35095,6 +37662,150 @@
           "conversation_id"
         ],
         "title": "ImportCasesFromConversationRequest"
+      },
+      "ImportCasesFromConversationsRequest": {
+        "properties": {
+          "conversation_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Conversation Ids",
+            "description": "Conversations to import. Repeats are collapsed."
+          },
+          "replace": {
+            "type": "boolean",
+            "title": "Replace",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_ids"
+        ],
+        "title": "ImportCasesFromConversationsRequest"
+      },
+      "ImportCasesFromConversationsResult": {
+        "properties": {
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/TestCase"
+            },
+            "type": "array",
+            "title": "Cases"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ImportedConversationResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "imported": {
+            "type": "integer",
+            "title": "Imported",
+            "default": 0
+          },
+          "replaced": {
+            "type": "integer",
+            "title": "Replaced",
+            "default": 0
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ImportCasesFromConversationsResult"
+      },
+      "ImportCasesFromFilesResult": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetFileResult"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "conversations": {
+            "type": "integer",
+            "title": "Conversations",
+            "default": 0
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns",
+            "default": 0
+          },
+          "duplicates": {
+            "type": "integer",
+            "title": "Duplicates",
+            "default": 0
+          },
+          "repeated": {
+            "type": "integer",
+            "title": "Repeated",
+            "default": 0
+          },
+          "failed_files": {
+            "type": "integer",
+            "title": "Failed Files",
+            "default": 0
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "title": "ImportCasesFromFilesResult"
+      },
+      "ImportedConversationResult": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Conversation Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "turns": {
+            "type": "integer",
+            "title": "Turns",
+            "default": 0
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "status"
+        ],
+        "title": "ImportedConversationResult"
       },
       "InProgConvTranscrUpdate": {
         "properties": {
@@ -35245,29 +37956,365 @@
         "title": "IntegrationsResponse",
         "description": "Integrations section response."
       },
-      "IssueStatus": {
-        "type": "string",
-        "enum": [
-          "open",
-          "in_progress",
-          "resolved",
-          "wont_fix"
-        ],
-        "title": "IssueStatus",
-        "description": "Lifecycle status of a reported issue (a comment left on a message)."
-      },
-      "IssueStatusUpdate": {
+      "IssueHistoryEvent": {
         "properties": {
-          "status": {
-            "$ref": "#/components/schemas/IssueStatus"
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "By"
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "status",
+              "fix_version",
+              "target_rollout_date",
+              "comment"
+            ],
+            "title": "Field"
+          },
+          "old": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old"
+          },
+          "new": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New"
           }
         },
         "type": "object",
         "required": [
-          "status"
+          "at",
+          "field"
         ],
-        "title": "IssueStatusUpdate",
-        "description": "Body for changing a reported issue's status."
+        "title": "IssueHistoryEvent"
+      },
+      "IssueNoteCreate": {
+        "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Body"
+          }
+        },
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "title": "IssueNoteCreate"
+      },
+      "IssueNoteRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "message_feedback_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Message Feedback Id"
+          },
+          "author_user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Author User Id"
+          },
+          "author_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Username"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "message_feedback_id",
+          "author_user_id",
+          "body",
+          "created_at"
+        ],
+        "title": "IssueNoteRead"
+      },
+      "IssueStatusCategory": {
+        "type": "string",
+        "enum": [
+          "todo",
+          "in_progress",
+          "done"
+        ],
+        "title": "IssueStatusCategory"
+      },
+      "IssueStatusCreate": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,49}$",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "category": {
+            "$ref": "#/components/schemas/IssueStatusCategory"
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "amber",
+              "blue",
+              "purple",
+              "teal",
+              "emerald",
+              "zinc",
+              "red",
+              "orange",
+              "sky",
+              "pink"
+            ],
+            "title": "Color"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "category",
+          "color"
+        ],
+        "title": "IssueStatusCreate"
+      },
+      "IssueStatusEdit": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IssueStatusCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "amber",
+                  "blue",
+                  "purple",
+                  "teal",
+                  "emerald",
+                  "zinc",
+                  "red",
+                  "orange",
+                  "sky",
+                  "pink"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "IssueStatusEdit"
+      },
+      "IssueStatusOrder": {
+        "properties": {
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Keys"
+          }
+        },
+        "type": "object",
+        "required": [
+          "keys"
+        ],
+        "title": "IssueStatusOrder"
+      },
+      "IssueStatusRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "category": {
+            "$ref": "#/components/schemas/IssueStatusCategory"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "color": {
+            "type": "string",
+            "title": "Color"
+          },
+          "is_active": {
+            "type": "integer",
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "label",
+          "category",
+          "position",
+          "color",
+          "is_active"
+        ],
+        "title": "IssueStatusRead"
+      },
+      "IssueStatusSummary": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "By Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "by_status"
+        ],
+        "title": "IssueStatusSummary"
+      },
+      "IssueUpdate": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "fix_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix Version"
+          },
+          "target_rollout_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Rollout Date"
+          }
+        },
+        "type": "object",
+        "title": "IssueUpdate"
       },
       "JSONRPCRequest": {
         "properties": {
@@ -35371,6 +38418,38 @@
           "cancelled"
         ],
         "title": "JobStatus"
+      },
+      "JudgeRule": {
+        "properties": {
+          "rubric": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Rubric"
+          },
+          "min_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Score",
+            "default": 0.5
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "none",
+              "expected_output"
+            ],
+            "title": "Source Type",
+            "default": "none"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rubric"
+        ],
+        "title": "JudgeRule"
       },
       "KBBase": {
         "properties": {
@@ -36488,6 +39567,40 @@
         "type": "object",
         "title": "LanguageUpdate"
       },
+      "LegacyHistoryRead": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/PromptVersionRead"
+            },
+            "type": "array",
+            "title": "Versions"
+          },
+          "gold_suite_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Suite Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id",
+          "versions"
+        ],
+        "title": "LegacyHistoryRead",
+        "description": "Versions saved under a shared DOM id before nodes carried their own history"
+      },
       "ListDirRequest": {
         "properties": {
           "smb_host": {
@@ -37090,6 +40203,25 @@
         "title": "LlmCostRateUpdate",
         "description": "Rate edit. Identity (provider/model) is fixed, delete + recreate to move a rate.\nBase rates are full-replace; a cache rate is only touched when the payload carries\nits key. Sent blank it clears back to the provider default, omitted it is kept"
       },
+      "LlmJudgeConfig": {
+        "properties": {
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/JudgeRule"
+            },
+            "type": "array",
+            "maxItems": 1,
+            "minItems": 1,
+            "title": "Rules"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rules"
+        ],
+        "title": "LlmJudgeConfig"
+      },
       "LlmModelCatalogCreate": {
         "properties": {
           "provider_key": {
@@ -37543,6 +40675,18 @@
             "format": "uuid",
             "title": "Id"
           },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
           "prompt_caching_mode": {
             "type": "string",
             "title": "Prompt Caching Mode",
@@ -37727,6 +40871,7 @@
               "source",
               "llm",
               "evaluation_method",
+              "analyst_purpose",
               "node"
             ],
             "title": "Dimension"
@@ -37854,6 +40999,21 @@
             ],
             "title": "Cost Per Conversation Usd"
           },
+          "distinct_conversations": {
+            "type": "integer",
+            "title": "Distinct Conversations",
+            "default": 0
+          },
+          "conversation_cost_usd": {
+            "type": "number",
+            "title": "Conversation Cost Usd",
+            "default": 0.0
+          },
+          "non_conversation_cost_usd": {
+            "type": "number",
+            "title": "Non Conversation Cost Usd",
+            "default": 0.0
+          },
           "agent_studio_test_cost_usd": {
             "type": "number",
             "title": "Agent Studio Test Cost Usd"
@@ -37915,6 +41075,18 @@
               }
             ],
             "title": "Last Unpriced At"
+          },
+          "last_fallback_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Fallback At"
           }
         },
         "type": "object",
@@ -37933,7 +41105,7 @@
           "priced_token_coverage_pct"
         ],
         "title": "LlmUsageSummaryResponse",
-        "description": "LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced\nrows; ``cost_is_partial`` is true when some rows had no price and were left out.\n\n``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only.\n\n``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,\nignoring the filters, so a client can tell whether one has landed since it last\nreported the gap. It is only populated when the filtered window has unpriced calls.\n\nPrompt tokens sent, normalized across providers. Includes cache (already\nin total_input_tokens). If provider reports input minus cache, we add it back\nso input + output = total_tokens."
+        "description": "LLM cost and token totals for a filter. ``total_cost_usd`` sums only priced\nrows; ``cost_is_partial`` is true when some rows had no price and were left out.\n\n``agent_studio_test_cost_usd`` covers Agent Studio workflow and node tests only.\n\n``conversation_cost_usd`` is the priced spend on rows with a conversation;\n``non_conversation_cost_usd`` is the rest (evaluations, analyst runs, API,\nschedules, studio tests, and rows whose conversation was purged).\n\n``last_unpriced_at`` is when an unpriced call was last *recorded* tenant-wide,\nignoring the filters, so a client can tell whether one has landed since it last\nreported the gap. It is only populated when the filtered window has unpriced calls.\n``last_fallback_at`` follows the same rules for calls priced from the bundled\nfallback rates.\n\nPrompt tokens sent, normalized across providers. Includes cache (already\nin total_input_tokens). If provider reports input minus cache, we add it back\nso input + output = total_tokens."
       },
       "LlmUsageTimeseriesItem": {
         "properties": {
@@ -39056,6 +42228,19 @@
             "maxLength": 255,
             "title": "Target Variable",
             "description": "The prediction target variable"
+          },
+          "inference_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Params",
+            "description": "Per-model inference configuration. `ratioBaselineColumn` identifies an extra caller input needed to reconstruct ratio-target predictions. `featureDefaults` maps model feature names to deliberate fallback values for omitted or null inputs."
           }
         },
         "type": "object",
@@ -39537,6 +42722,19 @@
             "title": "Target Variable",
             "description": "The prediction target variable"
           },
+          "inference_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Params",
+            "description": "Per-model inference configuration. `ratioBaselineColumn` identifies an extra caller input needed to reconstruct ratio-target predictions. `featureDefaults` maps model feature names to deliberate fallback values for omitted or null inputs."
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -39652,6 +42850,19 @@
             ],
             "title": "Target Variable",
             "description": "The prediction target variable"
+          },
+          "inference_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Params",
+            "description": "Per-model inference configuration. `ratioBaselineColumn` identifies an extra caller input needed to reconstruct ratio-target predictions. `featureDefaults` maps model feature names to deliberate fallback values for omitted or null inputs."
           }
         },
         "type": "object",
@@ -39707,6 +42918,90 @@
         ],
         "title": "MessageFeedbackRead"
       },
+      "MessageIssueRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "message_feedback_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Message Feedback Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "fix_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix Version"
+          },
+          "target_rollout_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Rollout Date"
+          },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "message_feedback_id",
+          "status"
+        ],
+        "title": "MessageIssueRead"
+      },
       "MicrosoftSsoCompleteRequest": {
         "properties": {
           "code": {
@@ -39742,6 +43037,22 @@
           "neural_network"
         ],
         "title": "ModelType"
+      },
+      "NliEvalConfig": {
+        "properties": {
+          "min_entail_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Entail Score"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "min_entail_score"
+        ],
+        "title": "NliEvalConfig"
       },
       "NodeDailyStatsItem": {
         "properties": {
@@ -39990,6 +43301,25 @@
           "items"
         ],
         "title": "NodeTypeBreakdownResponse"
+      },
+      "NotContainsConfig": {
+        "properties": {
+          "phrases": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Phrases"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "phrases"
+        ],
+        "title": "NotContainsConfig"
       },
       "NotificationAdminTargetingRead": {
         "properties": {
@@ -40899,6 +44229,42 @@
         ],
         "title": "PaginatedResponse[AgentListItem]"
       },
+      "PaginatedResponse_ApiKeySafeRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ApiKeySafeRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "PaginatedResponse[ApiKeySafeRead]"
+      },
       "PaginatedResponse_KBListItem_": {
         "properties": {
           "items": {
@@ -41120,12 +44486,19 @@
               }
             ],
             "title": "Updated At"
+          },
+          "is_admin_only": {
+            "type": "boolean",
+            "title": "Is Admin Only",
+            "description": "True for permissions only the built-in admin role may hold.",
+            "readOnly": true
           }
         },
         "type": "object",
         "required": [
           "name",
-          "id"
+          "id",
+          "is_admin_only"
         ],
         "title": "PermissionRead",
         "description": "Fields returned in GET operations."
@@ -41188,6 +44561,13 @@
             "type": "string",
             "format": "uuid",
             "title": "Default Config Id"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
           }
         },
         "type": "object",
@@ -41367,11 +44747,164 @@
         "title": "PresignDirectUploadResponse",
         "description": "Response for ``POST /file-manager/upload-session/presign``.\n\nThe frontend should:\n1. Issue ``method`` (``PUT``) to ``presigned_url`` with the file body and the\n   headers in ``required_headers``.\n2. Then call ``POST /file-manager/upload-session/{session_id}/finalize``."
       },
+      "PreviousAttempt": {
+        "properties": {
+          "improved": {
+            "type": "integer",
+            "maximum": 25.0,
+            "minimum": 0.0,
+            "title": "Improved"
+          },
+          "regressed": {
+            "type": "integer",
+            "maximum": 25.0,
+            "minimum": 0.0,
+            "title": "Regressed"
+          },
+          "unchanged": {
+            "type": "integer",
+            "maximum": 25.0,
+            "minimum": 0.0,
+            "title": "Unchanged"
+          },
+          "explanation": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Explanation",
+            "default": ""
+          },
+          "diff_summary": {
+            "type": "string",
+            "maxLength": 1500,
+            "title": "Diff Summary",
+            "default": ""
+          },
+          "regressions": {
+            "items": {
+              "$ref": "#/components/schemas/RegressionRef"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Regressions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "improved",
+          "regressed",
+          "unchanged"
+        ],
+        "title": "PreviousAttempt",
+        "description": "Previous round with scores (same cases). No prompt text; diff + explanation only"
+      },
+      "ProfileDataRequest": {
+        "properties": {
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "csv",
+              "datasource"
+            ],
+            "title": "Source Type",
+            "default": "csv"
+          },
+          "file_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Url"
+          },
+          "file_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Id"
+          },
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Name"
+          },
+          "data_source_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Source Id"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "title": "ProfileDataRequest",
+        "description": "Input for profiling an uploaded CSV or a database query result."
+      },
+      "PromptCallUsage": {
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "title": "Input Tokens",
+            "default": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "title": "Output Tokens",
+            "default": 0
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "PromptCallUsage",
+        "description": "Tokens the provider reported for one call"
+      },
       "PromptConfigRead": {
         "properties": {
           "id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Id"
           },
           "workflow_id": {
@@ -41400,18 +44933,23 @@
             "title": "Gold Suite Id"
           },
           "created_at": {
-            "type": "string",
-            "format": "date-time",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Created At"
           }
         },
         "type": "object",
         "required": [
-          "id",
           "workflow_id",
           "node_id",
-          "prompt_field",
-          "created_at"
+          "prompt_field"
         ],
         "title": "PromptConfigRead"
       },
@@ -41424,33 +44962,147 @@
           },
           "input": {
             "type": "string",
-            "title": "Input"
+            "maxLength": 16000,
+            "title": "Input",
+            "default": ""
           },
           "expected": {
             "type": "string",
-            "title": "Expected"
+            "maxLength": 16000,
+            "title": "Expected",
+            "default": ""
           },
           "actual": {
             "type": "string",
-            "title": "Actual"
+            "maxLength": 16000,
+            "title": "Actual",
+            "default": ""
+          },
+          "actual_truncated": {
+            "type": "boolean",
+            "title": "Actual Truncated",
+            "default": false
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "scored",
+              "execution_failed",
+              "scoring_failed",
+              "skipped"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           },
           "metrics": {
             "additionalProperties": true,
             "type": "object",
             "title": "Metrics"
           },
+          "verdict": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "passed",
+                  "failed",
+                  "inconclusive"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verdict"
+          },
           "passed": {
             "type": "boolean",
             "title": "Passed",
             "default": false
+          },
+          "case_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Score"
+          },
+          "scored_metrics": {
+            "type": "integer",
+            "title": "Scored Metrics",
+            "default": 0
+          },
+          "failed_metrics": {
+            "type": "integer",
+            "title": "Failed Metrics",
+            "default": 0
+          },
+          "errored_metrics": {
+            "type": "integer",
+            "title": "Errored Metrics",
+            "default": 0
+          },
+          "not_evaluated_metrics": {
+            "type": "integer",
+            "title": "Not Evaluated Metrics",
+            "default": 0
+          },
+          "not_applicable_metrics": {
+            "type": "integer",
+            "title": "Not Applicable Metrics",
+            "default": 0
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptCallUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
           }
         },
         "type": "object",
         "required": [
           "case_id",
-          "input",
-          "expected",
-          "actual"
+          "status"
         ],
         "title": "PromptEvalCaseResult"
       },
@@ -41458,28 +45110,63 @@
         "properties": {
           "prompt_content": {
             "type": "string",
+            "maxLength": 200000,
+            "minLength": 1,
             "title": "Prompt Content",
             "description": "The system prompt to evaluate."
-          },
-          "techniques": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Techniques",
-            "description": "Evaluator technique identifiers."
           },
           "provider_id": {
             "type": "string",
             "format": "uuid",
             "title": "Provider Id",
             "description": "LLM provider to run the prompt against."
+          },
+          "techniques": {
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Techniques",
+            "description": "Evaluator technique identifiers."
+          },
+          "technique_configs": {
+            "$ref": "#/components/schemas/PromptTechniqueConfigs"
+          },
+          "case_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 25,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Case Ids",
+            "description": "Cases to run. Omit to let the server pick the first max_cases."
+          },
+          "max_cases": {
+            "type": "integer",
+            "maximum": 25.0,
+            "minimum": 1.0,
+            "title": "Max Cases",
+            "description": "Ignored when case_ids is given.",
+            "default": 10
           }
         },
         "type": "object",
         "required": [
           "prompt_content",
-          "provider_id"
+          "provider_id",
+          "techniques"
         ],
         "title": "PromptEvalRequest"
       },
@@ -41494,12 +45181,16 @@
           },
           "summary": {
             "$ref": "#/components/schemas/PromptEvalSummary"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/PromptRunProvenance"
           }
         },
         "type": "object",
         "required": [
           "results",
-          "summary"
+          "summary",
+          "provenance"
         ],
         "title": "PromptEvalResponse"
       },
@@ -41513,8 +45204,39 @@
             "type": "integer",
             "title": "Passed"
           },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "inconclusive": {
+            "type": "integer",
+            "title": "Inconclusive"
+          },
+          "execution_failed": {
+            "type": "integer",
+            "title": "Execution Failed"
+          },
+          "scoring_failed": {
+            "type": "integer",
+            "title": "Scoring Failed"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "scored": {
+            "type": "integer",
+            "title": "Scored"
+          },
           "avg_score": {
-            "type": "number",
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Avg Score"
           }
         },
@@ -41522,9 +45244,97 @@
         "required": [
           "total",
           "passed",
-          "avg_score"
+          "failed",
+          "inconclusive",
+          "execution_failed",
+          "scoring_failed",
+          "skipped",
+          "scored"
         ],
-        "title": "PromptEvalSummary"
+        "title": "PromptEvalSummary",
+        "description": "One count per outcome. The six outcome counts sum to ``total``; ``scored``\nis a separate tally of cases with at least one scored metric, and is\n``avg_score``'s denominator"
+      },
+      "PromptHistoryRead": {
+        "properties": {
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/PromptVersionRead"
+            },
+            "type": "array",
+            "title": "Versions"
+          },
+          "gold_suite_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Suite Id"
+          },
+          "node_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Type"
+          },
+          "node_missing": {
+            "type": "boolean",
+            "title": "Node Missing"
+          },
+          "field_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Label"
+          },
+          "inline_check_supported": {
+            "type": "boolean",
+            "title": "Inline Check Supported",
+            "default": false
+          },
+          "unsupported_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsupported Reason"
+          },
+          "legacy_shared": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LegacyHistoryRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "versions",
+          "node_missing"
+        ],
+        "title": "PromptHistoryRead",
+        "description": "All data the editor needs: versions, node state, and field metadata\nthat determine which controls are usable"
       },
       "PromptOptimizeRequest": {
         "properties": {
@@ -41536,13 +45346,15 @@
           },
           "current_prompt": {
             "type": "string",
-            "title": "Current Prompt",
-            "description": "The current system prompt to improve."
+            "maxLength": 200000,
+            "minLength": 1,
+            "title": "Current Prompt"
           },
           "instructions": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "maxLength": 4000
               },
               {
                 "type": "null"
@@ -41555,17 +45367,72 @@
             "anyOf": [
               {
                 "items": {
-                  "additionalProperties": true,
-                  "type": "object"
+                  "$ref": "#/components/schemas/FailedCaseRef"
                 },
-                "type": "array"
+                "type": "array",
+                "maxItems": 10
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Failed Cases",
-            "description": "Recent failed evaluation cases for context."
+            "title": "Failed Cases"
+          },
+          "case_split": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseSplit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "techniques": {
+            "items": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "type": "array",
+            "maxItems": 8,
+            "title": "Techniques",
+            "description": "Selected grading techniques, used to explain how expected outputs are interpreted."
+          },
+          "technique_configs": {
+            "$ref": "#/components/schemas/PromptTechniqueConfigs"
+          },
+          "previous_attempts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PreviousAttempt"
+                },
+                "type": "array",
+                "maxItems": 3
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Attempts",
+            "description": "Earlier rewrites of this prompt and how they scored, so the model can build on them."
+          },
+          "passing_case_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 25
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Passing Case Ids",
+            "description": "Cases that pass the last check with the current prompt, so the rewrite knows what already works."
           }
         },
         "type": "object",
@@ -41584,19 +45451,240 @@
           "explanation": {
             "type": "string",
             "title": "Explanation"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "changed",
+              "whitespace_only",
+              "unchanged"
+            ],
+            "title": "Outcome"
+          },
+          "exposure": {
+            "additionalProperties": {
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Exposure"
+          },
+          "examples_truncated": {
+            "type": "boolean",
+            "title": "Examples Truncated",
+            "default": false
+          },
+          "holdout_case_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Holdout Case Ids"
+          },
+          "exploratory": {
+            "type": "boolean",
+            "title": "Exploratory"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/PromptRunProvenance"
           }
         },
         "type": "object",
         "required": [
           "suggested_prompt",
-          "explanation"
+          "explanation",
+          "outcome",
+          "exposure",
+          "holdout_case_ids",
+          "exploratory",
+          "provenance"
         ],
         "title": "PromptOptimizeResponse"
+      },
+      "PromptRunProvenance": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "isolated_prompt",
+            "title": "Mode",
+            "default": "isolated_prompt"
+          },
+          "provider_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Provider Id"
+          },
+          "provider_key": {
+            "type": "string",
+            "title": "Provider Key"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "techniques": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Techniques"
+          },
+          "evaluated_case_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Evaluated Case Ids"
+          },
+          "total_cases": {
+            "type": "integer",
+            "title": "Total Cases"
+          },
+          "trials": {
+            "type": "integer",
+            "title": "Trials",
+            "default": 1
+          },
+          "ran_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ran At"
+          },
+          "latency_ms_total": {
+            "type": "integer",
+            "title": "Latency Ms Total"
+          },
+          "usage_total": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Usage Total"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "unpriced_calls": {
+            "type": "integer",
+            "title": "Unpriced Calls",
+            "default": 0
+          },
+          "grader_calls": {
+            "type": "integer",
+            "title": "Grader Calls",
+            "default": 0
+          },
+          "grader_tokens": {
+            "type": "integer",
+            "title": "Grader Tokens",
+            "default": 0
+          },
+          "grader_cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grader Cost Usd"
+          },
+          "budget_seconds": {
+            "type": "integer",
+            "title": "Budget Seconds"
+          },
+          "deadline_hit": {
+            "type": "boolean",
+            "title": "Deadline Hit",
+            "default": false
+          },
+          "metering_handoff_failed": {
+            "type": "boolean",
+            "title": "Metering Handoff Failed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "provider_key",
+          "model",
+          "techniques",
+          "evaluated_case_ids",
+          "total_cases",
+          "ran_at",
+          "latency_ms_total",
+          "usage_total",
+          "budget_seconds"
+        ],
+        "title": "PromptRunProvenance",
+        "description": "What the run actually did, so the header can state it rather than imply it"
+      },
+      "PromptTechniqueConfigs": {
+        "properties": {
+          "not_contains": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotContainsConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "field_equals": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldEqualsConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nli_eval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NliEvalConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "llm_judge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LlmJudgeConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PromptTechniqueConfigs",
+        "description": "Config for techniques that accept it. nli_eval takes only a threshold, its\nevidence is fixed; llm_judge takes one rubric rule and never a provider;\nprovenance_eval has no model, 422 if named"
       },
       "PromptVersionCreate": {
         "properties": {
           "content": {
             "type": "string",
+            "maxLength": 200000,
             "title": "Content",
             "description": "The prompt text."
           },
@@ -41852,6 +45940,33 @@
         ],
         "title": "RecordingRead"
       },
+      "RegressionRef": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "case_id"
+        ],
+        "title": "RegressionRef"
+      },
       "ReportedIssueRead": {
         "properties": {
           "feedback_id": {
@@ -41880,6 +45995,17 @@
               }
             ],
             "title": "Agent Id"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
           },
           "workflow_name": {
             "anyOf": [
@@ -41946,6 +46072,17 @@
             ],
             "title": "Conversation Topic"
           },
+          "conversation_subtopic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Subtopic"
+          },
           "conversation_date": {
             "anyOf": [
               {
@@ -41957,6 +46094,40 @@
               }
             ],
             "title": "Conversation Date"
+          },
+          "fix_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix Version"
+          },
+          "target_rollout_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Rollout Date"
+          },
+          "matched_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched Note"
           }
         },
         "type": "object",
@@ -42151,6 +46322,56 @@
         "title": "RolePermissionUpdate",
         "description": "Fields allowed when updating a RolePermission entry.\nIn a typical join table, you might only allow toggling an 'is_active' field,\nor you might not allow updates at all."
       },
+      "RolePermissionsSet": {
+        "properties": {
+          "permission_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Permission Ids",
+            "description": "The complete list of permission IDs the role should hold."
+          }
+        },
+        "type": "object",
+        "title": "RolePermissionsSet",
+        "description": "Full replacement set of permissions for one role."
+      },
+      "RolePermissionsSetResult": {
+        "properties": {
+          "role_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Id"
+          },
+          "permission_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Permission Ids"
+          },
+          "added": {
+            "type": "integer",
+            "title": "Added"
+          },
+          "removed": {
+            "type": "integer",
+            "title": "Removed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role_id",
+          "permission_ids",
+          "added",
+          "removed"
+        ],
+        "title": "RolePermissionsSetResult",
+        "description": "Outcome of a bulk set, so the client can confirm what was written."
+      },
       "RoleRead": {
         "properties": {
           "name": {
@@ -42258,6 +46479,203 @@
         },
         "type": "object",
         "title": "RoleUpdate"
+      },
+      "RunConversationResult": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict",
+            "description": "passed | failed | not_evaluated"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/RunTurnResult"
+            },
+            "type": "array",
+            "title": "Turns"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/TestToolRuleResult"
+            },
+            "type": "array",
+            "title": "Rules",
+            "description": "Checks on the whole conversation."
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "verdict",
+          "turns"
+        ],
+        "title": "RunConversationResult"
+      },
+      "RunConversations": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ConversationCounts"
+          },
+          "conversations": {
+            "items": {
+              "$ref": "#/components/schemas/RunConversationResult"
+            },
+            "type": "array",
+            "title": "Conversations"
+          },
+          "other_rules": {
+            "items": {
+              "$ref": "#/components/schemas/TestToolRuleResult"
+            },
+            "type": "array",
+            "title": "Other Rules",
+            "description": "Checks whose conversation is not in this run."
+          },
+          "rules_pending": {
+            "type": "boolean",
+            "title": "Rules Pending",
+            "description": "The run has checks or rules that are graded when it ends, and it has not ended well yet.",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "counts",
+          "conversations"
+        ],
+        "title": "RunConversations",
+        "description": "A run's results by conversation, in the order the run played them."
+      },
+      "RunTurnResult": {
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Case Id"
+          },
+          "number": {
+            "type": "integer",
+            "title": "Number",
+            "description": "Position in its conversation, from 1."
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected"
+          },
+          "reply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reply"
+          },
+          "verdict": {
+            "type": "string",
+            "title": "Verdict",
+            "description": "passed | failed | not_evaluated"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Why the turn crashed or was not evaluated."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "The stored result's status; None when there is none."
+          },
+          "metrics": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TestResultMetrics"
+            },
+            "type": "object",
+            "title": "Metrics"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/TestToolRuleResult"
+            },
+            "type": "array",
+            "title": "Rules"
+          },
+          "has_trace": {
+            "type": "boolean",
+            "title": "Has Trace",
+            "default": false
+          },
+          "in_dataset": {
+            "type": "boolean",
+            "title": "In Dataset",
+            "description": "False when the turn was removed from the dataset after the run.",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "case_id",
+          "number",
+          "verdict"
+        ],
+        "title": "RunTurnResult",
+        "description": "One turn of a run: what the customer said, what was expected, what the agent replied, and how it was graded."
+      },
+      "RunTurnTrace": {
+        "properties": {
+          "execution_trace": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Trace"
+          }
+        },
+        "type": "object",
+        "title": "RunTurnTrace"
       },
       "RunWorkflowEvaluationsRequest": {
         "properties": {
@@ -44292,6 +48710,19 @@
             ],
             "title": "Summary Metrics"
           },
+          "progress": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress",
+            "description": "conversations_done, conversations_total, turns_done and turns_total, updated after each turn. Null until the run starts."
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -44671,6 +49102,43 @@
           "fixed"
         ],
         "title": "ThreadIdMode"
+      },
+      "TopicOption": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "subtopics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Subtopics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "subtopics"
+        ],
+        "title": "TopicOption"
+      },
+      "TopicOptionsRead": {
+        "properties": {
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/TopicOption"
+            },
+            "type": "array",
+            "title": "Topics"
+          }
+        },
+        "type": "object",
+        "required": [
+          "topics"
+        ],
+        "title": "TopicOptionsRead"
       },
       "TopicsReport": {
         "properties": {
@@ -45780,7 +50248,8 @@
             "enum": [
               "slack",
               "whatsapp",
-              "generic"
+              "generic",
+              "workflow_trigger"
             ],
             "title": "Webhook Type",
             "default": "generic"
@@ -45885,7 +50354,8 @@
             "enum": [
               "slack",
               "whatsapp",
-              "generic"
+              "generic",
+              "workflow_trigger"
             ],
             "title": "Webhook Type"
           },
@@ -46042,7 +50512,8 @@
                 "enum": [
                   "slack",
                   "whatsapp",
-                  "generic"
+                  "generic",
+                  "workflow_trigger"
                 ]
               },
               {
@@ -46932,6 +51403,650 @@
           "updated_at"
         ],
         "title": "WorkflowSummary"
+      },
+      "WorkflowTriggerDeliveryResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkflowScheduleRunStatus"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "duplicate": {
+            "type": "boolean",
+            "title": "Duplicate",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "status"
+        ],
+        "title": "WorkflowTriggerDeliveryResponse",
+        "description": "What the public endpoint (and the test endpoint) answer."
+      },
+      "WorkflowTriggerProvision": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "node_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Node Id"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent_id",
+          "node_id"
+        ],
+        "title": "WorkflowTriggerProvision",
+        "description": "Create (or fetch) the endpoint of a Webhook Trigger node."
+      },
+      "WorkflowTriggerProvisionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "POST",
+              "GET"
+            ],
+            "title": "Method"
+          },
+          "auth_mode": {
+            "type": "string",
+            "enum": [
+              "bearer",
+              "hmac"
+            ],
+            "title": "Auth Mode"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "title": "Rate Limit Per Minute"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "last_run_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleRunStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret"
+          },
+          "created": {
+            "type": "boolean",
+            "title": "Created",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agent_id",
+          "node_id",
+          "url",
+          "method",
+          "auth_mode",
+          "rate_limit_per_minute",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkflowTriggerProvisionResponse"
+      },
+      "WorkflowTriggerRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "POST",
+              "GET"
+            ],
+            "title": "Method"
+          },
+          "auth_mode": {
+            "type": "string",
+            "enum": [
+              "bearer",
+              "hmac"
+            ],
+            "title": "Auth Mode"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "title": "Rate Limit Per Minute"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "last_run_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowScheduleRunStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "agent_id",
+          "node_id",
+          "url",
+          "method",
+          "auth_mode",
+          "rate_limit_per_minute",
+          "is_active",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkflowTriggerRead"
+      },
+      "WorkflowTriggerRunRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "webhook_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Webhook Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Agent Id"
+          },
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkflowScheduleRunStatus"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "input_data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Data"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "execution_output": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Output"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "webhook_id",
+          "agent_id",
+          "node_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkflowTriggerRunRead"
+      },
+      "WorkflowTriggerRunSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "webhook_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Webhook Id"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/WorkflowScheduleRunStatus"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "webhook_id",
+          "status",
+          "created_at"
+        ],
+        "title": "WorkflowTriggerRunSummary",
+        "description": "List row: no payloads, so the run list stays small."
+      },
+      "WorkflowTriggerSecret": {
+        "properties": {
+          "secret": {
+            "type": "string",
+            "title": "Secret"
+          },
+          "auth_mode": {
+            "type": "string",
+            "enum": [
+              "bearer",
+              "hmac"
+            ],
+            "title": "Auth Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "secret",
+          "auth_mode"
+        ],
+        "title": "WorkflowTriggerSecret"
+      },
+      "WorkflowTriggerTestRequest": {
+        "properties": {
+          "payload": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          },
+          "headers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headers"
+          }
+        },
+        "type": "object",
+        "title": "WorkflowTriggerTestRequest"
+      },
+      "WorkflowTriggerUpdate": {
+        "properties": {
+          "method": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "POST",
+                  "GET"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "auth_mode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "bearer",
+                  "hmac"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Mode"
+          },
+          "rate_limit_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Per Minute",
+            "description": "0 disables the limit"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "WorkflowTriggerUpdate"
       },
       "WorkflowUpdate": {
         "properties": {
