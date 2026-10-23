@@ -120,7 +120,54 @@ export interface CSVAnalysisResult {
     min?: number | null;
     max?: number | null;
   }>;
+  // Training-file previews (analyze-file) read at most a fixed number of
+  // rows; these say how much of the file the stats cover.
+  rows_analyzed?: number;
+  rows_truncated?: boolean;
+  // Excel workbooks: every sheet, and the one previewed.
+  sheet_names?: string[];
+  sheet_name?: string;
 }
+
+export interface AnalyzeTrainingFileRequest {
+  file_id?: string;
+  file_url?: string;
+  file_name?: string;
+  sheet_name?: string;
+}
+
+// Preview an uploaded training file of any supported type (CSV, Parquet,
+// Excel, JSON). Prefer file_id: it works with every storage provider.
+/** Effective Train Data Source limits (GET /ml-models/training-data/limits). */
+export interface TrainingDataLimits {
+  max_upload_bytes: number;
+  max_upload_label: string;
+  json_max_bytes: number;
+  max_rows: number;
+  supported_extensions: string[];
+}
+
+export const getTrainingDataLimits = async (): Promise<TrainingDataLimits | null> => {
+  try {
+    return (await apiRequest<TrainingDataLimits>("GET", `${BASE}/training-data/limits`)) ?? null;
+  } catch {
+    // The server still enforces the limit; the UI just can't show it in advance.
+    return null;
+  }
+};
+
+export const analyzeTrainingFile = async (
+  request: AnalyzeTrainingFileRequest,
+): Promise<CSVAnalysisResult> => {
+  const response = await apiRequest<CSVAnalysisResult>(
+    "POST",
+    `${BASE}/analyze-file`,
+    { ...request },
+    { timeout: API_PREPROCESSING_TIMEOUT_MS },
+  );
+  if (!response) throw new Error("Failed to preview the file");
+  return response;
+};
 
 export const analyzeCSV = async (
   fileUrl: string,
@@ -161,6 +208,7 @@ export type ProfileDataRequest =
       file_id?: string;
       file_url?: string;
       file_name?: string;
+      sheet_name?: string;
     }
   | {
       source_type: "datasource";

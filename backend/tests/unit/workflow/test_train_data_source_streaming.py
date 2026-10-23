@@ -526,7 +526,8 @@ async def test_non_csv_row_limit_removes_partial_output(monkeypatch, tmp_path):
         )
 
     assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED
-    assert "returned more than 2 rows" in exc_info.value.error_detail
+    # Counted before any row is written, so the limit fails fast.
+    assert "has 3 rows, which exceeds the limit of 2" in exc_info.value.error_detail
     assert not list((tmp_path / "train" / "thread-1").glob("*.csv"))
 
 

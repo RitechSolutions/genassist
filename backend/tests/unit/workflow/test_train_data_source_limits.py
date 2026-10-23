@@ -240,13 +240,14 @@ async def test_csv_timeout_uses_extraction_timeout_message(monkeypatch, tmp_path
 async def test_non_csv_parsing_is_included_in_extraction_timeout(monkeypatch, tmp_path):
     node = _node()
     source = tmp_path / "slow.json"
-    source.write_text("[]", encoding="utf-8")
+    source.write_text('[{"id": 1}]', encoding="utf-8")
+    real_open_json = module.TrainingFileReader._open_json
 
-    def slow_parse(_file_path):
+    def slow_open_json(reader):
         time.sleep(0.05)
-        return []
+        return real_open_json(reader)
 
-    monkeypatch.setattr(module.ml_utils, "parse_training_file", slow_parse)
+    monkeypatch.setattr(module.TrainingFileReader, "_open_json", slow_open_json)
     monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
 
     with pytest.raises(AppException) as exc_info:

@@ -8,6 +8,19 @@ export interface TrainDataSourceProfileValues {
   csvFilePath?: string | null;
   csvFileId?: string | null;
   csvFileUrl?: string | null;
+  sheetName?: string | null;
+}
+
+// File types Train Data Source can read (backend: training_file_readers.py).
+export const TRAINING_FILE_TYPES = ['.csv', '.parquet', '.xlsx', '.xlsm', '.json', '.jsonl', '.ndjson'];
+
+export function isSupportedTrainingFile(fileName?: string | null): boolean {
+  const name = fileName?.toLowerCase() ?? '';
+  return TRAINING_FILE_TYPES.some((type) => name.endsWith(type));
+}
+
+export function isExcelFile(fileName?: string | null): boolean {
+  return /\.xls[xm]$/i.test(fileName ?? '');
 }
 
 export interface ProfileDataAvailability {
@@ -38,8 +51,7 @@ export function getProfileDataAvailability(values: TrainDataSourceProfileValues)
   }
 
   const hasFile = Boolean(values.csvFileId || values.csvFilePath || values.csvFileUrl);
-  const isCsv = Boolean(values.csvFileName?.toLowerCase().endsWith('.csv'));
-  const available = hasFile && isCsv;
+  const available = hasFile && isSupportedTrainingFile(values.csvFileName);
   return { visible: available, enabled: available };
 }
 
@@ -59,5 +71,6 @@ export function buildProfileDataRequest(values: TrainDataSourceProfileValues): P
     file_id: values.csvFileId || undefined,
     file_url: values.csvFilePath || values.csvFileUrl || undefined,
     file_name: values.csvFileName || undefined,
+    sheet_name: (isExcelFile(values.csvFileName) && values.sheetName) || undefined,
   };
 }

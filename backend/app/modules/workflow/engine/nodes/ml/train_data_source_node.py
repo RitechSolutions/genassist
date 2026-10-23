@@ -32,6 +32,11 @@ from app.modules.integration.database.read_only_sql import (
 )
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+    SUPPORTED_TRAINING_FILE_LABEL,
+    SUPPORTED_TRAINING_FILE_SUFFIXES,
+    TrainingFileReader,
+)
 from app.modules.workflow.engine.utils import (
     PARAM_STYLE_NAMED,
     PARAM_STYLE_PYFORMAT,
@@ -313,6 +318,7 @@ class TrainDataSourceNode(BaseNode):
         csv_file_path = config.get("csvFilePath")
         csv_file_id = config.get("csvFileId")
         csv_file_name = config.get("csvFileName")
+        sheet_name = config.get("sheetName")
 
         if not csv_file_path and not csv_file_id:
             raise AppException(
@@ -425,25 +431,32 @@ class TrainDataSourceNode(BaseNode):
                 limits.max_bytes,
             )
 
-            async def stream_training_file():
-                if suffix == ".csv":
-                    chunks = ml_utils.iter_csv_chunks(str(csv_path), chunk_rows)
-                    source_kind = "csv"
-                else:
-                    records = await asyncio.to_thread(
-                        ml_utils.parse_training_file,
-                        str(csv_path),
-                    )
-                    chunks = ml_utils.iter_record_chunks(records, chunk_rows)
-                    source_kind = "file"
+            reader = TrainingFileReader(
+                csv_path,
+                chunk_rows,
+                max_rows=limits.max_rows,
+                sheet_name=sheet_name,
+                json_max_bytes=settings.ML_EXTRACT_JSON_MAX_BYTES,
+            )
 
-                return await ml_utils.stream_rows_to_csv(
-                    chunks,
+            async def stream_training_file():
+                result = await ml_utils.stream_rows_to_csv(
+                    reader.chunks(),
                     self.state.thread_id,
                     max_rows=limits.max_rows,
                     max_bytes=limits.max_bytes,
-                    source_kind=source_kind,
+                    source_kind="csv" if reader.is_csv else "file",
                 )
+                if not reader.is_csv:
+                    # CSV has no types of its own (they're inferred
+                    # downstream, as before); every other format's column
+                    # types are saved next to the output for the next node.
+                    try:
+                        ml_utils.write_dtypes_mapping_sidecar(result[0], reader.column_dtypes())
+                    except BaseException:
+                        Path(result[0]).unlink(missing_ok=True)
+                        raise
+                return result
 
             try:
                 saved_csv_path, columns, row_count, sample_data = await asyncio.wait_for(
@@ -476,7 +489,7 @@ class TrainDataSourceNode(BaseNode):
             )
             raise AppException(
                 error_key=ErrorKey.ML_EXTRACT_FAILED,
-                error_detail=f"CSV source processing failed: {str(e)}",
+                error_detail=f"Training file processing failed: {str(e)}",
             ) from e
         finally:
             if temporary_source_path is not None:
@@ -729,15 +742,15 @@ class TrainDataSourceNode(BaseNode):
 
     @staticmethod
     def _validate_training_file_suffix(suffix: str) -> None:
-        if suffix in ml_utils.SUPPORTED_TRAINING_FILE_SUFFIXES:
+        if suffix in SUPPORTED_TRAINING_FILE_SUFFIXES:
             return
 
         raise AppException(
             error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
             status_code=400,
             error_detail=(
-                "This training file type is not supported. Use CSV, Excel (.xlsx), "
-                "JSON, or Parquet."
+                "This training file type is not supported. Use one of: "
+                f"{SUPPORTED_TRAINING_FILE_LABEL}."
             ),
         )
 
