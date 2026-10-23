@@ -1,5 +1,7 @@
 import json
 import logging
+from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import uuid4
@@ -16,6 +18,7 @@ from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
     MLModelInferenceNode,
     _build_input_array,
     _build_prediction_outputs,
+    _echo_input_columns,
     _normalize_inference_inputs,
     _prediction_array,
     _prepare_inference_inputs,
@@ -1466,6 +1469,7 @@ class TestInferenceFeatureContract:
             {"region": "east", "hour": 8},
             feature_names=["region", "hour"],
             inference_params={"featureDefaults": {"region": "unknown"}},
+            label_encodings={"region": {"east": 0, "unknown": 1}},
         )
 
         assert result["status"] == "success"
@@ -1475,20 +1479,23 @@ class TestInferenceFeatureContract:
     async def test_data_preparation_failure_keeps_original_cause_with_applied_default(
         self, monkeypatch
     ):
+        scaler = MagicMock()
+        scaler.transform.side_effect = ValueError("scaler rejected prepared input")
+
         with pytest.raises(AppException) as exc:
             await _predict(
                 monkeypatch,
                 _StubModel(),
-                {"hour": "abc"},
+                {"hour": 8},
                 feature_names=["hour", "lag_24"],
                 inference_params={"featureDefaults": {"lag_24": 0}},
-                scaler=MagicMock(),
+                scaler=scaler,
                 scaled_columns=["hour"],
             )
 
         assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
         assert "Data preparation failed after configured feature default(s)" in exc.value.error_detail
-        assert "abc" in exc.value.error_detail
+        assert "scaler rejected prepared input" in exc.value.error_detail
         assert "applied for: lag_24" in exc.value.error_detail
 
     @pytest.mark.asyncio
@@ -1497,13 +1504,13 @@ class TestInferenceFeatureContract:
             feature_names_in_ = np.array(["hour", "lag_24"])
 
             def predict(self, input_data):
-                raise ValueError("invalid value 'abc' for hour\nStack trace:\n" + "x" * 2000)
+                raise ValueError("model rejected hour\nStack trace:\n" + "x" * 2000)
 
         with pytest.raises(AppException) as exc:
             await _predict(
                 monkeypatch,
                 RawModel(),
-                {"hour": "abc"},
+                {"hour": 8},
                 feature_names=["hour", "lag_24"],
                 inference_params={"featureDefaults": {"lag_24": 0}},
             )
@@ -1511,7 +1518,7 @@ class TestInferenceFeatureContract:
         visible_detail = truncate_for_log(describe_exception(exc.value), 500)
         assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
         assert "configured feature default(s) were applied for: lag_24" in visible_detail
-        assert "invalid value 'abc' for hour" in visible_detail
+        assert "model rejected hour" in visible_detail
         assert "Stack trace" not in visible_detail
 
     @pytest.mark.asyncio
@@ -1993,8 +2000,8 @@ class _CapturingModel:
 
 
 class TestOrdinalInputValidation:
-    """MI-9: an ordinal value outside the fitted order is rejected, as training
-    rejects it, instead of being encoded as NaN."""
+    """Reject ordinal values outside the fitted order instead of encoding them
+    as NaN."""
 
     ORDER = {"High": 2, "Low": 0, "Medium": 1}
 
@@ -2167,8 +2174,8 @@ class TestCategoricalErrorMessages:
 
 
 class TestConvertValueNumbers:
-    """MI-12: one parsing rule - int for plain integer strings, otherwise float;
-    underscores and non-finite values stay text."""
+    """Use one parsing rule: plain integer strings become integers, while
+    decimal and scientific notation become floats."""
 
     @pytest.mark.parametrize(
         ("raw", "expected"),
@@ -2200,6 +2207,16 @@ class TestConvertValueNumbers:
         assert result == expected
         assert type(result) is type(expected)
 
+    def test_long_non_matching_number_text_is_left_unchanged(self):
+        raw = f"{'1' * 20_000}x"
+
+        assert convert_value(raw) == raw
+
+    def test_integer_text_over_python_digit_limit_is_left_unchanged(self):
+        raw = "1" * 5_000
+
+        assert convert_value(raw) == raw
+
     def test_numeric_default_in_scientific_notation_is_accepted(self):
         prepared, applied = _prepare_inference_inputs(
             {"hour": [8]},
@@ -2226,6 +2243,18 @@ class TestConvertValueNumbers:
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
         assert "lag_24" in exc.value.error_detail
 
+    def test_numeric_like_text_is_allowed_for_a_fitted_category_default(self):
+        prepared, applied = _prepare_inference_inputs(
+            {},
+            ["kind"],
+            defaults={"kind": "1_000"},
+            categorical_features=["kind"],
+            categorical_values={"kind": {"1_000"}},
+        )
+
+        assert prepared == {"kind": ["1_000"]}
+        assert applied == ["kind"]
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize("value", ["inf", "1_000", float("inf")])
     async def test_numeric_input_that_is_not_a_finite_number_is_rejected(self, monkeypatch, value):
@@ -2242,8 +2271,21 @@ class TestConvertValueNumbers:
         assert "'area'" in exc.value.error_detail
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("value", ["inf", "1_000", float("inf")])
-    async def test_invalid_numeric_like_input_without_encoders_is_rejected(
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "inf",
+            "1_000",
+            float("inf"),
+            "east",
+            "١٢",
+            "1" * 400,
+            '{"nested": 1}',
+            [[1, 2]],
+            Decimal("Infinity"),
+        ],
+    )
+    async def test_numeric_metadata_rejects_invalid_values_without_encoders(
         self, monkeypatch, value
     ):
         with pytest.raises(AppException) as exc:
@@ -2257,10 +2299,84 @@ class TestConvertValueNumbers:
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
         assert "'area'" in exc.value.error_detail
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["1e400", float("inf")])
+    async def test_legacy_numeric_overflow_is_rejected(
+        self, monkeypatch, value
+    ):
+        from sklearn.linear_model import LinearRegression
+
+        training_data = pd.DataFrame({"area": [1.0, 2.0]})
+        model = LinearRegression().fit(training_data, [1.0, 2.0])
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"area": value},
+                feature_names=["area"],
+                legacy=True,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "'area'" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_legacy_pipeline_keeps_text_categories_that_look_numeric(
+        self, monkeypatch
+    ):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.dummy import DummyRegressor
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        training_data = pd.DataFrame({"zone": ["2_3", "inf"]})
+        model = Pipeline(
+            [
+                (
+                    "categories",
+                    ColumnTransformer(
+                        [("zone", OneHotEncoder(), ["zone"])],
+                    ),
+                ),
+                ("regressor", DummyRegressor()),
+            ]
+        ).fit(training_data, [10.0, 20.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"zone": ["2_3", "inf"]},
+            feature_names=["zone"],
+            legacy=True,
+        )
+
+        assert result["input_data"] == {"zone": ["2_3", "inf"]}
+
+    @pytest.mark.asyncio
+    async def test_numeric_validation_bounds_invalid_values_in_error(
+        self, monkeypatch
+    ):
+        invalid_values = [f"invalid-{index}-" + "x" * 100 for index in range(10)]
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"area": invalid_values},
+                feature_names=["area"],
+            )
+
+        detail = exc.value.error_detail
+        assert "invalid-0" in detail
+        assert "row 1" in detail
+        assert "invalid-5" not in detail
+        assert "x" * 40 not in detail
+        assert len(detail) < 450
+
 
 class TestEchoedInputTypes:
-    """MI-13: input_data keeps each value's own type when a text feature is
-    present."""
+    """Echoed input data keeps each value's own type."""
 
     @pytest.mark.asyncio
     async def test_mixed_inputs_keep_their_types_with_encoded_text(self, monkeypatch):
@@ -2282,13 +2398,34 @@ class TestEchoedInputTypes:
         json.dumps(result)
 
     @pytest.mark.asyncio
-    async def test_mixed_inputs_keep_their_types_without_encoders(self, monkeypatch):
+    async def test_numeric_inputs_keep_their_types_without_encoders(self, monkeypatch):
         result = await _predict(
             monkeypatch,
             _StubModel(),
-            {"area": 1.5, "region": "east"},
-            feature_names=["area", "region"],
+            {"area": 1.5, "count": 2, "flag": True},
+            feature_names=["area", "count", "flag"],
         )
 
-        assert result["input_data"] == {"area": [1.5], "region": ["east"]}
+        assert result["input_data"] == {
+            "area": [1.5],
+            "count": [2],
+            "flag": [True],
+        }
         assert type(result["input_data"]["area"][0]) is float
+        assert type(result["input_data"]["count"][0]) is int
+        assert type(result["input_data"]["flag"][0]) is bool
+
+    def test_non_json_scalars_are_serialized_safely(self):
+        timestamp = datetime(2026, 10, 23, 12, 30, tzinfo=timezone.utc)
+
+        result = _echo_input_columns(
+            {"amount": [Decimal("1.5")], "created_at": [timestamp]},
+            ["amount", "created_at"],
+            1,
+        )
+
+        assert result == {
+            "amount": ["1.5"],
+            "created_at": ["2026-10-23 12:30:00+00:00"],
+        }
+        json.dumps(result)

@@ -5,6 +5,7 @@ ML Model Inference node implementation using the BaseNode class.
 import json
 import logging
 import re
+from numbers import Number
 from typing import Any, Dict, List, Optional, Sequence
 from uuid import UUID
 
@@ -38,8 +39,9 @@ logger = logging.getLogger(__name__)
 _BOOL_TRUE = frozenset({"true"})
 _BOOL_FALSE = frozenset({"false"})
 _INT_PATTERN = re.compile(r"[+-]?[0-9]+")
-_FLOAT_PATTERN = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
-_NON_FINITE_NUMBER_TEXT = frozenset({"inf", "infinity", "nan"})
+_FLOAT_PATTERN = re.compile(
+    r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+)
 
 
 def convert_value(val: Any) -> Any:
@@ -78,7 +80,10 @@ def convert_value(val: Any) -> Any:
     # also accept "1_000", "inf" and "nan", which are not valid inputs, so
     # those stay text and are rejected where a number is required.
     if _INT_PATTERN.fullmatch(stripped):
-        return int(stripped)
+        try:
+            return int(stripped)
+        except ValueError:
+            return val
     if _FLOAT_PATTERN.fullmatch(stripped):
         # An overflow such as "1e400" parses to inf; the numeric checks
         # reject non-finite values with a specific message.
@@ -474,33 +479,22 @@ def _prepare_inference_inputs(
             ),
         )
 
-    invalid_numeric_defaults = [
-        name
-        for name, value in prepared_defaults.items()
-        if categorical_feature_set is not None
-        and name not in categorical_feature_set
-        and isinstance(value, str)
-    ]
+    invalid_numeric_defaults = []
+    for name, value in prepared_defaults.items():
+        if categorical_feature_set is not None and name in categorical_feature_set:
+            continue
+        if _numeric_value_problem(
+            value,
+            allow_text=categorical_feature_set is None,
+        ) is not None:
+            invalid_numeric_defaults.append(name)
     if invalid_numeric_defaults:
         raise AppException(
             error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
             error_detail=(
-                "Inference fallback value(s) for numeric feature(s) must be numbers or booleans: "
+                "Inference fallback value(s) for numeric feature(s) must be finite scalar "
+                "numbers or booleans: "
                 f"{', '.join(invalid_numeric_defaults)}."
-            ),
-        )
-
-    non_finite_defaults = [
-        name
-        for name, value in prepared_defaults.items()
-        if isinstance(value, (float, np.floating)) and not np.isfinite(value)
-    ]
-    if non_finite_defaults:
-        raise AppException(
-            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-            error_detail=(
-                "Inference fallback value(s) must be finite numbers for: "
-                f"{', '.join(non_finite_defaults)}."
             ),
         )
 
@@ -600,46 +594,61 @@ def _prepare_inference_inputs(
     return prepared_inputs, defaults_applied
 
 
+def _numeric_value_problem(value: Any, allow_text: bool) -> Optional[str]:
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, (bool, np.bool_)):
+        return None
+    if isinstance(value, str):
+        return None if allow_text else "not numeric"
+    if isinstance(value, (dict, list, tuple, set)) or value is None:
+        return "not numeric"
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        if allow_text and not isinstance(value, Number):
+            return None
+        return "not numeric"
+    return None if np.isfinite(numeric_value) else "not finite"
+
+
 def _validate_numeric_inputs(
     normalized_inputs: Dict[str, List[Any]],
     numeric_features: Sequence[str],
-    reject_arbitrary_text: bool,
+    allow_text: bool,
 ) -> None:
-    """Reject text and non-finite values in numeric features before they are
-    cast to float - numpy's cast would otherwise accept "1_000", "inf" and
-    "Infinity" that convert_value deliberately left as text."""
+    """Reject invalid scalar numbers while preserving unknown legacy text."""
     problems = []
     for name in numeric_features:
-        bad = []
-        for value in normalized_inputs.get(name, []):
-            if isinstance(value, np.generic):
-                value = value.item()
-            invalid = isinstance(value, float) and not np.isfinite(value)
-            if isinstance(value, str):
-                stripped = value.strip()
-                unsigned = stripped.lower().lstrip("+-")
-                without_underscores = stripped.replace("_", "")
-                invalid = (
-                    reject_arbitrary_text
-                    or unsigned in _NON_FINITE_NUMBER_TEXT
-                    or (
-                        "_" in stripped
-                        and (
-                            _INT_PATTERN.fullmatch(without_underscores)
-                            or _FLOAT_PATTERN.fullmatch(without_underscores)
-                        )
-                    )
-                )
-            if invalid:
-                if str(value) not in bad:
-                    bad.append(str(value))
-        if bad:
-            problems.append(f"'{name}': {', '.join(bad[:5])}{' …' if len(bad) > 5 else ''}")
+        invalid_value_rows: Dict[str, List[int]] = {}
+        has_more = False
+        for row_number, value in enumerate(
+            normalized_inputs.get(name, []), start=1
+        ):
+            if _numeric_value_problem(value, allow_text) is None:
+                continue
+            value_text = _format_error_value(_json_safe_scalar(value))
+            if (
+                value_text not in invalid_value_rows
+                and len(invalid_value_rows) >= _MAX_LISTED_VALUES
+            ):
+                has_more = True
+                break
+            rows = invalid_value_rows.setdefault(value_text, [])
+            if len(rows) < _MAX_LISTED_VALUES:
+                rows.append(row_number)
+        if invalid_value_rows:
+            suffix = " …" if has_more else ""
+            problems.append(
+                f"'{_format_error_value(name)}': "
+                f"{_format_value_rows(invalid_value_rows)}{suffix}"
+            )
     if problems:
         raise AppException(
             error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
             error_detail=(
-                "Numeric feature(s) received values that are not finite numbers: "
+                "Numeric feature(s) received values that are not valid finite numbers: "
                 f"{'; '.join(problems)}. Use plain numbers such as 1000, 2.5 or 1e5."
             ),
         )
@@ -655,7 +664,7 @@ def _echo_input_columns(
     as soon as one feature is text (1.5 -> "1.5", True -> "True")."""
     return {
         name: [
-            value.item() if isinstance(value, np.generic) else value
+            _json_safe_scalar(value)
             for value in _broadcast_column(normalized_inputs[name], batch_size, name)
         ]
         for name in feature_names
@@ -1304,8 +1313,7 @@ class MLModelInferenceNode(BaseNode):
                 # Validated raw values aligned to feature_names, including any
                 # deliberate per-model defaults applied above. Used below to
                 # build the model-ready matrix and the echoed "input_data".
-                raw_input_data = _build_input_array(normalized_inputs, feature_names)
-                batch_size = raw_input_data.shape[0]
+                batch_size = _infer_batch_size(normalized_inputs) or 1
                 if target_transform is not None:
                     ratio_baseline_values = _validated_ratio_baseline_values(
                         normalized_inputs,
@@ -1315,7 +1323,7 @@ class MLModelInferenceNode(BaseNode):
                     )
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
-                    batch_size, raw_input_data.shape[1] if raw_input_data.ndim == 2 else 0, list(feature_names),
+                    batch_size, len(feature_names), list(feature_names),
                 )
 
                 # Reapply the same categorical encoding fitted at training time
@@ -1332,8 +1340,8 @@ class MLModelInferenceNode(BaseNode):
                 numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
                 _validate_numeric_inputs(
                     normalized_inputs,
-                    numeric_order,
-                    reject_arbitrary_text=bool(encoded_feature_columns),
+                    numeric_order if metadata_is_authoritative else feature_names,
+                    allow_text=not metadata_is_authoritative,
                 )
 
                 # Build every output column by name first, then assemble the
@@ -1389,6 +1397,9 @@ class MLModelInferenceNode(BaseNode):
                             column_arrays[col] = encoded_nd[:, i]
                         legacy_order += encoded_nd_columns
                 else:
+                    raw_input_data = _build_input_array(
+                        normalized_inputs, feature_names
+                    )
                     for i, col in enumerate(feature_names):
                         column_arrays[col] = raw_input_data[:, i]
                     legacy_order = list(feature_names)
