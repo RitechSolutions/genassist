@@ -397,9 +397,18 @@ class TrainDataSourceNode(BaseNode):
 
                 csv_file_path = str(temporary_source_path)
 
-            csv_path = Path(csv_file_path)
-            if not csv_path.exists():
+            # Only files inside the data volume, or the configured storage folder, can be read
+            allowed_directories = [ml_utils.DATA_VOLUME, *(await ml_utils.extra_csv_directories())]
+            candidates = [csv_file_path]
+            if not os.path.isabs(csv_file_path) and self.state.thread_id:
+                candidates.insert(0, ml_utils.DATA_VOLUME / "train" / self.state.thread_id / csv_file_path)
+            csv_path = next(
+                (path for path in (ml_utils._csv_path_inside(c, allowed_directories) for c in candidates) if path),
+                None,
+            )
+            if csv_path is None:
                 raise self._file_unavailable_error()
+            csv_file_path = str(csv_path)
 
             if not os.access(csv_file_path, os.R_OK):
                 raise AppException(
