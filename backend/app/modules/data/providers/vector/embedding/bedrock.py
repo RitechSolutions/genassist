@@ -4,6 +4,7 @@ AWS Bedrock embedding provider implementation
 
 import asyncio
 import logging
+from contextlib import contextmanager
 from typing import List
 
 from app.core.config.settings import settings
@@ -23,6 +24,7 @@ class BedrockEmbedder(BaseEmbedder):
     def __init__(self, config: EmbeddingConfig):
         super().__init__(config)
         self.client = None
+        self._batch_client = None
         # Dimension mapping for Bedrock models
         self._model_dimensions = {
             "amazon.titan-embed-text-v2:0": 1024,
@@ -38,32 +40,41 @@ class BedrockEmbedder(BaseEmbedder):
             self._dimension = self._model_dimensions.get(model_id, 1024)
         return self._dimension
 
+    def _build_client(self, close_after_each_call: bool):
+        """Build a Bedrock client; without close_after_each_call it reuses its connections"""
+        from botocore.config import Config
+        from langchain_aws import BedrockEmbeddings
+
+        # Credentials come from boto3's default chain (environment, credentials file, instance or task role)
+        client = BedrockEmbeddings(
+            model_id=self.config.model_id or "amazon.titan-embed-text-v2:0",
+            region_name=self.config.region_name or "ca-central-1",
+            config=Config(**self._client_timeouts()),
+        )
+        if close_after_each_call:
+            client.client.meta.events.register("before-send.bedrock-runtime", _close_connection_after_call)
+        return client
+
+    def _client_timeouts(self) -> dict:
+        """Knowledge-base timeouts when set; otherwise the embedding timeout to connect and the AWS default to read"""
+        connect_timeout = self.config.connect_timeout
+        if connect_timeout is None:
+            connect_timeout = settings.BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS
+        timeouts = {"connect_timeout": connect_timeout}
+        if self.config.read_timeout is not None:
+            timeouts["read_timeout"] = self.config.read_timeout
+        return timeouts
+
     async def initialize(self) -> bool:
-        """Initialize the Bedrock client"""
+        """Initialize the Bedrock clients; the batch client is built once and kept on re-initialization"""
         try:
-            from botocore.config import Config
-            from langchain_aws import BedrockEmbeddings
-
-            # Use model_id from config or default
-            model_id = self.config.model_id or "amazon.titan-embed-text-v2:0"
-            region_name = self.config.region_name or "ca-central-1"
-            timeout_seconds = settings.BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS
-
-            # Initialize Bedrock embeddings
-            # Credentials are automatically loaded from boto3's credential chain:
-            # 1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-            # 2. AWS credentials file (~/.aws/credentials)
-            # 3. IAM instance profile (EC2/ECS)
-            # 4. IAM role (Lambda/ECS with task role)
-            self.client = BedrockEmbeddings(
-                model_id=model_id,
-                region_name=region_name,
-                config=Config(connect_timeout=timeout_seconds),
-            )
-            self.client.client.meta.events.register("before-send.bedrock-runtime", _close_connection_after_call)
-
+            client = self._build_client(close_after_each_call=True)
+            batch_client = self._batch_client
+            if batch_client is None:
+                batch_client = self._build_client(close_after_each_call=False)
+            self.client, self._batch_client = client, batch_client
             logger.info(
-                f"Initialized Bedrock embeddings with model: {model_id} in region: {region_name}")
+                f"Initialized Bedrock embeddings with model: {self.client.model_id} in region: {self.client.region_name}")
             return True
 
         except Exception as e:
@@ -83,18 +94,29 @@ class BedrockEmbedder(BaseEmbedder):
         if not texts:
             return []
 
-        if not self.client:
+        if self._batch_client is None:
             if not await self.initialize():
                 raise RuntimeError("Failed to initialize Bedrock client")
 
         try:
-            # Use LangChain's embed_documents method for batch processing
-            embeddings = await self.client.aembed_documents(texts)
+            with self._batch_connections() as client:
+                # Use LangChain's embed_documents method for batch processing
+                embeddings = await client.aembed_documents(texts)
             return embeddings
 
         except Exception as e:
             logger.error(f"Failed to generate embeddings: {e}")
             return []
+
+    @contextmanager
+    def _batch_connections(self):
+        """Batch client that starts with no pooled connections and drops them again when the batch ends"""
+        batch_client = self._batch_client
+        batch_client.client.close()
+        try:
+            yield batch_client
+        finally:
+            batch_client.client.close()
 
     async def embed_query(self, query: str) -> List[float]:
         """
