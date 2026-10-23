@@ -109,8 +109,9 @@ class TestS3StorageProvider:
             provider = S3StorageProvider(config=s3_config)
 
             assert provider.aws_bucket_name == "test-bucket"
-            assert provider.aws_access_key_id == "test-access-key"
-            assert provider.aws_secret_access_key == "test-secret-key"
+            # Access keys are not kept on the provider; the S3 client uses the default AWS credentials
+            assert not hasattr(provider, "aws_access_key_id")
+            assert not hasattr(provider, "aws_secret_access_key")
             assert provider.aws_region_name == "us-east-1"
             assert provider.s3_client == mock_s3_client
 
