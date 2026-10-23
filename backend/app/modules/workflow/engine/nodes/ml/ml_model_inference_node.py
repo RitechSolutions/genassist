@@ -220,15 +220,86 @@ def _validate_categorical_inputs(
             }
         )
         if invalid_values:
-            allowed = ", ".join(str(v) for v in known.tolist())
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
+                error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
                 error_detail=(
-                    f"Invalid value(s) for feature '{col}': {', '.join(invalid_values)}. "
-                    f"Please enter a correct value, otherwise this field will be ignored. "
-                    f"Expected one of: {allowed}."
+                    f"Invalid value(s) for feature '{_format_error_value(col)}': "
+                    f"{_format_value_list(invalid_values)}. The request was rejected "
+                    "because one or more values are not configured for this model."
                 ),
             )
+
+
+def _validate_ordinal_inputs(
+    normalized_inputs: Dict[str, List[Any]],
+    ordinal_columns: Sequence[str],
+    ordinal_encodings: Dict[str, Dict[Any, Any]],
+) -> None:
+    """Reject an ordinal value that has no position in the fitted order.
+
+    Training refuses such values rather than turning them into missing
+    (TrainModelNode._encode_categoricals), so inference does the same instead
+    of encoding them as NaN - which most models reject with a vague error and
+    XGBoost/LightGBM/HistGradientBoosting silently treat as missing. Values
+    are matched with ordinal_key, exactly as training matches them; missing
+    values stay missing, as they do in training.
+    """
+    for col in ordinal_columns:
+        if col not in normalized_inputs:
+            continue
+        mapping = ordinal_encodings.get(col) or {}
+        known_keys = {ordinal_key(k) for k in mapping}
+        invalid_value_rows: Dict[str, List[int]] = {}
+        for row, value in enumerate(normalized_inputs[col], start=1):
+            key = ordinal_key(value)
+            if key is None or key in known_keys:
+                continue
+            invalid_value_rows.setdefault(str(value), []).append(row)
+        if invalid_value_rows:
+            raise AppException(
+                error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                error_detail=(
+                    f"Invalid value(s) for ordinal feature '{_format_error_value(col)}': "
+                    f"{_format_value_rows(invalid_value_rows)}. The request was rejected because "
+                    "one or more values have no configured ordinal position."
+                ),
+            )
+
+
+_MAX_LISTED_VALUES = 5
+_MAX_DISPLAY_VALUE_LENGTH = 40
+
+
+def _format_error_value(value: Any) -> str:
+    """Bound an input value before including it in a client-safe error."""
+    text = str(value)
+    if len(text) <= _MAX_DISPLAY_VALUE_LENGTH:
+        return text
+    return f"{text[: _MAX_DISPLAY_VALUE_LENGTH - 1]}…"
+
+
+def _format_value_list(values: Sequence[Any], limit: int = _MAX_LISTED_VALUES) -> str:
+    """Join bounded caller values without exceeding the client detail budget."""
+    items = [_format_error_value(value) for value in values]
+    if len(items) <= limit:
+        return ", ".join(items)
+    return f"{', '.join(items[:limit])} … {len(items) - limit} more"
+
+
+def _format_value_rows(
+    value_rows: Dict[str, List[int]], limit: int = _MAX_LISTED_VALUES
+) -> str:
+    """Pair each bounded invalid value with its affected input rows."""
+    entries = list(value_rows.items())
+    formatted = []
+    for value, rows in entries[:limit]:
+        row_label = "row" if len(rows) == 1 else "rows"
+        formatted.append(
+            f"{_format_error_value(value)} ({row_label} {_format_value_list(rows)})"
+        )
+    if len(entries) > limit:
+        formatted.append(f"… {len(entries) - limit} more values")
+    return "; ".join(formatted)
 
 
 def _category_key(value: Any, normalize: bool = False) -> Any:
@@ -586,25 +657,34 @@ def _mapped_transform(
     """
     if not columns:
         return np.empty((batch_size, 0))
-    raw = _build_input_array(normalized_inputs, columns).astype(object)
-    out = np.empty(raw.shape, dtype=float)
+    out = np.empty((batch_size, len(columns)), dtype=float)
     for i, col in enumerate(columns):
+        # Preserve each original value type. np.column_stack can stringify
+        # mixed values either across columns or within one batch column.
+        values = np.asarray(
+            _broadcast_column(normalized_inputs[col], batch_size, col),
+            dtype=object,
+        )
         mapping = mappings.get(col, {})
         if normalize_keys:
             mapping = {ordinal_key(k): v for k, v in mapping.items()}
-            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in raw[:, i]]
+            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in values]
         else:
             mapping = {_category_key(k): v for k, v in mapping.items()}
             out[:, i] = [
-                mapping.get(_category_key(v), unseen_value) for v in raw[:, i]
+                mapping.get(_category_key(v), unseen_value) for v in values
             ]
     return out
 
 
 def _json_safe_scalar(value: Any) -> Any:
     """Convert NumPy scalars to JSON-safe Python scalar values."""
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
     if isinstance(value, np.generic):
         value = value.item()
+    if isinstance(value, (list, tuple)):
+        return [_json_safe_scalar(item) for item in value]
 
     if isinstance(value, float) and not np.isfinite(value):
         return None
@@ -616,6 +696,114 @@ def _json_safe_scalar(value: Any) -> Any:
     except (TypeError, ValueError):
         return str(value)
     return value
+
+
+def _prediction_array(raw_predictions: Any) -> np.ndarray:
+    """Normalize model output without coercing mixed Python values to text."""
+    try:
+        predictions = np.asarray(raw_predictions)
+    except ValueError:
+        return np.asarray(raw_predictions, dtype=object)
+
+    if (
+        isinstance(raw_predictions, (list, tuple))
+        and predictions.dtype.kind in {"S", "U"}
+    ):
+        object_predictions = np.asarray(raw_predictions, dtype=object)
+        if any(
+            not isinstance(value, (str, np.str_))
+            for value in object_predictions.flat
+        ):
+            return object_predictions
+    return predictions
+
+
+def _validated_ratio_baseline_values(
+    normalized_inputs: Dict[str, List[Any]],
+    baseline_column: Any,
+    batch_size: int,
+    target_variable: Any,
+) -> np.ndarray:
+    """Return finite, non-zero numeric baseline values aligned to the batch."""
+    if not isinstance(baseline_column, str) or not baseline_column:
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail="Ratio-target metadata does not identify a baseline column.",
+        )
+
+    if baseline_column not in normalized_inputs:
+        raise AppException(
+            error_key=ErrorKey.MISSING_PARAMETER,
+            error_detail=(
+                "This model was trained on a ratio target "
+                f"('{target_variable}' / '{baseline_column}'); "
+                f"'{baseline_column}' must be supplied as an inference input so "
+                "predictions can be converted back to real units."
+            ),
+        )
+
+    raw_values = _broadcast_column(
+        normalized_inputs[baseline_column],
+        batch_size,
+        baseline_column,
+    )
+    baseline_values = np.empty(len(raw_values), dtype=float)
+    invalid_rows = []
+    for row_number, value in enumerate(raw_values, start=1):
+        reason = None
+        if (isinstance(value, str) and not value.strip()) or _is_missing_value(value):
+            reason = "missing"
+        elif isinstance(value, (bool, np.bool_)):
+            reason = "not numeric"
+        else:
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError, OverflowError):
+                reason = "not numeric"
+            else:
+                if not np.isfinite(numeric_value):
+                    reason = "not finite"
+                elif numeric_value == 0:
+                    reason = "zero"
+                else:
+                    baseline_values[row_number - 1] = numeric_value
+        if reason is not None:
+            invalid_rows.append(f"{row_number} ({reason})")
+
+    if invalid_rows:
+        displayed_rows = invalid_rows[:10]
+        omitted_row_count = len(invalid_rows) - len(displayed_rows)
+        invalid_rows_detail = ", ".join(displayed_rows)
+        if omitted_row_count:
+            invalid_rows_detail += f", and {omitted_row_count} more"
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                f"Invalid value(s) for ratio baseline '{baseline_column}' at row(s): "
+                f"{invalid_rows_detail}. Baseline values must be numeric, finite, and non-zero."
+            ),
+        )
+
+    return baseline_values
+
+
+def _apply_ratio_target_transform(
+    predictions: np.ndarray,
+    baseline_values: np.ndarray,
+) -> np.ndarray:
+    """Scale each prediction row by its corresponding ratio baseline."""
+    if predictions.ndim == 0 or predictions.shape[0] != len(baseline_values):
+        prediction_rows = 0 if predictions.ndim == 0 else predictions.shape[0]
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=(
+                "Ratio-target model returned "
+                f"{prediction_rows} prediction row(s) for "
+                f"{len(baseline_values)} baseline row(s)."
+            ),
+        )
+    baseline_shape = (len(baseline_values),) + (1,) * max(predictions.ndim - 1, 0)
+    return predictions * baseline_values.reshape(baseline_shape)
 
 
 def _describe_feature_names(names: Any) -> str:
@@ -1081,19 +1269,6 @@ def _replay_feature_engineering(
     return computed
 
 
-def _label_for_prediction(value: Any) -> str:
-    """Map a model prediction to an availability label."""
-    if value is None:
-        return "Not Available"
-    if isinstance(value, (bool, np.bool_)):
-        return "Available" if value else "Not Available"
-    if isinstance(value, (int, float, np.integer, np.floating)):
-        return "Available" if float(value) != 0 else "Not Available"
-    if isinstance(value, str):
-        return "Available" if value.strip() else "Not Available"
-    return "Available" if value else "Not Available"
-
-
 def _build_prediction_outputs(
     predictions: Sequence[Any], class_labels: Optional[Sequence[Any]]
 ) -> tuple[List[Any], List[Any], List[Dict[str, Any]]]:
@@ -1108,15 +1283,42 @@ def _build_prediction_outputs(
 
 
 def _build_probability_outputs(
-    probabilities: np.ndarray, class_labels: Sequence[Any]
-) -> tuple[List[Dict[str, Any]], List[Any]]:
-    """Build probability dictionaries without assuming numeric class labels."""
+    probabilities: np.ndarray,
+    class_labels: Sequence[Any],
+    prediction_values: Sequence[Any],
+) -> tuple[List[Dict[str, Any]], Optional[List[Any]]]:
+    """Build probability dictionaries and confidence for each predicted class."""
+    probabilities = np.asarray(probabilities)
     json_class_labels = [_json_safe_scalar(class_label) for class_label in class_labels]
+    class_indexes = {}
+    for index, class_label in enumerate(json_class_labels):
+        try:
+            class_indexes.setdefault(class_label, index)
+        except TypeError:
+            continue
+    if probabilities.ndim != 2:
+        raise ValueError("Probability output must be a two-dimensional array")
+    if probabilities.shape[0] != len(prediction_values):
+        raise ValueError(
+            "Probability output row count does not match prediction row count"
+        )
+    if probabilities.shape[1] != len(json_class_labels):
+        raise ValueError(
+            "Probability output column count does not match model class count"
+        )
     probability_outputs = [
         {f"Class_{json_class_labels[index]}": _json_safe_scalar(probability) for index, probability in enumerate(row)}
         for row in probabilities
     ]
-    confidences = [_json_safe_scalar(max(row)) for row in probabilities]
+    confidences = []
+    for row, prediction in zip(probabilities, prediction_values, strict=True):
+        try:
+            predicted_class_index = class_indexes.get(prediction)
+        except TypeError:
+            return probability_outputs, None
+        if predicted_class_index is None:
+            return probability_outputs, None
+        confidences.append(_json_safe_scalar(row[predicted_class_index]))
     return probability_outputs, confidences
 
 
@@ -1165,7 +1367,8 @@ class MLModelInferenceNode(BaseNode):
                 model_id = UUID(model_id_str)
             except (ValueError, AttributeError) as e:
                 raise AppException(
-                    error_key=ErrorKey.MISSING_PARAMETER, error_detail=f"Invalid modelId format: {model_id_str}"
+                    error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                    error_detail="modelId must be a valid UUID.",
                 ) from e
 
             # Get ML model from database
@@ -1217,6 +1420,7 @@ class MLModelInferenceNode(BaseNode):
 
             # Prepare input array for prediction (always batch format)
             defaults_applied: List[str] = []
+            ratio_baseline_values: Optional[np.ndarray] = None
             try:
                 inference_params = getattr(ml_model, "inference_params", None) or {}
                 target_transform = metadata.get("target_transform")
@@ -1320,6 +1524,13 @@ class MLModelInferenceNode(BaseNode):
                 # build the model-ready matrix and the echoed "input_data".
                 raw_input_data = _build_input_array(normalized_inputs, feature_names)
                 batch_size = raw_input_data.shape[0]
+                if target_transform is not None:
+                    ratio_baseline_values = _validated_ratio_baseline_values(
+                        normalized_inputs,
+                        target_transform.get("baselineColumn"),
+                        batch_size,
+                        ml_model.target_variable,
+                    )
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
                     batch_size, raw_input_data.shape[1] if raw_input_data.ndim == 2 else 0, list(feature_names),
@@ -1368,6 +1579,7 @@ class MLModelInferenceNode(BaseNode):
                         legacy_order += label_columns
 
                     if ordinal_columns:
+                        _validate_ordinal_inputs(normalized_inputs, ordinal_columns, ordinal_encodings)
                         ordinal_data = _mapped_transform(
                             normalized_inputs, ordinal_columns, ordinal_encodings, batch_size,
                             unseen_value=np.nan, normalize_keys=True,
@@ -1529,17 +1741,25 @@ class MLModelInferenceNode(BaseNode):
                 # Get model-derived class labels. Regressors do not expose classes_.
                 class_labels = getattr(model, "classes_", None)
 
-                # Use predict_proba when available to avoid a redundant forward pass
+                raw_predictions = model.predict(prediction_input)
+                predictions = _prediction_array(raw_predictions)
+                if predictions.ndim == 2 and predictions.shape[1] == 1:
+                    predictions = predictions[:, 0]
+
+                # Probability outputs are optional and do not determine the predicted class.
                 probabilities: Optional[np.ndarray] = None
                 if hasattr(model, "predict_proba") and class_labels is not None:
                     try:
                         probabilities = model.predict_proba(prediction_input)
-                        predictions = np.asarray(class_labels)[np.argmax(probabilities, axis=1)]
-                    except Exception:
+                    except Exception as exc:
+                        logger.warning(
+                            "Probabilities unavailable for model %s; returning predictions "
+                            "without probabilities/confidences: %s: %s",
+                            model_id,
+                            type(exc).__name__,
+                            _summarize_error(exc),
+                        )
                         probabilities = None
-                        predictions = model.predict(prediction_input)
-                else:
-                    predictions = model.predict(prediction_input)
 
                 # Reconstruct real-unit predictions for a model trained on a
                 # ratio target (target / baselineColumn - see TrainModelNode's
@@ -1547,22 +1767,11 @@ class MLModelInferenceNode(BaseNode):
                 # raw ratio (e.g. 0.73) instead of the real-unit value the
                 # caller expects (e.g. 54750). No-op for models with no
                 # targetTransform or legacy models that predate this metadata.
-                if target_transform is not None:
-                    baseline_column = target_transform.get("baselineColumn")
-                    if baseline_column not in normalized_inputs:
-                        raise AppException(
-                            error_key=ErrorKey.MISSING_PARAMETER,
-                            error_detail=(
-                                f"This model was trained on a ratio target "
-                                f"('{ml_model.target_variable}' / '{baseline_column}'); "
-                                f"'{baseline_column}' must be supplied as an inference input so "
-                                "predictions can be converted back to real units."
-                            ),
-                        )
-                    baseline_values = _build_input_array(
-                        normalized_inputs, [baseline_column]
-                    ).astype(float)[:, 0]
-                    predictions = predictions * baseline_values
+                if ratio_baseline_values is not None:
+                    predictions = _apply_ratio_target_transform(
+                        predictions,
+                        ratio_baseline_values,
+                    )
 
                 # Build response (always batch format)
                 # Convert the raw (pre-encoding) input to a column-wise dictionary
@@ -1601,9 +1810,28 @@ class MLModelInferenceNode(BaseNode):
 
                 # Add probabilities and confidence
                 if probabilities is not None:
-                    probability_outputs, confidences = _build_probability_outputs(probabilities, class_labels)
-                    result["probabilities"] = probability_outputs
-                    result["confidences"] = confidences
+                    try:
+                        probability_outputs, confidences = _build_probability_outputs(
+                            probabilities,
+                            class_labels,
+                            prediction_values,
+                        )
+                    except (IndexError, TypeError, ValueError) as exc:
+                        logger.warning(
+                            "Ignoring invalid probability output for model %s: %s",
+                            model_id,
+                            exc,
+                        )
+                    else:
+                        result["probabilities"] = probability_outputs
+                        if confidences is None:
+                            logger.warning(
+                                "Confidence omitted for model %s because a predicted class "
+                                "is not present in the model class list",
+                                model_id,
+                            )
+                        else:
+                            result["confidences"] = confidences
                 if inference_warnings:
                     result["warnings"] = inference_warnings
                 logger.info(
