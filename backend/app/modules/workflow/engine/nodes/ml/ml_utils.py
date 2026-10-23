@@ -441,23 +441,43 @@ def column_transform_value_problem(
     Shared by training and inference, so a value that would be rejected at
     training is rejected the same way at prediction time.
     """
-    non_finite = ~np.isfinite(values)
-    if non_finite.any():
+    problem_code = column_transform_value_problem_code(
+        strategy, values, power_method
+    )
+    if problem_code == "non_finite":
+        non_finite = ~np.isfinite(values)
         counts = {c: int(n) for c, n in zip(columns, non_finite.sum(axis=0)) if n}
         return f"empty or infinite values in {counts}"
-    if strategy == "log_transform":
+    if problem_code == "negative_log_input":
         negative = values < 0
-        if negative.any():
-            counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
-            return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
-    if strategy == "power_transform" and power_method == "box-cox":
+        counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
+        return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
+    if problem_code == "non_positive_box_cox_input":
         not_positive = values <= 0
-        if not_positive.any():
-            counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
-            return (
-                f"Box-Cox needs values above 0; values of 0 or less in {counts}. "
-                "Use the Yeo-Johnson method instead, which accepts any value"
-            )
+        counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
+        return (
+            f"Box-Cox needs values above 0; values of 0 or less in {counts}. "
+            "Use the Yeo-Johnson method instead, which accepts any value"
+        )
+    return None
+
+
+def column_transform_value_problem_code(
+    strategy: str,
+    values: np.ndarray,
+    power_method: Optional[str] = None,
+) -> Optional[str]:
+    """Stable reason code for an invalid column-transform input matrix."""
+    if (~np.isfinite(values)).any():
+        return "non_finite"
+    if strategy == "log_transform" and (values < 0).any():
+        return "negative_log_input"
+    if all((
+        strategy == "power_transform",
+        power_method == "box-cox",
+        (values <= 0).any(),
+    )):
+        return "non_positive_box_cox_input"
     return None
 
 

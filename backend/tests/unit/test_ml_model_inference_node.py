@@ -2163,3 +2163,418 @@ class TestCategoricalErrorMessages:
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
         assert exc.value.error_detail == "modelId must be a valid UUID."
+
+
+class TestFeatureEngineeringReplayErrors:
+    """MI-10: a replay step that fails, or whose inputs are absent, is reported
+    as an input error naming the feature, the step and the cause - not as a
+    metadata problem."""
+
+    RATIO_STEP = {
+        "strategy": "custom_expression",
+        "new_col": "income_per_person",
+        "expression": "income / household_size",
+    }
+
+    @pytest.mark.asyncio
+    async def test_step_that_raises_is_an_input_error_naming_feature_step_and_cause(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"income": 1000.0, "household_size": "abc"},
+                feature_names=["income", "household_size"],
+                model_input_columns=["income", "household_size", "income_per_person"],
+                feature_engineering_steps=[self.RATIO_STEP],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        detail = exc.value.error_detail
+        assert "'income_per_person'" in detail
+        assert "custom_expression" in detail
+        assert "incompatible with the configured expression" in detail
+        assert "TypeError" not in detail
+        assert "unsupported operand" not in detail
+        assert "metadata may be incomplete" not in detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_step_with_an_unregistered_input_column_is_a_metadata_error(
+        self, monkeypatch
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _CapturingModel(),
+                {"income": 1000.0},
+                feature_names=["income"],
+                model_input_columns=["income", "age_bin"],
+                feature_engineering_steps=[
+                    {"strategy": "bin_numeric", "new_col": "age_bin", "bin_column": "age",
+                     "bin_edges": [0, 30, 60, 90]},
+                ],
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert "Could not reconstruct column(s) ['age_bin']" in exc.value.error_detail
+        assert "metadata may be incomplete" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_chained_step_names_the_step_that_failed_first(self, monkeypatch):
+        poly = MagicMock()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _CapturingModel(),
+                {"income": 1000.0, "household_size": "abc"},
+                feature_names=["income", "household_size"],
+                model_input_columns=["income", "household_size", "sq_income_per_person^2"],
+                feature_engineering_steps=[
+                    self.RATIO_STEP,
+                    {"strategy": "polynomial", "new_col": "sq", "poly_columns": ["income_per_person"],
+                     "poly": poly, "new_names": ["sq_income_per_person^2"]},
+                ],
+            )
+
+        # The model only needs the squared feature, so that step is reported,
+        # and its cause points at the ratio step it depends on.
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        detail = exc.value.error_detail
+        assert "feature 'sq' (step 'polynomial')" in detail
+        assert "required engineered input(s) could not be computed" in detail
+        assert "income_per_person" not in detail
+        poly.transform.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_valid_replay_reaches_the_model(self, monkeypatch):
+        model = _CapturingModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"income": [1000.0, 900.0], "household_size": [4, 3]},
+            feature_names=["income", "household_size"],
+            model_input_columns=["income", "household_size", "income_per_person"],
+            feature_engineering_steps=[self.RATIO_STEP],
+        )
+
+        assert result["status"] == "success"
+        np.testing.assert_allclose(model.received[:, 2], [250.0, 300.0])
+
+    @pytest.mark.asyncio
+    async def test_text_expression_runs_on_real_values_before_placeholder_validation(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"city": ["NY", "Paris"], "b": [2, 3]},
+            feature_names=["city", "b"],
+            model_input_columns=["b", "city_score"],
+            label_encodings={"city": {"NY": 0, "Paris": 1}},
+            feature_engineering_steps=[
+                {
+                    "strategy": "custom_expression",
+                    "new_col": "city_score",
+                    "expression": "city.str.len() * b",
+                }
+            ],
+        )
+
+        assert result["status"] == "success"
+        np.testing.assert_array_equal(model.received, [[2, 4], [3, 15]])
+
+    @pytest.mark.asyncio
+    async def test_failed_step_the_model_does_not_use_does_not_block(self, monkeypatch):
+        result = await _predict(
+            monkeypatch,
+            _CapturingModel(),
+            {"income": 1000.0, "household_size": "abc"},
+            feature_names=["income", "household_size"],
+            model_input_columns=["income", "household_size"],
+            feature_engineering_steps=[self.RATIO_STEP],
+        )
+
+        assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_unused_column_transform_failure_does_not_block(self, monkeypatch):
+        result = await _predict(
+            monkeypatch,
+            _CapturingModel(),
+            {"income": -5.0},
+            feature_names=["income"],
+            model_input_columns=["income"],
+            feature_engineering_steps=[
+                {
+                    "strategy": "log_transform",
+                    "new_col": "log_income",
+                    "columns": ["income"],
+                    "output_columns": ["log_income"],
+                    "transformer": None,
+                    "power_method": None,
+                }
+            ],
+        )
+
+        assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_failed_in_place_transform_does_not_predict_on_raw_value(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"income": -5.0},
+                feature_names=["income"],
+                model_input_columns=["income"],
+                feature_engineering_steps=[
+                    {
+                        "strategy": "log_transform",
+                        "new_col": "income",
+                        "columns": ["income"],
+                        "output_columns": ["income"],
+                        "transformer": None,
+                        "power_method": None,
+                        "replace_source_columns": True,
+                    }
+                ],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "feature 'income' (step 'log_transform')" in exc.value.error_detail
+        assert "negative values were supplied" in exc.value.error_detail
+        assert "{'income': 1}" not in exc.value.error_detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_later_step_does_not_use_raw_value_after_in_place_failure(
+        self, monkeypatch
+    ):
+        transformer = MagicMock()
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"income": -5.0},
+                feature_names=["income"],
+                model_input_columns=["quantile_income"],
+                feature_engineering_steps=[
+                    {
+                        "strategy": "log_transform",
+                        "new_col": "income",
+                        "columns": ["income"],
+                        "output_columns": ["income"],
+                        "transformer": None,
+                        "power_method": None,
+                        "replace_source_columns": True,
+                    },
+                    {
+                        "strategy": "quantile_transform",
+                        "new_col": "quantile_income",
+                        "columns": ["income"],
+                        "output_columns": ["quantile_income"],
+                        "transformer": transformer,
+                        "power_method": None,
+                    },
+                ],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "feature 'quantile_income'" in exc.value.error_detail
+        transformer.transform.assert_not_called()
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_custom_expression_depending_on_metadata_failure_keeps_reconstruct_message(
+        self, monkeypatch
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _CapturingModel(),
+                {"income": 5.0},
+                feature_names=["income"],
+                model_input_columns=["income", "double_quantile_income"],
+                feature_engineering_steps=[
+                    {
+                        "strategy": "quantile_transform",
+                        "new_col": "quantile_income",
+                        "columns": ["income"],
+                        "output_columns": ["quantile_income"],
+                        "transformer": None,
+                        "power_method": None,
+                    },
+                    {
+                        "strategy": "custom_expression",
+                        "new_col": "double_quantile_income",
+                        "expression": "quantile_income * 2",
+                    },
+                ],
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert "metadata may be incomplete" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_invalid_saved_expression_is_a_metadata_error(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _CapturingModel(),
+                {"income": 5.0},
+                feature_names=["income"],
+                model_input_columns=["income", "clipped_income"],
+                feature_engineering_steps=[
+                    {
+                        "strategy": "custom_expression",
+                        "new_col": "clipped_income",
+                        "expression": "clip(income, 0)",
+                    }
+                ],
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert "metadata may be incomplete" in exc.value.error_detail
+        assert "input values" not in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_missing_expression_input_is_a_metadata_error(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _CapturingModel(),
+                {"income": 5.0},
+                feature_names=["income"],
+                model_input_columns=["income", "age_twice"],
+                feature_engineering_steps=[
+                    {
+                        "strategy": "custom_expression",
+                        "new_col": "age_twice",
+                        "expression": "age * 2",
+                    }
+                ],
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert "metadata may be incomplete" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_legacy_order_includes_failed_engineered_output(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"income": 1000.0, "household_size": "abc"},
+                feature_names=["income", "household_size"],
+                feature_engineering_steps=[self.RATIO_STEP],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "feature 'income_per_person'" in exc.value.error_detail
+        assert model.received is None
+
+    def test_missing_transform_input_without_problem_collection_is_skipped(self):
+        result = inference_module._replay_feature_engineering(
+            {"income": [5.0]},
+            [
+                {
+                    "strategy": "log_transform",
+                    "new_col": "log_age",
+                    "columns": ["age"],
+                    "output_columns": ["log_age"],
+                    "transformer": None,
+                    "power_method": None,
+                }
+            ],
+            1,
+        )
+
+        assert result == {}
+
+    def test_missing_raw_and_failed_engineered_inputs_are_both_classified(self):
+        cause, log_cause, input_problem = inference_module._missing_step_inputs_problem(
+            ["age", "quantile_income"],
+            {"quantile_income": ("quantile_income", False)},
+        )
+
+        assert "['age'] were not provided" in cause
+        assert "required engineered input(s) could not be computed" in cause
+        assert "quantile_income" not in cause
+        assert "quantile_income" in log_cause
+        assert input_problem is False
+
+    def test_partial_normalize_metadata_failure_preserves_completed_outputs(self):
+        problems = []
+        result = inference_module._replay_feature_engineering(
+            {"a": [2.0], "b": [3.0]},
+            [
+                {
+                    "strategy": "normalize",
+                    "new_col": "normalized",
+                    "column_stats": {
+                        "a": {"out_col": "a_norm", "min": 0.0, "max": 4.0},
+                        "b": {"out_col": "b_norm", "max": 6.0},
+                    },
+                },
+                {
+                    "strategy": "custom_expression",
+                    "new_col": "double_a_norm",
+                    "expression": "a_norm * 2",
+                },
+            ],
+            1,
+            problems=problems,
+        )
+
+        np.testing.assert_allclose(result["a_norm"], [0.5])
+        np.testing.assert_allclose(result["double_a_norm"], [1.0])
+        assert "b_norm" not in result
+        assert problems[-1]["outputs"] == ["b_norm"]
+        assert problems[-1]["input_problem"] is False
+
+    @pytest.mark.asyncio
+    async def test_missing_fitted_transformer_keeps_reconstruct_message(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _CapturingModel(),
+                {"income": 5.0},
+                feature_names=["income"],
+                model_input_columns=["income", "quantile_income"],
+                feature_engineering_steps=[
+                    {
+                        "strategy": "quantile_transform",
+                        "new_col": "quantile_income",
+                        "columns": ["income"],
+                        "output_columns": ["quantile_income"],
+                        "transformer": None,
+                        "power_method": None,
+                    }
+                ],
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert "metadata may be incomplete" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_real_metadata_gap_keeps_the_reconstruct_message(self, monkeypatch):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _CapturingModel(),
+                {"income": 1000.0},
+                feature_names=["income"],
+                model_input_columns=["income", "ghost"],
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert "Could not reconstruct column(s) ['ghost']" in exc.value.error_detail

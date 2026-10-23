@@ -25,6 +25,7 @@ from app.modules.workflow.engine.nodes.ml.ml_utils import (
     COLUMN_TRANSFORM_STRATEGY_LABELS,
     apply_column_transform,
     column_transform_value_problem,
+    column_transform_value_problem_code,
     normalize_feature_expression,
     ordinal_key,
 )
@@ -874,10 +875,149 @@ def _resolve_feature_order(
     )
 
 
+def _step_output_columns(step: Dict[str, Any]) -> List[str]:
+    """The model columns a feature-engineering step produces."""
+    strategy = step.get("strategy")
+    if strategy in ("normalize", "standardize"):
+        return [stats.get("out_col") for stats in (step.get("column_stats") or {}).values()]
+    if strategy == "polynomial":
+        return list(step.get("new_names") or [])
+    if strategy in COLUMN_TRANSFORM_STRATEGY_LABELS:
+        return list(step.get("output_columns") or [])
+    return [step.get("new_col")]
+
+
+def _replay_input_error_detail(step: Dict[str, Any], cause: str) -> str:
+    feature = step.get("new_col") or step.get("feature")
+    return (
+        f"Could not compute engineered feature '{feature}' "
+        f"(step '{step.get('strategy')}') from the inputs: {cause}. "
+        "Check the input values this feature is calculated from."
+    )
+
+
+def _record_replay_problem(
+    problems: Optional[List[Dict[str, Any]]],
+    failed_columns: Dict[str, tuple[str, bool]],
+    available: Dict[str, List[Any]],
+    available_frame: pd.DataFrame,
+    computed: Dict[str, np.ndarray],
+    step: Dict[str, Any],
+    cause: str,
+    outputs: Optional[List[str]] = None,
+    input_problem: bool = True,
+    log_cause: Optional[str] = None,
+) -> None:
+    outputs = [c for c in (outputs if outputs is not None else _step_output_columns(step)) if c]
+    for column in outputs:
+        failed_columns[column] = (step.get("new_col") or column, input_problem)
+        available.pop(column, None)
+        computed.pop(column, None)
+        if column in available_frame.columns:
+            available_frame.drop(columns=[column], inplace=True)
+    logger.warning(
+        "Failed to replay feature-engineering step '%s' (%s) at inference: %s",
+        step.get("new_col"), step.get("strategy"), log_cause or cause,
+    )
+    if problems is None:
+        if input_problem:
+            raise AppException(
+                error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                error_detail=_replay_input_error_detail(step, cause),
+            )
+        return
+    problems.append({
+        "feature": step.get("new_col"),
+        "strategy": step.get("strategy"),
+        "cause": cause,
+        "outputs": outputs,
+        "input_problem": input_problem,
+    })
+
+
+def _missing_step_inputs_problem(
+    absent: List[str], failed_columns: Dict[str, tuple[str, bool]]
+) -> tuple[str, str, bool]:
+    """Explain why a step's input columns are absent, pointing at the earlier
+    step that failed to produce them when that is the reason. The boolean
+    says whether the root cause came from caller input rather than metadata."""
+    raw_inputs = [column for column in absent if column not in failed_columns]
+    upstream_failures = [failed_columns[column] for column in absent if column in failed_columns]
+    upstream = sorted({feature for feature, _ in upstream_failures})
+    client_causes = []
+    log_causes = []
+    if raw_inputs:
+        message = f"input column(s) {raw_inputs} were not provided"
+        client_causes.append(message)
+        log_causes.append(message)
+    if upstream:
+        client_causes.append(
+            "other required engineered input(s) could not be computed because an earlier step failed"
+        )
+        log_causes.append(
+            f"input column(s) {[column for column in absent if column in failed_columns]} "
+            f"could not be computed because engineered feature(s) {upstream} failed first"
+        )
+    input_problem = not raw_inputs and (
+        bool(upstream_failures)
+        and all(problem_is_input for _, problem_is_input in upstream_failures)
+    )
+    return "; ".join(client_causes), "; ".join(log_causes), input_problem
+
+
+def _validate_replay_expression(
+    expression: str,
+    available_frame: pd.DataFrame,
+    failed_columns: Dict[str, tuple[str, bool]],
+) -> tuple[List[str], Optional[Exception]]:
+    """Validate saved expression syntax independently from caller values."""
+    placeholder = pd.DataFrame({column: [1.0] for column in available_frame.columns})
+    try:
+        placeholder.eval(expression)
+        return [], None
+    except Exception as original_error:
+        if not failed_columns:
+            return [], original_error
+
+    with_failed = placeholder.copy()
+    for column in failed_columns:
+        with_failed[column] = 1.0
+    try:
+        with_failed.eval(expression)
+    except Exception as error:
+        return [], error
+
+    referenced = []
+    for column in failed_columns:
+        try:
+            with_failed.drop(columns=[column]).eval(expression)
+        except Exception:
+            referenced.append(column)
+    return referenced, None
+
+
+def _raise_for_replay_problems(
+    problems: List[Dict[str, Any]], missing_columns: Sequence[str]
+) -> None:
+    """Raise the first caller-input problem behind a missing model column.
+
+    Metadata problems fall through to the reconstruction error, while failed
+    outputs the model does not need cannot block an otherwise valid request.
+    """
+    needed = set(missing_columns)
+    for problem in problems:
+        if problem["input_problem"] and needed.intersection(problem["outputs"]):
+            raise AppException(
+                error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                error_detail=_replay_input_error_detail(problem, problem["cause"]),
+            )
+
+
 def _replay_feature_engineering(
     normalized_inputs: Dict[str, List[Any]],
     steps: List[Dict[str, Any]],
     batch_size: int,
+    problems: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, np.ndarray]:
     """Recompute engineered feature columns from raw caller-supplied inputs,
     using the exact fitted parameters (bin edges, mean/std, fitted
@@ -888,9 +1028,75 @@ def _replay_feature_engineering(
     reference an earlier step's new column (e.g. a polynomial feature built
     from a normalized one), same as at training time, so each computed
     column is folded into `available` for subsequent steps to read.
+
+    A step that raises, or whose input columns are absent, is recorded in
+    `problems` (feature, step, cause, output columns) instead of being
+    skipped silently; the caller decides whether the model needs it (see
+    _raise_for_replay_problems). Steps with incomplete saved parameters are
+    still skipped, which surfaces later as a metadata problem.
     """
     computed: Dict[str, np.ndarray] = {}
     available = dict(normalized_inputs)
+    available_frame = pd.DataFrame({
+        column: _build_input_array(available, [column])[:, 0]
+        for column in available
+    })
+    failed_columns: Dict[str, tuple[str, bool]] = {}
+
+    def record_problem(
+        step: Dict[str, Any],
+        cause: str,
+        outputs: Optional[List[str]] = None,
+        input_problem: bool = True,
+        log_cause: Optional[str] = None,
+    ) -> None:
+        _record_replay_problem(
+            problems,
+            failed_columns,
+            available,
+            available_frame,
+            computed,
+            step,
+            cause,
+            outputs=outputs,
+            input_problem=input_problem,
+            log_cause=log_cause,
+        )
+
+    def record_absent_inputs(
+        step: Dict[str, Any],
+        absent: List[str],
+        outputs: Optional[List[str]] = None,
+    ) -> None:
+        cause, log_cause, input_problem = _missing_step_inputs_problem(
+            absent, failed_columns
+        )
+        record_problem(
+            step,
+            cause,
+            outputs=outputs,
+            input_problem=input_problem,
+            log_cause=log_cause,
+        )
+
+    def record_numeric_problem(
+        step: Dict[str, Any],
+        error: Exception,
+        outputs: Optional[List[str]] = None,
+    ) -> None:
+        record_problem(
+            step,
+            "the values used by this step must be numeric",
+            outputs=outputs,
+            log_cause=f"{type(error).__name__}: {_summarize_error(error)}",
+        )
+
+    def store_output(column: str, values: Any) -> None:
+        output = np.asarray(values)
+        computed[column] = output
+        available[column] = output.tolist()
+        available_frame[column] = output
+        failed_columns.pop(column, None)
 
     for step in steps:
         strategy = step.get("strategy")
@@ -898,91 +1104,163 @@ def _replay_feature_engineering(
 
         try:
             if strategy == "custom_expression":
-                expression = step.get("expression")
-                df = pd.DataFrame({
-                    col: _build_input_array(available, [col])[:, 0]
-                    for col in available
-                })
-                result = np.asarray(df.eval(normalize_feature_expression(expression)))
-                computed[new_col] = result
-                available[new_col] = result.tolist()
+                expression = normalize_feature_expression(step.get("expression"))
+                try:
+                    result = np.asarray(available_frame.eval(expression))
+                except Exception as e:
+                    absent, expression_error = _validate_replay_expression(
+                        expression, available_frame, failed_columns
+                    )
+                    if absent:
+                        record_absent_inputs(step, absent)
+                    elif expression_error is not None:
+                        record_problem(
+                            step,
+                            "the saved expression could not be evaluated",
+                            input_problem=False,
+                            log_cause=(
+                                f"{type(expression_error).__name__}: "
+                                f"{_summarize_error(expression_error)}"
+                            ),
+                        )
+                    elif isinstance(e, (TypeError, ValueError, ZeroDivisionError)):
+                        record_problem(
+                            step,
+                            "the supplied values are incompatible with the configured expression",
+                            log_cause=f"{type(e).__name__}: {_summarize_error(e)}",
+                        )
+                    else:
+                        record_problem(
+                            step,
+                            "the saved expression could not be evaluated",
+                            input_problem=False,
+                            log_cause=f"{type(e).__name__}: {_summarize_error(e)}",
+                        )
+                    continue
+                store_output(new_col, result)
 
             elif strategy == "bin_numeric":
                 bin_column = step.get("bin_column")
                 bin_edges = step.get("bin_edges") or []
-                if bin_column not in available or len(bin_edges) < 2:
+                if len(bin_edges) < 2:
                     continue
-                raw = _build_input_array(available, [bin_column]).astype(float)[:, 0]
+                if bin_column not in available:
+                    record_absent_inputs(step, [bin_column])
+                    continue
+                try:
+                    raw = _build_input_array(available, [bin_column]).astype(float)[:, 0]
+                except (TypeError, ValueError) as e:
+                    record_numeric_problem(step, e)
+                    continue
                 clipped = np.clip(raw, bin_edges[0], bin_edges[-1])
                 binned = pd.cut(
                     pd.Series(clipped), bins=bin_edges, labels=False, include_lowest=True
                 ).to_numpy()
-                computed[new_col] = binned
-                available[new_col] = binned.tolist()
+                store_output(new_col, binned)
 
             elif strategy in ("normalize", "standardize"):
                 # Retired for new features (see train_model_node), but models
                 # trained with them still need them replayed.
                 for col, stats in (step.get("column_stats") or {}).items():
-                    if col not in available:
+                    out_col = stats.get("out_col")
+                    if not out_col:
+                        logger.warning(
+                            "Failed to replay feature-engineering step '%s' (%s) at inference: "
+                            "saved column statistics for '%s' do not record an output column",
+                            new_col, strategy, col,
+                        )
                         continue
-                    raw = _build_input_array(available, [col]).astype(float)[:, 0]
-                    out_col = stats["out_col"]
-                    if strategy == "normalize":
-                        result = (raw - stats["min"]) / (stats["max"] - stats["min"])
-                    else:
-                        result = (raw - stats["mean"]) / stats["std"]
-                    computed[out_col] = result
-                    available[out_col] = result.tolist()
+                    if col not in available:
+                        record_absent_inputs(step, [col], outputs=[out_col])
+                        continue
+                    try:
+                        raw = _build_input_array(available, [col]).astype(float)[:, 0]
+                    except (TypeError, ValueError) as e:
+                        record_numeric_problem(step, e, outputs=[out_col])
+                        continue
+                    try:
+                        if strategy == "normalize":
+                            result = (raw - stats["min"]) / (stats["max"] - stats["min"])
+                        else:
+                            result = (raw - stats["mean"]) / stats["std"]
+                    except Exception as e:
+                        record_problem(
+                            step,
+                            "the saved feature-engineering step could not be replayed",
+                            outputs=[out_col],
+                            input_problem=False,
+                            log_cause=f"{type(e).__name__}: {_summarize_error(e)}",
+                        )
+                        continue
+                    store_output(out_col, result)
 
             elif strategy == "polynomial":
                 poly_columns = step.get("poly_columns") or []
                 poly = step.get("poly")
                 new_names = step.get("new_names") or []
-                if not poly_columns or poly is None or any(c not in available for c in poly_columns):
+                if not poly_columns or poly is None:
                     continue
-                raw = _build_input_array(available, poly_columns).astype(float)
+                absent = [c for c in poly_columns if c not in available]
+                if absent:
+                    record_absent_inputs(step, absent)
+                    continue
+                try:
+                    raw = _build_input_array(available, poly_columns).astype(float)
+                except (TypeError, ValueError) as e:
+                    record_numeric_problem(step, e)
+                    continue
                 poly_out = poly.transform(raw)
                 new_values = poly_out[:, len(poly_columns):]
                 for i, name in enumerate(new_names):
-                    computed[name] = new_values[:, i]
-                    available[name] = new_values[:, i].tolist()
+                    store_output(name, new_values[:, i])
 
             elif strategy in COLUMN_TRANSFORM_STRATEGY_LABELS:
                 label = COLUMN_TRANSFORM_STRATEGY_LABELS[strategy]
                 columns = step.get("columns") or []
                 absent = [c for c in columns if c not in available]
                 if absent:
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=(
-                            f"Feature '{new_col}' ({label}) needs input column(s) {absent}, "
-                            "which were not provided"
-                        ),
-                    )
+                    record_absent_inputs(step, absent)
+                    continue
                 try:
                     raw = _build_input_array(available, columns).astype(float)
                 except (TypeError, ValueError) as e:
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=f"Feature '{new_col}' ({label}) needs numeric inputs for {columns}: {e}",
-                    ) from e
-                problem = column_transform_value_problem(strategy, raw, columns, step.get("power_method"))
+                    record_numeric_problem(step, e)
+                    continue
+                problem_code = column_transform_value_problem_code(
+                    strategy, raw, step.get("power_method")
+                )
+                problem = column_transform_value_problem(
+                    strategy, raw, columns, step.get("power_method")
+                )
                 if problem:
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=f"Feature '{new_col}' ({label}) can't use these inputs: {problem}",
+                    if problem_code == "negative_log_input":
+                        cause = (
+                            "Log Transform needs values of 0 or more; "
+                            "negative values were supplied"
+                        )
+                    elif problem_code == "non_positive_box_cox_input":
+                        cause = "Box-Cox needs values above 0"
+                    elif problem_code == "non_finite":
+                        cause = "the supplied values contain empty or infinite values"
+                    else:
+                        cause = f"the supplied values are not valid for {label}"
+                    record_problem(
+                        step,
+                        cause,
+                        log_cause=problem,
                     )
+                    continue
                 out = apply_column_transform(strategy, step.get("transformer"), raw)
                 for i, name in enumerate(step.get("output_columns") or []):
-                    computed[name] = out[:, i]
-                    available[name] = out[:, i].tolist()
+                    store_output(name, out[:, i])
         except AppException:
             raise
         except Exception as e:
-            logger.warning(
-                "Failed to replay feature-engineering step '%s' (%s) at inference: %s",
-                new_col, strategy, e,
+            record_problem(
+                step,
+                "the saved feature-engineering step could not be replayed",
+                input_problem=False,
+                log_cause=f"{type(e).__name__}: {_summarize_error(e)}",
             )
 
     return computed
@@ -1331,6 +1609,7 @@ class MLModelInferenceNode(BaseNode):
                 # for models with no feature engineering or legacy models
                 # that predate this metadata.
                 feature_engineering_steps = metadata.get("feature_engineering_steps") or []
+                replay_problems: List[Dict[str, Any]] = []
                 if feature_engineering_steps:
                     fe_inputs: Dict[str, List[Any]] = normalized_inputs
                     mapped_columns = label_columns + ordinal_columns
@@ -1353,9 +1632,23 @@ class MLModelInferenceNode(BaseNode):
                             )
                             for i, col in enumerate(ordinal_columns):
                                 fe_inputs[col] = codes[:, i].tolist()
-                    engineered = _replay_feature_engineering(fe_inputs, feature_engineering_steps, batch_size)
+                    engineered = _replay_feature_engineering(
+                        fe_inputs, feature_engineering_steps, batch_size,
+                        problems=replay_problems,
+                    )
                     column_arrays.update(engineered)
-                    legacy_order += [c for c in engineered if c not in legacy_order]
+                    failed_outputs = {
+                        output
+                        for problem in replay_problems
+                        for output in problem["outputs"]
+                        if output not in engineered
+                    }
+                    for output in failed_outputs:
+                        column_arrays.pop(output, None)
+                    for step in feature_engineering_steps:
+                        for output in _step_output_columns(step):
+                            if output and output not in legacy_order:
+                                legacy_order.append(output)
 
                 # The real training-time column order, when available, always
                 # wins over the grouped fallback above.
@@ -1401,6 +1694,11 @@ class MLModelInferenceNode(BaseNode):
                 missing_columns = [
                     column for column in matrix_column_order if column not in column_arrays
                 ]
+                # A caller-input problem behind a missing model column is
+                # reported as such. Metadata failures keep the generic
+                # reconstruction error below, and unused failures are ignored.
+                _raise_for_replay_problems(replay_problems, missing_columns)
+
                 if missing_columns:
                     error = ValueError(
                         f"Could not reconstruct column(s) {missing_columns} that the model "
