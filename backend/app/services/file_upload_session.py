@@ -235,6 +235,7 @@ class FileUploadSessionService:
                 result["file_type"] = "url"
                 result["file_url"] = file_url
                 result["file_id"] = str(created_file.id)
+                result["filename"] = os.path.basename(created_file.path)
                 if created_file.storage_provider == "local":
                     result["file_path"] = f"{created_file.storage_path}/{created_file.path}"
             else:

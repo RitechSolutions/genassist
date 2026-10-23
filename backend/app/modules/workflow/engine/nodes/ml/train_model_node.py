@@ -134,7 +134,7 @@ class TrainModelNode(BaseNode):
             logger.info(f"Training {model_type} model: {name}")
 
             # Load data from CSV file
-            data, df = ml_utils.load_csv_file(file_url, self.state.thread_id)
+            data, df = ml_utils.load_csv_file(file_url, self.state.thread_id, await ml_utils.extra_csv_directories())
             logger.info(f"Loaded {len(df)} rows from {file_url}")
 
             # Validate columns exist

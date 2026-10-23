@@ -311,6 +311,8 @@ async def upload_file(
                 file_id = str(created_file.id)
                 file_url = await file_manager_service.get_file_source_url(created_file.id)
 
+                result["filename"] = os.path.basename(created_file.path)
+
                 result["file_type"] = "url"
                 result["file_url"] = file_url
                 result["file_id"] = file_id

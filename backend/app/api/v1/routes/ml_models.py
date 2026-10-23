@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import tempfile
 import uuid
 from pathlib import Path
@@ -18,7 +19,7 @@ from app.core.permissions.constants import Permissions as P
 from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.schemas.file import FileBase, FileUploadResponse
-from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate
+from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate, is_in_ml_models_dir
 from app.services.app_settings import AppSettingsService
 from app.services.file_manager import FileManagerService
 from app.services.ml_model_manager import get_ml_model_manager
@@ -155,6 +156,12 @@ async def upload_pkl_file(
 
         if created_file.storage_provider == "local":
             file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
+            # A custom file manager folder puts the file outside the ML models folder, where
+            # pkl_file is not accepted, so the model gets a copy inside it.
+            if not is_in_ml_models_dir(file_path):
+                copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
+                await asyncio.to_thread(shutil.copyfile, file_path, copy_path)
+                file_path = copy_path
             # file_path = await file_manager_service.get_file_url(created_file)
 
         file_id = str(created_file.id)
@@ -246,6 +253,13 @@ async def validate_model_file(
                 detail="PKL file not found"
             )
 
+    # Fetch the uploaded file into the ML models folder when the saved path is not usable
+    from app.services.ml_model_manager import local_model_file
+    try:
+        await local_model_file(ml_model, service)
+    except Exception as e:
+        logger.warning(f"Could not fetch the model file for {ml_model_id}: {e}")
+
     # Get model info
     info = get_model_info(ml_model.pkl_file)
 
@@ -302,6 +316,7 @@ async def analyze_csv(
             - max: Maximum value (for numeric)
     """
     try:
+        allowed_directories = await ml_utils.extra_csv_directories()
         # Resolve and validate file path using shared utility
         try:
             # check if the file_url includes a valid file id
@@ -310,7 +325,7 @@ async def analyze_csv(
                 await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
                 file_path = dest_path
             else:
-                file_path = ml_utils.resolve_csv_file_path(file_url)
+                file_path = ml_utils.resolve_csv_file_path(file_url, allowed_directories=allowed_directories)
 
         except AppException as e:
             # Convert AppException to HTTPException for API endpoint
@@ -333,7 +348,7 @@ async def analyze_csv(
 
             try:
                 # Load the CSV file using shared utility
-                data, df = ml_utils.load_csv_file(file_url)
+                data, df = ml_utils.load_csv_file(file_url, allowed_directories=allowed_directories)
 
                 # Execute preprocessing code using shared utility
                 # Use raise_on_error=True to raise exceptions for API endpoint
@@ -420,7 +435,7 @@ async def profile_csv(
                 await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
                 file_path = dest_path
             else:
-                file_path = ml_utils.resolve_csv_file_path(file_url)
+                file_path = ml_utils.resolve_csv_file_path(file_url, allowed_directories=await ml_utils.extra_csv_directories())
         except AppException as e:
             if e.error_key == ErrorKey.FILE_NOT_FOUND:
                 raise HTTPException(

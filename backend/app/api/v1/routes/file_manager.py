@@ -1,4 +1,5 @@
 import base64
+import os
 import uuid
 from typing import Dict, List, Optional
 from uuid import UUID
@@ -97,6 +98,8 @@ async def create_file(
             file,
             file_base=file_base,
         )
+    except AppException:
+        raise
     except Exception as e:
         raise AppException(ErrorKey.INTERNAL_ERROR,500,f"Failed to create file: {str(e)}")
 
@@ -334,7 +337,7 @@ async def upload_files(
         )
         file_url = await file_manager_service.get_file_source_url(created.id)
         result = {
-            "filename": unique_name,
+            "filename": os.path.basename(created.path),
             "original_filename": f.filename or unique_name,
             "file_type": "url",
             "file_url": file_url,
