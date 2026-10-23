@@ -20,6 +20,7 @@ import {
 } from "@/components/pagination";
 import { getPageList } from "@/helpers/pagination";
 import { SearchInput } from "@/components/SearchInput";
+import { useHasPermission } from "@/hooks/useHasPermission";
 import { RefreshCcw } from "lucide-react";
 import { User } from "@/interfaces/user.interface";
 
@@ -46,6 +47,7 @@ export default function AuditLogs() {
   const [users, setUsers] = useState<User[]>([]);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const pageSize = 30;
+  const canReadUsers = useHasPermission("read:user");
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedTableName(tableName.trim()), 1000);
@@ -107,16 +109,25 @@ export default function AuditLogs() {
   ]);
 
   useEffect(() => {
+    if (!canReadUsers) {
+      setUsers([]);
+      return;
+    }
+    // Drop the answer if access changed while the request was running
+    let isOutdated = false;
     const fetchUsersData = async () => {
       try {
         const fetchedUsers = await fetchUsers();
-        setUsers(fetchedUsers);
+        if (!isOutdated) setUsers(fetchedUsers);
       } catch (error) {
         // ignore
       }
     };
     fetchUsersData();
-  }, []);
+    return () => {
+      isOutdated = true;
+    };
+  }, [canReadUsers]);
 
   useEffect(() => {
     fetchFilteredAuditLogs();

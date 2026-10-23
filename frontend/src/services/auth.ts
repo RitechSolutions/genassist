@@ -136,10 +136,12 @@ export const getPermissions = (): string[] => {
   }
 };
 
-export const hasPermission = (permission: string): boolean => {
-  const permissions = getPermissions() || [];
-  return permissions.includes('*') || permissions.includes(permission);
-};
+/** Same rule as the backend: full access or the exact permission */
+export const userHasPermission = (permissions: string[], permission: string): boolean =>
+  permissions.includes('*') || permissions.includes(permission);
+
+export const hasPermission = (permission: string): boolean =>
+  userHasPermission(getPermissions() || [], permission);
 
 export const hasAllPermissions = (requiredPermissions: string[]): boolean => {
   if (!requiredPermissions || requiredPermissions.length === 0) return true;

@@ -269,3 +269,9 @@ export interface InProgressPollResponse {
   messages: InProgressPollMessage[];
   read_state?: ReadReceiptState | null;
 }
+
+/** Whether a saved conversation can still be continued; "unknown" when the server could not be reached. */
+export type ConversationAvailability = "available" | "finalized" | "unavailable" | "unknown";
+
+/** "conversation_restarted": the old conversation could not be continued, so a new one was started and the message was not sent. */
+export type SendMessageOutcome = "sent" | "conversation_restarted" | "failed";

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/config/api", () => ({
   apiRequest: vi.fn(),
@@ -13,6 +13,7 @@ vi.mock("@/config/api", () => ({
 import { apiRequest } from "@/config/api";
 import {
   getFeatureFlags,
+  getFeatureFlagsForCurrentUser,
   getFeatureFlag,
   createFeatureFlag,
   updateFeatureFlag,
@@ -21,6 +22,36 @@ import {
 
 const mockApiRequest = vi.mocked(apiRequest);
 beforeEach(() => vi.clearAllMocks());
+
+describe("getFeatureFlagsForCurrentUser", () => {
+  const grantPermissions = (permissions: string[]) =>
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => (key === "permissions" ? JSON.stringify(permissions) : null),
+    });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("gives users without the permission no flags and sends no request", async () => {
+    grantPermissions(["read:conversation", "read:dashboard"]);
+    expect(await getFeatureFlagsForCurrentUser()).toEqual([]);
+    expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+
+  it("loads the flags for users holding the permission", async () => {
+    grantPermissions(["read:feature_flag"]);
+    const flags = [{ id: "1", key: "beta" }];
+    mockApiRequest.mockResolvedValue(flags as never);
+    expect(await getFeatureFlagsForCurrentUser()).toEqual(flags);
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "feature-flags/");
+  });
+
+  it("loads the flags for users with full access", async () => {
+    grantPermissions(["*"]);
+    mockApiRequest.mockResolvedValue([] as never);
+    await getFeatureFlagsForCurrentUser();
+    expect(mockApiRequest).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("getFeatureFlags", () => {
   it("GETs feature-flags/ and returns the array", async () => {

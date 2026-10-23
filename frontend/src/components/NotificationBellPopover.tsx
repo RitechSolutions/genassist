@@ -6,7 +6,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover"
 import { ScrollArea } from "@/components/scroll-area"
 import { formatTimeAgo } from "@/helpers/formatters"
 import { formatNotificationDescription } from "@/helpers/notificationDisplay"
-import { useNotifications } from "@/hooks/useNotifications"
+import { NOTIFICATIONS_READ_PERMISSION, useNotifications } from "@/hooks/useNotifications"
+import { useHasPermission } from "@/hooks/useHasPermission"
 import { Notification } from "@/interfaces/notification.interface"
 import { cn } from "@/helpers/utils"
 import { EmptyNotificationsState } from "@/views/Notifications/components/EmptyNotificationsState"
@@ -54,9 +55,12 @@ export function NotificationBellPopover({
   compact = false,
 }: NotificationBellPopoverProps) {
   const { notifications, markAsRead } = useNotifications()
+  const canReadNotifications = useHasPermission(NOTIFICATIONS_READ_PERMISSION)
 
   const unreadCount = notifications.filter((notification) => !notification.read).length
   const previewItems = notifications.slice(0, maxItems)
+
+  if (!canReadNotifications) return null
 
   return (
     <Popover>
