@@ -1425,14 +1425,16 @@ class EvalBundleService:
         await self.workflows.get_by_id(workflow_id)
         evaluations = await self._group_evaluations(workflow_id, category)
         if not evaluations:
+            if category is None:
+                detail = "This workflow has no evaluations to export."
+            elif category:
+                detail = "This workflow has no evaluations in this category to export."
+            else:
+                detail = "This workflow has no evaluations without a category to export."
             raise AppException(
                 status_code=404,
                 error_key=ErrorKey.NOT_FOUND,
-                error_detail=(
-                    "This workflow has no evaluations to export."
-                    if category is None
-                    else "This workflow has no evaluations in this category to export."
-                ),
+                error_detail=detail,
             )
         if len(evaluations) > MAX_SET_EVALUATIONS:
             raise AppException(

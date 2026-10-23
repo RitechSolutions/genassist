@@ -1558,6 +1558,12 @@ class TestBundleSetExport:
         with pytest.raises(AppException) as excinfo:
             await service.export_workflow_evaluations(workflow_id, "refunds")
         assert excinfo.value.status_code == 404
+        assert excinfo.value.error_detail == "This workflow has no evaluations in this category to export."
+
+        # None without a category: the message doesn't speak of a category.
+        with pytest.raises(AppException) as excinfo:
+            await service.export_workflow_evaluations(workflow_id, "")
+        assert excinfo.value.error_detail == "This workflow has no evaluations without a category to export."
 
     @pytest.mark.asyncio
     async def test_export_set_with_no_evaluations_404s(self):

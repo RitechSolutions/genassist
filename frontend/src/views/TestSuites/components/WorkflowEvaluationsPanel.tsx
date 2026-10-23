@@ -446,7 +446,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         toast.error("You don't have permission to export evaluations.");
         return;
       }
-      downloadJsonFile(bundleSetFilename(title ?? workflowName), bundleSet);
+      downloadJsonFile(bundleSetFilename(title ?? workflowName, categoryQuery(category)), bundleSet);
       const exported = bundleSet.evaluations.length;
       toast.success(`Exported ${exported} evaluation${exported !== 1 ? "s" : ""}`);
     } catch (error) {
@@ -522,13 +522,15 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
         <ListChecks className="h-10 w-10 text-muted-foreground" />
       </div>
       <p className="text-sm text-muted-foreground max-w-sm">
-        {search || category !== ALL_CATEGORIES
+        {category !== ALL_CATEGORIES
           ? "No evaluations match your search or category."
-          : allowCreate && !isUnassigned
-            ? "This workflow has no evaluations yet. Create your first one to get started."
-            : isSection
-              ? "This workflow has no evaluations yet."
-              : "This workflow has no evaluations yet. Create one from the Evaluations overview."}
+          : search
+            ? "No evaluations match your search."
+            : allowCreate && !isUnassigned
+              ? "This workflow has no evaluations yet. Create your first one to get started."
+              : isSection
+                ? "This workflow has no evaluations yet."
+                : "This workflow has no evaluations yet. Create one from the Evaluations overview."}
       </p>
       {!search && allowCreate && !isUnassigned && (
         <Button onClick={createEvaluation}>
