@@ -2264,6 +2264,30 @@ class TestFeatureEngineeringReplayErrors:
         np.testing.assert_allclose(model.received[:, 2], [250.0, 300.0])
 
     @pytest.mark.asyncio
+    async def test_text_expression_runs_on_real_values_before_placeholder_validation(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"city": ["NY", "Paris"], "b": [2, 3]},
+            feature_names=["city", "b"],
+            model_input_columns=["b", "city_score"],
+            label_encodings={"city": {"NY": 0, "Paris": 1}},
+            feature_engineering_steps=[
+                {
+                    "strategy": "custom_expression",
+                    "new_col": "city_score",
+                    "expression": "city.str.len() * b",
+                }
+            ],
+        )
+
+        assert result["status"] == "success"
+        np.testing.assert_array_equal(model.received, [[2, 4], [3, 15]])
+
+    @pytest.mark.asyncio
     async def test_failed_step_the_model_does_not_use_does_not_block(self, monkeypatch):
         result = await _predict(
             monkeypatch,

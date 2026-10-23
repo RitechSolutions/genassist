@@ -1106,39 +1106,37 @@ def _replay_feature_engineering(
         try:
             if strategy == "custom_expression":
                 expression = normalize_feature_expression(step.get("expression"))
-                absent, expression_error = _validate_replay_expression(
-                    expression, available_frame, failed_columns
-                )
-                if absent:
-                    record_absent_inputs(step, absent)
-                    continue
-                if expression_error is not None:
-                    record_problem(
-                        step,
-                        "the saved expression could not be evaluated",
-                        input_problem=False,
-                        log_cause=(
-                            f"{type(expression_error).__name__}: "
-                            f"{_summarize_error(expression_error)}"
-                        ),
-                    )
-                    continue
                 try:
                     result = np.asarray(available_frame.eval(expression))
-                except (TypeError, ValueError, ZeroDivisionError) as e:
-                    record_problem(
-                        step,
-                        "the supplied values are incompatible with the configured expression",
-                        log_cause=f"{type(e).__name__}: {_summarize_error(e)}",
-                    )
-                    continue
                 except Exception as e:
-                    record_problem(
-                        step,
-                        "the saved expression could not be evaluated",
-                        input_problem=False,
-                        log_cause=f"{type(e).__name__}: {_summarize_error(e)}",
+                    absent, expression_error = _validate_replay_expression(
+                        expression, available_frame, failed_columns
                     )
+                    if absent:
+                        record_absent_inputs(step, absent)
+                    elif expression_error is not None:
+                        record_problem(
+                            step,
+                            "the saved expression could not be evaluated",
+                            input_problem=False,
+                            log_cause=(
+                                f"{type(expression_error).__name__}: "
+                                f"{_summarize_error(expression_error)}"
+                            ),
+                        )
+                    elif isinstance(e, (TypeError, ValueError, ZeroDivisionError)):
+                        record_problem(
+                            step,
+                            "the supplied values are incompatible with the configured expression",
+                            log_cause=f"{type(e).__name__}: {_summarize_error(e)}",
+                        )
+                    else:
+                        record_problem(
+                            step,
+                            "the saved expression could not be evaluated",
+                            input_problem=False,
+                            log_cause=f"{type(e).__name__}: {_summarize_error(e)}",
+                        )
                     continue
                 store_output(new_col, result)
 
