@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import uuid4
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from app.core.exceptions.error_messages import ErrorKey
@@ -16,6 +17,7 @@ from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
     _build_input_array,
     _build_prediction_outputs,
     _normalize_inference_inputs,
+    _prediction_array,
     _prepare_inference_inputs,
     _validate_categorical_inputs,
     convert_input_types,
@@ -331,8 +333,14 @@ class TestBuildPredictionOutputs:
         assert labels == [None]
         assert details == [{"result": 12.75, "label": None}]
 
+    def test_numeric_series_keeps_numeric_array_dtype(self):
+        predictions = _prediction_array(pd.Series([0.5, 0.7]))
 
-async def _run_inference(monkeypatch, model, model_type):
+        assert predictions.dtype == np.dtype("float64")
+        np.testing.assert_array_equal(predictions, [0.5, 0.7])
+
+
+async def _run_inference(monkeypatch, model, model_type, inference_inputs=None):
     model_record = SimpleNamespace(
         name="test-model",
         model_type=model_type,
@@ -362,7 +370,7 @@ async def _run_inference(monkeypatch, model, model_type):
     return await node.process(
         {
             "modelId": "12345678-1234-5678-1234-567812345678",
-            "inferenceInputs": {"feature": 1},
+            "inferenceInputs": inference_inputs or {"feature": 1},
         }
     )
 
@@ -385,26 +393,275 @@ class TestInferenceOutput:
         json.dumps(result)
 
     @pytest.mark.asyncio
-    async def test_preserves_string_classes_and_uses_them_consistently(self, monkeypatch):
+    async def test_flattens_column_shaped_regression_output(self, monkeypatch):
+        class ColumnRegressionModel:
+            def predict(self, _input_data):
+                return np.array([[np.float32(12.75)]])
+
+        result = await _run_inference(
+            monkeypatch,
+            ColumnRegressionModel(),
+            "linear_regression",
+        )
+
+        assert result["prediction"] == [12.75]
+        assert result["prediction_label"] == [None]
+        assert result["prediction_details"] == [{"result": 12.75, "label": None}]
+
+    @pytest.mark.asyncio
+    async def test_flattens_numpy_matrix_regression_output(self, monkeypatch):
+        class MatrixRegressionModel:
+            def predict(self, _input_data):
+                return np.matrix([[np.float32(12.75)]])
+
+        result = await _run_inference(
+            monkeypatch,
+            MatrixRegressionModel(),
+            "linear_regression",
+        )
+
+        assert result["prediction"] == [12.75]
+        assert result["prediction_label"] == [None]
+        assert result["prediction_details"] == [{"result": 12.75, "label": None}]
+
+    @pytest.mark.asyncio
+    async def test_preserves_multi_output_regression_as_numeric_lists(self, monkeypatch):
+        class MultiOutputRegressionModel:
+            def predict(self, _input_data):
+                return np.array([[np.float32(12.75), np.float32(3.5)]])
+
+        result = await _run_inference(
+            monkeypatch,
+            MultiOutputRegressionModel(),
+            "linear_regression",
+        )
+
+        assert result["prediction"] == [[12.75, 3.5]]
+        assert result["prediction_label"] == [None]
+        assert result["prediction_details"] == [
+            {"result": [12.75, 3.5], "label": None}
+        ]
+        json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_preserves_mixed_python_prediction_types(self, monkeypatch):
+        class MixedOutputRegressionModel:
+            def predict(self, _input_data):
+                return [1, "ready"]
+
+        result = await _run_inference(
+            monkeypatch,
+            MixedOutputRegressionModel(),
+            "linear_regression",
+            {"feature": [1, 2]},
+        )
+
+        assert result["prediction"] == [1, "ready"]
+        assert [type(value) for value in result["prediction"]] == [int, str]
+        assert result["prediction_label"] == [None, None]
+        json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_uses_predict_for_class_when_probabilities_disagree(self, monkeypatch):
         class StringClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def __init__(self):
+                self.predict_calls = 0
+                self.predict_proba_calls = 0
+
+            def predict(self, _input_data):
+                self.predict_calls += 1
+                return np.array(["denied"])
+
+            def predict_proba(self, _input_data):
+                self.predict_proba_calls += 1
+                return np.array([[0.25, 0.75]], dtype=np.float32)
+
+        model = StringClassifier()
+        result = await _run_inference(monkeypatch, model, "logistic_regression")
+
+        assert model.predict_calls == 1
+        assert model.predict_proba_calls == 1
+        assert result["prediction"] == ["denied"]
+        assert result["prediction_label"] == ["denied"]
+        assert result["prediction_details"] == [{"result": "denied", "label": "denied"}]
+        assert [detail["label"] for detail in result["prediction_details"]] == result["prediction_label"]
+        assert result["probabilities"] == [{"Class_denied": 0.25, "Class_approved": 0.75}]
+        assert result["confidences"] == [0.25]
+        assert result["batch_size"] == 1
+        json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_confidence_uses_first_equal_class_label(self, monkeypatch):
+        class EqualClassLabelsClassifier:
+            classes_ = np.array([1, 1.0, True], dtype=object)
+
+            def predict(self, _input_data):
+                return np.array([True], dtype=object)
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.125, 0.25, 0.625]], dtype=np.float32)
+
+        result = await _run_inference(
+            monkeypatch,
+            EqualClassLabelsClassifier(),
+            "logistic_regression",
+        )
+
+        assert result["prediction"] == [True]
+        assert result["confidences"] == [0.125]
+
+    @pytest.mark.asyncio
+    async def test_flattens_single_column_classifier_predictions(self, monkeypatch):
+        class SingleColumnClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array([["approved"]])
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.125, 0.875]], dtype=np.float32)
+
+        result = await _run_inference(
+            monkeypatch,
+            SingleColumnClassifier(),
+            "catboost",
+        )
+
+        assert result["prediction"] == ["approved"]
+        assert result["prediction_label"] == ["approved"]
+        assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
+        assert result["probabilities"] == [{"Class_denied": 0.125, "Class_approved": 0.875}]
+        assert result["confidences"] == [0.875]
+
+    @pytest.mark.asyncio
+    async def test_returns_prediction_when_probability_generation_fails(self, monkeypatch, caplog):
+        class ProbabilityFailureClassifier:
             classes_ = np.array(["denied", "approved"])
 
             def predict(self, _input_data):
                 return np.array(["approved"])
 
             def predict_proba(self, _input_data):
-                return np.array([[0.25, 0.75]], dtype=np.float32)
+                raise RuntimeError("probabilities unavailable")
 
-        result = await _run_inference(monkeypatch, StringClassifier(), "logistic_regression")
+        with caplog.at_level(logging.WARNING):
+            result = await _run_inference(
+                monkeypatch,
+                ProbabilityFailureClassifier(),
+                "logistic_regression",
+            )
 
         assert result["prediction"] == ["approved"]
         assert result["prediction_label"] == ["approved"]
         assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
-        assert [detail["label"] for detail in result["prediction_details"]] == result["prediction_label"]
-        assert result["probabilities"] == [{"Class_denied": 0.25, "Class_approved": 0.75}]
-        assert result["confidences"] == [0.75]
-        assert result["batch_size"] == 1
-        json.dumps(result)
+        assert "probabilities" not in result
+        assert "confidences" not in result
+        assert "Probabilities unavailable" in caplog.text
+        assert "RuntimeError: probabilities unavailable" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_classifier_without_probability_support_uses_predict(self, monkeypatch):
+        class PredictionOnlyClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["approved"])
+
+        result = await _run_inference(
+            monkeypatch,
+            PredictionOnlyClassifier(),
+            "logistic_regression",
+        )
+
+        assert result["prediction"] == ["approved"]
+        assert result["prediction_label"] == ["approved"]
+        assert result["prediction_details"] == [{"result": "approved", "label": "approved"}]
+        assert "probabilities" not in result
+        assert "confidences" not in result
+
+    @pytest.mark.asyncio
+    async def test_omits_confidence_when_one_prediction_is_not_in_class_list(
+        self,
+        monkeypatch,
+        caplog,
+    ):
+        class UnknownClassClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["review", "approved"])
+
+            def predict_proba(self, _input_data):
+                return np.array(
+                    [[0.25, 0.75], [0.25, 0.75]],
+                    dtype=np.float32,
+                )
+
+        with caplog.at_level(logging.WARNING):
+            result = await _run_inference(
+                monkeypatch,
+                UnknownClassClassifier(),
+                "logistic_regression",
+                {"feature": [1, 2]},
+            )
+
+        assert result["prediction"] == ["review", "approved"]
+        assert result["probabilities"] == [
+            {"Class_denied": 0.25, "Class_approved": 0.75},
+            {"Class_denied": 0.25, "Class_approved": 0.75},
+        ]
+        assert "confidences" not in result
+        assert "Confidence omitted" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_keeps_probabilities_for_unhashable_prediction(self, monkeypatch):
+        class ArrayLabelClassifier:
+            classes_ = np.array([["denied"], ["approved"]], dtype=object)
+
+            def predict(self, _input_data):
+                return np.array([[["approved"]]], dtype=object)
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.25, 0.75]], dtype=np.float32)
+
+        result = await _run_inference(
+            monkeypatch,
+            ArrayLabelClassifier(),
+            "logistic_regression",
+        )
+
+        assert result["probabilities"] == [
+            {"Class_['denied']": 0.25, "Class_['approved']": 0.75}
+        ]
+        assert "confidences" not in result
+
+    @pytest.mark.asyncio
+    async def test_ignores_probability_row_count_mismatch(self, monkeypatch, caplog):
+        class MismatchedProbabilityClassifier:
+            classes_ = np.array(["denied", "approved"])
+
+            def predict(self, _input_data):
+                return np.array(["approved"])
+
+            def predict_proba(self, _input_data):
+                return np.array(
+                    [[0.25, 0.75], [0.75, 0.25]],
+                    dtype=np.float32,
+                )
+
+        with caplog.at_level(logging.WARNING):
+            result = await _run_inference(
+                monkeypatch,
+                MismatchedProbabilityClassifier(),
+                "logistic_regression",
+            )
+
+        assert result["prediction"] == ["approved"]
+        assert "probabilities" not in result
+        assert "confidences" not in result
+        assert "row count" in caplog.text
 
 
 class _StubModel:
@@ -1498,6 +1755,165 @@ class TestInferenceFeatureContract:
         assert result["defaults_applied"] == []
 
     @pytest.mark.asyncio
+    async def test_ratio_target_scales_column_predictions_row_by_row(self, monkeypatch):
+        class ColumnRatioModel:
+            def predict(self, input_data):
+                return np.array([[0.5], [0.7]])
+
+        result = await _predict(
+            monkeypatch,
+            ColumnRatioModel(),
+            {"feature": [2, 3], "baseline": [100, 200]},
+            feature_names=["feature"],
+            inference_params={"ratioBaselineColumn": "baseline"},
+            target_transform={"baselineColumn": "baseline"},
+        )
+
+        assert result["prediction"] == pytest.approx([50.0, 140.0])
+
+    @pytest.mark.asyncio
+    async def test_ratio_target_preserves_multi_output_rows(self, monkeypatch):
+        class MultiOutputRatioModel:
+            def predict(self, input_data):
+                return np.array([[0.5, 0.25], [0.7, 0.2]])
+
+        result = await _predict(
+            monkeypatch,
+            MultiOutputRatioModel(),
+            {"feature": [2, 3], "baseline": [100, 200]},
+            feature_names=["feature"],
+            inference_params={"ratioBaselineColumn": "baseline"},
+            target_transform={"baselineColumn": "baseline"},
+        )
+
+        assert result["prediction"] == [[50.0, 25.0], [140.0, 40.0]]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "predictions",
+        [np.array([0.5]), np.array([[0.5, 0.7]])],
+    )
+    async def test_ratio_target_rejects_prediction_row_count_mismatch(
+        self,
+        monkeypatch,
+        predictions,
+    ):
+        class MismatchedRatioModel:
+            def predict(self, _input_data):
+                return predictions
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                MismatchedRatioModel(),
+                {"feature": [2, 3], "baseline": [100, 200]},
+                feature_names=["feature"],
+                target_transform={"baselineColumn": "baseline"},
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert "1 prediction row(s) for 2 baseline row(s)" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_ratio_target_rejects_a_missing_baseline_row(self, monkeypatch):
+        class RatioModel:
+            predict_called = False
+
+            def predict(self, input_data):
+                self.predict_called = True
+                return np.full(len(input_data), 0.5)
+
+        model = RatioModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"feature": [2, 3], "baseline": [100, None]},
+                feature_names=["feature"],
+                target_transform={"baselineColumn": "baseline"},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "ratio baseline 'baseline'" in exc.value.error_detail
+        assert "2 (missing)" in exc.value.error_detail
+        assert model.predict_called is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("baseline", "expected_reason"),
+        [
+            ([100, ""], "2 (missing)"),
+            ([100, "   "], "2 (missing)"),
+            ([100, "abc"], "2 (not numeric)"),
+            ([100, 0], "2 (zero)"),
+            ([100, float("inf")], "2 (not finite)"),
+            ([True, 100], "1 (not numeric)"),
+            ([True, False], "1 (not numeric)"),
+        ],
+    )
+    async def test_ratio_target_rejects_invalid_baseline_rows(
+        self,
+        monkeypatch,
+        baseline,
+        expected_reason,
+    ):
+        class RatioModel:
+            def predict(self, input_data):
+                return np.full(len(input_data), 0.5)
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                RatioModel(),
+                {"feature": [2, 3], "baseline": baseline},
+                feature_names=["feature"],
+                target_transform={"baselineColumn": "baseline"},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "ratio baseline 'baseline'" in exc.value.error_detail
+        assert expected_reason in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_ratio_target_rejects_an_absent_baseline(self, monkeypatch):
+        class RatioModel:
+            def predict(self, input_data):
+                return np.full(len(input_data), 0.5)
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                RatioModel(),
+                {"feature": [2, 3]},
+                feature_names=["feature"],
+                target_transform={"baselineColumn": "baseline"},
+            )
+
+        assert exc.value.error_key is ErrorKey.MISSING_PARAMETER
+        assert "('y' / 'baseline')" in exc.value.error_detail
+        assert "'baseline' must be supplied" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_ratio_target_limits_invalid_rows_in_error_detail(self, monkeypatch):
+        class RatioModel:
+            def predict(self, input_data):
+                return np.full(len(input_data), 0.5)
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                RatioModel(),
+                {"feature": list(range(12)), "baseline": [None] * 12},
+                feature_names=["feature"],
+                target_transform={"baselineColumn": "baseline"},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "10 (missing)" in exc.value.error_detail
+        assert "11 (missing)" not in exc.value.error_detail
+        assert "and 2 more" in exc.value.error_detail
+
+    @pytest.mark.asyncio
     async def test_model_feature_order_wins_over_caller_order(self, monkeypatch):
         class CapturingModel:
             received = []
@@ -1564,3 +1980,186 @@ class TestEnsurePklFile:
         service.record_local_pkl_file.assert_awaited_once_with(model_id, expected_path)
         service.update.assert_not_awaited()
         assert ml_model.pkl_file == expected_path
+
+
+class _CapturingModel:
+    def __init__(self):
+        self.received = None
+
+    def predict(self, X):
+        self.received = np.asarray(X)
+        return np.zeros(len(X), dtype=int)
+
+
+class TestOrdinalInputValidation:
+    """MI-9: an ordinal value outside the fitted order is rejected, as training
+    rejects it, instead of being encoded as NaN."""
+
+    ORDER = {"High": 2, "Low": 0, "Medium": 1}
+
+    @pytest.mark.asyncio
+    async def test_unknown_ordinal_value_is_rejected(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": "Urgent"},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        detail = exc.value.error_detail
+        assert "'priority'" in detail
+        assert "Urgent" in detail
+        assert "Low" not in detail
+        assert "Medium" not in detail
+        assert "High" not in detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_mixed_or_missing_ordinal_codes_still_return_an_input_error(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": "Urgent"},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": {"Low": None, "Medium": 1, "High": "last"}},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "configured ordinal position" in exc.value.error_detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_normalised_matches_are_accepted(self, monkeypatch):
+        model = _CapturingModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"priority": [" High", "Low"], "grade": [2, 3.0]},
+            feature_names=["priority", "grade"],
+            ordinal_encodings={"priority": self.ORDER, "grade": {"2": 1, "3": 2}},
+        )
+
+        assert result["status"] == "success"
+        np.testing.assert_array_equal(model.received, [[2, 1], [0, 2]])
+
+    @pytest.mark.asyncio
+    async def test_mixed_type_batch_preserves_normalised_matches(self, monkeypatch):
+        model = _CapturingModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"rank": [2.0, "High"]},
+            feature_names=["rank"],
+            ordinal_encodings={"rank": {"2": 0, "High": 1}},
+        )
+
+        assert result["status"] == "success"
+        np.testing.assert_array_equal(model.received, [[0], [1]])
+
+    @pytest.mark.asyncio
+    async def test_one_invalid_row_in_a_batch_rejects_the_request_and_names_the_row(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": ["Low", "Urgent", "High"]},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Urgent (row 2)" in exc.value.error_detail
+        assert "Low" not in exc.value.error_detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_broadcast_invalid_ordinal_names_every_affected_row(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": "Urgent", "amount": [1, 2, 3]},
+                feature_names=["priority", "amount"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Urgent (rows 1, 2, 3)" in exc.value.error_detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_each_invalid_ordinal_value_is_paired_with_its_rows(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": ["Low", "Urgent", "Blocked", "Urgent"]},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Urgent (rows 2, 4)" in exc.value.error_detail
+        assert "Blocked (row 3)" in exc.value.error_detail
+        assert model.received is None
+
+
+class TestCategoricalErrorMessages:
+    """Unknown categories return bounded client-safe errors without exposing
+    values learned from training data."""
+
+    def test_unknown_category_says_rejected_with_input_invalid_key(self):
+        with pytest.raises(AppException) as exc:
+            _validate_categorical_inputs(
+                {"color": ["purple"]},
+                ["color"],
+                [np.array(["training-red", "training-green"], dtype=object)],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        detail = exc.value.error_detail
+        assert "will be ignored" not in detail
+        assert "rejected" in detail
+        assert "purple" in detail
+        assert "training-red" not in detail
+        assert "training-green" not in detail
+
+    def test_training_values_are_not_exposed_and_caller_values_are_bounded(self):
+        known = np.array([f"customer-{i}" for i in range(25)], dtype=object)
+        invalid_values = [f"invalid-{index}-" + "x" * 100 for index in range(10)]
+        with pytest.raises(AppException) as exc:
+            _validate_categorical_inputs(
+                {"account_name": invalid_values},
+                ["account_name"],
+                [known],
+            )
+
+        detail = exc.value.error_detail
+        assert "customer-0" not in detail
+        assert "invalid-0" in detail
+        assert "invalid-5" not in detail
+        assert "… 5 more" in detail
+        assert "..." not in detail
+        assert len(detail) < 450
+
+    @pytest.mark.asyncio
+    async def test_invalid_model_id_format_is_an_input_error(self):
+        node = MLModelInferenceNode("ml1", {"id": "ml1", "type": "mlModelInferenceNode", "data": {}}, MagicMock())
+        with pytest.raises(AppException) as exc:
+            await node.process({"modelId": "not-a-uuid", "inferenceInputs": {}})
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert exc.value.error_detail == "modelId must be a valid UUID."

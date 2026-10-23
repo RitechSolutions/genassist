@@ -70,6 +70,14 @@ from .support_ticket import (
 )
 from .template import TemplateModel
 from .tenant import TenantModel
+from .test_suite import (
+    TestCaseModel,
+    TestEvaluationModel,
+    TestResultModel,
+    TestRunModel,
+    TestSuiteModel,
+    TestToolRuleResultModel,
+)
 from .tool import ToolModel
 from .user_group import UserGroupModel
 from .user_supervised_group import UserSupervisedGroupModel
@@ -148,6 +156,12 @@ __all__ = [
     "UserSupervisedGroupModel",
     "PromptVersionModel",
     "PromptConfigModel",
+    "TestSuiteModel",
+    "TestCaseModel",
+    "TestEvaluationModel",
+    "TestRunModel",
+    "TestResultModel",
+    "TestToolRuleResultModel",
     "FilesUploadSessionModel",
     "AudioProvidersModel",
     "FallbackChainModel",

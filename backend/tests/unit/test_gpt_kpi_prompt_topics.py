@@ -91,3 +91,29 @@ async def test_live_topic_is_normalised_only_when_a_string(topic, expected):
         result = await analyzer.partial_hostility_analysis("customer: hi", llm_analyst=_analyst())
 
     assert result["topic"] == expected
+
+
+def _with_reasoning(text):
+    return [
+        {"type": "reasoning_content", "reasoning_content": {"text": "[REDACTED]", "signature": ""}},
+        {"type": "text", "text": text},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_final_verdict_reads_the_text_of_a_reasoning_reply():
+    with _llm_replying(_with_reasoning(_reply("technical issue", "login issues"))):
+        result = await analyzer.analyze_transcript("customer: hi", llm_analyst=_analyst())
+
+    assert result.title == "Technical issue"
+    assert result.kpi_metrics["Subtopic"] == "Login issues"
+
+
+@pytest.mark.asyncio
+async def test_live_verdict_reads_the_text_of_a_reasoning_reply():
+    reply = json.dumps({"topic": "technical issue", "hostile_score": 5, "negative_reason": "Other"})
+    with _llm_replying(_with_reasoning(reply)):
+        result = await analyzer.partial_hostility_analysis("customer: hi", llm_analyst=_analyst())
+
+    assert result["topic"] == "Technical issue"
+    assert result["hostile_score"] == 5

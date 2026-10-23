@@ -343,6 +343,56 @@ class TestRun(TestRunInDB):
     workflow_version: Optional[str] = None
 
 
+class ConversationCounts(BaseModel):
+    total: int = 0
+    passed: int = 0
+    failed: int = 0
+    not_evaluated: int = 0
+
+
+class RunTurnResult(BaseModel):
+    """One turn of a run: what the customer said, what was expected, what the agent replied, and how it was graded."""
+
+    case_id: UUID
+    number: int = Field(description="Position in its conversation, from 1.")
+    message: str = ""
+    expected: Optional[str] = None
+    reply: Optional[str] = None
+    verdict: str = Field(description="passed | failed | not_evaluated")
+    reason: Optional[str] = Field(default=None, description="Why the turn crashed or was not evaluated.")
+    status: Optional[str] = Field(default=None, description="The stored result's status; None when there is none.")
+    metrics: Dict[str, TestResultMetrics] = Field(default_factory=dict)
+    rules: List[TestToolRuleResult] = Field(default_factory=list)
+    has_trace: bool = False
+    in_dataset: bool = Field(default=True, description="False when the turn was removed from the dataset after the run.")
+
+
+class RunConversationResult(BaseModel):
+    key: str
+    verdict: str = Field(description="passed | failed | not_evaluated")
+    turns: List[RunTurnResult]
+    rules: List[TestToolRuleResult] = Field(default_factory=list, description="Checks on the whole conversation.")
+
+
+class RunConversations(BaseModel):
+    """A run's results by conversation, in the order the run played them."""
+
+    run_id: UUID
+    counts: ConversationCounts
+    conversations: List[RunConversationResult]
+    other_rules: List[TestToolRuleResult] = Field(
+        default_factory=list, description="Checks whose conversation is not in this run."
+    )
+    rules_pending: bool = Field(
+        default=False,
+        description="The run has checks or rules that are graded when it ends, and it has not ended well yet.",
+    )
+
+
+class RunTurnTrace(BaseModel):
+    execution_trace: Optional[Dict[str, Any]] = None
+
+
 # ---------------------------------------------------------------------------
 # TestEvaluation
 # ---------------------------------------------------------------------------
@@ -427,6 +477,18 @@ class TestEvaluationInDB(TestEvaluationBase):
 
 class TestEvaluation(TestEvaluationInDB):
     pass
+
+
+class ChecksPreviewRequest(BaseModel):
+    """Evaluations whose older methods to read as checks."""
+
+    evaluation_ids: List[UUID] = Field(default_factory=list, max_length=200)
+
+
+class ChecksPreviewResult(BaseModel):
+    """Those with older methods, as checks; nothing is saved."""
+
+    evaluations: List[TestEvaluation] = Field(default_factory=list)
 
 
 class EvaluationToolInfo(BaseModel):

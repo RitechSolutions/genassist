@@ -67,7 +67,7 @@ class MultiTenantSessionManager:
         if ktenant not in self._engines:
             tenant_url = settings.get_tenant_database_url(tenant)
             logger.debug(
-                    f"Creating new engine for tenant {tenant} with URL: {tenant_url}"
+                    f"Creating new engine for tenant {tenant}"
                     )
 
             if background_task:
@@ -198,7 +198,7 @@ class MultiTenantSessionManager:
 
             # Now create the schema in the tenant database using async engine
             tenant_url = settings.get_tenant_database_url(tenant)
-            logger.info(f"Creating schema for tenant database with URL: {tenant_url}")
+            logger.info(f"Creating schema for tenant database: {tenant_db_name}")
 
             # Create all tables from Base.metadata using async engine
             async_engine = create_async_engine(tenant_url, echo=False)
@@ -246,51 +246,46 @@ class MultiTenantSessionManager:
             logger.error(f"Failed to create database for tenant {tenant}: {e}")
             return False
 
+    async def _seed_with_tenant_context(self, tenant: str) -> None:
+        """Seed a database with the tenant context set, inside a request scope so all DI usages share one session"""
+        from fastapi_injector import RequestScopeFactory
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from app.core.tenant_scope import clear_tenant_context, set_tenant_context
+        from app.db.seed.seed import seed_data
+        from app.dependencies.injector import injector
+
+        # Set tenant context so that dependency injection uses the tenant session
+        set_tenant_context(tenant)
+        try:
+            request_scope_factory = injector.get(RequestScopeFactory)
+            async with request_scope_factory.create_scope():
+                # Resolve the request-scoped session so all DI usages share it
+                di_session = injector.get(AsyncSession)
+                try:
+                    await seed_data(di_session, injector)
+                    # Repositories only flush now; commit the seeded rows explicitly.
+                    await di_session.commit()
+                except Exception:
+                    await di_session.rollback()
+                    raise
+                finally:
+                    try:
+                        await di_session.close()
+                    except Exception:
+                        pass
+        finally:
+            # Clear tenant context after seeding
+            clear_tenant_context()
+
     async def seed_tenant_database(self, tenant: str = "master") -> bool:
         """Seed a tenant database with initial data"""
         try:
-            # Set tenant context so that dependency injection uses the tenant session
-            from app.core.tenant_scope import clear_tenant_context, set_tenant_context
-
-            set_tenant_context(tenant)
-
-            try:
-                # Import and run the seed function inside a request scope so DI shares the same session
-                from fastapi_injector import RequestScopeFactory
-                from sqlalchemy.ext.asyncio import AsyncSession
-
-                from app.db.seed.seed import seed_data
-                from app.dependencies.injector import injector
-
-                request_scope_factory = injector.get(RequestScopeFactory)
-                async with request_scope_factory.create_scope():
-                    # Resolve the request-scoped session so all DI usages share it
-                    di_session = injector.get(AsyncSession)
-                    try:
-                        await seed_data(di_session, injector)
-                        # Repositories only flush now; commit the seeded rows explicitly.
-                        await di_session.commit()
-                    except Exception:
-                        await di_session.rollback()
-                        raise
-                    finally:
-                        try:
-                            await di_session.close()
-                        except Exception:
-                            pass
-
-                logger.info(f"Successfully seeded tenant database: {tenant}")
-                return True
-            finally:
-                # Clear tenant context after seeding
-                clear_tenant_context()
-
+            await self._seed_with_tenant_context(tenant)
+            logger.info(f"Successfully seeded tenant database: {tenant}")
+            return True
         except Exception as e:
             logger.error(f"Failed to seed tenant database {tenant}: {e}")
-            # Ensure tenant context is cleared even on error
-            from app.core.tenant_scope import clear_tenant_context
-
-            clear_tenant_context()
             return False
 
     async def close_all(self):
@@ -308,15 +303,8 @@ class MultiTenantSessionManager:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
-        from app.dependencies.injector import injector
-
-        from .seed.seed import seed_data
-
-        session_factory = self.get_tenant_session_factory(tenant)
-        async with session_factory() as session:
-            await seed_data(session, injector)
-            # Repositories only flush now; commit the seeded rows explicitly.
-            await session.commit()
+        # Seeding resolves services through DI, whose session needs the tenant context set
+        await self._seed_with_tenant_context(tenant)
 
     async def get_all_table_names_async(self, tenant: str = "master") -> list[str]:
         """Introspect tables with the *current* session’s bind."""

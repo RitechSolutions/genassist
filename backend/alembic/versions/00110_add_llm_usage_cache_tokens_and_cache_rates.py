@@ -27,6 +27,9 @@ _PROMPT_GE_INPUT_CHECK = "ck_llm_usage_events_prompt_ge_input"
 
 
 def upgrade() -> None:
+    op.add_column(_RATES, sa.Column("cache_read_per_1k", sa.Numeric(18, 10), nullable=True))
+    op.add_column(_RATES, sa.Column("cache_creation_per_1k", sa.Numeric(18, 10), nullable=True))
+
     op.add_column(
         _EVENTS, sa.Column("cache_read_tokens", sa.BigInteger(), nullable=False, server_default=sa.text("0"))
     )
@@ -40,9 +43,6 @@ def upgrade() -> None:
     op.add_column(_EVENTS, sa.Column("prompt_tokens", sa.BigInteger(), nullable=False, server_default=sa.text("0")))
     op.execute(f"UPDATE {_EVENTS} SET prompt_tokens = input_tokens")
     op.create_check_constraint(_PROMPT_GE_INPUT_CHECK, _EVENTS, "prompt_tokens >= input_tokens")
-
-    op.add_column(_RATES, sa.Column("cache_read_per_1k", sa.Numeric(18, 10), nullable=True))
-    op.add_column(_RATES, sa.Column("cache_creation_per_1k", sa.Numeric(18, 10), nullable=True))
 
 
 def downgrade() -> None:

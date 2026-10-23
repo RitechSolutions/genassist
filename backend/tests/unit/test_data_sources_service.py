@@ -179,5 +179,10 @@ async def test_update_data_source_success(data_source_service, mock_repository):
     result = await data_source_service.update(source_id, update_data)
 
     # Assert
-    mock_repository.update.assert_called_once_with(source_id, update_data.model_dump(exclude_unset=True))
+    # New connection details reset the connection status until the connection is tested again
+    expected_update = {
+        **update_data.model_dump(exclude_unset=True),
+        "connection_status": {"status": "Untested", "last_tested_at": None, "message": None},
+    }
+    mock_repository.update.assert_called_once_with(source_id, expected_update)
     assert result == mock_updated_source 

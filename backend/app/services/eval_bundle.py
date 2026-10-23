@@ -88,6 +88,7 @@ ACTION_TAKEN = "action_taken"
 LLM_JUDGE = "llm_judge"
 PROVENANCE_EVAL = "provenance_eval"
 NLI_EVAL = "nli_eval"
+CHECKS = "checks"
 
 # Techniques whose configs carry an llm_provider_id.
 _PROVIDER_TECHNIQUES = (LLM_JUDGE, PROVENANCE_EVAL)
@@ -417,15 +418,31 @@ def collect_provider_ids(configs: Optional[Dict[str, Any]]) -> List[str]:
         config = (configs or {}).get(technique)
         if isinstance(config, dict) and config.get("llm_provider_id"):
             ids.setdefault(str(config["llm_provider_id"]), None)
+    checks = (configs or {}).get(CHECKS)
+    if isinstance(checks, dict):
+        # The evaluation's AI grader, and any a check names for itself.
+        for holder in [checks, *_checks_of(checks)]:
+            if holder.get("llm_provider_id"):
+                ids.setdefault(str(holder["llm_provider_id"]), None)
     return list(ids.keys())
 
 
+def _checks_of(config: Any) -> List[Dict[str, Any]]:
+    entries = config.get("checks") if isinstance(config, dict) else None
+    return [entry for entry in entries if isinstance(entry, dict)] if isinstance(entries, list) else []
+
+
 def collect_case_ids(configs: Optional[Dict[str, Any]]) -> List[str]:
-    """Test case ids referenced by turn-targeted rules of any rule-based technique."""
+    """Test case ids referenced by turn-targeted rules of any rule-based technique, and by checks."""
     ids: Dict[str, None] = {}
     for _, _, rule in _rules_with_targets(configs):
         for case_id in _rule_case_ids(rule):
             ids.setdefault(case_id, None)
+    for check in _checks_of((configs or {}).get(CHECKS)):
+        # A check's turn, and its chosen conversations, which are a turn's id when it has no conversation.
+        for case_id in [check.get("case_id"), *(check.get("conversation_ids") or [])]:
+            if case_id:
+                ids.setdefault(str(case_id), None)
     return list(ids.keys())
 
 
@@ -647,7 +664,37 @@ def rewrite_provider_refs(
                 "the default provider will be used."
             )
         new_configs[technique] = updated
+    checks = new_configs.get(CHECKS)
+    if isinstance(checks, dict):
+        new_configs[CHECKS], missing = _repoint_check_providers(checks, provider_map)
+        if missing:
+            warnings.append("No matching LLM provider for the checks; the default provider will be used.")
     return new_configs, warnings
+
+
+def _repoint_check_providers(
+    config: Dict[str, Any], provider_map: Dict[str, Optional[str]]
+) -> Tuple[Dict[str, Any], bool]:
+    """The checks' AI graders in this environment; an unmatched one falls back to the default."""
+    missing = False
+
+    def repoint(holder: Dict[str, Any]) -> Dict[str, Any]:
+        nonlocal missing
+        if not holder.get("llm_provider_id"):
+            return holder
+        updated = dict(holder)
+        mapped = provider_map.get(str(updated["llm_provider_id"]))
+        if mapped:
+            updated["llm_provider_id"] = mapped
+        else:
+            updated.pop("llm_provider_id")
+            missing = True
+        return updated
+
+    updated = repoint(config)
+    if isinstance(config.get("checks"), list):
+        updated["checks"] = [repoint(entry) if isinstance(entry, dict) else entry for entry in config["checks"]]
+    return updated, missing
 
 
 def rewrite_case_refs(
@@ -670,7 +717,37 @@ def rewrite_case_refs(
         rules = list(config["rules"])
         rules[index] = updated
         new_configs[technique] = {**config, "rules": rules}
+    checks = new_configs.get(CHECKS)
+    if isinstance(checks, dict) and isinstance(checks.get("checks"), list):
+        repointed = []
+        for entry in checks["checks"]:
+            updated, warning = _repoint_check(entry, case_map) if isinstance(entry, dict) else (entry, None)
+            if warning:
+                warnings.append(warning)
+            repointed.append(updated)
+        new_configs[CHECKS] = {**checks, "checks": repointed}
     return new_configs, warnings
+
+
+def _repoint_check(check: Dict[str, Any], case_map: Dict[str, str]) -> Tuple[Dict[str, Any], Optional[str]]:
+    """A check's turn and chosen conversations in the recreated dataset."""
+    updated = dict(check)
+    if isinstance(updated.get("conversation_ids"), list):
+        # A conversation of one turn is keyed by that turn's id; others keep their conversation's id.
+        updated["conversation_ids"] = [case_map.get(str(key), key) for key in updated["conversation_ids"]]
+    case_id = updated.get("case_id")
+    if not case_id:
+        return updated, None
+    if case_map.get(str(case_id)):
+        updated["case_id"] = case_map[str(case_id)]
+        if updated.get("conversation_id") == case_id:
+            updated["conversation_id"] = updated["case_id"]
+        return updated, None
+    # The conversation and turn still find it, as for a rule.
+    if updated.get("conversation_id") and updated.get("turn_index") is not None:
+        updated.pop("case_id")
+        return updated, None
+    return updated, f"Check '{updated.get('id')}' is about a turn that is not part of the bundle; it will grade as not evaluated."
 
 
 def _repoint_rule(

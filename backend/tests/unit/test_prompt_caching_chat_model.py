@@ -826,6 +826,26 @@ class TestOpikCallbacks:
         assert llm.callbacks is None
 
 
+@pytest.mark.asyncio
+class TestStreamUsage:
+    @pytest.mark.parametrize(
+        "provider, connection_data",
+        [
+            ("vllm", {"base_url": "http://vllm.internal/v1"}),
+            ("openrouter", {"api_key": "k"}),
+            ("azure_openai", {"api_key": "k", "azure_endpoint": "https://x.openai.azure.com"}),
+        ],
+    )
+    async def test_openai_compatible_providers_report_usage_on_streamed_replies(self, provider, connection_data):
+        _, init = await _build(provider, connection_data, requested=False)
+        assert init.call_args.kwargs["stream_usage"] is True
+
+    @pytest.mark.parametrize("provider", ["anthropic", "bedrock"])
+    async def test_other_providers_keep_their_own_default(self, provider):
+        _, init = await _build(provider, {"api_key": "k"}, requested=False)
+        assert "stream_usage" not in init.call_args.kwargs
+
+
 def _patch_provider_lookups(chain=None):
     from app.services.fallback_chains import FallbackChainService
 

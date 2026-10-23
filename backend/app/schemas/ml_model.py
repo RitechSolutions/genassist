@@ -1,3 +1,4 @@
+import os
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional
@@ -7,6 +8,18 @@ from math import isfinite
 
 
 FEATURE_DEFAULTS_PARAM = "featureDefaults"
+
+from app.core.project_path import DATA_VOLUME
+
+# Local .pkl files of ML models must stay inside this folder.
+ML_MODELS_DIR = str(DATA_VOLUME / "ml_models")
+
+
+def is_in_ml_models_dir(path: str) -> bool:
+    """True if path, with symlinks and '..' resolved, is a file path inside ML_MODELS_DIR."""
+    root = os.path.realpath(ML_MODELS_DIR)
+    resolved = os.path.realpath(path)
+    return resolved != root and os.path.commonpath([root, resolved]) == root
 
 
 class ModelType(str, Enum):
@@ -92,6 +105,15 @@ class MLModelCreate(MLModelWriteBase):
     def validate_features_not_empty(cls, v):
         if not v or len(v) == 0:
             raise ValueError('Features list must not be empty')
+        return v
+
+    # Update is checked in MLModelsService.update instead, where the stored path is known:
+    # the edit form sends an older model's stored pkl_file back unchanged.
+    @field_validator('pkl_file')
+    @classmethod
+    def validate_pkl_file_in_ml_models_dir(cls, v):
+        if v and not is_in_ml_models_dir(v):
+            raise ValueError('pkl_file must be a file inside the ML models folder')
         return v
 
 
