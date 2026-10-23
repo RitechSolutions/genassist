@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional, List, Union
 from pydantic import BaseModel
 
-from app.auth.dependencies import auth
+from app.auth.dependencies import auth, permissions
+from app.core.permissions.constants import Permissions as P
 from app.core.project_path import DATA_VOLUME
 from app.services.smb_share_service import SMBShareFSService
 from app.tasks.share_folder_tasks import transcribe_audio_files_async_with_scope
@@ -17,13 +18,19 @@ _ALLOWED_LOCAL_ROOTS: list[Path] = [
 ]
 
 
-def _validate_local_root(local_root: Optional[str]) -> Optional[str]:
+def _validate_local_root(local_root: Optional[str], use_local_fs: bool) -> Optional[str]:
     """Validate that local_root is under an allowed directory.
 
     Returns the value unchanged when valid, or raises HTTPException 400.
-    When local_root is None (SMB mode), it is passed through unchanged.
+    In local filesystem mode local_root is required, so the service never falls
+    back to the backend working directory. In SMB mode it is passed through unchanged.
     """
-    if local_root is None:
+    if not local_root:
+        if use_local_fs:
+            raise HTTPException(
+                status_code=400,
+                detail="local_root is required when use_local_fs is true",
+            )
         return None
 
     try:
@@ -137,10 +144,10 @@ class ExistsRequest(SMBConnection):
 # API Endpoints
 # -----------------------------------------------------------------------------
 
-@router.post("/list", response_model=List[str], dependencies=[Depends(auth)])
+@router.post("/list", response_model=List[str], dependencies=[Depends(auth), Depends(permissions(P.DataSource.READ))])
 async def list_dir(req: ListDirRequest):
     """List directory contents with optional filters."""
-    safe_local_root = _validate_local_root(req.local_root)
+    safe_local_root = _validate_local_root(req.local_root, req.use_local_fs)
     safe_subpath = get_safe_path(req.subpath)
     try:
         async with SMBShareFSService(
@@ -164,10 +171,10 @@ async def list_dir(req: ListDirRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/read", dependencies=[Depends(auth)])
+@router.post("/read", dependencies=[Depends(auth), Depends(permissions(P.DataSource.READ))])
 async def read_file(req: FileRequest):
     """Read file content."""
-    safe_local_root = _validate_local_root(req.local_root)
+    safe_local_root = _validate_local_root(req.local_root, req.use_local_fs)
     safe_filepath = get_safe_path(req.filepath)
 
     try:
@@ -185,10 +192,10 @@ async def read_file(req: FileRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/write", dependencies=[Depends(auth)])
+@router.post("/write", dependencies=[Depends(auth), Depends(permissions(P.DataSource.UPDATE))])
 async def write_file(req: FileRequest):
     """Write or update a file."""
-    safe_local_root = _validate_local_root(req.local_root)
+    safe_local_root = _validate_local_root(req.local_root, req.use_local_fs)
     safe_filepath = get_safe_path(req.filepath)
 
     try:
@@ -212,10 +219,10 @@ async def write_file(req: FileRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/file", dependencies=[Depends(auth)])
+@router.delete("/file", dependencies=[Depends(auth), Depends(permissions(P.DataSource.DELETE))])
 async def delete_file(req: FileRequest):
     """Delete a file."""
-    safe_local_root = _validate_local_root(req.local_root)
+    safe_local_root = _validate_local_root(req.local_root, req.use_local_fs)
     safe_filepath = get_safe_path(req.filepath)
 
     try:
@@ -234,10 +241,10 @@ async def delete_file(req: FileRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/folder", dependencies=[Depends(auth)])
+@router.post("/folder", dependencies=[Depends(auth), Depends(permissions(P.DataSource.UPDATE))])
 async def create_folder(req: FolderRequest):
     """Create a new folder (recursively)."""
-    safe_local_root = _validate_local_root(req.local_root)
+    safe_local_root = _validate_local_root(req.local_root, req.use_local_fs)
     safe_folderpath = get_safe_path(req.folderpath)
 
     try:
@@ -256,10 +263,10 @@ async def create_folder(req: FolderRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/folder", dependencies=[Depends(auth)])
+@router.delete("/folder", dependencies=[Depends(auth), Depends(permissions(P.DataSource.DELETE))])
 async def delete_folder(req: FolderRequest):
     """Delete a folder and its contents."""
-    safe_local_root = _validate_local_root(req.local_root)
+    safe_local_root = _validate_local_root(req.local_root, req.use_local_fs)
     safe_folderpath = get_safe_path(req.folderpath)
 
     try:
@@ -278,10 +285,10 @@ async def delete_folder(req: FolderRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/exists", dependencies=[Depends(auth)])
+@router.post("/exists", dependencies=[Depends(auth), Depends(permissions(P.DataSource.READ))])
 async def exists(req: ExistsRequest):
     """Check if a path exists."""
-    safe_local_root = _validate_local_root(req.local_root)
+    safe_local_root = _validate_local_root(req.local_root, req.use_local_fs)
     safe_path = get_safe_path(req.path)
 
     try:
@@ -299,6 +306,9 @@ async def exists(req: ExistsRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/execute-celery-jobs")
+@router.get(
+    "/execute-celery-jobs",
+    dependencies=[Depends(auth), Depends(permissions(P.DataSource.UPDATE))],
+)
 async def execute_celery_jobs():
     await transcribe_audio_files_async_with_scope()
