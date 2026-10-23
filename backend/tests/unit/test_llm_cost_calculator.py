@@ -66,6 +66,19 @@ class TestCalculateCost:
         assert cost == round(0.0001 + 0.0004, 6)
 
 
+class TestLivePricingConfigured:
+    def test_only_a_tenant_row_reports_configured(self, monkeypatch):
+        monkeypatch.setattr(
+            llm_pricing,
+            "get_db_pricing_nested",
+            lambda tenant: {"openai": {"gpt-4o": {"input_per_1k": 0.001, "output_per_1k": 0.002}}},
+        )
+        assert llm_pricing.resolve_live_pricing("openai", "gpt-4o").configured is True
+        assert llm_pricing.resolve_live_pricing("openai", "gpt-4o-mini").configured is False
+        assert llm_pricing.resolve_live_pricing("openai", "gpt-3.5-turbo").configured is False
+        assert llm_pricing.resolve_live_pricing("openai", "unknown-model-xyz").configured is False
+
+
 class TestCalculateCostWithCacheTokens:
     @pytest.fixture(autouse=True)
     def _no_db_rates(self, no_db_rates):

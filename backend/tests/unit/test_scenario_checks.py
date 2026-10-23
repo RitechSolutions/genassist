@@ -1,5 +1,6 @@
 """Should / Should not checks: the model, sentences and grading, without a run."""
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -561,3 +562,11 @@ class TestJudge:
         assert verdicts[("c1", ("a1",))].met
         for case_id in ("a2", "a3"):
             assert verdicts[("c1", (case_id,))].reason == "The AI grader ran out of time for this run."
+
+    @pytest.mark.asyncio
+    async def test_with_no_time_left_nothing_is_sent_to_the_grader(self):
+        judge = AsyncMock(return_value=JudgeVerdict(score=1.0))
+        item = check(kind="reply_meets", rubric="Greet", when="every_turn")
+        verdicts = await run_judge([JudgeRequest(item, [turn("a1")])], judge, budget_seconds=0)
+        judge.assert_not_awaited()
+        assert verdicts[("c1", ("a1",))].reason == "The AI grader ran out of time for this run."

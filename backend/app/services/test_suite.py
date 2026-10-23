@@ -245,20 +245,20 @@ def _checks_judge_budget(
     conversations: int,
     seconds_left: float = RUN_TIME_LIMIT_SECONDS,
 ) -> float:
-    """Seconds the checks' AI grader gets: the usual budget, or more when there is much to grade and time left."""
+    """Seconds the checks' AI grader gets: the usual budget, more for much to grade, less near the run's limit."""
     try:
         checks = parse_checks_config((technique_configs or {}).get(CHECKS_TECHNIQUE)).checks
     except ValueError:
-        return CHECKS_JUDGE_BUDGET_SECONDS
+        checks = []
     gradings = sum(
         1 if check.level == "turn" else turns if check.per_turn else conversations
         for check in checks
         if check.scored
     )
-    wanted = min(gradings * CHECK_JUDGE_SECONDS_EACH, CHECKS_JUDGE_BUDGET_CAP_SECONDS)
-    # More time only up to the run's limit, keeping the checks' margin and time to store the results.
+    wanted = max(CHECKS_JUDGE_BUDGET_SECONDS, min(gradings * CHECK_JUDGE_SECONDS_EACH, CHECKS_JUDGE_BUDGET_CAP_SECONDS))
+    # Never past the run's limit, keeping the checks' margin and time to store the results; less than usual if need be.
     room = seconds_left - (CHECKS_EVALUATION_TIMEOUT_SECONDS - CHECKS_JUDGE_BUDGET_SECONDS) - RUN_FINISH_SECONDS
-    return max(CHECKS_JUDGE_BUDGET_SECONDS, min(wanted, room))
+    return max(0.0, min(wanted, room))
 
 
 def turn_record(
@@ -3294,8 +3294,9 @@ class TestSuiteService:
         Every technique is bounded and isolated: a bug or a stuck DB call in one
         must not leave the whole run stuck in "running", nor drop the others.
         """
-        seconds_left = RUN_TIME_LIMIT_SECONDS - (time.monotonic() - started) if started is not None else RUN_TIME_LIMIT_SECONDS
-        judge_budget = _checks_judge_budget(technique_configs, len(cases), len(conversations), seconds_left)
+        def seconds_left() -> float:
+            return RUN_TIME_LIMIT_SECONDS - (time.monotonic() - started if started is not None else 0.0)
+
         graders: Dict[str, Callable[[], Any]] = {
             TOOL_USED_TECHNIQUE: lambda: self._evaluate_tool_usage(
                 run=run,
@@ -3324,7 +3325,10 @@ class TestSuiteService:
                 workflow=workflow,
                 observations_by_turn=case_actions,
             ),
-            CHECKS_TECHNIQUE: lambda: self._evaluate_checks(
+        }
+
+        def grade_checks(judge_budget: float) -> Any:
+            return self._evaluate_checks(
                 run=run,
                 conversations=conversations,
                 cases=cases,
@@ -3335,8 +3339,7 @@ class TestSuiteService:
                 provider_name_cache=provider_name_cache if provider_name_cache is not None else {},
                 metering_state=metering_state if metering_state is not None else {"timed_out": False},
                 judge_budget=judge_budget,
-            ),
-        }
+            )
 
         summaries: Dict[str, Any] = {}
         for technique in RULE_ROW_TECHNIQUES:
@@ -3344,13 +3347,19 @@ class TestSuiteService:
                 continue
             label = _RULE_TECHNIQUE_LABELS[technique]
             try:
-                # The checks keep their usual margin over however long their AI grading may take.
-                timeout = (
-                    judge_budget + CHECKS_EVALUATION_TIMEOUT_SECONDS - CHECKS_JUDGE_BUDGET_SECONDS
-                    if technique == CHECKS_TECHNIQUE
-                    else RULE_EVALUATION_TIMEOUT_SECONDS
-                )
-                summary = await asyncio.wait_for(graders[technique](), timeout=timeout)
+                if technique == CHECKS_TECHNIQUE:
+                    # Measured now, so the time the techniques before them took is left out.
+                    judge_budget = _checks_judge_budget(
+                        technique_configs, len(cases), len(conversations), seconds_left()
+                    )
+                    # The checks keep their usual margin over however long their AI grading may take.
+                    timeout = judge_budget + CHECKS_EVALUATION_TIMEOUT_SECONDS - CHECKS_JUDGE_BUDGET_SECONDS
+                    grading = grade_checks(judge_budget)
+                else:
+                    timeout, grading = RULE_EVALUATION_TIMEOUT_SECONDS, graders[technique]()
+                # Never past the run's limit either, so the run still stores its results.
+                timeout = max(0.0, min(timeout, seconds_left() - RUN_FINISH_SECONDS))
+                summary = await asyncio.wait_for(grading, timeout=timeout)
                 if summary is not None:
                     summaries[technique] = summary
             except Exception as exc:  # pylint: disable=broad-except

@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import Mock, patch
 
+from app.core.utils.s3_utils import S3Client
 from app.modules.filemanager.providers.s3.provider import S3StorageProvider
 
 
@@ -13,6 +14,7 @@ def s3_config():
         "AWS_BUCKET_NAME": "test-bucket",
         "AWS_ACCESS_KEY_ID": "test-access-key",
         "AWS_SECRET_ACCESS_KEY": "test-secret-key",
+        "AWS_SESSION_TOKEN": "test-session-token",
         "AWS_REGION": "us-east-1",
     }
 
@@ -94,6 +96,27 @@ class TestS3StorageProvider:
         """Test getting the base path returns bucket name."""
         assert s3_provider.get_base_path() == "test-bucket"
 
+    @pytest.mark.asyncio
+    async def test_download_file_to_path_uses_native_s3_download(
+        self,
+        s3_provider,
+        mock_s3_client,
+        tmp_path,
+    ):
+        destination = tmp_path / "training.csv"
+        mock_s3_client.download_file.return_value = True
+
+        downloaded = await s3_provider.download_file_to_path(
+            "uploads/training.csv",
+            str(destination),
+        )
+
+        assert downloaded is True
+        mock_s3_client.download_file.assert_called_once_with(
+            "uploads/training.csv",
+            str(destination),
+        )
+
     def test_get_stats(self, s3_provider):
         """Test getting provider statistics."""
         stats = s3_provider.get_stats()
@@ -111,8 +134,26 @@ class TestS3StorageProvider:
             assert provider.aws_bucket_name == "test-bucket"
             assert provider.aws_access_key_id == "test-access-key"
             assert provider.aws_secret_access_key == "test-secret-key"
+            assert provider.aws_session_token == "test-session-token"
             assert provider.aws_region_name == "us-east-1"
             assert provider.s3_client == mock_s3_client
+
+    def test_initialization_passes_temporary_credentials_to_client(
+        self, s3_config, mock_s3_client
+    ):
+        with patch(
+            "app.modules.filemanager.providers.s3.provider.S3Client",
+            return_value=mock_s3_client,
+        ) as client_class:
+            S3StorageProvider(config=s3_config)
+
+        client_class.assert_called_once_with(
+            bucket_name="test-bucket",
+            aws_access_key_id="test-access-key",
+            aws_secret_access_key="test-secret-key",
+            aws_session_token="test-session-token",
+            region_name="us-east-1",
+        )
 
     def test_initialization_with_partial_config_keeps_none_region(self, mock_s3_client):
         """Test provider initialization when region is not provided."""
@@ -127,3 +168,29 @@ class TestS3StorageProvider:
 
         assert provider.aws_bucket_name == "test-bucket"
         assert provider.aws_region_name is None
+
+
+class TestS3ClientCredentials:
+    def test_uses_standard_credential_chain_when_credentials_are_omitted(self):
+        with patch("app.core.utils.s3_utils.boto3.client") as boto_client:
+            S3Client(bucket_name="test-bucket", region_name="us-east-1")
+
+        boto_client.assert_called_once_with("s3", region_name="us-east-1")
+
+    def test_passes_session_token_with_temporary_credentials(self):
+        with patch("app.core.utils.s3_utils.boto3.client") as boto_client:
+            S3Client(
+                bucket_name="test-bucket",
+                aws_access_key_id="test-access-key",
+                aws_secret_access_key="test-secret-key",
+                aws_session_token="test-session-token",
+                region_name="us-east-1",
+            )
+
+        boto_client.assert_called_once_with(
+            "s3",
+            aws_access_key_id="test-access-key",
+            aws_secret_access_key="test-secret-key",
+            aws_session_token="test-session-token",
+            region_name="us-east-1",
+        )

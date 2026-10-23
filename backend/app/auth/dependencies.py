@@ -47,7 +47,7 @@ async def get_current_user(
 
 
 # Checks for api key header or user JWT token
-def _set_user_context(user, roles) -> None:
+def _set_user_context(user, roles, granted_permissions=None) -> None:
     """Populate starlette context with user identity and group info.
 
     Centralised so HTTP auth (auth()) and WebSocket auth (socket_auth) stay in sync.
@@ -56,6 +56,11 @@ def _set_user_context(user, roles) -> None:
     """
     context["user_id"] = user.id if user else None
     context["user_roles"] = roles
+    context["user_permissions"] = (
+        granted_permissions
+        if granted_permissions is not None
+        else getattr(user, "permissions", []) if user else []
+    )
     context["operator_id"] = user.operator.id if user and user.operator else None
     context["group_id"] = user.group_id if user and hasattr(user, "group_id") else None
     context["supervised_group_ids"] = authorized_supervised_group_ids(user)
@@ -72,7 +77,11 @@ async def auth(
     if getattr(request.state, "api_key", None):
         # Authenticate API Key if provided
         context["auth_mode"] = "api_key"
-        _set_user_context(user, request.state.api_key.roles)
+        _set_user_context(
+            user,
+            request.state.api_key.roles,
+            request.state.api_key.permissions,
+        )
     elif user:
         request.state.user = user  # Attach user to the state
         context["auth_mode"] = "token"
@@ -186,7 +195,7 @@ def socket_auth(required_permissions: list[str]):
                     key_obj.user.id,
                     key_obj.permissions,
                 )
-                _set_user_context(key_obj.user, key_obj.roles)
+                _set_user_context(key_obj.user, key_obj.roles, key_obj.permissions)
             else:
                 raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Missing credentials")
 
@@ -235,6 +244,7 @@ async def _handle_guest_token(
         context["auth_mode"] = "guest_token"
         context["user_id"] = user_id_uuid
         context["user_roles"] = []
+        context["user_permissions"] = guest_token_data.get("permissions", [])
         context["operator_id"] = agent.operator.id if agent.operator else None
 
         return True
@@ -284,6 +294,7 @@ async def _handle_authenticated_agent(
     context["auth_mode"] = "token"
     context["user_id"] = user.id
     context["user_roles"] = user.roles
+    context["user_permissions"] = user.permissions
     context["operator_id"] = user.operator.id if user.operator else None
 
 

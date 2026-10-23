@@ -569,6 +569,8 @@ export interface RunComparison {
   checks: CheckMoves;
   /** No conversation changed result, so the verdict comes from the checks. */
   fromChecks: boolean;
+  /** Conversations graded in the earlier run and not in this one, by how they went then. */
+  noLongerEvaluated: { passed: number; failed: number };
 }
 
 /** A conversation's checks that now pass or now fail, as the compare tables highlight them. */
@@ -624,9 +626,15 @@ export const compareRuns = (baseline: RunConversations, current: RunConversation
         checks: none,
       }),
     );
-  // The verdict counts what the four cards count, so the two always agree.
+  // The verdict counts what the four cards count, and passes lost to not being evaluated, which the header lists.
   const groups = new Set(changes.map(compareGroup));
-  const worse = groups.has("newly_failing");
+  const lost = changes.filter((change) => change.change === "no_longer_evaluated");
+  const noLongerEvaluated = {
+    passed: lost.filter((change) => change.before === "passed").length,
+    failed: lost.filter((change) => change.before === "failed").length,
+  };
+  // A conversation that passed and is not evaluated now no longer passes, so the run can't be the same.
+  const worse = groups.has("newly_failing") || noLongerEvaluated.passed > 0;
   const better = groups.has("newly_passing");
   const byConversation: ComparisonVerdict = worse && better ? "mixed" : worse ? "worse" : better ? "better" : "same";
   // A conversation that changed result is on its card already; only what that would hide is counted.
@@ -645,7 +653,7 @@ export const compareRuns = (baseline: RunConversations, current: RunConversation
         ? "worse"
         : "better"
     : byConversation;
-  return { verdict, changes, checks, fromChecks };
+  return { verdict, changes, checks, fromChecks, noLongerEvaluated };
 };
 
 /** The four ways a conversation can go between two runs, and the rest that cannot be compared. */

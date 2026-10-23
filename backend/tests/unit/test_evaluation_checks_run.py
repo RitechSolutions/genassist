@@ -1,4 +1,6 @@
 """Checks in a run: graded on what each turn did, stored one row each, masked, summarized by conversation."""
+import asyncio
+import time
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -249,10 +251,60 @@ class TestChecksInARun:
     def test_grading_ends_before_the_run_time_limit(self):
         budget = test_suite_module._checks_judge_budget
         rubric = {"checks": [{"id": "r", "kind": "reply_meets", "rubric": "Greet", "when": "every_turn"}]}
-        # 70 minutes in, the grader gets what is left after the margin and storing, never less than usual.
+        # 70 minutes in, the grader gets what is left after the margin and storing.
         left = test_suite_module.RUN_TIME_LIMIT_SECONDS - 70 * 60
         assert budget({"checks": rubric}, 100000, 10, left) == left - 3 * 60 - test_suite_module.RUN_FINISH_SECONDS
-        assert budget({"checks": rubric}, 100000, 10, 60) == test_suite_module.CHECKS_JUDGE_BUDGET_SECONDS
+        # Late in a run that is less than usual, and with no time left nothing, rather than past the limit.
+        assert budget({"checks": rubric}, 10, 1, 10 * 60) == 2 * 60
+        assert budget({"checks": {"checks": [{"id": "bad"}]}}, 10, 1, 10 * 60) == 2 * 60
+        assert budget({"checks": rubric}, 100000, 10, 60) == 0
+
+    @pytest.mark.asyncio
+    async def test_the_checks_stop_in_time_for_the_run_to_store_its_results(self):
+        service = _service()
+        never_done = asyncio.Event()
+
+        async def grade_forever(**_kwargs):
+            await never_done.wait()
+
+        service._evaluate_checks = grade_forever
+        # A run whose turns took all but two minutes of its limit.
+        started = time.monotonic() - test_suite_module.RUN_TIME_LIMIT_SECONDS + 2 * 60
+        summaries = await asyncio.wait_for(
+            service._evaluate_rule_techniques(
+                run=SimpleNamespace(id=uuid4()), cases=[], conversations=[], technique_configs={}, workflow=None,
+                requested=["checks"], case_events={}, case_executed_agents={}, case_routes={}, case_actions={},
+                started=started,
+            ),
+            timeout=5,
+        )
+        assert summaries["checks"]["error"] == "Checks evaluation failed or timed out."
+
+    @pytest.mark.asyncio
+    async def test_the_checks_budget_leaves_out_the_time_earlier_techniques_took(self, monkeypatch):
+        service = _service()
+        clock = {"now": 10_000.0}
+        monkeypatch.setattr(test_suite_module, "time", SimpleNamespace(monotonic=lambda: clock["now"]))
+        budgets = []
+
+        async def slow_tool_rules(**_kwargs):
+            clock["now"] += 30 * 60
+
+        async def checks(**kwargs):
+            budgets.append(kwargs["judge_budget"])
+
+        service._evaluate_tool_usage = slow_tool_rules
+        service._evaluate_checks = checks
+        rubric = {"checks": {"checks": [{"id": "r", "kind": "reply_meets", "rubric": "Greet", "when": "every_turn"}]}}
+        # 40 minutes are left when grading starts, and the older tool rules take 30 of them.
+        started = clock["now"] - test_suite_module.RUN_TIME_LIMIT_SECONDS + 40 * 60
+        await service._evaluate_rule_techniques(
+            run=SimpleNamespace(id=uuid4()), cases=[None] * 2000, conversations=[], technique_configs=rubric,
+            workflow=None, requested=["tool_used", "checks"], case_events={}, case_executed_agents={},
+            case_routes={}, case_actions={}, started=started,
+        )
+        # The checks get the 10 minutes still left: 2 for AI grading, after their margin and storing.
+        assert budgets == [2 * 60]
 
     def test_step_errors_read_plainly(self):
         nodes = {"n1": {"label": "Search"}}

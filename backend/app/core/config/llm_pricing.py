@@ -102,6 +102,7 @@ class LivePricing:
     display_rates: Dict[str, float]
     cache_read_per_1k: Optional[float] = None
     cache_creation_per_1k: Optional[float] = None
+    configured: bool = False
 
 
 @dataclass(frozen=True)
@@ -389,4 +390,5 @@ def resolve_live_pricing(provider: str, model: str) -> LivePricing:
         _float_rates(selected.rates, selected.row),
         None if cache_read is None else float(cache_read),
         None if cache_creation is None else float(cache_creation),
+        configured=selected.status is PricingStatus.CONFIGURED,
     )

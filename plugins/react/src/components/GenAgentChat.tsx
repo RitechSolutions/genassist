@@ -5,6 +5,7 @@ import { useChat } from '../hooks/useChat';
 import { useReadReporter, messageIdentityKey } from '../hooks/useReadReporter';
 import { useScrollManagement } from '../hooks/useScrollManagement';
 import { useThinkingAnimation } from '../hooks/useThinkingAnimation';
+import { useSmoothReveal } from '../hooks/useSmoothReveal';
 import { useViewportManager } from '../hooks/useViewportManager';
 import { useFileAttachments } from '../hooks/useFileAttachments';
 import { ChatMessage, GenAgentChatProps, ScheduleItem, SendMessageOutcome } from '../types';
@@ -238,6 +239,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     possibleQueries,
     isFinalized,
     isAgentTyping,
+    streaming,
     addFeedback,
     readState,
     markRead,
@@ -273,18 +275,38 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     onConfigLoaded,
   });
 
-  const { currentThinkingParts, currentThinkingPartIndex } = useThinkingAnimation({
+  const { currentThinkingParts, currentThinkingPartIndex, activityLabel } = useThinkingAnimation({
     isAgentTyping,
     thinkingPhrases,
     thinkingDelayMs,
     translations,
+    activityKind: streaming?.running[streaming.running.length - 1],
   });
+  const thinkingLabel =
+    activityLabel ?? (currentThinkingParts[currentThinkingPartIndex] || currentThinkingParts[currentThinkingParts.length - 1]);
 
-  const { messagesEndRef, chatContainerRef, showScrollButton, scrollToLatest } = useScrollManagement({
+  const lastMessage = messages[messages.length - 1];
+  const revealedText = useSmoothReveal(
+    streaming ? streaming.text : lastMessage?.speaker === 'agent' ? lastMessage.text : '',
+    Boolean(streaming),
+  );
+  const liveText = streaming ? revealedText : '';
+  const revealingMessage =
+    !streaming && lastMessage?.speaker === 'agent' && revealedText !== lastMessage.text ? lastMessage : null;
+
+  // Index of the visitor's most recent message, so only it shows the receipt.
+  const lastCustomerIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].speaker === 'customer') return i;
+    }
+    return -1;
+  }, [messages]);
+  const latestQuestion: ChatMessage | undefined = messages[lastCustomerIndex];
+
+  const { messagesEndRef, chatContainerRef, spacerRef, showScrollButton, scrollToLatest } = useScrollManagement({
     messages,
+    latestQuestion,
     isAgentTyping,
-    currentThinkingPartIndex,
-    currentThinkingPartsLength: currentThinkingParts.length,
     conversationId,
     isFloatingOpen: mode === 'inputbar' ? barPanelOpen : isFloatingOpen,
     mode,
@@ -347,14 +369,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
     return 'delivered';
   }, [readReceipts, lastCustomerSequence, readState]);
-
-  // Index of the visitor's most recent message, so only it shows the receipt.
-  const lastCustomerIndex = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].speaker === 'customer') return i;
-    }
-    return -1;
-  }, [messages]);
 
   const {
     windowWidth,
@@ -1453,7 +1467,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           const displayMessage =
             isFirstAgentMessage && welcomeMessage
               ? { ...message, text: welcomeMessage }
-              : message;
+              : message === revealingMessage
+                ? { ...message, text: revealedText }
+                : message;
 
           return (
             <React.Fragment key={index}>
@@ -1483,12 +1499,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 audioHeaders={message.type === 'audio' && useAudio ? audioHeaders : undefined}
                 autoPlayAudioMessageId={autoPlayAudioMessageId}
                 receiptStatus={index === lastCustomerIndex ? lastCustomerReceipt : undefined}
+                isLatestQuestion={message === latestQuestion}
               />
             </React.Fragment>
           );
         });
       })()}
-      {isAgentTyping && currentThinkingParts.length > 0 && (
+      {streaming && liveText && renderLiveBubble('agent', liveText, streaming.createTime, '__streaming_reply__')}
+      {isAgentTyping && !liveText && currentThinkingParts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '80%' }}>
           <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>{agentName || t('labels.agent')}</div>
           <div style={{
@@ -1498,7 +1516,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             maxWidth: '100%',
           }}>
             <div
-              key={`${currentThinkingPartIndex}-${currentThinkingParts.join('|')}`}
+              key={thinkingLabel}
               style={{
                 animation: 'ga-think-change 220ms ease',
                 willChange: 'transform, opacity',
@@ -1506,7 +1524,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 fontSize: '13px',
               }}
             >
-              {currentThinkingParts[currentThinkingPartIndex] || currentThinkingParts[currentThinkingParts.length - 1]}
+              {thinkingLabel}
             </div>
           </div>
         </div>
@@ -1528,6 +1546,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       {liveVoice.isActive && liveCaption.agent.trim() !== '' &&
         renderLiveBubble('agent', liveCaption.agent, liveCaption.createTime, '__live_caption_agent__')}
       <div ref={setBottomSentinelRef} />
+      <div ref={spacerRef} style={{ flexShrink: 0 }} />
     </>
   );
 

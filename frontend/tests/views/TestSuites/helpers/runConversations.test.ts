@@ -708,16 +708,29 @@ describe("comparing two runs", () => {
       "no_longer_evaluated",
     ]);
     expect(comparison.changes.map(compareGroup)).toEqual(["newly_passing", "not_compared", "not_compared"]);
-    // Newly passing on its card, so the verdict says so too.
-    expect(comparison.verdict).toBe("better");
+    // Newly passing on its card, and a pass lost to not being evaluated, so the verdict is Mixed.
+    expect([comparison.verdict, comparison.noLongerEvaluated]).toEqual(["mixed", { passed: 1, failed: 1 }]);
   });
 
-  it("gives the verdict the cards give", () => {
+  it("gives the verdict the cards give when no conversation that passed lost its evaluation", () => {
     const one = (verdict: Verdict) => runOf([conversation("a", verdict)]);
     expect(compareRuns(one("not_evaluated"), one("failed")).verdict).toBe("worse");
     expect(compareRuns(one("not_evaluated"), one("passed")).verdict).toBe("better");
-    expect(compareRuns(one("passed"), one("not_evaluated")).verdict).toBe("same");
     expect(compareRuns(one("failed"), one("failed")).verdict).toBe("same");
+  });
+
+  it("does not say Same when a conversation that passed is no longer evaluated", () => {
+    const one = (verdict: Verdict) => runOf([conversation("a", verdict)]);
+    const lostPass = compareRuns(one("passed"), one("not_evaluated"));
+    expect([lostPass.verdict, lostPass.noLongerEvaluated]).toEqual(["worse", { passed: 1, failed: 0 }]);
+    // One that failed is neither better nor worse now, so it is only listed.
+    const lostFail = compareRuns(one("failed"), one("not_evaluated"));
+    expect([lostFail.verdict, lostFail.noLongerEvaluated]).toEqual(["same", { passed: 0, failed: 1 }]);
+    const both = compareRuns(
+      runOf([conversation("a", "passed"), conversation("b", "failed")]),
+      runOf([conversation("a", "not_evaluated"), conversation("b", "passed")]),
+    );
+    expect(both.verdict).toBe("mixed");
   });
 
   it("lets the checks decide when no conversation changed result, and says Same only when nothing moved", () => {

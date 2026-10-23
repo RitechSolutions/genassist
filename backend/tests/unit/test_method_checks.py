@@ -528,6 +528,26 @@ def test_the_evaluations_grader_moves_onto_its_own_checks_beside_a_default_one()
     assert "llm_provider_id" not in rule
 
 
+def test_the_evaluations_own_checks_keep_the_default_model_beside_one_converted_grader():
+    _, configs, _ = converted_evaluation(["checks", "llm_judge"], {
+        "checks": {"checks": [{"id": "own", "kind": "reply_meets", "rubric": "Polite"}]},
+        "llm_judge": {"llm_provider_id": "judge", "rules": [{"rubric": "Greet"}]},
+    })
+    checks = configs["checks"]
+    # The method's grader stays on its own checks rather than grading the whole evaluation.
+    assert "llm_provider_id" not in checks
+    own, rule = checks["checks"]
+    assert "llm_provider_id" not in own
+    assert rule["llm_provider_id"] == "judge"
+
+    # Own checks that no AI grades are not moved by it, so the one grader still grades the evaluation.
+    _, configs, _ = converted_evaluation(["checks", "llm_judge"], {
+        "checks": {"checks": [{"id": "own", "kind": "reply_mentions", "text": "refund"}]},
+        "llm_judge": {"llm_provider_id": "judge", "rules": [{"rubric": "Greet"}]},
+    })
+    assert configs["checks"]["llm_provider_id"] == "judge"
+
+
 def test_an_only_rule_keeps_at_least_one_call():
     conversion = convert_methods(["tool_used"], {"tool_used": {"rules": [
         {"id": "r", "tool_ids": ["tool-1"], "operator": "only", "min_calls": 1},
