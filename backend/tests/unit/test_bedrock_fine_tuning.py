@@ -142,7 +142,7 @@ async def test_create_fine_tuning_job_success(bedrock_service, mock_repository):
     # Nova defaults are always sent (Bedrock requires hyperParameters), with the
     # user's value overriding the corresponding default; all values stringified.
     assert call["hyperParameters"] == {
-        "epochCount": "1",
+        "epochCount": "2",
         "learningRate": "0.00001",
         "learningRateWarmupSteps": "10",
     }
@@ -168,7 +168,7 @@ async def test_create_fine_tuning_job_sends_default_hyperparameters(bedrock_serv
 
     call = bedrock_service._bedrock_client.create_model_customization_job.call_args.kwargs
     assert call["hyperParameters"] == {
-        "epochCount": "2",
+        "epochCount": "1",
         "learningRate": "0.00001",
         "learningRateWarmupSteps": "10",
     }

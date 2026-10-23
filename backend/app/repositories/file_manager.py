@@ -74,6 +74,19 @@ class FileManagerRepository(DbRepository[FileModel]):
         result = await self.db.execute(query)
         return result.scalars().first()
 
+    async def is_path_shared(self, file_id: UUID, storage_provider: str, path: str) -> bool:
+        """True if another live file record points at the same object in storage."""
+        query = select(FileModel.id).where(
+            and_(
+                FileModel.id != file_id,
+                FileModel.storage_provider == storage_provider,
+                FileModel.path == path,
+                FileModel.is_deleted == 0,
+            )
+        ).limit(1)
+        result = await self.db.execute(query)
+        return result.first() is not None
+
     async def list_files(
         self,
         user_id: Optional[UUID] = None,

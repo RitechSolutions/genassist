@@ -8,11 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.modules.workflow.audio.audio_input import pcm_to_wav
-from app.modules.workflow.engine.nodes.voice_agent_node import (
-    VoiceAgentNode,
-    _history_to_live_turns,
-    _tool_declarations,
-)
+from app.modules.workflow.audio.gemini_live import history_to_live_turns, tool_declarations
+from app.modules.workflow.engine.nodes.voice_agent_node import VoiceAgentNode
 from app.modules.workflow.engine.workflow_engine import _sanitize_output_for_memory
 
 _PCM_16K = b"\x00\x01" * 1600  # 0.1s of 16 kHz s16 mono
@@ -246,7 +243,7 @@ class TestErrorHandling:
         with _patch_provider(provider_type="openai"):
             output = await node.process(_native_config())
         assert "error" in output
-        assert "Gemini" in output["message"]
+        assert "Gemini" in output["output"]["message"]
 
     async def test_compressed_audio_rejected(self):
         webm_payload = base64.b64encode(b"x" * 200).decode("utf-8")
@@ -312,8 +309,8 @@ class TestAudioResolution:
 
 
 class TestHelpers:
-    def test_tool_declarations(self):
-        declarations = _tool_declarations([_FakeTool()])
+    def testtool_declarations(self):
+        declarations = tool_declarations([_FakeTool()])
         assert declarations == [
             {
                 "name": "get_weather",
@@ -329,7 +326,7 @@ class TestHelpers:
         ]
 
     def test_history_to_live_turns_skips_empty_and_maps_roles(self):
-        turns = _history_to_live_turns([
+        turns = history_to_live_turns([
             {"role": "user", "content": "hi"},
             {"role": "assistant", "content": ""},
             {"role": "ai", "content": {"message": "hello"}},

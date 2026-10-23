@@ -67,7 +67,7 @@ async def delete(datasource_id: UUID, service: DataSourceService = Injected(Data
     return {"message": "Datasource deleted successfully"}
 
 
-@router.post("/test-connection", dependencies=[Depends(auth)])
+@router.post("/test-connection", dependencies=[Depends(auth), Depends(permissions(P.DataSource.READ))])
 async def test_connection(
     datasource: DataSourceBase,
     datasource_id: Optional[UUID] = None,

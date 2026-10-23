@@ -8,6 +8,7 @@ which is the legacy format of the local PBP fixtures.
 """
 
 import itertools
+import os
 import pickle
 import threading
 from collections import defaultdict
@@ -69,6 +70,7 @@ from sklearn.preprocessing import (
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
+from app.core.utils import model_validator
 from app.core.utils.model_validator import validate_pickle_file_safe
 from app.core.utils.safe_pickle import safe_pickle_load
 from app.modules.workflow.engine.nodes.ml import model_registry
@@ -225,6 +227,12 @@ def _search_space_cases():
 
 _SEARCH_SPACE_CASES = _search_space_cases()
 
+
+
+@pytest.fixture(autouse=True)
+def _ml_models_folder_is_tmp_path(monkeypatch, tmp_path):
+    # Model files are only read from inside the ML models folder; these tests write them to tmp_path
+    monkeypatch.setattr(model_validator, "ML_MODELS_DIR", os.path.realpath(tmp_path))
 
 @pytest.fixture(scope="module", params=_SEARCH_SPACE_CASES)
 def search_space_model(request):

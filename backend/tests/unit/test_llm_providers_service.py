@@ -11,6 +11,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.db.models.llm import LlmProvidersModel
 from app.repositories.llm_providers import LlmProviderRepository
 from app.schemas.llm import LlmProviderCreate, LlmProviderUpdate
+from app.services.app_settings import AppSettingsService
 from app.services.llm_providers import LlmProviderService
 
 
@@ -29,7 +30,7 @@ def mock_repository():
 
 @pytest.fixture
 def llm_provider_service(mock_repository):
-    return LlmProviderService(repository=mock_repository)
+    return LlmProviderService(repository=mock_repository, app_settings_service=AsyncMock(spec=AppSettingsService))
 
 
 @pytest.fixture
