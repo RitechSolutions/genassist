@@ -14,6 +14,7 @@ class ErrorKey(Enum):
     RULE_CONFIG_INVALID = "rule_config_invalid"
     EVALUATION_TARGET_NOT_A_VERSION = "evaluation_target_not_a_version"
     EVALUATION_WORKFLOW_REQUIRED = "evaluation_workflow_required"
+    EVALUATION_TECHNIQUES_REQUIRED = "evaluation_techniques_required"
     EVALUATION_BUNDLE_INVALID = "evaluation_bundle_invalid"
     DATASET_FILE_IMPORT_INVALID = "dataset_file_import_invalid"
     NOT_FOUND = "not_found"
@@ -139,6 +140,7 @@ class ErrorKey(Enum):
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
     ML_INFERENCE_INPUT_INVALID = "ML_INFERENCE_INPUT_INVALID"
+    ML_MODEL_ARTIFACT_INVALID = "ML_MODEL_ARTIFACT_INVALID"
     INVALID_PKL_FILE = "INVALID_PKL_FILE"
     PKL_FILE_TOO_LARGE = "PKL_FILE_TOO_LARGE"
     ERROR_UPLOAD_FILE_OPEN_AI = "ERROR_UPLOAD_FILE_OPEN_AI"
@@ -205,8 +207,6 @@ class ErrorKey(Enum):
     PROMPT_OPTIMIZE_UNUSABLE = "PROMPT_OPTIMIZE_UNUSABLE"
     PROMPT_EXECUTION_TIMEOUT = "PROMPT_EXECUTION_TIMEOUT"
     PROMPT_MODEL_CALL_FAILED = "PROMPT_MODEL_CALL_FAILED"
-    CHAT_TURN_CAPACITY_EXCEEDED = "CHAT_TURN_CAPACITY_EXCEEDED"
-    CHAT_TURN_CLIENT_DISCONNECTED = "CHAT_TURN_CLIENT_DISCONNECTED"
 
 
 ERROR_MESSAGES = {
@@ -216,6 +216,7 @@ ERROR_MESSAGES = {
         ErrorKey.RULE_CONFIG_INVALID: "The evaluation rule configuration is not valid.",
         ErrorKey.EVALUATION_TARGET_NOT_A_VERSION: "The target workflow is not a version of the evaluation's workflow.",
         ErrorKey.EVALUATION_WORKFLOW_REQUIRED: "This evaluation has no workflow. Edit it and choose a workflow.",
+        ErrorKey.EVALUATION_TECHNIQUES_REQUIRED: "Add at least one check or method to the evaluation.",
         ErrorKey.EVALUATION_BUNDLE_INVALID: "The evaluation bundle is invalid or could not be imported.",
         ErrorKey.DATASET_FILE_IMPORT_INVALID: "The dataset files could not be imported.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
@@ -344,6 +345,7 @@ ERROR_MESSAGES = {
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
         ErrorKey.ML_INFERENCE_INPUT_INVALID: "ML model inference received invalid input values.",
+        ErrorKey.ML_MODEL_ARTIFACT_INVALID: "The model file does not match the registered features or target.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",
         ErrorKey.PKL_FILE_TOO_LARGE: "PKL file too large. Maximum size is 500MB.",
         ErrorKey.ERROR_UPLOAD_FILE_OPEN_AI: "Failed to upload file to OpenAI.",
@@ -419,8 +421,6 @@ ERROR_MESSAGES = {
         ErrorKey.PROMPT_OPTIMIZE_UNUSABLE: "The model did not return a usable prompt suggestion.",
         ErrorKey.PROMPT_EXECUTION_TIMEOUT: "The prompt check did not finish within the time budget.",
         ErrorKey.PROMPT_MODEL_CALL_FAILED: "The LLM provider call failed.",
-        ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "The assistant is busy right now. Please try again in a moment.",
-        ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED: "The request was abandoned before the assistant could answer.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
@@ -450,8 +450,6 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "Les connexions de sous-agents de ce workflow sont invalides : {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "Un sous-agent de ce workflow est mal configuré : {0}",
         ErrorKey.LOOP_INVALID_TOPOLOGY: "Une boucle de ce workflow n'est pas connectée correctement : {0}",
-        ErrorKey.CHAT_TURN_CAPACITY_EXCEEDED: "L'assistant est occupé pour le moment. Veuillez réessayer dans un instant.",
-        ErrorKey.CHAT_TURN_CLIENT_DISCONNECTED: "La demande a été abandonnée avant que l'assistant puisse répondre.",
     },
 }
 

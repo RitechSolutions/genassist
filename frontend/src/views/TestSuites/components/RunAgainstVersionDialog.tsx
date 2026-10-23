@@ -5,6 +5,7 @@ import { Button } from "@/components/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -27,10 +28,12 @@ interface RunAgainstVersionDialogProps {
   agentId: string;
   /** The version the evaluation runs against by default. */
   currentWorkflowId?: string;
-  /** Named once in the description instead of repeated per option. */
-  workflowName?: string;
+  /** The version open in the builder, preselected when given. */
+  openWorkflowId?: string;
   /** Confirm label, e.g. "Run" or "Run all". */
   confirmLabel?: string;
+  /** Run itself opens this to pick the version, so it says what runs, and one version can run. */
+  asRun: { title: string; description: React.ReactNode };
   isStarting?: boolean;
   onRun: (targetWorkflowId: string) => void;
 }
@@ -40,8 +43,9 @@ export const RunAgainstVersionDialog: React.FC<RunAgainstVersionDialogProps> = (
   onOpenChange,
   agentId,
   currentWorkflowId,
-  workflowName,
+  openWorkflowId,
   confirmLabel = "Run",
+  asRun,
   isStarting = false,
   onRun,
 }) => {
@@ -72,9 +76,10 @@ export const RunAgainstVersionDialog: React.FC<RunAgainstVersionDialogProps> = (
         if (isStale) return;
         setVersions(rows ?? []);
         setActiveWorkflowId(agent?.workflow_id ?? null);
-        // Preselect what a plain Run would execute: the active version, or the
-        // evaluation's own when the workflow has no active version.
-        setSelectedWorkflowId(agent?.workflow_id ?? currentWorkflowId ?? "");
+        // Preselect the version open in the builder, else the active one, or the
+        // evaluation's own when there is no active version.
+        const listed = (id?: string | null) => (id && rows?.some((row) => row.id === id) ? id : undefined);
+        setSelectedWorkflowId(listed(openWorkflowId) ?? listed(agent?.workflow_id) ?? listed(currentWorkflowId) ?? "");
       } catch {
         // Distinct from an empty list: the versions are unknown, not absent.
         if (!isStale) {
@@ -89,80 +94,68 @@ export const RunAgainstVersionDialog: React.FC<RunAgainstVersionDialogProps> = (
     return () => {
       isStale = true;
     };
-  }, [isOpen, agentId, currentWorkflowId, loadAttempt]);
+  }, [isOpen, agentId, currentWorkflowId, openWorkflowId, loadAttempt]);
 
   // Each saved version carries its own name, so it is what tells two versions
-  // apart once a workflow has many of them. "current" marks the agent's live
-  // version, matching the wording of the wizard's workflow picker.
+  // apart once a workflow has many of them. "active" marks the agent's live
+  // version, as the builder does, and "open here" the version open in the builder.
   const versionLabel = (version: WorkflowSummary): string => {
-    const suffix = version.id === activeWorkflowId ? " (current)" : "";
+    const marks = [
+      ...(version.id === activeWorkflowId ? ["active"] : []),
+      ...(version.id === openWorkflowId ? ["open here"] : []),
+    ];
+    const suffix = marks.length ? ` (${marks.join(", ")})` : "";
     if (!version.name?.trim()) return `v${version.version}${suffix}`;
     return `v${version.version} · ${version.name}${suffix}`;
   };
 
-  const hasOtherVersions = versions.length > 1;
-  const canRun = Boolean(selectedWorkflowId) && hasOtherVersions && !isStarting;
+  const canRun = Boolean(selectedWorkflowId) && !isStarting;
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Run against a version</DialogTitle>
+          <DialogTitle>{asRun.title}</DialogTitle>
+          <DialogDescription>{asRun.description}</DialogDescription>
         </DialogHeader>
-        <div className="mt-2 space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Execute against another saved version of{" "}
-            {workflowName ?? "this workflow"}
-          </p>
-          <div className="space-y-1.5">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Version
-            </div>
-            {isLoadingVersions ? (
-              <div className="flex h-10 items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading versions…
-              </div>
-            ) : hasLoadFailed ? (
-              <div className="flex items-center gap-3">
-                <p className="flex-1 text-xs text-destructive">
-                  Couldn't load this workflow's versions.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setLoadAttempt((attempt) => attempt + 1)}
-                >
-                  Retry
-                </Button>
-              </div>
-            ) : (
-              <Select
-                value={selectedWorkflowId}
-                onValueChange={setSelectedWorkflowId}
-                disabled={!hasOtherVersions}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a version" />
-                </SelectTrigger>
-                <SelectContent>
-                  {versions.map((version) => (
-                    <SelectItem key={version.id} value={version.id}>
-                      {versionLabel(version)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {!isLoadingVersions && !hasLoadFailed && !hasOtherVersions && (
-              <p className="text-xs text-muted-foreground">
-                This workflow has only one saved version. Save another version in
-                the workflow builder to run against it here.
-              </p>
-            )}
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Version
           </div>
+          {isLoadingVersions ? (
+            <div className="flex h-10 items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading versions…
+            </div>
+          ) : hasLoadFailed ? (
+            <div className="flex items-center gap-3">
+              <p className="flex-1 text-xs text-destructive">
+                Couldn't load this workflow's versions.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : (
+            <Select value={selectedWorkflowId} onValueChange={setSelectedWorkflowId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a version" />
+              </SelectTrigger>
+              <SelectContent>
+                {versions.map((version) => (
+                  <SelectItem key={version.id} value={version.id}>
+                    {versionLabel(version)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
-        <DialogFooter className="mt-6 gap-2 border-t pt-4">
+        <DialogFooter className="mt-6 gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

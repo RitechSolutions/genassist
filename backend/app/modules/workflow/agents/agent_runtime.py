@@ -14,6 +14,7 @@ from app.modules.workflow.llm.prompt_caching_chat_model import build_cacheable_s
 from app.modules.workflow.llm.provider import LLMProvider
 
 if TYPE_CHECKING:
+    from app.core.turn_stream import TokenSink
     from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ async def run_agent_once(
     stable_volatile_parts: Optional[tuple[str, str]] = None,
     stable_tool_names: Optional[frozenset[str]] = None,
     prompt_caching_enabled: bool = False,
+    on_token: Optional["TokenSink"] = None,
 ) -> AgentRunResult:
     """Pick the LLM if needed, create the agent for ``agent_type``, run it once,
     add its token usage to ``state``, and return a normalized result"""
@@ -93,6 +95,7 @@ async def run_agent_once(
             system_prompt=react_prompt,
             tools=tools,
             max_iterations=max_iterations,
+            on_token=on_token,
         )
     elif agent_type == "SimpleToolExecutor":
         agent = SimpleToolAgent(

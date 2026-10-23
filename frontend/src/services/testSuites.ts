@@ -6,6 +6,7 @@ import type {
   CreateTestSuitePayload,
   ImportCasesFromFilesResult,
   ImportFromConversationsResult,
+  RunConversations,
   TestCase,
   TestResult,
   TestRun,
@@ -134,4 +135,13 @@ export const getTestRunsBatch = (ids: string[]) =>
 
 export const listResultsForRun = (runId: string) =>
   apiRequest<TestResult[]>("GET", `${BASE}/runs/${runId}/results`);
+
+export const getRunConversations = (runId: string) =>
+  apiRequest<RunConversations>("GET", `${BASE}/runs/${runId}/conversations`);
+
+export const getRunTurnTrace = (runId: string, caseId: string) =>
+  apiRequest<{ execution_trace: Record<string, unknown> | null }>(
+    "GET",
+    `${BASE}/runs/${runId}/results/${caseId}/trace`,
+  );
 

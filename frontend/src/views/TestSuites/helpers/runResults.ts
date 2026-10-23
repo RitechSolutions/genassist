@@ -1,91 +1,65 @@
 import { TestResult, TestRun } from "@/interfaces/testSuite.interface";
-import type {
-  RuleTechnique,
-  TestToolRuleResult,
-} from "@/interfaces/testEvaluation.interface";
-
-// Order rule sections the way the wizard lists the techniques.
-const TECHNIQUE_ORDER: RuleTechnique[] = ["tool_used", "route_taken", "action_taken"];
-
-// Rule-based techniques count rule checks (a rule per scope unit), not test cases.
-export const isRuleTechnique = (technique: string): boolean =>
-  TECHNIQUE_ORDER.includes(technique as RuleTechnique);
-
-// Rule results arrive for every technique at once; each is displayed on its own.
-export const groupByTechnique = (
-  results: TestToolRuleResult[],
-): [RuleTechnique, TestToolRuleResult[]][] => {
-  const byTechnique = new Map<RuleTechnique, TestToolRuleResult[]>();
-  for (const result of results) {
-    const technique = result.technique ?? "tool_used";
-    byTechnique.set(technique, [...(byTechnique.get(technique) ?? []), result]);
-  }
-  return TECHNIQUE_ORDER.filter((technique) => byTechnique.has(technique)).map(
-    (technique) => [technique, byTechnique.get(technique) as TestToolRuleResult[]],
-  );
-};
+import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
 
 // A turn-scoped result belongs to one case, so it is shown with that case; a
 // conversation-scoped one has no single case to sit on.
 export const isTurnScope = (scope: string): boolean =>
-  scope === "every_turn" || scope === "specific_turn";
-
-// Shown wherever a method's accuracy is null: nothing could be checked.
-export const NOT_EVALUATED = "Not evaluated";
-
-const countLabel = (count: number, noun: string): string =>
-  `${count} ${noun}${count === 1 ? "" : "s"}`;
-
-// A rule is graded once per scope unit, so the check count is rules x turns (plus
-// one per conversation for a conversation-scoped rule) — never the turn count. The
-// subline spells that out, so a number like "24 checks" over 12 turns is traceable.
-export const ruleCheckSummary = (
-  results: TestToolRuleResult[],
-): { headline: string; subline: string } => {
-  const passed = results.filter((result) => result.status === "passed").length;
-  const failed = results.filter((result) => result.status === "failed").length;
-  const evaluated = passed + failed;
-
-  const ruleCount = new Set(results.map((result) => result.rule_id)).size;
-  const turnChecks = results.filter((result) => isTurnScope(result.scope)).length;
-  const conversationChecks = results.filter((result) => result.scope === "conversation").length;
-
-  const parts = [countLabel(ruleCount, "rule")];
-  if (turnChecks) parts.push(countLabel(turnChecks, "turn check"));
-  if (conversationChecks) parts.push(countLabel(conversationChecks, "conversation check"));
-
-  // Nothing checked has no pass rate, so it must not read as 0%.
-  if (!evaluated) return { headline: NOT_EVALUATED, subline: parts.join(" · ") };
-
-  const rate = Math.round((passed / evaluated) * 100);
-  return {
-    headline: `${passed} of ${evaluated} checks passed · ${rate}% pass rate`,
-    subline: parts.join(" · "),
-  };
-};
+  scope === "every_turn" || scope === "specific_turn" || scope === "turn";
 
 export type CaseStatus = "passed" | "failed" | "not_scored";
 
-export const hasMetrics = (result: TestResult): boolean =>
+export const hasMetrics = (result: Pick<TestResult, "metrics">): boolean =>
   !!result.metrics && Object.keys(result.metrics).length > 0;
 
-// No metrics means no score, whatever the stored status claims.
-export const isResultNotScored = (result: TestResult): boolean =>
-  !hasMetrics(result) || (!!result.status && result.status !== "scored");
+// Methods with nothing to compare (not evaluated) or that broke (error) neither pass nor fail.
+const gradedMetrics = (result: TestResult) =>
+  Object.values(result.metrics ?? {}).filter((m) => !m.not_evaluated && !m.error);
+
+const hasErroredMetric = (result: TestResult): boolean =>
+  Object.values(result.metrics ?? {}).some((m) => m.error);
+
+// Skipped, unexecuted and unscorable turns, whatever their metrics say.
+const isResultNotScoredByStatus = (result: Pick<TestResult, "status">): boolean =>
+  !!result.status && result.status !== "scored";
+
+// A scored turn every method skipped, such as one without an expected reply. Errors don't count.
+const isNotEvaluatedTurn = (result: Pick<TestResult, "status" | "metrics">): boolean =>
+  hasMetrics(result) &&
+  !isResultNotScoredByStatus(result) &&
+  Object.values(result.metrics!).every((m) => m.not_evaluated);
+
+// No metrics means no score; a broken method leaves the turn unscored unless another failed it.
+export const isResultNotScored = (result: TestResult): boolean => {
+  if (!hasMetrics(result) || isResultNotScoredByStatus(result)) return true;
+  const graded = gradedMetrics(result);
+  const failed = graded.some((m) => !m.passed);
+  return !failed && (graded.length === 0 || hasErroredMetric(result));
+};
 
 export const isResultPassed = (result: TestResult): boolean =>
-  hasMetrics(result) &&
-  !isResultNotScored(result) &&
-  Object.values(result.metrics!).every((m) => m.passed);
+  !isResultNotScored(result) && gradedMetrics(result).every((m) => m.passed);
 
 export const isResultFailed = (result: TestResult): boolean =>
   !isResultPassed(result) && !isResultNotScored(result);
 
-export const notScoredLabel = (result: { status?: string | null }): string => {
+export const notScoredLabel = (result: Pick<TestResult, "status" | "metrics">): string => {
   if (result.status === "skipped") return "Skipped";
   if (result.status === "scoring_failed") return "Scoring failed";
   if (result.status === "execution_failed") return "Execution failed";
+  if (isNotEvaluatedTurn(result)) return "Not evaluated";
   return "Not scored";
+};
+
+/** A failed run has a page worth opening only when some turns finished before it stopped. */
+export const runHasResults = (run: Pick<TestRun, "status" | "progress">): boolean =>
+  run.status !== "failed" || (run.progress?.turns_done ?? 0) > 0;
+
+// "12 of 40 turns done" while a run is in progress; null before it reports any.
+export const runProgressText = (run: Pick<TestRun, "progress"> | null | undefined): string | null => {
+  const progress = run?.progress;
+  if (!progress || !progress.turns_total) return null;
+  const total = progress.turns_total;
+  return `${progress.turns_done} of ${total} turn${total === 1 ? "" : "s"} done`;
 };
 
 // A case's status reflects its turn-level rule results too (tool usage, route,
@@ -98,7 +72,13 @@ export const caseStatusFor = (
   const ruleFailed = ruleResults.some((rule) => rule.status === "failed");
   const rulePassed = ruleResults.some((rule) => rule.status === "passed");
   if (ruleFailed) return "failed";
-  const passed = isResultPassed(result) || (isResultNotScored(result) && rulePassed);
+  // A passed rule passes an ungraded turn, but not one that failed to run or score, or whose method broke.
+  const passed =
+    isResultPassed(result) ||
+    (isResultNotScored(result) &&
+      !isResultNotScoredByStatus(result) &&
+      !hasErroredMetric(result) &&
+      rulePassed);
   if (passed) return "passed";
   if (isResultFailed(result)) return "failed";
   return "not_scored";
@@ -121,6 +101,49 @@ export const techniqueSummaries = (
     (entry): entry is [string, TechniqueSummary] =>
       isTechniqueKey(entry[0]) && Boolean(entry[1]) && typeof entry[1] === "object",
   );
+
+export interface ChecksConversations {
+  total: number;
+  passed: number;
+  failed: number;
+  not_evaluated: number;
+}
+
+/** A run's verdict by conversation, or null without checks. */
+export const checksConversations = (run: TestRun | null | undefined): ChecksConversations | null => {
+  const checks = (run?.summary_metrics as Record<string, unknown> | undefined)?.checks as
+    | { conversations?: ChecksConversations }
+    | undefined;
+  const conversations = checks?.conversations;
+  return conversations && conversations.total ? conversations : null;
+};
+
+/** Why none of a run's checks could be graded, or null. */
+export const checksGradingError = (run: TestRun | null | undefined): string | null => {
+  const checks = (run?.summary_metrics as Record<string, unknown> | undefined)?.checks as { error?: unknown } | undefined;
+  return typeof checks?.error === "string" && checks.error
+    ? "The checks could not be graded in this run, so its conversations were not evaluated. Run it again."
+    : null;
+};
+
+/** True when a run also graded turns with an older method, beside its checks. */
+export const runGradesTurns = (run: Pick<TestRun, "techniques"> | null | undefined): boolean =>
+  (run?.techniques ?? []).some((technique) => technique !== "checks");
+
+/** "3 of 4 conversations passed · 1 failed" for a run with checks, or null. Read where the switch is off. */
+export const checksVerdictText = (run: TestRun | null | undefined): string | null => {
+  const conversations = checksConversations(run);
+  if (!conversations) return null;
+  const graded = conversations.passed + conversations.failed;
+  const parts = [
+    graded
+      ? `${conversations.passed} of ${graded} conversation${graded === 1 ? "" : "s"} passed`
+      : "No conversation could be checked",
+  ];
+  if (conversations.failed) parts.push(`${conversations.failed} failed`);
+  if (conversations.not_evaluated) parts.push(`${conversations.not_evaluated} not checked`);
+  return parts.join(" · ");
+};
 
 export const techniqueAccuracy = (summary: TechniqueSummary | undefined): number | null =>
   typeof summary?.accuracy === "number" ? summary.accuracy : null;
@@ -147,15 +170,20 @@ const turnRulesByCase = (
 };
 
 // Turns passed in a run, by the same per-case status the run details show.
+// Turns nothing could grade are counted apart instead of against the pass rate.
 export const turnsPassed = (
   results: TestResult[],
   ruleResults: TestToolRuleResult[],
-): { passed: number; total: number } => {
+): { passed: number; total: number; notEvaluated: number } => {
   const rulesByCase = turnRulesByCase(ruleResults);
-  const passed = results.filter(
-    (result) => caseStatusFor(result, rulesByCase.get(result.case_id) ?? []) === "passed",
-  ).length;
-  return { passed, total: results.length };
+  let passed = 0;
+  let notEvaluated = 0;
+  for (const result of results) {
+    const status = caseStatusFor(result, rulesByCase.get(result.case_id) ?? []);
+    if (status === "passed") passed += 1;
+    else if (status === "not_scored" && isNotEvaluatedTurn(result)) notEvaluated += 1;
+  }
+  return { passed, total: results.length - notEvaluated, notEvaluated };
 };
 
 export const isRunInProgress = (run: Pick<TestRun, "status"> | null | undefined): boolean =>
@@ -194,3 +222,29 @@ export const runFailureText = (run: TestRun): string => {
   if (!reason) return "Run failed.";
   return /^run\b/i.test(reason) ? reason : `Run failed: ${reason}`;
 };
+
+/** "Run 3" once numbered in its evaluation, else "Run #a1b2". */
+export const runName = (run: Pick<TestRun, "id" | "number">): string =>
+  run.number ? `Run ${run.number}` : `Run #${(run.id ?? "").slice(-4)}`;
+
+/** The runs numbered in their evaluation: its run ids are kept newest first and never removed. */
+export const numberRuns = (runs: TestRun[], runIds: string[]): TestRun[] => {
+  const numbers = new Map(runIds.map((id, index) => [id, runIds.length - index]));
+  return runs.map((run) => (run.id && numbers.has(run.id) ? { ...run, number: numbers.get(run.id) } : run));
+};
+
+export const runDate = (run: Pick<TestRun, "created_at">): string => new Date(run.created_at ?? "").toLocaleString();
+
+/** How long a finished run took, from when it was queued to its last update. */
+export const runDuration = (run: Pick<TestRun, "status" | "created_at" | "updated_at">): string | null => {
+  if (isRunInProgress(run) || !run.created_at || !run.updated_at) return null;
+  const seconds = Math.round((new Date(run.updated_at).getTime() - new Date(run.created_at).getTime()) / 1000);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+};
+
+/** "Run 3 · workflow v4.1 · 9 Oct, 14:02", for choosing a run; the version is the workflow's. */
+export const runOptionLabel = (run: TestRun): string =>
+  [runName(run), run.workflow_version ? `workflow v${run.workflow_version}` : null, runDate(run)]
+    .filter(Boolean)
+    .join(" · ");

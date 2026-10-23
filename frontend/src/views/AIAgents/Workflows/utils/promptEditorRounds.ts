@@ -112,10 +112,13 @@ export const optimizerHistoryOf = (
       improved: round.counts.improved,
       regressed: round.counts.regressed,
       unchanged: round.counts.unchanged,
-      explanation: clipCodePoints(
-        round.source.result.explanation,
-        MAX_ROUND_TEXT_CHARS,
-      ),
+      explanation:
+        round.suggestion === round.source.result.suggested_prompt
+          ? clipCodePoints(
+              round.source.result.explanation,
+              MAX_ROUND_TEXT_CHARS,
+            )
+          : "",
       diff_summary: promptDiffSummary(
         round.source.request.prompt,
         round.suggestion,
@@ -151,4 +154,34 @@ export const baselineOf = (
     };
   if (evalRun && !evalStale) return { run: evalRun, label: "the draft" };
   return null;
+};
+
+export const roundRunOf = (
+  rounds: readonly Round[],
+  contextKey: string,
+  text: string,
+): SuggestedRunState | null =>
+  rounds.find(
+    (round) =>
+      round.run !== null &&
+      round.contextKey === contextKey &&
+      round.suggestion === text,
+  )?.run ?? null;
+
+export const attachKeptRun = (
+  rounds: Round[],
+  record: Omit<Round, "id"> | null,
+): Round[] => {
+  if (!record?.run || record.suggestion !== record.source.request.prompt)
+    return rounds;
+  const index = rounds.findIndex(
+    (round) => round.suggestion === record.suggestion,
+  );
+  if (index === -1 || rounds[index].run !== null) return rounds;
+  const { run, incomplete, counts, regressions, contextKey } = record;
+  return rounds.map((round, i) =>
+    i === index
+      ? { ...round, run, incomplete, counts, regressions, contextKey }
+      : round,
+  );
 };

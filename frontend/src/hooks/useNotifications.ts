@@ -14,6 +14,7 @@ import {
   type NotificationTypeFilter,
 } from "@/services/dashboard"
 import { useNotificationUserSettings } from "@/hooks/useNotificationUserSettings"
+import { useHasPermission } from "@/hooks/useHasPermission"
 import {
   NOTIFICATIONS_INFINITE_QUERY_KEY,
   NOTIFICATIONS_PAGE_SIZE,
@@ -25,6 +26,9 @@ export {
   NOTIFICATIONS_PAGE_SIZE,
   notificationsInfiniteQueryKey,
 } from "@/constants/notificationFeed"
+
+/** The notification feed is served by the dashboard API */
+export const NOTIFICATIONS_READ_PERMISSION = "read:dashboard"
 
 type NotificationFeedPage = {
   items: Notification[]
@@ -39,6 +43,7 @@ export const useNotificationsInfinite = ({
   levelFilter?: "all" | "info" | "success" | "warning" | "error"
 } = {}) => {
   const queryClient = useQueryClient()
+  const canReadNotifications = useHasPermission(NOTIFICATIONS_READ_PERMISSION)
   const { settings } = useNotificationUserSettings()
   const {
     conversationStarted,
@@ -76,6 +81,7 @@ export const useNotificationsInfinite = ({
     initialPageParam: 0,
     getNextPageParam: (lastPage, _pages, lastSkip) =>
       lastPage.hasMore ? (lastSkip as number) + lastPage.items.length : undefined,
+    enabled: canReadNotifications,
     refetchInterval: isNotificationPollingEnabled ? 15000 : false,
   })
 

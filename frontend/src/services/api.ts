@@ -21,6 +21,7 @@ import {
 import { PaginatedResponse } from "@/interfaces/common.interface";
 import { KBListItem } from "@/views/KnowledgeBase/types/knowledgeBase";
 import { getApiKeys, revealApiKey } from "@/services/apiKeys";
+import { hasPermission } from "@/services/auth";
 import { AxiosError } from "axios";
 import { UploadFileResponse } from "@/interfaces/file-manager.interface";
 
@@ -236,15 +237,27 @@ export async function getAllKnowledgeItems() {
   return apiRequest("GET", "genagent/knowledge/items");
 }
 
-export async function getKnowledgeItemsList(
-  page: number = 1,
-  pageSize: number = 20
-): Promise<PaginatedResponse<KBListItem>> {
+export async function getKnowledgeItemsList({
+  page = 1,
+  pageSize = 20,
+  search,
+  type,
+}: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  type?: string;
+} = {}): Promise<PaginatedResponse<KBListItem>> {
   const skip = (page - 1) * pageSize;
-  return apiRequest<PaginatedResponse<KBListItem>>(
+  const params = new URLSearchParams({ skip: String(skip), limit: String(pageSize) });
+  const trimmed = search?.trim();
+  if (trimmed) params.set("search", trimmed);
+  if (type) params.set("type", type);
+  const response = await apiRequest<PaginatedResponse<KBListItem>>(
     "GET",
-    `genagent/knowledge/list?skip=${skip}&limit=${pageSize}`
+    `genagent/knowledge/list?${params.toString()}`
   );
+  return response ?? { items: [], total: 0, page: 1, page_size: pageSize, total_pages: 0 };
 }
 
 export async function getKnowledgeItem(id: string) {
@@ -292,6 +305,8 @@ const FILE_MANAGER_CAPS_TTL_MS = 60_000; // 1 minute
 export async function getFileManagerCaps(
   forceRefresh = false
 ): Promise<FileManagerCapabilities> {
+  // Without access to the settings, use the same fallback as a failed read (not cached)
+  if (!hasPermission("read:file")) return { directS3UploadEnabled: false };
   const now = Date.now();
   const stale = now - _fileManagerCapsCachedAt > FILE_MANAGER_CAPS_TTL_MS;
   if (!forceRefresh && _fileManagerCapsCache && !stale) {

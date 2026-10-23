@@ -1,12 +1,40 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getTranslationArray } from '../utils/i18n';
-import type { Translations } from '../types';
+import { getTranslationArray, getTranslationString } from '../utils/i18n';
+import type { ActivityKind, Translations } from '../types';
+
+const ACTIVITY_LABEL_FALLBACKS: Record<ActivityKind, string> = {
+  knowledge: 'Searching the knowledge base…',
+  tool: 'Working on your request…',
+};
+
+export const MIN_LABEL_MS = 800;
+
+export interface LabelPace {
+  latest?: ActivityKind;
+  shown?: ActivityKind;
+  shownAt: number | null;
+}
+
+export const IDLE_PACE: LabelPace = { shownAt: null };
+
+/** Moves the label towards the latest step once the shown one has been up for MIN_LABEL_MS. */
+export function paceLabel(
+  pace: LabelPace,
+  activityKind: ActivityKind | undefined,
+  now: number,
+): LabelPace {
+  if (pace.shownAt === null) return { latest: activityKind, shownAt: now };
+  const latest = activityKind ?? pace.latest;
+  if (latest !== pace.shown && now >= pace.shownAt + MIN_LABEL_MS) return { latest, shown: latest, shownAt: now };
+  return latest === pace.latest ? pace : { ...pace, latest };
+}
 
 interface UseThinkingAnimationOptions {
   isAgentTyping: boolean;
   thinkingPhrases: string[] | undefined;
   thinkingDelayMs: number | undefined;
   translations: Translations;
+  activityKind: ActivityKind | undefined;
 }
 
 export function useThinkingAnimation({
@@ -14,6 +42,7 @@ export function useThinkingAnimation({
   thinkingPhrases,
   thinkingDelayMs,
   translations,
+  activityKind,
 }: UseThinkingAnimationOptions) {
   const DEFAULT_THINKING_MESSAGES = useMemo(
     () => getTranslationArray('thinking.messages', translations, [
@@ -67,8 +96,32 @@ export function useThinkingAnimation({
     };
   }, [isAgentTyping, thinkingPhrases, thinkingDelayMs]);
 
+  const [pace, setPace] = useState<LabelPace>(IDLE_PACE);
+  const [wakeCount, wake] = useState(0);
+
+  useEffect(() => {
+    if (!isAgentTyping) {
+      setPace(IDLE_PACE);
+      return;
+    }
+    const next = paceLabel(pace, activityKind, Date.now());
+    if (next !== pace) {
+      setPace(next);
+      return;
+    }
+    if (pace.latest === pace.shown || pace.shownAt === null) return;
+    const timeoutId = setTimeout(() => wake((n) => n + 1), pace.shownAt + MIN_LABEL_MS - Date.now());
+    return () => clearTimeout(timeoutId);
+  }, [isAgentTyping, activityKind, pace, wakeCount]);
+
+  const shownKind = isAgentTyping ? pace.shown : undefined;
+  const activityLabel = shownKind
+    ? getTranslationString(`thinking.activity.${shownKind}`, translations, ACTIVITY_LABEL_FALLBACKS[shownKind])
+    : undefined;
+
   return {
     currentThinkingParts,
     currentThinkingPartIndex,
+    activityLabel,
   };
 }

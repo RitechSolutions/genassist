@@ -22,7 +22,7 @@ type SubAgentDialogProps = BaseNodeDialogProps<SubAgentNodeData, SubAgentNodeDat
 
 const MODE_HELP: Record<SubAgentMode, string> = {
   single_turn: "Answers once and returns to the parent automatically. No clarifying questions.",
-  task: "Does a bounded job. May ask the user one clarifying question, then calls finish_task.",
+  task: "Does a bounded job. May ask the user clarifying questions, then calls finish_task.",
   chat: "Takes over the conversation and owns turns until it hands control back to the parent.",
 };
 
@@ -126,7 +126,7 @@ export const SubAgentDialog: React.FC<SubAgentDialogProps> = (props) => {
                 size="description"
                 value={values.description || ""}
                 onChange={(e) => setField("description", e.target.value)}
-                placeholder="What this sub agent handles, e.g. searches flights and checks fares"
+                placeholder="What this sub-agent handles, e.g. searches flights and checks fares"
               />
             </div>
 

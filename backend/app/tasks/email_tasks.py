@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from celery import shared_task
 
+from app.core.tenant_scope import background_task_context
 from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
@@ -84,11 +85,13 @@ def send_email_task(
 ) -> Dict[str, Any]:
     """Render ``template_name`` and send it for the given tenant. Retries on failure."""
     try:
-        return run_async_in_celery(
-            _send_for_tenant(tenant_slug, to, subject, template_name, context, cc, bcc),
-            timeout=60,
-            task_name="send_email_task",
-        )
+        # Like every other task: pooled connections must not outlive this task's event loop.
+        with background_task_context():
+            return run_async_in_celery(
+                _send_for_tenant(tenant_slug, to, subject, template_name, context, cc, bcc),
+                timeout=60,
+                task_name="send_email_task",
+            )
     except Exception as exc:
         logger.warning(
             "send_email_task failed (attempt %s/%s): %s",

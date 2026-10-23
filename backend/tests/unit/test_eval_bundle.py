@@ -543,6 +543,29 @@ class TestRewriting:
             "bundle; it will grade as not evaluated."
         ]
 
+    def test_checks_keep_their_graders_turns_and_conversations_on_import(self):
+        configs = {"checks": {"llm_provider_id": "old", "checks": [
+            {"id": "a", "kind": "reply_meets", "rubric": "Be polite", "llm_provider_id": "gone"},
+            {"id": "b", "kind": "reply_mentions", "text": "x", "level": "turn", "case_id": "old-1", "conversation_id": "old-1"},
+            {"id": "c", "kind": "reply_mentions", "text": "x", "level": "turn", "case_id": "old-2",
+             "conversation_id": "conv-9", "turn_index": 1},
+            {"id": "d", "kind": "reply_mentions", "text": "x", "level": "conversation", "conversation_ids": ["old-1", "conv-9"]},
+        ]}}
+        assert collect_provider_ids(configs) == ["old", "gone"]
+        assert collect_case_ids(configs) == ["old-1", "old-2", "conv-9"]
+
+        rewritten, provider_warnings = rewrite_provider_refs(configs, {"old": "new", "gone": None})
+        assert rewritten["checks"]["llm_provider_id"] == "new"
+        assert "llm_provider_id" not in rewritten["checks"]["checks"][0]
+        assert provider_warnings == ["No matching LLM provider for the checks; the default provider will be used."]
+
+        rewritten, case_warnings = rewrite_case_refs(rewritten, {"old-1": "new-1"})
+        b, c, d = rewritten["checks"]["checks"][1:]
+        assert (b["case_id"], b["conversation_id"]) == ("new-1", "new-1")
+        assert "case_id" not in c and (c["conversation_id"], c["turn_index"]) == ("conv-9", 1)
+        assert d["conversation_ids"] == ["new-1", "conv-9"]
+        assert case_warnings == []
+
     def test_collects_case_ids_from_every_rule_technique(self):
         configs = {
             "tool_used": {"rules": [{"id": "r1", "target_case_id": "case-1"}]},

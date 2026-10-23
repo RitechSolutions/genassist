@@ -183,6 +183,34 @@ def resolve_action_nodes(workflow: Any, workflow_path: Optional[List[str]] = Non
     ]
 
 
+def resolve_state_keys(workflow: Any, workflow_path: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Values the workflow remembers between turns: stateful Chat Input fields and Set State keys."""
+    workflow_path = workflow_path or []
+    keys: List[Dict[str, Any]] = []
+    for node in _nodes(workflow):
+        data = _node_data(node)
+        if node.get("type") == "chatInputNode":
+            schema = data.get("inputSchema") or {}
+            names = [
+                name for name, spec in (schema.items() if isinstance(schema, dict) else [])
+                if isinstance(spec, dict) and spec.get("stateful")
+            ]
+            source = "chat_input"
+        elif node.get("type") == "setStateNode":
+            names = [
+                state.get("key") for state in data.get("states") or []
+                if isinstance(state, dict) and state.get("key")
+            ]
+            source = "set_state"
+        else:
+            continue
+        keys.extend(
+            {"key": str(name), "source": source, "node_label": _node_label(node), "workflow_path": list(workflow_path)}
+            for name in names
+        )
+    return keys
+
+
 def resolve_node_labels(workflow: Any) -> Dict[str, str]:
     """Display label for every node id in the workflow graph."""
     return {node.get("id"): _node_label(node) for node in _nodes(workflow) if node.get("id")}

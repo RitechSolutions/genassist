@@ -12,6 +12,7 @@ from app.modules.data.providers.vector.db.faiss import FaissVectorDB
 
 LOGGER_NAME = "app.modules.data.providers.vector.db.faiss"
 LOAD_FAILED = "Failed to load FAISS index"
+DISALLOWED_GLOBAL = "Disallowed pickle global"
 
 
 def _config(persist_directory) -> VectorDBConfig:
@@ -82,7 +83,7 @@ async def test_malicious_metadata_cache_is_refused_without_side_effects(tmp_path
     db = await _reload(tmp_path, caplog)
     assert not marker.exists()
     _assert_empty_state(db)
-    assert f"{LOAD_FAILED}: Blocked:" in caplog.text
+    assert f"{LOAD_FAILED}: {DISALLOWED_GLOBAL}" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -94,7 +95,7 @@ async def test_numpy_typed_metadata_cache_is_refused(tmp_path, caplog):
 
     db = await _reload(tmp_path, caplog)
     _assert_empty_state(db)
-    assert f"{LOAD_FAILED}: Blocked:" in caplog.text
+    assert f"{LOAD_FAILED}: {DISALLOWED_GLOBAL}" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -110,4 +111,4 @@ async def test_truncated_metadata_cache_resets_state_without_refusal(tmp_path, c
     db = await _reload(tmp_path, caplog)
     _assert_empty_state(db)
     assert LOAD_FAILED in caplog.text
-    assert "Blocked:" not in caplog.text
+    assert DISALLOWED_GLOBAL not in caplog.text

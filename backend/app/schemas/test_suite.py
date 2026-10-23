@@ -296,6 +296,13 @@ class TestRunBase(BaseModel):
         description="Identifiers of selected evaluation techniques.",
     )
     summary_metrics: Optional[Dict[str, Any]] = None
+    progress: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "conversations_done, conversations_total, turns_done and turns_total, "
+            "updated after each turn. Null until the run starts."
+        ),
+    )
 
 
 class TestRunCreate(BaseModel):
@@ -334,6 +341,56 @@ class TestRun(TestRunInDB):
     # read paths, None on the create response.
     workflow_name: Optional[str] = None
     workflow_version: Optional[str] = None
+
+
+class ConversationCounts(BaseModel):
+    total: int = 0
+    passed: int = 0
+    failed: int = 0
+    not_evaluated: int = 0
+
+
+class RunTurnResult(BaseModel):
+    """One turn of a run: what the customer said, what was expected, what the agent replied, and how it was graded."""
+
+    case_id: UUID
+    number: int = Field(description="Position in its conversation, from 1.")
+    message: str = ""
+    expected: Optional[str] = None
+    reply: Optional[str] = None
+    verdict: str = Field(description="passed | failed | not_evaluated")
+    reason: Optional[str] = Field(default=None, description="Why the turn crashed or was not evaluated.")
+    status: Optional[str] = Field(default=None, description="The stored result's status; None when there is none.")
+    metrics: Dict[str, TestResultMetrics] = Field(default_factory=dict)
+    rules: List[TestToolRuleResult] = Field(default_factory=list)
+    has_trace: bool = False
+    in_dataset: bool = Field(default=True, description="False when the turn was removed from the dataset after the run.")
+
+
+class RunConversationResult(BaseModel):
+    key: str
+    verdict: str = Field(description="passed | failed | not_evaluated")
+    turns: List[RunTurnResult]
+    rules: List[TestToolRuleResult] = Field(default_factory=list, description="Checks on the whole conversation.")
+
+
+class RunConversations(BaseModel):
+    """A run's results by conversation, in the order the run played them."""
+
+    run_id: UUID
+    counts: ConversationCounts
+    conversations: List[RunConversationResult]
+    other_rules: List[TestToolRuleResult] = Field(
+        default_factory=list, description="Checks whose conversation is not in this run."
+    )
+    rules_pending: bool = Field(
+        default=False,
+        description="The run has checks or rules that are graded when it ends, and it has not ended well yet.",
+    )
+
+
+class RunTurnTrace(BaseModel):
+    execution_trace: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +479,18 @@ class TestEvaluation(TestEvaluationInDB):
     pass
 
 
+class ChecksPreviewRequest(BaseModel):
+    """Evaluations whose older methods to read as checks."""
+
+    evaluation_ids: List[UUID] = Field(default_factory=list, max_length=200)
+
+
+class ChecksPreviewResult(BaseModel):
+    """Those with older methods, as checks; nothing is saved."""
+
+    evaluations: List[TestEvaluation] = Field(default_factory=list)
+
+
 class EvaluationToolInfo(BaseModel):
     """A tool an agent can call, from the workflow graph. ``id`` matches tool events."""
 
@@ -463,6 +532,15 @@ class EvaluationActionNodeInfo(BaseModel):
     workflow_path: List[str] = Field(default_factory=list)
 
 
+class EvaluationStateKeyInfo(BaseModel):
+    """A value the workflow remembers: a stateful Chat Input field or a key Set State writes."""
+
+    key: str
+    source: str
+    node_label: str
+    workflow_path: List[str] = Field(default_factory=list)
+
+
 class EvaluationToolCatalog(BaseModel):
     """Agents/tools, routers and executable nodes for a workflow (incl. nested), for the UI."""
 
@@ -470,6 +548,7 @@ class EvaluationToolCatalog(BaseModel):
     agents: List[EvaluationAgentInfo] = Field(default_factory=list)
     routers: List[EvaluationRouterInfo] = Field(default_factory=list)
     action_nodes: List[EvaluationActionNodeInfo] = Field(default_factory=list)
+    state_keys: List[EvaluationStateKeyInfo] = Field(default_factory=list)
 
 
 class WorkflowEvaluationSummary(BaseModel):

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 from uuid import UUID
 
 from injector import inject
@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
+from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.db.models.agent import AgentModel
 from app.db.models.test_suite import (
     TestSuiteModel,
@@ -62,15 +63,18 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         ]
 
     async def get_cases_by_ids(
-        self, suite_id: UUID, case_ids: List[UUID]
+        self, suite_id: UUID, case_ids: List[UUID], include_deleted: bool = False
     ) -> List[TestCaseModel]:
-        """Fetch rows by ids; applies suite scope (DbRepository.get_by_ids doesn't)"""
+        """Fetch rows by ids; applies suite scope (DbRepository.get_by_ids doesn't).
+        include_deleted also returns removed turns, which past runs still show."""
         if not case_ids:
             return []
         stmt = select(TestCaseModel).where(
             TestCaseModel.suite_id == str(suite_id),
             TestCaseModel.id.in_(case_ids),
         )
+        if include_deleted:
+            stmt = stmt.execution_options(**{SOFT_DELETE_FLAG: True})
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
@@ -187,6 +191,25 @@ class TestRunRepository(DbRepository[TestRunModel]):
         result = await self.db.execute(stmt)
         return [str(run_id) for run_id in result.scalars().all()]
 
+    async def publish_progress(self, run_id: UUID, progress: dict) -> None:
+        """Write a run's progress in a transaction of its own, so it shows before the run's next commit"""
+        from sqlalchemy import text
+
+        from app.core.tenant_scope import get_tenant_context
+        from app.db.multi_tenant_session import multi_tenant_manager
+
+        session_factory = multi_tenant_manager.get_tenant_session_factory(get_tenant_context())
+        async with session_factory() as session:
+            # Progress is best effort; never wait long on the run's row.
+            await session.execute(text("SET LOCAL lock_timeout = '2s'"))
+            await session.execute(
+                update(TestRunModel)
+                .where(TestRunModel.id == run_id)
+                .values(progress=progress)
+                .execution_options(synchronize_session=False)
+            )
+            await session.commit()
+
     async def mark_orphaned_as_failed(
         self,
         waiting_ids: List[str],
@@ -240,6 +263,29 @@ class TestResultRepository(DbRepository[TestResultModel]):
         stmt = select(TestResultModel).where(TestResultModel.run_id == str(run_id))
         result = await self.db.execute(stmt)
         return result.scalars().all()
+
+    async def get_outcomes_for_run(self, run_id: UUID) -> List[Any]:
+        """Each result without its trace: the message the run sent and whether a trace exists."""
+        stmt = select(
+            TestResultModel.case_id,
+            TestResultModel.status,
+            TestResultModel.error,
+            TestResultModel.metrics,
+            TestResultModel.actual_output,
+            TestResultModel.execution_trace["input"].label("trace_input"),
+            # A trace dropped on store is JSON null, not SQL NULL, so both read as no trace.
+            (func.coalesce(func.jsonb_typeof(TestResultModel.execution_trace), "null") != "null").label("has_trace"),
+        ).where(TestResultModel.run_id == str(run_id))
+        result = await self.db.execute(stmt)
+        return result.all()
+
+    async def get_trace(self, run_id: UUID, case_id: UUID) -> Optional[dict]:
+        stmt = select(TestResultModel.execution_trace).where(
+            TestResultModel.run_id == str(run_id),
+            TestResultModel.case_id == str(case_id),
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
 
 
 @inject
@@ -383,12 +429,8 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
     def _search_condition(self, search: Optional[str]):
         if not search or not search.strip():
             return None
-        pattern = f"%{search.strip().lower()}%"
         evaluation = TestEvaluationModel
-        return or_(
-            func.lower(evaluation.name).like(pattern),
-            func.lower(func.coalesce(evaluation.description, "")).like(pattern),
-        )
+        return self._contains_condition(search, evaluation.name, func.coalesce(evaluation.description, ""))
 
     async def get_page_for_workflow(
         self,
@@ -435,22 +477,28 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
-    async def count_by_effective_workflow(self) -> List[Tuple[Optional[UUID], int]]:
+    async def count_by_effective_workflow(
+        self, search: Optional[str] = None
+    ) -> List[Tuple[Optional[UUID], int]]:
         """(workflow_id, count) per workflow; ``None`` = unassigned bucket.
 
-        Versions collapse onto one row, so a workflow never appears twice.
+        Versions collapse onto one row, so a workflow never appears twice. A search
+        counts only the evaluations it matches, and leaves out workflows with none.
         """
         group_key, _ = self._grouped_effective_workflow()
         stmt = self._grouped_select(
             group_key.label("workflow_id"), func.count().label("count")
         ).group_by(group_key)
+        matches = self._search_condition(search)
+        if matches is not None:
+            stmt = stmt.where(matches)
         result = await self.db.execute(stmt)
         return [(row.workflow_id, int(row.count)) for row in result.all()]
 
     async def get_latest_run_pointers(
-        self,
+        self, search: Optional[str] = None
     ) -> List[Tuple[Optional[UUID], List[str]]]:
-        """(workflow_id, run_ids) for every live evaluation.
+        """(workflow_id, run_ids) for every live evaluation, or those a search matches.
 
         Used to compute per-workflow health: ``run_ids[0]`` is each evaluation's
         latest run. Only the pointer lists are loaded here — not the runs. Keyed
@@ -461,6 +509,9 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         stmt = self._grouped_select(
             group_key.label("workflow_id"), TestEvaluationModel.run_ids
         )
+        matches = self._search_condition(search)
+        if matches is not None:
+            stmt = stmt.where(matches)
         result = await self.db.execute(stmt)
         return [(row.workflow_id, list(row.run_ids or [])) for row in result.all()]
 

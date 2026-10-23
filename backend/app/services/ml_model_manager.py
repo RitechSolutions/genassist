@@ -10,7 +10,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Tuple
 from uuid import UUID
 
 from injector import inject
@@ -119,7 +119,7 @@ class MLModelManager:
         if not hasattr(self, "_cached_models"):
             self._cached_models: Dict[str, CachedMLModel] = {}
             self._loading_locks: Dict[str, asyncio.Lock] = {}
-            self._validated_files: Set[str] = set()
+            self._validated_files: Dict[str, Tuple[int, int]] = {}
             logger.info("MLModelManager initialized")
 
     async def get_model(
@@ -222,7 +222,9 @@ class MLModelManager:
         """
         from app.core.utils.model_validator import validate_pickle_file_safe
 
-        is_valid, error = validate_pickle_file_safe(pkl_file)
+        # The exact-allowlist scan is pure Python; keep it off the event loop.
+        loop = asyncio.get_running_loop()
+        is_valid, error = await loop.run_in_executor(_MODEL_LOAD_EXECUTOR, validate_pickle_file_safe, pkl_file)
 
         if not is_valid:
             logger.error(f"Model validation failed: {pkl_file} - {error}")
@@ -256,14 +258,15 @@ class MLModelManager:
         if not os.path.exists(pkl_file):
             raise FileNotFoundError(f"Model file not found: {pkl_file}")
 
-        # Only run the expensive subprocess validation once per file path.
-        # Subsequent loads of the same file (e.g. after cache eviction due to
-        # timestamp change) skip it because the file was already proven safe.
-        if pkl_file not in self._validated_files:
-            # Step 1: Validate model in subprocess (prevents segfaults from crashing main app)
+        # Skip the static scan only when this exact file version already passed.
+        # A stale reload or retrain rewrites the same path, so key on (mtime, size).
+        file_stat = os.stat(pkl_file)
+        file_signature = (file_stat.st_mtime_ns, file_stat.st_size)
+        if self._validated_files.get(pkl_file) != file_signature:
+            # Step 1: Validate model without blocking the event loop
             logger.debug(f"Pre-validating model file: {pkl_file}")
             await self._validate_model_safe(pkl_file)
-            self._validated_files.add(pkl_file)
+            self._validated_files[pkl_file] = file_signature
 
         # Step 2: Load model in thread pool with timeout
         loop = asyncio.get_running_loop()
@@ -292,7 +295,7 @@ class MLModelManager:
         model_id_str = str(model_id)
         cached = self._cached_models.pop(model_id_str, None)
         if cached:
-            self._validated_files.discard(cached.pkl_file)
+            self._validated_files.pop(cached.pkl_file, None)
             logger.info(f"Invalidated cached model {model_id_str}")
 
     def clear_cache(self) -> None:

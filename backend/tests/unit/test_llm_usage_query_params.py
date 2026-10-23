@@ -1,6 +1,6 @@
 """Unit tests for the shared LLM usage query-param dependency"""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -37,6 +37,27 @@ def test_filters_are_carried_through():
     params = LlmUsageQueryParams(agent_id=agent_id, group_id=group_id, provider="OpenAI", model="GPT-4o")
     assert params.agent_id == agent_id and params.group_id == group_id
     assert params.provider == "OpenAI" and params.model == "GPT-4o"
+
+
+def test_exact_bounds_must_come_together():
+    with pytest.raises(HTTPException) as exc:
+        LlmUsageQueryParams(activity_from_datetime=datetime(2026, 7, 1, tzinfo=timezone.utc))
+    assert exc.value.status_code == 400
+
+
+def test_exact_bounds_must_be_timezone_aware():
+    with pytest.raises(HTTPException) as exc:
+        LlmUsageQueryParams(
+            activity_from_datetime=datetime(2026, 7, 1), activity_to_datetime=datetime(2026, 7, 8, tzinfo=timezone.utc)
+        )
+    assert exc.value.status_code == 400
+
+
+def test_exact_bounds_must_be_ordered():
+    instant = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    with pytest.raises(HTTPException) as exc:
+        LlmUsageQueryParams(activity_from_datetime=instant, activity_to_datetime=instant)
+    assert exc.value.status_code == 400
 
 
 def test_breakdown_dimensions_match_the_literal():

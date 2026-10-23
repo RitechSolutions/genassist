@@ -19,6 +19,8 @@ export type {
   DynamicChatItem,
   ScheduleItem,
   Translations,
+  StreamEvent,
+  StreamingReply,
 } from './types';
 export {
   parseInteractiveContentBlocks,

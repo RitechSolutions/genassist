@@ -27,8 +27,9 @@ from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, BaseMessageChunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
+from langgraph.constants import TAG_NOSTREAM
 
 from app.modules.workflow.llm.fallback_exceptions import (
     FALLBACK_PROVIDER_ID_KEY,
@@ -42,10 +43,11 @@ logger = logging.getLogger(__name__)
 __all__ = ["FallbackChatModel", "FALLBACK_PROVIDER_ID_KEY", "child_callback_config"]
 
 
-def child_callback_config(run_manager: Optional[Any]) -> Optional[dict]:
+def child_callback_config(run_manager: Optional[Any]) -> dict:
     """Config that nests a delegated call under the caller's run"""
+    config: dict = {"tags": [TAG_NOSTREAM]}
     if run_manager is None:
-        return None
+        return config
     from langchain_core.callbacks import AsyncCallbackManager, CallbackManager
 
     manager_cls = AsyncCallbackManager if isinstance(run_manager, AsyncCallbackManagerForLLMRun) else CallbackManager
@@ -53,7 +55,20 @@ def child_callback_config(run_manager: Optional[Any]) -> Optional[dict]:
     manager.set_handlers(run_manager.inheritable_handlers)
     manager.add_tags(list(run_manager.inheritable_tags or []))
     manager.add_metadata(dict(run_manager.inheritable_metadata or {}))
-    return {"callbacks": manager}
+    config["callbacks"] = manager
+    return config
+
+
+def as_chunk(message: BaseMessage) -> BaseMessageChunk:
+    """A child that cannot stream answers `astream` with one whole message, which a
+    ChatGenerationChunk rejects"""
+    if isinstance(message, BaseMessageChunk):
+        return message
+    return AIMessageChunk(**message.model_dump(exclude={"type"}))
+
+
+def _has_output(message: BaseMessage) -> bool:
+    return bool(message.content or getattr(message, "tool_call_chunks", None) or getattr(message, "tool_calls", None))
 
 
 class FallbackChatModel(BaseChatModel):
@@ -76,7 +91,7 @@ class FallbackChatModel(BaseChatModel):
         request_timeouts: Per-provider max wall-clock seconds to wait for a single
             attempt's reply before cancelling it and treating it as a retryable
             failure. Parallel to `models` (0 or missing = no limit for that
-            provider). For streaming this bounds time-to-first-token.
+            provider). For streaming it bounds the wait for each chunk.
     """
 
     models: List[Any]
@@ -209,21 +224,31 @@ class FallbackChatModel(BaseChatModel):
             timeout = _t if _t > 0 else None
             for attempt in range(self.retry_count + 1):
                 emitted = False
+                held: List[BaseMessage] = []
                 try:
                     aiter = model.astream(messages, config=config, **invoke_kwargs).__aiter__()
                     while True:
-                        # Bound time-to-first-token by the request timeout. Subsequent
-                        # chunks are not individually timed (mid-stream stalls are rare
-                        # and can't be cleanly failed over once tokens are emitted).
-                        if not emitted and timeout is not None:
+                        # Every chunk waits at most the request timeout, so a stream that stalls
+                        # after its first token ends the call instead of holding the turn.
+                        if timeout is not None:
                             chunk = await asyncio.wait_for(aiter.__anext__(), timeout=timeout)
                         else:
                             chunk = await aiter.__anext__()
+                        held.append(chunk)
+                        # Providers open with an empty chunk; holding it keeps failover open until real output.
+                        if not emitted and not _has_output(chunk):
+                            continue
                         if not emitted:
-                            self._stamp(chunk, idx)
+                            self._stamp(held[0], idx)
                             emitted = True
-                        yield ChatGenerationChunk(message=chunk)
+                        for message in held:
+                            yield ChatGenerationChunk(message=as_chunk(message))
+                        held.clear()
                 except StopAsyncIteration:
+                    if held:
+                        self._stamp(held[0], idx)
+                    for message in held:
+                        yield ChatGenerationChunk(message=as_chunk(message))
                     return  # stream finished normally
                 except BaseException as exc:  # noqa: BLE001
                     # Mid-stream failover is not supported: once tokens have been emitted
@@ -302,7 +327,7 @@ class FallbackChatModel(BaseChatModel):
                         if not emitted:
                             self._stamp(chunk, idx)
                             emitted = True
-                        yield ChatGenerationChunk(message=chunk)
+                        yield ChatGenerationChunk(message=as_chunk(chunk))
                     return
                 except BaseException as exc:  # noqa: BLE001
                     if emitted or not is_retryable(exc):

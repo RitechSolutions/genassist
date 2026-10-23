@@ -124,6 +124,25 @@ describe("analyzeCSV", () => {
     );
   });
 
+  it("includes File Manager identity for non-local CSV files", async () => {
+    mockApiRequest.mockResolvedValue({ row_count: 1 } as never);
+    await analyzeCSV(
+      "https://app.example/api/file-manager/files/file-1/source",
+      undefined,
+      { id: "file-1", name: "training.csv" },
+    );
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "ml-models/analyze-csv",
+      {
+        file_url: "https://app.example/api/file-manager/files/file-1/source",
+        file_id: "file-1",
+        file_name: "training.csv",
+      },
+      { timeout: API_PREPROCESSING_TIMEOUT_MS },
+    );
+  });
+
   it("throws when the response is falsy", async () => {
     mockApiRequest.mockResolvedValue(null as never);
     await expect(analyzeCSV("http://x/file.csv")).rejects.toThrow("Failed to analyze CSV");

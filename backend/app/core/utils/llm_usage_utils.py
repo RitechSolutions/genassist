@@ -73,8 +73,14 @@ def _standard_token_details(usage_metadata: Dict[str, Any]) -> Dict[str, Any]:
     for key in ("input_token_details", "output_token_details"):
         value = usage_metadata.get(key)
         if isinstance(value, dict) and value:
-            details[key] = value
+            details[key] = dict(value)
     return details
+
+
+def _openai_cache_write_tokens(response_metadata: Any) -> Optional[int]:
+    token_usage = response_metadata.get("token_usage") if isinstance(response_metadata, dict) else None
+    details = token_usage.get("prompt_tokens_details") if isinstance(token_usage, dict) else None
+    return _first_present(details, "cache_write_tokens")
 
 
 def extract_usage_from_response_metadata(metadata: Dict[str, Any]) -> Optional[Dict[str, int]]:
@@ -164,6 +170,9 @@ def extract_usage_from_aimessage(message: Any) -> Optional[Dict[str, Any]]:
                 "total_tokens": max(provider_total, input_tokens + output_tokens),
             }
             details = _standard_token_details(usage_metadata)
+            cache_write = _openai_cache_write_tokens(response_metadata)
+            if cache_write is not None:
+                details.setdefault("input_token_details", {}).setdefault("cache_creation", cache_write)
             if details:
                 usage["token_details"] = details
 

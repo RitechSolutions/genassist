@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
+from app.core.turn_stream import TokenSink
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,11 @@ class PIIAnonymizerMixin:
             del self.process
             del self._pii_history_token_items
             del self._pii_prompt_token_items
+
+    def chat_token_sink(self) -> Optional[TokenSink]:
+        if self.node_data.get("piiMasking"):
+            return None
+        return super().chat_token_sink()  # type: ignore[misc]
 
     def _mask_for_llm(self, text: str) -> str:
         """Mask PII in text added to a prompt during a run.

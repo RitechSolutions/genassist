@@ -44,6 +44,7 @@ export interface PipelineRunPromoteResult {
   model_updated: boolean;
   /** The pipeline config that is now the model's default. */
   default_config_id: string;
+  warnings: string[];
 }
 
 export interface PipelineRunCreatePayload {
@@ -64,4 +65,3 @@ export interface TrainingPipelineConfigUpdatePayload {
   is_default?: boolean;
   cron_schedule?: string | null;
 }
-

@@ -53,11 +53,6 @@ export const SuggestionDiffEditor: React.FC<SuggestionDiffEditorProps> = ({
 
       {view === "diff" ? (
         <div className="border rounded">
-          {before === suggestion && (
-            <p className="border-b px-3 py-2 text-xs italic text-muted-foreground">
-              No differences
-            </p>
-          )}
           <FieldChangeRow
             variant="embedded"
             change={{

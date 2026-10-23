@@ -63,6 +63,19 @@ def test_date_bounds_are_half_open_on_utc_days():
     assert "occurred_at < '2026-02-01 00:00:00+00:00'" in sql
 
 
+def test_exact_bounds_replace_the_utc_day_bounds():
+    params = LlmUsageQueryParams(
+        from_date=date(2026, 1, 1),
+        to_date=date(2026, 1, 31),
+        activity_from_datetime=datetime(2026, 1, 1, 15, 30, tzinfo=timezone.utc),
+        activity_to_datetime=datetime(2026, 1, 31, 9, 0, tzinfo=timezone.utc),
+    )
+    sql = _conditions_sql(params)
+    assert "occurred_at >= '2026-01-01 15:30:00+00:00'" in sql
+    assert "occurred_at < '2026-01-31 09:00:00+00:00'" in sql
+    assert "'2026-02-01 00:00:00+00:00'" not in sql
+
+
 def test_provider_and_model_filters_are_normalised():
     sql = _conditions_sql(LlmUsageQueryParams(provider=" OpenAI ", model=" GPT-4o "))
     assert "provider_key = 'openai'" in sql

@@ -59,8 +59,9 @@ export const SUB_AGENT_HELP_CONTENT: NodeHelpContent = {
       title: "Collaboration modes",
       bullets: [
         "Single Turn: answers once and returns to the parent.",
-        "Task: does a bounded job, may ask one clarifying question, then finishes.",
+        "Task: does a bounded job, may ask clarifying questions, then finishes.",
         "Chat: takes over the conversation until it hands control back.",
+        "Inside the sub-agent and its tools, {{session.message}} is the task the parent delegated, and later the user's replies to the sub-agent, not the user's original message.",
       ],
     },
     {
@@ -76,8 +77,9 @@ export const SUB_AGENT_HELP_CONTENT: NodeHelpContent = {
     {
       title: "Testing",
       bullets: [
-        "Node test button: a one-shot smoke run against a sample message with the sub-agent's own model, prompt, and tools. Task and Chat modes show either the result or the first clarifying question.",
-        "Full delegation (Task/Chat pause and resume) is exercised from the workflow test chat: the parent delegates, the sub-agent's question arrives as a normal reply, and your next message routes back to it.",
+        "Node test button: a one-shot run with the sub-agent's model and prompt, no tools. Task and Chat modes show either the result or the first clarifying question.",
+        "A sub-agent saved without a user prompt gets an empty message from the Node test button, so try real delegation in the workflow test chat.",
+        "Full delegation (Task/Chat pause and resume) is exercised from the workflow test chat. Set a Thread ID in the test inputs so follow-up messages reach the sub-agent: the parent delegates, the sub-agent's question arrives as a normal reply, and your next message routes back to it.",
         "Editing the workflow while a delegation is active invalidates that conversation; start a new one after saving changes.",
       ],
     },

@@ -9,6 +9,8 @@ from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.schemas.test_suite import (
     BatchRunsRequest,
+    RunConversations,
+    RunTurnTrace,
     TestResult,
     TestRun,
     TestRunCreate,
@@ -108,3 +110,30 @@ async def list_tool_rule_results_for_run(
 ):
     """Per-rule Tool Usage outcomes for a run (turn- and conversation-scoped)."""
     return await service.list_tool_rule_results_for_run(run_id)
+
+
+@router.get(
+    "/runs/{run_id}/conversations",
+    response_model=RunConversations,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def get_run_conversations(
+    run_id: UUID,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """A run's results by conversation: each one's verdict, its turns and its checks, without traces."""
+    return await service.get_run_conversations(run_id)
+
+
+@router.get(
+    "/runs/{run_id}/results/{case_id}/trace",
+    response_model=RunTurnTrace,
+    dependencies=[Depends(auth), Depends(permissions(P.Evaluation.READ))],
+)
+async def get_run_turn_trace(
+    run_id: UUID,
+    case_id: UUID,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """One turn's execution trace, for the steps it took."""
+    return await service.get_run_turn_trace(run_id, case_id)
