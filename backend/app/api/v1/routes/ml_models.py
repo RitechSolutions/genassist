@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import tempfile
 import uuid
 from decimal import Decimal
@@ -30,7 +31,7 @@ from app.modules.integration.database.read_only_sql import (
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.utils import has_volatile_template_vars
 from app.schemas.file import FileBase, FileUploadResponse
-from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate
+from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate, is_in_ml_models_dir
 from app.services.app_settings import AppSettingsService
 from app.services.file_manager import FileManagerService
 from app.services.ml_model_manager import get_ml_model_manager
@@ -182,6 +183,12 @@ async def upload_pkl_file(
 
         if created_file.storage_provider == "local":
             file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
+            # A custom file manager folder puts the file outside the ML models folder, where
+            # pkl_file is not accepted, so the model gets a copy inside it.
+            if not is_in_ml_models_dir(file_path):
+                copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
+                await asyncio.to_thread(shutil.copyfile, file_path, copy_path)
+                file_path = copy_path
             # file_path = await file_manager_service.get_file_url(created_file)
 
         file_id = str(created_file.id)
@@ -272,6 +279,13 @@ async def validate_model_file(
                 status_code=404,
                 detail="PKL file not found"
             )
+
+    # Fetch the uploaded file into the ML models folder when the saved path is not usable
+    from app.services.ml_model_manager import local_model_file
+    try:
+        await local_model_file(ml_model, service)
+    except Exception as e:
+        logger.warning(f"Could not fetch the model file for {ml_model_id}: {e}")
 
     # Get model info
     info = get_model_info(ml_model.pkl_file)
@@ -573,7 +587,10 @@ async def _resolve_csv_input(
             )
 
     if file_url and not file_url.startswith(("http://", "https://")):
-        local_path = ml_utils.resolve_csv_file_path(file_url)
+        # Only CSV files inside the data volume, or the configured storage folder, can be read
+        local_path = ml_utils.resolve_csv_file_path(
+            file_url, allowed_directories=await ml_utils.extra_csv_directories()
+        )
         _enforce_csv_input_byte_limit(local_path)
         return local_path, None
 

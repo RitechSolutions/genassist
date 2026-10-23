@@ -2,13 +2,21 @@
 
 import collections
 import operator
+import os
 import pickle
 import pty
 
 import pytest
 
+from app.core.utils import model_validator
 from app.core.utils.model_validator import validate_pickle_file_safe
 from tests.unit.core.utils.pickle_helpers import WriteFilePayload, call_global, pickle_unicode
+
+
+@pytest.fixture(autouse=True)
+def _ml_models_folder_is_tmp_path(monkeypatch, tmp_path):
+    # Model files are only read from inside the ML models folder; these tests write them to tmp_path
+    monkeypatch.setattr(model_validator, "ML_MODELS_DIR", os.path.realpath(tmp_path))
 
 
 def _validate_bytes(tmp_path, data: bytes):
