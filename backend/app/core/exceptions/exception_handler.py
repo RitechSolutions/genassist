@@ -3,73 +3,56 @@ import logging
 import os
 import re
 
-from fastapi import Request, WebSocket, WebSocketException
+from fastapi import HTTPException, Request, WebSocket, WebSocketException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions.error_messages import ErrorKey, get_error_message
+from app.core.exceptions.error_policy import client_safe_error_detail, sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException, UpstreamServiceError
 
 logger = logging.getLogger(__name__)
-
-# Errors whose detail is written for the end user and carries no internal
-# information, so it is returned outside dev too.
-_CLIENT_SAFE_DETAIL_KEYS = frozenset(
-    {
-        ErrorKey.SSO_MICROSOFT_OAUTH_ERROR,
-        ErrorKey.SSO_MICROSOFT_USER_DENIED,
-        ErrorKey.SSO_MICROSOFT_REDIRECT_NOT_ALLOWED,
-        ErrorKey.SSO_MICROSOFT_NOT_CONFIGURED,
-        ErrorKey.SSO_MICROSOFT_DISABLED,
-        # Says which reference could not be re-linked, or why the import was
-        # refused — the whole point is telling the user what to change.
-        ErrorKey.EVALUATION_BUNDLE_INVALID,
-    }
-)
-
-
-def _sanitize_public_error_detail(text: str, max_len: int = 450) -> str:
-    """Single-line hint for API clients; strips obvious secret patterns."""
-    if not text:
-        return ""
-    t = " ".join(str(text).split())
-    t = re.sub(
-        r"(client_secret|client_assertion|password|refresh_token|code_verifier)=[^\s&\"']+",
-        r"\1=***",
-        t,
-        flags=re.I,
-    )
-    return t[:max_len]
 
 
 def _response_error_detail(error: AppException) -> str | None:
     raw = (error.error_detail or "").strip()
     if not raw:
         return None
-    sanitized = _sanitize_public_error_detail(raw)
+    sanitized = sanitize_error_detail(raw)
     if not sanitized:
         return None
     if os.getenv("ENV") == "dev":
         return sanitized
-    if error.error_key in _CLIENT_SAFE_DETAIL_KEYS:
-        return sanitized
-    return None
+    return client_safe_error_detail(error)
+
+
+def _app_exception_body(request: Request, error: AppException) -> dict:
+    if error.error_detail:
+        logger.exception(error.error_detail)
+    logger.info(f"Handled bad request: {error}")
+    return {
+        'error': get_error_message(request=request, error_key=error.error_key, error_variables=error.error_variables),
+        'error_code': error.status_code,
+        'error_key': error.error_key.value,
+        'error_detail': _response_error_detail(error),
+        }
+
+
+def stream_error_body(request: Request, error: Exception) -> dict:
+    """The ``error`` frame a streamed chat turn sends in place of the JSON error response."""
+    if isinstance(error, AppException):
+        return _app_exception_body(request, error)
+    if isinstance(error, HTTPException):
+        return {'error': error.detail, 'error_code': error.status_code}
+    logger.exception("Streamed chat turn failed")
+    return {'error': get_error_message(request=request, error_key=ErrorKey.INTERNAL_ERROR), 'error_code': 500}
 
 
 def init_error_handlers(app):
     @app.exception_handler(AppException)
     def handle_app_exception(request: Request, error: AppException):
-        if error.error_detail:
-            logger.exception(error.error_detail)
-        logger.info(f"Handled bad request: {error}")
-        response = {
-            'error': get_error_message(request=request, error_key=error.error_key, error_variables=error.error_variables),
-            'error_code': error.status_code,
-            'error_key': error.error_key.value,
-            'error_detail': _response_error_detail(error),
-            }
-        return JSONResponse(content=jsonable_encoder(response), status_code=error.status_code)
+        return JSONResponse(content=jsonable_encoder(_app_exception_body(request, error)), status_code=error.status_code)
 
     @app.exception_handler(UpstreamServiceError)
     def handle_upstream_service_error(request: Request, error: UpstreamServiceError):
@@ -154,4 +137,3 @@ async def send_socket_error(websocket: WebSocket, error_key: ErrorKey, lang: str
         "error": get_error_message(error_key, lang=lang),
         "error_key": error_key.value,
         }))
-

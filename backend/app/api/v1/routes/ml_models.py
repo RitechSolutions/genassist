@@ -4,20 +4,32 @@ import os
 import shutil
 import tempfile
 import uuid
+from decimal import Decimal
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 import pandas as pd
+import sqlglot
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi_injector import Injected
+from pydantic import BaseModel
+from sqlglot import exp
 
 from app.auth.dependencies import auth, permissions
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.core.project_path import DATA_VOLUME
+from app.modules.integration.database.provider_manager import DBProviderManager
+from app.modules.integration.database.read_only_sql import (
+    SQLGLOT_DIALECTS,
+    read_only_sql_blocked_message,
+    validate_read_only_sql,
+)
 from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.utils import has_volatile_template_vars
 from app.schemas.file import FileBase, FileUploadResponse
 from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate, is_in_ml_models_dir
 from app.services.app_settings import AppSettingsService
@@ -35,6 +47,21 @@ os.makedirs(ML_MODELS_UPLOAD_DIR, exist_ok=True)
 
 # Maximum file size for .pkl files (500MB)
 MAX_PKL_FILE_SIZE = 500 * 1024 * 1024
+
+
+class ProfileDataRequest(BaseModel):
+    """Input for profiling an uploaded CSV or a database query result."""
+
+    source_type: Literal["csv", "datasource"] = "csv"
+    file_url: Optional[str] = None
+    file_id: Optional[UUID] = None
+    file_name: Optional[str] = None
+    data_source_id: Optional[UUID] = None
+    query: Optional[str] = None
+
+
+_require_data_source_read = permissions(P.DataSource.READ)
+_require_file_manager_read = permissions(P.FileManager.READ)
 
 
 @router.post("", response_model=MLModelRead, dependencies=[
@@ -284,7 +311,10 @@ async def validate_model_file(
     Depends(permissions(P.MlModel.READ))
 ])
 async def analyze_csv(
-    file_url: str = Body(..., embed=True, description="Path or URL to CSV file"),
+    request: Request,
+    file_url: Optional[str] = Body(None, embed=True, description="Path or URL to CSV file"),
+    file_id: Optional[UUID] = Body(None, embed=True, description="File Manager ID"),
+    file_name: Optional[str] = Body(None, embed=True, description="Original CSV file name"),
     python_code: Optional[str] = Body(None, embed=True, description="Optional Python code to preprocess data before analysis"),
     file_manager_service: FileManagerService = Injected(FileManagerService)
 ):
@@ -295,6 +325,10 @@ async def analyze_csv(
     - An absolute path (starting with /)
     - A relative path (will be checked in DATA_VOLUME/train directories)
     - A path within DATA_VOLUME
+    - A File Manager URL (resolved by ID, including S3-backed files)
+
+    A file_id can be supplied directly so non-local files do not need to be
+    fetched through their HTTP source URL.
 
     If python_code is provided, the data will be preprocessed using the Python code
     before analysis. The code should accept params with 'data' (list of dicts), 'df' (DataFrame),
@@ -315,30 +349,15 @@ async def analyze_csv(
             - min: Minimum value (for numeric)
             - max: Maximum value (for numeric)
     """
+    temporary_path: Optional[Path] = None
     try:
-        allowed_directories = await ml_utils.extra_csv_directories()
-        # Resolve and validate file path using shared utility
-        try:
-            # check if the file_url includes a valid file id
-            if file_url.startswith("http://") or file_url.startswith("https://"):
-                dest_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"csv_file_{uuid.uuid4()}.csv")
-                await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
-                file_path = dest_path
-            else:
-                file_path = ml_utils.resolve_csv_file_path(file_url, allowed_directories=allowed_directories)
-
-        except AppException as e:
-            # Convert AppException to HTTPException for API endpoint
-            if e.error_key == ErrorKey.FILE_NOT_FOUND:
-                raise HTTPException(
-                    status_code=404,
-                    detail=e.error_detail
-                )
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=e.error_detail
-                )
+        file_path, temporary_path = await _resolve_csv_input(
+            file_url=file_url,
+            file_id=file_id,
+            file_name=file_name,
+            request=request,
+            file_manager_service=file_manager_service,
+        )
 
         logger.info(f"Analyzing CSV file: {file_path}")
 
@@ -348,29 +367,33 @@ async def analyze_csv(
 
             try:
                 # Load the CSV file using shared utility
-                data, df = ml_utils.load_csv_file(file_url, allowed_directories=allowed_directories)
+                df = ml_utils.load_csv_file(str(file_path))
 
                 # Execute preprocessing code using shared utility
                 # Use raise_on_error=True to raise exceptions for API endpoint
                 processed_df, _, _ = await ml_utils.execute_and_process_preprocessing_code(
-                    python_code, data, df, str(file_path), raise_on_error=True
+                    python_code, df, str(file_path), raise_on_error=True
                 )
 
                 # Save processed data to a temporary CSV file
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as tmp_file:
                     processed_df.to_csv(tmp_file.name, index=False, encoding='utf-8')
                     temp_file_path = tmp_file.name
+                # Keep the column types the preprocessing code produced, so the
+                # analysis reports them the way the next node will see them.
+                dtypes_path = ml_utils.write_dtypes_sidecar(temp_file_path, processed_df)
 
                 try:
                     # Analyze the processed CSV file
                     analysis = ml_utils.analyze_csv_data(temp_file_path)
                     return analysis
                 finally:
-                    # Clean up temporary file
-                    try:
-                        os.unlink(temp_file_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to delete temporary file {temp_file_path}: {str(e)}")
+                    # Clean up temporary files
+                    for path in (temp_file_path, dtypes_path):
+                        try:
+                            os.unlink(path)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete temporary file {path}: {str(e)}")
 
             except AppException as e:
                 # Convert AppException to HTTPException for API endpoint
@@ -391,70 +414,397 @@ async def analyze_csv(
 
     except HTTPException:
         raise
-    except AppException:
-        raise
+    except AppException as exc:
+        if exc.status_code == 403:
+            raise
+        status_code = 404 if exc.error_key == ErrorKey.FILE_NOT_FOUND else 400
+        raise HTTPException(
+            status_code=status_code,
+            detail=exc.error_detail,
+        ) from exc
     except Exception as e:
         logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Error analyzing CSV file: {str(e)}"
         ) from e
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning(
+                    "Failed to delete temporary CSV preview file",
+                    exc_info=True,
+                )
 
 
-def _build_profile_report_html(file_path: str) -> str:
+def _build_profile_report_html(
+    file_path: str,
+    display_name: Optional[str] = None,
+) -> str:
     """Run ydata-profiling on a CSV file and return the report as an HTML string."""
+    path = Path(file_path)
+    try:
+        df = pd.read_csv(
+            path,
+            encoding="utf-8",
+            on_bad_lines="skip",
+            nrows=settings.ML_PROFILE_MAX_ROWS,
+        )
+    except pd.errors.EmptyDataError as exc:
+        raise HTTPException(status_code=400, detail="The file has no rows.") from exc
+
+    return _build_dataframe_profile_report_html(
+        df,
+        title=(
+            f"Data Profile: {Path(display_name).name if display_name else path.name} "
+            f"(up to {settings.ML_PROFILE_MAX_ROWS:,} rows)"
+        ),
+        empty_detail="The file has no rows.",
+    )
+
+
+def _normalize_profile_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert common driver objects into types understood by ydata-profiling."""
+    normalized = df.copy()
+    for column in normalized.columns:
+        non_null = normalized[column].dropna()
+        if non_null.empty:
+            continue
+        if non_null.map(lambda value: isinstance(value, Decimal)).all():
+            normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
+        elif non_null.map(lambda value: isinstance(value, UUID)).all():
+            normalized[column] = normalized[column].map(
+                lambda value: str(value) if isinstance(value, UUID) else value
+            )
+    return normalized
+
+
+def _build_dataframe_profile_report_html(
+    df: pd.DataFrame,
+    *,
+    title: str,
+    empty_detail: str = "The query returned no rows.",
+) -> str:
+    """Run ydata-profiling on an already-loaded dataframe."""
+    if df.empty:
+        raise HTTPException(status_code=400, detail=empty_detail)
+
     from ydata_profiling import ProfileReport
 
-    df = pd.read_csv(file_path, encoding="utf-8", on_bad_lines="skip")
-    profile = ProfileReport(df, title=f"Data Profile: {Path(file_path).name}")
+    profile = ProfileReport(_normalize_profile_dataframe(df), title=title)
     return profile.to_html()
 
 
-@router.post("/profile-csv", dependencies=[
+def _temporary_csv_path() -> Path:
+    """Create a closed temporary CSV path suitable for async downloads."""
+    with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as temp_file:
+        return Path(temp_file.name)
+
+
+async def _resolve_profile_csv(
+    profile_request: ProfileDataRequest,
+    request: Request,
+    file_manager_service: FileManagerService,
+) -> tuple[Path, Optional[Path]]:
+    """Resolve the CSV input used by data profiling."""
+    return await _resolve_csv_input(
+        file_url=profile_request.file_url,
+        file_id=profile_request.file_id,
+        file_name=profile_request.file_name,
+        request=request,
+        file_manager_service=file_manager_service,
+    )
+
+
+async def _resolve_csv_input(
+    *,
+    file_url: Optional[str],
+    file_id: Optional[UUID],
+    file_name: Optional[str],
+    request: Request,
+    file_manager_service: FileManagerService,
+) -> tuple[Path, Optional[Path]]:
+    """Resolve a local CSV or download a File Manager/non-local CSV.
+
+    The second tuple item identifies a temporary file owned by this request and
+    therefore requiring cleanup. Reading a File Manager record also requires
+    File Manager read permission; local paths do not.
+    """
+    if file_id is None and file_url:
+        file_id = await file_manager_service.extract_file_id_from_url(file_url)
+
+    if file_id is not None:
+        await _require_file_manager_read(request)
+        try:
+            stored_file = await file_manager_service.get_file_by_id(file_id)
+            if stored_file is None:
+                raise LookupError("File Manager record not found")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Could not access the selected CSV file. Check that it still "
+                    "exists and that the storage configuration is valid."
+                ),
+            ) from exc
+        _validate_file_manager_csv(stored_file)
+        # Reject from stored metadata before downloading the object.
+        stored_size = getattr(stored_file, "size", None)
+        if isinstance(stored_size, int):
+            _raise_if_csv_input_too_large(stored_size)
+
+        temp_path = _temporary_csv_path()
+        try:
+            await file_manager_service.download_file_to_path(
+                file_id,
+                str(temp_path),
+            )
+        except Exception as exc:
+            temp_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Could not access the selected CSV file. Check that it still "
+                    "exists and that the storage configuration is valid."
+                ),
+            ) from exc
+        try:
+            _enforce_csv_input_byte_limit(temp_path)
+        except HTTPException:
+            temp_path.unlink(missing_ok=True)
+            raise
+        return temp_path, temp_path
+
+    candidate_name = file_url or file_name
+    if candidate_name:
+        suffix = Path(candidate_name.split("?", maxsplit=1)[0]).suffix.lower()
+        if suffix and suffix != ".csv":
+            raise HTTPException(
+                status_code=400,
+                detail="Only CSV files can be previewed or profiled.",
+            )
+
+    if file_url and not file_url.startswith(("http://", "https://")):
+        # Only CSV files inside the data volume, or the configured storage folder, can be read
+        local_path = ml_utils.resolve_csv_file_path(
+            file_url, allowed_directories=await ml_utils.extra_csv_directories()
+        )
+        _enforce_csv_input_byte_limit(local_path)
+        return local_path, None
+
+    if file_url and file_url.startswith(("http://", "https://")):
+        temp_path = _temporary_csv_path()
+        try:
+            downloaded = await file_manager_service.download_file_from_url_to_path(
+                file_url,
+                str(temp_path),
+            )
+            if not downloaded:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Could not fetch the CSV file.",
+                )
+        except HTTPException:
+            temp_path.unlink(missing_ok=True)
+            raise
+        except Exception as exc:
+            temp_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail="Could not fetch the CSV file.",
+            ) from exc
+        try:
+            _enforce_csv_input_byte_limit(temp_path)
+        except HTTPException:
+            temp_path.unlink(missing_ok=True)
+            raise
+        return temp_path, temp_path
+
+    raise HTTPException(
+        status_code=400,
+        detail="A CSV file path, URL, or File Manager ID is required.",
+    )
+
+
+def _enforce_csv_input_byte_limit(file_path: Path) -> None:
+    """Apply the Train Data Source byte ceiling to preview/profile inputs."""
+    _raise_if_csv_input_too_large(file_path.stat().st_size)
+
+
+def _raise_if_csv_input_too_large(file_size: int) -> None:
+    if file_size <= settings.ML_EXTRACT_MAX_BYTES:
+        return
+
+    raise HTTPException(
+        status_code=413,
+        detail=(
+            f"The CSV file is {file_size:,} bytes, which exceeds the "
+            f"{settings.ML_EXTRACT_MAX_BYTES:,}-byte training-data limit."
+        ),
+    )
+
+
+def _validate_file_manager_csv(stored_file: object) -> None:
+    """Validate a File Manager record using server-controlled metadata."""
+    extension = str(getattr(stored_file, "file_extension", "") or "").strip()
+    if extension:
+        suffix = f".{extension.lstrip('.').lower()}"
+    else:
+        suffix = ""
+        for candidate in (
+            getattr(stored_file, "name", None),
+            getattr(stored_file, "path", None),
+        ):
+            if candidate:
+                suffix = Path(str(candidate)).suffix.lower()
+                if suffix:
+                    break
+
+    if suffix != ".csv":
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV files can be previewed or profiled.",
+        )
+
+
+async def _load_query_profile_dataframe(
+    request: ProfileDataRequest,
+) -> pd.DataFrame:
+    """Execute a validated read-only query and return its rows as a dataframe."""
+    if request.data_source_id is None or not (request.query or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="A data source and query are required for SQL profiling.",
+        )
+
+    provider = DBProviderManager.get_instance()
+    manager = await provider.get_database_manager(str(request.data_source_id))
+    if manager is None:
+        raise HTTPException(status_code=404, detail="Data source not found.")
+
+    query = request.query.strip()
+    if has_volatile_template_vars(query):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Profiling cannot resolve workflow variables. Replace {{...}} "
+                "with sample values before profiling."
+            ),
+        )
+
+    db_type = manager.get_db_type()
+    validation = validate_read_only_sql(query, db_type)
+    if not validation.is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=read_only_sql_blocked_message(validation),
+        )
+
+    dialect = SQLGLOT_DIALECTS[db_type.strip().lower()]
+    statement = sqlglot.parse_one(query, read=dialect)
+    existing_limit = statement.args.get("limit")
+    row_limit = settings.ML_PROFILE_MAX_ROWS
+    existing_count = None
+    if isinstance(existing_limit, exp.Limit):
+        existing_count = existing_limit.expression
+    elif isinstance(existing_limit, exp.Fetch):
+        existing_count = existing_limit.args.get("count")
+    if isinstance(existing_count, exp.Literal):
+        try:
+            row_limit = min(row_limit, int(existing_count.this))
+        except (TypeError, ValueError):
+            pass
+    profile_query = statement.limit(row_limit, copy=True).sql(dialect=dialect)
+
+    limited_validation = validate_read_only_sql(profile_query, db_type)
+    if not limited_validation.is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=read_only_sql_blocked_message(limited_validation),
+        )
+
+    try:
+        rows, error = await asyncio.wait_for(
+            manager.execute_read_query(profile_query),
+            timeout=settings.ML_EXTRACT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=408,
+            detail="The profiling query timed out.",
+        ) from exc
+
+    if error:
+        logger.error("Data profiling query failed: %s", error)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The profiling query failed. Check the selected columns and data source."
+            ),
+        )
+
+    dataframe = pd.DataFrame(rows)
+    if dataframe.empty:
+        raise HTTPException(status_code=400, detail="The query returned no rows.")
+    return dataframe
+
+
+@router.post("/profile-data", dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.READ))
 ])
-async def profile_csv(
-    file_url: str = Body(..., embed=True, description="Path or URL to CSV file"),
+@router.post("/profile-csv", include_in_schema=False, dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.READ))
+])
+async def profile_data(
+    profile_request: ProfileDataRequest,
+    request: Request,
     file_manager_service: FileManagerService = Injected(FileManagerService)
 ):
     """
-    Run pandas/ydata data profiling on a CSV file and return the report as a
-    downloadable HTML file.
-
-    The file_url can be:
-    - An absolute path (starting with /)
-    - A relative path (will be checked in DATA_VOLUME/train directories)
-    - A path within DATA_VOLUME
-    - An HTTP(S) URL (downloaded before profiling)
+    Profile a local/non-local CSV file or the result of a read-only SQL query.
     """
+    if profile_request.source_type == "datasource":
+        await _require_data_source_read(request)
+
+    temporary_path: Optional[Path] = None
     try:
-        try:
-            if file_url.startswith("http://") or file_url.startswith("https://"):
-                dest_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"csv_file_{uuid.uuid4()}.csv")
-                await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
-                file_path = dest_path
-            else:
-                file_path = ml_utils.resolve_csv_file_path(file_url, allowed_directories=await ml_utils.extra_csv_directories())
-        except AppException as e:
-            if e.error_key == ErrorKey.FILE_NOT_FOUND:
-                raise HTTPException(
-                    status_code=404,
-                    detail=e.error_detail
-                )
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=e.error_detail
-                )
+        if profile_request.source_type == "datasource":
+            logger.info(
+                "Profiling SQL results for datasource %s",
+                profile_request.data_source_id,
+            )
+            dataframe = await _load_query_profile_dataframe(profile_request)
+            html = await asyncio.to_thread(
+                _build_dataframe_profile_report_html,
+                dataframe,
+                title=(
+                    "Data Profile: SQL Query Results "
+                    f"(up to {settings.ML_PROFILE_MAX_ROWS:,} rows)"
+                ),
+            )
+            download_name = "query_profile.html"
+        else:
+            file_path, temporary_path = await _resolve_profile_csv(
+                profile_request,
+                request,
+                file_manager_service,
+            )
+            logger.info("Profiling CSV file: %s", file_path)
+            display_name = profile_request.file_name
+            if display_name is None and temporary_path is not None:
+                display_name = "data.csv"
+            html = await asyncio.to_thread(
+                _build_profile_report_html,
+                str(file_path),
+                display_name,
+            )
+            report_stem = Path(display_name or str(file_path)).stem
+            download_name = f"{report_stem}_profile.html"
 
-        logger.info(f"Profiling CSV file: {file_path}")
-
-        # ydata-profiling is CPU-bound and can take a while on large files;
-        # run it off the event loop so it doesn't block other requests.
-        html = await asyncio.to_thread(_build_profile_report_html, str(file_path))
-
-        download_name = f"{Path(str(file_path)).stem}_profile.html"
         return Response(
             content=html,
             media_type="text/html",
@@ -463,11 +813,24 @@ async def profile_csv(
 
     except HTTPException:
         raise
-    except AppException:
-        raise
+    except AppException as exc:
+        if exc.status_code == 403:
+            raise
+        status_code = 404 if exc.error_key == ErrorKey.FILE_NOT_FOUND else 400
+        raise HTTPException(status_code=status_code, detail=exc.error_detail) from exc
     except Exception as e:
-        logger.error(f"Error profiling CSV file: {str(e)}", exc_info=True)
+        logger.error("Error profiling data: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error profiling CSV file: {str(e)}"
+            detail="Error profiling data."
         ) from e
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning(
+                    "Failed to delete temporary profile file %s",
+                    temporary_path,
+                    exc_info=True,
+                )

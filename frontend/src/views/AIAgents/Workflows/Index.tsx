@@ -1,7 +1,6 @@
 import React, { useEffect } from "react";
 import { GraphFlow } from "./GraphFlow";
 import { registerAllNodeTypes } from "./nodeTypes";
-import nodeRegistry from "./registry/nodeRegistry";
 import { ReactFlowProvider } from "reactflow";
 
 // Initialize node types

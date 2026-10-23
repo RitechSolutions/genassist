@@ -11,17 +11,56 @@ from typing import Any, Dict, List, Literal, Optional
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
 
+from app.core import turn_stream
+from app.core.exceptions.error_messages import ErrorKey, get_error_message
+from app.core.exceptions.error_policy import (
+    client_safe_error_detail,
+    exception_location,
+    sanitize_error_detail,
+)
+from app.core.exceptions.exception_classes import AppException
 from app.core.observability.otel import (
     is_otel_runtime_enabled,
     record_workflow_node_duration,
 )
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
+from app.modules.workflow.engine.entry_nodes import is_entry_node_type
+from app.modules.workflow.engine.loops import LOOP_BODY_HANDLE
 from app.modules.workflow.engine.node_result import is_node_failure, node_failure
-from app.modules.workflow.engine.utils import extract_code_params, replace_config_vars
+from app.modules.workflow.engine.utils import describe_exception, extract_code_params, replace_config_vars
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 logger = logging.getLogger(__name__)
+
+# Node types whose work the chat widget may label. Only the coarse kind leaves the backend;
+# node names, ids and types never do, and unlisted types send nothing.
+_NODE_ACTIVITY_KINDS: dict[str, turn_stream.ActivityKind] = {
+    "knowledgeBaseNode": "knowledge",
+    "apiToolNode": "tool",
+    "openApiNode": "tool",
+    "pythonCodeNode": "tool",
+    "sqlNode": "tool",
+    "webSearchNode": "tool",
+    "webScraperNode": "tool",
+    "slackMessageNode": "tool",
+    "gmailNode": "tool",
+    "readMailsNode": "tool",
+    "calendarEventNode": "tool",
+    "whatsappToolNode": "tool",
+    "zendeskTicketNode": "tool",
+    "salesforceCaseNode": "tool",
+    "jiraNode": "tool",
+    "createWorkflowScheduleNode": "tool",
+    "mlModelInferenceNode": "tool",
+    "toolBuilderNode": "tool",
+}
+
+
+def _emit_node_activity(node_type: str, phase: turn_stream.ActivityPhase) -> None:
+    kind = _NODE_ACTIVITY_KINDS.get(node_type)
+    if kind:
+        turn_stream.emit_activity(kind, phase)
 
 
 class BaseNode(ABC):
@@ -34,6 +73,11 @@ class BaseNode(ABC):
     - Execution tracking
     - Input/output processing
     """
+
+    # Subclasses may opt into publishing only explicitly approved exception
+    # details in workflow-test results. Most nodes retain their existing error
+    # behavior until they are migrated deliberately.
+    client_safe_failure_messages = False
 
     def __init__(self, node_id: str, node_config: Dict[str, Any], state: WorkflowState):
         """
@@ -53,6 +97,10 @@ class BaseNode(ABC):
         self.execution_start_time: Optional[float] = None
         self.execution_end_time: Optional[float] = None
         self.code_params: Dict[str, Any] = {}
+        self.direct_input: Any = None
+        # Set by the engine when it builds the node for a run; None when the node
+        # is built as an agent tool. Lets a node run part of the graph (Loop).
+        self.engine: Any = None
 
         # Validate configuration
         self._validate_config()
@@ -63,6 +111,38 @@ class BaseNode(ABC):
             raise ValueError("Node ID is required")
         if not self.node_config:
             logger.warning(f"Node {self.node_id} has no configuration")
+
+    def _unresolved_config_fields(self) -> set[str]:
+        """Return config fields a subclass must resolve during processing."""
+        return set()
+
+    def _resolve_config_data(
+        self,
+        source_output: Any,
+        direct_input: Any,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Resolve config variables while preserving subclass-owned fields."""
+        config_data = self.node_config.get("data", {})
+        unresolved_fields = self._unresolved_config_fields()
+        config_to_resolve = {
+            key: value
+            for key, value in config_data.items()
+            if key not in unresolved_fields
+        }
+        resolved_config_data, replacements = replace_config_vars(
+            config=config_to_resolve,
+            state=self.state,
+            source_output=source_output,
+            direct_input=direct_input,
+        )
+        resolved_config_data.update(
+            {
+                key: config_data[key]
+                for key in unresolved_fields
+                if key in config_data
+            }
+        )
+        return resolved_config_data, replacements
 
     def get_name(self) -> str:
         """Get the node name from configuration."""
@@ -91,6 +171,14 @@ class BaseNode(ABC):
         JSONB column, so it is persisted with the workflow.
         """
         return bool(self.node_data.get("deactivated", False))
+
+    def get_bypass_next_nodes(self) -> Optional[List[str]]:
+        """Nodes to continue with when this node is deactivated.
+
+        ``None`` (the default) means every connected node. A node whose outputs
+        are not all "what comes next" (a Loop's body) overrides this.
+        """
+        return None
 
     def get_node_config(self, node_id: str):
         """Get the node config and type."""
@@ -145,6 +233,16 @@ class BaseNode(ABC):
         """Get the session context (session data) from workflow state."""
         return self.state.get_session()
 
+    def _is_unused_entry_source(self, source_id: str) -> bool:
+        """True for an entry node (Chat Input / Webhook Trigger) that did not
+        start this run. It never executes, so waiting on it would hang the
+        downstream node and reading it would yield nothing."""
+        entry_node_id = getattr(self.state, "entry_node_id", None)
+        if not entry_node_id or source_id == entry_node_id:
+            return False
+        _, node_type = self.get_node_config(source_id)
+        return is_entry_node_type(node_type)
+
     def get_source_nodes(self) -> List[str]:
         """Get all source nodes connected to this next node."""
         target_edges = self.state.target_edges
@@ -156,10 +254,28 @@ class BaseNode(ABC):
                 _, node_type = self.get_node_config(source_id)
                 if "toolBuilderNode" in node_type or "mcpNode" in node_type or "subAgentNode" in node_type:
                     continue
+                if self._is_unused_entry_source(source_id):
+                    continue
                 source_nodes.append(source_id)
 
         logger.debug(f"Found {len(source_nodes)} source nodes for next node {self.node_id}: {source_nodes}")
         return source_nodes
+
+    def is_source_ready(self, source_id: str) -> bool:
+        """Whether a source node has finished, so its output is there to read.
+
+        A Loop keeps the pass context in its output while it iterates. That is
+        for its body only: to every other node the loop has no output until it
+        has finished, however long a parallel branch has been waiting for it.
+        """
+        if self.state.get_node_output(source_id) is None:
+            return False
+        if source_id not in self.state.active_loops:
+            return True
+        return any(
+            edge.get("source") == source_id and edge.get("sourceHandle") == LOOP_BODY_HANDLE
+            for edge in self.state.target_edges.get(self.node_id, [])
+        )
 
     def check_if_requirement_satisfied(self) -> bool:
         """
@@ -175,8 +291,7 @@ class BaseNode(ABC):
 
         # Check if all source nodes have outputs
         for source_id in source_nodes:
-            source_output = self.state.get_node_output(source_id)
-            if source_output is None:
+            if not self.is_source_ready(source_id):
                 logger.debug(f"Source node {source_id} not ready for next node {self.node_id}")
                 return False
 
@@ -353,21 +468,21 @@ class BaseNode(ABC):
             else nullcontext()
         )
 
+        path_token = turn_stream.node_path.set((*turn_stream.node_path.get(), self.node_id))
+        _emit_node_activity(self.get_type(), "start")
         try:
             with span_cm as span:
                 try:
                     # Start execution tracking
                     self.start_execution()
+                    self.direct_input = direct_input
                     # self.set_node_input(input_data)
 
                     # Resolve configuration template variables
                     source_output = self.get_input_from_source()
-                    config_data = self.node_config.get("data", {})
-                    resolved_config_data, replacements = replace_config_vars(
-                        config=config_data,
-                        state=self.state,
-                        source_output=source_output,
-                        direct_input=direct_input,
+                    resolved_config_data, replacements = self._resolve_config_data(
+                        source_output,
+                        direct_input,
                     )
 
                     # Log replacements for debugging
@@ -405,7 +520,8 @@ class BaseNode(ABC):
                     failure = is_node_failure(result)
                     if failure is not None:
                         if span is not None and span.is_recording():
-                            span.set_status(Status(StatusCode.ERROR, str(failure.get("error"))))
+                            reason = truncate_for_log(redact_sensitive_substrings(str(failure.get("error"))), 500)
+                            span.set_status(Status(StatusCode.ERROR, reason))
                         flow_output = failure.get("output")
                         if flow_output is not None:
                             self.set_node_output(flow_output)
@@ -424,11 +540,61 @@ class BaseNode(ABC):
                     return result
 
                 except Exception as e:
+                    safe_location = None
+                    if self.client_safe_failure_messages:
+                        if isinstance(e, AppException):
+                            error_reason = client_safe_error_detail(e)
+                            if not error_reason and e.error_key != ErrorKey.INTERNAL_ERROR:
+                                error_reason = get_error_message(
+                                    e.error_key,
+                                    error_variables=e.error_variables,
+                                )
+                        else:
+                            error_reason = None
+                        error_reason = error_reason or get_error_message(ErrorKey.ML_EXTRACT_FAILED)
+                        log_reason = sanitize_error_detail(
+                            str(redact_sensitive_substrings(describe_exception(e))),
+                            max_len=2_000,
+                        ) or type(e).__name__
+                        safe_location = exception_location(e)
+                    else:
+                        # Masked and capped: this text reaches the run status, the trace and the agent
+                        error_reason = truncate_for_log(redact_sensitive_substrings(describe_exception(e)), 500)
+                        log_reason = error_reason
+
                     if span is not None and span.is_recording():
-                        span.record_exception(e)
-                        span.set_status(Status(StatusCode.ERROR, str(e)))
-                    error_msg = f"Error executing node {self.node_id}: {str(e)}"
-                    logger.error(error_msg, exc_info=True)
+                        if self.client_safe_failure_messages:
+                            span.add_event(
+                                "exception",
+                                {
+                                    "exception.type": type(e).__name__,
+                                    "exception.message": log_reason,
+                                    "genassist.exception.location": safe_location,
+                                },
+                            )
+                            span.set_status(Status(StatusCode.ERROR, log_reason))
+                        else:
+                            span.record_exception(e)
+                            span.set_status(Status(StatusCode.ERROR, log_reason))
+
+                    error_msg = f"Error executing node {self.node_id}: {error_reason}"
+                    if self.client_safe_failure_messages:
+                        # Full tracebacks repeat the raw exception message and
+                        # may include driver credentials. Keep a safe diagnostic
+                        # plus the exception type and innermost code location.
+                        logger.error(
+                            "Error executing node %s: %s (%s)",
+                            self.node_id,
+                            log_reason,
+                            safe_location,
+                        )
+                    else:
+                        logger.error(
+                            "Error executing node %s: %s",
+                            self.node_id,
+                            log_reason,
+                            exc_info=True,
+                        )
                     self.complete_execution(error=error_msg)
                     # Return a detectable failure envelope (not None) so a caller using
                     # this node as a tool learns it failed. Downstream engine flow is
@@ -437,6 +603,9 @@ class BaseNode(ABC):
                     return node_failure(error_msg, code=500)
         finally:
             record_workflow_node_duration(self.get_type(), time.perf_counter() - t0, success)
+            _emit_node_activity(self.get_type(), "end")
+            turn_stream.end_reply(self.node_id)
+            turn_stream.node_path.reset(path_token)
 
     @abstractmethod
     async def process(self, config: Dict[str, Any]) -> Any:
@@ -455,6 +624,17 @@ class BaseNode(ABC):
         """
         raise NotImplementedError("Subclasses must implement the process method")
 
+    def chat_token_sink(self) -> Optional[turn_stream.TokenSink]:
+        """Where this node streams its reply text in a streamed chat turn, or None"""
+        stream = turn_stream.current_stream.get()
+        if stream is None or not self.state.registry_managed:
+            return None
+        types = {node["id"]: node.get("type") for node in self.state.workflow.get("nodes", [])}
+        feeds_output = any(
+            types.get(edge.get("target")) == "chatOutputNode" for edge in self.state.source_edges.get(self.node_id, [])
+        )
+        return stream.text_sink(self.node_id) if feeds_output else None
+
     def get_input_from_source(self) -> Any:
         """
         Get the output from the last connected source node.
@@ -468,7 +648,11 @@ class BaseNode(ABC):
         """
         all_target_edges = self.get_state().target_edges
         target_edges = all_target_edges.get(self.node_id, [])
-        input_edges = [edge for edge in target_edges if edge.get("targetHandle", "") == "input"]
+        input_edges = [
+            edge
+            for edge in target_edges
+            if edge.get("targetHandle", "") == "input" and not self._is_unused_entry_source(edge["source"])
+        ]
         if not input_edges:
             logger.debug("No target edges found for node %s", self.node_id)
             return None

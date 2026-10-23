@@ -1,0 +1,234 @@
+import React from "react";
+import { AlertCircle, CheckCircle2, XCircle } from "lucide-react";
+import { Badge } from "@/components/badge";
+import type {
+  PromptEvalCaseResult,
+  PromptEvalResponse,
+} from "@/interfaces/promptEditor.interface";
+import { methodLabel } from "@/views/TestSuites/helpers/methodLabels";
+import {
+  ISOLATION_NOTE,
+  LEAKAGE_NOTE,
+  STALE_NOTE,
+  caseSpendLine,
+  caseStatusLabel,
+  formatAvgScore,
+  joinPairedRuns,
+  metricOutcomeLabel,
+  metricOutcomeOf,
+  metricScoreLabel,
+  snapshotHeader,
+  soleMetricEchoesVerdict,
+  spendComparisonLine,
+  summaryLine,
+  type MetricOutcome,
+  type ProviderFallback,
+} from "../../utils/promptEditorResults";
+import { Reveal } from "./Reveal";
+
+/** Only a verdict is coloured. A case that never ran is neutral, never a red score */
+const caseTone = (result: PromptEvalCaseResult): string => {
+  if (result.status !== "scored") return "border-border bg-muted/40";
+  if (result.verdict === "passed")
+    return "border-green-200 bg-green-50 dark:border-green-500/30 dark:bg-green-500/15";
+  if (result.verdict === "failed")
+    return "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/15";
+  return "border-border bg-muted/40";
+};
+
+const CaseIcon: React.FC<{ result: PromptEvalCaseResult }> = ({ result }) => {
+  if (result.status !== "scored")
+    return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
+  if (result.verdict === "passed")
+    return <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />;
+  if (result.verdict === "failed")
+    return <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />;
+  return <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />;
+};
+
+const METRIC_TONE: Record<MetricOutcome, string> = {
+  passed: "text-green-700 dark:text-green-400",
+  failed: "text-red-700 dark:text-red-400",
+  error: "text-amber-700 dark:text-amber-400",
+  not_evaluated: "text-amber-700 dark:text-amber-400",
+  not_applicable: "text-muted-foreground",
+};
+
+const AMBER_BANNER =
+  "text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/15 " +
+  "border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2 text-sm";
+
+const Field: React.FC<{ label: string; value: string; suffix?: string }> = ({
+  label,
+  value,
+  suffix,
+}) => (
+  <div>
+    <p className="font-medium text-muted-foreground">{label}</p>
+    <Reveal
+      label={label}
+      value={value}
+      suffix={suffix}
+      className="block w-full"
+      clip="line-clamp-3 whitespace-pre-wrap"
+    />
+  </div>
+);
+
+const CaseCard: React.FC<{ result: PromptEvalCaseResult }> = ({ result }) => {
+  const metrics = Object.entries(result.metrics ?? {});
+  const showMetrics = metrics.length > 0 && !soleMetricEchoesVerdict(result);
+  const notes = metrics.filter(
+    ([technique, metric]) =>
+      (technique === "llm_judge" || metric.error || metric.not_evaluated) &&
+      metric.comment &&
+      !metric.not_applicable,
+  );
+  const spend = caseSpendLine(result);
+  return (
+    <div className={`border rounded p-3 text-sm ${caseTone(result)}`}>
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <CaseIcon result={result} />
+        <span className="font-medium">{caseStatusLabel(result)}</span>
+        {result.case_score !== null && (
+          <span className="text-xs text-muted-foreground">
+            {formatAvgScore(result.case_score)}
+          </span>
+        )}
+        {spend && (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {spend}
+          </span>
+        )}
+      </div>
+      {result.error && (
+        <p className="text-xs text-muted-foreground mb-2">{result.error}</p>
+      )}
+      {(showMetrics || notes.length > 0) && (
+        <div className="space-y-1 mb-2">
+          {showMetrics && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+              {metrics.map(([technique, metric]) => {
+                const score = metricScoreLabel(metric);
+                return (
+                  <span key={technique} className="flex items-baseline gap-1">
+                    <span className="font-medium">{methodLabel(technique)}</span>
+                    <span className={METRIC_TONE[metricOutcomeOf(metric)]}>
+                      {metricOutcomeLabel(metric)}
+                    </span>
+                    {score && (
+                      <span className="text-muted-foreground">{score}</span>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {notes.map(([technique, metric]) => (
+            <Reveal
+              key={technique}
+              label={`${methodLabel(technique)} note`}
+              value={`${methodLabel(technique)}: ${metric.comment}`}
+              className="block w-full text-xs text-muted-foreground"
+              clip="line-clamp-1"
+            />
+          ))}
+        </div>
+      )}
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <Field label="Input" value={result.input} />
+        <Field label="Expected" value={result.expected} />
+        <Field
+          label="Actual"
+          value={result.actual}
+          suffix={result.actual_truncated ? " […shortened by the editor]" : undefined}
+        />
+      </div>
+    </div>
+  );
+};
+
+const Comparison: React.FC<{
+  baseline: PromptEvalResponse;
+  suggestion: PromptEvalResponse;
+}> = ({ baseline, suggestion }) => {
+  const joined = joinPairedRuns(baseline, suggestion);
+  const spendLine = spendComparisonLine(joined);
+  return (
+    <div className="border-t pt-3 space-y-2">
+      <p className="text-sm font-medium">
+        {joined.improved} improved · {joined.regressed} regressed ·{" "}
+        {joined.unchanged} unchanged
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {joined.compared} of {joined.rows.length} cases could be compared.
+      </p>
+      {spendLine && (
+        <p className="text-xs text-muted-foreground tabular-nums">{spendLine}</p>
+      )}
+      <div className="space-y-1 text-xs">
+        {joined.rows.map((row) => (
+          <div key={row.caseId} className="flex items-center gap-2">
+            <Reveal
+              label="Input"
+              value={row.baseline?.input ?? row.suggestion?.input ?? row.caseId}
+              className="text-muted-foreground flex-1 min-w-0"
+              clip="block truncate"
+            />
+            <span>{row.baseline ? caseStatusLabel(row.baseline) : "—"}</span>
+            <span className="text-muted-foreground">→</span>
+            <span>{row.suggestion ? caseStatusLabel(row.suggestion) : "—"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+interface PromptEvalResultsProps {
+  results: PromptEvalResponse;
+  title?: string;
+  /** The run no longer describes the current inputs. It stays on screen regardless */
+  stale: boolean;
+  /** Names the provider when the run itself carries no model fields */
+  providerFallback?: ProviderFallback;
+  /** Present for a paired hold-out run: the same cases under the current prompt */
+  comparison?: { baseline: PromptEvalResponse };
+  leaky?: boolean;
+}
+
+export const PromptEvalResults: React.FC<PromptEvalResultsProps> = ({
+  results,
+  title,
+  stale,
+  providerFallback,
+  comparison,
+  leaky,
+}) => (
+  <div className="space-y-3">
+    <div className="flex flex-wrap items-center gap-3">
+      {title && <p className="text-sm font-medium">{title}</p>}
+      <Badge variant="secondary">{summaryLine(results.summary)}</Badge>
+      <Badge variant="secondary">
+        Avg Score: {formatAvgScore(results.summary.avg_score)}
+      </Badge>
+    </div>
+
+    {stale && <div className={AMBER_BANNER}>{STALE_NOTE}</div>}
+
+    <p className="text-xs text-muted-foreground tabular-nums">
+      {snapshotHeader(results.provenance, providerFallback)}
+    </p>
+    <p className="text-xs text-muted-foreground">{ISOLATION_NOTE}</p>
+    {leaky && <p className="text-xs text-muted-foreground">{LEAKAGE_NOTE}</p>}
+    {comparison && (
+      <Comparison baseline={comparison.baseline} suggestion={results} />
+    )}
+
+    <div className="space-y-2">
+      {results.results.map((result, index) => (
+        <CaseCard key={result.case_id || index} result={result} />
+      ))}
+    </div>
+  </div>
+);

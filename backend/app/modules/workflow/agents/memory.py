@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Union, Optional
+from typing import Dict, Any, List, Set, Union, Optional
 import logging
 from datetime import datetime
 import json
@@ -1064,10 +1064,9 @@ class RedisConversationMemory(BaseConversationMemory):
             redis = await self._get_redis()
 
             # Delete all keys related to this conversation including stateful values
-            await redis.delete(self._message_key)
-            await redis.delete(self._metadata_key)
-            await redis.delete(self._conversation_key)
-            await redis.delete(self._stateful_key)
+            await redis.delete(
+                self._message_key, self._metadata_key, self._conversation_key, self._stateful_key
+            )
 
             logger.info(f"Deleted conversation data for thread {self.thread_id}")
 
@@ -1196,6 +1195,22 @@ class ConversationMemory:
     """Class to maintain conversation history across workflow executions"""
 
     _instances: Dict[str, "BaseConversationMemory"] = {}
+    # Threads forget() deletes along with their sub-agent threads; nothing else is tracked
+    _children: Dict[str, Set[str]] = {}
+    # Adopted threads, such as a sub-workflow's own thread, and the tracked thread they belong to
+    _owners: Dict[str, str] = {}
+
+    @classmethod
+    def _new_instance(cls, thread_id: str) -> "BaseConversationMemory":
+        if settings.REDIS_FOR_CONVERSATION:
+            return RedisConversationMemory(thread_id)
+        return InMemoryConversationMemory(thread_id)
+
+    @classmethod
+    def _tracked_root(cls, thread_id: str) -> Optional[str]:
+        root = str(thread_id).split(":sub:", 1)[0]
+        root = cls._owners.get(root, root)
+        return root if root in cls._children else None
 
     @classmethod
     def get_instance(cls, thread_id: str) -> "BaseConversationMemory":
@@ -1204,10 +1219,10 @@ class ConversationMemory:
             logger.info(
                 f"Creating new conversation memory instance for thread ID: {thread_id}"
             )
-            if settings.REDIS_FOR_CONVERSATION:
-                cls._instances[thread_id] = RedisConversationMemory(thread_id)
-            else:
-                cls._instances[thread_id] = InMemoryConversationMemory(thread_id)
+            cls._instances[thread_id] = cls._new_instance(thread_id)
+        root = cls._tracked_root(thread_id)
+        if root is not None and root != thread_id:
+            cls._children[root].add(thread_id)
         return cls._instances[thread_id]
 
     @classmethod
@@ -1215,6 +1230,41 @@ class ConversationMemory:
         """Drop one cached instance; used for sub-agent threads that would
         otherwise accumulate one entry per delegation"""
         cls._instances.pop(thread_id, None)
+
+    @classmethod
+    def track_children(cls, thread_id: str) -> None:
+        """Record the sub-agent threads this thread starts, so forget() deletes them too"""
+        cls._children.setdefault(thread_id, set())
+
+    @classmethod
+    def adopt(cls, parent_thread_id: str, thread_id: str) -> None:
+        """Have forget() delete a thread started for the parent's tracked thread, such as a sub-workflow's own thread"""
+        root = cls._tracked_root(parent_thread_id)
+        if root is not None:
+            cls._children[root].add(thread_id)
+            cls._owners[thread_id] = root
+
+    @classmethod
+    async def forget(cls, thread_id: str) -> None:
+        """Drop a thread's cached instance and stored data, and those of its tracked sub-agent threads"""
+        errors: List[Exception] = []
+        children = cls._children.pop(thread_id, set())
+        for child in children:
+            cls._owners.pop(child, None)
+        for tid in [thread_id, *sorted(children, key=str)]:
+            memory = cls._instances.pop(tid, None)
+            # A finished sub-agent thread was dropped from the cache but still has stored data.
+            if memory is None and tid != thread_id:
+                memory = cls._new_instance(tid)
+            delete_conversation = getattr(memory, "delete_conversation", None)
+            if not callable(delete_conversation):
+                continue
+            try:
+                await delete_conversation()
+            except Exception as exc:  # pylint: disable=broad-except
+                errors.append(exc)
+        if errors:
+            raise errors[0]
 
     @classmethod
     def clear_all(cls) -> None:

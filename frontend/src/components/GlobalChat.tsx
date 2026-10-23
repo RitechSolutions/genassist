@@ -2,7 +2,12 @@ import { GenAgentChat } from "genassist-chat-react";
 import { useEffect, useState } from "react";
 import { getApiUrl, getWsUrl } from "@/config/api";
 import { isWsEnabled, isPollEnabled } from "@/config/api";
-import { useChatTheme } from "@/hooks/useChatTheme";
+import { useChatTheme, useColorMode } from "@/hooks/useChatTheme";
+
+const BRAND_LOGO_URL =
+  "https://cdn.prod.website-files.com/689da2a76e017a77b0596d1c/694291f3d893f585af78bdd7_genassist_logo.svg";
+const BRAND_LOGO_DARK_URL =
+  "https://raw.githubusercontent.com/RitechSolutions/genassist/89b52401ca2367428bfc1df54ebf0051a313dc51/plugins/react/src/assets/logo_dark_mode.png";
 
 export const GlobalChat = () => {
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
@@ -17,6 +22,7 @@ export const GlobalChat = () => {
     fontFamily: "Roboto, Arial, sans-serif",
     fontSize: "14px",
   });
+  const colorMode = useColorMode();
   // const tenantId = localStorage.getItem('tenant_id') as string | undefined;
 
   useEffect(() => {
@@ -47,7 +53,7 @@ export const GlobalChat = () => {
       apiKey={genassistApiKey}
       // tenant={tenantId}
       headerTitle="Genassist Chat"
-      brandLogoUrl="https://cdn.prod.website-files.com/689da2a76e017a77b0596d1c/694291f3d893f585af78bdd7_genassist_logo.svg"
+      brandLogoUrl={colorMode === "dark" ? BRAND_LOGO_DARK_URL : BRAND_LOGO_URL}
       theme={theme}
       useWs={isWsEnabled}
       mode="floating"

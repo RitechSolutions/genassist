@@ -1,20 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import JsonViewer from "@/components/JsonViewer";
 import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
+import { ChevronLeft, Pencil, GitCompareArrows, Play, Loader2 } from "lucide-react";
 import {
-  ChevronLeft,
-  GitBranch,
-  GitCompareArrows,
-  Play,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Loader2,
-} from "lucide-react";
-import {
-  getTestRun,
   getTestRunsBatch,
   listTestCases,
   listResultsForRun,
@@ -26,53 +17,56 @@ import {
   getToolRuleResults,
   runTestEvaluation,
 } from "@/services/testEvaluations";
-import { TestResult, TestRun, TestSuite } from "@/interfaces/testSuite.interface";
+import { TestCase, TestResult, TestRun, TestSuite } from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
 import { WorkflowMinimal } from "@/interfaces/workflow.interface";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/dialog";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/resizable";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/skeleton";
 import { Progress } from "@/components/progress";
 import { PaginationBar } from "@/components/PaginationBar";
-import { TooltipProvider } from "@/components/RadixTooltip";
-import { TooltipButton } from "@/components/tooltip-button";
 import { cn } from "@/helpers/utils";
-import { RuleResults } from "./RuleResults";
-import { RuleResultCard } from "./RuleResultCard";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
-import { CompareRunsDialog } from "./CompareRunsDialog";
-import { MetricRuleBreakdown } from "./MetricRuleBreakdown";
 import { methodLabel } from "../helpers/methodLabels";
 import {
-  groupByTechnique,
-  isRuleTechnique,
-  isResultFailed,
-  isTurnScope,
-  isResultNotScored,
-  isResultPassed,
-  notScoredLabel,
+  isRunInProgress,
+  checksConversations,
+  checksVerdictText,
+  numberRuns,
   runAvgAccuracy,
+  runGradesTurns,
+  runFailureText,
+  runHasResults,
+  runName,
+  runProgressText,
+  runStatusLabel,
+  turnsPassed,
 } from "../helpers/runResults";
-
-type ResultFilter = "all" | "passed" | "failed" | "not_scored";
+import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
+import { CHECKS_TECHNIQUE, checkConversations, leftOutNote, parseChecks } from "../helpers/checks";
+import { ChecksDialog } from "./ChecksDialog";
+import { CompareConversationView } from "./CompareConversationView";
+import { ConversationResultView } from "./ConversationResultView";
+import { LeftOutNote } from "./LeftOutNote";
+import { RunCompareView } from "./RunCompareView";
+import { RunResultsView } from "./RunResultsView";
+import { type RunContext, VerdictTally } from "./resultsParts";
+import { runConversationCounts, tallySlots } from "../helpers/runConversations";
+import {
+  backFromConversation,
+  isComparing,
+  type ResultsLocation,
+  type ResultsMove,
+} from "../helpers/resultsLocation";
+import { useEvaluationCatalog } from "../hooks/useEvaluationData";
+import { useChecksPreview, withPreview } from "../hooks/useChecksPreview";
 
 const RUNS_PAGE_SIZE = 6;
+const RUNNING_POLL_MS = 5000;
+const NO_RUNS: TestRun[] = [];
+const NO_RUN_IDS: string[] = [];
+const AVG_SCORE_HINT = "Avg score: the average of each method's pass rate";
 
 /** Execution counts the backend stores alongside the per-technique metrics. */
 const RUN_TOTALS_KEY = "_totals";
-// Tool Usage has its own dedicated, readable section, so it is left out of the
-// generic per-technique summary grid to avoid a confusing "Avg Score" card.
-const TOOL_USED_TECHNIQUE = "tool_used";
 
 interface RunTotals {
   cases: number;
@@ -96,62 +90,16 @@ export interface EvaluationDetailPanelProps {
    * workflow page; the in-tab caller ignores it.
    */
   onWorkflowResolved?: (workflowId: string | null) => void;
+  /** The run, conversation or comparison open in the evaluation. The standalone page keeps it in the URL. */
+  resultsView?: ResultsLocation | null;
+  onResultsViewChange?: (view: ResultsLocation | null, move?: ResultsMove) => void;
+  /** Opens the editor; without it, the standalone editor page opens. */
+  onEditEvaluation?: (evaluationId: string) => void;
+  /** Shown inside the workflow's builder, so links stay in it or open apart. */
+  embedded?: boolean;
+  /** The version Run preselects, such as the one open in the builder; the active one when left out. */
+  runVersionId?: string;
 }
-
-const getMetricSourceLabel = (
-  technique: string,
-  config: Record<string, unknown> | undefined
-): string | null => {
-  switch (technique) {
-    case "exact_match":
-    case "contains":
-    case "json_match":
-      return "Expected Output";
-    case "not_contains": {
-      const hasPhrases = Array.isArray(config?.phrases) ? (config.phrases as unknown[]).length > 0 : Boolean(config?.text);
-      return hasPhrases ? "Configured forbidden phrases" : "Forbidden phrases";
-    }
-    case "field_equals":
-      return config?.expected !== undefined ? "Configured expected value" : "Expected Output";
-    case "nli_eval": {
-      const evidenceField = config?.evidence_field as string | undefined;
-      return evidenceField ? `Run data: ${evidenceField}` : "Expected Output (evidence)";
-    }
-    case "provenance_eval": {
-      const contextField = config?.context_field as string | undefined;
-      return contextField ? `Run data: ${contextField}` : "Expected Output (context)";
-    }
-    case "llm_judge": {
-      const sourceField = config?.source_field as string | undefined;
-      return sourceField ? `Run data: ${sourceField}` : "Rubric only (no source)";
-    }
-    default:
-      return null;
-  }
-};
-
-// True only when the metric actually grades against the test case's expected output.
-// The configurable metrics fall back to expected output unless a config override
-// points them elsewhere (an inline expected value, or an evidence/context field).
-const usesExpectedOutput = (
-  technique: string,
-  config: Record<string, unknown> | undefined
-): boolean => {
-  switch (technique) {
-    case "exact_match":
-    case "contains":
-    case "json_match":
-      return true;
-    case "field_equals":
-      return config?.expected === undefined;
-    case "nli_eval":
-      return !config?.evidence_field;
-    case "provenance_eval":
-      return !config?.context_field;
-    default:
-      return false;
-  }
-};
 
 const accuracyTextClass = (acc: number): string =>
   acc >= 0.9
@@ -159,6 +107,16 @@ const accuracyTextClass = (acc: number): string =>
     : acc >= 0.7
       ? "text-amber-600 dark:text-amber-400"
       : "text-red-600 dark:text-red-400";
+
+const accuracyBarClass = (acc: number): string =>
+  acc >= 0.9 ? "bg-green-600" : acc >= 0.7 ? "bg-amber-600" : "bg-red-600";
+
+const SummaryItem: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="min-w-0">
+    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+    <div className="mt-1 min-w-0 text-sm">{children}</div>
+  </div>
+);
 
 // "completed" is the happy path and adds no signal, so it is not badged — only
 // in-progress and failure states show.
@@ -168,46 +126,66 @@ const RunStatusBadge: React.FC<{ status: string }> = ({ status }) => {
   return (
     <Badge variant="outline" className="flex items-center gap-1 shrink-0">
       {inProgress && <Loader2 className="h-3 w-3 animate-spin" />}
-      {status}
+      {runStatusLabel(status)}
     </Badge>
   );
 };
 
+/** A run's name, the workflow version it played and when, one to a line. */
+const RunFacts: React.FC<{ run: TestRun }> = ({ run }) => (
+  <div className="min-w-0 space-y-0.5">
+    <div className="flex items-center gap-2">
+      <span className="font-semibold">{runName(run)}</span>
+      {/* A failed run says so beside it, with why. */}
+      {run.status !== "failed" && <RunStatusBadge status={run.status} />}
+    </div>
+    {run.workflow_version && (
+      <div className="text-xs text-muted-foreground">
+        Workflow version: <span className="text-foreground">{run.workflow_version}</span>
+      </div>
+    )}
+    <div className="text-xs text-muted-foreground">
+      Ran on: <span className="text-foreground">{new Date(run.created_at ?? "").toLocaleString()}</span>
+    </div>
+  </div>
+);
+
 /**
- * A single evaluation's detail — configuration, last run, previous executions,
- * run comparison and the run-details dialog. Extracted from EvaluationDetailPage
- * so the standalone `/tests` route and the workflow builder's Evaluations tab
- * share one implementation. Renders content only (no page chrome); callers wrap
- * it in PageLayout or the tab's scroll container.
+ * One evaluation: its summary, last run and runs, and the results, conversation and
+ * comparison views they open. Shared by the evaluation's page and the workflow
+ * builder's Evaluations tab. Renders content only (no page chrome).
  */
 export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   evaluationId,
   onBack,
   backLabel = "Back",
   onWorkflowResolved,
+  resultsView,
+  onResultsViewChange,
+  onEditEvaluation,
+  embedded = false,
+  runVersionId,
 }) => {
-  const [isRunning, setIsRunning] = useState(false);
-  const [isLoadingResults, setIsLoadingResults] = useState(false);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null);
-  const [isRunDetailsOpen, setIsRunDetailsOpen] = useState(false);
-  const [runs, setRuns] = useState<TestRun[]>([]);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [ownResultsView, setOwnResultsView] = useState<ResultsLocation | null>(null);
+  const view = onResultsViewChange ? resultsView ?? null : ownResultsView;
+  const setView = (next: ResultsLocation | null, move?: ResultsMove) =>
+    onResultsViewChange ? onResultsViewChange(next, move) : setOwnResultsView(next);
+  const topRef = useRef<HTMLDivElement>(null);
+  const [isStarting, setIsStarting] = useState(false);
   const [resultsByRun, setResultsByRun] = useState<Record<string, TestResult[]>>({});
   const [ruleResultsByRun, setRuleResultsByRun] = useState<Record<string, TestToolRuleResult[]>>({});
   const [suite, setSuite] = useState<TestSuite | null>(null);
   const [workflowName, setWorkflowName] = useState<string>("Dataset default");
   const [workflowAgentId, setWorkflowAgentId] = useState<string | null>(null);
   const [isVersionDialogOpen, setIsVersionDialogOpen] = useState(false);
-  const [isCompareOpen, setIsCompareOpen] = useState(false);
-  const [expectedOutputByCaseId, setExpectedOutputByCaseId] = useState<
-    Record<string, Record<string, unknown> | undefined>
-  >({});
-  const [inputByCaseId, setInputByCaseId] = useState<
-    Record<string, Record<string, unknown> | undefined>
-  >({});
-  const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
-  const [isLoadingRuns, setIsLoadingRuns] = useState(true);
+  const [suiteCases, setSuiteCases] = useState<TestCase[]>([]);
+  const [suiteCasesFor, setSuiteCasesFor] = useState<string | null>(null);
+  const [suiteCasesFailed, setSuiteCasesFailed] = useState(false);
   const [runsPage, setRunsPage] = useState(1);
+  const [showChecks, setShowChecks] = useState(false);
+  const [allWorkflows, setAllWorkflows] = useState<WorkflowMinimal[]>([]);
 
   const [evaluation, setEvaluation] = useState<
     Awaited<ReturnType<typeof getTestEvaluationById>>
@@ -216,26 +194,36 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   useEffect(() => {
     if (!evaluationId) return;
     setRunsPage(1);
-    getTestEvaluationById(evaluationId).then(setEvaluation);
+    // A failed load ends the loading state instead of leaving skeletons up.
+    getTestEvaluationById(evaluationId)
+      .then(setEvaluation)
+      .catch(() => setEvaluation(null));
   }, [evaluationId]);
 
-  // Report the evaluation's own workflow id so the standalone route can send
-  // "back" to the correct workflow page (null → the dataset-default / unassigned).
+  // Keyed on fields, so a run_ids change after Run does not refetch the context.
+  const evaluationLoaded = Boolean(evaluation);
+  const evaluationSuiteId = evaluation?.suite_id;
+  const evaluationWorkflowId = evaluation?.workflow_id ?? null;
+
+  // Report the workflow it runs, its own or else its dataset's, so "back" finds where it is listed
+  // (null → unassigned).
+  const datasetWorkflowId = suite?.workflow_id ?? null;
   useEffect(() => {
-    if (evaluation) onWorkflowResolved?.(evaluation.workflow_id ?? null);
-  }, [evaluation, onWorkflowResolved]);
+    if (evaluationLoaded) onWorkflowResolved?.(evaluationWorkflowId ?? datasetWorkflowId);
+  }, [evaluationLoaded, evaluationWorkflowId, datasetWorkflowId, onWorkflowResolved]);
 
   useEffect(() => {
     const loadContext = async () => {
-      if (!evaluation) return;
+      if (!evaluationLoaded) return;
       const [suites, workflows] = await Promise.all([
         listTestSuites(),
         getWorkflowsMinimal(),
       ]);
-      const suiteData = (suites ?? []).find((item) => item.id === evaluation.suite_id);
+      setAllWorkflows(workflows ?? []);
+      const suiteData = (suites ?? []).find((item) => item.id === evaluationSuiteId);
       setSuite(suiteData ?? null);
       const workflowData = (workflows ?? []).find(
-        (item: WorkflowMinimal) => item.id === evaluation.workflow_id,
+        (item: WorkflowMinimal) => item.id === evaluationWorkflowId,
       );
       setWorkflowName(
         workflowData?.agent_name || workflowData?.name || "Dataset default",
@@ -243,183 +231,169 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
       setWorkflowAgentId(workflowData?.agent_id ?? null);
     };
     loadContext();
-  }, [evaluation]);
+  }, [evaluationLoaded, evaluationSuiteId, evaluationWorkflowId]);
 
   useEffect(() => {
-    const loadExpectedOutputs = async () => {
+    const loadCases = async () => {
       if (!evaluation?.suite_id) {
-        setExpectedOutputByCaseId({});
+        setSuiteCases([]);
         return;
       }
-      const cases = await listTestCases(evaluation.suite_id);
-      const expectedMapping: Record<string, Record<string, unknown> | undefined> = {};
-      const inputMapping: Record<string, Record<string, unknown> | undefined> = {};
-      (cases ?? []).forEach((testCase) => {
-        if (testCase.id) {
-          expectedMapping[testCase.id] = testCase.expected_output;
-          inputMapping[testCase.id] = testCase.input_data;
-        }
-      });
-      setExpectedOutputByCaseId(expectedMapping);
-      setInputByCaseId(inputMapping);
+      setSuiteCasesFailed(false);
+      let cases: TestCase[] | null;
+      try {
+        cases = await listTestCases(evaluation.suite_id);
+      } catch {
+        setSuiteCasesFailed(true);
+        return;
+      }
+      setSuiteCases(cases ?? []);
+      setSuiteCasesFor(evaluation.suite_id);
     };
-    loadExpectedOutputs();
+    loadCases();
   }, [evaluation?.suite_id]);
 
-  useEffect(() => {
-    const loadRuns = async () => {
-      setIsLoadingRuns(true);
-      try {
-        if (!evaluation?.run_ids?.length) {
-          setRuns([]);
-          return;
-        }
-        const runData = await getTestRunsBatch(evaluation.run_ids);
-        setRuns(
-          (runData ?? [])
-            .filter(Boolean)
-            .sort(
-              (a, b) =>
-                new Date(b?.created_at ?? 0).getTime() -
-                new Date(a?.created_at ?? 0).getTime(),
-            ) as TestRun[],
-        );
-      } finally {
-        setIsLoadingRuns(false);
-      }
-    };
-    loadRuns();
-  }, [evaluation]);
+  const runIds = evaluation?.run_ids ?? NO_RUN_IDS;
+  const runsQueryKey = (ids: string[]) => ["evaluation-runs", evaluationId, ids];
 
+  // Polls while any run is queued or running, so a page opened mid-run still updates.
+  const { data: runsData, isLoading: isRunsQueryLoading } = useQuery({
+    queryKey: runsQueryKey(runIds),
+    queryFn: async () =>
+      ((await getTestRunsBatch(runIds)) ?? [])
+        .filter(Boolean)
+        .sort(
+          (a, b) =>
+            new Date(b?.created_at ?? 0).getTime() - new Date(a?.created_at ?? 0).getTime(),
+        ),
+    enabled: runIds.length > 0,
+    staleTime: 0,
+    // Keeps the list while a new run id changes the key, never another evaluation's runs.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === evaluationId ? previous : undefined,
+    refetchInterval: (query) =>
+      (query.state.data ?? []).some(isRunInProgress) ? RUNNING_POLL_MS : false,
+  });
+  const runs = useMemo(
+    () => (runIds.length > 0 ? numberRuns(runsData ?? NO_RUNS, runIds) : NO_RUNS),
+    [runsData, runIds],
+  );
+  const isRunning = isStarting || runs.some(isRunInProgress);
+  // Still loading until the evaluation says which runs it has.
+  const isLoadingRuns = evaluation === undefined || (runIds.length > 0 && isRunsQueryLoading);
+
+  // A finished run's results never change, so each is fetched once and shared.
+  const finishedRunLoads = useRef(new Map<string, Promise<void>>());
+  // The newest load per run; an older, slower response must not overwrite it.
+  const latestRunLoad = useRef(new Map<string, number>());
+
+  const loadRunResults = useCallback((runId: string, finished: boolean): Promise<void> => {
+    const pending = finished ? finishedRunLoads.current.get(runId) : undefined;
+    if (pending) return pending;
+    const ticket = (latestRunLoad.current.get(runId) ?? 0) + 1;
+    latestRunLoad.current.set(runId, ticket);
+    const load = (async () => {
+      const [data, ruleRows] = await Promise.all([
+        listResultsForRun(runId),
+        getToolRuleResults(runId).catch(() => []),
+      ]);
+      if (latestRunLoad.current.get(runId) !== ticket) return;
+      setResultsByRun((prev) => ({ ...prev, [runId]: data ?? [] }));
+      setRuleResultsByRun((prev) => ({ ...prev, [runId]: ruleRows ?? [] }));
+    })();
+    if (finished) {
+      finishedRunLoads.current.set(runId, load);
+      // A failed load may be retried.
+      load.catch(() => finishedRunLoads.current.delete(runId));
+    }
+    return load;
+  }, []);
+
+  // Runs are sorted newest-first, so the most recent is the summary for the header.
+  const lastRun = runs[0];
+  const lastRunId = lastRun?.id;
+  const lastRunStatus = lastRun?.status;
+  // A run that counted its conversations reads by conversation, with no results to load.
+  const lastRunCounts = runConversationCounts(lastRun);
+  const hasLastRunCounts = Boolean(lastRunCounts);
+
+  // The Last Run card counts turns passed, so it loads the run's results once it completes.
   useEffect(() => {
-    const loadSelectedRunResults = async () => {
-      if (!selectedRunId) return;
-      setSelectedCaseId(null);
-      setResultFilter("all");
-      setIsLoadingResults(true);
-      try {
-        const [data, ruleRows] = await Promise.all([
-          listResultsForRun(selectedRunId),
-          getToolRuleResults(selectedRunId).catch(() => []),
-        ]);
-        setResultsByRun((prev) => ({ ...prev, [selectedRunId]: data ?? [] }));
-        setRuleResultsByRun((prev) => ({ ...prev, [selectedRunId]: ruleRows ?? [] }));
-      } finally {
-        setIsLoadingResults(false);
-      }
-    };
-    loadSelectedRunResults();
-  }, [selectedRunId]);
+    if (!lastRunId || lastRunStatus !== "completed" || hasLastRunCounts) return;
+    // A failed load falls back to "No score" instead of a skeleton that never resolves.
+    loadRunResults(lastRunId, true).catch(() =>
+      setResultsByRun((prev) => ({ ...prev, [lastRunId]: prev[lastRunId] ?? [] })),
+    );
+  }, [lastRunId, lastRunStatus, hasLastRunCounts, loadRunResults]);
+
+  // Each results view opens at its top, with focus on it rather than on the row that opened it.
+  useEffect(() => {
+    if (!view) return;
+    topRef.current?.scrollIntoView({ block: "start" });
+    topRef.current?.focus({ preventScroll: true });
+  }, [view?.runId, view?.conversation, view?.compareWith]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRunEvaluation = async (targetWorkflowId?: string) => {
     if (!evaluation || !evaluationId) return;
-    setIsRunning(true);
+    setIsStarting(true);
     try {
       const created = await runTestEvaluation(evaluationId, targetWorkflowId);
       if (created?.id) {
-        setRuns((prev) => [created, ...prev]);
+        // Show the new run at once; the runs query polls it until it finishes.
+        const nextRunIds = [created.id, ...runIds];
+        queryClient.setQueryData(runsQueryKey(nextRunIds), [created, ...runs]);
+        setEvaluation((prev) => (prev ? { ...prev, run_ids: nextRunIds } : prev));
         setRunsPage(1); // jump back to the first page so the new run is visible
-
-        // Poll every 10 seconds until the run reaches a terminal state.
-        const pollInterval = setInterval(async () => {
-          const updated = await getTestRun(created.id);
-          if (!updated) return;
-          setRuns((prev) =>
-            prev.map((r) => (r.id === updated.id ? (updated as TestRun) : r))
-          );
-          if (updated.status === "completed" || updated.status === "failed") {
-            clearInterval(pollInterval);
-            setIsRunning(false);
-            const [results, ruleRows] = await Promise.all([
-              listResultsForRun(created.id),
-              getToolRuleResults(created.id).catch(() => []),
-            ]);
-            setResultsByRun((prev) => ({ ...prev, [created.id]: results ?? [] }));
-            setRuleResultsByRun((prev) => ({ ...prev, [created.id]: ruleRows ?? [] }));
-          }
-        }, 10_000);
-        // Return early — setIsRunning(false) is handled by the interval above.
-        return;
       }
     } catch (error) {
-      const status = (error as { response?: { status?: number } })?.response
-        ?.status;
-      if (status === 409) {
-        toast.error("This evaluation is already running.");
-      } else if (status === 400) {
-        toast.error("That version does not belong to this workflow.");
-      } else {
-        toast.error("Failed to start the evaluation.");
+      toast.error(runStartErrorMessage(error));
+      // Started elsewhere: reload the evaluation so that run shows up and is polled.
+      if (isRunConflict(error)) {
+        void getTestEvaluationById(evaluationId).then((fresh) => {
+          if (fresh) setEvaluation(fresh);
+        });
       }
+    } finally {
+      setIsStarting(false);
     }
-    setIsRunning(false);
   };
+
+  // The agent's live version, which names the workflow and is what Run preselects outside the builder.
+  const evaluationWorkflow = allWorkflows.find((item) => item.id === (evaluation?.workflow_id ?? suite?.workflow_id));
+  const liveWorkflow =
+    (evaluationWorkflow?.agent_id &&
+      allWorkflows.find((item) => item.agent_id === evaluationWorkflow.agent_id && item.is_active_version)) ||
+    evaluationWorkflow;
+  // Checks are read against the version Run preselects.
+  const checksWorkflowId =
+    runVersionId ?? liveWorkflow?.id ?? evaluation?.workflow_id ?? suite?.workflow_id ?? undefined;
+  const checksCatalog = useEvaluationCatalog(checksWorkflowId, showChecks);
+  const previews = useChecksPreview(evaluation ? [evaluation] : []);
+  // Older methods show as the checks a run grades them with; saving in the editor keeps them.
+  const shownEvaluation = useMemo(() => evaluation && withPreview(evaluation, previews), [evaluation, previews]);
+  const parsedChecks = useMemo(() => parseChecks(shownEvaluation?.technique_configs?.checks), [shownEvaluation]);
+  const savedChecks = parsedChecks.checks;
+  const leftOut = leftOutNote(parsedChecks.olderMethods);
+
+
+  // The editor is a page of its own, which makes older methods into checks first.
+  const openEditor = () => {
+    if (!evaluationId) return;
+    if (onEditEvaluation) onEditEvaluation(evaluationId);
+    else navigate(`/tests/evaluations/${evaluationId}/edit`);
+  };
+  const datasetConversations = useMemo(() => checkConversations(suiteCases), [suiteCases]);
+  const conversationsLoaded = Boolean(evaluation?.suite_id) && suiteCasesFor === evaluation?.suite_id;
 
   const openRun = (runId: string | undefined) => {
-    if (!runId) return;
-    setSelectedRunId(runId);
-    setIsRunDetailsOpen(true);
+    if (runId) setView({ runId });
   };
 
-  const selectedRun = runs.find((run) => run.id === selectedRunId);
-  const selectedRunResults = selectedRunId ? resultsByRun[selectedRunId] ?? [] : [];
-  const selectedRunRuleResults = selectedRunId ? ruleResultsByRun[selectedRunId] ?? [] : [];
-
-  // Turn-level rule results are shown inside the matching test-case detail;
-  // conversation results stay in the run-level sections.
-  const ruleResultsByCaseId = useMemo(() => {
-    const rows = selectedRunId ? ruleResultsByRun[selectedRunId] ?? [] : [];
-    const map = new Map<string, TestToolRuleResult[]>();
-    for (const ruleResult of rows) {
-      if (isTurnScope(ruleResult.scope) && ruleResult.case_id) {
-        const existing = map.get(ruleResult.case_id) ?? [];
-        existing.push(ruleResult);
-        map.set(ruleResult.case_id, existing);
-      }
-    }
-    return map;
-  }, [selectedRunId, ruleResultsByRun]);
-
-  // A case's displayed status must reflect its turn-level Tool Usage results too: a
-  // tool failure fails the case, and a tool pass can score an otherwise-unscored case.
-  const caseTools = (result: TestResult): TestToolRuleResult[] =>
-    result.case_id ? ruleResultsByCaseId.get(result.case_id) ?? [] : [];
-
-  const casePassed = (result: TestResult): boolean => {
-    const tools = caseTools(result);
-    const toolFailed = tools.some((t) => t.status === "failed");
-    const toolPassed = tools.some((t) => t.status === "passed");
-    if (toolFailed) return false;
-    return isResultPassed(result) || (isResultNotScored(result) && toolPassed);
+  // Opens the comparison with the newest finished run picked, waiting for the second.
+  const openComparison = () => {
+    const newest = runs.find((run) => run.status === "completed");
+    if (newest?.id) setView({ runId: newest.id, compareWith: "" });
   };
-
-  const caseFailed = (result: TestResult): boolean => {
-    const toolFailed = caseTools(result).some((t) => t.status === "failed");
-    return toolFailed || (!casePassed(result) && isResultFailed(result));
-  };
-
-  const caseNotScored = (result: TestResult): boolean =>
-    !casePassed(result) && !caseFailed(result);
-
-  const filterResults = () => {
-    if (resultFilter === "passed") return selectedRunResults.filter(casePassed);
-    if (resultFilter === "not_scored") return selectedRunResults.filter(caseNotScored);
-    if (resultFilter === "failed") return selectedRunResults.filter(caseFailed);
-    return selectedRunResults;
-  };
-
-  const filteredResults = filterResults();
-  // Keep a case selected in the right column; fall back to the first in the current filter.
-  const activeCase =
-    filteredResults.find((r) => r.id === selectedCaseId) ?? filteredResults[0] ?? null;
-
-  const passedCount = selectedRunResults.filter(casePassed).length;
-  const failedCount = selectedRunResults.filter(caseFailed).length;
-  const notScoredCount = selectedRunResults.filter(caseNotScored).length;
-
-  const runTotals = (selectedRun?.summary_metrics as Record<string, unknown> | undefined)?.[
-    RUN_TOTALS_KEY
-  ] as RunTotals | undefined;
 
   // Client-side pagination for the runs list (runs are all loaded up front).
   const runsTotalPages = Math.max(1, Math.ceil(runs.length / RUNS_PAGE_SIZE));
@@ -428,20 +402,25 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
     (runsSafePage - 1) * RUNS_PAGE_SIZE,
     runsSafePage * RUNS_PAGE_SIZE,
   );
+  // The runs on screen share verdict slots, so their counts line up.
+  const runSlots = tallySlots(pagedRuns.map(runConversationCounts));
 
-  // Offered whenever the evaluation targets a workflow; the dialog handles a
-  // workflow that has no second version to choose.
-  const canRunAgainstVersion = Boolean(workflowAgentId && evaluation?.workflow_id);
-  const finishedRunCount = runs.filter(
-    (run) => run.status === "completed" || run.status === "failed",
-  ).length;
+  // Run asks for the version when the evaluation targets a workflow; the dialog handles one with no second version.
+  const pickVersionOnRun = Boolean(workflowAgentId && evaluation?.workflow_id);
+  const completedRunCount = runs.filter((run) => run.status === "completed").length;
 
-  // Runs are sorted newest-first, so the most recent is the summary for the header.
-  const lastRun = runs[0];
-  const lastRunAvg = lastRun ? runAvgAccuracy(lastRun) : null;
+  const lastRunResults = lastRunId ? resultsByRun[lastRunId] : undefined;
+  const lastRunTurns =
+    lastRunStatus === "completed" && lastRunResults
+      ? turnsPassed(lastRunResults, ruleResultsByRun[lastRunId] ?? [])
+      : null;
   const lastRunTotals = (lastRun?.summary_metrics as Record<string, unknown> | undefined)?.[
     RUN_TOTALS_KEY
   ] as RunTotals | undefined;
+  // A run with only checks reads by conversation; turns are not graded one by one.
+  const lastRunVerdict = checksConversations(lastRun);
+  const verdictFirst = Boolean(lastRunVerdict) && !runGradesTurns(lastRun);
+  const verdictGraded = lastRunVerdict ? lastRunVerdict.passed + lastRunVerdict.failed : 0;
 
   if (!evaluation) {
     return (
@@ -455,195 +434,409 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
         >
           <ChevronLeft className="h-5 w-5" />
         </Button>
-        <h1 className="text-2xl font-bold tracking-tight">Evaluation not found</h1>
+        {/* Undefined while it loads, null once it could not be found. */}
+        {evaluation === undefined ? (
+          <Skeleton className="h-8 w-80" />
+        ) : (
+          <h1 className="text-2xl font-bold tracking-tight">Evaluation not found</h1>
+        )}
       </div>
     );
   }
 
-  const renderCaseDetail = (result: TestResult) => {
-    const passed = casePassed(result);
-    const notScored = caseNotScored(result);
-    const gradedTechniques = Object.keys(result.metrics ?? {});
-    const caseExpectedOutput = result.case_id ? expectedOutputByCaseId[result.case_id] : undefined;
-    // Show Expected Output only when a graded metric actually uses it, so process-only
-    // checks never imply they were graded against it.
-    const showExpectedOutput =
-      gradedTechniques.length === 0 ||
-      gradedTechniques.some((tech) =>
-        usesExpectedOutput(
-          tech,
-          evaluation?.technique_configs?.[tech] as Record<string, unknown> | undefined,
-        ),
-      );
-    const caseRuleRows = result.case_id ? ruleResultsByCaseId.get(result.case_id) ?? [] : [];
-
-    return (
-      <>
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
-          <div className="flex items-center gap-2 min-w-0">
-            {notScored ? (
-              <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-            ) : passed ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
-            ) : (
-              <XCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-            )}
-            <span className="text-sm font-semibold">Case #{result.case_id?.slice(-4)}</span>
-            {notScored && (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-                {notScoredLabel(result)}
-              </span>
-            )}
-          </div>
-          {result.metrics && (
-            <div className="flex flex-wrap justify-end gap-1">
-              {Object.entries(result.metrics).map(([tech, metricValue]) => {
-                const metricNotScored = metricValue.not_evaluated || metricValue.error;
-                return (
-                <span
-                  key={tech}
-                  className={cn(
-                    "inline-flex items-center rounded-full px-2 py-0.5 text-[10px]",
-                    metricNotScored
-                      ? "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
-                      : metricValue.passed
-                        ? "bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-400"
-                        : "bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400",
-                  )}
-                >
-                  <span className="mr-1 font-semibold">{methodLabel(tech)}</span>
-                  {typeof metricValue.score === "number" && (
-                    <span>
-                      {metricValue.score <= 1
-                        ? `${Math.round(metricValue.score * 100)}%`
-                        : metricValue.score.toFixed(2)}
-                    </span>
-                  )}
-                </span>
-                );
-              })}
-            </div>
-          )}
+  if (view) {
+    const viewRun = runs.find((run) => run.id === view.runId);
+    const runId = view.runId;
+    // A run is not compared with itself, so that pick waits for another.
+    const compareWith = view.compareWith === runId ? "" : view.compareWith;
+    // What a run does not carry, for the header of each results page.
+    const runContext: RunContext = {
+      workflowName: liveWorkflow ? liveWorkflow.agent_name || liveWorkflow.name : undefined,
+      workflowAgentId: liveWorkflow?.agent_id ?? undefined,
+      datasetName: suite && viewRun?.suite_id === suite.id ? suite.name : undefined,
+      embedded,
+    };
+    let content: React.ReactNode;
+    if (!viewRun) {
+      content = isLoadingRuns ? (
+        <Skeleton className="h-8 w-80" />
+      ) : (
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setView(null, { back: true })}
+            aria-label={`Back to ${evaluation.name}`}
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+          <p className="text-sm text-muted-foreground">This run is not part of the evaluation.</p>
         </div>
+      );
+    } else if (view.conversation && compareWith) {
+      const other = runs.find((run) => run.id === compareWith);
+      content = other ? (
+        <CompareConversationView
+          key={view.conversation}
+          run={viewRun}
+          other={other}
+          context={runContext}
+          conversationKey={view.conversation}
+          onBack={() => setView(backFromConversation(view), { back: true })}
+          onNavigate={(conversation) => setView({ ...view, conversation }, { replace: true })}
+        />
+      ) : (
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => setView({ runId }, { back: true })} aria-label="Back to the run">
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+          <p className="text-sm text-muted-foreground">The run to compare with is not part of the evaluation.</p>
+        </div>
+      );
+    } else if (view.conversation) {
+      content = (
+        <ConversationResultView
+          key={view.conversation}
+          run={viewRun}
+          context={runContext}
+          conversationKey={view.conversation}
+          onBack={() => setView(backFromConversation(view), { back: true })}
+          onNavigate={(conversation) => setView({ ...view, conversation }, { replace: true })}
+        />
+      );
+    } else if (isComparing(view)) {
+      const other = compareWith ? runs.find((run) => run.id === compareWith) ?? null : null;
+      content = (
+        <RunCompareView
+          run={viewRun}
+          other={other}
+          runs={runs}
+          context={runContext}
+          conversations={datasetConversations}
+          conversationsReady={conversationsLoaded}
+          backLabel={`Back to ${evaluation.name}`}
+          onBack={() => setView(null, { back: true })}
+          onChangeRuns={(nextRunId, otherId) => setView({ runId: nextRunId, compareWith: otherId }, { replace: true })}
+          onOpenConversation={(conversation) => setView({ runId, conversation, compareWith })}
+        />
+      );
+    } else {
+      content = (
+        <RunResultsView
+          run={viewRun}
+          context={runContext}
+          conversations={datasetConversations}
+          conversationsReady={conversationsLoaded}
+          backLabel={`Back to ${evaluation.name}`}
+          onBack={() => setView(null, { back: true })}
+          onOpenConversation={(conversation) => setView({ runId, conversation })}
+          onCompare={runs.some((run) => run.id !== runId && run.status === "completed") ? () => setView({ runId, compareWith: "" }) : undefined}
+        />
+      );
+    }
+    return (
+      <div ref={topRef} tabIndex={-1} className="scroll-mt-16 outline-none">
+        {content}
+      </div>
+    );
+  }
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          {/* Metric comments + grading source */}
-          {result.metrics && (
-            <div className="space-y-1">
-              {Object.entries(result.metrics).map(([tech, metricValue]) => {
-                const sourceLabel = getMetricSourceLabel(
-                  tech,
-                  evaluation?.technique_configs?.[tech],
-                );
-                const ruleDetails =
-                  Array.isArray(metricValue.details) && metricValue.details.length > 1
-                    ? metricValue.details
-                    : null;
-                if (!metricValue.comment && !sourceLabel && !ruleDetails) return null;
-                return (
-                  <div key={`${result.id}-${tech}-comment`} className="text-xs">
-                    <span className="font-semibold text-muted-foreground">{methodLabel(tech)}:</span>{" "}
-                    {metricValue.comment && !ruleDetails && (
-                      <span className="text-muted-foreground">{metricValue.comment}</span>
-                    )}
-                    {sourceLabel && (
-                      <span className="text-muted-foreground">
-                        {metricValue.comment && !ruleDetails ? " — " : ""}checked against: {sourceLabel}
-                      </span>
-                    )}
-                    {ruleDetails && <MetricRuleBreakdown details={ruleDetails} />}
-                  </div>
-                );
-              })}
-            </div>
+  // Methods no check could be read from, as when the preview could not load.
+  const olderTechniques = (shownEvaluation ?? evaluation).techniques.filter(
+    (technique) => technique !== CHECKS_TECHNIQUE,
+  );
+  const summaryCard = (
+    <div className="rounded-lg border bg-card dark:bg-zinc-900">
+      <div className="grid gap-4 p-4 sm:grid-cols-3">
+        <SummaryItem label="Workflow">
+          {/* Inside the builder the workflow is the one already open. */}
+          {liveWorkflow?.agent_id && !embedded ? (
+            <Link
+              to={`/ai-agents/workflow/${liveWorkflow.agent_id}`}
+              className="block truncate font-medium text-primary hover:underline"
+            >
+              {liveWorkflow.agent_name || liveWorkflow.name}
+            </Link>
+          ) : liveWorkflow ? (
+            <span className="block truncate font-medium">{liveWorkflow.agent_name || liveWorkflow.name}</span>
+          ) : (
+            <span className="text-muted-foreground">{workflowName}</span>
           )}
+        </SummaryItem>
+        <SummaryItem label="Dataset">
+          {/* From the builder it opens apart, so the builder stays as it was. */}
+          <Link
+            to={`/tests/datasets/${evaluation.suite_id}`}
+            target={embedded ? "_blank" : undefined}
+            rel={embedded ? "noreferrer" : undefined}
+            className="block truncate font-medium text-primary hover:underline"
+          >
+            {suite?.name ?? "Its dataset"}
+          </Link>
+          <span className="text-xs text-muted-foreground">
+            {conversationsLoaded
+              ? `${datasetConversations.length} conversation${datasetConversations.length === 1 ? "" : "s"}`
+              : suiteCasesFailed
+                ? "Its conversations could not be loaded."
+                : "Loading its conversations…"}
+          </span>
+        </SummaryItem>
+        <SummaryItem label="Checks">
+          <span className="font-medium">
+            {savedChecks.length} check{savedChecks.length === 1 ? "" : "s"}
+          </span>
+          {savedChecks.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowChecks(true)}
+              aria-haspopup="dialog"
+              className="ml-2 text-xs font-medium text-primary hover:underline"
+            >
+              Show
+            </button>
+          )}
+          {olderTechniques.length > 0 && (
+            <span className="block text-xs text-muted-foreground">
+              Also runs older methods: {olderTechniques.map(methodLabel).join(", ")}
+            </span>
+          )}
+        </SummaryItem>
+      </div>
+      {/* What the conversion could not make into checks shows until it is seen in the editor. */}
+      {leftOut.length > 0 && (
+        <div className="border-t p-4">
+          <LeftOutNote items={leftOut} />
+        </div>
+      )}
+      <ChecksDialog
+        open={showChecks}
+        onOpenChange={setShowChecks}
+        checks={savedChecks}
+        description={`What should and should not happen when ${evaluation.name} runs.`}
+        conversations={datasetConversations}
+        conversationsReady={conversationsLoaded}
+        catalog={checksCatalog}
+        actions={
+          <Button
+            variant="outline"
+            onClick={() => {
+              setShowChecks(false);
+              openEditor();
+            }}
+            disabled={isRunning}
+            icon={<Pencil className="h-4 w-4" />}
+          >
+            Edit
+          </Button>
+        }
+      />
+    </div>
+  );
 
-          {/* Turn-level rule checks for this case, grouped by technique */}
-          {groupByTechnique(caseRuleRows).map(([technique, rows]) => (
-            <div key={technique}>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">
-                {methodLabel(technique)}
+  const lastRunScore = lastRun && (
+    lastRun.status === "failed" ? (
+      <div className="text-sm text-red-600 dark:text-red-400">
+        {runFailureText(lastRun)}
+      </div>
+    ) : lastRun.status === "completed" && lastRunCounts ? (
+      <VerdictTally counts={lastRunCounts} className="text-lg font-semibold" iconClassName="h-5 w-5" slots={runSlots} />
+    ) : lastRun.status === "completed" && verdictFirst && lastRunVerdict && verdictGraded > 0 ? (
+      <div className="flex items-center gap-2">
+        <Progress
+          value={(lastRunVerdict.passed / verdictGraded) * 100}
+          className="h-2 w-40"
+          indicatorClassName={accuracyBarClass(lastRunVerdict.passed / verdictGraded)}
+        />
+        <span
+          className={cn("text-sm font-semibold", accuracyTextClass(lastRunVerdict.passed / verdictGraded))}
+        >
+          {checksVerdictText(lastRun)}
+        </span>
+      </div>
+    ) : lastRun.status === "completed" && verdictFirst ? (
+      <div className="text-sm text-muted-foreground">{checksVerdictText(lastRun)}</div>
+    ) : lastRun.status === "completed" && !lastRunResults ? (
+      <Skeleton className="h-5 w-40" />
+    ) : lastRunTurns && lastRunTurns.total === 0 && lastRunTurns.notEvaluated > 0 ? (
+      <div className="text-sm text-muted-foreground">
+        No turn could be graded · {lastRunTurns.notEvaluated} not evaluated
+      </div>
+    ) : lastRunTurns && lastRunTurns.total > 0 ? (
+      <div className="flex items-center gap-2">
+        <Progress
+          value={(lastRunTurns.passed / lastRunTurns.total) * 100}
+          className="h-2 w-40"
+          indicatorClassName={accuracyBarClass(lastRunTurns.passed / lastRunTurns.total)}
+        />
+        <span
+          className={cn(
+            "text-sm font-semibold",
+            accuracyTextClass(lastRunTurns.passed / lastRunTurns.total),
+          )}
+        >
+          {lastRunTurns.passed} of {lastRunTurns.total} turns passed
+          {lastRunTurns.notEvaluated > 0 && (
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              · {lastRunTurns.notEvaluated} not evaluated
+            </span>
+          )}
+        </span>
+      </div>
+    ) : (
+      <div className="text-sm text-muted-foreground">
+        {lastRun.status === "completed"
+          ? "No score"
+          : runProgressText(lastRun) ?? "Not scored yet"}
+      </div>
+    )
+  );
+  const lastRunNotes = lastRun && (
+    <>
+      {!verdictFirst && !lastRunCounts && checksVerdictText(lastRun) && (
+        <div className="text-xs font-medium">Checks: {checksVerdictText(lastRun)}</div>
+      )}
+      {lastRunTotals && !verdictFirst && !lastRunCounts && (
+        <div className="text-xs text-muted-foreground">
+          {lastRunTotals.scored} of {lastRunTotals.cases} turns scored
+          {lastRunTotals.execution_failed > 0 &&
+            ` · ${lastRunTotals.execution_failed} failed to execute`}
+        </div>
+      )}
+      {lastRunTotals && (verdictFirst || lastRunCounts) && lastRunTotals.execution_failed > 0 && (
+        <div className="text-xs text-muted-foreground">
+          {lastRunTotals.execution_failed} of {lastRunTotals.cases} turns failed to run
+        </div>
+      )}
+    </>
+  );
+  // The facts on the left, the result large on the right.
+  const lastRunLayout = (
+    <>
+      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Last Run</div>
+      {lastRun && !isLoadingRuns ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 space-y-1">
+            <RunFacts run={lastRun} />
+            {lastRunNotes}
+          </div>
+          {/* Inset by a run row's border and padding, so its counts sit over theirs. */}
+          <div className="flex min-w-0 sm:mr-[13px] sm:max-w-md sm:justify-end sm:text-right">{lastRunScore}</div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <Skeleton className="h-5 w-32" />
+          <Skeleton className="h-2 w-40" />
+        </div>
+      )}
+    </>
+  );
+
+  // Opens the last run on click, like a row in the list.
+  // A failed run with no results says all it has here, so it does not open.
+  const lastRunCard =
+    lastRun && !isLoadingRuns && runHasResults(lastRun) ? (
+      <button
+        type="button"
+        onClick={() => openRun(lastRun.id)}
+        className="block w-full rounded-lg border bg-card p-4 text-left transition-colors hover:bg-muted dark:bg-zinc-900"
+      >
+        {lastRunLayout}
+      </button>
+    ) : (
+      <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">{lastRunLayout}</div>
+    );
+
+  const runsCard = (
+    <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
+      <h2 className="mb-3 text-lg font-semibold">All runs</h2>
+
+      {isLoadingRuns ? (
+        <div className="space-y-2 max-h-72 overflow-y-auto">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="space-y-2 rounded-lg border p-3">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-16 rounded-full" />
               </div>
-              <div className="space-y-2">
-                {rows.map((ruleResult) => (
-                  <RuleResultCard key={ruleResult.id} result={ruleResult} />
-                ))}
+              <Skeleton className="h-3 w-32" />
+              <div className="flex gap-1">
+                <Skeleton className="h-5 w-20 rounded-full" />
+                <Skeleton className="h-5 w-20 rounded-full" />
               </div>
             </div>
           ))}
-
-          {/* Input / Expected comparison, side by side */}
-          <div
-            className={cn(
-              "grid grid-cols-1 gap-4",
-              showExpectedOutput && "lg:grid-cols-2",
-            )}
-          >
-            <div>
-              <div className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
-                Input
-              </div>
-              <div className="rounded border bg-card p-2 text-xs dark:bg-zinc-900">
-                <JsonViewer
-                  data={
-                    ((result.case_id && (inputByCaseId[result.case_id] as unknown)) ??
-                      {}) as unknown as never
-                  }
-                />
-              </div>
-            </div>
-            {showExpectedOutput && (
-              <div>
-                <div className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                  <span className="h-1.5 w-1.5 rounded-full bg-green-500"></span>
-                  Expected Output
-                </div>
-                <div className="rounded border bg-card p-2 text-xs dark:bg-zinc-900">
-                  <JsonViewer data={(caseExpectedOutput ?? {}) as unknown as never} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Actual Output — full width, styled like Execution Trace */}
-          <div>
-            <div className="mb-1 text-xs font-medium text-muted-foreground">Actual Output</div>
-            <div className="rounded border bg-card p-2 text-xs dark:bg-zinc-900">
-              {result.actual_output &&
-              "value" in result.actual_output &&
-              Object.keys(result.actual_output).length === 1 ? (
-                <div className="whitespace-pre-wrap">{String(result.actual_output.value)}</div>
-              ) : (
-                <JsonViewer data={(result.actual_output ?? {}) as unknown as never} />
-              )}
-            </div>
-          </div>
-
-          {result.execution_trace && Object.keys(result.execution_trace).length > 0 && (
-            <div>
-              <div className="mb-1 text-xs font-medium text-muted-foreground">Execution Trace</div>
-              <div className="rounded border bg-card p-2 text-xs dark:bg-zinc-900">
-                <JsonViewer data={(result.execution_trace ?? {}) as unknown as never} />
-              </div>
-            </div>
-          )}
-
-          {result.error && (
-            <div className="rounded border border-red-200 bg-red-50 p-3 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400">
-              <div className="mb-1 font-medium">Error</div>
-              {result.error}
-            </div>
-          )}
         </div>
-      </>
-    );
-  };
+      ) : runs.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-10 text-center">
+          <Play className="mb-2 h-10 w-10 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">No runs yet</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Click "Run" to execute your first run.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {pagedRuns.map((run) => {
+            const counts = runConversationCounts(run);
+            const avgAccuracy = counts ? null : runAvgAccuracy(run);
+            const opens = runHasResults(run);
+            const Row = opens ? "button" : "div";
+            return (
+              <Row
+                key={run.id}
+                {...(opens ? { type: "button" as const, onClick: () => openRun(run.id) } : {})}
+                className={cn(
+                  "flex w-full flex-col gap-2 rounded-lg border p-3 text-left sm:flex-row sm:items-center sm:justify-between",
+                  opens && "transition-colors hover:bg-muted",
+                )}
+              >
+                <RunFacts run={run} />
+                <div className="flex min-w-0 sm:max-w-md sm:justify-end sm:text-right">
+                  {run.status === "failed" ? (
+                    <span className="text-sm text-red-600 dark:text-red-400">{runFailureText(run)}</span>
+                  ) : run.status !== "completed" ? (
+                    <span className="text-sm text-muted-foreground">{runProgressText(run) ?? "Not scored yet"}</span>
+                  ) : counts ? (
+                    <VerdictTally
+                      counts={counts}
+                      className="text-lg font-semibold"
+                      iconClassName="h-5 w-5"
+                      slots={runSlots}
+                    />
+                  ) : avgAccuracy !== null ? (
+                    <span
+                      title={AVG_SCORE_HINT}
+                      className={cn("text-lg font-semibold tabular-nums", accuracyTextClass(avgAccuracy))}
+                    >
+                      {Math.round(avgAccuracy * 100)}%
+                    </span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No score</span>
+                  )}
+                </div>
+              </Row>
+            );
+          })}
+        </div>
+      )}
+
+      {!isLoadingRuns && runs.length > RUNS_PAGE_SIZE && (
+        <PaginationBar
+          total={runs.length}
+          currentPage={runsSafePage}
+          pageSize={RUNS_PAGE_SIZE}
+          pageItemCount={pagedRuns.length}
+          onPageChange={setRunsPage}
+        />
+      )}
+    </div>
+  );
 
   return (
     <>
-      {/* Header: back arrow + evaluation name + Run */}
-      <div className="flex items-center gap-2">
+      {/* Header: back arrow + evaluation name + Run; the buttons take their own row on phones. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
         <Button
           variant="ghost"
           size="icon"
@@ -661,27 +854,21 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
             <p className="truncate text-sm text-muted-foreground">{evaluation.description}</p>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {canRunAgainstVersion && (
-            <TooltipProvider delayDuration={200}>
-              <TooltipButton
-                button={
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    disabled={isRunning}
-                    onClick={() => setIsVersionDialogOpen(true)}
-                    aria-label="Run against a version"
-                  >
-                    <GitBranch className="h-4 w-4" />
-                  </Button>
-                }
-                tooltipContent={{ children: <p>Run against a version</p> }}
-              />
-            </TooltipProvider>
+        <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+          {completedRunCount >= 2 && (
+            <Button
+              variant="outline"
+              onClick={openComparison}
+              icon={<GitCompareArrows className="h-4 w-4" />}
+            >
+              Compare
+            </Button>
           )}
+          <Button variant="outline" onClick={openEditor} disabled={isRunning} icon={<Pencil className="h-4 w-4" />}>
+            Edit
+          </Button>
           <Button
-            onClick={() => handleRunEvaluation()}
+            onClick={() => (pickVersionOnRun ? setIsVersionDialogOpen(true) : void handleRunEvaluation())}
             disabled={isRunning}
             aria-label="Run evaluation"
           >
@@ -695,487 +882,26 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
         </div>
       </div>
 
-      {/* Configuration + Last Run summary */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Configuration */}
-        <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="min-w-0">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Dataset
-              </div>
-              <div className="mt-0.5 truncate text-sm font-medium">
-                {suite?.name ?? evaluation.suite_id}
-              </div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Workflow
-              </div>
-              <div className="mt-0.5 truncate text-sm font-medium">{workflowName}</div>
-            </div>
-            <div className="sm:col-span-2">
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Metrics
-              </div>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {evaluation.techniques.map((technique) => (
-                  <Badge key={technique} variant="secondary">
-                    {methodLabel(technique)}
-                  </Badge>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+      {summaryCard}
+      {/* With no runs, All runs says so on its own. */}
+      {(isLoadingRuns || lastRun) && lastRunCard}
+      {runsCard}
 
-        {/* Last Run Details */}
-        <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Last Run
-            </div>
-            {lastRun && (
-              <button
-                type="button"
-                onClick={() => openRun(lastRun.id)}
-                className="text-xs font-medium text-primary hover:underline"
-              >
-                View details
-              </button>
-            )}
-          </div>
-          {isLoadingRuns ? (
-            <div className="space-y-2">
-              <Skeleton className="h-5 w-32" />
-              <Skeleton className="h-2 w-40" />
-            </div>
-          ) : !lastRun ? (
-            <div className="text-sm text-muted-foreground">No runs yet.</div>
-          ) : (
-            <div className="space-y-2">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">Run #{lastRun.id?.slice(-4)}</span>
-                  {lastRun.workflow_version && (
-                    <Badge variant="outline" className="text-[10px]">
-                      v{lastRun.workflow_version}
-                    </Badge>
-                  )}
-                  <RunStatusBadge status={lastRun.status} />
-                </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {new Date(lastRun.created_at ?? "").toLocaleString()}
-                </div>
-              </div>
-              {lastRunAvg !== null ? (
-                <div className="flex items-center gap-2">
-                  <Progress
-                    value={lastRunAvg * 100}
-                    className={cn(
-                      "h-2 w-40",
-                      lastRunAvg >= 0.9
-                        ? "[&>div]:bg-green-600"
-                        : lastRunAvg >= 0.7
-                          ? "[&>div]:bg-amber-600"
-                          : "[&>div]:bg-red-600",
-                    )}
-                  />
-                  <span className={cn("text-sm font-semibold", accuracyTextClass(lastRunAvg))}>
-                    {Math.round(lastRunAvg * 100)}%
-                  </span>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  {lastRun.status === "completed" ? "No score" : "Not scored yet"}
-                </div>
-              )}
-              {lastRunTotals && (
-                <div className="text-xs text-muted-foreground">
-                  {lastRunTotals.scored} of {lastRunTotals.cases} records scored
-                  {lastRunTotals.execution_failed > 0 &&
-                    ` · ${lastRunTotals.execution_failed} failed to execute`}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Runs as cards */}
-      <div className="rounded-lg border bg-card p-4 dark:bg-zinc-900">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Previous Executions</h2>
-          <div className="flex items-center gap-2">
-            {finishedRunCount >= 2 && (
-              <Button variant="outline" size="sm" onClick={() => setIsCompareOpen(true)}>
-                <GitCompareArrows className="mr-1.5 h-3.5 w-3.5" />
-                Compare
-              </Button>
-            )}
-            <Badge variant="secondary" className="text-xs">
-              {runs.length} run{runs.length !== 1 ? "s" : ""}
-            </Badge>
-          </div>
-        </div>
-
-        {isLoadingRuns ? (
-          <div className="space-y-2 max-h-72 overflow-y-auto">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="space-y-2 rounded-lg border p-3">
-                <div className="flex items-center justify-between">
-                  <Skeleton className="h-5 w-24" />
-                  <Skeleton className="h-5 w-16 rounded-full" />
-                </div>
-                <Skeleton className="h-3 w-32" />
-                <div className="flex gap-1">
-                  <Skeleton className="h-5 w-20 rounded-full" />
-                  <Skeleton className="h-5 w-20 rounded-full" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : runs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center">
-            <Play className="mb-2 h-10 w-10 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">No runs yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Click "Run" to execute your first run.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {pagedRuns.map((run) => {
-              const avgAccuracy = runAvgAccuracy(run);
-              const summaryMetrics = run.summary_metrics as
-                | Record<string, { accuracy?: number }>
-                | undefined;
-              return (
-                <button
-                  key={run.id}
-                  type="button"
-                  onClick={() => openRun(run.id)}
-                  className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">Run #{run.id?.slice(-4)}</span>
-                      {run.workflow_version && (
-                        <Badge variant="outline" className="text-[10px]">
-                          v{run.workflow_version}
-                        </Badge>
-                      )}
-                      {avgAccuracy !== null && (
-                        <div className="flex items-center gap-1">
-                          <Progress
-                            value={avgAccuracy * 100}
-                            className={cn(
-                              "h-1.5 w-16",
-                              avgAccuracy >= 0.9
-                                ? "[&>div]:bg-success"
-                                : avgAccuracy >= 0.7
-                                  ? "[&>div]:bg-warning"
-                                  : "[&>div]:bg-destructive",
-                            )}
-                          />
-                          <span className={cn("text-xs font-medium", accuracyTextClass(avgAccuracy))}>
-                            {Math.round(avgAccuracy * 100)}%
-                          </span>
-                        </div>
-                      )}
-                      {avgAccuracy === null && run.status === "completed" && (
-                        <span className="text-xs text-muted-foreground">No score</span>
-                      )}
-                    </div>
-                    <RunStatusBadge status={run.status} />
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {new Date(run.created_at ?? "").toLocaleString()}
-                  </div>
-                  {summaryMetrics && (
-                    <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
-                      {Object.entries(summaryMetrics)
-                        .filter(([tech]) => tech !== RUN_TOTALS_KEY)
-                        .map(([tech, summary]) => {
-                          const acc = typeof summary.accuracy === "number" ? summary.accuracy : null;
-                          let colorClasses = "bg-muted text-muted-foreground border border-border";
-                          if (acc !== null) {
-                            if (acc >= 0.9) {
-                              colorClasses =
-                                "bg-green-50 text-green-700 border border-green-200 dark:bg-green-500/15 dark:text-green-400 dark:border-green-500/30";
-                            } else if (acc >= 0.7) {
-                              colorClasses =
-                                "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/30";
-                            } else {
-                              colorClasses =
-                                "bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/30";
-                            }
-                          }
-                          return (
-                            <span
-                              key={tech}
-                              className={`inline-flex items-center rounded-full px-2 py-0.5 ${colorClasses}`}
-                            >
-                              <span className="mr-1 font-semibold">{methodLabel(tech)}</span>
-                              {acc !== null && <span>{Math.round(acc * 100)}%</span>}
-                            </span>
-                          );
-                        })}
-                    </div>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {!isLoadingRuns && runs.length > RUNS_PAGE_SIZE && (
-          <PaginationBar
-            total={runs.length}
-            currentPage={runsSafePage}
-            pageSize={RUNS_PAGE_SIZE}
-            pageItemCount={pagedRuns.length}
-            onPageChange={setRunsPage}
-          />
-        )}
-      </div>
-
-      {/* Run Details — big dialog with columns (Test Workflow style) */}
-      <Dialog
-        open={isRunDetailsOpen && !!selectedRun}
-        onOpenChange={(open) => {
-          setIsRunDetailsOpen(open);
-          if (!open) setResultFilter("all");
-        }}
-      >
-        <DialogContent className="flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[1800px] flex-col gap-0 overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b px-5 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <DialogTitle>Run Details #{selectedRun?.id?.slice(-4)}</DialogTitle>
-                {selectedRun?.workflow_version && (
-                  <Badge variant="outline" className="text-[10px]">
-                    v{selectedRun.workflow_version}
-                  </Badge>
-                )}
-              </div>
-              {selectedRun && <RunStatusBadge status={selectedRun.status} />}
-            </div>
-            {selectedRun?.created_at && (
-              <p className="text-xs text-muted-foreground">
-                {new Date(selectedRun.created_at).toLocaleString()}
-              </p>
-            )}
-          </DialogHeader>
-
-          {/* Columns: evaluation summary | results list | selected case detail */}
-          <div className="min-h-0 flex-1">
-            <ResizablePanelGroup
-              direction="horizontal"
-              autoSaveId="run-details-v2"
-              className="h-full"
-            >
-              {/* Evaluation Summary column */}
-              <ResizablePanel defaultSize={24} minSize={18} maxSize={35}>
-                <div className="flex h-full flex-col overflow-hidden">
-                  <div className="shrink-0 border-b px-4 py-2.5 text-sm font-medium">
-                    Evaluation Summary
-                  </div>
-                  <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-                    {runTotals && runTotals.scored < runTotals.cases && (
-                      <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-400">
-                        Scores cover {runTotals.scored} of {runTotals.cases} records
-                        {runTotals.execution_failed > 0 &&
-                          ` · ${runTotals.execution_failed} failed to execute`}
-                        {runTotals.scoring_failed > 0 &&
-                          ` · ${runTotals.scoring_failed} ran but failed scoring`}
-                        {runTotals.skipped > 0 && ` · ${runTotals.skipped} skipped`}
-                      </div>
-                    )}
-                    {selectedRun?.summary_metrics ? (
-                      <div className="grid grid-cols-1 gap-3">
-                        {Object.entries(
-                          selectedRun.summary_metrics as Record<
-                            string,
-                            { accuracy?: number; avg_score?: number; cases?: number }
-                          >,
-                        )
-                          .filter(([tech]) => tech !== RUN_TOTALS_KEY && tech !== TOOL_USED_TECHNIQUE)
-                          .map(([tech, summary]) => {
-                            const acc = typeof summary.accuracy === "number" ? summary.accuracy : null;
-                            return (
-                              <div key={tech} className="rounded-lg border bg-card p-3 dark:bg-zinc-900">
-                                <div className="mb-2 text-xs font-medium text-muted-foreground">{methodLabel(tech)}</div>
-                                {acc !== null && (
-                                  <div className="space-y-1">
-                                    <div className="flex items-center justify-between">
-                                      <span className={cn("text-lg font-semibold", accuracyTextClass(acc))}>
-                                        {Math.round(acc * 100)}%
-                                      </span>
-                                      {typeof summary.cases === "number" && (
-                                        <span className="text-xs text-muted-foreground">
-                                          {summary.cases} {isRuleTechnique(tech) ? "checks" : "cases"}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <Progress
-                                      value={acc * 100}
-                                      className={cn(
-                                        "h-2",
-                                        acc >= 0.9
-                                          ? "[&>div]:bg-success"
-                                          : acc >= 0.7
-                                            ? "[&>div]:bg-warning"
-                                            : "[&>div]:bg-destructive",
-                                      )}
-                                    />
-                                  </div>
-                                )}
-                                {typeof summary.avg_score === "number" && (
-                                  <div className="mt-1 text-sm">
-                                    Avg Score:{" "}
-                                    <span className="font-medium">{summary.avg_score.toFixed(2)}</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                      </div>
-                    ) : (
-                      <div className="text-sm text-muted-foreground">No metrics available</div>
-                    )}
-                  </div>
-                </div>
-              </ResizablePanel>
-
-              <ResizableHandle withHandle />
-
-              {/* Results list column */}
-              <ResizablePanel defaultSize={32} minSize={22}>
-                <div className="flex h-full flex-col overflow-hidden">
-                  <div className="shrink-0 border-b px-3 py-2.5">
-                    <Tabs value={resultFilter} onValueChange={(v) => setResultFilter(v as ResultFilter)}>
-                      <TabsList className="h-8">
-                        <TabsTrigger value="all" className="px-2.5 py-1 text-xs">
-                          All ({selectedRunResults.length})
-                        </TabsTrigger>
-                        <TabsTrigger value="passed" className="px-2.5 py-1 text-xs">
-                          <CheckCircle2 className="mr-1 h-3 w-3 text-green-600 dark:text-green-400" />
-                          {passedCount}
-                        </TabsTrigger>
-                        <TabsTrigger value="failed" className="px-2.5 py-1 text-xs">
-                          <XCircle className="mr-1 h-3 w-3 text-red-600 dark:text-red-400" />
-                          {failedCount}
-                        </TabsTrigger>
-                        <TabsTrigger value="not_scored" className="px-2.5 py-1 text-xs">
-                          <AlertCircle className="mr-1 h-3 w-3 text-amber-600" />
-                          {notScoredCount}
-                        </TabsTrigger>
-                      </TabsList>
-                    </Tabs>
-                  </div>
-                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
-                    {selectedRunRuleResults.length > 0 && <RuleResults results={selectedRunRuleResults} />}
-
-                    {isLoadingResults ? (
-                      [1, 2, 3, 4].map((i) => (
-                        <div key={i} className="rounded-md border p-3">
-                          <Skeleton className="h-4 w-24" />
-                          <Skeleton className="mt-2 h-3 w-40" />
-                        </div>
-                      ))
-                    ) : filteredResults.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-8 text-center">
-                        <AlertCircle className="mb-2 h-8 w-8 text-muted-foreground/40" />
-                        <p className="text-sm text-muted-foreground">
-                          {resultFilter === "all"
-                            ? "No test results available yet."
-                            : resultFilter === "passed"
-                              ? "No passed test cases."
-                              : resultFilter === "not_scored"
-                                ? "No unscored test cases."
-                                : "No failed test cases."}
-                        </p>
-                      </div>
-                    ) : (
-                      filteredResults.map((result) => {
-                        const passed = casePassed(result);
-                        const notScored = caseNotScored(result);
-                        const isActive = activeCase?.id === result.id;
-                        const metricComments = Object.entries(result.metrics ?? {})
-                          .filter(([, m]) => m.comment)
-                          .map(([tech, m]) => `${methodLabel(tech)}: ${m.comment}`)
-                          .join(" | ");
-                        let caseStatusLabel = "Passed";
-                        if (notScored) caseStatusLabel = notScoredLabel(result);
-                        else if (!passed) caseStatusLabel = "Failed";
-                        const subtitleText = metricComments || caseStatusLabel;
-                        return (
-                          <button
-                            key={result.id}
-                            type="button"
-                            onClick={() => setSelectedCaseId(result.id ?? null)}
-                            className={cn(
-                              "w-full rounded-md border p-2.5 text-left transition-colors",
-                              isActive ? "bg-primary/5 ring-1 ring-primary" : "hover:bg-muted",
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                {notScored ? (
-                                  <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                                ) : passed ? (
-                                  <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600 dark:text-green-400" />
-                                ) : (
-                                  <XCircle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-                                )}
-                                <span className="truncate text-sm font-medium">
-                                  Case #{result.case_id?.slice(-4)}
-                                </span>
-                              </div>
-                            </div>
-                            {result.metrics && (
-                              <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
-                                {subtitleText}
-                              </div>
-                            )}
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              </ResizablePanel>
-
-              <ResizableHandle withHandle />
-
-              {/* Selected case detail column */}
-              <ResizablePanel defaultSize={44} minSize={30}>
-                <div className="flex h-full flex-col overflow-hidden">
-                  {activeCase ? (
-                    renderCaseDetail(activeCase)
-                  ) : (
-                    <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-                      <AlertCircle className="mb-3 h-10 w-10 text-muted-foreground/30" />
-                      <p className="text-sm text-muted-foreground">
-                        {isLoadingResults ? "Loading results…" : "Select a case to see its details."}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {canRunAgainstVersion && workflowAgentId && (
+      {pickVersionOnRun && workflowAgentId && (
         <RunAgainstVersionDialog
           isOpen={isVersionDialogOpen}
           onOpenChange={setIsVersionDialogOpen}
           agentId={workflowAgentId}
           currentWorkflowId={evaluation.workflow_id}
-          workflowName={workflowName}
+          openWorkflowId={runVersionId}
+          asRun={{
+            title: "Run evaluation",
+            description: (
+              <>
+                Runs <span className="font-medium text-foreground">{evaluation.name}</span> on the version you pick.
+              </>
+            ),
+          }}
           isStarting={isRunning}
           onRun={(targetWorkflowId) => {
             setIsVersionDialogOpen(false);
@@ -1183,12 +909,6 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
           }}
         />
       )}
-
-      <CompareRunsDialog
-        isOpen={isCompareOpen}
-        onOpenChange={setIsCompareOpen}
-        runs={runs}
-      />
     </>
   );
 };

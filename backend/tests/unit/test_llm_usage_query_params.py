@@ -1,6 +1,6 @@
 """Unit tests for the shared LLM usage query-param dependency"""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -39,8 +39,31 @@ def test_filters_are_carried_through():
     assert params.provider == "OpenAI" and params.model == "GPT-4o"
 
 
+def test_exact_bounds_must_come_together():
+    with pytest.raises(HTTPException) as exc:
+        LlmUsageQueryParams(activity_from_datetime=datetime(2026, 7, 1, tzinfo=timezone.utc))
+    assert exc.value.status_code == 400
+
+
+def test_exact_bounds_must_be_timezone_aware():
+    with pytest.raises(HTTPException) as exc:
+        LlmUsageQueryParams(
+            activity_from_datetime=datetime(2026, 7, 1), activity_to_datetime=datetime(2026, 7, 8, tzinfo=timezone.utc)
+        )
+    assert exc.value.status_code == 400
+
+
+def test_exact_bounds_must_be_ordered():
+    instant = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    with pytest.raises(HTTPException) as exc:
+        LlmUsageQueryParams(activity_from_datetime=instant, activity_to_datetime=instant)
+    assert exc.value.status_code == 400
+
+
 def test_breakdown_dimensions_match_the_literal():
-    assert BREAKDOWN_DIMENSIONS == ("provider", "model", "agent", "source", "llm", "evaluation_method", "node")
+    assert BREAKDOWN_DIMENSIONS == (
+        "provider", "model", "agent", "source", "llm", "evaluation_method", "analyst_purpose", "node"
+    )
 
 
 def test_export_dimensions_match_the_literal():
@@ -48,4 +71,4 @@ def test_export_dimensions_match_the_literal():
 
 
 def test_export_excludes_the_drill_down_dimensions():
-    assert set(BREAKDOWN_DIMENSIONS) - set(EXPORT_DIMENSIONS) == {"llm", "evaluation_method", "node"}
+    assert set(BREAKDOWN_DIMENSIONS) - set(EXPORT_DIMENSIONS) == {"llm", "evaluation_method", "analyst_purpose", "node"}

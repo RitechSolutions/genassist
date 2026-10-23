@@ -170,7 +170,9 @@ class TestThreadIsolation:
 
         calls = await self._run(_service(), cases, use_memory=False)
 
-        assert all(call["thread_id"] is None for call in calls)
+        # Each turn gets its own throwaway thread and nothing is persisted.
+        threads = [call["thread_id"] for call in calls]
+        assert all(threads) and len(set(threads)) == len(threads)
         assert all(call["persist"] is False for call in calls)
 
     @pytest.mark.asyncio
@@ -192,6 +194,111 @@ class TestThreadIsolation:
 
         assert calls[0]["thread_id"] != "injected-thread"
         assert calls[0]["input_data"]["thread_id"] == calls[0]["thread_id"]
+
+    @pytest.mark.asyncio
+    async def test_use_memory_is_not_passed_to_the_workflow(self):
+        service = _service()
+        service.case_repo.get_all_for_suite.return_value = [_case()]
+        service.evaluators = MagicMock()
+        service.evaluators.evaluate = AsyncMock(return_value={})
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(
+            return_value=SimpleNamespace(output="out", format_state_as_response=lambda: {})
+        )
+        run = SimpleNamespace(
+            id=uuid4(), techniques=["no_errors"], status="queued", summary_metrics=None
+        )
+
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine):
+            await service._execute_run(
+                SimpleNamespace(id=uuid4(), default_input_metadata=None),
+                SimpleNamespace(id=uuid4(), nodes=[], edges=[]),
+                run,
+                run_input_metadata={"use_memory": True, "channel": "web"},
+            )
+
+        input_data = engine.execute_from_node.call_args.kwargs["input_data"]
+        assert "use_memory" not in input_data
+        assert input_data["channel"] == "web"
+        assert input_data["message"] == "hi"
+
+
+class TestMemoryCacheCleanup:
+    """Finished evaluation threads are forgotten: cache entry and stored memory both."""
+
+    async def _run(self, cases, *, use_memory):
+        service = _service()
+        service.case_repo.get_all_for_suite.return_value = cases
+        service.evaluators = MagicMock()
+        service.evaluators.evaluate = AsyncMock(return_value={})
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(
+            side_effect=lambda **kwargs: SimpleNamespace(
+                output="out",
+                # Threadless runs get a throwaway thread from the engine.
+                thread_id=kwargs["thread_id"] or f"engine-{uuid4()}",
+                format_state_as_response=lambda: {},
+            )
+        )
+        run = SimpleNamespace(
+            id=uuid4(), techniques=["no_errors"], status="queued", summary_metrics=None
+        )
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine), patch(
+            "app.services.test_suite.ConversationMemory.forget", new_callable=AsyncMock
+        ) as forget:
+            await service._execute_run(
+                SimpleNamespace(id=uuid4(), default_input_metadata=None),
+                SimpleNamespace(id=uuid4(), nodes=[], edges=[]),
+                run,
+                run_input_metadata={"use_memory": True} if use_memory else None,
+            )
+        return engine, forget
+
+    @pytest.mark.asyncio
+    async def test_each_conversation_thread_is_forgotten_once(self):
+        first, second = uuid4(), uuid4()
+        cases = [
+            _case(conversation_id=first, turn_index=0),
+            _case(conversation_id=first, turn_index=1),
+            _case(conversation_id=second, turn_index=0),
+        ]
+
+        engine, forget = await self._run(cases, use_memory=True)
+
+        threads = [call.kwargs["thread_id"] for call in engine.execute_from_node.call_args_list]
+        assert [call.args[0] for call in forget.await_args_list] == list(dict.fromkeys(threads))
+
+    @pytest.mark.asyncio
+    async def test_threadless_turns_forget_their_throwaway_thread(self):
+        engine, forget = await self._run([_case(), _case()], use_memory=False)
+
+        threads = [call.kwargs["thread_id"] for call in engine.execute_from_node.call_args_list]
+        assert all(call.kwargs["persist"] is False for call in engine.execute_from_node.call_args_list)
+        assert [call.args[0] for call in forget.await_args_list] == threads
+        assert len(set(threads)) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_threadless_turn_that_raises_still_forgets_its_thread(self):
+        service = _service()
+        service.case_repo.get_all_for_suite.return_value = [_case()]
+        service.evaluators = MagicMock()
+        service.evaluators.evaluate = AsyncMock(return_value={})
+        engine = MagicMock()
+        engine.execute_from_node = AsyncMock(side_effect=RuntimeError("boom"))
+        run = SimpleNamespace(
+            id=uuid4(), techniques=["no_errors"], status="queued", summary_metrics=None
+        )
+        with patch("app.services.test_suite.WorkflowEngine", return_value=engine), patch(
+            "app.services.test_suite.ConversationMemory.forget", new_callable=AsyncMock
+        ) as forget:
+            await service._execute_run(
+                SimpleNamespace(id=uuid4(), default_input_metadata=None),
+                SimpleNamespace(id=uuid4(), nodes=[], edges=[]),
+                run,
+            )
+
+        thread = engine.execute_from_node.call_args.kwargs["thread_id"]
+        forget.assert_awaited_once_with(thread)
 
 
 class TestPersistenceFailureHandling:
@@ -537,6 +644,30 @@ class TestRemoveConversationFromSuite:
         service.case_repo.soft_delete_for_conversation.assert_not_awaited()
 
 
+class TestDeleteCase:
+    @pytest.mark.asyncio
+    async def test_a_turn_is_soft_deleted_like_a_removed_conversation(self):
+        """Results reference the turn with no ON DELETE, so a hard delete would fail."""
+        service = _service()
+        case = _case(conversation_id=uuid4(), turn_index=1)
+        service.case_repo.get_by_id.return_value = case
+
+        await service.delete_case(case.id)
+
+        service.case_repo.soft_delete.assert_awaited_once_with(case)
+        service.case_repo.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_unknown_turn_is_rejected(self):
+        service = _service()
+        service.case_repo.get_by_id.return_value = None
+
+        with pytest.raises(AppException):
+            await service.delete_case(uuid4())
+
+        service.case_repo.soft_delete.assert_not_awaited()
+
+
 class TestFailureReason:
     """Failures live on state.errors; state.output is empty for a failed run."""
 
@@ -704,6 +835,69 @@ class TestImportFromConversation:
         )
         service.case_repo.soft_delete_for_conversation.assert_not_awaited()
 
+    def _import_recording_dates(self, service, *, suite_id, conversation_id):
+        """Import, capturing created_at as it was at insert time.
+
+        ``_persist`` stands in for the database and overwrites the timestamps,
+        so the value under test has to be read before it runs.
+        """
+        stamped = []
+
+        def persist(cases):
+            stamped.extend(case.created_at for case in cases)
+            return self._persist(cases)
+
+        service.suite_repo.get_by_id.return_value = SimpleNamespace(id=suite_id)
+        service.conversation_repo.fetch_conversation_by_id.return_value = (
+            self._conversation()
+        )
+        service.case_repo.create_many.side_effect = persist
+        return stamped
+
+    @pytest.mark.asyncio
+    async def test_reimport_keeps_the_date_the_conversation_first_joined(self):
+        service = _service()
+        suite_id, conversation_id = uuid4(), uuid4()
+        first_joined = datetime(2025, 6, 1)
+        service.case_repo.get_all_for_suite.return_value = [
+            _case(
+                conversation_id=conversation_id,
+                turn_index=0,
+                created_at=first_joined,
+            ),
+            _case(
+                conversation_id=conversation_id,
+                turn_index=1,
+                created_at=datetime(2025, 6, 2),
+            ),
+            # An older conversation must not donate its date to this one.
+            _case(
+                conversation_id=uuid4(),
+                turn_index=0,
+                created_at=datetime(2024, 1, 1),
+            ),
+        ]
+        stamped = self._import_recording_dates(
+            service, suite_id=suite_id, conversation_id=conversation_id
+        )
+
+        await service.import_cases_from_conversation(suite_id, conversation_id)
+
+        assert stamped == [first_joined, first_joined]
+
+    @pytest.mark.asyncio
+    async def test_first_import_lets_the_database_set_the_date(self):
+        service = _service()
+        suite_id, conversation_id = uuid4(), uuid4()
+        service.case_repo.get_all_for_suite.return_value = []
+        stamped = self._import_recording_dates(
+            service, suite_id=suite_id, conversation_id=conversation_id
+        )
+
+        await service.import_cases_from_conversation(suite_id, conversation_id)
+
+        assert stamped == [None, None]
+
     @pytest.mark.asyncio
     async def test_empty_conversation_is_rejected_before_deleting_anything(self):
         service = _service()
@@ -718,3 +912,466 @@ class TestImportFromConversation:
         service.case_repo.soft_delete_all_for_suite.assert_not_awaited()
         service.case_repo.soft_delete_for_conversation.assert_not_awaited()
         service.case_repo.create_many.assert_not_awaited()
+
+
+class TestImportFromConversations:
+    """Importing a selection of conversations in one request."""
+
+    def _conversation(self, turns=2):
+        messages = []
+        for turn in range(turns):
+            messages.append(_message(f"q{turn}", "customer", turn * 2))
+            messages.append(_message(f"a{turn}", "agent", turn * 2 + 1))
+        return SimpleNamespace(messages=messages)
+
+    def _persist(self, cases):
+        """Stand in for the insert, which assigns the id and timestamps."""
+        now = datetime(2026, 1, 1)
+        for case in cases:
+            case.id = uuid4()
+            case.created_at = now
+            case.updated_at = now
+        return cases
+
+    def _arrange(self, service, transcripts):
+        """Wire the repos so each conversation id resolves to its own transcript."""
+        service.suite_repo.get_by_id.return_value = SimpleNamespace(id=uuid4())
+        service.conversation_repo.fetch_conversation_by_id.side_effect = (
+            lambda conversation_id, **_: transcripts.get(conversation_id)
+        )
+        service.case_repo.create_many.side_effect = self._persist
+
+    @pytest.mark.asyncio
+    async def test_imports_every_selected_conversation(self):
+        service = _service()
+        suite_id, first, second = uuid4(), uuid4(), uuid4()
+        self._arrange(
+            service,
+            {first: self._conversation(turns=2), second: self._conversation(turns=3)},
+        )
+
+        result = await service.import_cases_from_conversations(
+            suite_id, [first, second]
+        )
+
+        assert result.imported == 2
+        assert result.failed == 0
+        assert [entry.turns for entry in result.results] == [2, 3]
+        assert len(result.cases) == 5
+
+    @pytest.mark.asyncio
+    async def test_turn_index_restarts_for_each_conversation(self):
+        service = _service()
+        first, second = uuid4(), uuid4()
+        self._arrange(
+            service,
+            {first: self._conversation(turns=2), second: self._conversation(turns=2)},
+        )
+
+        result = await service.import_cases_from_conversations(
+            uuid4(), [first, second]
+        )
+
+        by_conversation = {}
+        for case in result.cases:
+            by_conversation.setdefault(case.source_conversation_id, []).append(
+                case.turn_index
+            )
+        assert by_conversation[first] == [0, 1]
+        assert by_conversation[second] == [0, 1]
+
+    @pytest.mark.asyncio
+    async def test_the_whole_selection_is_written_as_one_insert(self):
+        service = _service()
+        first, second = uuid4(), uuid4()
+        self._arrange(
+            service,
+            {first: self._conversation(), second: self._conversation()},
+        )
+
+        await service.import_cases_from_conversations(uuid4(), [first, second])
+
+        service.case_repo.create_many.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_one_unusable_conversation_does_not_block_the_rest(self):
+        service = _service()
+        suite_id, good, empty = uuid4(), uuid4(), uuid4()
+        self._arrange(
+            service,
+            {good: self._conversation(turns=2), empty: SimpleNamespace(messages=[])},
+        )
+
+        result = await service.import_cases_from_conversations(
+            suite_id, [empty, good]
+        )
+
+        assert result.imported == 1
+        assert result.failed == 1
+        assert [entry.status for entry in result.results] == ["failed", "imported"]
+        assert result.results[0].detail == "No question and answer turns to import."
+        assert len(result.cases) == 2
+        # Only the importable conversation gives up its old turns.
+        service.case_repo.soft_delete_for_conversation.assert_awaited_once_with(
+            suite_id, good, commit=False
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_missing_conversation_is_reported_rather_than_raised(self):
+        service = _service()
+        good, missing = uuid4(), uuid4()
+        self._arrange(service, {good: self._conversation()})
+
+        result = await service.import_cases_from_conversations(
+            uuid4(), [good, missing]
+        )
+
+        assert result.results[1].status == "failed"
+        assert result.results[1].detail == "Conversation not found."
+        assert result.imported == 1
+
+    @pytest.mark.asyncio
+    async def test_nothing_is_deleted_when_no_conversation_can_be_imported(self):
+        service = _service()
+        first, second = uuid4(), uuid4()
+        self._arrange(
+            service,
+            {
+                first: SimpleNamespace(messages=[]),
+                second: SimpleNamespace(messages=[]),
+            },
+        )
+
+        result = await service.import_cases_from_conversations(
+            uuid4(), [first, second]
+        )
+
+        assert result.failed == 2
+        assert result.cases == []
+        service.case_repo.soft_delete_all_for_suite.assert_not_awaited()
+        service.case_repo.soft_delete_for_conversation.assert_not_awaited()
+        service.case_repo.create_many.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_replace_wipes_the_suite_once_for_the_whole_selection(self):
+        service = _service()
+        suite_id, first, second = uuid4(), uuid4(), uuid4()
+        self._arrange(
+            service,
+            {first: self._conversation(), second: self._conversation()},
+        )
+
+        await service.import_cases_from_conversations(
+            suite_id, [first, second], replace=True
+        )
+
+        service.case_repo.soft_delete_all_for_suite.assert_awaited_once_with(
+            suite_id, commit=False
+        )
+        service.case_repo.soft_delete_for_conversation.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_replace_leaves_the_suite_alone_when_nothing_is_importable(self):
+        service = _service()
+        self._arrange(service, {})
+
+        result = await service.import_cases_from_conversations(
+            uuid4(), [uuid4()], replace=True
+        )
+
+        assert result.failed == 1
+        service.case_repo.soft_delete_all_for_suite.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_same_conversation_picked_twice_is_imported_once(self):
+        service = _service()
+        conversation_id = uuid4()
+        self._arrange(service, {conversation_id: self._conversation(turns=2)})
+
+        result = await service.import_cases_from_conversations(
+            uuid4(), [conversation_id, conversation_id]
+        )
+
+        assert len(result.results) == 1
+        assert len(result.cases) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_conversation_already_in_the_dataset_reads_as_replaced(self):
+        service = _service()
+        suite_id, existing_id, fresh_id = uuid4(), uuid4(), uuid4()
+        first_joined = datetime(2025, 6, 1)
+        service.case_repo.get_all_for_suite.return_value = [
+            _case(conversation_id=existing_id, turn_index=0, created_at=first_joined),
+        ]
+        self._arrange(
+            service,
+            {existing_id: self._conversation(), fresh_id: self._conversation()},
+        )
+
+        result = await service.import_cases_from_conversations(
+            suite_id, [existing_id, fresh_id]
+        )
+
+        assert [entry.status for entry in result.results] == ["replaced", "imported"]
+        assert result.replaced == 1
+        assert result.imported == 1
+
+    @pytest.mark.asyncio
+    async def test_a_reimported_conversation_keeps_the_date_it_first_joined(self):
+        service = _service()
+        suite_id, existing_id = uuid4(), uuid4()
+        first_joined = datetime(2025, 6, 1)
+        service.case_repo.get_all_for_suite.return_value = [
+            _case(conversation_id=existing_id, turn_index=0, created_at=first_joined),
+            # An older conversation must not donate its date to this one.
+            _case(conversation_id=uuid4(), turn_index=0, created_at=datetime(2024, 1, 1)),
+        ]
+        stamped = []
+
+        def persist(cases):
+            stamped.extend(case.created_at for case in cases)
+            return self._persist(cases)
+
+        self._arrange(service, {existing_id: self._conversation(turns=2)})
+        service.case_repo.create_many.side_effect = persist
+
+        await service.import_cases_from_conversations(suite_id, [existing_id])
+
+        assert stamped == [first_joined, first_joined]
+
+    @pytest.mark.asyncio
+    async def test_a_missing_suite_still_fails_the_whole_request(self):
+        service = _service()
+        service.suite_repo.get_by_id.return_value = None
+
+        with pytest.raises(AppException):
+            await service.import_cases_from_conversations(uuid4(), [uuid4()])
+
+        service.conversation_repo.fetch_conversation_by_id.assert_not_awaited()
+
+
+def _suite(name, suite_id=None, description=None):
+    return SimpleNamespace(
+        id=suite_id or uuid4(), name=name, description=description
+    )
+
+
+class TestListSuitesForConversation:
+    """Answering "which datasets hold this conversation" from a conversation."""
+
+    @pytest.mark.asyncio
+    async def test_lists_every_dataset_including_ones_without_the_conversation(self):
+        service = _service()
+        holder, other = _suite("Refunds"), _suite("Billing")
+        service.suite_repo.get_all.return_value = [holder, other]
+        service.case_repo.get_conversation_membership.return_value = [
+            (holder.id, 3, datetime(2026, 2, 1))
+        ]
+
+        entries = await service.list_suites_for_conversation(uuid4())
+
+        by_id = {entry.suite_id: entry for entry in entries}
+        assert by_id[holder.id].turns == 3
+        assert by_id[holder.id].added_at == datetime(2026, 2, 1)
+        assert by_id[other.id].turns == 0
+        assert by_id[other.id].added_at is None
+
+    @pytest.mark.asyncio
+    async def test_orders_datasets_by_name_ignoring_case(self):
+        service = _service()
+        service.suite_repo.get_all.return_value = [
+            _suite("zeta"),
+            _suite("Alpha"),
+            _suite("beta"),
+        ]
+        service.case_repo.get_conversation_membership.return_value = []
+
+        entries = await service.list_suites_for_conversation(uuid4())
+
+        assert [entry.name for entry in entries] == ["Alpha", "beta", "zeta"]
+
+    @pytest.mark.asyncio
+    async def test_carries_the_description_through(self):
+        service = _service()
+        service.suite_repo.get_all.return_value = [
+            _suite("Refunds", description="Angry customers")
+        ]
+        service.case_repo.get_conversation_membership.return_value = []
+
+        entries = await service.list_suites_for_conversation(uuid4())
+
+        assert entries[0].description == "Angry customers"
+
+    @pytest.mark.asyncio
+    async def test_no_datasets_is_an_empty_list_not_an_error(self):
+        service = _service()
+        service.suite_repo.get_all.return_value = []
+        service.case_repo.get_conversation_membership.return_value = []
+
+        assert await service.list_suites_for_conversation(uuid4()) == []
+
+
+class TestAddConversationToSuites:
+    """Adding one conversation to several datasets from a conversation surface."""
+
+    def _conversation(self, turns=2):
+        messages = []
+        for turn in range(turns):
+            messages.append(_message(f"q{turn}", "customer", turn * 2))
+            messages.append(_message(f"a{turn}", "agent", turn * 2 + 1))
+        return SimpleNamespace(messages=messages)
+
+    def _persist(self, cases):
+        now = datetime(2026, 1, 1)
+        for case in cases:
+            case.id = uuid4()
+            case.created_at = now
+            case.updated_at = now
+        return cases
+
+    def _arrange(self, service, conversation, existing_by_suite=None):
+        """Wire the repos so every suite exists and holds what the test says."""
+        existing_by_suite = existing_by_suite or {}
+        service.conversation_repo.fetch_conversation_by_id.return_value = conversation
+        service.suite_repo.get_by_id.side_effect = (
+            lambda suite_id: SimpleNamespace(id=suite_id)
+        )
+        service.case_repo.get_all_for_suite.side_effect = (
+            lambda suite_id: existing_by_suite.get(suite_id, [])
+        )
+        service.case_repo.create_many.side_effect = self._persist
+
+    @pytest.mark.asyncio
+    async def test_adds_the_conversation_to_every_selected_dataset(self):
+        service = _service()
+        conversation_id, first, second = uuid4(), uuid4(), uuid4()
+        self._arrange(service, self._conversation(turns=2))
+
+        result = await service.add_conversation_to_suites(
+            conversation_id, [first, second]
+        )
+
+        assert result.imported == 2
+        assert result.replaced == 0
+        assert result.failed == 0
+        assert [entry.suite_id for entry in result.results] == [first, second]
+        assert all(entry.turns == 2 for entry in result.results)
+
+    @pytest.mark.asyncio
+    async def test_a_dataset_that_already_holds_it_is_reported_as_replaced(self):
+        service = _service()
+        conversation_id, holder, fresh = uuid4(), uuid4(), uuid4()
+        self._arrange(
+            service,
+            self._conversation(turns=2),
+            existing_by_suite={
+                holder: [
+                    _case(
+                        conversation_id=conversation_id,
+                        turn_index=0,
+                        created_at=datetime(2025, 5, 1),
+                    )
+                ]
+            },
+        )
+
+        result = await service.add_conversation_to_suites(
+            conversation_id, [holder, fresh]
+        )
+
+        statuses = {entry.suite_id: entry.status for entry in result.results}
+        assert statuses[holder] == "replaced"
+        assert statuses[fresh] == "imported"
+        assert result.imported == 1
+        assert result.replaced == 1
+
+    @pytest.mark.asyncio
+    async def test_re_import_refreshes_that_datasets_turns_only(self):
+        service = _service()
+        conversation_id, holder = uuid4(), uuid4()
+        self._arrange(
+            service,
+            self._conversation(turns=2),
+            existing_by_suite={
+                holder: [_case(conversation_id=conversation_id, turn_index=0)]
+            },
+        )
+
+        await service.add_conversation_to_suites(conversation_id, [holder])
+
+        service.case_repo.soft_delete_for_conversation.assert_awaited_once_with(
+            holder, conversation_id, commit=False
+        )
+        service.case_repo.soft_delete_all_for_suite.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_same_dataset_picked_twice_is_one_add(self):
+        service = _service()
+        conversation_id, suite_id = uuid4(), uuid4()
+        self._arrange(service, self._conversation(turns=1))
+
+        result = await service.add_conversation_to_suites(
+            conversation_id, [suite_id, suite_id]
+        )
+
+        assert len(result.results) == 1
+        assert result.imported == 1
+
+    @pytest.mark.asyncio
+    async def test_a_missing_dataset_fails_alone(self):
+        service = _service()
+        conversation_id, missing, good = uuid4(), uuid4(), uuid4()
+        self._arrange(service, self._conversation(turns=2))
+        service.suite_repo.get_by_id.side_effect = (
+            lambda suite_id: None if suite_id == missing else SimpleNamespace(id=suite_id)
+        )
+
+        result = await service.add_conversation_to_suites(
+            conversation_id, [missing, good]
+        )
+
+        assert result.failed == 1
+        assert result.imported == 1
+        failure = next(e for e in result.results if e.suite_id == missing)
+        assert failure.status == "failed"
+        assert failure.detail == "Dataset not found."
+        assert failure.turns == 0
+
+    @pytest.mark.asyncio
+    async def test_a_missing_conversation_fails_before_any_dataset_is_touched(self):
+        service = _service()
+        service.conversation_repo.fetch_conversation_by_id.return_value = None
+
+        with pytest.raises(AppException) as excinfo:
+            await service.add_conversation_to_suites(uuid4(), [uuid4()])
+
+        assert excinfo.value.status_code == 404
+        service.suite_repo.get_by_id.assert_not_awaited()
+        service.case_repo.create_many.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_conversation_with_no_turns_fails_before_any_dataset_is_touched(self):
+        service = _service()
+        service.conversation_repo.fetch_conversation_by_id.return_value = (
+            SimpleNamespace(messages=[_message("hi?", "customer", 0)])
+        )
+
+        with pytest.raises(AppException) as excinfo:
+            await service.add_conversation_to_suites(uuid4(), [uuid4()])
+
+        assert excinfo.value.status_code == 400
+        service.suite_repo.get_by_id.assert_not_awaited()
+        service.case_repo.create_many.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_the_conversation_is_read_once_per_dataset_but_validated_first(self):
+        service = _service()
+        conversation_id = uuid4()
+        self._arrange(service, self._conversation(turns=1))
+
+        await service.add_conversation_to_suites(
+            conversation_id, [uuid4(), uuid4()]
+        )
+
+        # One validating read plus one per dataset, all for the same conversation.
+        assert service.conversation_repo.fetch_conversation_by_id.await_count == 3

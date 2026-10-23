@@ -1,12 +1,13 @@
 """SubAgentNode: clean output, completion tools, config validation, engine halt"""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.modules.workflow.agents.agent_runtime import AgentRunResult
 from app.modules.workflow.agents.memory import InMemoryConversationMemory
 from app.modules.workflow.agents.sub_agents.orchestrator import SUB_AGENT_CONTROL_ATTR
+from app.modules.workflow.engine.node_result import is_node_failure
 from app.modules.workflow.engine.nodes.sub_agent_node import SubAgentNode
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine, _sanitize_output_for_memory
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -54,11 +55,59 @@ async def test_single_turn_returns_clean_output_only():
 
 
 @pytest.mark.asyncio
+async def test_memory_is_on_when_the_node_omits_the_key():
+    node = _make_node()
+    with (
+        patch(f"{_NODE}.run_agent_once", AsyncMock(return_value=_run_result())),
+        patch.object(SubAgentNode, "get_connected_nodes", return_value=[]),
+        patch.object(SubAgentNode, "_get_chat_history_for_agent", AsyncMock(return_value=[])) as history,
+    ):
+        await node.process(dict(_OK_CONFIG))
+    history.assert_awaited_once()
+
+
+async def _resolved_user_prompt(data, task="THE TASK"):
+    workflow = {"config": {"id": "wf1"}, "nodes": [{"id": "child", "type": "subAgentNode", "data": data}], "edges": []}
+    state = WorkflowState(
+        workflow=workflow, thread_id="t-task", initial_values={"message": task, "session": {"message": task}}
+    )
+    state.memory = InMemoryConversationMemory("t-task")
+    with patch(f"{_NODE}.run_agent_once", AsyncMock(return_value=_run_result())) as run_once:
+        await SubAgentNode("child", {"type": "subAgentNode", "data": data}, state).execute()
+    return run_once.await_args.kwargs["user_prompt"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "data",
+    [{**_OK_CONFIG, "name": "Helper", "userPrompt": "{{session.message}}"}, {**_OK_CONFIG, "name": "Helper"}],
+    ids=["canvas", "builder"],
+)
+async def test_child_prompt_is_the_delegated_task(data):
+    assert await _resolved_user_prompt(data) == "THE TASK"
+
+
+@pytest.mark.asyncio
+async def test_builder_child_masks_the_delegated_task():
+    service = MagicMock()
+    service.mask.side_effect = lambda text, existing_items=None: (
+        text.replace("ada@example.com", "<EMAIL_1>"),
+        {"items": [{"original": "ada@example.com", "token": "<EMAIL_1>"}]},
+    )
+    service.unmask.side_effect = lambda text, token_map: text
+    data = {**_OK_CONFIG, "name": "Helper", "piiMasking": True}
+    with patch("app.modules.workflow.engine.pii_anonymizer_mixin._service", service):
+        prompt = await _resolved_user_prompt(data, task="Email ada@example.com about invoice 42")
+    assert prompt == "Email <EMAIL_1> about invoice 42"
+
+
+@pytest.mark.asyncio
 async def test_missing_provider_returns_error():
     node = _make_node()
     with patch.object(SubAgentNode, "get_connected_nodes", return_value=[]):
         output = await node.process({"mode": "single_turn"})
     assert output["error"] == "missing providerId"
+    assert is_node_failure(output) is not None
 
 
 @pytest.mark.asyncio

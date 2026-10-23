@@ -57,11 +57,15 @@ export interface EvaluationAgentInfo {
 export interface EvaluationRouterBranch {
   value: string;
   destination: string | null;
+  /** Display name when the value is opaque (a Switch case id). */
+  label?: string | null;
 }
 
 export interface EvaluationRouterInfo {
   id: string;
   label: string;
+  /** routerNode or switchNode. */
+  type?: string | null;
   workflow_path: string[];
   branches: EvaluationRouterBranch[];
 }
@@ -73,11 +77,20 @@ export interface EvaluationActionNodeInfo {
   workflow_path: string[];
 }
 
+// A value the workflow remembers between turns: a stateful Chat Input field or a Set State key.
+export interface EvaluationStateKeyInfo {
+  key: string;
+  source: "chat_input" | "set_state" | string;
+  node_label: string;
+  workflow_path: string[];
+}
+
 export interface EvaluationToolCatalog {
   workflow_id: string;
   agents: EvaluationAgentInfo[];
   routers: EvaluationRouterInfo[];
   action_nodes: EvaluationActionNodeInfo[];
+  state_keys?: EvaluationStateKeyInfo[];
 }
 
 export type ToolUsageOperator = "all" | "any" | "none" | "only";
@@ -96,13 +109,6 @@ export interface RuleScopeTarget {
   // The single-turn shape saved before that, still read when editing.
   target_case_id?: string | null;
   target_turn_index?: number | null;
-}
-
-// An imported multi-turn conversation available for specific-turn targeting.
-export interface RuleConversation {
-  id: string; // source_conversation_id
-  label: string;
-  turns: { caseId: string; turnIndex: number; label: string }[];
 }
 
 // ---- Route / Action multi-rule builder drafts ----
@@ -156,7 +162,108 @@ export interface ToolUsageRule extends RuleScopeTarget {
 }
 
 // Techniques graded per scope, stored as one result row per rule check.
-export type RuleTechnique = "tool_used" | "route_taken" | "action_taken";
+export type RuleTechnique = "tool_used" | "route_taken" | "action_taken" | "checks";
+
+// ---- Should / Should not checks ----
+
+export type CheckKind =
+  | "reply_mentions"
+  | "reply_matches"
+  | "reply_meets"
+  | "reply_grounded"
+  | "tool_called"
+  | "only_tools"
+  | "step_runs"
+  | "step_fails"
+  | "route_taken"
+  | "state_equals"
+  | "value_equals";
+// How closely a reply has to match the dataset's expected reply.
+export type CheckMatch = "exact" | "contains" | "meaning";
+// What an AI grader reads besides the reply; for reply_grounded, what the reply sticks to.
+export type CheckContext = "expected_reply" | "knowledge_base" | "tool_calls" | "session" | "run_value";
+
+// One more tool a check is about; as another tool that should be called, with its own values and result.
+export interface CheckToolRef {
+  tool?: string | null;
+  tool_name?: string | null;
+  args?: Record<string, string>;
+  result_not_empty?: boolean;
+  result_contains?: string | null;
+  // The form's value rows as typed, never saved.
+  rows?: [string, string][];
+}
+export type CheckLevel = "every_conversation" | "conversation" | "turn";
+export type CheckExpect = "should" | "should_not";
+// Every conversation only: hold on every turn, or at some point.
+export type CheckWhen = "every_turn" | "anywhere";
+
+// One expectation about a conversation. Names travel with ids so a check survives a copied workflow.
+/** What grades a reply against its source besides the AI grader, as NLI and Provenance did. */
+export type CheckGrader = "nli" | "similarity";
+
+export interface ScenarioCheck {
+  id: string;
+  expect: CheckExpect;
+  kind: CheckKind;
+  level: CheckLevel;
+  when: CheckWhen;
+  /** The conversation level's chosen conversations. */
+  conversation_ids?: string[] | null;
+  /** A turn's conversation; one chosen conversation was stored here before several could be. */
+  conversation_id?: string | null;
+  case_id?: string | null;
+  turn_index?: number | null;
+  turn_message?: string | null;
+  text?: string | null;
+  rubric?: string | null;
+  context?: CheckContext | null;
+  context_path?: string | null;
+  /** An AI-graded check passes at this score; 0.5 when not set. */
+  pass_score?: number | null;
+  /** An AI-graded check's own grader; the evaluation's when not set. */
+  llm_provider_id?: string | null;
+  /** reply_grounded: the NLI model or text similarity in place of the AI grader. */
+  grader?: CheckGrader | null;
+  nli_model?: string | null;
+  fail_on_contradiction?: boolean;
+  /** Text similarity's embedding model: type, model_name, base_url, model_id, region_name. */
+  embedding?: Record<string, string>;
+  match?: CheckMatch | null;
+  tool?: string | null;
+  tool_name?: string | null;
+  /** tool_called: more tools, any of which counts; only_tools: the tools that may be used, or with Should not, may not. */
+  tools?: CheckToolRef[];
+  agent?: string | null;
+  agent_name?: string | null;
+  args?: Record<string, string>;
+  succeeds?: boolean;
+  result_not_empty?: boolean;
+  result_contains?: string | null;
+  min_calls?: number | null;
+  max_calls?: number | null;
+  step?: string | null;
+  step_name?: string | null;
+  /** Any step of this node type, when no one step is picked. */
+  step_type?: string | null;
+  router?: string | null;
+  router_name?: string | null;
+  branch?: string | null;
+  branch_label?: string | null;
+  key?: string | null;
+  /** value_equals: where in the turn the value is, as a dotted path. */
+  path?: string | null;
+  value?: string | null;
+}
+
+// The older methods an evaluation had before they became checks, and what could not become one.
+export interface OlderMethods {
+  techniques?: string[];
+  technique_configs?: Record<string, unknown>;
+  left_out?: string[];
+  /** Saved in the editor since, so the note has been seen. */
+  reviewed?: boolean;
+}
 
 // The readable, rename-proof snapshot the backend stores with each result.
 export interface ToolRuleTargetInfo {

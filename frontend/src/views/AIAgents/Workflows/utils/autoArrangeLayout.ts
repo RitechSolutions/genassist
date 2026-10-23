@@ -34,8 +34,11 @@
  * row instead of throwing.
  */
 
+import { isEntryNodeType } from "./entryNodes";
+
 import { NodeHandler } from "../types/nodes";
 import { XY } from "./executionLayout";
+import { isLoopBackEdge } from "./loopGraph";
 
 export interface AutoArrangeNode {
   id: string;
@@ -129,6 +132,9 @@ export const computeAutoArrangeLayout = (input: AutoArrangeInput): Record<string
 
   for (const e of edges) {
     if (!idSet.has(e.source) || !idSet.has(e.target) || e.source === e.target) continue;
+    // A loop's back-edge closes a cycle and enters the Loop from below; it is neither main flow
+    // nor a tool attachment, so the body simply lays out left-to-right after the Loop.
+    if (isLoopBackEdge(e)) continue;
     const sPos = handlerPos(e.source, e.sourceHandle);
     const tPos = handlerPos(e.target, e.targetHandle);
     const isTool = sPos === "top" || tPos === "bottom";
@@ -156,7 +162,7 @@ export const computeAutoArrangeLayout = (input: AutoArrangeInput): Record<string
   // is explicitly excluded here.
   const mainStarts = nodes
     .map((n) => n.id)
-    .filter((id) => !toolRoots.has(id) && (typeOf(id) === "chatInputNode" || (mainIn.get(id) ?? 0) === 0));
+    .filter((id) => !toolRoots.has(id) && (isEntryNodeType(typeOf(id)) || (mainIn.get(id) ?? 0) === 0));
 
   const reachFrom = (seeds: Iterable<string>): Set<string> => {
     const seen = new Set<string>();

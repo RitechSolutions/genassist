@@ -5,7 +5,7 @@ import hashlib
 import json
 
 import pytest
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
 from app.core.config.settings import settings
@@ -283,3 +283,16 @@ def test_pin_keys_are_a_fixed_length_digest_of_caller_supplied_values():
     finally:
         clear_tenant_context()
     assert ambiguous != other
+
+
+@pytest.mark.asyncio
+async def test_streamed_turn_pins_its_client_after_the_commit(guarded_app):
+    _, redis = guarded_app
+
+    def request(headers):
+        return Request({"type": "http", "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()]})
+
+    await ReadAfterWriteMiddleware.remember_write(request(_bearer()))
+    await ReadAfterWriteMiddleware.remember_write(request({}))
+
+    assert redis.set_calls == [(_expected_key(), "1", PIN_SECONDS)]

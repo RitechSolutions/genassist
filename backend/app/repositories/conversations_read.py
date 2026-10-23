@@ -138,29 +138,29 @@ class ConversationReadRepository:
 
         # Conditional topic filtering
         if conversation_filter.conversation_topics:
+            topic_keys = [topic.strip().lower() for topic in conversation_filter.conversation_topics]
             topic_condition = or_(
                 and_(
                     ConversationModel.status == ConversationStatus.FINALIZED.value,
                     ConversationModel.analysis.has(
-                        ConversationAnalysisModel.topic.in_(
-                            [
-                                topic.value
-                                for topic in conversation_filter.conversation_topics
-                            ]
-                        )
+                        func.lower(func.trim(ConversationAnalysisModel.topic)).in_(topic_keys)
                     ),
                 ),
                 and_(
                     ConversationModel.status != ConversationStatus.FINALIZED.value,
-                    ConversationModel.topic.in_(
-                        [
-                            topic.value
-                            for topic in conversation_filter.conversation_topics
-                        ]
-                    ),
+                    func.lower(func.trim(ConversationModel.topic)).in_(topic_keys),
                 ),
             )
             query = query.where(topic_condition)
+
+        if conversation_filter.conversation_subtopics:
+            subtopic_keys = [subtopic.strip().lower() for subtopic in conversation_filter.conversation_subtopics]
+            query = query.where(
+                ConversationModel.status == ConversationStatus.FINALIZED.value,
+                ConversationModel.analysis.has(
+                    func.lower(func.trim(ConversationAnalysisModel.subtopic)).in_(subtopic_keys)
+                ),
+            )
 
         return query
 

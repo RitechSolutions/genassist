@@ -1,5 +1,6 @@
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.agent_response_log import AgentResponseLogModel
+from app.db.models.analytics_aggregation_state import AnalyticsAggregationStateModel
 
 # from app.db.models.api_key_permission import ApiKeyPermissionModel
 from app.db.models.api_key import ApiKeyModel
@@ -48,9 +49,10 @@ from .fine_tuning import (
     FineTuningJobModel,
     OpenAIFileModel,
 )
+from .issue_status import IssueStatusModel
 from .knowledge_base import KnowledgeBaseModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
-from .message_issue import MessageIssueModel
+from .message_issue import MessageIssueModel, MessageIssueNoteModel
 from .ml_model import MLModel
 from .ml_model_pipeline import (
     ArtifactType,
@@ -74,10 +76,12 @@ from .user_supervised_group import UserSupervisedGroupModel
 from .webhook import WebhookModel
 from .workflow import WorkflowModel
 from .workflow_schedule import WorkflowScheduleModel, WorkflowScheduleRunModel
+from .workflow_trigger_run import WorkflowTriggerRunModel
 
 __all__ = [
     "WorkflowScheduleModel",
     "WorkflowScheduleRunModel",
+    "WorkflowTriggerRunModel",
     # Primary model class names
     "OperatorModel",
     "OperatorStatisticsModel",
@@ -110,6 +114,7 @@ __all__ = [
     "ConversationReadReceiptModel",
     "AgentResponseLogModel",
     "AgentExecutionDailyStatsModel",
+    "AnalyticsAggregationStateModel",
     "NodeExecutionDailyStatsModel",
     "CustomerModel",
     "DataSourceModel",
@@ -147,6 +152,8 @@ __all__ = [
     "AudioProvidersModel",
     "FallbackChainModel",
     "MessageIssueModel",
+    "MessageIssueNoteModel",
+    "IssueStatusModel",
     "SupportTicketModel",
     "SupportTicketCommentModel",
     "SupportTicketEventModel",
@@ -159,6 +166,7 @@ models = [
     ConversationReadReceiptModel,
     AgentResponseLogModel,
     AgentExecutionDailyStatsModel,
+    AnalyticsAggregationStateModel,
     NodeExecutionDailyStatsModel,
     UserModel,
     NotificationRecipientModel,
@@ -209,6 +217,8 @@ models = [
     AudioProvidersModel,
     FallbackChainModel,
     MessageIssueModel,
+    MessageIssueNoteModel,
+    IssueStatusModel,
     SupportTicketModel,
     SupportTicketCommentModel,
     SupportTicketEventModel,

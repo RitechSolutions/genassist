@@ -10,6 +10,7 @@ from .calendar_events_node import CalendarEventsNode
 from .chat_nodes import ChatInputNode, ChatOutputNode
 from .data_mapper_node import DataMapperNode
 from .file_reader_node import FileReaderNode
+from .filter_node import FilterNode
 from .finalize_conversation_node import FinalizeConversationNode
 from .gmail_tool_node import GmailToolNode
 from .html_to_image_node import HtmlToImageNode
@@ -20,6 +21,7 @@ from .human_in_the_loop_node import HumanInTheLoopNode
 from .jira_node import JiraNode
 from .knowledge_tool_node import KnowledgeToolNode
 from .llm_model_node import LLMModelNode
+from .loop_node import LoopNode
 from .mcp_node import MCPNode
 from .ml import (
     MLModelInferenceNode,
@@ -39,12 +41,14 @@ from .slack_tool_node import SlackToolNode
 from .stt_node import STTNode
 from .sql_node import SQLNode
 from .sub_agent_node import SubAgentNode
+from .switch_node import SwitchNode
 from .thread_rag_node import ThreadRAGNode
 from .tool_builder_node import ToolBuilderNode
 from .tts_node import TTSNode
 from .voice_agent_node import VoiceAgentNode
 from .web_scraper_node import WebScraperNode
 from .web_search_node import WebSearchNode
+from .webhook_trigger_node import WebhookTriggerNode
 from .whatsapp_tool_node import WhatsAppToolNode
 from .workflow_executor_node import WorkflowExecutorNode
 from .zendesk_tool_node import ZendeskToolNode
@@ -54,6 +58,9 @@ __all__ = [
     "ChatInputNode",
     "ChatOutputNode",
     "RouterNode",
+    "SwitchNode",
+    "FilterNode",
+    "LoopNode",
     "AgentNode",
     "ApiToolNode",
     "OpenAPINode",
@@ -95,4 +102,5 @@ __all__ = [
     "HtmlToImageNode",
     "FinalizeConversationNode",
     "NLPNode",
+    "WebhookTriggerNode",
 ]

@@ -1,11 +1,30 @@
+interface ValidationEntry {
+  msg?: unknown;
+  loc?: unknown;
+}
+
+const formatValidationEntry = (entry: ValidationEntry): string | null => {
+  const msg = entry.msg;
+  if (!msg) return null;
+  const loc = Array.isArray(entry.loc) ? entry.loc : [];
+  const path = loc
+    .filter(
+      (part, index) =>
+        !(index === 0 && (part === "body" || part === "query" || part === "path")),
+    )
+    .map(String)
+    .join(".");
+  return path ? `${path}: ${String(msg)}` : String(msg);
+};
+
 /**
  * Best-effort extraction of a human-readable message from an API/network error.
  *
  * Handles the axios error shapes used across the app
- * (`response.data.error`, `response.data.message`, `response.data.detail` as a
- * string, a FastAPI validation array `[{ msg }]`, or a `{ "0": { msg } }` map)
- * as well as plain `Error` instances. Falls back to `fallback` when nothing
- * usable is found.
+ * (`response.data.error_detail`, `response.data.error`, `response.data.message`,
+ * `response.data.detail` as a string, a FastAPI validation array `[{ msg }]`, or
+ * a `{ "0": { msg } }` map) as well as plain `Error` instances. Falls back to
+ * `fallback` when nothing usable is found.
  */
 export function extractErrorMessage(err: unknown, fallback: string): string {
   const e = (err ?? {}) as { response?: { data?: unknown }; message?: unknown };
@@ -15,22 +34,29 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
 
   if (data && typeof data === "object") {
     const d = data as {
+      error_detail?: unknown;
       error?: unknown;
       message?: unknown;
       detail?: unknown;
     };
+    // AppException: error_detail = details, error = message
+    if (typeof d.error_detail === "string" && d.error_detail.trim())
+      return d.error_detail;
     if (typeof d.error === "string" && d.error.trim()) return d.error;
     if (typeof d.message === "string" && d.message.trim()) return d.message;
 
     const detail = d.detail;
     if (typeof detail === "string" && detail.trim()) return detail;
     if (Array.isArray(detail) && detail[0] && typeof detail[0] === "object") {
-      const msg = (detail[0] as { msg?: unknown }).msg;
-      if (msg) return String(msg);
+      const formatted = formatValidationEntry(detail[0] as ValidationEntry);
+      if (formatted) return formatted;
     }
     if (detail && typeof detail === "object" && !Array.isArray(detail)) {
-      const first = (detail as Record<string, { msg?: unknown }>)["0"];
-      if (first?.msg) return String(first.msg);
+      const first = (detail as Record<string, ValidationEntry>)["0"];
+      if (first) {
+        const formatted = formatValidationEntry(first);
+        if (formatted) return formatted;
+      }
     }
   }
 

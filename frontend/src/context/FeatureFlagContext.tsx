@@ -1,5 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
-import { getFeatureFlags } from '@/services/featureFlags';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { FEATURE_FLAG_READ_PERMISSION, getFeatureFlagsForCurrentUser } from '@/services/featureFlags';
+import { useHasPermission } from '@/hooks/useHasPermission';
+import { useIsLoadingPermissions } from '@/context/PermissionContext';
 import { FeatureFlag, ParsedFeatureFlag } from '@/interfaces/featureFlag.interface';
 import { parseFeatureFlags, isFeatureEnabled as checkFeatureEnabled, getFeatureValue as getFeatureValueHelper } from '@/helpers/featureFlag';
 import { isAuthenticated } from '@/services/auth';
@@ -28,30 +30,42 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
   const [loading, setLoading] = useState(true);
   const [hydrated, setHydrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const canReadFlags = useHasPermission(FEATURE_FLAG_READ_PERMISSION);
+  const isLoadingPermissions = useIsLoadingPermissions();
+  // A stored list without the permission may be out of date, so /auth/me decides
+  const isAwaitingPermissions = !canReadFlags && isLoadingPermissions;
+  const latestRequestRef = useRef(0);
 
   const fetchFlags = async () => {
+    const requestId = ++latestRequestRef.current;
+    const isLatestRequest = () => requestId === latestRequestRef.current;
     try {
       setLoading(true);
-      const fetchedFlags = await getFeatureFlags();
+      const fetchedFlags = await getFeatureFlagsForCurrentUser();
+      if (!isLatestRequest()) return;
       setFlags(fetchedFlags);
       setError(null);
     } catch (err) {
+      if (!isLatestRequest()) return;
       setError('Failed to load feature flags');
     } finally {
-      setLoading(false);
-      setHydrated(true);
+      if (isLatestRequest()) {
+        setLoading(false);
+        setHydrated(true);
+      }
     }
   };
 
+  // Reload when the user's access to flags changes, e.g. once /auth/me answers
   useEffect(() => {
-    // check if the user is authenticated
-    if (isAuthenticated()) {
-      fetchFlags();
+    if (!isAuthenticated()) {
+      // no fetch runs for anonymous visitors, so flag state is already final
+      setHydrated(true);
       return;
     }
-    // no fetch runs for anonymous visitors, so flag state is already final
-    setHydrated(true);
-  }, []);
+    if (isAwaitingPermissions) return;
+    fetchFlags();
+  }, [canReadFlags, isAwaitingPermissions]);
 
   const isEnabled = (key: string): boolean => {
     return checkFeatureEnabled(flags, key);

@@ -59,6 +59,7 @@ class EvaluationNLIModel:
         self._model = None
         self._tokenizer = None
         self._loaded_model_name: Optional[str] = None
+        self._failed_model_name: Optional[str] = None
         # A timed-out to_thread call continues running. Serialize evaluation
         # inference so it cannot race with a following evaluation call.
         self._lock = threading.Lock()
@@ -80,6 +81,7 @@ class EvaluationNLIModel:
                 model_name,
             )
             self._loaded_model_name = model_name
+            self._failed_model_name = None
             return True
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
@@ -89,6 +91,7 @@ class EvaluationNLIModel:
             self._model = None
             self._tokenizer = None
             self._loaded_model_name = None
+            self._failed_model_name = model_name
             return False
 
     @staticmethod
@@ -129,6 +132,20 @@ class EvaluationNLIModel:
         if contradiction_index is None:
             contradiction_index = 0
         return entail_index, contradiction_index
+
+    def is_loaded(self, model_name: Optional[str] = None) -> bool:
+        """Whether the requested model can score right now. Lock-free to avoid stalling the event loop.
+        Can report the outgoing model briefly during swaps. Message-only, not for grading.
+        """
+        return (
+            self._resolve_model_name(model_name) == self._loaded_model_name
+            and self._model is not None
+            and self._tokenizer is not None
+        )
+
+    def load_failed(self, model_name: Optional[str] = None) -> bool:
+        """Tracks if last load failed. Lock-free. Next `score_evidence` retries; transients self-clear"""
+        return self._resolve_model_name(model_name) == self._failed_model_name
 
     def score_evidence(
         self,

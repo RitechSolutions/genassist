@@ -19,8 +19,12 @@ import { BaseNodeDialogProps } from "../base";
 import { DraggableTextArea } from "../../components/custom/DraggableTextArea";
 import { FileUploader } from "@/components/FileUploader";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
-import { analyzeCSV, profileCSV } from "@/services/mlModels";
+import { analyzeCSV, profileData } from "@/services/mlModels";
 import { useNodeDialogState } from "../useNodeDialogState";
+import {
+  buildProfileDataRequest,
+  getProfileDataAvailability,
+} from "./trainDataSourceProfile";
 
 type TrainDataSourceDialogProps = BaseNodeDialogProps<
   TrainDataSourceNodeData,
@@ -114,7 +118,11 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
     }
   }, [isOpen, data, toast]);
 
-  const handleAnalyzeFile = async (fileUrl: string, fileName: string) => {
+  const handleAnalyzeFile = async (
+    fileUrl: string,
+    fileName: string,
+    fileId?: string,
+  ) => {
     // The backend preview endpoint only supports CSV files today.
     if (!fileName.toLowerCase().endsWith(".csv")) {
       setField("analysisResult", null);
@@ -123,7 +131,10 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
 
     try {
       setIsAnalyzing(true);
-      const result = await analyzeCSV(fileUrl);
+      const result = await analyzeCSV(fileUrl, undefined, {
+        id: fileId,
+        name: fileName,
+      });
       setField("analysisResult", result);
     } catch (err) {
       console.error(err);
@@ -139,13 +150,20 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   };
 
   const handleProfileData = async () => {
-    const target = values.csvFilePath || values.csvFileUrl;
-    if (!target) return;
+    const request = buildProfileDataRequest(values);
+    if (!request) return;
 
     try {
       setIsProfiling(true);
-      const baseName = (values.csvFileName || "data").replace(/\.[^./]+$/, "");
-      await profileCSV(target, `${baseName}_profile.html`);
+      if (request.source_type === "datasource") {
+        await profileData(request, "query_profile.html");
+      } else {
+        const baseName = (values.csvFileName || "data").replace(
+          /\.[^./]+$/,
+          "",
+        );
+        await profileData(request, `${baseName}_profile.html`);
+      }
     } catch (err) {
       console.error(err);
       toast({
@@ -215,6 +233,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
     onClose();
   };
 
+  const profileAvailability = getProfileDataAvailability(values);
+
   return (
     <NodeConfigPanel
       isOpen={isOpen}
@@ -277,14 +297,16 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
             <Label htmlFor="query">Query *</Label>
             <DraggableTextArea
               id="query"
+              size="code"
               value={values.query ?? ""}
               onChange={(e) => setField("query", e.target.value || null)}
               placeholder="SELECT * FROM training_data WHERE ..."
-              className="w-full min-h-[120px] font-mono text-sm"
+              className="w-full font-mono text-sm"
             />
             <p className="text-xs text-muted-foreground">
-              SQL query to fetch training data. Use variables from previous
-              nodes if needed.
+              {"Variables like {{chat.input}} are sent to the database as values, "}
+              so they are safe to use in WHERE and LIMIT. They cannot replace
+              table or column names.
             </p>
           </div>
         )}
@@ -307,14 +329,15 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
                 csvFileUrl: result.file_url,
                 analysisResult: null,
               }));
-              // Prefer the raw server file_path: analyze-csv resolves it directly.
-              // file_url (when file-manager storage is enabled) points at an
-              // authenticated /file-manager/files/{id}/source endpoint that the
-              // backend's own internal downloader hits without credentials, so it
-              // 400s there — file_path avoids that round-trip entirely.
+              // Local uploads can be previewed by path. Non-local uploads send
+              // their File Manager ID so the backend resolves storage directly.
               const previewTarget = result.file_path || result.file_url;
               if (previewTarget) {
-                handleAnalyzeFile(previewTarget, result.original_filename);
+                handleAnalyzeFile(
+                  previewTarget,
+                  result.original_filename,
+                  result.file_path ? undefined : result.file_id,
+                );
               }
             }}
             onRemove={() => {
@@ -338,22 +361,27 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         {values.sourceType === "csv" && values.analysisResult && (
           <CSVAnalysisDisplay analysisResult={values.analysisResult} />
         )}
-        {values.sourceType === "csv" &&
-          (values.csvFilePath || values.csvFileUrl) &&
-          values.csvFileName?.toLowerCase().endsWith(".csv") && (
+        {profileAvailability.visible && (
+          <div className="space-y-1">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={handleProfileData}
               loading={isProfiling}
-              disabled={isProfiling}
+              disabled={isProfiling || !profileAvailability.enabled}
               icon={<BarChart3 className="h-4 w-4" />}
               className="w-fit"
             >
               {isProfiling ? "Generating profile..." : "Profile Data"}
             </Button>
-          )}
+            {profileAvailability.reason && (
+              <p className="text-xs text-muted-foreground">
+                {profileAvailability.reason}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </NodeConfigPanel>
   );

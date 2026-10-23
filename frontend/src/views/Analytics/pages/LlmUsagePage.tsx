@@ -21,7 +21,7 @@ import { Card, CardContent } from "@/components/card";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ExportButton } from "@/components/ui/ExportButton";
 import { formatUsd } from "@/helpers/formatCurrency";
-import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
+import { toExactActivityParams, toUtcBucketDateParams } from "@/helpers/dateRange";
 import { cn } from "@/helpers/utils";
 import { useDismissibleNotice } from "@/hooks/useDismissibleNotice";
 import { COMPARE_DATE_RANGE_STORAGE_KEY, usePersistedDateRange } from "@/hooks/usePersistedDateRange";
@@ -47,9 +47,16 @@ import { analyticsFadeUpClass } from "../constants/animations";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 import { LlmUsageBreakdownChart } from "../components/reports/LlmUsageBreakdownChart";
 import { LlmUsageCostShare } from "../components/reports/LlmUsageCostShare";
-import { LlmUsageEvaluationMethods } from "../components/reports/LlmUsageEvaluationMethods";
 import { LlmUsageProviderDonut } from "../components/reports/LlmUsageProviderDonut";
+import { LlmUsageSourceSubRows } from "../components/reports/LlmUsageSourceSubRows";
 import { LlmUsageTimeseriesChart, type SpendMetric } from "../components/reports/LlmUsageTimeseriesChart";
+import {
+  SOURCE_SUB_ROWS,
+  isSourceSubRowParent,
+  subRowCountLabel,
+  type SourceSubRowParent,
+} from "../helpers/llmUsageSubRows";
+import { pricedCostPerCall } from "../helpers/llmUsageMetrics";
 
 // Provider is covered by the always-on Provider share card, so it stays out of this selector
 const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: string }> = [
@@ -60,12 +67,14 @@ const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: str
 
 const ALL = ALL_FILTER_VALUE;
 const KPI_SUB_CLASS = "text-sm font-medium text-muted-foreground";
-const EVALUATION_KEY = "evaluation";
 const COVERAGE_NOTICE = "llm-unpriced-coverage";
+const MIN_UNPRICED_TOKEN_PCT = 0.1;
+const FALLBACK_NOTICE = "llm-fallback-rates";
 const PARTIAL_COST_HELP =
   "Some calls here ran on a model with no configured rate. " +
-  "This figure is the priced subtotal, real spend may be higher. Add the missing rates under " +
-  "LLM Settings › LLM Providers to price them.";
+  "This figure is the priced subtotal, real spend may be higher. Rates added under " +
+  "LLM Settings › LLM Providers apply to new calls only.";
+const LOAD_ERROR = "Failed to load cost data.";
 
 interface LlmUsageKpi {
   label: string;
@@ -117,6 +126,21 @@ function KpiDelta({ delta, unit = "%", tone = "semantic" }: KpiDeltaProps) {
   );
 }
 
+function useSourceSubRows(
+  parent: SourceSubRowParent,
+  enabled: boolean,
+  filterKey: unknown[],
+  filters: LlmUsageQueryFilters
+) {
+  const { dimension } = SOURCE_SUB_ROWS[parent];
+  return useQuery({
+    queryKey: ["llm-usage", "breakdown", dimension, ...filterKey],
+    queryFn: () => fetchLlmUsageBreakdown(dimension, filters),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
 function LlmUsagePage() {
   const [dateRange, setDateRange] = usePersistedDateRange({
     from: subDays(new Date(), 7),
@@ -126,28 +150,28 @@ function LlmUsagePage() {
   const { groups, showGroupFilter, groupFilter, setGroupFilter, agentFilter, setAgentFilter, agents, filterParams } =
     useAnalyticsFilters();
 
-  const [provider, setProvider] = useState(ALL);
   const [model, setModel] = useState(ALL);
   const [dimension, setDimension] = useState<LlmUsageDimension>("model");
   const [spendMetric, setSpendMetric] = useState<SpendMetric>("cost");
-  const [evalExpanded, setEvalExpanded] = useState(false);
+  const [expandedSources, setExpandedSources] = useState<string[]>([]);
 
-  const dateParams = useMemo(() => toExpandedUTCDateRange(dateRange), [dateRange]);
+  const dateParams = useMemo(
+    () => ({ ...toUtcBucketDateParams(dateRange), ...toExactActivityParams(dateRange) }),
+    [dateRange]
+  );
   const queryFilters = useMemo<LlmUsageQueryFilters>(
     () => ({
       ...filterParams,
       ...dateParams,
-      provider: provider !== ALL ? provider : undefined,
       model: model !== ALL ? model : undefined,
     }),
-    [filterParams, dateParams, provider, model]
+    [filterParams, dateParams, model]
   );
   const filterKey = [
-    dateParams.from_date,
-    dateParams.to_date,
+    dateParams.activity_from_datetime,
+    dateParams.activity_to_datetime,
     filterParams.group_id,
     filterParams.agent_id,
-    provider,
     model,
   ];
 
@@ -176,12 +200,11 @@ function LlmUsagePage() {
     placeholderData: keepPreviousData,
   });
 
-  const evalMethods = useQuery({
-    queryKey: ["llm-usage", "breakdown", "evaluation_method", ...filterKey],
-    queryFn: () => fetchLlmUsageBreakdown("evaluation_method", queryFilters),
-    enabled: evalExpanded && dimension === "source",
-    placeholderData: keepPreviousData,
-  });
+  const isSourceExpanded = (parent: SourceSubRowParent) => dimension === "source" && expandedSources.includes(parent);
+  const subRowQueries: Record<SourceSubRowParent, ReturnType<typeof useSourceSubRows>> = {
+    evaluation: useSourceSubRows("evaluation", isSourceExpanded("evaluation"), filterKey, queryFilters),
+    llm_analyst: useSourceSubRows("llm_analyst", isSourceExpanded("llm_analyst"), filterKey, queryFilters),
+  };
 
   const showNodePanel = agentFilter !== ALL;
   const agentNodes = useQuery({
@@ -199,7 +222,11 @@ function LlmUsagePage() {
 
   const hasCompare = Boolean(compareDateRange?.from && compareDateRange?.to);
   const compareParams = useMemo<LlmUsageQueryFilters>(
-    () => ({ ...queryFilters, ...toExpandedUTCDateRange(compareDateRange) }),
+    () => ({
+      ...queryFilters,
+      ...toUtcBucketDateParams(compareDateRange),
+      ...toExactActivityParams(compareDateRange),
+    }),
     [queryFilters, compareDateRange]
   );
 
@@ -207,11 +234,10 @@ function LlmUsagePage() {
     queryKey: [
       "llm-usage",
       "compare",
-      compareParams.from_date,
-      compareParams.to_date,
+      compareParams.activity_from_datetime,
+      compareParams.activity_to_datetime,
       filterParams.group_id,
       filterParams.agent_id,
-      provider,
       model,
     ],
     queryFn: () => fetchLlmUsageSummary(compareParams),
@@ -226,15 +252,15 @@ function LlmUsagePage() {
 
   const overviewLoading = overview.isPending || overview.isPlaceholderData;
   const tableLoading = breakdown.isPending || breakdown.isPlaceholderData;
-  const error = overview.error || breakdown.error ? "Failed to load cost data." : null;
+  const overviewError = overview.error ? LOAD_ERROR : null;
+  const error = overviewError ?? (breakdown.error ? LOAD_ERROR : null);
 
   const options = filterOptions.isPlaceholderData ? undefined : filterOptions.data;
 
   useEffect(() => {
     if (!options) return;
-    if (provider !== ALL && !options.providers.includes(provider)) setProvider(ALL);
     if (model !== ALL && !options.models.includes(model)) setModel(ALL);
-  }, [options, provider, model]);
+  }, [options, model]);
 
   const exportParams = useMemo(() => ({ ...queryFilters, dimension }), [queryFilters, dimension]);
 
@@ -242,39 +268,47 @@ function LlmUsagePage() {
   const dimensionLabel = activeDimension?.label ?? "Model";
   const dimensionHeading = activeDimension?.heading ?? dimensionLabel;
   const costFor = (key: string) => sourceItems.find((i) => i.key === key)?.cost_usd ?? 0;
-  const unpricedTokenPct = 100 - (summary?.priced_token_coverage_pct ?? 100);
+  // Gated on the rounded figure the notice prints, so it never reads "0.0%"
+  const unpricedTokenPct = Number((100 - (summary?.priced_token_coverage_pct ?? 100)).toFixed(1));
   const totalItemCost = items.reduce((sum, i) => sum + i.cost_usd, 0);
   const previous = hasCompare ? compare.data : undefined;
   const hasPartialCost = items.some((i) => i.cost_is_partial);
   const coverageNotice = useDismissibleNotice(COVERAGE_NOTICE, summary?.last_unpriced_at);
+  const fallbackNotice = useDismissibleNotice(FALLBACK_NOTICE, summary?.last_fallback_at);
 
-  const isEvaluationRow = (i: LlmUsageBreakdownItem) => dimension === "source" && i.key === EVALUATION_KEY;
+  const subRowParentOf = (i: LlmUsageBreakdownItem): SourceSubRowParent | null =>
+    dimension === "source" && isSourceSubRowParent(i.key) ? i.key : null;
+  const toggleSource = (parent: SourceSubRowParent) =>
+    setExpandedSources((current) =>
+      current.includes(parent) ? current.filter((key) => key !== parent) : [...current, parent]
+    );
 
   // Only a settled response may label the row, so a filter change can't flash a stale count
-  const evaluationMethodCount =
-    !evalMethods.isPlaceholderData && !evalMethods.isError ? evalMethods.data?.total : undefined;
-  const methodCountLabel = evaluationMethodCount
-    ? `${evaluationMethodCount} ${evaluationMethodCount === 1 ? "method" : "methods"}`
-    : null;
+  const countLabelFor = (parent: SourceSubRowParent) => {
+    const query = subRowQueries[parent];
+    return subRowCountLabel(parent, !query.isPlaceholderData && !query.isError ? query.data?.total : undefined);
+  };
 
   const columns: Column<LlmUsageBreakdownItem>[] = [
     {
       header: dimensionLabel,
       key: "label",
-      cell: (i) =>
-        isEvaluationRow(i) ? (
+      cell: (i) => {
+        const parent = subRowParentOf(i);
+        if (!parent) return <span className="font-medium">{i.label}</span>;
+        const countLabel = countLabelFor(parent);
+        return (
           // No onClick: the native click bubbles to the row handler, keyboard included
           <button
             type="button"
-            aria-expanded={evalExpanded}
+            aria-expanded={isSourceExpanded(parent)}
             className="flex items-center gap-2 rounded text-left font-medium ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <span>{i.label}</span>
-            {methodCountLabel && <span className="text-xs font-normal text-muted-foreground">{methodCountLabel}</span>}
+            {countLabel && <span className="text-xs font-normal text-muted-foreground">{countLabel}</span>}
           </button>
-        ) : (
-          <span className="font-medium">{i.label}</span>
-        ),
+        );
+      },
     },
     {
       header: "Calls",
@@ -301,9 +335,8 @@ function LlmUsagePage() {
     {
       header: "Avg / Call",
       key: "avg",
-      cell: (i) => (
-        <span className="tabular-nums text-muted-foreground">{formatUsd(i.calls ? i.cost_usd / i.calls : 0)}</span>
-      ),
+      description: "Priced cost divided by priced calls. Unpriced calls are left out.",
+      cell: (i) => <span className="tabular-nums text-muted-foreground">{formatUsd(pricedCostPerCall(i))}</span>,
     },
     {
       header: "Share",
@@ -321,6 +354,7 @@ function LlmUsagePage() {
       value: formatUsd(summary?.total_cost_usd),
       icon: DollarSign,
       sub: `Workflow ${formatUsd(costFor("workflow"), 2)} · Analyst ${formatUsd(costFor("llm_analyst"), 2)}`,
+      description: summary?.cost_is_partial ? PARTIAL_COST_HELP : undefined,
       delta:
         summary && previous ? <KpiDelta delta={pctChange(summary.total_cost_usd, previous.total_cost_usd)} /> : null,
     },
@@ -413,13 +447,13 @@ function LlmUsagePage() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
-        {summary && summary.unpriced_calls > 0 && coverageNotice.visible && (
+        {summary && summary.unpriced_calls > 0 && unpricedTokenPct >= MIN_UNPRICED_TOKEN_PCT && coverageNotice.visible && (
           <div className="flex items-center gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>
               <span className="font-semibold">{unpricedTokenPct.toFixed(1)}% of tokens have no configured rate.</span>{" "}
-              Totals below are the priced subtotal, add rates under LLM Settings › LLM Providers to complete cost
-              coverage.
+              Totals below are the priced subtotal. Rates added under LLM Settings › LLM Providers apply to new
+              calls only.
             </span>
             <button
               type="button"
@@ -432,15 +466,23 @@ function LlmUsagePage() {
           </div>
         )}
 
-        {summary && summary.fallback_calls > 0 && (
+        {summary && summary.fallback_calls > 0 && fallbackNotice.visible && (
           <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2.5 text-sm text-muted-foreground">
             <Info className="h-4 w-4 shrink-0" />
             <span>
               <span className="font-semibold text-foreground">
                 {summary.fallback_calls.toLocaleString()} calls used bundled fallback rates.
               </span>{" "}
-              Add matching rates to price them from your own configuration.
+              Add matching rates to price new calls from your own configuration.
             </span>
+            <button
+              type="button"
+              onClick={fallbackNotice.dismiss}
+              aria-label="Dismiss fallback rates notice"
+              className="ml-auto shrink-0 rounded p-0.5 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         )}
 
@@ -472,11 +514,12 @@ function LlmUsagePage() {
             <LlmUsageTimeseriesChart
               items={timeseries}
               loading={overviewLoading}
+              error={overviewError}
               metric={spendMetric}
               onMetricChange={setSpendMetric}
             />
           </div>
-          <LlmUsageProviderDonut items={providerItems} loading={overviewLoading} />
+          <LlmUsageProviderDonut items={providerItems} loading={overviewLoading} error={overviewError} />
         </div>
 
         <Card className={cn("bg-card dark:bg-zinc-900 shadow-sm", analyticsFadeUpClass)}>
@@ -509,26 +552,34 @@ function LlmUsagePage() {
               pageSize={10}
               getRowProps={
                 dimension === "source"
-                  ? (i) =>
-                      isEvaluationRow(i)
+                  ? (i) => {
+                      const parent = subRowParentOf(i);
+                      return parent
                         ? {
-                            onClick: () => setEvalExpanded((current) => !current),
+                            onClick: () => toggleSource(parent),
                             className: "cursor-pointer hover:bg-muted/60 focus-within:bg-muted/60",
                           }
-                        : undefined
+                        : undefined;
+                    }
                   : undefined
               }
               renderSubRows={
                 dimension === "source"
-                  ? (i) =>
-                      isEvaluationRow(i) && evalExpanded ? (
-                        <LlmUsageEvaluationMethods
-                          items={evalMethods.data?.items ?? []}
+                  ? (i) => {
+                      const parent = subRowParentOf(i);
+                      if (!parent || !isSourceExpanded(parent)) return null;
+                      const query = subRowQueries[parent];
+                      return (
+                        <LlmUsageSourceSubRows
+                          items={query.data?.items ?? []}
                           totalCostUsd={totalItemCost}
-                          loading={evalMethods.isPending || evalMethods.isPlaceholderData}
-                          error={evalMethods.isError}
+                          emptyText={SOURCE_SUB_ROWS[parent].emptyText}
+                          errorText={SOURCE_SUB_ROWS[parent].errorText}
+                          loading={query.isPending || query.isPlaceholderData}
+                          error={query.isError}
                         />
-                      ) : null
+                      );
+                    }
                   : undefined
               }
             />

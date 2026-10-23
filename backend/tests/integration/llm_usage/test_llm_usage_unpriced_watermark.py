@@ -1,4 +1,4 @@
-"""Integration tests for the newest-unpriced watermark behind the coverage notice"""
+"""Integration tests for the newest-unpriced and newest-fallback watermarks behind the Cost Explorer notices"""
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -35,7 +35,7 @@ async def db(app_def):
     await engine.dispose()
 
 
-async def _record(db, *, cost, occurred_at) -> None:
+async def _record(db, *, cost, occurred_at, status=None) -> None:
     session, execution_ids = db
     execution_id = f"watermark-{uuid4()}"
     execution_ids.append(execution_id)
@@ -51,7 +51,7 @@ async def _record(db, *, cost, occurred_at) -> None:
             output_tokens=5,
             total_tokens=15,
             cost_usd=cost,
-            pricing_status="unpriced" if cost is None else "configured",
+            pricing_status=status or ("unpriced" if cost is None else "configured"),
             occurred_at=occurred_at,
             is_deleted=0,
         )
@@ -97,3 +97,44 @@ async def test_soft_deleted_unpriced_calls_are_excluded(db):
     await session.commit()
 
     assert await repo.last_unpriced_at() != before
+
+
+@pytest.mark.asyncio
+async def test_fallback_watermark_tracks_when_the_call_was_recorded_not_when_it_ran(db):
+    session, _ = db
+    ran_at = datetime.now(timezone.utc) - _MONTH_AGO
+    recorded_after = datetime.now(timezone.utc)
+    await _record(db, cost=Decimal("0.10"), occurred_at=ran_at, status="fallback")
+
+    watermark = await LlmUsageReadRepository(session).last_fallback_at()
+    assert watermark >= recorded_after
+    assert watermark > ran_at
+
+
+@pytest.mark.asyncio
+async def test_configured_and_unpriced_calls_leave_the_fallback_watermark_alone(db):
+    session, _ = db
+    await _record(db, cost=Decimal("0.10"), occurred_at=datetime.now(timezone.utc) - _MONTH_AGO, status="fallback")
+    before = await LlmUsageReadRepository(session).last_fallback_at()
+
+    await _record(db, cost=Decimal("0.25"), occurred_at=datetime.now(timezone.utc))
+    await _record(db, cost=None, occurred_at=datetime.now(timezone.utc))
+
+    assert await LlmUsageReadRepository(session).last_fallback_at() == before
+
+
+@pytest.mark.asyncio
+async def test_soft_deleted_fallback_calls_are_excluded(db):
+    session, execution_ids = db
+    await _record(db, cost=Decimal("0.10"), occurred_at=datetime.now(timezone.utc), status="fallback")
+    repo = LlmUsageReadRepository(session)
+    before = await repo.last_fallback_at()
+
+    await session.execute(
+        LlmUsageEventModel.__table__.update()
+        .where(LlmUsageEventModel.execution_id.in_(execution_ids))
+        .values(is_deleted=1)
+    )
+    await session.commit()
+
+    assert await repo.last_fallback_at() != before
