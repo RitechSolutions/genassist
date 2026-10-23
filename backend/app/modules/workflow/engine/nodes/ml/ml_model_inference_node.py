@@ -219,15 +219,86 @@ def _validate_categorical_inputs(
             }
         )
         if invalid_values:
-            allowed = ", ".join(str(v) for v in known.tolist())
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
+                error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
                 error_detail=(
-                    f"Invalid value(s) for feature '{col}': {', '.join(invalid_values)}. "
-                    f"Please enter a correct value, otherwise this field will be ignored. "
-                    f"Expected one of: {allowed}."
+                    f"Invalid value(s) for feature '{_format_error_value(col)}': "
+                    f"{_format_value_list(invalid_values)}. The request was rejected "
+                    "because one or more values are not configured for this model."
                 ),
             )
+
+
+def _validate_ordinal_inputs(
+    normalized_inputs: Dict[str, List[Any]],
+    ordinal_columns: Sequence[str],
+    ordinal_encodings: Dict[str, Dict[Any, Any]],
+) -> None:
+    """Reject an ordinal value that has no position in the fitted order.
+
+    Training refuses such values rather than turning them into missing
+    (TrainModelNode._encode_categoricals), so inference does the same instead
+    of encoding them as NaN - which most models reject with a vague error and
+    XGBoost/LightGBM/HistGradientBoosting silently treat as missing. Values
+    are matched with ordinal_key, exactly as training matches them; missing
+    values stay missing, as they do in training.
+    """
+    for col in ordinal_columns:
+        if col not in normalized_inputs:
+            continue
+        mapping = ordinal_encodings.get(col) or {}
+        known_keys = {ordinal_key(k) for k in mapping}
+        invalid_value_rows: Dict[str, List[int]] = {}
+        for row, value in enumerate(normalized_inputs[col], start=1):
+            key = ordinal_key(value)
+            if key is None or key in known_keys:
+                continue
+            invalid_value_rows.setdefault(str(value), []).append(row)
+        if invalid_value_rows:
+            raise AppException(
+                error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                error_detail=(
+                    f"Invalid value(s) for ordinal feature '{_format_error_value(col)}': "
+                    f"{_format_value_rows(invalid_value_rows)}. The request was rejected because "
+                    "one or more values have no configured ordinal position."
+                ),
+            )
+
+
+_MAX_LISTED_VALUES = 5
+_MAX_DISPLAY_VALUE_LENGTH = 40
+
+
+def _format_error_value(value: Any) -> str:
+    """Bound an input value before including it in a client-safe error."""
+    text = str(value)
+    if len(text) <= _MAX_DISPLAY_VALUE_LENGTH:
+        return text
+    return f"{text[: _MAX_DISPLAY_VALUE_LENGTH - 1]}…"
+
+
+def _format_value_list(values: Sequence[Any], limit: int = _MAX_LISTED_VALUES) -> str:
+    """Join bounded caller values without exceeding the client detail budget."""
+    items = [_format_error_value(value) for value in values]
+    if len(items) <= limit:
+        return ", ".join(items)
+    return f"{', '.join(items[:limit])} … {len(items) - limit} more"
+
+
+def _format_value_rows(
+    value_rows: Dict[str, List[int]], limit: int = _MAX_LISTED_VALUES
+) -> str:
+    """Pair each bounded invalid value with its affected input rows."""
+    entries = list(value_rows.items())
+    formatted = []
+    for value, rows in entries[:limit]:
+        row_label = "row" if len(rows) == 1 else "rows"
+        formatted.append(
+            f"{_format_error_value(value)} ({row_label} {_format_value_list(rows)})"
+        )
+    if len(entries) > limit:
+        formatted.append(f"… {len(entries) - limit} more values")
+    return "; ".join(formatted)
 
 
 def _category_key(value: Any, normalize: bool = False) -> Any:
@@ -585,17 +656,22 @@ def _mapped_transform(
     """
     if not columns:
         return np.empty((batch_size, 0))
-    raw = _build_input_array(normalized_inputs, columns).astype(object)
-    out = np.empty(raw.shape, dtype=float)
+    out = np.empty((batch_size, len(columns)), dtype=float)
     for i, col in enumerate(columns):
+        # Preserve each original value type. np.column_stack can stringify
+        # mixed values either across columns or within one batch column.
+        values = np.asarray(
+            _broadcast_column(normalized_inputs[col], batch_size, col),
+            dtype=object,
+        )
         mapping = mappings.get(col, {})
         if normalize_keys:
             mapping = {ordinal_key(k): v for k, v in mapping.items()}
-            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in raw[:, i]]
+            out[:, i] = [mapping.get(ordinal_key(v), unseen_value) for v in values]
         else:
             mapping = {_category_key(k): v for k, v in mapping.items()}
             out[:, i] = [
-                mapping.get(_category_key(v), unseen_value) for v in raw[:, i]
+                mapping.get(_category_key(v), unseen_value) for v in values
             ]
     return out
 
@@ -1011,7 +1087,8 @@ class MLModelInferenceNode(BaseNode):
                 model_id = UUID(model_id_str)
             except (ValueError, AttributeError) as e:
                 raise AppException(
-                    error_key=ErrorKey.MISSING_PARAMETER, error_detail=f"Invalid modelId format: {model_id_str}"
+                    error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+                    error_detail="modelId must be a valid UUID.",
                 ) from e
 
             # Get ML model from database
@@ -1222,6 +1299,7 @@ class MLModelInferenceNode(BaseNode):
                         legacy_order += label_columns
 
                     if ordinal_columns:
+                        _validate_ordinal_inputs(normalized_inputs, ordinal_columns, ordinal_encodings)
                         ordinal_data = _mapped_transform(
                             normalized_inputs, ordinal_columns, ordinal_encodings, batch_size,
                             unseen_value=np.nan, normalize_keys=True,

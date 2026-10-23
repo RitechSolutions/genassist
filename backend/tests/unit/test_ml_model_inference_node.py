@@ -1980,3 +1980,186 @@ class TestEnsurePklFile:
         service.record_local_pkl_file.assert_awaited_once_with(model_id, expected_path)
         service.update.assert_not_awaited()
         assert ml_model.pkl_file == expected_path
+
+
+class _CapturingModel:
+    def __init__(self):
+        self.received = None
+
+    def predict(self, X):
+        self.received = np.asarray(X)
+        return np.zeros(len(X), dtype=int)
+
+
+class TestOrdinalInputValidation:
+    """MI-9: an ordinal value outside the fitted order is rejected, as training
+    rejects it, instead of being encoded as NaN."""
+
+    ORDER = {"High": 2, "Low": 0, "Medium": 1}
+
+    @pytest.mark.asyncio
+    async def test_unknown_ordinal_value_is_rejected(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": "Urgent"},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        detail = exc.value.error_detail
+        assert "'priority'" in detail
+        assert "Urgent" in detail
+        assert "Low" not in detail
+        assert "Medium" not in detail
+        assert "High" not in detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_mixed_or_missing_ordinal_codes_still_return_an_input_error(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": "Urgent"},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": {"Low": None, "Medium": 1, "High": "last"}},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "configured ordinal position" in exc.value.error_detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_normalised_matches_are_accepted(self, monkeypatch):
+        model = _CapturingModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"priority": [" High", "Low"], "grade": [2, 3.0]},
+            feature_names=["priority", "grade"],
+            ordinal_encodings={"priority": self.ORDER, "grade": {"2": 1, "3": 2}},
+        )
+
+        assert result["status"] == "success"
+        np.testing.assert_array_equal(model.received, [[2, 1], [0, 2]])
+
+    @pytest.mark.asyncio
+    async def test_mixed_type_batch_preserves_normalised_matches(self, monkeypatch):
+        model = _CapturingModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"rank": [2.0, "High"]},
+            feature_names=["rank"],
+            ordinal_encodings={"rank": {"2": 0, "High": 1}},
+        )
+
+        assert result["status"] == "success"
+        np.testing.assert_array_equal(model.received, [[0], [1]])
+
+    @pytest.mark.asyncio
+    async def test_one_invalid_row_in_a_batch_rejects_the_request_and_names_the_row(
+        self, monkeypatch
+    ):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": ["Low", "Urgent", "High"]},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Urgent (row 2)" in exc.value.error_detail
+        assert "Low" not in exc.value.error_detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_broadcast_invalid_ordinal_names_every_affected_row(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": "Urgent", "amount": [1, 2, 3]},
+                feature_names=["priority", "amount"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Urgent (rows 1, 2, 3)" in exc.value.error_detail
+        assert model.received is None
+
+    @pytest.mark.asyncio
+    async def test_each_invalid_ordinal_value_is_paired_with_its_rows(self, monkeypatch):
+        model = _CapturingModel()
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"priority": ["Low", "Urgent", "Blocked", "Urgent"]},
+                feature_names=["priority"],
+                ordinal_encodings={"priority": self.ORDER},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Urgent (rows 2, 4)" in exc.value.error_detail
+        assert "Blocked (row 3)" in exc.value.error_detail
+        assert model.received is None
+
+
+class TestCategoricalErrorMessages:
+    """Unknown categories return bounded client-safe errors without exposing
+    values learned from training data."""
+
+    def test_unknown_category_says_rejected_with_input_invalid_key(self):
+        with pytest.raises(AppException) as exc:
+            _validate_categorical_inputs(
+                {"color": ["purple"]},
+                ["color"],
+                [np.array(["training-red", "training-green"], dtype=object)],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        detail = exc.value.error_detail
+        assert "will be ignored" not in detail
+        assert "rejected" in detail
+        assert "purple" in detail
+        assert "training-red" not in detail
+        assert "training-green" not in detail
+
+    def test_training_values_are_not_exposed_and_caller_values_are_bounded(self):
+        known = np.array([f"customer-{i}" for i in range(25)], dtype=object)
+        invalid_values = [f"invalid-{index}-" + "x" * 100 for index in range(10)]
+        with pytest.raises(AppException) as exc:
+            _validate_categorical_inputs(
+                {"account_name": invalid_values},
+                ["account_name"],
+                [known],
+            )
+
+        detail = exc.value.error_detail
+        assert "customer-0" not in detail
+        assert "invalid-0" in detail
+        assert "invalid-5" not in detail
+        assert "… 5 more" in detail
+        assert "..." not in detail
+        assert len(detail) < 450
+
+    @pytest.mark.asyncio
+    async def test_invalid_model_id_format_is_an_input_error(self):
+        node = MLModelInferenceNode("ml1", {"id": "ml1", "type": "mlModelInferenceNode", "data": {}}, MagicMock())
+        with pytest.raises(AppException) as exc:
+            await node.process({"modelId": "not-a-uuid", "inferenceInputs": {}})
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert exc.value.error_detail == "modelId must be a valid UUID."
