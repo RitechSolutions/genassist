@@ -2,7 +2,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 from app.services.role_permissions import RolePermissionsService
+from app.repositories.permissions import PermissionsRepository
 from app.repositories.role_permissions import RolePermissionsRepository
+from app.repositories.roles import RolesRepository
 from app.schemas.role_permission import RolePermissionCreate, RolePermissionUpdate
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
@@ -14,7 +16,11 @@ def mock_repository():
 
 @pytest.fixture
 def role_permission_service(mock_repository):
-    return RolePermissionsService(repository=mock_repository)
+    return RolePermissionsService(
+        repository=mock_repository,
+        roles_repository=AsyncMock(spec=RolesRepository),
+        permissions_repository=AsyncMock(spec=PermissionsRepository),
+    )
 
 @pytest.fixture
 def sample_role_permission_data():
