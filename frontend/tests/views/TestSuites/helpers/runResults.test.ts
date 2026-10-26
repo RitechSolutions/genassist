@@ -14,12 +14,13 @@ import {
   runName,
   runOptionLabel,
   runFailureText,
+  runAllStatusText,
+  runInProgressText,
   runProgressText,
-  runStatusLabel,
   techniqueAccuracy,
   techniqueSummaries,
   turnsPassed,
-  runHasResults,
+  runOpens,
 } from "@/views/TestSuites/helpers/runResults";
 import type { TestResult, TestRun } from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
@@ -235,17 +236,27 @@ describe("methods that could not grade a turn", () => {
 
 describe("runProgressText", () => {
   const progress = (done: number, total: number) => ({
-    progress: { conversations_done: 0, conversations_total: 1, turns_done: done, turns_total: total },
+    progress: { conversations_done: done, conversations_total: total, turns_done: 7, turns_total: 40 },
   });
 
-  it("counts finished turns", () => {
-    expect(runProgressText(progress(3, 11))).toBe("3 of 11 turns done");
-    expect(runProgressText(progress(0, 1))).toBe("0 of 1 turn done");
+  it("counts finished conversations, as the results do", () => {
+    expect(runProgressText(progress(3, 11))).toBe("3 of 11 conversations done");
+    expect(runProgressText(progress(0, 1))).toBe("0 of 1 conversation done");
   });
 
   it("is null before the run reports progress", () => {
     expect(runProgressText({ progress: null })).toBeNull();
     expect(runProgressText(null)).toBeNull();
+  });
+});
+
+describe("runAllStatusText", () => {
+  it("says what the workflow's evaluations are doing", () => {
+    expect(runAllStatusText(true, null, false)).toBe("Starting…");
+    expect(runAllStatusText(true, { done: 3, total: 16 }, true)).toBe("Running… 3 of 16 done");
+    // Runs started from a row, or before the page was opened.
+    expect(runAllStatusText(false, null, true)).toBe("Running…");
+    expect(runAllStatusText(false, null, false)).toBeNull();
   });
 });
 
@@ -443,13 +454,6 @@ describe("runFailureText", () => {
 });
 
 describe("run status", () => {
-  it("labels statuses for people", () => {
-    expect(runStatusLabel("queued")).toBe("Queued");
-    expect(runStatusLabel("running")).toBe("Running");
-    expect(runStatusLabel("failed")).toBe("Failed");
-    expect(runStatusLabel("paused")).toBe("paused");
-  });
-
   it("treats queued and running runs as in progress", () => {
     expect(isRunInProgress({ status: "queued" })).toBe(true);
     expect(isRunInProgress({ status: "running" })).toBe(true);
@@ -497,15 +501,34 @@ describe("runOptionLabel", () => {
   });
 });
 
-describe("runHasResults", () => {
-  it("opens every run that did not fail", () => {
-    expect(runHasResults({ status: "completed", progress: null })).toBe(true);
-    expect(runHasResults({ status: "running", progress: null })).toBe(true);
+describe("runOpens", () => {
+  const turns = (done: number) => ({ turns_done: done, turns_total: 4 }) as TestRun["progress"];
+
+  it("opens a run once it has ended", () => {
+    expect(runOpens({ status: "completed", progress: null })).toBe(true);
+    // A run still going has no results worth a page yet.
+    expect(runOpens({ status: "running", progress: turns(3) })).toBe(false);
+    expect(runOpens({ status: "queued", progress: null })).toBe(false);
   });
 
   it("opens a failed run only when some turns finished first", () => {
-    expect(runHasResults({ status: "failed", progress: null })).toBe(false);
-    expect(runHasResults({ status: "failed", progress: { turns_done: 0, turns_total: 4 } as TestRun["progress"] })).toBe(false);
-    expect(runHasResults({ status: "failed", progress: { turns_done: 2, turns_total: 4 } as TestRun["progress"] })).toBe(true);
+    expect(runOpens({ status: "failed", progress: null })).toBe(false);
+    expect(runOpens({ status: "failed", progress: turns(0) })).toBe(false);
+    expect(runOpens({ status: "failed", progress: turns(2) })).toBe(true);
+  });
+});
+
+describe("runInProgressText", () => {
+  const progress = { conversations_done: 2, conversations_total: 9, turns_done: 5, turns_total: 13 };
+
+  it("says a run still going is queued, or how far it got", () => {
+    expect(runInProgressText({ status: "queued", progress: null })).toBe("Queued");
+    expect(runInProgressText({ status: "running", progress })).toBe("Running… 2 of 9 conversations done");
+    expect(runInProgressText({ status: "running", progress: null })).toBe("Running…");
+  });
+
+  it("never shows a finished run's count, as the last run is just after Run", () => {
+    expect(runInProgressText({ status: "completed", progress })).toBe("Running…");
+    expect(runInProgressText(null)).toBe("Running…");
   });
 });

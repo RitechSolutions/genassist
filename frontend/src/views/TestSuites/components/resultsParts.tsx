@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, MinusCircle, TrendingDown, TrendingUp, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, MinusCircle, TrendingDown, TrendingUp, XCircle } from "lucide-react";
 import { cn } from "@/helpers/utils";
 import type { ConversationCounts, TestRun, Verdict } from "@/interfaces/testSuite.interface";
 import {
@@ -43,6 +43,18 @@ export const VerdictIcon: React.FC<{ verdict: Verdict; className?: string; fille
 
 // A zero stays readable but faint, so the eye skips it.
 const ZERO = "font-normal text-muted-foreground/50";
+
+/** A run still going, in blue with a spinner, where its results will appear. */
+export const RunningStatus: React.FC<{ children: React.ReactNode; className?: string; iconClassName?: string }> = ({
+  children,
+  className,
+  iconClassName = "h-3 w-3",
+}) => (
+  <span className={cn("inline-flex items-center gap-1.5 font-medium text-blue-600 dark:text-blue-400", className)}>
+    <Loader2 className={cn("shrink-0 animate-spin", iconClassName)} aria-hidden="true" />
+    {children}
+  </span>
+);
 
 /** A run's conversations as passed and failed out of all, plus not evaluated when there are some. */
 export const VerdictTally: React.FC<{
