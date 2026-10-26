@@ -2606,7 +2606,7 @@ class TestFeatureEngineeringReplayErrors:
             await _predict(
                 monkeypatch,
                 model,
-                {"income": 1000.0, "household_size": "abc"},
+                {"income": 1000.0, "household_size": Decimal("4")},
                 feature_names=["income", "household_size"],
                 model_input_columns=["income", "household_size", "income_per_person"],
                 feature_engineering_steps=[self.RATIO_STEP],
@@ -2650,7 +2650,7 @@ class TestFeatureEngineeringReplayErrors:
             await _predict(
                 monkeypatch,
                 _CapturingModel(),
-                {"income": 1000.0, "household_size": "abc"},
+                {"income": 1000.0, "household_size": Decimal("4")},
                 feature_names=["income", "household_size"],
                 model_input_columns=["income", "household_size", "sq_income_per_person^2"],
                 feature_engineering_steps=[
@@ -2713,7 +2713,7 @@ class TestFeatureEngineeringReplayErrors:
         result = await _predict(
             monkeypatch,
             _CapturingModel(),
-            {"income": 1000.0, "household_size": "abc"},
+            {"income": 1000.0, "household_size": Decimal("4")},
             feature_names=["income", "household_size"],
             model_input_columns=["income", "household_size"],
             feature_engineering_steps=[self.RATIO_STEP],
@@ -2894,7 +2894,7 @@ class TestFeatureEngineeringReplayErrors:
             await _predict(
                 monkeypatch,
                 model,
-                {"income": 1000.0, "household_size": "abc"},
+                {"income": 1000.0, "household_size": Decimal("4")},
                 feature_names=["income", "household_size"],
                 feature_engineering_steps=[self.RATIO_STEP],
             )
