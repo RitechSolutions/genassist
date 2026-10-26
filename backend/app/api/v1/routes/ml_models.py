@@ -594,7 +594,10 @@ async def analyze_training_file(
             sheet_name = sheet_name or (sheet_names[0] if sheet_names else None)
 
         frame, total_rows, truncated = await read_training_file_preview(
-            path, settings.ML_PROFILE_MAX_ROWS, sheet_name=sheet_name
+            path,
+            settings.ML_PROFILE_MAX_ROWS,
+            sheet_name=sheet_name,
+            json_max_bytes=settings.ML_EXTRACT_JSON_MAX_BYTES,
         )
         analysis = await asyncio.to_thread(ml_utils.analyze_dataframe, frame)
         analysis["rows_analyzed"] = len(frame)
@@ -966,6 +969,7 @@ async def profile_data(
                     file_path,
                     settings.ML_PROFILE_MAX_ROWS,
                     sheet_name=profile_request.sheet_name,
+                    json_max_bytes=settings.ML_EXTRACT_JSON_MAX_BYTES,
                 )
                 html = await asyncio.to_thread(
                     _build_dataframe_profile_report_html,

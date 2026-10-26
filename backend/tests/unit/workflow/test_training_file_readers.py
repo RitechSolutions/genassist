@@ -367,3 +367,48 @@ async def test_preview_of_a_small_file_is_complete_and_typed(tmp_path):
 
     assert (len(frame), total, truncated) == (2, 2, False)
     assert str(frame["n"].dtype) == "Int64" and str(frame["f"].dtype) == "boolean"
+
+
+@pytest.mark.asyncio
+async def test_csv_preview_types_columns_like_read_csv(tmp_path):
+    path = tmp_path / "data.csv"
+    path.write_text("price,qty,size,ok\n1.5,3,M,True\n,4,L,False\n", encoding="utf-8")
+
+    frame, total, truncated = await read_training_file_preview(path, 100)
+
+    assert (len(frame), total, truncated) == (2, 2, False)
+    assert frame["price"].dtype == "float64" and frame["qty"].dtype == "int64"
+    assert frame["size"].dtype == object and frame["ok"].dtype == bool
+    assert ml_utils.analyze_dataframe(frame)["columns_info"][0]["type"] == "numeric"
+
+
+@pytest.mark.asyncio
+async def test_jsonl_preview_stops_scanning_after_the_preview_rows(tmp_path):
+    path = tmp_path / "rows.jsonl"
+    # The line after the preview rows is invalid: the preview must not read it.
+    path.write_text('{"a": 1}\n{"a": 2}\n{"a": 3}\nnot json\n', encoding="utf-8")
+
+    frame, total, truncated = await read_training_file_preview(path, 2)
+
+    assert list(frame["a"]) == [1, 2] and total is None and truncated
+
+
+@pytest.mark.asyncio
+async def test_jsonl_preview_with_exactly_the_preview_rows_is_complete(tmp_path):
+    path = tmp_path / "rows.jsonl"
+    path.write_text('{"a": 1}\n{"a": 2}\n\n', encoding="utf-8")
+
+    frame, total, truncated = await read_training_file_preview(path, 2)
+
+    assert (len(frame), total, truncated) == (2, 2, False)
+
+
+@pytest.mark.asyncio
+async def test_json_preview_uses_the_configured_size_limit(tmp_path):
+    path = tmp_path / "rows.json"
+    path.write_text(json.dumps([{"a": i} for i in range(50)]), encoding="utf-8")
+
+    with pytest.raises(AppException) as exc_info:
+        await read_training_file_preview(path, 10, json_max_bytes=100)
+
+    assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED

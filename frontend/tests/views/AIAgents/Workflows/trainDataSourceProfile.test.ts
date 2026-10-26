@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildProfileDataRequest,
+  createLatestRequestTracker,
   getProfileDataAvailability,
   isExcelFile,
   isSupportedTrainingFile,
@@ -141,5 +142,25 @@ describe('Train Data Source profiling', () => {
       reason: WORKFLOW_VARIABLE_PROFILE_REASON,
     });
     expect(buildProfileDataRequest(values)).toBeNull();
+  });
+});
+
+describe('Train Data Source preview requests', () => {
+  it('applies only the latest of overlapping previews (switching sheets quickly)', () => {
+    const tracker = createLatestRequestTracker();
+    const sheetA = tracker.start();
+    const sheetB = tracker.start();
+
+    // Sheet A's slower response arrives last: it must not overwrite sheet B.
+    expect(tracker.isLatest(sheetB)).toBe(true);
+    expect(tracker.isLatest(sheetA)).toBe(false);
+  });
+
+  it('drops a running preview once a newer request starts (e.g. the file was removed)', () => {
+    const tracker = createLatestRequestTracker();
+    const preview = tracker.start();
+    tracker.start();
+
+    expect(tracker.isLatest(preview)).toBe(false);
   });
 });

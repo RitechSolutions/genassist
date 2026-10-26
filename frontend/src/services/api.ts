@@ -292,10 +292,16 @@ export type UploadKnowledgeFilesOptions = {
 /** The server rejected the upload itself (too large, wrong type), so retrying another way won't help. */
 class UploadRejectedError extends Error {}
 
+// Error keys that refuse the file itself. Other 400s (e.g. "Uploaded object
+// not found in S3", a size mismatch) can still succeed as a chunked upload.
+const REJECTED_FILE_ERROR_KEYS = new Set(["ML_TRAINING_UPLOAD_TOO_LARGE", "ML_EXTRACT_FILE_UNSUPPORTED"]);
+
 function rejectedUploadError(err: unknown): Error {
-  const status = err instanceof AxiosError ? err.response?.status : undefined;
+  const response = err instanceof AxiosError ? err.response : undefined;
+  const errorKey = (response?.data as { error_key?: string } | undefined)?.error_key;
   const message = formatUploadOrNetworkError(err);
-  return status === 400 || status === 413 ? new UploadRejectedError(message) : new Error(message);
+  const rejected = response?.status === 413 || (errorKey !== undefined && REJECTED_FILE_ERROR_KEYS.has(errorKey));
+  return rejected ? new UploadRejectedError(message) : new Error(message);
 }
 
 /** Never show 100% until the server response completes. */

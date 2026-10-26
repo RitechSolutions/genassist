@@ -23,6 +23,21 @@ export function isExcelFile(fileName?: string | null): boolean {
   return /\.xls[xm]$/i.test(fileName ?? '');
 }
 
+export interface LatestRequestTracker {
+  /** Starts a request (and supersedes any still running); returns its id. */
+  start: () => number;
+  isLatest: (id: number) => boolean;
+}
+
+/** Overlapping requests: only the latest one's response should be applied. */
+export function createLatestRequestTracker(): LatestRequestTracker {
+  let latest = 0;
+  return {
+    start: () => ++latest,
+    isLatest: (id) => id === latest,
+  };
+}
+
 export interface ProfileDataAvailability {
   visible: boolean;
   enabled: boolean;

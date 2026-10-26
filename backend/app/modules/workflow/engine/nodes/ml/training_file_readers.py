@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import csv
 import datetime as dt
 import decimal
+import io
 import json
 import math
 from pathlib import Path
@@ -206,6 +208,7 @@ class TrainingFileReader:
         max_rows: Optional[int] = None,
         sheet_name: Optional[str] = None,
         json_max_bytes: int = DEFAULT_JSON_MAX_BYTES,
+        scan_rows: Optional[int] = None,
     ) -> None:
         if chunk_rows <= 0:
             raise ValueError("chunk_rows must be a positive integer")
@@ -215,6 +218,9 @@ class TrainingFileReader:
         self.max_rows = max_rows
         self.sheet_name = (sheet_name or "").strip() or None
         self.json_max_bytes = json_max_bytes
+        # JSON Lines: stop the key pass after this many records (a preview
+        # needs only the first rows, not the whole file's keys and count).
+        self.scan_rows = scan_rows
         self.types = ColumnTypeTracker()
         # Known up front for Parquet (from metadata); None otherwise.
         self.total_rows: Optional[int] = None
@@ -376,10 +382,10 @@ class TrainingFileReader:
     async def _open_json_lines(self):
         handle = open(self.path, "r", encoding="utf-8-sig")
         try:
-            columns, row_count = await self._scan_json_lines(handle)
+            columns, row_count, complete = await self._scan_json_lines(handle)
             if self.max_rows is not None and row_count > self.max_rows:
                 raise _too_many_rows(row_count, self.max_rows)
-            self.total_rows = row_count
+            self.total_rows = row_count if complete else None
             handle.seek(0)
         except BaseException:
             handle.close()
@@ -405,10 +411,14 @@ class TrainingFileReader:
 
         return columns, next_rows, handle.close
 
-    async def _scan_json_lines(self, handle) -> Tuple[List[str], int]:
-        """First pass: every key (in first-seen order) and the row count."""
+    async def _scan_json_lines(self, handle) -> Tuple[List[str], int, bool]:
+        """First pass: every key (in first-seen order) and the row count.
+
+        With scan_rows set, stops at the record after that many; the returned
+        flag says whether the whole file was scanned (the count is exact).
+        """
         keys: Dict[str, None] = {}
-        state = {"line": 0, "rows": 0}
+        state = {"line": 0, "rows": 0, "complete": True}
 
         def scan_some() -> bool:
             for _ in range(_JSONL_SCAN_LINES):
@@ -421,6 +431,9 @@ class TrainingFileReader:
                 state["line"] += 1
                 if not text.strip():
                     continue
+                if self.scan_rows is not None and state["rows"] >= self.scan_rows:
+                    state["complete"] = False
+                    return False
                 try:
                     record = json.loads(text)
                 except json.JSONDecodeError as exc:
@@ -444,7 +457,7 @@ class TrainingFileReader:
             pass
         if not keys:
             raise _invalid("The JSON Lines file has no records.")
-        return list(keys), state["rows"]
+        return list(keys), state["rows"], state["complete"]
 
     # -- JSON array --------------------------------------------------------
 
@@ -553,13 +566,20 @@ async def read_training_file_preview(
     *,
     sheet_name: Optional[str] = None,
     chunk_rows: int = 5_000,
+    json_max_bytes: int = DEFAULT_JSON_MAX_BYTES,
 ) -> Tuple[pd.DataFrame, Optional[int], bool]:
     """The first max_rows rows of a training file as a typed DataFrame.
 
     Returns (frame, total_rows, truncated). total_rows is exact when known
     (Parquet metadata, or the whole file fit in max_rows), otherwise None.
     """
-    reader = TrainingFileReader(path, min(chunk_rows, max_rows), sheet_name=sheet_name)
+    reader = TrainingFileReader(
+        path,
+        min(chunk_rows, max_rows),
+        sheet_name=sheet_name,
+        json_max_bytes=json_max_bytes,
+        scan_rows=max_rows,
+    )
     columns: List[str] = []
     rows: List[Tuple[Any, ...]] = []
     truncated = False
@@ -580,11 +600,28 @@ async def read_training_file_preview(
     finally:
         await chunks.aclose()
 
-    frame = pd.DataFrame(rows, columns=columns)
-    if not reader.is_csv:
-        frame = apply_column_dtypes(frame, reader.column_dtypes())
+    if reader.is_csv:
+        frame = _csv_rows_frame(columns, rows)
+    else:
+        frame = apply_column_dtypes(pd.DataFrame(rows, columns=columns), reader.column_dtypes())
     total = reader.total_rows if reader.total_rows is not None else (None if truncated else len(rows))
     return frame, total, truncated
+
+
+def _csv_rows_frame(columns: List[str], rows: List[Tuple[Any, ...]]) -> pd.DataFrame:
+    """CSV rows (all text) typed the way pd.read_csv types the saved file.
+
+    Re-parsing them gives the preview the same numeric/boolean columns the
+    next node sees when it reads the extracted CSV.
+    """
+    if not columns:
+        return pd.DataFrame(rows, columns=columns)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(columns)
+    writer.writerows(rows)
+    buffer.seek(0)
+    return pd.read_csv(buffer)
 
 
 def apply_column_dtypes(frame: pd.DataFrame, dtypes: Dict[str, str]) -> pd.DataFrame:

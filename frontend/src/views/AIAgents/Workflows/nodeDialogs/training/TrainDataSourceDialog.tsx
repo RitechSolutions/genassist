@@ -30,6 +30,7 @@ import { useNodeDialogState } from "../useNodeDialogState";
 import {
   TRAINING_FILE_TYPES,
   buildProfileDataRequest,
+  createLatestRequestTracker,
   getProfileDataAvailability,
   isExcelFile,
   isSupportedTrainingFile,
@@ -85,6 +86,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   });
   const [isCsvUploading, setIsCsvUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // Switching sheets quickly overlaps previews; only the latest may land.
+  const [previewRequests] = useState(createLatestRequestTracker);
   const [isProfiling, setIsProfiling] = useState(false);
   const [availableDataSources, setAvailableDataSources] = useState<
     DataSource[]
@@ -147,7 +150,9 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
     file: { fileId?: string | null; filePath?: string | null; fileName: string },
     sheetName?: string | null,
   ) => {
+    const requestId = previewRequests.start();
     if (!isSupportedTrainingFile(file.fileName)) {
+      setIsAnalyzing(false);
       setField("analysisResult", null);
       return;
     }
@@ -160,6 +165,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         file_name: file.fileName,
         sheet_name: sheetName || undefined,
       });
+      if (!previewRequests.isLatest(requestId)) return;
       setValues((v) => ({
         ...v,
         analysisResult: result,
@@ -167,6 +173,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         sheetName: result.sheet_name ?? v.sheetName,
       }));
     } catch (err) {
+      if (!previewRequests.isLatest(requestId)) return;
       console.error(err);
       toast({
         title: "Preview Failed",
@@ -175,7 +182,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         variant: "destructive",
       });
     } finally {
-      setIsAnalyzing(false);
+      if (previewRequests.isLatest(requestId)) setIsAnalyzing(false);
     }
   };
 
@@ -372,6 +379,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
               }
             }}
             onRemove={() => {
+              previewRequests.start(); // a preview still running is for the removed file
+              setIsAnalyzing(false);
               setValues((v) => ({
                 ...v,
                 csvFileName: null,

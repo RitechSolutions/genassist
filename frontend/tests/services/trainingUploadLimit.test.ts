@@ -141,4 +141,25 @@ describe("uploadFiles with purpose training_data", () => {
     expect(url).toBe("http://localhost/api/file-manager/upload-session/presign");
     expect(body).toMatchObject({ expected_size: LIMIT + 1, purpose: "training_data" });
   });
+
+  it("falls back to the chunked upload when the direct S3 upload fails with another 400", async () => {
+    grantPermissions(["read:file"]);
+    mockGet.mockResolvedValue({ data: { is_active: 1, values: { direct_s3_upload_enabled: true } } } as never);
+    await getFileManagerCaps(true);
+    const sessionNotFound = new AxiosError("Request failed with status code 400", "ERR_BAD_REQUEST", undefined, undefined, {
+      status: 400,
+      statusText: "Bad Request",
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+      data: { error_key: "MISSING_PARAMETER", error_detail: "Upload session not found." },
+    });
+    mockPost.mockRejectedValueOnce(sessionNotFound).mockRejectedValueOnce(new Error("chunked upload reached"));
+
+    await expect(
+      uploadFiles([fakeFile("data.parquet", 10)], { purpose: "training_data" }),
+    ).rejects.toThrow("chunked upload reached");
+
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    expect(mockPost.mock.calls[1][0]).toBe("http://localhost/api/file-manager/upload-session");
+  });
 });
