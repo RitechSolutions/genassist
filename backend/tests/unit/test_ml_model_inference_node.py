@@ -2271,6 +2271,22 @@ class TestConvertValueNumbers:
         assert "'area'" in exc.value.error_detail
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["1e400", float("inf"), np.float64("inf")])
+    async def test_non_finite_error_displays_the_rejected_value(
+        self, monkeypatch, value
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"area": value},
+                feature_names=["area"],
+            )
+
+        assert "inf (row 1)" in exc.value.error_detail
+        assert "None" not in exc.value.error_detail
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "value",
         [
@@ -2320,6 +2336,145 @@ class TestConvertValueNumbers:
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
         assert "'area'" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_metadata_pipeline_keeps_raw_text_for_its_preprocessor(
+        self, monkeypatch
+    ):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.dummy import DummyRegressor
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        training_data = pd.DataFrame({"region": ["east", "west"]})
+        model = Pipeline(
+            [
+                (
+                    "categories",
+                    ColumnTransformer(
+                        [("region", OneHotEncoder(), ["region"])],
+                    ),
+                ),
+                ("regressor", DummyRegressor(strategy="constant", constant=12.5)),
+            ]
+        ).fit(training_data, [10.0, 20.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east"},
+            feature_names=["region"],
+        )
+
+        assert result["prediction"] == [12.5]
+        assert result["input_data"] == {"region": ["east"]}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("wrapper", ["grid_search", "target_transform"])
+    async def test_metadata_wrapped_pipeline_keeps_raw_text_for_its_preprocessor(
+        self, monkeypatch, wrapper
+    ):
+        from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
+        from sklearn.dummy import DummyRegressor
+        from sklearn.model_selection import GridSearchCV
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        training_data = pd.DataFrame(
+            {"region": ["east", "west", "east", "west"], "hour": [8, 9, 10, 11]}
+        )
+        pipeline = Pipeline(
+            [
+                (
+                    "features",
+                    ColumnTransformer(
+                        [
+                            ("region", OneHotEncoder(), ["region"]),
+                            ("hour", "passthrough", ["hour"]),
+                        ]
+                    ),
+                ),
+                ("regressor", DummyRegressor()),
+            ]
+        )
+        if wrapper == "grid_search":
+            model = GridSearchCV(
+                pipeline,
+                {"regressor__strategy": ["mean"]},
+                cv=2,
+            )
+        else:
+            model = TransformedTargetRegressor(regressor=pipeline)
+        model.fit(training_data, [10.0, 20.0, 30.0, 40.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east", "hour": 8},
+            feature_names=["region", "hour"],
+        )
+
+        assert len(result["prediction"]) == 1
+        assert result["input_data"] == {"region": ["east"], "hour": [8]}
+
+    @pytest.mark.asyncio
+    async def test_metadata_native_categorical_model_accepts_only_its_text_feature(
+        self, monkeypatch
+    ):
+        class NativeCategoricalModel:
+            feature_names_ = ["region", "hour"]
+
+            def get_cat_feature_indices(self):
+                return [0]
+
+            def predict(self, input_data):
+                assert input_data.loc[0, "region"] == "east"
+                return np.array([12.5])
+
+        model = NativeCategoricalModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east", "hour": 8},
+            feature_names=["region", "hour"],
+        )
+
+        assert result["prediction"] == [12.5]
+        assert result["input_data"] == {"region": ["east"], "hour": [8]}
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"region": "east", "hour": "late"},
+                feature_names=["region", "hour"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "'hour'" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_real_catboost_uses_native_categorical_feature(self, monkeypatch):
+        catboost = pytest.importorskip("catboost")
+        training_data = pd.DataFrame(
+            {"region": ["east", "west", "east", "west"], "hour": [8, 9, 10, 11]}
+        )
+        model = catboost.CatBoostRegressor(
+            iterations=2,
+            verbose=False,
+            allow_writing_files=False,
+            cat_features=["region"],
+        ).fit(training_data, [10.0, 20.0, 30.0, 40.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east", "hour": 8},
+            feature_names=["region", "hour"],
+        )
+
+        assert len(result["prediction"]) == 1
+        assert result["input_data"] == {"region": ["east"], "hour": [8]}
 
     @pytest.mark.asyncio
     async def test_legacy_pipeline_keeps_text_categories_that_look_numeric(

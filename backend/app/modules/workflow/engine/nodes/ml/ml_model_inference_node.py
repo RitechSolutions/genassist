@@ -614,12 +614,75 @@ def _numeric_value_problem(value: Any, allow_text: bool) -> Optional[str]:
     return None if np.isfinite(numeric_value) else "not finite"
 
 
+def _wrapped_model_candidates(model: Any) -> List[Any]:
+    """Return a model and fitted estimators held by supported wrappers."""
+    candidates = []
+    pending = [model]
+    visited = set()
+    while pending:
+        candidate = pending.pop()
+        if candidate is None or id(candidate) in visited:
+            continue
+        visited.add(id(candidate))
+        candidates.append(candidate)
+        pending.extend(
+            getattr(candidate, attr, None)
+            for attr in ("best_estimator_", "regressor_")
+        )
+    return candidates
+
+
+def _model_accepts_raw_text_features(model: Any) -> bool:
+    """Return whether a fitted pipeline owns raw feature preprocessing."""
+    for candidate in _wrapped_model_candidates(model):
+        module_root = type(candidate).__module__.split(".", 1)[0]
+        steps = getattr(candidate, "steps", None)
+        if module_root in {"sklearn", "imblearn"} and isinstance(
+            steps, (list, tuple)
+        ) and bool(steps):
+            return True
+    return False
+
+
+def _model_native_text_features(
+    model: Any, feature_names: Sequence[str]
+) -> set[str]:
+    """Return named features a fitted estimator handles as text itself."""
+    text_features = set()
+    for candidate in _wrapped_model_candidates(model):
+        candidate_names = _normalize_estimator_feature_names(
+            getattr(candidate, "feature_names_", None),
+            None,
+        ) or list(feature_names)
+        for getter_name in (
+            "get_cat_feature_indices",
+            "get_text_feature_indices",
+        ):
+            getter = getattr(candidate, getter_name, None)
+            if not callable(getter):
+                continue
+            try:
+                indices = getter()
+            except Exception:
+                continue
+            for index in indices or []:
+                if (
+                    isinstance(index, (int, np.integer))
+                    and not isinstance(index, (bool, np.bool_))
+                    and 0 <= int(index) < len(candidate_names)
+                ):
+                    text_features.add(candidate_names[int(index)])
+    return text_features
+
+
 def _validate_numeric_inputs(
     normalized_inputs: Dict[str, List[Any]],
     numeric_features: Sequence[str],
     allow_text: bool,
+    text_features: Optional[Sequence[str]] = None,
 ) -> None:
-    """Reject invalid scalar numbers while preserving unknown legacy text."""
+    """Reject invalid scalar numbers while preserving supported text."""
+    allowed_text_features = set(text_features or [])
     problems = []
     for name in numeric_features:
         invalid_value_rows: Dict[str, List[int]] = {}
@@ -627,9 +690,12 @@ def _validate_numeric_inputs(
         for row_number, value in enumerate(
             normalized_inputs.get(name, []), start=1
         ):
-            if _numeric_value_problem(value, allow_text) is None:
+            if _numeric_value_problem(
+                value,
+                allow_text or name in allowed_text_features,
+            ) is None:
                 continue
-            value_text = _format_error_value(_json_safe_scalar(value))
+            value_text = _format_error_value(value)
             if (
                 value_text not in invalid_value_rows
                 and len(invalid_value_rows) >= _MAX_LISTED_VALUES
@@ -1619,10 +1685,22 @@ class MLModelInferenceNode(BaseNode):
                     categorical_columns + categorical_columns_no_drop + label_columns + ordinal_columns
                 )
                 numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
+                model_handles_raw_text = (
+                    not encoded_feature_columns
+                    and _model_accepts_raw_text_features(model)
+                )
+                model_native_text_features = (
+                    _model_native_text_features(model, feature_names)
+                    if not encoded_feature_columns
+                    else set()
+                )
                 _validate_numeric_inputs(
                     normalized_inputs,
                     numeric_order if metadata_is_authoritative else feature_names,
-                    allow_text=not metadata_is_authoritative,
+                    allow_text=(
+                        not metadata_is_authoritative or model_handles_raw_text
+                    ),
+                    text_features=model_native_text_features,
                 )
 
                 # Build every output column by name first, then assemble the
