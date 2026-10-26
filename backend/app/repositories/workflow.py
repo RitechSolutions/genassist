@@ -108,6 +108,10 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
         if commit:
             await self.db.flush()
 
+    async def get_locked(self, workflow_id: UUID, *, shared: bool = False) -> Optional[WorkflowModel]:
+        stmt = select(WorkflowModel).where(WorkflowModel.id == workflow_id).with_for_update(read=shared)
+        return (await self.db.execute(stmt)).scalars().first()
+
     async def live_mcp_server_names(self, workflow_id: UUID) -> List[str]:
         """Servers still exposing the version as a tool"""
         stmt = (

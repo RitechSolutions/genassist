@@ -222,8 +222,12 @@ class WorkflowService:
         result.nodes = decrypt_hidden_defaults(result.nodes)
         return result
 
+    async def lock_for_activation(self, workflow_id: UUID) -> None:
+        if not await self.repository.get_locked(workflow_id, shared=True):
+            raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
+
     async def delete(self, workflow_id: UUID) -> None:
-        orm_obj = await self.repository.get_by_id(workflow_id)
+        orm_obj = await self.repository.get_locked(workflow_id)
         if not orm_obj:
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
         active_id = await self.get_active_version_id(workflow_id)

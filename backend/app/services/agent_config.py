@@ -212,7 +212,7 @@ class AgentConfigService:
             exclude_unset=True,
         )
         if scalar_changes.get("workflow_id"):
-            await self.workflow_service.get_by_id(scalar_changes["workflow_id"])
+            await self.workflow_service.lock_for_activation(scalar_changes["workflow_id"])
 
         # Handle security_settings separately
         security_settings_update = scalar_changes.pop("security_settings", None)

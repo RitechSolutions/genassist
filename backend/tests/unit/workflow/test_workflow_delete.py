@@ -12,6 +12,7 @@ from app.services.workflow import WorkflowService
 def _service(*, workflow, agent_workflow_id=None, mcp_servers=(), ml_models=()):
     repository = MagicMock()
     repository.get_by_id = AsyncMock(return_value=workflow)
+    repository.get_locked = AsyncMock(return_value=workflow)
     result = MagicMock()
     result.scalar_one_or_none = MagicMock(return_value=agent_workflow_id)
     repository.db = MagicMock()
