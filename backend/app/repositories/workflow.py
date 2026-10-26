@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from injector import inject
@@ -6,6 +6,10 @@ from sqlalchemy import and_, case, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models.agent import AgentModel
+from app.db.models.mcp_server import MCPServerModel, MCPServerWorkflowModel
+from app.db.models.ml_model import MLModel
+from app.db.models.ml_model_pipeline import MLModelPipelineConfig
+from app.db.models.test_suite import TestEvaluationModel, TestSuiteModel
 from app.db.models.workflow import WorkflowModel
 from app.repositories.db_repository import DbRepository
 
@@ -103,6 +107,46 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
         )
         if commit:
             await self.db.flush()
+
+    async def get_locked(self, workflow_id: UUID, *, shared: bool = False) -> Optional[WorkflowModel]:
+        stmt = select(WorkflowModel).where(WorkflowModel.id == workflow_id).with_for_update(read=shared)
+        return (await self.db.execute(stmt)).scalars().first()
+
+    async def live_mcp_server_names(self, workflow_id: UUID) -> List[str]:
+        """Servers still exposing the version as a tool"""
+        stmt = (
+            select(MCPServerModel.name)
+            .join(MCPServerWorkflowModel, MCPServerWorkflowModel.mcp_server_id == MCPServerModel.id)
+            .where(MCPServerWorkflowModel.workflow_id == workflow_id, MCPServerModel.is_deleted == 0)
+            .distinct()
+            .order_by(MCPServerModel.name)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def live_ml_model_names(self, workflow_id: UUID) -> List[str]:
+        """Models whose live pipeline configuration runs the version"""
+        stmt = (
+            select(MLModel.name)
+            .join(MLModelPipelineConfig, MLModelPipelineConfig.model_id == MLModel.id)
+            .where(
+                MLModelPipelineConfig.workflow_id == workflow_id,
+                MLModelPipelineConfig.is_deleted == 0,
+                MLModel.is_deleted == 0,
+            )
+            .distinct()
+            .order_by(MLModel.name)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def repoint_test_data(self, workflow_id: UUID, target_workflow_id: Optional[UUID]) -> None:
+        """Move the evaluations and datasets pinned to a version onto another one"""
+        for model in (TestEvaluationModel, TestSuiteModel):
+            await self.db.execute(
+                update(model)
+                .where(model.workflow_id == workflow_id)
+                .values(workflow_id=target_workflow_id)
+                .execution_options(synchronize_session="fetch")
+            )
 
     async def get_summaries_by_agent(self, agent_id: UUID) -> List:
         stmt = (

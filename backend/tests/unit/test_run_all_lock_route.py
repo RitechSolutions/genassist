@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.routes import test_evaluations as route_mod
+from app.schemas.test_suite import RunWorkflowEvaluationsRequest
 
 
 def _fake_redis(*, acquired: bool = True, release_error: bool = False):
@@ -85,6 +86,22 @@ async def test_happy_path_starts_then_releases(monkeypatch):
     assert result is started
     service.start_workflow_evaluations.assert_awaited_once()
     redis.eval.assert_awaited_once()  # released after starting
+
+
+@pytest.mark.asyncio
+async def test_a_category_narrows_the_batch(monkeypatch):
+    _patch_injector(monkeypatch, _fake_redis(acquired=True))
+    service = _service(active=False)
+
+    await route_mod.run_workflow_evaluations(
+        uuid4(), data=RunWorkflowEvaluationsRequest(category="  refunds "), service=service
+    )
+    assert service.start_workflow_evaluations.await_args.args[-1] == "refunds"
+
+    await route_mod.run_workflow_evaluations(
+        uuid4(), data=RunWorkflowEvaluationsRequest(uncategorized=True), service=service
+    )
+    assert service.start_workflow_evaluations.await_args.args[-1] == ""
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,8 @@ export interface TestEvaluationConfig {
   id: string;
   name: string;
   description?: string;
+  /** A team's own label, shared with datasets; null when none is set, and "" clears it on an update. */
+  category?: string | null;
   suite_id: string;
   workflow_id?: string;
   techniques: string[];
