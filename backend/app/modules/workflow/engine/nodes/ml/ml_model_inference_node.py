@@ -652,74 +652,91 @@ def _model_accepts_raw_text_features(model: Any) -> bool:
 
 def _selected_feature_names(
     selector: Any, feature_names: Sequence[str]
-) -> set[str]:
+) -> List[str]:
     """Resolve fitted column-transformer selectors to model feature names."""
     if isinstance(selector, str):
-        return {selector} if selector in feature_names else set()
+        return [selector] if selector in feature_names else []
     if isinstance(selector, (int, np.integer)) and not isinstance(
         selector, (bool, np.bool_)
     ):
         index = int(selector)
-        return {feature_names[index]} if 0 <= index < len(feature_names) else set()
+        return [feature_names[index]] if 0 <= index < len(feature_names) else []
     if isinstance(selector, slice):
-        return set(feature_names[selector])
+        return list(feature_names[selector])
     if not isinstance(selector, (list, tuple, np.ndarray, pd.Index)):
-        return set()
+        return []
 
     selected = list(selector)
     if len(selected) == len(feature_names) and all(
         isinstance(value, (bool, np.bool_)) for value in selected
     ):
-        return {
+        return [
             name for name, is_selected in zip(feature_names, selected) if is_selected
-        }
+        ]
 
-    names = set()
+    names = []
     for value in selected:
         if isinstance(value, str) and value in feature_names:
-            names.add(value)
+            names.append(value)
         elif isinstance(value, (int, np.integer)) and not isinstance(
             value, (bool, np.bool_)
         ):
             index = int(value)
             if 0 <= index < len(feature_names):
-                names.add(feature_names[index])
+                names.append(feature_names[index])
     return names
 
 
-def _transformer_accepts_text(transformer: Any) -> bool:
+def _transformer_categories(transformer: Any) -> Optional[List[Any]]:
     if transformer is None or (
         isinstance(transformer, str) and transformer in {"drop", "passthrough"}
     ):
-        return False
-    if getattr(transformer, "categories_", None) is not None:
-        return True
+        return None
+    categories = getattr(transformer, "categories_", None)
+    if isinstance(categories, (list, tuple)):
+        return list(categories)
     steps = getattr(transformer, "steps", None)
-    return isinstance(steps, (list, tuple)) and any(
-        _transformer_accepts_text(step_transformer)
-        for _, step_transformer in steps
-    )
+    if isinstance(steps, (list, tuple)):
+        for _, step_transformer in reversed(steps):
+            categories = _transformer_categories(step_transformer)
+            if categories is not None:
+                return categories
+    return None
 
 
-def _pipeline_text_features(
+def _pipeline_categorical_values(
     pipeline: Any, feature_names: Sequence[str]
-) -> set[str]:
-    text_features = set()
+) -> Dict[str, set[Any]]:
+    categorical_values: Dict[str, set[Any]] = {}
     steps = getattr(pipeline, "steps", None)
     if not isinstance(steps, (list, tuple)):
-        return text_features
+        return categorical_values
 
     for _, transformer in steps:
         fitted_transformers = getattr(transformer, "transformers_", None)
         if isinstance(fitted_transformers, (list, tuple)):
             for _, column_transformer, selector in fitted_transformers:
-                if _transformer_accepts_text(column_transformer):
-                    text_features.update(
-                        _selected_feature_names(selector, feature_names)
-                    )
-        elif _transformer_accepts_text(transformer):
-            text_features.update(feature_names)
-    return text_features
+                selected_names = _selected_feature_names(selector, feature_names)
+                categories = _transformer_categories(column_transformer)
+                if categories is None or len(categories) != len(selected_names):
+                    continue
+                categorical_values.update(
+                    {
+                        name: {_category_key(value) for value in values.tolist()}
+                        for name, values in zip(selected_names, categories)
+                    }
+                )
+            continue
+
+        categories = _transformer_categories(transformer)
+        if categories is not None and len(categories) == len(feature_names):
+            categorical_values.update(
+                {
+                    name: {_category_key(value) for value in values.tolist()}
+                    for name, values in zip(feature_names, categories)
+                }
+            )
+    return categorical_values
 
 
 def _model_native_text_features(
@@ -728,7 +745,9 @@ def _model_native_text_features(
     """Return named features a fitted estimator handles as text itself."""
     text_features = set()
     for candidate in _wrapped_model_candidates(model):
-        text_features.update(_pipeline_text_features(candidate, feature_names))
+        text_features.update(
+            _pipeline_categorical_values(candidate, feature_names)
+        )
         candidate_names = _normalize_estimator_feature_names(
             getattr(candidate, "feature_names_", None),
             None,
@@ -754,6 +773,18 @@ def _model_native_text_features(
                 ):
                     text_features.add(candidate_names[int(index)])
     return text_features
+
+
+def _model_native_categorical_values(
+    model: Any, feature_names: Sequence[str]
+) -> Dict[str, set[Any]]:
+    """Return fitted categories owned by model-native preprocessing."""
+    categorical_values: Dict[str, set[Any]] = {}
+    for candidate in _wrapped_model_candidates(model):
+        categorical_values.update(
+            _pipeline_categorical_values(candidate, feature_names)
+        )
+    return categorical_values
 
 
 def _validate_numeric_inputs(
@@ -1698,6 +1729,12 @@ class MLModelInferenceNode(BaseNode):
                     if not encoded_feature_columns
                     else set()
                 )
+                model_native_categorical_values = (
+                    _model_native_categorical_values(model, feature_names)
+                    if not encoded_feature_columns
+                    else {}
+                )
+                categorical_values.update(model_native_categorical_values)
                 conversion_categorical_features = list(
                     dict.fromkeys(categorical_features + list(model_native_text_features))
                 )
@@ -1708,7 +1745,11 @@ class MLModelInferenceNode(BaseNode):
                         if metadata or model_native_text_features
                         else None
                     ),
-                    categorical_values=categorical_values if metadata else None,
+                    categorical_values=(
+                        categorical_values
+                        if metadata or model_native_categorical_values
+                        else None
+                    ),
                     normalized_categorical_features=list(ordinal_encodings),
                 )
                 normalized_inputs = _normalize_inference_inputs(inference_inputs)
@@ -1744,7 +1785,11 @@ class MLModelInferenceNode(BaseNode):
                     categorical_features=(
                         conversion_categorical_features if metadata else None
                     ),
-                    categorical_values=categorical_values if metadata else None,
+                    categorical_values=(
+                        categorical_values
+                        if metadata or model_native_categorical_values
+                        else None
+                    ),
                     normalized_categorical_features=list(ordinal_encodings),
                     default_feature_names=default_feature_names,
                     inference_warnings=inference_warnings,
@@ -1923,11 +1968,16 @@ class MLModelInferenceNode(BaseNode):
                 artifact_model_order = model_input_columns or legacy_order
                 if estimator_feature_names:
                     module_root = type(model).__module__.split(".", 1)[0]
-                    matrix_column_order = _match_registered_feature_names(
-                        estimator_feature_names,
-                        artifact_model_order,
-                        module_root,
-                    )
+                    if module_root == "catboost" and estimator_feature_names == [
+                        str(index) for index in range(len(estimator_feature_names))
+                    ]:
+                        matrix_column_order = artifact_model_order
+                    else:
+                        matrix_column_order = _match_registered_feature_names(
+                            estimator_feature_names,
+                            artifact_model_order,
+                            module_root,
+                        )
                     if matrix_column_order is None:
                         raise AppException(
                             error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,

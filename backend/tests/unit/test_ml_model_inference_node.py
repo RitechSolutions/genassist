@@ -2414,6 +2414,43 @@ class TestConvertValueNumbers:
         assert result["input_data"] == {"region": ["1e3"], "hour": [10.0]}
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("legacy", [False, True])
+    @pytest.mark.parametrize("handle_unknown", ["ignore", "error"])
+    @pytest.mark.parametrize("use_column_transformer", [False, True])
+    async def test_pipeline_converts_builder_text_to_fitted_integer_categories(
+        self, monkeypatch, legacy, handle_unknown, use_column_transformer
+    ):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+        from sklearn.tree import DecisionTreeRegressor
+
+        training_data = pd.DataFrame({"zone": [1, 2, 3]})
+        encoder = OneHotEncoder(handle_unknown=handle_unknown)
+        features = (
+            ColumnTransformer([("zone", encoder, ["zone"])])
+            if use_column_transformer
+            else encoder
+        )
+        model = Pipeline(
+            [
+                ("features", features),
+                ("regressor", DecisionTreeRegressor(random_state=0)),
+            ]
+        ).fit(training_data, [10.0, 20.0, 30.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"zone": ["1", "3"]},
+            feature_names=["zone"],
+            legacy=legacy,
+        )
+
+        assert result["prediction"] == [10.0, 30.0]
+        assert result["input_data"] == {"zone": [1, 3]}
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("wrapper", ["grid_search", "target_transform"])
     async def test_metadata_wrapped_pipeline_keeps_raw_text_for_its_preprocessor(
         self, monkeypatch, wrapper

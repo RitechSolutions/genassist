@@ -113,11 +113,6 @@ def _match_registered_feature_names(
     if set(normalized_registered_names) == set(estimator_names):
         return list(estimator_names)
 
-    if module_root == "catboost" and estimator_names == [
-        str(index) for index in range(len(estimator_names))
-    ]:
-        return normalized_registered_names
-
     if module_root != "lightgbm":
         return None
 
