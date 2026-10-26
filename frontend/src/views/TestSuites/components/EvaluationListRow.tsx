@@ -6,6 +6,7 @@ import { cn } from "@/helpers/utils";
 import { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
 import type { ConversationCounts } from "@/interfaces/testSuite.interface";
 import { EntityTitle } from "./EntityTitle";
+import { CategoryBadge } from "./CategoryBadge";
 import { VerdictTally } from "./resultsParts";
 import { accuracyColorClass } from "../helpers/evaluationMetrics";
 import { leftOutNote, parseChecks } from "../helpers/checks";
@@ -163,7 +164,10 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
       )}
     >
       <button type="button" className={cn("min-w-0 flex-1 text-left", indent && "pl-7")}>
-        <EntityTitle>{evaluation.name}</EntityTitle>
+        <span className="flex min-w-0 items-center gap-2">
+          <EntityTitle className="w-auto shrink">{evaluation.name}</EntityTitle>
+          {evaluation.category && <CategoryBadge name={evaluation.category} />}
+        </span>
         <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{evaluation.description || "No description"}</p>
         {leftOut && (
           <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">

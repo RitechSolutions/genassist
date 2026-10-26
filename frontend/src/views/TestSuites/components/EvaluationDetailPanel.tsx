@@ -46,6 +46,7 @@ import { ChecksDialog } from "./ChecksDialog";
 import { CompareConversationView } from "./CompareConversationView";
 import { ConversationResultView } from "./ConversationResultView";
 import { LeftOutNote } from "./LeftOutNote";
+import { CategoryBadge } from "./CategoryBadge";
 import { RunCompareView } from "./RunCompareView";
 import { RunResultsView } from "./RunResultsView";
 import { type RunContext, VerdictTally } from "./resultsParts";
@@ -847,9 +848,10 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold tracking-tight animate-fade-down">
-            {evaluation.name}
-          </h1>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-2xl font-bold tracking-tight animate-fade-down">{evaluation.name}</h1>
+            {evaluation.category && <CategoryBadge name={evaluation.category} />}
+          </div>
           {evaluation.description && (
             <p className="truncate text-sm text-muted-foreground">{evaluation.description}</p>
           )}

@@ -1,4 +1,5 @@
 import React, {useEffect, useState} from "react";
+import {useQueryClient} from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {PageLayout} from "@/components/PageLayout";
 import {PageHeader} from "@/components/PageHeader";
@@ -28,7 +29,12 @@ import {
 import {ConfirmDialog} from "@/components/ConfirmDialog";
 import {PageListSkeleton} from "@/components/skeletons";
 import {EntityTitle} from "../components/EntityTitle";
+import {CategoryBadge} from "../components/CategoryBadge";
+import {CategoryFilter} from "../components/CategoryFilter";
+import {CategoryPicker} from "../components/CategoryPicker";
 import {countConversations} from "../helpers/datasetConversations";
+import {ALL_CATEGORIES, matchesCategory} from "../helpers/categories";
+import {CATEGORIES_QUERY_KEY, useCategories} from "../hooks/useCategories";
 
 const getTimeAgo = (date: Date): string => {
   const now = new Date();
@@ -55,12 +61,16 @@ const DatasetsPage: React.FC = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
+  const categories = useCategories();
+  const queryClient = useQueryClient();
   const [datasetToDelete, setDatasetToDelete] = useState<TestSuite | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [editingDatasetId, setEditingDatasetId] = useState<string | null>(null);
   const [suiteName, setSuiteName] = useState("");
   const [suiteDescription, setSuiteDescription] = useState("");
+  const [suiteCategory, setSuiteCategory] = useState("");
 
   useEffect(() => {
     const load = async () => {
@@ -95,6 +105,7 @@ const DatasetsPage: React.FC = () => {
     setEditingDatasetId(suite.id ?? null);
     setSuiteName(suite.name);
     setSuiteDescription(suite.description ?? "");
+    setSuiteCategory(suite.category ?? "");
     setIsEditDialogOpen(true);
   };
 
@@ -104,6 +115,7 @@ const DatasetsPage: React.FC = () => {
     setEditingDatasetId(null);
     setSuiteName("");
     setSuiteDescription("");
+    setSuiteCategory("");
   };
 
   const handleDeleteDataset = async () => {
@@ -112,6 +124,8 @@ const DatasetsPage: React.FC = () => {
     try {
       await deleteTestSuite(datasetToDelete.id);
       setSuites((prev) => prev.filter((s) => s.id !== datasetToDelete.id));
+      // Its category may have been the last one in use.
+      void queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
       toast.success("Dataset deleted successfully.");
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
@@ -126,6 +140,7 @@ const DatasetsPage: React.FC = () => {
   // ---- Filtering -----------------------------------------------------------
 
   const filteredSuites = suites.filter((suite) => {
+    if (!matchesCategory(suite.category, categoryFilter)) return false;
     const query = searchQuery.trim().toLowerCase();
     if (!query) return true;
     return (
@@ -133,12 +148,14 @@ const DatasetsPage: React.FC = () => {
       (suite.description ?? "").toLowerCase().includes(query)
     );
   });
+  const filtering = Boolean(searchQuery) || categoryFilter !== ALL_CATEGORIES;
 
   return (
     <PageLayout>
       <PageHeader
         title="Datasets"
         subtitle="Create reusable golden datasets and manage their conversations."
+        filters={<CategoryFilter value={categoryFilter} onChange={setCategoryFilter} categories={categories} />}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchPlaceholder="Search datasets..."
@@ -156,11 +173,11 @@ const DatasetsPage: React.FC = () => {
             </div>
             <h3 className="font-medium text-lg">No datasets yet</h3>
             <p className="text-sm text-muted-foreground max-w-sm">
-              {searchQuery
-                ? "No datasets match your search. Try adjusting your query."
+              {filtering
+                ? "No datasets match your search or category."
                 : "Datasets hold the conversations you evaluate your AI agents against. Create your first dataset to get started."}
             </p>
-            {!searchQuery && (
+            {!filtering && (
               <Button onClick={() => setIsCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create your first dataset
@@ -192,7 +209,10 @@ const DatasetsPage: React.FC = () => {
                       onClick={() => navigate(`/tests/datasets/${suite.id}`)}
                       className="min-w-0 flex-1 text-left"
                     >
-                      <EntityTitle>{suite.name}</EntityTitle>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <EntityTitle className="w-auto shrink">{suite.name}</EntityTitle>
+                        {suite.category && <CategoryBadge name={suite.category} />}
+                      </span>
                       <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
                         {suite.description || "No description"}
                       </p>
@@ -248,7 +268,7 @@ const DatasetsPage: React.FC = () => {
       </div>
 
       {/* Create / edit dataset dialog */}
-      <CRUDDialog<{ name: string; description: string }>
+      <CRUDDialog<{ name: string; description: string; category: string }>
         open={isCreateDialogOpen || isEditDialogOpen}
         onOpenChange={(next) => {
           if (!next) closeDatasetDialog();
@@ -256,10 +276,10 @@ const DatasetsPage: React.FC = () => {
         mode={isEditDialogOpen ? "edit" : "create"}
         maxWidth="560px"
         resetKey={isEditDialogOpen ? editingDatasetId : "create"}
-        initialValues={{ name: "", description: "" }}
+        initialValues={{ name: "", description: "", category: "" }}
         editValues={
           isEditDialogOpen
-            ? { name: suiteName, description: suiteDescription }
+            ? { name: suiteName, description: suiteDescription, category: suiteCategory }
             : null
         }
         title={{ create: "Create Dataset", edit: "Edit Dataset" }}
@@ -273,6 +293,7 @@ const DatasetsPage: React.FC = () => {
             const created = await createTestSuite({
               name: values.name.trim(),
               description: values.description.trim() || undefined,
+              category: values.category || undefined,
             });
             if (created) {
               setSuites((prev) => [created, ...prev]);
@@ -283,11 +304,13 @@ const DatasetsPage: React.FC = () => {
             const updated = await updateTestSuite(editingDatasetId, {
               name: values.name.trim(),
               description: values.description.trim(), // "" clears it; undefined would keep the old one
+              category: values.category, // "" clears it too
             });
             setSuites((prev) =>
               prev.map((s) => (s.id === editingDatasetId ? updated : s))
             );
           }
+          void queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
         }}
       >
         {({ values, setField }) => (
@@ -307,6 +330,15 @@ const DatasetsPage: React.FC = () => {
                 onChange={(e) => setField("description", e.target.value)}
                 placeholder="What this dataset covers"
                 size="hint"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dataset-category" className="text-sm font-medium">Category</Label>
+              <CategoryPicker
+                id="dataset-category"
+                value={values.category}
+                onChange={(next) => setField("category", next)}
+                categories={categories}
               />
             </div>
           </>

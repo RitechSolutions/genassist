@@ -471,6 +471,13 @@ describe("route_taken and action_taken multi-rule configs", () => {
   });
 });
 
+describe("category", () => {
+  it("loads with the evaluation, and none reads as empty", () => {
+    expect(getEditInitialData({ ...evalWith({}), category: "Refunds" }, []).category).toBe("Refunds");
+    expect(getEditInitialData({ ...evalWith({}), category: null }, []).category).toBe("");
+  });
+});
+
 describe("newEvaluationDefaults", () => {
   it("ticks no method and replays conversations with memory", () => {
     const defaults = newEvaluationDefaults();

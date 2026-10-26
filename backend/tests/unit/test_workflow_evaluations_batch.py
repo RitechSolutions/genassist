@@ -71,7 +71,7 @@ class TestEvaluationsForWorkflow:
         result = await service._evaluations_for_workflow(wf)
 
         assert result == rows
-        service.evaluation_repo.get_all_for_workflow.assert_awaited_once_with(wf)
+        service.evaluation_repo.get_all_for_workflow.assert_awaited_once_with(wf, category=None)
 
 
 class TestFullNestedToolCatalog:
@@ -411,8 +411,8 @@ class TestWorkflowEvaluationSummaries:
 
         (summary,) = await service.get_workflow_evaluation_summaries("refund")
         assert summary.workflow_id == wf and summary.eval_count == 1
-        service.evaluation_repo.count_by_effective_workflow.assert_awaited_once_with("refund")
-        service.evaluation_repo.get_latest_run_pointers.assert_awaited_once_with("refund")
+        service.evaluation_repo.count_by_effective_workflow.assert_awaited_once_with("refund", None)
+        service.evaluation_repo.get_latest_run_pointers.assert_awaited_once_with("refund", None)
 
     @pytest.mark.asyncio
     async def test_health_counts_failed_runs_as_zero(self):
@@ -586,7 +586,7 @@ class TestListWorkflowEvaluations:
 
         assert result.page == 1 and result.page_size == 100  # floor + cap
         service.evaluation_repo.get_page_for_workflow.assert_awaited_once_with(
-            wf, 0, 100, None
+            wf, 0, 100, None, None
         )
 
     @pytest.mark.asyncio
@@ -603,11 +603,11 @@ class TestListWorkflowEvaluations:
         assert result.total_unfiltered == 55
         # page 2 of 20 -> offset 20, limit 20, search forwarded to the DB layer
         service.evaluation_repo.get_page_for_workflow.assert_awaited_once_with(
-            wf, 20, 20, "alpha"
+            wf, 20, 20, "alpha", None
         )
         # Filtered count for the page, plus the unfiltered count for "N of M".
         assert service.evaluation_repo.count_for_workflow.await_count == 2
-        service.evaluation_repo.count_for_workflow.assert_any_await(wf, "alpha")
+        service.evaluation_repo.count_for_workflow.assert_any_await(wf, "alpha", None)
         service.evaluation_repo.count_for_workflow.assert_any_await(wf, None)
 
     @pytest.mark.asyncio
@@ -617,5 +617,5 @@ class TestListWorkflowEvaluations:
         await service.list_workflow_evaluations(None, page=1, page_size=20)
 
         service.evaluation_repo.get_page_for_workflow.assert_awaited_once_with(
-            None, 0, 20, None
+            None, 0, 20, None, None
         )
