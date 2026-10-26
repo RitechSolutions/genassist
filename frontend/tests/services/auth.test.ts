@@ -15,6 +15,7 @@ import {
   isTokenExpired,
   completeMicrosoftSso,
   getAuthMe,
+  userHasPermission,
 } from "@/services/auth";
 
 const mockApiRequest = vi.mocked(apiRequest);
@@ -32,6 +33,28 @@ function base64UrlPayload(payload: unknown): string {
 function makeJwt(payload: unknown): string {
   return `header.${base64UrlPayload(payload)}.signature`;
 }
+
+describe("userHasPermission", () => {
+  it("allows a user holding the exact permission", () => {
+    expect(userHasPermission(["read:dashboard", "read:operator"], "read:operator")).toBe(true);
+  });
+
+  it("allows a user with full access", () => {
+    expect(userHasPermission(["*"], "read:feature_flag")).toBe(true);
+  });
+
+  it("refuses a user without the permission", () => {
+    expect(userHasPermission(["read:conversation"], "read:dashboard")).toBe(false);
+  });
+
+  it("refuses while no permissions are known", () => {
+    expect(userHasPermission([], "read:dashboard")).toBe(false);
+  });
+
+  it("does not treat a similar permission as a match", () => {
+    expect(userHasPermission(["read:app_setting"], "read:app_settings")).toBe(false);
+  });
+});
 
 describe("isTokenExpired", () => {
   it("returns false for a token whose exp is in the future", () => {

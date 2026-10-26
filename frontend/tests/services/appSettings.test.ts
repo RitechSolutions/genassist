@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/config/api", () => ({
   apiRequest: vi.fn(),
@@ -25,9 +25,32 @@ import {
 } from "@/services/appSettings";
 
 const mockApiRequest = vi.mocked(apiRequest);
-beforeEach(() => vi.clearAllMocks());
+let storedPermissions: string | null;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  storedPermissions = JSON.stringify(["*"]);
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => (key === "permissions" ? storedPermissions : null),
+  });
+});
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("getAllAppSettings", () => {
+  it("skips the request for users who may not read app settings", async () => {
+    storedPermissions = JSON.stringify(["read:conversation"]);
+    expect(await getAllAppSettings()).toEqual([]);
+    expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+
+  it("requests app settings for users holding the exact permission", async () => {
+    storedPermissions = JSON.stringify(["read:app_settings"]);
+    mockApiRequest.mockResolvedValue([] as never);
+    await getAllAppSettings();
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "app-settings/");
+  });
+
   it("requests app-settings/ and returns the array", async () => {
     const rows = [{ id: "1", name: "A" }];
     mockApiRequest.mockResolvedValue(rows as never);

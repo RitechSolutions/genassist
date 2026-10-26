@@ -60,6 +60,7 @@ import { DateRangePicker } from "@/components/date-range-picker";
 import type { DateRange } from "react-day-picker";
 import { format, subDays } from "date-fns";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
+import { useHasPermission } from "@/hooks/useHasPermission";
 import { Switch } from "@/components/switch";
 import { Label } from "@/components/label";
 import { fetchCustomAttributeKeys } from "@/services/analyticsReports";
@@ -143,6 +144,8 @@ const Transcripts = () => {
   // Custom attribute filters
   const [customAttrFilters, setCustomAttrFilters] = useState<Record<string, string>>({});
   const [availableAttrKeys, setAvailableAttrKeys] = useState<string[]>([]);
+  // Custom attribute keys are served by the analytics API
+  const canReadCustomAttributes = useHasPermission("read:dashboard");
 
   // Derive initial status filter from URL
   const initStatusFilter = (): StatusFilter => {
@@ -195,9 +198,20 @@ const Transcripts = () => {
 
   // Fetch available custom attribute keys when agent changes
   useEffect(() => {
+    if (!canReadCustomAttributes) {
+      setAvailableAttrKeys([]);
+      return;
+    }
+    // Drop the answer if the agent or access changed while the request was running
+    let isOutdated = false;
     const agentId = selectedAgentId !== "all" ? selectedAgentId : undefined;
-    fetchCustomAttributeKeys(agentId).then(setAvailableAttrKeys);
-  }, [selectedAgentId]);
+    fetchCustomAttributeKeys(agentId).then((keys) => {
+      if (!isOutdated) setAvailableAttrKeys(keys);
+    });
+    return () => {
+      isOutdated = true;
+    };
+  }, [selectedAgentId, canReadCustomAttributes]);
 
   const {
     conversations: wsConversations,
