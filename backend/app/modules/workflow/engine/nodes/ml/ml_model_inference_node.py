@@ -653,6 +653,9 @@ def _mapped_transform(
     """
     if not columns:
         return np.empty((batch_size, 0))
+    missing = [col for col in columns if col not in normalized_inputs]
+    if missing:
+        raise ValueError(f"Missing prepared feature column(s): {', '.join(missing)}")
     out = np.empty((batch_size, len(columns)), dtype=float)
     for i, col in enumerate(columns):
         # Preserve each original value type. np.column_stack can stringify
@@ -1601,16 +1604,36 @@ class MLModelInferenceNode(BaseNode):
                     legacy_order = list(feature_names)
 
                 # Recompute any engineered features (bin_numeric, normalize,
-                # standardize, polynomial, custom_expression) from the raw
-                # inputs, using the exact fitted parameters captured at
+                # standardize, polynomial, custom_expression) from the inputs, using the exact fitted parameters captured at
                 # training time (TrainModelNode._engineer_features). No-op
                 # for models with no feature engineering or legacy models
                 # that predate this metadata.
                 feature_engineering_steps = metadata.get("feature_engineering_steps") or []
                 replay_problems: List[Dict[str, Any]] = []
                 if feature_engineering_steps:
+                    fe_inputs: Dict[str, List[Any]] = normalized_inputs
+                    mapped_columns = label_columns + ordinal_columns
+                    if metadata.get("encoding_before_feature_engineering") and mapped_columns:
+                        # These models built their derived features from the
+                        # label/ordinal codes, so replay them from codes too.
+                        # Same order as training: missing values were already
+                        # filled above (_prepare_inference_inputs), then encode.
+                        fe_inputs = dict(normalized_inputs)
+                        if label_columns:
+                            codes = _mapped_transform(
+                                normalized_inputs, label_columns, label_encodings, batch_size, unseen_value=-1
+                            )
+                            for i, col in enumerate(label_columns):
+                                fe_inputs[col] = codes[:, i].tolist()
+                        if ordinal_columns:
+                            codes = _mapped_transform(
+                                normalized_inputs, ordinal_columns, ordinal_encodings, batch_size,
+                                unseen_value=np.nan, normalize_keys=True,
+                            )
+                            for i, col in enumerate(ordinal_columns):
+                                fe_inputs[col] = codes[:, i].tolist()
                     engineered = _replay_feature_engineering(
-                        normalized_inputs, feature_engineering_steps, batch_size,
+                        fe_inputs, feature_engineering_steps, batch_size,
                         problems=replay_problems,
                     )
                     column_arrays.update(engineered)
