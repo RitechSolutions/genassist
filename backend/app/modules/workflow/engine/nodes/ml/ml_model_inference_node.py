@@ -450,15 +450,20 @@ def _prepare_inference_inputs(
         if name in defaults
         and (name in missing_features or name in features_with_missing_values)
     }
-    prepared_defaults = {
-        name: (
-            value
-            if categorical_feature_set is not None and name in categorical_feature_set
-            else convert_value(value)
-        )
-        for name, value in defaults.items()
-        if name in defaults_to_apply
-    }
+    prepared_defaults = {}
+    for name, value in defaults.items():
+        if name not in defaults_to_apply:
+            continue
+        if name in categorical_values:
+            prepared_defaults[name] = _convert_categorical_input(
+                value,
+                categorical_values[name],
+                name in normalized_categorical_feature_set,
+            )
+        elif categorical_feature_set is not None and name in categorical_feature_set:
+            prepared_defaults[name] = value
+        else:
+            prepared_defaults[name] = convert_value(value)
 
     invalid_defaults = [
         name

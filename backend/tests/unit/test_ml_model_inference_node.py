@@ -2451,6 +2451,47 @@ class TestConvertValueNumbers:
         assert result["input_data"] == {"zone": [1, 3]}
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("legacy", "training_values", "default", "expected_input", "expected_prediction"),
+        [
+            (False, [1, 2, 3], "3", 3, 30.0),
+            (True, ["1e3", "2e3"], "1e3", "1e3", 10.0),
+        ],
+    )
+    async def test_pipeline_default_uses_fitted_category_type(
+        self,
+        monkeypatch,
+        legacy,
+        training_values,
+        default,
+        expected_input,
+        expected_prediction,
+    ):
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+        from sklearn.tree import DecisionTreeRegressor
+
+        training_data = pd.DataFrame({"zone": training_values})
+        model = Pipeline(
+            [
+                ("features", OneHotEncoder()),
+                ("regressor", DecisionTreeRegressor(random_state=0)),
+            ]
+        ).fit(training_data, [10.0, 20.0, 30.0][: len(training_values)])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {},
+            feature_names=["zone"],
+            inference_params={"featureDefaults": {"zone": default}},
+            legacy=legacy,
+        )
+
+        assert result["prediction"] == [expected_prediction]
+        assert result["input_data"] == {"zone": [expected_input]}
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("wrapper", ["grid_search", "target_transform"])
     async def test_metadata_wrapped_pipeline_keeps_raw_text_for_its_preprocessor(
         self, monkeypatch, wrapper
