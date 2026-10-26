@@ -1,5 +1,7 @@
 import json
 import logging
+from datetime import datetime, timezone
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock
 from uuid import uuid4
@@ -16,11 +18,13 @@ from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
     MLModelInferenceNode,
     _build_input_array,
     _build_prediction_outputs,
+    _echo_input_columns,
     _normalize_inference_inputs,
     _prediction_array,
     _prepare_inference_inputs,
     _validate_categorical_inputs,
     convert_input_types,
+    convert_value,
 )
 from app.modules.workflow.engine.utils import describe_exception
 
@@ -1465,6 +1469,7 @@ class TestInferenceFeatureContract:
             {"region": "east", "hour": 8},
             feature_names=["region", "hour"],
             inference_params={"featureDefaults": {"region": "unknown"}},
+            label_encodings={"region": {"east": 0, "unknown": 1}},
         )
 
         assert result["status"] == "success"
@@ -1474,20 +1479,23 @@ class TestInferenceFeatureContract:
     async def test_data_preparation_failure_keeps_original_cause_with_applied_default(
         self, monkeypatch
     ):
+        scaler = MagicMock()
+        scaler.transform.side_effect = ValueError("scaler rejected prepared input")
+
         with pytest.raises(AppException) as exc:
             await _predict(
                 monkeypatch,
                 _StubModel(),
-                {"hour": "abc"},
+                {"hour": 8},
                 feature_names=["hour", "lag_24"],
                 inference_params={"featureDefaults": {"lag_24": 0}},
-                scaler=MagicMock(),
+                scaler=scaler,
                 scaled_columns=["hour"],
             )
 
         assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
         assert "Data preparation failed after configured feature default(s)" in exc.value.error_detail
-        assert "abc" in exc.value.error_detail
+        assert "scaler rejected prepared input" in exc.value.error_detail
         assert "applied for: lag_24" in exc.value.error_detail
 
     @pytest.mark.asyncio
@@ -1496,13 +1504,13 @@ class TestInferenceFeatureContract:
             feature_names_in_ = np.array(["hour", "lag_24"])
 
             def predict(self, input_data):
-                raise ValueError("invalid value 'abc' for hour\nStack trace:\n" + "x" * 2000)
+                raise ValueError("model rejected hour\nStack trace:\n" + "x" * 2000)
 
         with pytest.raises(AppException) as exc:
             await _predict(
                 monkeypatch,
                 RawModel(),
-                {"hour": "abc"},
+                {"hour": 8},
                 feature_names=["hour", "lag_24"],
                 inference_params={"featureDefaults": {"lag_24": 0}},
             )
@@ -1510,7 +1518,7 @@ class TestInferenceFeatureContract:
         visible_detail = truncate_for_log(describe_exception(exc.value), 500)
         assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
         assert "configured feature default(s) were applied for: lag_24" in visible_detail
-        assert "invalid value 'abc' for hour" in visible_detail
+        assert "model rejected hour" in visible_detail
         assert "Stack trace" not in visible_detail
 
     @pytest.mark.asyncio
@@ -1992,8 +2000,8 @@ class _CapturingModel:
 
 
 class TestOrdinalInputValidation:
-    """MI-9: an ordinal value outside the fitted order is rejected, as training
-    rejects it, instead of being encoded as NaN."""
+    """Reject ordinal values outside the fitted order instead of encoding them
+    as NaN."""
 
     ORDER = {"High": 2, "Low": 0, "Medium": 1}
 
@@ -2165,6 +2173,594 @@ class TestCategoricalErrorMessages:
         assert exc.value.error_detail == "modelId must be a valid UUID."
 
 
+class TestConvertValueNumbers:
+    """Use one parsing rule: plain integer strings become integers, while
+    decimal and scientific notation become floats."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("42", 42),
+            ("-7", -7),
+            ("+5", 5),
+            (" 12 ", 12),
+            ("2.5", 2.5),
+            ("2.5E-3", 0.0025),
+            ("1e5", 100000.0),
+            ("-1.5e2", -150.0),
+            (".5", 0.5),
+            ("-.5", -0.5),
+            ("3.", 3.0),
+            ("1_000", "1_000"),
+            ("1_0.5", "1_0.5"),
+            ("inf", "inf"),
+            ("-Infinity", "-Infinity"),
+            ("nan", "nan"),
+            ("1e400", "1e400"),
+            ("abc", "abc"),
+            ("1.2.3", "1.2.3"),
+            ("e5", "e5"),
+        ],
+    )
+    def test_parses_numbers_with_one_rule(self, raw, expected):
+        result = convert_value(raw)
+        assert result == expected
+        assert type(result) is type(expected)
+
+    def test_long_non_matching_number_text_is_left_unchanged(self):
+        raw = f"{'1' * 20_000}x"
+
+        assert convert_value(raw) == raw
+
+    def test_integer_text_over_python_digit_limit_is_left_unchanged(self):
+        raw = "1" * 5_000
+
+        assert convert_value(raw) == raw
+
+    def test_numeric_default_in_scientific_notation_is_accepted(self):
+        prepared, applied = _prepare_inference_inputs(
+            {"hour": [8]},
+            ["hour", "lag_24"],
+            defaults={"lag_24": "1e5"},
+            categorical_features=[],
+            categorical_values={},
+        )
+
+        assert prepared["lag_24"] == [100000.0]
+        assert applied == ["lag_24"]
+
+    @pytest.mark.parametrize("default", ["1_000", "inf"])
+    def test_numeric_default_with_underscores_or_inf_is_rejected(self, default):
+        with pytest.raises(AppException) as exc:
+            _prepare_inference_inputs(
+                {"hour": [8]},
+                ["hour", "lag_24"],
+                defaults={"lag_24": default},
+                categorical_features=[],
+                categorical_values={},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "lag_24" in exc.value.error_detail
+
+    def test_numeric_like_text_is_allowed_for_a_fitted_category_default(self):
+        prepared, applied = _prepare_inference_inputs(
+            {},
+            ["kind"],
+            defaults={"kind": "1_000"},
+            categorical_features=["kind"],
+            categorical_values={"kind": {"1_000"}},
+        )
+
+        assert prepared == {"kind": ["1_000"]}
+        assert applied == ["kind"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["inf", "1_000", float("inf")])
+    async def test_numeric_input_that_is_not_a_finite_number_is_rejected(self, monkeypatch, value):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"area": value, "kind": "a"},
+                feature_names=["area", "kind"],
+                label_encodings={"kind": {"a": 0, "b": 1}},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "'area'" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("value", "displayed_value"),
+        [
+            ("1e400", "1e400"),
+            (float("inf"), "inf"),
+            (np.float64("inf"), "inf"),
+        ],
+    )
+    async def test_non_finite_error_displays_the_rejected_value(
+        self, monkeypatch, value, displayed_value
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"area": value},
+                feature_names=["area"],
+            )
+
+        assert f"{displayed_value} (row 1)" in exc.value.error_detail
+        assert "None" not in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "inf",
+            "1_000",
+            float("inf"),
+            "east",
+            "١٢",
+            "1" * 400,
+            '{"nested": 1}',
+            [[1, 2]],
+            Decimal("Infinity"),
+        ],
+    )
+    async def test_numeric_metadata_rejects_invalid_values_without_encoders(
+        self, monkeypatch, value
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"area": value},
+                feature_names=["area"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "'area'" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["1e400", float("inf")])
+    async def test_legacy_numeric_overflow_is_rejected(
+        self, monkeypatch, value
+    ):
+        from sklearn.linear_model import LinearRegression
+
+        training_data = pd.DataFrame({"area": [1.0, 2.0]})
+        model = LinearRegression().fit(training_data, [1.0, 2.0])
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"area": value},
+                feature_names=["area"],
+                legacy=True,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "'area'" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_metadata_pipeline_keeps_raw_text_for_its_preprocessor(
+        self, monkeypatch
+    ):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.dummy import DummyRegressor
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        training_data = pd.DataFrame({"region": ["east", "west"]})
+        model = Pipeline(
+            [
+                (
+                    "categories",
+                    ColumnTransformer(
+                        [("region", OneHotEncoder(), ["region"])],
+                    ),
+                ),
+                ("regressor", DummyRegressor(strategy="constant", constant=12.5)),
+            ]
+        ).fit(training_data, [10.0, 20.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east"},
+            feature_names=["region"],
+        )
+
+        assert result["prediction"] == [12.5]
+        assert result["input_data"] == {"region": ["east"]}
+
+    @pytest.mark.asyncio
+    async def test_metadata_pipeline_keeps_exponent_style_category_as_text(
+        self, monkeypatch
+    ):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.dummy import DummyRegressor
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        training_data = pd.DataFrame(
+            {"region": ["1e3", "2e3"], "hour": [8.0, 9.0]}
+        )
+        model = Pipeline(
+            [
+                (
+                    "features",
+                    ColumnTransformer(
+                        [
+                            ("region", OneHotEncoder(), ["region"]),
+                            ("hour", "passthrough", ["hour"]),
+                        ]
+                    ),
+                ),
+                ("regressor", DummyRegressor(strategy="constant", constant=12.5)),
+            ]
+        ).fit(training_data, [10.0, 20.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "1e3", "hour": "1e1"},
+            feature_names=["region", "hour"],
+        )
+
+        assert result["prediction"] == [12.5]
+        assert result["input_data"] == {"region": ["1e3"], "hour": [10.0]}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("legacy", [False, True])
+    @pytest.mark.parametrize("handle_unknown", ["ignore", "error"])
+    @pytest.mark.parametrize("use_column_transformer", [False, True])
+    async def test_pipeline_converts_builder_text_to_fitted_integer_categories(
+        self, monkeypatch, legacy, handle_unknown, use_column_transformer
+    ):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+        from sklearn.tree import DecisionTreeRegressor
+
+        training_data = pd.DataFrame({"zone": [1, 2, 3]})
+        encoder = OneHotEncoder(handle_unknown=handle_unknown)
+        features = (
+            ColumnTransformer([("zone", encoder, ["zone"])])
+            if use_column_transformer
+            else encoder
+        )
+        model = Pipeline(
+            [
+                ("features", features),
+                ("regressor", DecisionTreeRegressor(random_state=0)),
+            ]
+        ).fit(training_data, [10.0, 20.0, 30.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"zone": ["1", "3"]},
+            feature_names=["zone"],
+            legacy=legacy,
+        )
+
+        assert result["prediction"] == [10.0, 30.0]
+        assert result["input_data"] == {"zone": [1, 3]}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("legacy", "training_values", "default", "expected_input", "expected_prediction"),
+        [
+            (False, [1, 2, 3], "3", 3, 30.0),
+            (True, ["1e3", "2e3"], "1e3", "1e3", 10.0),
+        ],
+    )
+    async def test_pipeline_default_uses_fitted_category_type(
+        self,
+        monkeypatch,
+        legacy,
+        training_values,
+        default,
+        expected_input,
+        expected_prediction,
+    ):
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+        from sklearn.tree import DecisionTreeRegressor
+
+        training_data = pd.DataFrame({"zone": training_values})
+        model = Pipeline(
+            [
+                ("features", OneHotEncoder()),
+                ("regressor", DecisionTreeRegressor(random_state=0)),
+            ]
+        ).fit(training_data, [10.0, 20.0, 30.0][: len(training_values)])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {},
+            feature_names=["zone"],
+            inference_params={"featureDefaults": {"zone": default}},
+            legacy=legacy,
+        )
+
+        assert result["prediction"] == [expected_prediction]
+        assert result["input_data"] == {"zone": [expected_input]}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("wrapper", ["grid_search", "target_transform"])
+    async def test_metadata_wrapped_pipeline_keeps_raw_text_for_its_preprocessor(
+        self, monkeypatch, wrapper
+    ):
+        from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
+        from sklearn.dummy import DummyRegressor
+        from sklearn.model_selection import GridSearchCV
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        training_data = pd.DataFrame(
+            {"region": ["east", "west", "east", "west"], "hour": [8, 9, 10, 11]}
+        )
+        pipeline = Pipeline(
+            [
+                (
+                    "features",
+                    ColumnTransformer(
+                        [
+                            ("region", OneHotEncoder(), ["region"]),
+                            ("hour", "passthrough", ["hour"]),
+                        ]
+                    ),
+                ),
+                ("regressor", DummyRegressor()),
+            ]
+        )
+        if wrapper == "grid_search":
+            model = GridSearchCV(
+                pipeline,
+                {"regressor__strategy": ["mean"]},
+                cv=2,
+            )
+        else:
+            model = TransformedTargetRegressor(regressor=pipeline)
+        model.fit(training_data, [10.0, 20.0, 30.0, 40.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east", "hour": 8},
+            feature_names=["region", "hour"],
+        )
+
+        assert len(result["prediction"]) == 1
+        assert result["input_data"] == {"region": ["east"], "hour": [8]}
+
+    @pytest.mark.asyncio
+    async def test_metadata_native_categorical_model_accepts_only_its_text_feature(
+        self, monkeypatch
+    ):
+        class NativeCategoricalModel:
+            feature_names_ = ["region", "hour"]
+
+            def get_cat_feature_indices(self):
+                return [0]
+
+            def predict(self, input_data):
+                assert input_data.loc[0, "region"] == "east"
+                return np.array([12.5])
+
+        model = NativeCategoricalModel()
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east", "hour": 8},
+            feature_names=["region", "hour"],
+        )
+
+        assert result["prediction"] == [12.5]
+        assert result["input_data"] == {"region": ["east"], "hour": [8]}
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"region": "east", "hour": "late"},
+                feature_names=["region", "hour"],
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "'hour'" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_native_categorical_index_uses_metadata_name_when_model_names_are_positional(
+        self, monkeypatch
+    ):
+        class PositionalNativeCategoricalModel:
+            __module__ = "catboost.core"
+            feature_names_ = ["0", "1"]
+
+            def get_cat_feature_indices(self):
+                return [0]
+
+            def predict(self, input_data):
+                assert list(input_data.columns) == ["0", "1"]
+                assert input_data.iloc[0, 0] == "1e3"
+                assert float(input_data.iloc[0, 1]) == 5.0
+                return np.array([12.5])
+
+        result = await _predict(
+            monkeypatch,
+            PositionalNativeCategoricalModel(),
+            {"city": "1e3", "amount": "5e0"},
+            feature_names=["city", "amount"],
+        )
+
+        assert result["prediction"] == [12.5]
+        assert result["input_data"] == {"city": ["1e3"], "amount": [5.0]}
+
+    @pytest.mark.asyncio
+    async def test_real_catboost_uses_native_categorical_feature(self, monkeypatch):
+        catboost = pytest.importorskip("catboost")
+        training_data = pd.DataFrame(
+            {"region": ["east", "west", "east", "west"], "hour": [8, 9, 10, 11]}
+        )
+        model = catboost.CatBoostRegressor(
+            iterations=2,
+            verbose=False,
+            allow_writing_files=False,
+            cat_features=["region"],
+        ).fit(training_data, [10.0, 20.0, 30.0, 40.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east", "hour": 8},
+            feature_names=["region", "hour"],
+        )
+
+        assert len(result["prediction"]) == 1
+        assert result["input_data"] == {"region": ["east"], "hour": [8]}
+
+    @pytest.mark.asyncio
+    async def test_numpy_trained_catboost_maps_categorical_index_to_metadata_name(
+        self, monkeypatch
+    ):
+        catboost = pytest.importorskip("catboost")
+        training_data = np.array(
+            [["1e3", 8.0], ["2e3", 9.0], ["1e3", 10.0], ["2e3", 11.0]],
+            dtype=object,
+        )
+        model = catboost.CatBoostRegressor(
+            iterations=2,
+            verbose=False,
+            allow_writing_files=False,
+            cat_features=[0],
+        ).fit(training_data, [10.0, 20.0, 30.0, 40.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "1e3", "hour": "1e1"},
+            feature_names=["region", "hour"],
+        )
+
+        assert len(result["prediction"]) == 1
+        assert result["input_data"] == {"region": ["1e3"], "hour": [10.0]}
+
+    @pytest.mark.asyncio
+    async def test_legacy_pipeline_keeps_text_categories_that_look_numeric(
+        self, monkeypatch
+    ):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.dummy import DummyRegressor
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        training_data = pd.DataFrame({"zone": ["2_3", "inf"]})
+        model = Pipeline(
+            [
+                (
+                    "categories",
+                    ColumnTransformer(
+                        [("zone", OneHotEncoder(), ["zone"])],
+                    ),
+                ),
+                ("regressor", DummyRegressor()),
+            ]
+        ).fit(training_data, [10.0, 20.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"zone": ["2_3", "inf"]},
+            feature_names=["zone"],
+            legacy=True,
+        )
+
+        assert result["input_data"] == {"zone": ["2_3", "inf"]}
+
+    @pytest.mark.asyncio
+    async def test_numeric_validation_bounds_invalid_values_in_error(
+        self, monkeypatch
+    ):
+        invalid_values = [f"invalid-{index}-" + "x" * 100 for index in range(10)]
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"area": invalid_values},
+                feature_names=["area"],
+            )
+
+        detail = exc.value.error_detail
+        assert "invalid-0" in detail
+        assert "row 1" in detail
+        assert "invalid-5" not in detail
+        assert "x" * 40 not in detail
+        assert len(detail) < 450
+
+
+class TestEchoedInputTypes:
+    """Echoed input data keeps each value's own type."""
+
+    @pytest.mark.asyncio
+    async def test_mixed_inputs_keep_their_types_with_encoded_text(self, monkeypatch):
+        result = await _predict(
+            monkeypatch,
+            _StubModel(),
+            {"area": [1.5, 2], "flag": True, "color": ["red", "blue"]},
+            feature_names=["area", "flag", "color"],
+            label_encodings={"color": {"red": 0, "blue": 1}},
+        )
+
+        assert result["input_data"] == {
+            "area": [1.5, 2],
+            "flag": [True, True],
+            "color": ["red", "blue"],
+        }
+        assert [type(v) for v in result["input_data"]["area"]] == [float, int]
+        assert type(result["input_data"]["flag"][0]) is bool
+        json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_numeric_inputs_keep_their_types_without_encoders(self, monkeypatch):
+        result = await _predict(
+            monkeypatch,
+            _StubModel(),
+            {"area": 1.5, "count": 2, "flag": True},
+            feature_names=["area", "count", "flag"],
+        )
+
+        assert result["input_data"] == {
+            "area": [1.5],
+            "count": [2],
+            "flag": [True],
+        }
+        assert type(result["input_data"]["area"][0]) is float
+        assert type(result["input_data"]["count"][0]) is int
+        assert type(result["input_data"]["flag"][0]) is bool
+
+    def test_non_json_scalars_are_serialized_safely(self):
+        timestamp = datetime(2026, 10, 23, 12, 30, tzinfo=timezone.utc)
+
+        result = _echo_input_columns(
+            {"amount": [Decimal("1.5")], "created_at": [timestamp]},
+            ["amount", "created_at"],
+            1,
+        )
+
+        assert result == {
+            "amount": ["1.5"],
+            "created_at": ["2026-10-23 12:30:00+00:00"],
+        }
+        json.dumps(result)
+
+
 class TestFeatureEngineeringReplayErrors:
     """MI-10: a replay step that fails, or whose inputs are absent, is reported
     as an input error naming the feature, the step and the cause - not as a
@@ -2185,7 +2781,7 @@ class TestFeatureEngineeringReplayErrors:
             await _predict(
                 monkeypatch,
                 model,
-                {"income": 1000.0, "household_size": "abc"},
+                {"income": 1000.0, "household_size": Decimal("4")},
                 feature_names=["income", "household_size"],
                 model_input_columns=["income", "household_size", "income_per_person"],
                 feature_engineering_steps=[self.RATIO_STEP],
@@ -2229,7 +2825,7 @@ class TestFeatureEngineeringReplayErrors:
             await _predict(
                 monkeypatch,
                 _CapturingModel(),
-                {"income": 1000.0, "household_size": "abc"},
+                {"income": 1000.0, "household_size": Decimal("4")},
                 feature_names=["income", "household_size"],
                 model_input_columns=["income", "household_size", "sq_income_per_person^2"],
                 feature_engineering_steps=[
@@ -2292,7 +2888,7 @@ class TestFeatureEngineeringReplayErrors:
         result = await _predict(
             monkeypatch,
             _CapturingModel(),
-            {"income": 1000.0, "household_size": "abc"},
+            {"income": 1000.0, "household_size": Decimal("4")},
             feature_names=["income", "household_size"],
             model_input_columns=["income", "household_size"],
             feature_engineering_steps=[self.RATIO_STEP],
@@ -2473,7 +3069,7 @@ class TestFeatureEngineeringReplayErrors:
             await _predict(
                 monkeypatch,
                 model,
-                {"income": 1000.0, "household_size": "abc"},
+                {"income": 1000.0, "household_size": Decimal("4")},
                 feature_names=["income", "household_size"],
                 feature_engineering_steps=[self.RATIO_STEP],
             )
