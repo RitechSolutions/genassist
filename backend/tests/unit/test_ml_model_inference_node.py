@@ -2196,7 +2196,7 @@ class TestConvertValueNumbers:
             ("inf", "inf"),
             ("-Infinity", "-Infinity"),
             ("nan", "nan"),
-            ("1e400", float("inf")),
+            ("1e400", "1e400"),
             ("abc", "abc"),
             ("1.2.3", "1.2.3"),
             ("e5", "e5"),
@@ -2271,9 +2271,16 @@ class TestConvertValueNumbers:
         assert "'area'" in exc.value.error_detail
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("value", ["1e400", float("inf"), np.float64("inf")])
+    @pytest.mark.parametrize(
+        ("value", "displayed_value"),
+        [
+            ("1e400", "1e400"),
+            (float("inf"), "inf"),
+            (np.float64("inf"), "inf"),
+        ],
+    )
     async def test_non_finite_error_displays_the_rejected_value(
-        self, monkeypatch, value
+        self, monkeypatch, value, displayed_value
     ):
         with pytest.raises(AppException) as exc:
             await _predict(
@@ -2283,7 +2290,7 @@ class TestConvertValueNumbers:
                 feature_names=["area"],
             )
 
-        assert "inf (row 1)" in exc.value.error_detail
+        assert f"{displayed_value} (row 1)" in exc.value.error_detail
         assert "None" not in exc.value.error_detail
 
     @pytest.mark.asyncio
@@ -2370,6 +2377,43 @@ class TestConvertValueNumbers:
         assert result["input_data"] == {"region": ["east"]}
 
     @pytest.mark.asyncio
+    async def test_metadata_pipeline_keeps_exponent_style_category_as_text(
+        self, monkeypatch
+    ):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.dummy import DummyRegressor
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        training_data = pd.DataFrame(
+            {"region": ["1e3", "2e3"], "hour": [8.0, 9.0]}
+        )
+        model = Pipeline(
+            [
+                (
+                    "features",
+                    ColumnTransformer(
+                        [
+                            ("region", OneHotEncoder(), ["region"]),
+                            ("hour", "passthrough", ["hour"]),
+                        ]
+                    ),
+                ),
+                ("regressor", DummyRegressor(strategy="constant", constant=12.5)),
+            ]
+        ).fit(training_data, [10.0, 20.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "1e3", "hour": "1e1"},
+            feature_names=["region", "hour"],
+        )
+
+        assert result["prediction"] == [12.5]
+        assert result["input_data"] == {"region": ["1e3"], "hour": [10.0]}
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("wrapper", ["grid_search", "target_transform"])
     async def test_metadata_wrapped_pipeline_keeps_raw_text_for_its_preprocessor(
         self, monkeypatch, wrapper
@@ -2454,6 +2498,33 @@ class TestConvertValueNumbers:
         assert "'hour'" in exc.value.error_detail
 
     @pytest.mark.asyncio
+    async def test_native_categorical_index_uses_metadata_name_when_model_names_are_positional(
+        self, monkeypatch
+    ):
+        class PositionalNativeCategoricalModel:
+            __module__ = "catboost.core"
+            feature_names_ = ["0", "1"]
+
+            def get_cat_feature_indices(self):
+                return [0]
+
+            def predict(self, input_data):
+                assert list(input_data.columns) == ["0", "1"]
+                assert input_data.iloc[0, 0] == "1e3"
+                assert float(input_data.iloc[0, 1]) == 5.0
+                return np.array([12.5])
+
+        result = await _predict(
+            monkeypatch,
+            PositionalNativeCategoricalModel(),
+            {"city": "1e3", "amount": "5e0"},
+            feature_names=["city", "amount"],
+        )
+
+        assert result["prediction"] == [12.5]
+        assert result["input_data"] == {"city": ["1e3"], "amount": [5.0]}
+
+    @pytest.mark.asyncio
     async def test_real_catboost_uses_native_categorical_feature(self, monkeypatch):
         catboost = pytest.importorskip("catboost")
         training_data = pd.DataFrame(
@@ -2475,6 +2546,32 @@ class TestConvertValueNumbers:
 
         assert len(result["prediction"]) == 1
         assert result["input_data"] == {"region": ["east"], "hour": [8]}
+
+    @pytest.mark.asyncio
+    async def test_numpy_trained_catboost_maps_categorical_index_to_metadata_name(
+        self, monkeypatch
+    ):
+        catboost = pytest.importorskip("catboost")
+        training_data = np.array(
+            [["1e3", 8.0], ["2e3", 9.0], ["1e3", 10.0], ["2e3", 11.0]],
+            dtype=object,
+        )
+        model = catboost.CatBoostRegressor(
+            iterations=2,
+            verbose=False,
+            allow_writing_files=False,
+            cat_features=[0],
+        ).fit(training_data, [10.0, 20.0, 30.0, 40.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "1e3", "hour": "1e1"},
+            feature_names=["region", "hour"],
+        )
+
+        assert len(result["prediction"]) == 1
+        assert result["input_data"] == {"region": ["1e3"], "hour": [10.0]}
 
     @pytest.mark.asyncio
     async def test_legacy_pipeline_keeps_text_categories_that_look_numeric(

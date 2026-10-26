@@ -86,9 +86,8 @@ def convert_value(val: Any) -> Any:
         except ValueError:
             return val
     if _FLOAT_PATTERN.fullmatch(stripped):
-        # An overflow such as "1e400" parses to inf; the numeric checks
-        # reject non-finite values with a specific message.
-        return float(stripped)
+        converted = float(stripped)
+        return converted if np.isfinite(converted) else val
     return val
 
 
@@ -601,6 +600,13 @@ def _numeric_value_problem(value: Any, allow_text: bool) -> Optional[str]:
     if isinstance(value, (bool, np.bool_)):
         return None
     if isinstance(value, str):
+        stripped = value.strip()
+        if _FLOAT_PATTERN.fullmatch(stripped):
+            try:
+                if not np.isfinite(float(stripped)):
+                    return "not finite"
+            except ValueError:
+                pass
         return None if allow_text else "not numeric"
     if isinstance(value, (dict, list, tuple, set)) or value is None:
         return "not numeric"
@@ -644,16 +650,91 @@ def _model_accepts_raw_text_features(model: Any) -> bool:
     return False
 
 
+def _selected_feature_names(
+    selector: Any, feature_names: Sequence[str]
+) -> set[str]:
+    """Resolve fitted column-transformer selectors to model feature names."""
+    if isinstance(selector, str):
+        return {selector} if selector in feature_names else set()
+    if isinstance(selector, (int, np.integer)) and not isinstance(
+        selector, (bool, np.bool_)
+    ):
+        index = int(selector)
+        return {feature_names[index]} if 0 <= index < len(feature_names) else set()
+    if isinstance(selector, slice):
+        return set(feature_names[selector])
+    if not isinstance(selector, (list, tuple, np.ndarray, pd.Index)):
+        return set()
+
+    selected = list(selector)
+    if len(selected) == len(feature_names) and all(
+        isinstance(value, (bool, np.bool_)) for value in selected
+    ):
+        return {
+            name for name, is_selected in zip(feature_names, selected) if is_selected
+        }
+
+    names = set()
+    for value in selected:
+        if isinstance(value, str) and value in feature_names:
+            names.add(value)
+        elif isinstance(value, (int, np.integer)) and not isinstance(
+            value, (bool, np.bool_)
+        ):
+            index = int(value)
+            if 0 <= index < len(feature_names):
+                names.add(feature_names[index])
+    return names
+
+
+def _transformer_accepts_text(transformer: Any) -> bool:
+    if transformer is None or (
+        isinstance(transformer, str) and transformer in {"drop", "passthrough"}
+    ):
+        return False
+    if getattr(transformer, "categories_", None) is not None:
+        return True
+    steps = getattr(transformer, "steps", None)
+    return isinstance(steps, (list, tuple)) and any(
+        _transformer_accepts_text(step_transformer)
+        for _, step_transformer in steps
+    )
+
+
+def _pipeline_text_features(
+    pipeline: Any, feature_names: Sequence[str]
+) -> set[str]:
+    text_features = set()
+    steps = getattr(pipeline, "steps", None)
+    if not isinstance(steps, (list, tuple)):
+        return text_features
+
+    for _, transformer in steps:
+        fitted_transformers = getattr(transformer, "transformers_", None)
+        if isinstance(fitted_transformers, (list, tuple)):
+            for _, column_transformer, selector in fitted_transformers:
+                if _transformer_accepts_text(column_transformer):
+                    text_features.update(
+                        _selected_feature_names(selector, feature_names)
+                    )
+        elif _transformer_accepts_text(transformer):
+            text_features.update(feature_names)
+    return text_features
+
+
 def _model_native_text_features(
     model: Any, feature_names: Sequence[str]
 ) -> set[str]:
     """Return named features a fitted estimator handles as text itself."""
     text_features = set()
     for candidate in _wrapped_model_candidates(model):
+        text_features.update(_pipeline_text_features(candidate, feature_names))
         candidate_names = _normalize_estimator_feature_names(
             getattr(candidate, "feature_names_", None),
             None,
         ) or list(feature_names)
+        if candidate_names == [str(index) for index in range(len(candidate_names))]:
+            candidate_names = list(feature_names)
         for getter_name in (
             "get_cat_feature_indices",
             "get_text_feature_indices",
@@ -690,10 +771,9 @@ def _validate_numeric_inputs(
         for row_number, value in enumerate(
             normalized_inputs.get(name, []), start=1
         ):
-            if _numeric_value_problem(
-                value,
-                allow_text or name in allowed_text_features,
-            ) is None:
+            if name in allowed_text_features and isinstance(value, str):
+                continue
+            if _numeric_value_problem(value, allow_text) is None:
                 continue
             value_text = _format_error_value(value)
             if (
@@ -1601,9 +1681,33 @@ class MLModelInferenceNode(BaseNode):
                             )
                         }
                     )
+                label_columns = list(label_encodings.keys())
+                ordinal_columns = list(ordinal_encodings.keys())
+                encoded_feature_columns = (
+                    categorical_columns
+                    + categorical_columns_no_drop
+                    + label_columns
+                    + ordinal_columns
+                )
+                model_handles_raw_text = (
+                    not encoded_feature_columns
+                    and _model_accepts_raw_text_features(model)
+                )
+                model_native_text_features = (
+                    _model_native_text_features(model, feature_names)
+                    if not encoded_feature_columns
+                    else set()
+                )
+                conversion_categorical_features = list(
+                    dict.fromkeys(categorical_features + list(model_native_text_features))
+                )
                 inference_inputs = convert_input_types(
                     inference_inputs,
-                    categorical_features=categorical_features if metadata else None,
+                    categorical_features=(
+                        conversion_categorical_features
+                        if metadata or model_native_text_features
+                        else None
+                    ),
                     categorical_values=categorical_values if metadata else None,
                     normalized_categorical_features=list(ordinal_encodings),
                 )
@@ -1637,7 +1741,9 @@ class MLModelInferenceNode(BaseNode):
                     feature_names,
                     defaults=feature_defaults,
                     allowed_extra_features=allowed_extra_features,
-                    categorical_features=categorical_features if metadata else None,
+                    categorical_features=(
+                        conversion_categorical_features if metadata else None
+                    ),
                     categorical_values=categorical_values if metadata else None,
                     normalized_categorical_features=list(ordinal_encodings),
                     default_feature_names=default_feature_names,
@@ -1678,22 +1784,7 @@ class MLModelInferenceNode(BaseNode):
                 # columns it was trained on, instead of the raw (pre-encoding)
                 # feature names. No-op for models with no categorical features
                 # or legacy models that predate this metadata.
-                label_columns = list(label_encodings.keys())
-                ordinal_columns = list(ordinal_encodings.keys())
-
-                encoded_feature_columns = (
-                    categorical_columns + categorical_columns_no_drop + label_columns + ordinal_columns
-                )
                 numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
-                model_handles_raw_text = (
-                    not encoded_feature_columns
-                    and _model_accepts_raw_text_features(model)
-                )
-                model_native_text_features = (
-                    _model_native_text_features(model, feature_names)
-                    if not encoded_feature_columns
-                    else set()
-                )
                 _validate_numeric_inputs(
                     normalized_inputs,
                     numeric_order if metadata_is_authoritative else feature_names,
