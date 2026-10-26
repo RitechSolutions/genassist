@@ -5,17 +5,21 @@ export const CATEGORY_MAX_LENGTH = 50;
 /** A category as it is saved: spaces trimmed and collapsed. */
 export const tidyCategory = (text: string): string => text.trim().replace(/\s+/g, " ");
 
+// Letter by letter like the database's lower() (which lowers "İ" to "i"), whatever the browser's language.
+const caseless = (text: string): string =>
+  Array.from(text, (letter) => (letter === "İ" ? "i" : letter.toLowerCase())).join("");
+
 /** What the picker lists for the typed text, matched on the tidied text so extra spaces hide nothing. */
 export const pickerChoices = (text: string, value: string, categories: string[]) => {
   const typed = tidyCategory(text);
-  const wanted = typed.toLocaleLowerCase();
+  const wanted = caseless(typed);
   // One added in the form but not saved yet is listed too.
   const names = value && !categories.includes(value) ? [value, ...categories] : categories;
   return {
     typed,
     // Typed in another case, a category in use is picked, not added again.
-    isNew: Boolean(typed) && !names.some((name) => name.toLocaleLowerCase() === wanted),
-    shown: typed ? names.filter((name) => name.toLocaleLowerCase().includes(wanted)) : names,
+    isNew: Boolean(typed) && !names.some((name) => caseless(name) === wanted),
+    shown: typed ? names.filter((name) => caseless(name).includes(wanted)) : names,
   };
 };
 
@@ -46,5 +50,5 @@ export const runAllScope = (value: string, workflowName: string): string => {
 export const matchesCategory = (category: string | null | undefined, value: string): boolean => {
   if (value === NO_CATEGORY) return !category;
   if (!value.startsWith(PREFIX)) return true;
-  return (category ?? "").toLocaleLowerCase() === value.slice(PREFIX.length).toLocaleLowerCase();
+  return caseless(category ?? "") === caseless(value.slice(PREFIX.length));
 };

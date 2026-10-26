@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ALL_CATEGORIES,
   NO_CATEGORY,
@@ -48,5 +48,27 @@ describe("categories", () => {
     expect(matchesCategory("Refunds", NO_CATEGORY)).toBe(false);
     expect(matchesCategory("Refunds", categoryOption("refunds"))).toBe(true);
     expect(matchesCategory("Escalation", categoryOption("Refunds"))).toBe(false);
+  });
+
+  it("ignore case as the database does, in any browser language", () => {
+    // A Turkish browser's toLocaleLowerCase turns "I" into "ı"; matching must not depend on it.
+    const toLocaleLowerCase = String.prototype.toLocaleLowerCase;
+    const turkish = vi.spyOn(String.prototype, "toLocaleLowerCase").mockImplementation(function (this: string) {
+      return toLocaleLowerCase.call(this, "tr-TR");
+    });
+    try {
+      expect(matchesCategory("INVOICES", categoryOption("invoices"))).toBe(true);
+      expect(pickerChoices("invoices", "", ["INVOICES"])).toEqual({
+        typed: "invoices",
+        isNew: false,
+        shown: ["INVOICES"],
+      });
+      // The database lowers one letter at a time: "İ" to "i" and a final "Σ" to "σ".
+      expect(matchesCategory("İADE", categoryOption("iade"))).toBe(true);
+      expect(pickerChoices("iade", "", ["İADE"]).isNew).toBe(false);
+      expect(pickerChoices("οδοσ", "", ["ΟΔΟΣ"]).isNew).toBe(false);
+    } finally {
+      turkish.mockRestore();
+    }
   });
 });
