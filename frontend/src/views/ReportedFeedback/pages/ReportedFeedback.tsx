@@ -175,14 +175,15 @@ export default function ReportedFeedback() {
     {
       header: "Comment",
       key: "comment",
-      headerClassName: "w-[300px]",
+      headerClassName: "min-w-[130px]",
+      className: "max-w-0",
       cell: (item) => (
         <>
-          <span className="block max-w-[280px] truncate text-sm">
+          <span className="block truncate text-sm">
             <HighlightedExcerpt text={item.comment} search={search} />
           </span>
           {item.matched_note && (
-            <p className="mt-1 flex max-w-[280px] gap-1.5 text-xs text-muted-foreground">
+            <p className="mt-1 flex gap-1.5 text-xs text-muted-foreground">
               <NotebookPen className="mt-0.5 h-3 w-3 shrink-0" />
               <span className="sr-only">Matching note: </span>
               <span className="line-clamp-2 break-words">
@@ -196,9 +197,10 @@ export default function ReportedFeedback() {
     {
       header: "Message",
       key: "message",
-      headerClassName: "w-[260px]",
+      headerClassName: "min-w-[120px]",
+      className: "max-w-0",
       cell: (item) => (
-        <span className="block max-w-[240px] truncate text-sm text-muted-foreground">
+        <span className="block truncate text-sm text-muted-foreground">
           <span className="mr-1 text-xs font-medium uppercase">
             {item.speaker}:
           </span>
@@ -210,8 +212,9 @@ export default function ReportedFeedback() {
       header: "Agent",
       key: "agent",
       headerClassName: "w-[150px]",
+      className: "max-w-0",
       cell: (item) => (
-        <span className="block max-w-[140px] truncate text-sm">
+        <span className="block truncate text-sm">
           {item.agent_name || (
             <span className="italic text-muted-foreground">—</span>
           )}
@@ -222,9 +225,10 @@ export default function ReportedFeedback() {
       header: "Topic",
       key: "topic",
       headerClassName: "w-[170px]",
+      className: "max-w-0",
       cell: (item) =>
         item.conversation_topic ? (
-          <TruncatedText className="max-w-[160px] text-sm">
+          <TruncatedText className="text-sm">
             {topicLabel(item.conversation_topic, item.conversation_subtopic)}
           </TruncatedText>
         ) : (
