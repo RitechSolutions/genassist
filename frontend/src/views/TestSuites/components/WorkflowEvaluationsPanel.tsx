@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Download, ListChecks, Loader2, MoreVertical, Play, Plus, Search } from "lucide-react";
+import { ChevronDown, Download, ListChecks, MoreVertical, Play, Plus, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { Button } from "@/components/button";
@@ -43,9 +43,10 @@ import { useChecksPreview, withPreview } from "../hooks/useChecksPreview";
 import { WORKFLOW_SUMMARIES_QUERY_KEY } from "../hooks/useEvaluationData";
 import { CATEGORIES_QUERY_KEY } from "../hooks/useCategories";
 import { EvaluationListRow } from "./EvaluationListRow";
+import { RunningStatus } from "./resultsParts";
 import { RunAgainstVersionDialog } from "./RunAgainstVersionDialog";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
-import { runAvgAccuracy, runProgressText } from "../helpers/runResults";
+import { runAllStatusText, runAvgAccuracy, runInProgressText } from "../helpers/runResults";
 import { runConversationCounts } from "../helpers/runConversations";
 import { ALL_CATEGORIES, categoryQuery, runAllScope } from "../helpers/categories";
 import {
@@ -484,28 +485,20 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
   const runAllDisabled = isWorkflowRunning || Boolean(anyRunning);
   const runAll = () => (pickVersionOnRun ? setIsRunAllVersionDialogOpen(true) : void handleRunAll());
   const sectionCount = isSection ? count ?? totalUnfiltered : 0;
-  const runAllLabel =
-    isWorkflowRunning && workflowProgress ? (
-      <>
-        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-        {workflowProgress.done}/{workflowProgress.total}
-      </>
-    ) : isWorkflowRunning ? (
-      <>
-        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-        Starting…
-      </>
-    ) : anyRunning ? (
-      <>
-        <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-        Running…
-      </>
-    ) : (
-      <>
-        <Play className="h-3.5 w-3.5 mr-1" />
-        Run all
-      </>
-    );
+  // Run all keeps its name; what the evaluations are doing shows beside it, as a row's run shows beside Run.
+  const runAllLabel = (
+    <>
+      <Play className="h-3.5 w-3.5 mr-1" />
+      Run all
+    </>
+  );
+  const runAllStatusLabel = runAllStatusText(isWorkflowRunning, workflowProgress, Boolean(anyRunning));
+  const runAllStatus = runAllStatusLabel && (
+    <RunningStatus className="shrink-0 text-xs">
+      {/* Phones keep the room for the name; the spinner still shows, and screen readers still hear it. */}
+      <span className="sr-only sm:not-sr-only">{runAllStatusLabel}</span>
+    </RunningStatus>
+  );
 
   const listBody = isLoading ? (
     <PageListSkeleton variant="evaluation" bordered={false} />
@@ -552,9 +545,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
           lastRunStatus={
             evaluation.id ? lastRunsByEvaluationId[evaluation.id]?.status : undefined
           }
-          progressText={
-            evaluation.id ? runProgressText(lastRunsByEvaluationId[evaluation.id]) : null
-          }
+          runningText={runInProgressText(evaluation.id ? lastRunsByEvaluationId[evaluation.id] : null)}
           onOpen={() => evaluation.id && onOpenEvaluation(evaluation.id)}
           onEdit={() => void editEvaluation(evaluation)}
           onExport={() => void handleExport(evaluation)}
@@ -600,6 +591,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
                   : `${sectionCount} evaluation${sectionCount !== 1 ? "s" : ""}`}
               </Badge>
             </button>
+            {!isUnassigned && runAllStatus}
             {!isUnassigned && (
               // Run all and the menu act on their own instead of folding the section.
               <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
@@ -642,7 +634,8 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
                   : `${total} evaluation${total !== 1 ? "s" : ""}`}
               </Badge>
             </div>
-            <div className="ml-auto flex items-center gap-2 shrink-0">
+            {/* Wraps on narrow screens, as Run all's status can make it wider than the header. */}
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
               <div className="relative w-56">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
@@ -669,6 +662,7 @@ export const WorkflowEvaluationsPanel: React.FC<WorkflowEvaluationsPanelProps> =
                       tooltipContent={{ children: <p>Export all evaluations</p> }}
                     />
                   </TooltipProvider>
+                  {runAllStatus}
                   <Button variant="outline" disabled={runAllDisabled} onClick={runAll}>
                     {runAllLabel}
                   </Button>
