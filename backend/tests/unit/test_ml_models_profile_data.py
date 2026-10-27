@@ -185,7 +185,7 @@ async def test_analyze_csv_returns_safe_s3_access_error_and_removes_partial_file
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == (
-        "Could not access the selected CSV file. Check that it still exists "
+        "Could not access the selected file. Check that it still exists "
         "and that the storage configuration is valid."
     )
     assert "AccessDenied" not in exc_info.value.detail
@@ -469,7 +469,7 @@ async def test_profile_data_requires_source_details():
         )
 
     assert exc_info.value.status_code == 400
-    assert "CSV file path" in exc_info.value.detail
+    assert "file path" in exc_info.value.detail
 
 
 @pytest.mark.asyncio
@@ -583,7 +583,7 @@ async def test_profile_data_prefers_file_id_over_existing_local_path(monkeypatch
 async def test_profile_data_rejects_failed_url_download(monkeypatch, tmp_path):
     created_paths: list[Path] = []
 
-    def temporary_path():
+    def temporary_path(_suffix=".csv"):
         path = tmp_path / "profile.csv"
         path.touch()
         created_paths.append(path)
@@ -608,7 +608,7 @@ async def test_profile_data_rejects_failed_url_download(monkeypatch, tmp_path):
 async def test_profile_data_rejects_failed_file_manager_download(monkeypatch, tmp_path):
     created_paths: list[Path] = []
 
-    def temporary_path():
+    def temporary_path(_suffix=".csv"):
         path = tmp_path / "profile.csv"
         path.touch()
         created_paths.append(path)
@@ -627,7 +627,7 @@ async def test_profile_data_rejects_failed_file_manager_download(monkeypatch, tm
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == (
-        "Could not access the selected CSV file. Check that it still exists "
+        "Could not access the selected file. Check that it still exists "
         "and that the storage configuration is valid."
     )
     assert created_paths and not created_paths[0].exists()
