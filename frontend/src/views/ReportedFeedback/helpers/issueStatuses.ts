@@ -40,6 +40,23 @@ export function withCurrentStatus(
   return [...keys, current];
 }
 
+export function listableStatuses(
+  list: IssueStatus[],
+  byStatus: FeedbackStatusSummary["by_status"],
+  selected: string[] = [],
+): IssueStatus[] {
+  const retired = list.filter(
+    (status) =>
+      status.is_active !== 1 &&
+      ((byStatus[status.key] ?? 0) > 0 || selected.includes(status.key)),
+  );
+  return [...activeStatuses(list), ...retired];
+}
+
+export function normalizeStatusKeys(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))].sort();
+}
+
 /** Summary counts summed per category; keys the list does not know count nowhere. */
 export function categoryTotals(
   summary: FeedbackStatusSummary,

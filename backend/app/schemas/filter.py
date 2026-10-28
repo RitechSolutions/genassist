@@ -113,7 +113,9 @@ class MessageIssueSummaryFilter(BaseModel):
 
 
 class MessageIssueFilter(BaseFilterModel, MessageIssueSummaryFilter):
-    status: Optional[str] = Field(None, max_length=50, description="Filter by tracked resolution status")
+    status: Optional[list[Annotated[str, StringConstraints(max_length=50)]]] = Field(
+        Query(None, description="Filter by tracked resolution status; repeat the param to match any of several")
+    )
     feedback_id: Optional[UUID] = Field(None, description="Only this comment, for a shared link")
 
 

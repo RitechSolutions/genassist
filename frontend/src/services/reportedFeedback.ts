@@ -44,7 +44,7 @@ export interface FeedbackFilters {
 export interface FetchReportedFeedbackParams extends FeedbackFilters {
   skip?: number;
   limit?: number;
-  status?: string;
+  status?: string[];
   feedback_id?: string;
 }
 
@@ -67,13 +67,13 @@ const EMPTY_RESULT: ReportedFeedbackResult = {
 export const fetchReportedFeedback = async (
   params: FetchReportedFeedbackParams = {},
 ): Promise<ReportedFeedbackResult> => {
-  const { skip = 0, limit = 20, status, ...filters } = params;
+  const { skip = 0, limit = 20, status = [], ...filters } = params;
   const safeLimit = limit > 0 ? Math.min(limit, MAX_BACKEND_LIMIT) : 20;
 
   const queryParams = new URLSearchParams();
   if (skip) queryParams.append("skip", String(skip));
   queryParams.append("limit", String(safeLimit));
-  if (status && status !== "all") queryParams.append("status", status);
+  for (const key of status) queryParams.append("status", key);
   appendFilters(queryParams, filters);
 
   const response = await apiRequest<ReportedFeedbackResult>(

@@ -60,7 +60,7 @@ def _sql(stmt) -> str:
 
 async def _list_statements(**kwargs):
     db = CapturingDb()
-    await TranscriptMessageRepository(db).get_message_issues(MessageIssueFilter(**kwargs))
+    await TranscriptMessageRepository(db).get_message_issues(MessageIssueFilter(**{"status": None, **kwargs}))
     return db.statements
 
 
@@ -85,10 +85,10 @@ async def test_summary_groups_by_status_defaulting_to_open():
 
 
 @pytest.mark.asyncio
-async def test_list_status_filter_matches_the_defaulted_status():
-    rows, count = await _list_statements(status="needs_help_desk_fix")
+async def test_list_status_filter_matches_any_of_the_defaulted_statuses():
+    rows, count = await _list_statements(status=["needs_help_desk_fix", "resolved"])
     for stmt in (rows, count):
-        assert "coalesce(message_issues.status, 'open') = 'needs_help_desk_fix'" in _sql(stmt)
+        assert "coalesce(message_issues.status, 'open') IN ('needs_help_desk_fix', 'resolved')" in _sql(stmt)
 
 
 @pytest.mark.asyncio
