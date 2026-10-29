@@ -17,6 +17,7 @@ import toast from "react-hot-toast";
 import { getAllMLModels } from "@/services/mlModels";
 import { MLModel } from "@/interfaces/ml-model.interface";
 import { useNodeDialogState } from "./useNodeDialogState";
+import { pruneInferenceInputs } from "./mlModelInferenceInputs";
 
 export const MLModelInferenceDialog: React.FC<
   BaseNodeDialogProps<MLModelInferenceNodeData, MLModelInferenceNodeData>
@@ -43,10 +44,13 @@ export const MLModelInferenceDialog: React.FC<
 
   // Fetch ML models on mount
   useEffect(() => {
+    let cancelled = false;
+
     const fetchModels = async () => {
       try {
         setLoading(true);
         const models = await getAllMLModels();
+        if (cancelled) return;
         setMlModels(models);
 
         // If there's a selected model ID, find and set it
@@ -57,16 +61,39 @@ export const MLModelInferenceDialog: React.FC<
           }
         }
       } catch (error) {
-        toast.error("Failed to load ML models");
+        if (!cancelled) toast.error("Failed to load ML models");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
-    if (isOpen) {
-      fetchModels();
+    if (!isOpen) {
+      setSelectedModel(null);
+      setLoading(false);
+      return;
     }
+
+    fetchModels();
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, data.modelId]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const pruned = pruneInferenceInputs(
+      values.inferenceInputs,
+      values.modelId,
+      selectedModel
+    );
+    if (pruned.removedInputs.length === 0) return;
+
+    setField("inferenceInputs", pruned.inferenceInputs);
+    toast.success(
+      `Removed obsolete model input(s): ${pruned.removedInputs.join(", ")}`
+    );
+  }, [isOpen, selectedModel, setField, values.inferenceInputs, values.modelId]);
 
   // Handle model selection change
   const handleModelChange = (value: string) => {
@@ -173,28 +200,44 @@ export const MLModelInferenceDialog: React.FC<
             <div className="space-y-2">
               <Label className="text-sm font-semibold">Inference Values</Label>
               <div className="space-y-3 pl-2 border-l-2 border-border">
-                {selectedModel.features.map((key) => (
-                  <div key={key} className="space-y-1">
-                    <Label
-                      htmlFor={`param-${key}`}
-                      className="text-xs text-muted-foreground"
-                    >
-                      {key}
-                    </Label>
-                    <DraggableInput
-                      id={`param-${key}`}
-                      value={values.inferenceInputs[key] || ""}
-                      onChange={(e) =>
-                        updateInferenceInput(key, e.target.value)
-                      }
-                      placeholder={`Add value`}
-                      className="text-sm"
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      Use {"{{variable}}"} for dynamic values
+                {selectedModel.features.map((key) => {
+                  const featureDefaults =
+                    selectedModel.inference_params?.featureDefaults;
+                  const hasDefault = Object.prototype.hasOwnProperty.call(
+                    featureDefaults ?? {},
+                    key
+                  );
+                  const configuredDefault = featureDefaults?.[key];
+
+                  return (
+                    <div key={key} className="space-y-1">
+                      <Label
+                        htmlFor={`param-${key}`}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {key}
+                      </Label>
+                      <DraggableInput
+                        id={`param-${key}`}
+                        value={values.inferenceInputs[key] || ""}
+                        onChange={(e) =>
+                          updateInferenceInput(key, e.target.value)
+                        }
+                        placeholder={
+                          hasDefault
+                            ? `Optional - default: ${JSON.stringify(configuredDefault)}`
+                            : "Add value"
+                        }
+                        className="text-sm"
+                      />
+                      <div className="text-xs text-muted-foreground">
+                        {hasDefault
+                          ? `Leave empty to use the configured default (${JSON.stringify(configuredDefault)}), or use {{variable}} for a dynamic value`
+                          : `Use {{variable}} for dynamic values`}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

@@ -1,14 +1,11 @@
 import { DateRangePicker } from "@/components/date-range-picker";
-import { subDays } from "date-fns";
+import { dashboardDefaultDateRange } from "@/helpers/dateRange";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { KPISection } from "./Analytics";
 import { ActiveConversations } from "./ActiveConversations/pages/ActiveConversations";
 
 const Index = () => {
-  const [dateRange, setDateRange] = usePersistedDateRange({
-    from: subDays(new Date(), 30),
-    to: new Date(),
-  });
+  const [dateRange, setDateRange] = usePersistedDateRange(dashboardDefaultDateRange());
 
   return (
     <>

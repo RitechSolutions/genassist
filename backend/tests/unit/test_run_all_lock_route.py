@@ -9,6 +9,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.v1.routes import test_evaluations as route_mod
+from app.schemas.test_suite import RunWorkflowEvaluationsRequest
 
 
 def _fake_redis(*, acquired: bool = True, release_error: bool = False):
@@ -43,7 +44,7 @@ async def test_lock_contention_returns_409_without_starting(monkeypatch):
     service = _service()
 
     with pytest.raises(HTTPException) as exc:
-        await route_mod.run_workflow_evaluations(uuid4(), service)
+        await route_mod.run_workflow_evaluations(uuid4(), service=service)
 
     assert exc.value.status_code == 409
     service.start_workflow_evaluations.assert_not_awaited()
@@ -59,7 +60,7 @@ async def test_already_running_returns_409_and_releases_own_lock(monkeypatch):
     service = _service(active=True)
 
     with pytest.raises(HTTPException) as exc:
-        await route_mod.run_workflow_evaluations(uuid4(), service)
+        await route_mod.run_workflow_evaluations(uuid4(), service=service)
 
     assert exc.value.status_code == 409
     service.start_workflow_evaluations.assert_not_awaited()
@@ -80,11 +81,27 @@ async def test_happy_path_starts_then_releases(monkeypatch):
     started = [SimpleNamespace(evaluation_id=uuid4())]
     service = _service(active=False, started=started)
 
-    result = await route_mod.run_workflow_evaluations(uuid4(), service)
+    result = await route_mod.run_workflow_evaluations(uuid4(), service=service)
 
     assert result is started
     service.start_workflow_evaluations.assert_awaited_once()
     redis.eval.assert_awaited_once()  # released after starting
+
+
+@pytest.mark.asyncio
+async def test_a_category_narrows_the_batch(monkeypatch):
+    _patch_injector(monkeypatch, _fake_redis(acquired=True))
+    service = _service(active=False)
+
+    await route_mod.run_workflow_evaluations(
+        uuid4(), data=RunWorkflowEvaluationsRequest(category="  refunds "), service=service
+    )
+    assert service.start_workflow_evaluations.await_args.args[-1] == "refunds"
+
+    await route_mod.run_workflow_evaluations(
+        uuid4(), data=RunWorkflowEvaluationsRequest(uncategorized=True), service=service
+    )
+    assert service.start_workflow_evaluations.await_args.args[-1] == ""
 
 
 @pytest.mark.asyncio
@@ -95,6 +112,6 @@ async def test_release_failure_does_not_mask_response(monkeypatch):
     started = [SimpleNamespace(evaluation_id=uuid4())]
     service = _service(active=False, started=started)
 
-    result = await route_mod.run_workflow_evaluations(uuid4(), service)
+    result = await route_mod.run_workflow_evaluations(uuid4(), service=service)
 
     assert result is started  # successful start still returned despite release error

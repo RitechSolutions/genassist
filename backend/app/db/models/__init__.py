@@ -49,9 +49,10 @@ from .fine_tuning import (
     FineTuningJobModel,
     OpenAIFileModel,
 )
+from .issue_status import IssueStatusModel
 from .knowledge_base import KnowledgeBaseModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
-from .message_issue import MessageIssueModel
+from .message_issue import MessageIssueModel, MessageIssueNoteModel
 from .ml_model import MLModel
 from .ml_model_pipeline import (
     ArtifactType,
@@ -69,6 +70,14 @@ from .support_ticket import (
 )
 from .template import TemplateModel
 from .tenant import TenantModel
+from .test_suite import (
+    TestCaseModel,
+    TestEvaluationModel,
+    TestResultModel,
+    TestRunModel,
+    TestSuiteModel,
+    TestToolRuleResultModel,
+)
 from .tool import ToolModel
 from .user_group import UserGroupModel
 from .user_supervised_group import UserSupervisedGroupModel
@@ -147,10 +156,18 @@ __all__ = [
     "UserSupervisedGroupModel",
     "PromptVersionModel",
     "PromptConfigModel",
+    "TestSuiteModel",
+    "TestCaseModel",
+    "TestEvaluationModel",
+    "TestRunModel",
+    "TestResultModel",
+    "TestToolRuleResultModel",
     "FilesUploadSessionModel",
     "AudioProvidersModel",
     "FallbackChainModel",
     "MessageIssueModel",
+    "MessageIssueNoteModel",
+    "IssueStatusModel",
     "SupportTicketModel",
     "SupportTicketCommentModel",
     "SupportTicketEventModel",
@@ -214,6 +231,8 @@ models = [
     AudioProvidersModel,
     FallbackChainModel,
     MessageIssueModel,
+    MessageIssueNoteModel,
+    IssueStatusModel,
     SupportTicketModel,
     SupportTicketCommentModel,
     SupportTicketEventModel,

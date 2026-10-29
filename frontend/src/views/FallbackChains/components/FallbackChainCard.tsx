@@ -31,7 +31,9 @@ export function FallbackChainCard({
       getAllFallbackChains(),
       getAllLLMProviders(),
     ]);
-    setProvidersById(Object.fromEntries(providerData.map((p) => [p.id, p])));
+    setProvidersById(
+      Object.fromEntries((providerData ?? []).map((p) => [p.id, p]))
+    );
     return chainData;
   };
 

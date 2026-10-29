@@ -543,6 +543,29 @@ class TestRewriting:
             "bundle; it will grade as not evaluated."
         ]
 
+    def test_checks_keep_their_graders_turns_and_conversations_on_import(self):
+        configs = {"checks": {"llm_provider_id": "old", "checks": [
+            {"id": "a", "kind": "reply_meets", "rubric": "Be polite", "llm_provider_id": "gone"},
+            {"id": "b", "kind": "reply_mentions", "text": "x", "level": "turn", "case_id": "old-1", "conversation_id": "old-1"},
+            {"id": "c", "kind": "reply_mentions", "text": "x", "level": "turn", "case_id": "old-2",
+             "conversation_id": "conv-9", "turn_index": 1},
+            {"id": "d", "kind": "reply_mentions", "text": "x", "level": "conversation", "conversation_ids": ["old-1", "conv-9"]},
+        ]}}
+        assert collect_provider_ids(configs) == ["old", "gone"]
+        assert collect_case_ids(configs) == ["old-1", "old-2", "conv-9"]
+
+        rewritten, provider_warnings = rewrite_provider_refs(configs, {"old": "new", "gone": None})
+        assert rewritten["checks"]["llm_provider_id"] == "new"
+        assert "llm_provider_id" not in rewritten["checks"]["checks"][0]
+        assert provider_warnings == ["No matching LLM provider for the checks; the default provider will be used."]
+
+        rewritten, case_warnings = rewrite_case_refs(rewritten, {"old-1": "new-1"})
+        b, c, d = rewritten["checks"]["checks"][1:]
+        assert (b["case_id"], b["conversation_id"]) == ("new-1", "new-1")
+        assert "case_id" not in c and (c["conversation_id"], c["turn_index"]) == ("conv-9", 1)
+        assert d["conversation_ids"] == ["new-1", "conv-9"]
+        assert case_warnings == []
+
     def test_collects_case_ids_from_every_rule_technique(self):
         configs = {
             "tool_used": {"rules": [{"id": "r1", "target_case_id": "case-1"}]},
@@ -1325,6 +1348,20 @@ class TestRoundTrip:
         assert created.technique_configs["route_taken"]["rules"][0]["router"] == "tgt-router"
         assert result.case_count == 1
 
+    @pytest.mark.asyncio
+    async def test_categories_go_out_and_come_back_with_the_bundle(self):
+        export_service, evaluation, _, _ = _export_fixture()
+        suite = export_service.suites.get_suite.return_value
+        export_service.suites.get_evaluation.return_value = evaluation.model_copy(update={"category": "Refunds"})
+        export_service.suites.get_suite.return_value = suite.model_copy(update={"category": "Refund flows"})
+        bundle = await export_service.export_evaluation(uuid4())
+        assert (bundle.evaluation.category, bundle.dataset.category) == ("Refunds", "Refund flows")
+
+        import_service = _import_service(uuid4())
+        await import_service.import_bundle(EvaluationImportRequest(bundle=bundle, target_workflow_id=uuid4()))
+        assert import_service.suites.create_evaluation.await_args.args[0].category == "Refunds"
+        assert import_service.suites.create_suite.await_args.args[0].category == "Refund flows"
+
 
 def _route_only_evaluation(name: str) -> BundleEvaluation:
     return BundleEvaluation(
@@ -1478,6 +1515,55 @@ class TestBundleSetExport:
         shared, other = bundle_set.evaluations[0], bundle_set.evaluations[1]
         assert shared.dataset_local_id == other.dataset_local_id
         assert bundle_set.evaluations[2].dataset_local_id != shared.dataset_local_id
+
+    @pytest.mark.asyncio
+    async def test_export_set_keeps_only_the_evaluations_in_the_category(self):
+        workflow_id, suite_id = uuid4(), uuid4()
+        evaluations = [
+            _stored_evaluation("A checks", suite_id, workflow_id),
+            _stored_evaluation("B checks", suite_id, workflow_id),
+        ]
+        service = _service()
+        service.suites.list_evaluations.return_value = evaluations
+        service.suites.evaluation_ids_in_category.return_value = {evaluations[1].id}
+        service.suites.get_evaluation.side_effect = lambda eid: next(
+            e for e in evaluations if e.id == eid
+        )
+        service.suites.get_suite.return_value = TestSuiteInDB(
+            id=suite_id, name="Shared dataset", workflow_id=workflow_id,
+            created_at=NOW, updated_at=NOW,
+        )
+        service.suites.list_cases_for_suite.return_value = [
+            TestCaseInDB(
+                id=uuid4(), suite_id=suite_id, input_data={"message": "hi"},
+                created_at=NOW, updated_at=NOW,
+            )
+        ]
+        service.suites.get_evaluation_tool_catalog.return_value = (
+            EvaluationToolCatalog(**_catalog("src"))
+        )
+        service.workflows.get_by_id.return_value = SimpleNamespace(
+            id=workflow_id, name="HR Assistant", version="1.0"
+        )
+        service.workflows.get_all_minimal.return_value = []
+        service.providers.get_all_minimal.return_value = []
+
+        bundle_set = await service.export_workflow_evaluations(workflow_id, "refunds")
+
+        assert [i.evaluation.name for i in bundle_set.evaluations] == ["B checks"]
+        service.suites.evaluation_ids_in_category.assert_awaited_once_with("refunds")
+
+        # None in the category: nothing to export, said as such.
+        service.suites.evaluation_ids_in_category.return_value = set()
+        with pytest.raises(AppException) as excinfo:
+            await service.export_workflow_evaluations(workflow_id, "refunds")
+        assert excinfo.value.status_code == 404
+        assert excinfo.value.error_detail == "This workflow has no evaluations in this category to export."
+
+        # None without a category: the message doesn't speak of a category.
+        with pytest.raises(AppException) as excinfo:
+            await service.export_workflow_evaluations(workflow_id, "")
+        assert excinfo.value.error_detail == "This workflow has no evaluations without a category to export."
 
     @pytest.mark.asyncio
     async def test_export_set_with_no_evaluations_404s(self):

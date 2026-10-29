@@ -188,9 +188,10 @@ def _resolve_result_url(href: str) -> str | None:
     try:
         parsed = urlparse(href)
         host = (parsed.hostname or "").lower()
-        is_ddg_link = (host.endswith("duckduckgo.com") or (not host and parsed.path.startswith("/l/"))) and (
-            "uddg=" in parsed.query
-        )
+        is_ddg_link = (
+            (host == "duckduckgo.com" or host.endswith(".duckduckgo.com"))
+            or (not host and parsed.path.startswith("/l/"))
+        ) and ("uddg=" in parsed.query)
         if is_ddg_link:
             values = parse_qs(parsed.query).get("uddg")
             if not values:

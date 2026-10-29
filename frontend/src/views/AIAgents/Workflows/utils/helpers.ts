@@ -506,7 +506,7 @@ export const parseInputValue = (value: string, type: SchemaType): unknown => {
     }
   } catch (error) {
     // Return the original string if parsing fails
-    console.warn(`Failed to parse value "${value}" as ${type}:`, error);
+    console.warn('Failed to parse value "%s" as %s:', value, type, error);
     return value;
   }
 };

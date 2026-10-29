@@ -1,9 +1,11 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
+import { SearchX } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { cn } from '@/helpers/utils';
 import { Dialog, DialogOverlay, DialogPortal } from '@/components/dialog';
+import { ListEmptyState } from '@/components/ListEmptyState';
 import {
   Command,
   CommandEmpty,
@@ -210,7 +212,13 @@ export function CommandSearchDialog({ open, onOpenChange, groups, footer }: Comm
             />
             <CommandList className="max-h-[60vh] p-1">
               {!loading && !hasResults && (
-                <CommandEmpty className="py-10 text-muted-foreground">No results found.</CommandEmpty>
+                <CommandEmpty className="py-0">
+                  <ListEmptyState
+                    icon={<SearchX className="h-6 w-6 text-muted-foreground" />}
+                    title="No results found"
+                    description={`Nothing matches "${query.trim()}". Try a different keyword or check the spelling.`}
+                  />
+                </CommandEmpty>
               )}
 
               {/* Static nav ("pages") */}

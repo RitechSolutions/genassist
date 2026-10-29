@@ -5,6 +5,8 @@ ordering, per-provider retry, fail-fast on permanent errors, streaming failover,
 bind_tools type-stability, and responding-provider attribution.
 """
 
+import asyncio
+
 import httpx
 import openai
 import pytest
@@ -17,6 +19,7 @@ from app.modules.workflow.llm.fallback_chat_model import (
     FallbackChatModel,
 )
 from app.modules.workflow.llm.fallback_exceptions import is_retryable
+from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
 
 
 def _openai_status_error(code: int) -> openai.APIStatusError:
@@ -230,6 +233,115 @@ class TestFallbackChatModel:
         resp = await fm.ainvoke([HumanMessage(content="hi")])
         assert resp.content == "slow-but-ok"
         assert resp.response_metadata.get(FALLBACK_PROVIDER_ID_KEY) == "slow"
+
+    async def test_a_child_that_cannot_stream_still_streams_its_whole_reply(self):
+        class _WholeReplyModel(BaseChatModel):
+
+            @property
+            def _llm_type(self):
+                return "whole"
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                raise NotImplementedError
+
+            async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+                reply = AIMessage(
+                    content="checking",
+                    tool_calls=[{"name": "search", "args": {"q": "x"}, "id": "call_1", "type": "tool_call"}],
+                    usage_metadata={"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
+                )
+                return ChatResult(generations=[ChatGeneration(message=reply)])
+
+        fm = FallbackChatModel(
+            models=[PromptCachingChatModel(inner=_WholeReplyModel(), cache_style="anthropic")],
+            provider_ids=["p1"],
+        )
+        reply = None
+        async for chunk in fm.astream([HumanMessage(content="hi")]):
+            reply = chunk if reply is None else reply + chunk
+
+        assert reply.content == "checking"
+        assert reply.tool_calls == [{"name": "search", "args": {"q": "x"}, "id": "call_1", "type": "tool_call"}]
+        assert reply.usage_metadata == {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5}
+        assert reply.response_metadata.get(FALLBACK_PROVIDER_ID_KEY) == "p1"
+
+    async def test_a_stream_that_stalls_after_its_first_chunk_times_out_without_falling_over(self):
+        class _StallingModel(BaseChatModel):
+            @property
+            def _llm_type(self):
+                return "stalling"
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                raise NotImplementedError
+
+            async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+                yield ChatGenerationChunk(message=AIMessageChunk(content="first"))
+                await asyncio.sleep(5)
+                yield ChatGenerationChunk(message=AIMessageChunk(content="too late"))
+
+        fallback = _FakeModel(behavior="ok")
+        fm = FallbackChatModel(
+            models=[_StallingModel(), fallback],
+            provider_ids=["slow", "fast"],
+            request_timeouts=[0.05, 0],
+        )
+        received = []
+
+        with pytest.raises(asyncio.TimeoutError):
+            async for chunk in fm.astream([HumanMessage(content="hi")]):
+                received.append(chunk.content)
+
+        assert received == ["first"]
+        assert fallback.call_count == 0
+
+    async def test_a_stream_that_opens_empty_then_stalls_falls_over(self):
+        class _OpensThenStallsModel(BaseChatModel):
+            @property
+            def _llm_type(self):
+                return "opens-then-stalls"
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                raise NotImplementedError
+
+            async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+                yield ChatGenerationChunk(message=AIMessageChunk(content=[]))
+                await asyncio.sleep(5)
+                yield ChatGenerationChunk(message=AIMessageChunk(content="too late"))
+
+        fm = FallbackChatModel(
+            models=[_OpensThenStallsModel(), _FakeModel(behavior="ok", text="fallback")],
+            provider_ids=["slow", "fast"],
+            request_timeouts=[0.05, 0],
+        )
+        reply = None
+        async for chunk in fm.astream([HumanMessage(content="hi")]):
+            reply = chunk if reply is None else reply + chunk
+
+        assert reply.content == "fallback"
+        assert reply.response_metadata.get(FALLBACK_PROVIDER_ID_KEY) == "fast"
+
+    async def test_a_stream_with_no_output_still_delivers_its_usage(self):
+        class _EmptyReplyModel(BaseChatModel):
+            @property
+            def _llm_type(self):
+                return "empty-reply"
+
+            def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+                raise NotImplementedError
+
+            async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+                yield ChatGenerationChunk(message=AIMessageChunk(content=""))
+                usage = {"input_tokens": 4, "output_tokens": 0, "total_tokens": 4}
+                yield ChatGenerationChunk(message=AIMessageChunk(content="", usage_metadata=usage))
+
+        fm = FallbackChatModel(models=[_EmptyReplyModel()], provider_ids=["p1"])
+        reply = None
+        async for chunk in fm.astream([HumanMessage(content="hi")]):
+            reply = chunk if reply is None else reply + chunk
+
+        assert reply.content == ""
+        assert reply.usage_metadata == {"input_tokens": 4, "output_tokens": 0, "total_tokens": 4}
+        assert reply.response_metadata.get(FALLBACK_PROVIDER_ID_KEY) == "p1"
 
     async def test_bind_tools_preserves_wrapper_and_settings(self):
         fm = FallbackChatModel(

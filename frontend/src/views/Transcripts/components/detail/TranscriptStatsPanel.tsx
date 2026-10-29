@@ -33,6 +33,7 @@ export function TranscriptStatsPanel({ controller, className }: TranscriptStatsP
     showCosts,
     setShowCosts,
     totalCost,
+    costIncomplete,
     userFeedback,
     isEditing,
     feedbackType,
@@ -206,8 +207,11 @@ export function TranscriptStatsPanel({ controller, className }: TranscriptStatsP
             <p className="text-sm text-muted-foreground flex justify-between">
               <span>Output Tokens:</span> <b>{totalCost.output_tokens}</b>
             </p>
-            <p className="text-sm text-muted-foreground flex justify-between">
-              <span>Total Cost:</span> <b>${totalCost.total.toFixed(6)}</b>
+            <p
+              className="text-sm text-muted-foreground flex justify-between"
+              title={costIncomplete ? 'Some messages have no cost recorded, so the real total may be higher.' : undefined}
+            >
+              <span>Total Cost:</span> <b>{costIncomplete ? '≥ ' : ''}${totalCost.total.toFixed(6)}</b>
             </p>
           </div>
         </>

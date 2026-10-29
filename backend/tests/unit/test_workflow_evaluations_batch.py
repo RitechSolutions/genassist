@@ -14,7 +14,7 @@ from app.services.test_suite import resolvers_from_agents
 
 
 def _service() -> EvalService:
-    return EvalService(
+    service = EvalService(
         suite_repo=AsyncMock(),
         case_repo=AsyncMock(),
         run_repo=AsyncMock(),
@@ -24,6 +24,9 @@ def _service() -> EvalService:
         workflow_service=AsyncMock(),
         conversation_repo=AsyncMock(),
     )
+    # Older methods run as they are here; test_method_checks covers converting them.
+    service._checks_for_older_methods = AsyncMock(return_value=None)
+    return service
 
 
 def _eval(*, suite_id, workflow_id=None, eval_id=None):
@@ -68,7 +71,7 @@ class TestEvaluationsForWorkflow:
         result = await service._evaluations_for_workflow(wf)
 
         assert result == rows
-        service.evaluation_repo.get_all_for_workflow.assert_awaited_once_with(wf)
+        service.evaluation_repo.get_all_for_workflow.assert_awaited_once_with(wf, category=None)
 
 
 class TestFullNestedToolCatalog:
@@ -288,7 +291,7 @@ class TestStartWorkflowEvaluations:
         service = _service()
         service._evaluations_for_workflow = AsyncMock(return_value=evals)
 
-        async def fake_start(ev, dispatch, target_workflow_id=None):
+        async def fake_start(ev, dispatch, target_workflow_id=None, **_):
             if ev is evals[1]:
                 raise RuntimeError("boom - secret internals")
             return SimpleNamespace(id=uuid4(), suite_id=ev.suite_id, status="queued")
@@ -397,6 +400,19 @@ class TestWorkflowEvaluationSummaries:
             s.health is None and s.finished_count == 0 and s.any_running is False
             for s in summaries
         )
+
+    @pytest.mark.asyncio
+    async def test_a_search_summarises_only_what_it_matches(self):
+        wf = uuid4()
+        service = _service()
+        service.evaluation_repo.count_by_effective_workflow = AsyncMock(return_value=[(wf, 1)])
+        service.evaluation_repo.get_latest_run_pointers = AsyncMock(return_value=[])
+        service.run_repo.get_by_ids = AsyncMock(return_value=[])
+
+        (summary,) = await service.get_workflow_evaluation_summaries("refund")
+        assert summary.workflow_id == wf and summary.eval_count == 1
+        service.evaluation_repo.count_by_effective_workflow.assert_awaited_once_with("refund", None)
+        service.evaluation_repo.get_latest_run_pointers.assert_awaited_once_with("refund", None)
 
     @pytest.mark.asyncio
     async def test_health_counts_failed_runs_as_zero(self):
@@ -570,7 +586,7 @@ class TestListWorkflowEvaluations:
 
         assert result.page == 1 and result.page_size == 100  # floor + cap
         service.evaluation_repo.get_page_for_workflow.assert_awaited_once_with(
-            wf, 0, 100, None
+            wf, 0, 100, None, None
         )
 
     @pytest.mark.asyncio
@@ -587,11 +603,11 @@ class TestListWorkflowEvaluations:
         assert result.total_unfiltered == 55
         # page 2 of 20 -> offset 20, limit 20, search forwarded to the DB layer
         service.evaluation_repo.get_page_for_workflow.assert_awaited_once_with(
-            wf, 20, 20, "alpha"
+            wf, 20, 20, "alpha", None
         )
         # Filtered count for the page, plus the unfiltered count for "N of M".
         assert service.evaluation_repo.count_for_workflow.await_count == 2
-        service.evaluation_repo.count_for_workflow.assert_any_await(wf, "alpha")
+        service.evaluation_repo.count_for_workflow.assert_any_await(wf, "alpha", None)
         service.evaluation_repo.count_for_workflow.assert_any_await(wf, None)
 
     @pytest.mark.asyncio
@@ -601,5 +617,5 @@ class TestListWorkflowEvaluations:
         await service.list_workflow_evaluations(None, page=1, page_size=20)
 
         service.evaluation_repo.get_page_for_workflow.assert_awaited_once_with(
-            None, 0, 20, None
+            None, 0, 20, None, None
         )

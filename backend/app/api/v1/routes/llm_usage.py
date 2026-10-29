@@ -146,7 +146,15 @@ async def export_usage(
     service: LlmUsageReadService = Injected(LlmUsageReadService),
 ) -> StreamingResponse:
     summary, breakdown = await service.get_export_report(params, dimension)
-    content, media_type = export_llm_usage(fmt, summary, breakdown, params.from_date, params.to_date)
+    content, media_type = export_llm_usage(
+        fmt,
+        summary,
+        breakdown,
+        params.from_date,
+        params.to_date,
+        params.activity_from_datetime,
+        params.activity_to_datetime,
+    )
     return StreamingResponse(
         io.BytesIO(content),
         media_type=media_type,

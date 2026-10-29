@@ -162,11 +162,7 @@ async def run_child_turn(
     }
     engine = WorkflowEngine(workflow_config)
     thread_id = child_thread_id(root_thread_id, child_node_id, invocation_id)
-    # Pass the parent session as one nested object
-    input_data = {"message": message}
-    canonical = _canonical_session(session or {})
-    if canonical:
-        input_data["session"] = canonical
+    input_data = {"message": message, "session": {**_canonical_session(session or {}), "message": message}}
 
     tenant = get_tenant_context()
     from app.core.utils.db_connection_utils import (

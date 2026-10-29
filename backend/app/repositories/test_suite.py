@@ -1,14 +1,15 @@
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Set, Tuple
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import and_, delete, exists, func, literal, or_, select, update
+from sqlalchemy import and_, delete, exists, func, literal, or_, select, union, update
 from sqlalchemy import case as sa_case
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
+from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.db.models.agent import AgentModel
 from app.db.models.test_suite import (
     TestSuiteModel,
@@ -62,15 +63,18 @@ class TestCaseRepository(DbRepository[TestCaseModel]):
         ]
 
     async def get_cases_by_ids(
-        self, suite_id: UUID, case_ids: List[UUID]
+        self, suite_id: UUID, case_ids: List[UUID], include_deleted: bool = False
     ) -> List[TestCaseModel]:
-        """Fetch rows by ids; applies suite scope (DbRepository.get_by_ids doesn't)"""
+        """Fetch rows by ids; applies suite scope (DbRepository.get_by_ids doesn't).
+        include_deleted also returns removed turns, which past runs still show."""
         if not case_ids:
             return []
         stmt = select(TestCaseModel).where(
             TestCaseModel.suite_id == str(suite_id),
             TestCaseModel.id.in_(case_ids),
         )
+        if include_deleted:
+            stmt = stmt.execution_options(**{SOFT_DELETE_FLAG: True})
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
@@ -187,6 +191,25 @@ class TestRunRepository(DbRepository[TestRunModel]):
         result = await self.db.execute(stmt)
         return [str(run_id) for run_id in result.scalars().all()]
 
+    async def publish_progress(self, run_id: UUID, progress: dict) -> None:
+        """Write a run's progress in a transaction of its own, so it shows before the run's next commit"""
+        from sqlalchemy import text
+
+        from app.core.tenant_scope import get_tenant_context
+        from app.db.multi_tenant_session import multi_tenant_manager
+
+        session_factory = multi_tenant_manager.get_tenant_session_factory(get_tenant_context())
+        async with session_factory() as session:
+            # Progress is best effort; never wait long on the run's row.
+            await session.execute(text("SET LOCAL lock_timeout = '2s'"))
+            await session.execute(
+                update(TestRunModel)
+                .where(TestRunModel.id == run_id)
+                .values(progress=progress)
+                .execution_options(synchronize_session=False)
+            )
+            await session.commit()
+
     async def mark_orphaned_as_failed(
         self,
         waiting_ids: List[str],
@@ -240,6 +263,29 @@ class TestResultRepository(DbRepository[TestResultModel]):
         stmt = select(TestResultModel).where(TestResultModel.run_id == str(run_id))
         result = await self.db.execute(stmt)
         return result.scalars().all()
+
+    async def get_outcomes_for_run(self, run_id: UUID) -> List[Any]:
+        """Each result without its trace: the message the run sent and whether a trace exists."""
+        stmt = select(
+            TestResultModel.case_id,
+            TestResultModel.status,
+            TestResultModel.error,
+            TestResultModel.metrics,
+            TestResultModel.actual_output,
+            TestResultModel.execution_trace["input"].label("trace_input"),
+            # A trace dropped on store is JSON null, not SQL NULL, so both read as no trace.
+            (func.coalesce(func.jsonb_typeof(TestResultModel.execution_trace), "null") != "null").label("has_trace"),
+        ).where(TestResultModel.run_id == str(run_id))
+        result = await self.db.execute(stmt)
+        return result.all()
+
+    async def get_trace(self, run_id: UUID, case_id: UUID) -> Optional[dict]:
+        stmt = select(TestResultModel.execution_trace).where(
+            TestResultModel.run_id == str(run_id),
+            TestResultModel.case_id == str(case_id),
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
 
 
 @inject
@@ -383,12 +429,48 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
     def _search_condition(self, search: Optional[str]):
         if not search or not search.strip():
             return None
-        pattern = f"%{search.strip().lower()}%"
         evaluation = TestEvaluationModel
-        return or_(
-            func.lower(evaluation.name).like(pattern),
-            func.lower(func.coalesce(evaluation.description, "")).like(pattern),
+        return self._contains_condition(search, evaluation.name, func.coalesce(evaluation.description, ""))
+
+    @staticmethod
+    def _category_condition(category: Optional[str]):
+        """None: any category; "": none set; else that category, whatever its case."""
+        if category is None:
+            return None
+        if category == "":
+            return TestEvaluationModel.category.is_(None)
+        # Both sides lowered by the database, so they share one case mapping.
+        return func.lower(TestEvaluationModel.category) == func.lower(category)
+
+    def _filtered(self, stmt, search: Optional[str], category: Optional[str]):
+        for condition in (self._search_condition(search), self._category_condition(category)):
+            if condition is not None:
+                stmt = stmt.where(condition)
+        return stmt
+
+    async def categories(self) -> List[str]:
+        """Every category a live dataset or evaluation has."""
+        evaluations = select(TestEvaluationModel.category).where(
+            TestEvaluationModel.is_deleted == 0, TestEvaluationModel.category.is_not(None)
         )
+        suites = select(TestSuiteModel.category).where(
+            TestSuiteModel.is_deleted == 0, TestSuiteModel.category.is_not(None)
+        )
+        result = await self.db.execute(union(evaluations, suites))
+        return [row[0] for row in result.all()]
+
+    async def category_spelling(self, category: str) -> Optional[str]:
+        """How a live dataset or evaluation already spells this category, whatever its case."""
+        wanted = func.lower(category)
+        evaluations = select(TestEvaluationModel.category).where(
+            TestEvaluationModel.is_deleted == 0, func.lower(TestEvaluationModel.category) == wanted
+        )
+        suites = select(TestSuiteModel.category).where(
+            TestSuiteModel.is_deleted == 0, func.lower(TestSuiteModel.category) == wanted
+        )
+        result = await self.db.execute(union(evaluations, suites))
+        # Two spellings only if two saves raced; the list shows the same one.
+        return min((row[0] for row in result.all()), default=None)
 
     async def get_page_for_workflow(
         self,
@@ -396,11 +478,10 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         offset: int,
         limit: int,
         search: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> List[TestEvaluationModel]:
         stmt = select(TestEvaluationModel).where(self._workflow_condition(workflow_id))
-        search_condition = self._search_condition(search)
-        if search_condition is not None:
-            stmt = stmt.where(search_condition)
+        stmt = self._filtered(stmt, search, category)
         stmt = (
             stmt.order_by(TestEvaluationModel.created_at.desc())
             .offset(offset)
@@ -410,47 +491,54 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         return result.scalars().all()
 
     async def count_for_workflow(
-        self, workflow_id: Optional[UUID], search: Optional[str] = None
+        self, workflow_id: Optional[UUID], search: Optional[str] = None, category: Optional[str] = None
     ) -> int:
         stmt = (
             select(func.count())
             .select_from(TestEvaluationModel)
             .where(self._workflow_condition(workflow_id))
         )
-        search_condition = self._search_condition(search)
-        if search_condition is not None:
-            stmt = stmt.where(search_condition)
+        stmt = self._filtered(stmt, search, category)
         result = await self.db.execute(stmt)
         return int(result.scalar() or 0)
 
     async def get_all_for_workflow(
-        self, workflow_id: Optional[UUID]
+        self, workflow_id: Optional[UUID], category: Optional[str] = None
     ) -> List[TestEvaluationModel]:
-        """Every evaluation for a workflow (no paging) — the Run all scope."""
-        stmt = (
-            select(TestEvaluationModel)
-            .where(self._workflow_condition(workflow_id))
-            .order_by(TestEvaluationModel.created_at.desc())
-        )
+        """Every evaluation for a workflow (no paging), or in one category — the Run all scope."""
+        stmt = select(TestEvaluationModel).where(self._workflow_condition(workflow_id))
+        stmt = self._filtered(stmt, None, category).order_by(TestEvaluationModel.created_at.desc())
         result = await self.db.execute(stmt)
         return result.scalars().all()
 
-    async def count_by_effective_workflow(self) -> List[Tuple[Optional[UUID], int]]:
+    async def ids_in_category(self, category: str) -> Set[UUID]:
+        """Live evaluations in this category ("" = none set), as the lists filter them."""
+        stmt = select(TestEvaluationModel.id).where(
+            TestEvaluationModel.is_deleted == 0, self._category_condition(category)
+        )
+        result = await self.db.execute(stmt)
+        return set(result.scalars().all())
+
+    async def count_by_effective_workflow(
+        self, search: Optional[str] = None, category: Optional[str] = None
+    ) -> List[Tuple[Optional[UUID], int]]:
         """(workflow_id, count) per workflow; ``None`` = unassigned bucket.
 
-        Versions collapse onto one row, so a workflow never appears twice.
+        Versions collapse onto one row, so a workflow never appears twice. A search
+        or category counts only the evaluations it matches, and leaves out workflows with none.
         """
         group_key, _ = self._grouped_effective_workflow()
         stmt = self._grouped_select(
             group_key.label("workflow_id"), func.count().label("count")
         ).group_by(group_key)
+        stmt = self._filtered(stmt, search, category)
         result = await self.db.execute(stmt)
         return [(row.workflow_id, int(row.count)) for row in result.all()]
 
     async def get_latest_run_pointers(
-        self,
+        self, search: Optional[str] = None, category: Optional[str] = None
     ) -> List[Tuple[Optional[UUID], List[str]]]:
-        """(workflow_id, run_ids) for every live evaluation.
+        """(workflow_id, run_ids) for every live evaluation, or those a search matches.
 
         Used to compute per-workflow health: ``run_ids[0]`` is each evaluation's
         latest run. Only the pointer lists are loaded here — not the runs. Keyed
@@ -461,6 +549,7 @@ class TestEvaluationRepository(DbRepository[TestEvaluationModel]):
         stmt = self._grouped_select(
             group_key.label("workflow_id"), TestEvaluationModel.run_ids
         )
+        stmt = self._filtered(stmt, search, category)
         result = await self.db.execute(stmt)
         return [(row.workflow_id, list(row.run_ids or [])) for row in result.all()]
 

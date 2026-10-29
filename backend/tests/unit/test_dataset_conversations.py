@@ -224,7 +224,7 @@ class TestThreadIsolation:
 
 
 class TestMemoryCacheCleanup:
-    """Finished evaluation threads are dropped from the worker's memory cache."""
+    """Finished evaluation threads are forgotten: cache entry and stored memory both."""
 
     async def _run(self, cases, *, use_memory):
         service = _service()
@@ -244,18 +244,18 @@ class TestMemoryCacheCleanup:
             id=uuid4(), techniques=["no_errors"], status="queued", summary_metrics=None
         )
         with patch("app.services.test_suite.WorkflowEngine", return_value=engine), patch(
-            "app.services.test_suite.ConversationMemory.discard"
-        ) as discard:
+            "app.services.test_suite.ConversationMemory.forget", new_callable=AsyncMock
+        ) as forget:
             await service._execute_run(
                 SimpleNamespace(id=uuid4(), default_input_metadata=None),
                 SimpleNamespace(id=uuid4(), nodes=[], edges=[]),
                 run,
                 run_input_metadata={"use_memory": True} if use_memory else None,
             )
-        return engine, discard
+        return engine, forget
 
     @pytest.mark.asyncio
-    async def test_each_conversation_thread_is_discarded_once(self):
+    async def test_each_conversation_thread_is_forgotten_once(self):
         first, second = uuid4(), uuid4()
         cases = [
             _case(conversation_id=first, turn_index=0),
@@ -263,22 +263,22 @@ class TestMemoryCacheCleanup:
             _case(conversation_id=second, turn_index=0),
         ]
 
-        engine, discard = await self._run(cases, use_memory=True)
+        engine, forget = await self._run(cases, use_memory=True)
 
         threads = [call.kwargs["thread_id"] for call in engine.execute_from_node.call_args_list]
-        assert [call.args[0] for call in discard.call_args_list] == list(dict.fromkeys(threads))
+        assert [call.args[0] for call in forget.await_args_list] == list(dict.fromkeys(threads))
 
     @pytest.mark.asyncio
-    async def test_threadless_turns_discard_their_throwaway_thread(self):
-        engine, discard = await self._run([_case(), _case()], use_memory=False)
+    async def test_threadless_turns_forget_their_throwaway_thread(self):
+        engine, forget = await self._run([_case(), _case()], use_memory=False)
 
         threads = [call.kwargs["thread_id"] for call in engine.execute_from_node.call_args_list]
         assert all(call.kwargs["persist"] is False for call in engine.execute_from_node.call_args_list)
-        assert [call.args[0] for call in discard.call_args_list] == threads
+        assert [call.args[0] for call in forget.await_args_list] == threads
         assert len(set(threads)) == 2
 
     @pytest.mark.asyncio
-    async def test_a_threadless_turn_that_raises_still_discards_its_thread(self):
+    async def test_a_threadless_turn_that_raises_still_forgets_its_thread(self):
         service = _service()
         service.case_repo.get_all_for_suite.return_value = [_case()]
         service.evaluators = MagicMock()
@@ -289,8 +289,8 @@ class TestMemoryCacheCleanup:
             id=uuid4(), techniques=["no_errors"], status="queued", summary_metrics=None
         )
         with patch("app.services.test_suite.WorkflowEngine", return_value=engine), patch(
-            "app.services.test_suite.ConversationMemory.discard"
-        ) as discard:
+            "app.services.test_suite.ConversationMemory.forget", new_callable=AsyncMock
+        ) as forget:
             await service._execute_run(
                 SimpleNamespace(id=uuid4(), default_input_metadata=None),
                 SimpleNamespace(id=uuid4(), nodes=[], edges=[]),
@@ -298,7 +298,7 @@ class TestMemoryCacheCleanup:
             )
 
         thread = engine.execute_from_node.call_args.kwargs["thread_id"]
-        discard.assert_called_once_with(thread)
+        forget.assert_awaited_once_with(thread)
 
 
 class TestPersistenceFailureHandling:

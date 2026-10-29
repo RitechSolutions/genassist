@@ -137,3 +137,11 @@ def test_bound_event_value_keeps_short_strings():
     from app.modules.workflow.engine.workflow_state import _bound_event_value
 
     assert _bound_event_value("short result") == "short result"
+
+
+def test_sanitize_serializes_timestamps_as_iso_strings():
+    import pandas as pd
+    from datetime import datetime
+
+    out = sanitize_for_json([{"d": pd.Timestamp("2026-10-08 13:00")}, {"d": datetime(2026, 1, 1)}, {"d": pd.NaT}])
+    assert out == [{"d": "2026-10-08T13:00:00"}, {"d": "2026-01-01T00:00:00"}, {"d": None}]

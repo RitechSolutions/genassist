@@ -1,7 +1,6 @@
 from typing import List, Optional, Dict, Any
 import boto3
 from botocore.exceptions import ClientError
-from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,19 +11,27 @@ class S3Client:
         bucket_name: str,
         aws_access_key_id: Optional[str] = None,
         aws_secret_access_key: Optional[str] = None,
-        region_name: Optional[str] = None
+        region_name: Optional[str] = None,
+        aws_session_token: Optional[str] = None,
     ):
         """
         Initialize S3 client with credentials and bucket name.
         If credentials are not provided, boto3 will use the default credential chain.
         """
         self.bucket_name = bucket_name
-        self.s3_client = boto3.client(
-            's3',
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            region_name=region_name
-        )
+        client_options: Dict[str, Any] = {}
+        if region_name:
+            client_options["region_name"] = region_name
+        if aws_access_key_id:
+            client_options["aws_access_key_id"] = aws_access_key_id
+        if aws_secret_access_key:
+            client_options["aws_secret_access_key"] = aws_secret_access_key
+        if aws_session_token:
+            client_options["aws_session_token"] = aws_session_token
+
+        # With no explicit credentials, boto3 uses its standard credential
+        # chain (environment, shared config, container or instance roles).
+        self.s3_client = boto3.client("s3", **client_options)
 
     def list_files(
         self,

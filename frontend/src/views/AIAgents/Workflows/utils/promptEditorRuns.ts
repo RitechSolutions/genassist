@@ -43,6 +43,7 @@ export interface FailedCase {
   actual: string;
   failedMetrics: string[];
   feedback: string | null;
+  judgeScore: number | null;
 }
 
 export const MAX_OPTIMIZE_FAILED = 10;
@@ -92,18 +93,31 @@ export const failedCasesOf = (
 ): FailedCase[] =>
   results
     .filter((r) => r.verdict === "failed")
-    .map((r) => ({
-      caseId: r.case_id,
-      actual: r.actual,
-      failedMetrics: failedMetricsOf(r.metrics),
-      feedback: feedbackOf(r.metrics),
-    }))
+    .map((r) => {
+      const failed = failedMetricsOf(r.metrics);
+      const judge = r.metrics?.llm_judge?.score;
+      return {
+        caseId: r.case_id,
+        actual: r.actual,
+        failedMetrics: failed,
+        feedback: feedbackOf(r.metrics),
+        judgeScore:
+          failed.includes("llm_judge") && typeof judge === "number"
+            ? judge
+            : null,
+      };
+    })
     .slice(0, MAX_OPTIMIZE_FAILED);
 
 /** How many failed before the cap, for the "10 of 14 failures included" line */
 export const failedCaseCount = (
   results: readonly PromptEvalCaseResult[],
 ): number => results.filter((r) => r.verdict === "failed").length;
+
+export const passingCaseIdsOf = (
+  results: readonly PromptEvalCaseResult[],
+): string[] =>
+  results.filter((r) => r.verdict === "passed").map((r) => r.case_id);
 
 export interface EvalKeyInputs {
   prompt: string;

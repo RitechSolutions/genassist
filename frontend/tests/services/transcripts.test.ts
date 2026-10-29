@@ -82,6 +82,23 @@ describe("fetchTranscripts", () => {
     });
   });
 
+  it("repeats each topic and sub-topic as its own param", async () => {
+    mockApiRequest.mockResolvedValue({ items: [] } as never);
+
+    await fetchTranscripts({
+      limit: 1,
+      conversation_topics: ["Payment issue", "Refund"],
+      conversation_subtopics: ["Declined payment"],
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "conversations/?limit=1&conversation_topics=Payment+issue&conversation_topics=Refund" +
+        "&conversation_subtopics=Declined+payment",
+      undefined,
+    );
+  });
+
   it("scopes the query to a single operator when operator_id is given", async () => {
     mockApiRequest.mockResolvedValue({ items: [] } as never);
 

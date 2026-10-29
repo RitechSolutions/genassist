@@ -280,12 +280,57 @@ describe("knowledge base endpoints", () => {
   it("getKnowledgeItemsList computes skip from page and pageSize", async () => {
     mockApiRequest.mockResolvedValue({ items: [] });
 
-    await getKnowledgeItemsList(4, 25);
+    await getKnowledgeItemsList({ page: 4, pageSize: 25 });
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
       "genagent/knowledge/list?skip=75&limit=25"
     );
+  });
+
+  it("getKnowledgeItemsList passes a trimmed search term", async () => {
+    mockApiRequest.mockResolvedValue({ items: [] });
+
+    await getKnowledgeItemsList({ pageSize: 10, search: "  faq  " });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/knowledge/list?skip=0&limit=10&search=faq"
+    );
+  });
+
+  it("getKnowledgeItemsList omits a blank search term", async () => {
+    mockApiRequest.mockResolvedValue({ items: [] });
+
+    await getKnowledgeItemsList({ pageSize: 10, search: "   " });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/knowledge/list?skip=0&limit=10"
+    );
+  });
+
+  it("getKnowledgeItemsList passes the type filter", async () => {
+    mockApiRequest.mockResolvedValue({ items: [] });
+
+    await getKnowledgeItemsList({ page: 2, pageSize: 10, type: "url" });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/knowledge/list?skip=10&limit=10&type=url"
+    );
+  });
+
+  it("getKnowledgeItemsList returns an empty page when the request is forbidden", async () => {
+    mockApiRequest.mockResolvedValue(null);
+
+    await expect(getKnowledgeItemsList({ pageSize: 10 })).resolves.toEqual({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 10,
+      total_pages: 0,
+    });
   });
 
   it("getKnowledgeItem GETs a single item by id", async () => {

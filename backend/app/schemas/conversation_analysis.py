@@ -7,6 +7,7 @@ from typing import Optional, Dict
 class ConversationAnalysisBase(BaseModel):
     conversation_id: UUID = Field(default_factory=uuid4)
     topic: str
+    subtopic: Optional[str] = None
     summary: str
     negative_sentiment: int
     positive_sentiment: int

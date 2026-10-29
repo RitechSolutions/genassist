@@ -37,6 +37,7 @@ function dialogValues(
     csvFilePath: null,
     csvFileId: null,
     csvFileUrl: null,
+    sheetName: null,
     analysisResult: null,
     ...overrides,
   };
@@ -189,6 +190,7 @@ describe('Train Data Source UI', () => {
       csvFilePath: '/data/training.csv',
       csvFileId: 'file-1',
       csvFileUrl: 'https://example.test/files/file-1',
+      sheetName: 'Sheet 2',
       analysisResult: {
         row_count: 2,
         column_count: 1,
@@ -205,6 +207,7 @@ describe('Train Data Source UI', () => {
       csvFilePath: null,
       csvFileId: null,
       csvFileUrl: null,
+      sheetName: null,
       analysisResult: null,
     });
   });

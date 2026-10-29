@@ -74,7 +74,7 @@ const INDEX_ENTITIES: IndexEntity[] = [
     icon: BookOpen,
     permissions: ["*", "update:knowledge_base"],
     load: async () => {
-      const res = await getKnowledgeItemsList(1, 100);
+      const res = await getKnowledgeItemsList({ pageSize: 100 });
       return (res?.items ?? []).map((k) => ({ id: k.id, title: k.name }));
     },
     buildUrl: (row) => `/knowledge-base/edit/${row.id}`,

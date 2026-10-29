@@ -180,7 +180,9 @@ class TrainModelNode(BaseNode):
                             ("custom_expression", "bin_numeric", "polynomial",
                             "log_transform", "quantile_transform",
                             "power_transform", or "pca"), plus strategy-specific
-                            fields (expression / binColumn+numBins /
+                            fields (expression / binColumn+numBins+binStrategy
+                            ("uniform" equal-width, default, or "quantile"
+                            equal-frequency) /
                             polynomialColumns+polynomialDegree / sourceColumns,
                             with quantileOutputDistribution+nQuantiles,
                             powerMethod, pcaComponents+pcaStandardize, and
@@ -427,6 +429,11 @@ class TrainModelNode(BaseNode):
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"featureEngineering entry '{item.get('newColumnName')}' has strategy 'bin_numeric' but is missing binColumn or numBins",
                     )
+                if strategy == "bin_numeric" and item.get("binStrategy", "uniform") not in ("uniform", "quantile"):
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"featureEngineering entry '{item.get('newColumnName')}' has invalid binStrategy: {item.get('binStrategy')}. Must be one of: uniform, quantile",
+                    )
                 if strategy in ("normalize", "standardize") and not item.get("sourceColumns"):
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
@@ -469,7 +476,7 @@ class TrainModelNode(BaseNode):
             logger.info(f"Training {model_type} model: {name}")
 
             # Load data from CSV file
-            df = ml_utils.load_csv_file(file_url, self.state.thread_id)
+            df = ml_utils.load_csv_file(file_url, self.state.thread_id, await ml_utils.extra_csv_directories())
             # Column types saved by an upstream Preprocessing node (nullable
             # Int64/boolean, string, category, datetime) are converted to the
             # plain dtypes the steps below select on - see
@@ -618,9 +625,8 @@ class TrainModelNode(BaseNode):
             # Apply per-column missing-value overrides (drop_column/drop_rows/
             # impute_*). Fill values are computed from the training split
             # only, then applied to validation - see _handle_missing_values.
-            # Captured into missing_value_fills so inference can reproduce the
-            # exact same fill for any feature it doesn't receive a value for
-            # (see the "missing_value_fills" metadata key saved below).
+            # Captured so validation and inference can reuse the exact values
+            # fitted from the training split.
             missing_value_fills: Dict[str, Any] = {}
             if missing_value_handling:
                 X_train, y_train, X_val, y_val, baseline_train, baseline_val, missing_value_fills = (
@@ -653,6 +659,8 @@ class TrainModelNode(BaseNode):
                     missing_count = int(X_train[col].isna().sum()) + (
                         int(X_val[col].isna().sum()) if X_val is not None else 0
                     )
+                    if not missing_count:
+                        continue
                     if X_train[col].dtype in ['int64', 'float64']:
                         fill_value = X_train[col].median()
                         fill_kind = "median"
@@ -664,12 +672,11 @@ class TrainModelNode(BaseNode):
                     if X_val is not None:
                         X_val[col].fillna(fill_value, inplace=True)
                     missing_value_fills[col] = fill_value
-                    if missing_count:
-                        auto_fill_warnings.append(
-                            f"Column '{col}': {missing_count} empty value(s) filled automatically with the "
-                            f"{fill_kind} ({fill_value!r}) of the training data. Set Missing Value Handling "
-                            "for this column to choose how instead."
-                        )
+                    auto_fill_warnings.append(
+                        f"Column '{col}': {missing_count} empty value(s) filled automatically with the "
+                        f"{fill_kind} ({fill_value!r}) of the training data. Set Missing Value Handling "
+                        "for this column to choose how instead."
+                    )
 
             # A "drop_column" missing-value strategy above removes the column
             # from X_train entirely, but feature_columns (saved to metadata
@@ -717,6 +724,19 @@ class TrainModelNode(BaseNode):
                 y_train = y_train / baseline_train
                 logger.info(f"Training on ratio target: {target_column} / {baseline_column}")
 
+            # Apply per-column encoding overrides (label/ordinal) and note which
+            # columns asked for one-hot without dropping the first category.
+            # Mappings are fit on the training split only, then applied to
+            # validation - see _encode_categoricals. Runs BEFORE feature
+            # engineering so a derived feature can use the encoded numbers
+            # (e.g. size * price with size ordinal-encoded to 0/1/2); before,
+            # those steps saw the raw text and were skipped. One-hot still
+            # runs after, below, since it replaces the source column.
+            X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns = (
+                self._encode_categoricals(X_train, X_val, categorical_encoding)
+            )
+            mapped_columns = set(label_encodings) | set(ordinal_encodings)
+
             # Create derived features - bin edges and normalize/standardize
             # statistics are fit on the training split only, then applied to
             # validation - see _engineer_features. Runs before the numeric
@@ -724,21 +744,17 @@ class TrainModelNode(BaseNode):
             feature_engineering_steps: List[Dict[str, Any]] = []
             if feature_engineering:
                 X_train, X_val, feature_engineering_steps = self._engineer_features(
-                    X_train, X_val, feature_engineering
+                    X_train, X_val, feature_engineering, label_encodings, ordinal_encodings
                 )
 
             # Capture the numeric feature columns before one-hot encoding turns
             # categoricals into dummy columns, so scaling below only touches
-            # genuinely-numeric original features.
-            numeric_feature_columns = X_train.select_dtypes(include=['int64', 'float64']).columns.tolist()
-
-            # Apply per-column encoding overrides (label/ordinal) and note which
-            # columns asked for one-hot without dropping the first category.
-            # Mappings are fit on the training split only, then applied to
-            # validation - see _encode_categoricals.
-            X_train, X_val, label_encodings, ordinal_encodings, one_hot_no_drop_columns = (
-                self._encode_categoricals(X_train, X_val, categorical_encoding)
-            )
+            # genuinely-numeric original features. Label/ordinal codes are
+            # numeric now but were never scaled, so keep them out.
+            numeric_feature_columns = [
+                c for c in X_train.select_dtypes(include=['int64', 'float64']).columns
+                if c not in mapped_columns
+            ]
 
             # One-hot encode whatever categorical columns are left - columns with
             # no explicit categoricalEncoding override, plus ones explicitly set
@@ -891,6 +907,11 @@ class TrainModelNode(BaseNode):
                     ),
                     **({"label_encodings": label_encodings} if label_encodings else {}),
                     **({"ordinal_encodings": ordinal_encodings} if ordinal_encodings else {}),
+                    # Tells inference to feed label/ordinal-encoded values (not
+                    # raw text) into the feature-engineering replay. Absent on
+                    # models trained before encoding moved ahead of feature
+                    # engineering, which keep replaying from raw inputs.
+                    "encoding_before_feature_engineering": True,
                     **({"missing_value_fills": missing_value_fills} if missing_value_fills else {}),
                     **({"target_transform": target_transform} if target_transform is not None else {}),
                 },
@@ -906,16 +927,60 @@ class TrainModelNode(BaseNode):
             # of looking one up by the node's own display name, which is
             # usually just the generic "Train Model" label and would silently
             # register the pkl against the wrong (or a stray new) model row.
-            target_model_id = (self.state.initial_values or {}).get("model_id")
-            ml_model_id, registration_error = await self._register_trained_model(
-                name=name,
-                model_type=model_type,
-                feature_columns=feature_columns,
-                target_column=target_column,
-                local_pkl_path=model_artifact["model_file_path"],
-                target_model_id=target_model_id,
-                target_transform=target_transform,
+            categorical_feature_contracts = {
+                name: {
+                    "values": ml_utils.sanitize_for_json(list(mapping)),
+                    "normalize_keys": False,
+                }
+                for name, mapping in label_encodings.items()
+            }
+            categorical_feature_contracts.update(
+                {
+                    name: {
+                        "values": ml_utils.sanitize_for_json(list(mapping)),
+                        "normalize_keys": True,
+                    }
+                    for name, mapping in ordinal_encodings.items()
+                }
             )
+            if encoder is not None:
+                categorical_feature_contracts.update(
+                    {
+                        name: {
+                            "values": ml_utils.sanitize_for_json(values.tolist()),
+                            "normalize_keys": False,
+                        }
+                        for name, values in zip(categorical_columns, encoder.categories_)
+                    }
+                )
+            if encoder_no_drop is not None:
+                categorical_feature_contracts.update(
+                    {
+                        name: {
+                            "values": ml_utils.sanitize_for_json(values.tolist()),
+                            "normalize_keys": False,
+                        }
+                        for name, values in zip(no_drop_columns, encoder_no_drop.categories_)
+                    }
+                )
+            target_model_id = (self.state.initial_values or {}).get("model_id")
+            ml_model_id, registration_error, registration_warnings = (
+                await self._register_trained_model(
+                    name=name,
+                    model_type=model_type,
+                    feature_columns=feature_columns,
+                    target_column=target_column,
+                    local_pkl_path=model_artifact["model_file_path"],
+                    target_model_id=target_model_id,
+                    target_transform=target_transform,
+                    categorical_feature_contracts=categorical_feature_contracts,
+                )
+            )
+            if missing_value_fills:
+                auto_fill_warnings.append(
+                    "Training-time missing-value fills were stored in the model artifact and will "
+                    "be applied at inference when those features are omitted or null."
+                )
 
             # Retired strategies still run (so saved workflows and their models
             # keep behaving the same), but the user is told to move off them.
@@ -929,7 +994,9 @@ class TrainModelNode(BaseNode):
                 for item in feature_engineering
                 if item.get("strategy") in _RETIRED_FE_STRATEGIES
             ]
-            training_warnings = auto_fill_warnings + training_warnings
+            training_warnings = (
+                auto_fill_warnings + training_warnings + registration_warnings
+            )
             for warning in training_warnings:
                 logger.warning(warning)
 
@@ -948,6 +1015,11 @@ class TrainModelNode(BaseNode):
                 "metrics": metrics,
                 "ml_model_id": ml_model_id,
                 "model_parameters": model_parameters,
+                **(
+                    {"missing_value_fills": ml_utils.sanitize_for_json(missing_value_fills)}
+                    if missing_value_fills
+                    else {}
+                ),
                 **({"target_transform": target_transform} if target_transform is not None else {}),
             }
             if search_metadata:
@@ -1250,7 +1322,9 @@ class TrainModelNode(BaseNode):
             filled = series.fillna(fill_value)
         return filled.infer_objects()
 
-    def _engineer_features(self, X_train, X_val, feature_engineering):
+    def _engineer_features(
+        self, X_train, X_val, feature_engineering, label_encodings=None, ordinal_encodings=None
+    ):
         """
         Create derived features from existing columns.
 
@@ -1266,6 +1340,10 @@ class TrainModelNode(BaseNode):
         bin edges / mean+std / PolynomialFeatures transformer, not just the
         config), since without it inference has no way to reconstruct columns
         the model was actually trained on.
+
+        label_encodings/ordinal_encodings are the mappings already applied to
+        those columns - a Custom Expression comparing one to text has the text
+        translated to its code (see translate_category_literals).
         """
         steps: List[Dict[str, Any]] = []
 
@@ -1281,6 +1359,17 @@ class TrainModelNode(BaseNode):
                 # Columns are referenced by name; the older df["col"] form is
                 # rewritten to that first (see normalize_feature_expression).
                 eval_expression = ml_utils.normalize_feature_expression(expression)
+                try:
+                    # Label/ordinal columns hold codes by now, so size == "High"
+                    # would be False on every row - compare against the code.
+                    eval_expression = ml_utils.translate_category_literals(
+                        eval_expression, label_encodings or {}, ordinal_encodings or {}
+                    )
+                except ValueError as e:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=f"Feature engineering '{new_col}': the expression `{expression}` {e}.",
+                    ) from e
                 try:
                     X_train[new_col] = X_train.eval(eval_expression)
                     if X_val is not None:
@@ -1306,10 +1395,20 @@ class TrainModelNode(BaseNode):
             elif strategy == "bin_numeric":
                 bin_column = item.get("binColumn")
                 num_bins = item.get("numBins")
+                bin_strategy = item.get("binStrategy", "uniform")
                 if bin_column not in X_train.columns or not pd.api.types.is_numeric_dtype(X_train[bin_column]):
                     logger.warning(f"Skipping bin_numeric for '{new_col}': column '{bin_column}' not found or not numeric")
                     continue
-                _, bin_edges = pd.cut(X_train[bin_column], bins=num_bins, retbins=True, duplicates="drop")
+                if bin_strategy == "quantile":
+                    # Equal-frequency edges from train percentiles. Heavily
+                    # repeated values (e.g. many zeros) collapse duplicate
+                    # edges, leaving fewer bins than requested.
+                    _, bin_edges = pd.qcut(X_train[bin_column], q=num_bins, retbins=True, duplicates="drop")
+                    if len(bin_edges) < 2:
+                        logger.warning(f"Skipping bin_numeric for '{new_col}': column '{bin_column}' has too few distinct values for quantile bins")
+                        continue
+                else:
+                    _, bin_edges = pd.cut(X_train[bin_column], bins=num_bins, retbins=True, duplicates="drop")
                 X_train[new_col] = pd.cut(
                     X_train[bin_column], bins=bin_edges, labels=False, include_lowest=True
                 )
@@ -1322,6 +1421,7 @@ class TrainModelNode(BaseNode):
                     "strategy": "bin_numeric",
                     "new_col": new_col,
                     "bin_column": bin_column,
+                    "bin_strategy": bin_strategy,
                     "bin_edges": list(bin_edges),
                 })
 
@@ -2128,7 +2228,8 @@ class TrainModelNode(BaseNode):
         local_pkl_path: str,
         target_model_id: Optional[str] = None,
         target_transform: Optional[dict] = None,
-    ) -> tuple[Optional[str], Optional[str]]:
+        categorical_feature_contracts: Optional[Dict[str, Any]] = None,
+    ) -> tuple[Optional[str], Optional[str], List[str]]:
         """
         Upload the trained .pkl through the file manager and create/update the
         matching ``ml_models`` row, so an ML Model Inference node can find it
@@ -2144,18 +2245,24 @@ class TrainModelNode(BaseNode):
                 Model") for ad-hoc/test-node runs with no pipeline context.
 
         Returns:
-            Tuple of (ml_model_id or None, error message or None). Never
+            Tuple of (ml_model_id or None, error message or None, warnings). Never
             raises — a registration failure shouldn't fail a training run
             that already produced a valid .pkl on disk.
         """
         try:
             from app.schemas.ml_model import MLModelCreate, MLModelUpdate
             from app.dependencies.injector import injector
-            from app.services.ml_models import MLModelsService
+            from app.services.ml_models import (
+                MLModelsService,
+                STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX,
+                merge_model_inference_params,
+                stale_categorical_defaults,
+            )
             from app.core.config.settings import file_storage_settings
             from app.schemas.file import FileBase
             from app.services.app_settings import AppSettingsService
             from app.services.file_manager import FileManagerService
+            from app.services.ml_model_artifacts import ModelArtifactContract
 
             fm = injector.get(FileManagerService)
             app_cfg = await injector.get(AppSettingsService).get_by_type_and_name(
@@ -2193,24 +2300,12 @@ class TrainModelNode(BaseNode):
                 f"Trained by workflow Train Model node (thread {self.state.thread_id}) "
                 f"{node_marker}"
             )
-            # A ratio-target model needs the baseline column's raw value at
-            # inference time to reconstruct a real-unit prediction, even
-            # though it was never one of the model's actual training
-            # features (see MLModelInferenceNode's reconstruction of it).
-            # Recorded here so the inference UI knows to ask for it alongside
-            # the regular feature inputs.
-            inference_params = (
-                {"ratioBaselineColumn": target_transform.get("baselineColumn")}
-                if target_transform else None
-            )
-
             model_fields = {
                 "description": description,
                 "model_type": model_type,
                 "features": feature_columns,
                 "target_variable": target_column,
                 "pkl_file_id": resolved_pkl_file_id,
-                "inference_params": inference_params,
                 # The uploaded file is now the source of truth; a stale local
                 # path from a previous run shouldn't be preferred over it.
                 "pkl_file": None,
@@ -2234,14 +2329,40 @@ class TrainModelNode(BaseNode):
                 if by_name and node_marker in (by_name.description or ""):
                     existing = by_name
 
-            if existing:
-                updated = await ml_service.update(existing.id, MLModelUpdate(**model_fields))
-                return str(updated.id), None
+            model_fields["inference_params"] = merge_model_inference_params(
+                getattr(existing, "inference_params", None),
+                feature_columns,
+                target_transform.get("baselineColumn") if target_transform else None,
+            )
+            stale_defaults = stale_categorical_defaults(
+                model_fields["inference_params"], categorical_feature_contracts
+            )
+            registration_warnings = []
+            if stale_defaults:
+                registration_warnings.append(
+                    f"{STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX}: "
+                    f"{', '.join(stale_defaults)}. Update or remove these defaults before "
+                    "relying on them during inference."
+                )
 
-            created = await ml_service.create(MLModelCreate(name=name, **model_fields))
-            return str(created.id), None
+            # These are the feature_columns/target_column this node wrote into the
+            # artifact metadata, so registration need not download and re-read it.
+            artifact_contract = ModelArtifactContract(
+                features=tuple(feature_columns),
+                target_variable=target_column,
+                feature_count=len(feature_columns),
+            )
+            if existing:
+                updated = await ml_service.update(
+                    existing.id, MLModelUpdate(**model_fields), artifact_contract=artifact_contract
+                )
+                return str(updated.id), None, registration_warnings
+
+            created = await ml_service.create(
+                MLModelCreate(name=name, **model_fields), artifact_contract=artifact_contract
+            )
+            return str(created.id), None, registration_warnings
 
         except Exception as e:
             logger.error(f"Failed to register trained model '{name}': {str(e)}", exc_info=True)
-            return None, str(e)
-
+            return None, str(e), []

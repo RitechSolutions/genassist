@@ -54,6 +54,7 @@ class AuditLogPermissions:
 class ConversationPermissions:
     """Conversation permissions"""
     READ = "read:conversation"
+    UPDATE = "update:conversation"
     CREATE_IN_PROGRESS = "create:in_progress_conversation"
     UPDATE_IN_PROGRESS = "update:in_progress_conversation"
     TAKEOVER_IN_PROGRESS = "takeover_in_progress_conversation"

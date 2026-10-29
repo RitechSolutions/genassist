@@ -16,6 +16,7 @@ describe("METHOD_LABELS", () => {
       nli_eval: "NLI Evaluation",
       provenance_eval: "Provenance Evaluation",
       llm_judge: "LLM Judge",
+      checks: "Checks",
     });
   });
 });

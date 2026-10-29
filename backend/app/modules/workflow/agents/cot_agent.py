@@ -67,15 +67,6 @@ class ChainOfThoughtAgent:
         result = await self._run_chain_of_thought(query, chat_history)
         return result
 
-    async def stream(self, query: str, chat_history: Optional[List] = None):
-        """Stream the agent's tool selection and execution process"""
-        try:
-            result = await self.invoke(query, chat_history)
-            yield result
-        except Exception as e:
-            logger.error(f"Error streaming Chain-of-Thought query: {str(e)}")
-            yield create_error_response(str(e), "ChainOfThoughtAgent")
-
     async def _run_chain_of_thought(
         self, query: str, chat_history: List[Dict[str, str]]
     ) -> Dict[str, Any]:

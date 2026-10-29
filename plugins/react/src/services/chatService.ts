@@ -13,6 +13,8 @@ import {
   InProgressPollResponse,
   InProgressPollMessage,
   ReadReceiptState,
+  ConversationAvailability,
+  StreamEvent,
 } from "../types";
 import {
   createWebSocket,
@@ -20,6 +22,34 @@ import {
   createWebSocketDiagnostic,
 } from "../utils/websocket";
 import { redactPci } from "../utils/pciRedaction";
+import { isGuestTokenExpired } from "../utils/guestToken";
+import { measureClockOffsetMs } from "../utils/serverClock";
+import {
+  ConversationGoneError,
+  isConversationFinalizedError,
+  isConversationUnavailableError,
+  isExpiredPassError,
+} from "../utils/conversationErrors";
+import { removeStoredConversationData } from "../utils/conversationStorage";
+import { createSseParser } from "../utils/sse";
+
+const FINALIZED_CONVERSATION_STATUS = "finalized";
+const AVAILABILITY_CHECK_TIMEOUT_MS = 5000;
+
+const httpError = (status: number, data: any) =>
+  Object.assign(new Error(typeof data?.error === "string" ? data.error : `Request failed with status code ${status}`), {
+    response: { status, data },
+  });
+
+async function readBody(res: Response): Promise<any> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 export const GENASSIST_AGENT_METADATA_UPDATED = "genassist_agent_metadata_updated";
 
 export class ChatService {
@@ -30,11 +60,16 @@ export class ChatService {
   private conversationId: string | null = null;
   private conversationCreateTime: number | null = null; // Track conversation start time
   private guestToken: string | null = null; // Guest token for authorization
+  private clockOffsetMs = 0; // How far the server clock is ahead of this device
   private isFinalized: boolean = false;
   private webSocket: WebSocket | null = null;
   private messageHandler: ((message: ChatMessage) => void) | null = null;
+  private streamHandler: ((event: StreamEvent) => void) | null = null;
   private takeoverHandler: (() => void) | null = null;
   private finalizedHandler: (() => void) | null = null;
+  private conversationGoneHandler:
+    | ((conversationId: string | null, availability: ConversationAvailability) => void)
+    | null = null;
   private readStateHandler: ((state: ReadReceiptState) => void) | null = null;
   private messageMetaHandler:
     | ((meta: { client_id?: string; message_id?: string; sequence_number?: number }) => void)
@@ -201,17 +236,24 @@ export class ChatService {
     return parts.join(', ');
   }
 
-  /**
-   * Get headers for API requests, including authorization if guest token is available
-   */
+  /** Headers for conversation requests, using the guest token when there is one. */
   private getHeaders(contentType: string = "application/json"): Record<string, string> {
+    return this.buildHeaders(contentType, this.guestToken);
+  }
+
+  /** Headers for agent-level lookups, always authorised by the widget key. */
+  private getAgentHeaders(): Record<string, string> {
+    return this.buildHeaders("application/json", null);
+  }
+
+  private buildHeaders(contentType: string, guestToken: string | null): Record<string, string> {
     const headers: Record<string, string> = {
       "Content-Type": contentType,
     };
 
     // Prefer guest JWT for session calls; omit shared API key once scoped token exists.
-    if (this.guestToken) {
-      headers["Authorization"] = `Bearer ${this.guestToken}`;
+    if (guestToken) {
+      headers["Authorization"] = `Bearer ${guestToken}`;
     } else {
       headers["x-api-key"] = this.apiKey;
     }
@@ -236,12 +278,48 @@ export class ChatService {
     this.messageHandler = handler;
   }
 
+  setStreamHandler(handler: ((event: StreamEvent) => void) | null) {
+    this.streamHandler = handler;
+  }
+
   setTakeoverHandler(handler: () => void) {
     this.takeoverHandler = handler;
   }
 
   setFinalizedHandler(handler: () => void) {
     this.finalizedHandler = handler;
+  }
+
+  /** Called when a request shows the conversation can no longer be continued, so the UI can reset too. */
+  setConversationGoneHandler(
+    handler: ((conversationId: string | null, availability: ConversationAvailability) => void) | null
+  ) {
+    this.conversationGoneHandler = handler;
+  }
+
+  private handleConversationGone(availability: ConversationAvailability): void {
+    const goneConversationId = this.conversationId;
+    this.resetChatConversation();
+    this.conversationGoneHandler?.(goneConversationId, availability);
+  }
+
+  /** Stops a conversation request before it is sent with an expired guest token. */
+  private assertGuestTokenUsable(): void {
+    if (!this.hasExpiredGuestToken()) return;
+    this.handleConversationGone("unavailable");
+    throw new ConversationGoneError();
+  }
+
+  private handleRefusedConversationRequest(error: unknown, requestConversationId: string | null): void {
+    const isForCurrentConversation = requestConversationId === this.conversationId;
+    if (!isForCurrentConversation || !isConversationUnavailableError(error)) return;
+    this.handleConversationGone(isConversationFinalizedError(error) ? "finalized" : "unavailable");
+  }
+
+  /** Send paths restart the chat themselves, so only clear local state when the refusal is for the current chat */
+  private resetIfRefusedForCurrent(error: unknown, requestConversationId: string | null): void {
+    const isForCurrentConversation = requestConversationId === this.conversationId;
+    if (isForCurrentConversation && isConversationUnavailableError(error)) this.resetChatConversation();
   }
 
   setReadStateHandler(handler: ((state: ReadReceiptState) => void) | null) {
@@ -318,7 +396,7 @@ export class ChatService {
     try {
       const response = await axios.get<AgentInfoResponse>(
         `${this.baseUrl}/api/conversations/in-progress/agent-info`,
-        { headers: this.getHeaders() }
+        { headers: this.getAgentHeaders() }
       );
       const data = response.data || {};
       const agentId =
@@ -360,7 +438,7 @@ export class ChatService {
     try {
       const response = await axios.get<AgentChatLocalesResponse>(
         `${this.baseUrl}/api/conversations/in-progress/agent-chat-locales`,
-        { headers: this.getHeaders() }
+        { headers: this.getAgentHeaders() }
       );
       const data = response.data;
       if (data?.locales && typeof data.locales === "object") {
@@ -496,7 +574,13 @@ export class ChatService {
           agentId,
           guestToken,
           availableLanguages,
+          clockOffsetMs,
         } = JSON.parse(savedConversation);
+        this.clockOffsetMs = typeof clockOffsetMs === "number" ? clockOffsetMs : 0;
+        if (this.isSavedConversationUnusable(guestToken, isFinalized)) {
+          this.discardSavedConversation(conversationId);
+          return;
+        }
         this.conversationId = conversationId;
         this.conversationCreateTime = createTime;
         this.isFinalized = isFinalized || false;
@@ -531,6 +615,26 @@ export class ChatService {
     }
   }
 
+  /** A saved conversation that is finalized or whose guest token has expired cannot be continued. */
+  private isSavedConversationUnusable(
+    guestToken: string | null | undefined,
+    isFinalized: boolean | undefined,
+  ): boolean {
+    const hasExpiredGuestToken =
+      Boolean(guestToken) && isGuestTokenExpired(guestToken as string, this.serverNowMs());
+    return hasExpiredGuestToken || Boolean(isFinalized);
+  }
+
+  private discardSavedConversation(conversationId: string | null): void {
+    removeStoredConversationData(this.apiKey, conversationId);
+    this.resetChatConversation();
+    try {
+      localStorage.removeItem(this.storageKeyBase);
+    } catch {
+      // Storage may be unavailable (privacy mode)
+    }
+  }
+
   /**
    * Save the current conversation ID to localStorage
    */
@@ -554,6 +658,7 @@ export class ChatService {
           thinkingConfig: this.thinkingConfig,
           agentId: this.agentId,
           guestToken: this.guestToken,
+          clockOffsetMs: this.clockOffsetMs,
           availableLanguages: this.availableLanguages,
         };
         localStorage.setItem(this.getStorageKey(), JSON.stringify(conversationData));
@@ -561,18 +666,6 @@ export class ChatService {
     } catch (error) {
       // ignore
     }
-  }
-
-  // Check if an error is a token expiration error
-  private isTokenExpiredError(error: any): boolean {
-    return (
-      error.response &&
-      error.response.status === 401 &&
-      error.response.data &&
-      (error.response.data.error === "Token has expired." ||
-        error.response.data.message === "Token has expired." ||
-        (typeof error.response.data === "string" && error.response.data.includes("Token has expired")))
-    );
   }
 
   /**
@@ -606,6 +699,7 @@ export class ChatService {
     this.conversationId = null;
     this.conversationCreateTime = null;
     this.guestToken = null;
+    this.clockOffsetMs = 0;
     this.isFinalized = false;
 
     // Clear possible queries and workflow metadata
@@ -652,6 +746,30 @@ export class ChatService {
     return this.isFinalized;
   }
 
+  hasExpiredGuestToken(): boolean {
+    return this.guestToken !== null && isGuestTokenExpired(this.guestToken, this.serverNowMs());
+  }
+
+  /** The current time by the server's clock, so a wrong device clock does not expire a valid pass. */
+  private serverNowMs(): number {
+    return Date.now() + this.clockOffsetMs;
+  }
+
+  /** Whether the conversation can still be continued; asks the server unless the answer is known locally. */
+  async checkConversationAvailability(): Promise<ConversationAvailability> {
+    const isKnownUnavailable = this.isFinalized || this.hasExpiredGuestToken();
+    if (isKnownUnavailable) return "unavailable";
+    try {
+      const { status } = await this.pollInProgressConversation({
+        timeoutMs: AVAILABILITY_CHECK_TIMEOUT_MS,
+      });
+      return status === FINALIZED_CONVERSATION_STATUS ? "finalized" : "available";
+    } catch (error) {
+      if (isConversationFinalizedError(error)) return "finalized";
+      return isConversationUnavailableError(error) ? "unavailable" : "unknown";
+    }
+  }
+
   async startConversation(reCaptchaToken?: string | undefined): Promise<string> {
     try {
       const requestBody: any = {
@@ -683,6 +801,7 @@ export class ChatService {
         : Date.now() / 1000;
       // Store guest token if provided
       this.guestToken = response.data.guest_token || null;
+      this.clockOffsetMs = measureClockOffsetMs(response.data.conversation_id);
       this.isFinalized = false;
 
       // Store possible queries if available
@@ -770,11 +889,41 @@ export class ChatService {
       this.saveConversation();
       return response.data.conversation_id;
     } catch (error: any) {
-      if (this.isTokenExpiredError(error)) {
+      if (isExpiredPassError(error)) {
         this.resetChatConversation();
       }
       throw error;
     }
+  }
+
+  /**
+    * Sends one chat turn and requests an SSE stream. Activity frames go to the stream handler;
+    * the saved conversation comes from the `done` frame, or from the JSON body if the backend doesn't stream.
+  */
+  private async updateConversation(requestBody: unknown): Promise<any> {
+    // Browsers that can't read a body as it arrives ask for the plain JSON reply instead.
+    const canReadStream = "body" in Response.prototype;
+    const res = await fetch(`${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`, {
+      method: "PATCH",
+      headers: canReadStream ? { ...this.getHeaders(), Accept: "text/event-stream" } : this.getHeaders(),
+      body: JSON.stringify(requestBody),
+    });
+    if (!res.ok) throw httpError(res.status, await readBody(res));
+    if (!res.body || !(res.headers.get("content-type") || "").includes("text/event-stream")) return readBody(res);
+
+    const reader = res.body.getReader();
+    const parse = createSseParser();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      for (const frame of parse(value)) {
+        const data = JSON.parse(frame.data);
+        if (frame.event === "activity" || frame.event === "delta") this.streamHandler?.({ type: frame.event, ...data });
+        else if (frame.event === "error") throw httpError(typeof data.error_code === "number" ? data.error_code : 500, data);
+        else if (frame.event === "done") return data.conversation;
+      }
+    }
+    throw new Error("Stream ended before done");
   }
 
   async sendMessage(
@@ -787,6 +936,8 @@ export class ChatService {
     if (!this.conversationId || !this.conversationCreateTime) {
       throw new Error("Conversation not started");
     }
+    this.assertGuestTokenUsable();
+    const requestConversationId = this.conversationId;
 
     // Scrub any payment card numbers (PCI) client-side before the text is
     // echoed into the user's bubble or put on the wire. The same redacted
@@ -831,21 +982,7 @@ export class ChatService {
         requestBody.metadata = mergedMetadata;
       }
 
-      const response = await axios.patch(
-        `${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`,
-        requestBody,
-        {
-          headers: this.getHeaders(),
-        }
-      ).catch(e => {
-        const err = e?.response?.data;
-        // Handle error when conversation is finalized
-        if (err?.error_key === 'CONVERSATION_FINALIZED' || err?.error_key === 'AGENT_NOT_FOUND') {
-          this.handleConversationFinalized();
-        } else {
-          throw e;
-        }
-      });
+      const responseBody = await this.updateConversation(requestBody);
 
       // Anchor this optimistic visitor bubble to its server-assigned sequence_number
       // and message_id (the saved copy is the newest 'customer' message in the
@@ -853,7 +990,7 @@ export class ChatService {
       // logic compares against the supervisor's last-read marker for "Seen".
       if (!opts?.silent && this.messageMetaHandler) {
         try {
-          const respMessages = (response?.data as any)?.messages;
+          const respMessages = responseBody?.messages;
           if (Array.isArray(respMessages)) {
             let newest: any = null;
             for (const m of respMessages) {
@@ -882,7 +1019,7 @@ export class ChatService {
       // If not using WebSocket, try to retrieve the response message from the update conversation response
       if (!this.useWs && this.messageHandler && (!this.useWs || !this.usePoll)) { // usePoll is true when using heartbeat polling
         try {
-          const responseData = response?.data as any || {};
+          const responseData = responseBody || {};
 
           if (responseData.messages && Array.isArray(responseData.messages)) {
 
@@ -923,9 +1060,8 @@ export class ChatService {
         }
       }
     } catch (error: any) {
-      // Check if this is a token expiration error
-      if (this.isTokenExpiredError(error)) {
-        this.resetChatConversation();
+      if (isConversationUnavailableError(error)) {
+        this.resetIfRefusedForCurrent(error, requestConversationId);
         throw error;
       }
 
@@ -982,6 +1118,8 @@ export class ChatService {
     if (!this.conversationId) {
       throw new Error("Conversation not started");
     }
+    this.assertGuestTokenUsable();
+    const requestConversationId = this.conversationId;
 
     const now = Date.now() / 1000;
     const chatMessage: ChatMessage = {
@@ -1058,9 +1196,7 @@ export class ChatService {
         }
       }
     } catch (error: any) {
-      if (this.isTokenExpiredError(error)) {
-        this.resetChatConversation();
-      }
+      this.resetIfRefusedForCurrent(error, requestConversationId);
       throw error;
     }
   }
@@ -1069,6 +1205,8 @@ export class ChatService {
     if (!this.conversationId) {
       throw new Error("Conversation not started");
     }
+    this.assertGuestTokenUsable();
+    const requestConversationId = this.conversationId;
 
     const formData = new FormData();
     formData.append("chat_id", chatId);
@@ -1085,9 +1223,7 @@ export class ChatService {
 
       return response.data as FileUploadResponse;
     } catch (error: any) {
-      if (this.isTokenExpiredError(error)) {
-        this.resetChatConversation();
-      }
+      this.handleRefusedConversationRequest(error, requestConversationId);
       throw error;
     }
   }
@@ -1157,6 +1293,11 @@ export class ChatService {
    */
   async markRead(lastReadSequence: number): Promise<void> {
     if (!this.conversationId) return;
+    if (this.hasExpiredGuestToken()) {
+      this.handleConversationGone("unavailable");
+      return;
+    }
+    const requestConversationId = this.conversationId;
     try {
       await axios.patch(
         `${this.baseUrl}/api/conversations/in-progress/mark-read/${this.conversationId}`,
@@ -1164,9 +1305,7 @@ export class ChatService {
         { headers: this.getHeaders() }
       );
     } catch (error: any) {
-      if (this.isTokenExpiredError(error)) {
-        this.resetChatConversation();
-      }
+      this.handleRefusedConversationRequest(error, requestConversationId);
       // Swallow otherwise — a failed receipt must never disrupt the chat.
     }
   }
@@ -1299,7 +1438,7 @@ export class ChatService {
       const imageResponse = await axios.get(
         `${this.baseUrl}/api/genagent/agents/configs/${agentId}/welcome-image`,
         {
-          headers: this.getHeaders(),
+          headers: this.getAgentHeaders(),
           responseType: "blob",
         }
       );
@@ -1309,11 +1448,8 @@ export class ChatService {
       if (this.welcomeDataHandler) {
         this.welcomeDataHandler(this.welcomeData);
       }
-    } catch (err: any) {
-      if (this.isTokenExpiredError(err)) {
-        this.resetChatConversation();
-      }
-      // ignore
+    } catch {
+      // The welcome image is optional
     }
   }
 
@@ -1326,6 +1462,8 @@ export class ChatService {
     if (!messageId) {
       throw new Error("Message ID is required for feedback");
     }
+    this.assertGuestTokenUsable();
+    const requestConversationId = this.conversationId;
 
     try {
       // Use message ID in the URL path, not conversation ID
@@ -1347,9 +1485,7 @@ export class ChatService {
       });
 
     } catch (error: any) {
-      if (this.isTokenExpiredError(error)) {
-        this.resetChatConversation();
-      }
+      this.handleRefusedConversationRequest(error, requestConversationId);
       console.error('Feedback API call failed:', {
         message: error.message,
         response: error.response?.data,
@@ -1377,7 +1513,7 @@ export class ChatService {
    * Poll in-progress conversation (heartbeat when WebSocket is disabled).
    * Returns status and messages normalized to ChatMessage[].
    */
-  async pollInProgressConversation(): Promise<{
+  async pollInProgressConversation(options: { timeoutMs?: number } = {}): Promise<{
     status: string;
     pollMessages: InProgressPollMessage[];
     readState: ReadReceiptState | null;
@@ -1385,10 +1521,11 @@ export class ChatService {
     if (!this.conversationId || !this.conversationCreateTime) {
       throw new Error("Conversation not started");
     }
+    this.assertGuestTokenUsable();
 
     const response = await axios.get<InProgressPollResponse>(
       `${this.baseUrl}/api/conversations/in-progress/poll/${this.conversationId}`,
-      { headers: this.getHeaders() }
+      { headers: this.getHeaders(), timeout: options.timeoutMs }
     );
 
     const pollMessages = (response.data.messages || []).map((m) =>

@@ -99,3 +99,15 @@ export const formatPercentage = (value: number | string | undefined | null): str
 export const getInitials = (firstName = "", lastName = ""): string => {
   return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 }; 
+/** Human-readable size in binary units, matching the backend (2147483648 -> "2 GB"). */
+export const formatBytes = (size: number): string => {
+  const units = ["bytes", "KB", "MB", "GB"];
+  let value = size;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  if (unit === 0) return `${Math.trunc(value)} bytes`;
+  return `${Number(value.toFixed(1))} ${units[unit]}`;
+};

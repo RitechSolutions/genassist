@@ -47,7 +47,13 @@ export const updateWorkflow = (id: string, workflow: WorkflowUpdatePayload) =>
 
 // Delete a workflow
 export const deleteWorkflow = (id: string) =>
-  apiRequest<void>("DELETE", `${BASE}/${id}`);
+  apiRequest<void>(
+    "DELETE",
+    `${BASE}/${id}`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
 
 // Test a workflow configuration with a test message
 export interface WorkflowTestPayload {
@@ -75,6 +81,8 @@ export interface WorkflowTokenUsage {
   cost_usd?: number;
   /** True when a call could not be priced, so cost_usd is the priced subtotal only. */
   cost_is_partial?: boolean;
+  fallback_calls?: number;
+  fallback_models?: string[];
   calls?: number;
 }
 

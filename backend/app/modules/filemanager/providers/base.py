@@ -105,6 +105,24 @@ class BaseStorageProvider(ABC):
         """
         pass
 
+    async def download_file_to_path(self, file_path: str, local_path: str) -> bool:
+        """Download a stored file to a local path.
+
+        Providers can override this method to stream directly to disk. The
+        fallback preserves the existing provider contract for implementations
+        that only expose ``download_file``.
+        """
+        import asyncio
+
+        content = await self.download_file(file_path)
+
+        def _write() -> None:
+            with open(local_path, "wb") as file_handle:
+                file_handle.write(content)
+
+        await asyncio.to_thread(_write)
+        return True
+
     @abstractmethod
     async def delete_file(self, file_path: str) -> bool:
         """

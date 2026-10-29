@@ -43,6 +43,10 @@ export interface Translations {
   };
   thinking: {
     messages: string[];
+    activity?: {
+      knowledge: string;
+      tool: string;
+    };
   };
   time: {
     justNow: string;

@@ -68,6 +68,7 @@ class SubAgentTurnRouter:
         from app.modules.workflow.agents.sub_agents import orchestrator
         from app.modules.workflow.agents.sub_agents import session as sub_session
         from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY, SubAgentStack
+        from app.modules.workflow.engine.nodes.agent_node import _without_tool_references
 
         frame = stack.top()
         timeout_seconds = self._child_timeout(frame.child_node_id)
@@ -78,7 +79,7 @@ class SubAgentTurnRouter:
                 child_node_id=frame.child_node_id,
                 invocation_id=frame.invocation_id,
                 message=session_message,
-                session=input_data.get("session"),
+                session=input_data.get("session") or frame.parent_resume.request_context.get("session"),
                 timeout_seconds=timeout_seconds,
                 inherit_pii=frame.inherit_pii,
                 usage_context=usage_context,
@@ -91,10 +92,15 @@ class SubAgentTurnRouter:
 
         completion = orchestrator.child_completion(child_state)
         if completion is None:
+            completion = self._failed_completion(child_state, frame.child_node_id, session_message)
+        if completion is None:
             response = child_state.format_state_as_response()
             if self._is_awaiting_sub_agent(response.get("output")):
                 return self.finalize(response)
-            return self._message_only(response, orchestrator.child_message(child_state))
+            reply = orchestrator.child_message(child_state)
+            if persist:
+                await self._remember_turn(memory, session_message, reply)
+            return self._message_only(response, reply)
 
         remaining = stack.frames[:-1]
         if remaining:
@@ -103,13 +109,23 @@ class SubAgentTurnRouter:
             await sub_session.clear_stack(memory)
         orchestrator.discard_child_memory(thread_id, frame.child_node_id, frame.invocation_id)
 
+        child_id = frame.child_node_id
+        parent_resume = frame.parent_resume.model_dump()
+        child_output = child_state.node_outputs.get(child_id)
+        if child_output is not None:
+            parent_resume["node_outputs"][child_id] = child_output
+        child_status = child_state.node_execution_status.get(child_id)
+        if child_status is not None:
+            parent_resume["node_execution_status"].update(
+                _without_tool_references({child_id: {k: v for k, v in child_status.items() if k != "endTime"}})
+            )
         resume = {
-            **frame.parent_resume.model_dump(),
-            "child_node_id": frame.child_node_id,
+            **parent_resume,
+            "child_node_id": child_id,
             "mode": frame.mode,
             "child_task": frame.task,
             "child_result": completion.get("result", orchestrator.child_message(child_state)),
-            **self._child_trace(child_state, frame.child_node_id),
+            **self._child_trace(child_state, child_id),
         }
         state = await self.workflow_engine.execute_from_node(
             start_node_id=frame.parent_node_id,
@@ -151,6 +167,26 @@ class SubAgentTurnRouter:
         if isinstance(state, dict) and isinstance(state.get("output"), dict):
             state["output"] = dict(message)
         return response
+
+    @staticmethod
+    def _failed_completion(child_state, child_id: str, session_message: str):
+        from app.modules.workflow.engine.nodes.agent_node import AgentNode
+
+        error = AgentNode._child_failure(child_state, child_id)
+        if error is None:
+            return None
+        logger.error("Sub-agent %s failed on a resumed turn: %s", child_id, error)
+        result = messages.child_failed()
+        if session_message:
+            result += f" The user's latest message to it was: {session_message}"
+        return {"result": result}
+
+    @staticmethod
+    async def _remember_turn(memory, session_message: str, reply: str) -> None:
+        try:
+            await memory.add_input_output(session_message, reply)
+        except Exception:
+            logger.warning("Could not record the sub-agent turn in conversation memory", exc_info=True)
 
     @staticmethod
     def _child_trace(child_state, child_id: str) -> dict:

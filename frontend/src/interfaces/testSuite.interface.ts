@@ -1,8 +1,12 @@
+import type { TestToolRuleResult } from "./testEvaluation.interface";
+
 
 export interface TestSuite {
   id?: string;
   name: string;
   description?: string;
+  /** A team's own label, shared with evaluations; null when none is set. */
+  category?: string | null;
   workflow_id?: string;
   default_input_metadata?: Record<string, unknown>;
   created_at?: string;
@@ -104,6 +108,13 @@ export interface AddConversationToDatasetsResult {
   failed: number;
 }
 
+export interface RunProgress {
+  conversations_done: number;
+  conversations_total: number;
+  turns_done: number;
+  turns_total: number;
+}
+
 export interface TestRun {
   id?: string;
   suite_id: string;
@@ -111,10 +122,14 @@ export interface TestRun {
   status: string;
   techniques: string[];
   summary_metrics?: Record<string, unknown>;
+  /** Null until the run starts; updated after each turn. */
+  progress?: RunProgress | null;
   workflow_name?: string | null;
   workflow_version?: string | null;
   created_at?: string;
   updated_at?: string;
+  /** Its place among the evaluation's runs, 1 for the first; set by the page, not the API. */
+  number?: number;
 }
 
 export interface MetricRuleDetail {
@@ -151,9 +166,60 @@ export interface TestResult {
   updated_at?: string;
 }
 
+export type Verdict = "passed" | "failed" | "not_evaluated";
+
+/** How many of a run's conversations passed, failed or were not evaluated. */
+export interface ConversationCounts {
+  total: number;
+  passed: number;
+  failed: number;
+  not_evaluated: number;
+}
+
+/** One turn of a run, as its results page shows it. */
+export interface RunTurnResult {
+  case_id: string;
+  /** Position in its conversation, from 1. */
+  number: number;
+  /** What the run sent. */
+  message: string;
+  expected?: string | null;
+  reply?: string | null;
+  verdict: Verdict;
+  /** Why the turn crashed or was not evaluated. */
+  reason?: string | null;
+  status?: string | null;
+  metrics: Record<string, TestResultMetric>;
+  rules: TestToolRuleResult[];
+  has_trace: boolean;
+  /** False when the turn was removed from the dataset after the run. */
+  in_dataset: boolean;
+}
+
+export interface RunConversationResult {
+  key: string;
+  verdict: Verdict;
+  turns: RunTurnResult[];
+  /** Checks on the whole conversation. */
+  rules: TestToolRuleResult[];
+}
+
+export interface RunConversations {
+  run_id: string;
+  counts: ConversationCounts;
+  /** In the order the run played them. */
+  conversations: RunConversationResult[];
+  /** Checks whose conversation is not in the run. */
+  other_rules: TestToolRuleResult[];
+  /** Checks and rules are graded when the run ends, and it has not completed. */
+  rules_pending?: boolean;
+}
+
 export interface CreateTestSuitePayload {
   name: string;
   description?: string;
+  /** On an update, "" clears it. */
+  category?: string;
   workflow_id?: string;
   default_input_metadata?: Record<string, unknown>;
 }

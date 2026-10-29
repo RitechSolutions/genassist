@@ -23,6 +23,8 @@ import type { ConnectionStatus } from "@/interfaces/connectionStatus.interface";
 import { SchemaFormRenderer } from "@/components/SchemaFormRenderer";
 import { FormField } from "@/components/ui/form-field";
 import { CRUDDialog } from "@/components/ui/crud-dialog";
+import { ListErrorState } from "@/components/ListErrorState";
+import { extractErrorMessage } from "@/helpers/apiError";
 
 const CAPABILITY_OPTIONS = [
   { value: "tts", label: "Text-to-Speech (TTS)" },
@@ -90,7 +92,13 @@ export function AudioProviderDialog({
   > | null>(null);
   const queryClient = useQueryClient();
 
-  const { data, isLoading: isLoadingConfig } = useQuery({
+  const {
+    data,
+    isLoading: isLoadingConfig,
+    isError: isConfigError,
+    error: configError,
+    refetch: refetchConfig,
+  } = useQuery({
     queryKey: ["audioProviderFormSchemas", isOpen],
     queryFn: () => getAudioProviderFormSchemas(),
     refetchOnWindowFocus: false,
@@ -99,6 +107,12 @@ export function AudioProviderDialog({
   });
 
   const formSchemas = data ?? {};
+  // apiRequest resolves null on a 403 instead of throwing. A later failed
+  // refetch keeps that null, so it only means "forbidden" while there is no error.
+  const isConfigForbidden = data === null && !isConfigError;
+  // A failed background refetch keeps the cached schemas, so only treat it as a
+  // load failure when there is nothing to render the form from.
+  const configLoadFailed = (isConfigError && !data) || isConfigForbidden;
 
   useEffect(() => {
     if (isOpen) {
@@ -209,6 +223,7 @@ export function AudioProviderDialog({
       validate={(values) =>
         !values.name.trim() ? { name: "Name is required." } : null
       }
+      submitDisabled={configLoadFailed}
       onSubmit={async (values, { mode: m }) => {
         const missingFields = [
           !providerType && "Provider Type",
@@ -272,6 +287,28 @@ export function AudioProviderDialog({
             {isLoadingConfig ? (
               <div className="flex items-center justify-center p-4">
                 <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            ) : configLoadFailed ? (
+              <div className="rounded-md border">
+                <ListErrorState
+                  compact
+                  title={
+                    isConfigForbidden
+                      ? "No access to provider types"
+                      : "Couldn't load provider types"
+                  }
+                  message={
+                    isConfigForbidden
+                      ? "You don't have permission to view audio provider types."
+                      : extractErrorMessage(
+                          configError,
+                          "Failed to fetch audio provider types."
+                        )
+                  }
+                  onRetry={
+                    isConfigForbidden ? undefined : () => void refetchConfig()
+                  }
+                />
               </div>
             ) : (
               <Select

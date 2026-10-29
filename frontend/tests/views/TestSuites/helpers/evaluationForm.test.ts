@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   buildTechniqueConfigs,
+  formMetadata,
   getEditInitialData,
   newEvaluationDefaults,
-  wizardMetadata,
+  type EvaluationFormData,
 } from "@/views/TestSuites/helpers/evaluationForm";
-import type { EvaluationWizardData } from "@/views/TestSuites/components/EvaluationWizard";
 import type { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
 
 const evalWith = (toolUsed: Record<string, unknown>): TestEvaluationConfig =>
@@ -72,7 +72,7 @@ describe("serializeToolRule round-trips per_tool", () => {
       ],
     };
     const rules = parseRules(stored);
-    const data = { metrics: ["tool_used"], toolRules: rules } as unknown as EvaluationWizardData;
+    const data = { metrics: ["tool_used"], toolRules: rules } as unknown as EvaluationFormData;
     const out = buildTechniqueConfigs(data).tool_used as {
       rules: { per_tool?: Record<string, unknown> }[];
     };
@@ -109,7 +109,7 @@ describe("grading source configs", () => {
         },
       ],
       judgeProviderId: "",
-    } as unknown as EvaluationWizardData;
+    } as unknown as EvaluationFormData;
 
     const configs = buildTechniqueConfigs(data);
     expect(configs.nli_eval.evidence_source).toBe("expected_output");
@@ -138,7 +138,7 @@ describe("grading source configs", () => {
     const data = {
       ...initial,
       metrics: evaluation.techniques,
-    } as EvaluationWizardData;
+    } as EvaluationFormData;
     const configs = buildTechniqueConfigs(data);
 
     expect(configs.nli_eval.evidence_field).toBe("trace.nodes.custom.output");
@@ -202,7 +202,7 @@ describe("grading source configs", () => {
       metrics: ["llm_judge"],
       judgeRules: initial.judgeRules,
       judgeProviderId: initial.judgeProviderId,
-    } as unknown as EvaluationWizardData;
+    } as unknown as EvaluationFormData;
     const configs = buildTechniqueConfigs(data);
     expect(configs.llm_judge).toEqual({
       llm_provider_id: "p1",
@@ -225,7 +225,7 @@ describe("field_equals config", () => {
       metrics: ["field_equals"],
       fieldEqualsField: "outputs.status",
       fieldEqualsExpected: "resolved",
-    } as unknown as EvaluationWizardData;
+    } as unknown as EvaluationFormData;
 
     expect(buildTechniqueConfigs(data).field_equals).toEqual({
       field: "outputs.status",
@@ -238,7 +238,7 @@ describe("field_equals config", () => {
       metrics: ["field_equals"],
       fieldEqualsField: "",
       fieldEqualsExpected: "",
-    } as unknown as EvaluationWizardData;
+    } as unknown as EvaluationFormData;
 
     expect(buildTechniqueConfigs(data).field_equals).toEqual({});
   });
@@ -320,7 +320,7 @@ describe("route_taken and action_taken multi-rule configs", () => {
         { id: "r-1", router: "r1", expected: "true", scope: "every_turn" },
         { id: "r-2", router: "", expected: "support", scope: "conversation" },
       ],
-    } as unknown as EvaluationWizardData;
+    } as unknown as EvaluationFormData;
 
     expect(buildTechniqueConfigs(data).route_taken).toEqual({
       rules: [
@@ -336,7 +336,7 @@ describe("route_taken and action_taken multi-rule configs", () => {
       actionRules: [
         { id: "a-1", node: "zendesk", nodeType: "", shouldFire: true, scope: "conversation" },
       ],
-    } as unknown as EvaluationWizardData;
+    } as unknown as EvaluationFormData;
 
     expect(buildTechniqueConfigs(data).action_taken).toEqual({
       rules: [{ id: "a-1", node: "zendesk", should_fire: true, scope: "conversation" }],
@@ -366,7 +366,7 @@ describe("route_taken and action_taken multi-rule configs", () => {
           target_case_ids: [],
         },
       ],
-    } as unknown as EvaluationWizardData;
+    } as unknown as EvaluationFormData;
 
     expect(buildTechniqueConfigs(data).route_taken).toEqual({
       rules: [
@@ -413,7 +413,7 @@ describe("route_taken and action_taken multi-rule configs", () => {
     const data = {
       metrics: ["action_taken"],
       actionRules: initial.actionRules,
-    } as unknown as EvaluationWizardData;
+    } as unknown as EvaluationFormData;
 
     expect(buildTechniqueConfigs(data).action_taken).toEqual({
       rules: [
@@ -455,7 +455,7 @@ describe("route_taken and action_taken multi-rule configs", () => {
     const data = {
       metrics: ["action_taken"],
       actionRules: initial.actionRules,
-    } as unknown as EvaluationWizardData;
+    } as unknown as EvaluationFormData;
 
     expect(buildTechniqueConfigs(data).action_taken).toEqual({
       rules: [
@@ -468,6 +468,13 @@ describe("route_taken and action_taken multi-rule configs", () => {
         },
       ],
     });
+  });
+});
+
+describe("category", () => {
+  it("loads with the evaluation, and none reads as empty", () => {
+    expect(getEditInitialData({ ...evalWith({}), category: "Refunds" }, []).category).toBe("Refunds");
+    expect(getEditInitialData({ ...evalWith({}), category: null }, []).category).toBe("");
   });
 });
 
@@ -484,8 +491,8 @@ describe("newEvaluationDefaults", () => {
   });
 
   it("saves memory on by default", () => {
-    const data = { ...newEvaluationDefaults(), inputMetadataText: "{}" } as EvaluationWizardData;
-    expect(wizardMetadata(data)).toEqual({ use_memory: true });
+    const data = { ...newEvaluationDefaults(), inputMetadataText: "{}" } as EvaluationFormData;
+    expect(formMetadata(data)).toEqual({ use_memory: true });
   });
 
   it("keeps memory off for an existing evaluation saved without it", () => {
@@ -500,5 +507,43 @@ describe("newEvaluationDefaults", () => {
       updated_at: "",
     } as TestEvaluationConfig;
     expect(getEditInitialData(evaluation, []).useMemory).toBe(false);
+  });
+});
+
+describe("checks and what they were made from", () => {
+  const evaluation = {
+    id: "e2",
+    name: "converted",
+    suite_id: "s1",
+    techniques: ["checks"],
+    technique_configs: {
+      checks: {
+        checks: [{ id: "c1", expect: "should", kind: "reply_mentions", level: "every_conversation", when: "anywhere", text: "hi" }],
+        llm_provider_id: "p1",
+        older_methods: { techniques: ["contains"], left_out: ["Contains: an empty phrase."] },
+      },
+    },
+    run_ids: [],
+    created_at: "",
+    updated_at: "",
+  } as unknown as TestEvaluationConfig;
+
+  it("loads the older methods' record with the checks", () => {
+    const loaded = getEditInitialData(evaluation, []);
+    expect(loaded.checks?.map((check) => check.id)).toEqual(["c1"]);
+    expect(loaded.checksProviderId).toBe("p1");
+    expect(loaded.checksOlderMethods).toEqual({ techniques: ["contains"], left_out: ["Contains: an empty phrase."] });
+  });
+
+  it("saves the record back, marked as seen by the editor", () => {
+    const loaded = getEditInitialData(evaluation, []);
+    const configs = buildTechniqueConfigs({
+      ...loaded,
+      metrics: ["checks"],
+      checksOlderMethods: { ...loaded.checksOlderMethods!, reviewed: true },
+    } as EvaluationFormData);
+    expect(configs.checks).toMatchObject({
+      older_methods: { techniques: ["contains"], left_out: ["Contains: an empty phrase."], reviewed: true },
+    });
   });
 });

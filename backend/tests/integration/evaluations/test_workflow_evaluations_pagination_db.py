@@ -64,12 +64,77 @@ async def test_pagination_and_search_run_in_the_database(db_session):
         one = await eval_repo.get_page_for_workflow(None, 0, 50, search=f"{prefix}eval_07")
         assert len(one) == 1 and one[0].name == f"{prefix}eval_07"
         assert await eval_repo.count_for_workflow(None, search=f"{prefix}nope") == 0
+        # % and _ are searched as typed, not as wildcards.
+        assert await eval_repo.count_for_workflow(None, search=f"{prefix}eval%7") == 0
+        assert await eval_repo.count_by_effective_workflow(f"{prefix}eval_0_") == []
 
         # Run all scope (full, unpaginated) and the summary group-by — the paths
         all_scope = await eval_repo.get_all_for_workflow(None)
         assert {e.id for e in created} <= {e.id for e in all_scope}
         summary = dict(await eval_repo.count_by_effective_workflow())
         assert summary.get(None, 0) >= 25  # unassigned bucket includes ours
+
+        # A search counts only what it matches, and drops workflows with no match.
+        assert dict(await eval_repo.count_by_effective_workflow(f"{prefix}eval_07")) == {None: 1}
+        assert await eval_repo.count_by_effective_workflow(f"{prefix}nope") == []
+        assert len(await eval_repo.get_latest_run_pointers(f"{prefix}eval_1")) == 10
+    finally:
+        for evaluation in created:
+            await session.delete(evaluation)
+        await session.delete(suite)
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_category_filter_and_list_run_in_the_database(db_session):
+    session = db_session
+    eval_repo = TestEvaluationRepository(session)
+    suite_repo = TestSuiteRepository(session)
+
+    prefix = f"zz_{uuid4().hex[:8]}_"
+    refunds, escalation = f"{prefix}Refunds", f"{prefix}Escalation"
+    suite = await suite_repo.create(
+        TestSuiteModel(name=f"{prefix}suite", workflow_id=None, category=escalation)
+    )
+    created = []
+    try:
+        for i, category in enumerate([refunds, refunds, None]):
+            created.append(
+                await eval_repo.create(
+                    TestEvaluationModel(
+                        name=f"{prefix}eval_{i}",
+                        suite_id=suite.id,
+                        workflow_id=None,
+                        category=category,
+                        techniques=[],
+                        run_ids=[],
+                    )
+                )
+            )
+
+        # A category matches whatever its case, in SQL.
+        assert await eval_repo.count_for_workflow(None, search=prefix, category=refunds.lower()) == 2
+        # "" keeps the evaluations with none set.
+        none_set = await eval_repo.get_page_for_workflow(None, 0, 10, search=prefix, category="")
+        assert [e.name for e in none_set] == [f"{prefix}eval_2"]
+        assert dict(await eval_repo.count_by_effective_workflow(prefix, refunds)) == {None: 2}
+        assert len(await eval_repo.get_latest_run_pointers(prefix, "")) == 1
+
+        # The list holds datasets' and evaluations' categories, each once.
+        categories = await eval_repo.categories()
+        assert categories.count(refunds) == 1
+        assert escalation in categories
+        # A save finds the spelling in use, whatever the case it is typed in.
+        assert await eval_repo.category_spelling(escalation.upper()) == escalation
+        assert await eval_repo.category_spelling(f"{prefix}nope") is None
+
+        # Run all and export pick the same evaluations as the lists.
+        in_refunds = {created[0].id, created[1].id}
+        run_all = await eval_repo.get_all_for_workflow(None, category=refunds.upper())
+        assert {e.id for e in run_all} == in_refunds
+        assert await eval_repo.ids_in_category(refunds.lower()) == in_refunds
+        none_set = await eval_repo.ids_in_category("")
+        assert created[2].id in none_set and not in_refunds & none_set
     finally:
         for evaluation in created:
             await session.delete(evaluation)

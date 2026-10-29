@@ -124,13 +124,3 @@ class SimpleToolAgent(BaseToolAgent):
             if llm_usage_entries:
                 result["llm_usage"] = llm_usage_entries
             return result
-
-    async def stream(self, query: str, chat_history: Optional[List[Dict[str, str]]] = None, **kwargs):
-        """Stream the agent's tool selection and execution process"""
-        try:
-            result = await self.invoke(query, chat_history, **kwargs)
-            yield result
-        except Exception as e:
-            logger.error(
-                f"Error streaming {self._get_agent_name()} query: {str(e)}")
-            yield create_error_response(str(e), self._get_agent_name())

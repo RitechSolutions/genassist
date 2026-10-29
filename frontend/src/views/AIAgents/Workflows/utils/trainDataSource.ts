@@ -27,6 +27,7 @@ type TrainDataSourceSelectionData = Partial<
     | 'csvFilePath'
     | 'csvFileId'
     | 'csvFileUrl'
+    | 'sheetName'
     | 'query'
     | 'analysisResult'
   >
@@ -53,6 +54,7 @@ export interface TrainDataSourceDialogValues {
   csvFilePath: string | null;
   csvFileId: string | null;
   csvFileUrl: string | null;
+  sheetName: string | null;
   analysisResult: TrainDataSourceNodeData['analysisResult'] | null;
 }
 
@@ -62,17 +64,13 @@ export interface TrainDataSourceSummary {
   sourceLabel?: string;
 }
 
-export function getTrainDataSourceSelection(
-  data: TrainDataSourceSelectionData,
-): TrainDataSourceSelection {
+export function getTrainDataSourceSelection(data: TrainDataSourceSelectionData): TrainDataSourceSelection {
   if (data.sourceType === 'csv' || data.sourceType === 'datasource') {
     return { sourceType: data.sourceType };
   }
 
   // Older nodes may have no sourceType; infer it from what they configured.
-  const hasLegacyFile = Boolean(
-    data.csvFileName || data.csvFilePath || data.csvFileId || data.csvFileUrl,
-  );
+  const hasLegacyFile = Boolean(data.csvFileName || data.csvFilePath || data.csvFileId || data.csvFileUrl);
   if (hasLegacyFile) return { sourceType: 'csv' };
   if (data.dataSourceId) return { sourceType: 'datasource' };
 
@@ -89,7 +87,7 @@ export function getTrainDataSourceVisibleFields(sourceType: TrainDataSourceType)
 
 export function applyTrainDataSourceType(
   values: TrainDataSourceDialogValues,
-  sourceType: TrainDataSourceType,
+  sourceType: TrainDataSourceType
 ): TrainDataSourceDialogValues {
   if (sourceType === values.sourceType) return values;
 
@@ -104,6 +102,7 @@ export function applyTrainDataSourceType(
     csvFilePath: null,
     csvFileId: null,
     csvFileUrl: null,
+    sheetName: null,
     analysisResult: null,
   };
 }
@@ -111,14 +110,8 @@ export function applyTrainDataSourceType(
 export function validateTrainDataSource(
   values: Pick<
     TrainDataSourceDialogValues,
-    | 'sourceType'
-    | 'dataSourceId'
-    | 'query'
-    | 'csvFileName'
-    | 'csvFilePath'
-    | 'csvFileId'
-    | 'csvFileUrl'
-  >,
+    'sourceType' | 'dataSourceId' | 'query' | 'csvFileName' | 'csvFilePath' | 'csvFileId' | 'csvFileUrl'
+  >
 ): string | null {
   if (values.sourceType === 'datasource') {
     if (!values.dataSourceId) return 'Select a data source.';
@@ -138,12 +131,9 @@ export function validateTrainDataSource(
 
 export function hasTrainDataSourceConfigurationChanged(
   current: TrainDataSourceSelectionData,
-  next: TrainDataSourceSelectionData,
+  next: TrainDataSourceSelectionData
 ): boolean {
-  if (
-    getTrainDataSourceSelection(current).sourceType !==
-    getTrainDataSourceSelection(next).sourceType
-  ) {
+  if (getTrainDataSourceSelection(current).sourceType !== getTrainDataSourceSelection(next).sourceType) {
     return true;
   }
 
@@ -154,31 +144,26 @@ export function hasTrainDataSourceConfigurationChanged(
     'csvFilePath',
     'csvFileId',
     'csvFileUrl',
+    'sheetName',
   ];
 
   return fields.some((field) => (current[field] ?? '') !== (next[field] ?? ''));
 }
 
 export function isTrainingDatabaseSource(dataSource: DataSource): boolean {
-  return TRAINING_DATABASE_SOURCE_TYPES.has(
-    dataSource.source_type.trim().toLowerCase(),
-  );
+  return TRAINING_DATABASE_SOURCE_TYPES.has(dataSource.source_type.trim().toLowerCase());
 }
 
 export function getTrainDataSourceSummary(
   data: TrainDataSourceSelectionData,
-  selectedDataSource?: Pick<DataSource, 'name'>,
+  selectedDataSource?: Pick<DataSource, 'name'>
 ): TrainDataSourceSummary {
   const { sourceType } = getTrainDataSourceSelection(data);
   if (sourceType === 'csv') {
     return {
       sourceTypeLabel: 'Uploaded File',
       sourceFieldLabel: 'Data Source',
-      sourceLabel:
-        data.csvFileName ||
-        (data.csvFilePath || data.csvFileId || data.csvFileUrl
-          ? 'Uploaded file'
-          : ''),
+      sourceLabel: data.csvFileName || (data.csvFilePath || data.csvFileId || data.csvFileUrl ? 'Uploaded file' : ''),
     };
   }
 
@@ -201,9 +186,7 @@ export function getTrainDataSourceSummary(
   return {
     sourceTypeLabel: 'Database',
     sourceFieldLabel: 'Data Source',
-    sourceLabel: selectedDataSource
-      ? selectedDataSource.name
-      : 'Unavailable data source',
+    sourceLabel: selectedDataSource ? selectedDataSource.name : 'Unavailable data source',
   };
 }
 
@@ -213,14 +196,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function getTrainDataSourceShape(
   data: TrainDataSourceSelectionData,
-  runtimeOutput?: Record<string, unknown>,
+  runtimeOutput?: Record<string, unknown>
 ): string {
   let rowCount = data.analysisResult?.row_count;
   let columnCount = data.analysisResult?.column_count;
 
-  const metadata = isRecord(runtimeOutput?.metadata)
-    ? runtimeOutput.metadata
-    : undefined;
+  const metadata = isRecord(runtimeOutput?.metadata) ? runtimeOutput.metadata : undefined;
   if (rowCount === undefined && typeof metadata?.rowCount === 'number') {
     rowCount = metadata.rowCount;
   }

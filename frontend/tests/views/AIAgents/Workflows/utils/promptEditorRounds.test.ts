@@ -11,10 +11,12 @@ import type {
 import {
   MAX_ROUND_DIFF_CHARS,
   MAX_ROUND_REGRESSION_FEEDBACK_CHARS,
+  attachKeptRun,
   baselineOf,
   optimizerHistoryOf,
   promptDiffSummary,
   regressionsOf,
+  roundRunOf,
   type Round,
   type RoundCounts,
 } from "@/views/AIAgents/Workflows/utils/promptEditorRounds";
@@ -72,7 +74,7 @@ const round = (overrides: Partial<Round> = {}): Round => ({
   id: 1,
   source: {
     request: { prompt: "before" },
-    result: { suggested_prompt: "after", explanation: "why" },
+    result: { suggested_prompt: "after", explanation: "why", outcome: "changed" },
   } as Round["source"],
   suggestion: "after",
   run: run("r"),
@@ -203,6 +205,38 @@ describe("optimizerHistoryOf", () => {
       { case_id: "c1", feedback: "contains: missing the link" },
     ]);
   });
+
+  it("sends no explanation for a round whose suggestion the user edited, since the diff describes the user's text", () => {
+    const [attempt] = optimizerHistoryOf(
+      [round({ suggestion: "after, edited" })],
+      "ctx",
+    );
+
+    expect(attempt.explanation).toBe("");
+    expect(attempt.diff_summary).toContain("+ after, edited");
+  });
+});
+
+describe("roundRunOf", () => {
+  it("finds the scored run of a text at any position in the chain", () => {
+    const older = run("older");
+    const rounds = [
+      round({ id: 2, suggestion: "second" }),
+      round({ id: 1, suggestion: "first", run: older }),
+    ];
+
+    expect(roundRunOf(rounds, "ctx", "first")).toBe(older);
+  });
+
+  it("ignores a round scored under other settings or never scored", () => {
+    const rounds = [
+      round({ id: 2, suggestion: "text", contextKey: "other" }),
+      round({ id: 1, suggestion: "text", run: null }),
+    ];
+
+    expect(roundRunOf(rounds, "ctx", "text")).toBeNull();
+    expect(roundRunOf([round()], "ctx", "missing")).toBeNull();
+  });
 });
 
 describe("baselineOf", () => {
@@ -235,5 +269,61 @@ describe("baselineOf", () => {
   it("uses the draft's run only while it is current", () => {
     expect(baselineOf([], "ctx", evalRun, true)).toBeNull();
     expect(baselineOf([], "ctx", null, false)).toBeNull();
+  });
+});
+
+describe("attachKeptRun", () => {
+  const keptRun = run("kept");
+  const kept = (overrides: Partial<Round> = {}): Round =>
+    round({
+      id: 9,
+      source: {
+        request: { prompt: "s1" },
+        result: { suggested_prompt: "s1", explanation: "", outcome: "unchanged" },
+      } as Round["source"],
+      suggestion: "s1",
+      run: keptRun,
+      counts: counts({ improved: 1, regressed: 1, compared: 3 }),
+      regressions: [{ caseId: "c2", feedback: null }],
+      contextKey: "now",
+      ...overrides,
+    });
+
+  it("hands a scored keep to the unscored round that suggested it, without taking a slot", () => {
+    const other = round({ id: 1, suggestion: "other" });
+    const rounds = [
+      round({ id: 2, suggestion: "s1", run: null, counts: null, contextKey: "old" }),
+      other,
+    ];
+
+    const result = attachKeptRun(rounds, kept());
+
+    expect(result).toEqual([
+      {
+        ...rounds[0],
+        run: keptRun,
+        counts: { improved: 1, regressed: 1, unchanged: 0, compared: 3 },
+        regressions: [{ caseId: "c2", feedback: null }],
+        contextKey: "now",
+      },
+      other,
+    ]);
+  });
+
+  it("never overwrites a scored round, even when an older copy of the text is unscored", () => {
+    const rounds = [
+      round({ id: 3, suggestion: "s1" }),
+      round({ id: 1, suggestion: "s1", run: null }),
+    ];
+
+    expect(attachKeptRun(rounds, kept())).toBe(rounds);
+  });
+
+  it("leaves the rounds alone for a changed, unscored or missing suggestion", () => {
+    const rounds = [round({ id: 2, suggestion: "s1", run: null })];
+
+    expect(attachKeptRun(rounds, kept({ suggestion: "s2" }))).toBe(rounds);
+    expect(attachKeptRun(rounds, kept({ run: null }))).toBe(rounds);
+    expect(attachKeptRun(rounds, null)).toBe(rounds);
   });
 });

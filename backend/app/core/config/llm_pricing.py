@@ -15,7 +15,9 @@ from app.core.config.llm_prompt_cache_capabilities import bedrock_cache_family
 from app.core.tenant_scope import get_tenant_context
 from app.services.llm_pricing_cache import get_db_pricing_nested
 
-_BEDROCK_REGION_PREFIX = re.compile(r"^(?:us|eu|apac|us-gov)\.")
+_BEDROCK_REGION_PREFIX = re.compile(r"^(?:us|eu|apac|ca|jp|au|global|us-gov)\.")
+# A rate key also covers its dated, versioned and alias variants, never a sibling model (-mini, -32k, -4-5, .1, -8b)
+_VARIANT_TAIL = re.compile(r"^(?:-(?:\d{2,}|v\d+(?:[.:]\d+)*|latest|preview))*(?:[@:].*)?$")
 _Rate = TypeVar("_Rate", Decimal, float)
 
 # Static fallback when DB is empty or missing a row (also used before first migration).
@@ -100,6 +102,7 @@ class LivePricing:
     display_rates: Dict[str, float]
     cache_read_per_1k: Optional[float] = None
     cache_creation_per_1k: Optional[float] = None
+    configured: bool = False
 
 
 @dataclass(frozen=True)
@@ -200,12 +203,16 @@ def _cache_rate(row: Any, key: str) -> Optional[Decimal]:
     return rate
 
 
+def _covers(key: str, model_key: str) -> bool:
+    return model_key.startswith(key) and _VARIANT_TAIL.fullmatch(model_key[len(key) :]) is not None
+
+
 def _exact_or_longest_prefix(model_key: str, table: Mapping[str, Any]) -> Optional[str]:
     if not model_key:
         return None
     if model_key in table and not model_key.startswith("_"):
         return model_key
-    prefixes = [key for key in table if not key.startswith("_") and model_key.startswith(key)]
+    prefixes = [key for key in table if not key.startswith("_") and _covers(key, model_key)]
     return max(prefixes, key=len) if prefixes else None
 
 
@@ -219,7 +226,7 @@ def _match_bedrock_region_agnostic(model_key: str, table: Mapping[str, Any]) -> 
     exact = [key for stripped, key in candidates if stripped == base]
     if exact:
         return exact[0]
-    prefixed = [(stripped, key) for stripped, key in candidates if stripped and base.startswith(stripped)]
+    prefixed = [(stripped, key) for stripped, key in candidates if stripped and _covers(stripped, base)]
     if prefixed:
         return max(prefixed, key=lambda pair: len(pair[0]))[1]
     return None
@@ -383,4 +390,5 @@ def resolve_live_pricing(provider: str, model: str) -> LivePricing:
         _float_rates(selected.rates, selected.row),
         None if cache_read is None else float(cache_read),
         None if cache_creation is None else float(cache_creation),
+        configured=selected.status is PricingStatus.CONFIGURED,
     )

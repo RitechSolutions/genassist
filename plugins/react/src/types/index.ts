@@ -31,6 +31,22 @@ export interface ChatMessage {
   client_id?: string;
 }
 
+/** What the assistant is working on during a streamed turn */
+export type ActivityKind = "knowledge" | "tool";
+
+/** A progress frame from a streamed chat turn (`Accept: text/event-stream`) */
+export type StreamEvent =
+  | { type: "activity"; kind: ActivityKind; phase: "start" | "end" }
+  | { type: "delta"; call_id: string; text: string };
+
+/** The in-flight reply of a streamed turn, kept apart from `messages` until the saved reply arrives */
+export interface StreamingReply {
+  text: string;
+  callId: string | null;
+  createTime: number;
+  running: ActivityKind[];
+}
+
 /** Read/seen status shown under the visitor's own messages. */
 export type MessageReceiptStatus = "sent" | "delivered" | "seen";
 
@@ -269,3 +285,9 @@ export interface InProgressPollResponse {
   messages: InProgressPollMessage[];
   read_state?: ReadReceiptState | null;
 }
+
+/** Whether a saved conversation can still be continued; "unknown" when the server could not be reached. */
+export type ConversationAvailability = "available" | "finalized" | "unavailable" | "unknown";
+
+/** "conversation_restarted": the old conversation could not be continued, so a new one was started and the message was not sent. */
+export type SendMessageOutcome = "sent" | "conversation_restarted" | "failed";

@@ -1,32 +1,46 @@
-import React, { useState, useEffect } from 'react';
-import { TrainDataSourceNodeData } from '../../types/nodes';
+import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/button';
-import { RichInput } from '@/components/richInput';
+import { FileUploader } from '@/components/FileUploader';
 import { Label } from '@/components/label';
+import { RichInput } from '@/components/richInput';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/select';
+import { useToast } from '@/components/use-toast';
+import { formatBytes } from '@/helpers/formatters';
 import { DataSource } from '@/interfaces/dataSource.interface';
 import { getAllDataSources } from '@/services/dataSources';
-import { useToast } from '@/components/use-toast';
-import { Save, BarChart3, Eye } from 'lucide-react';
+import {
+  analyzeTrainingFile,
+  CSVAnalysisResult,
+  getTrainingDataLimits,
+  previewQuery,
+  profileData,
+  TrainingDataLimits,
+} from '@/services/mlModels';
+import { BarChart3, Eye, Save } from 'lucide-react';
 import { NodeConfigPanel } from '../../components/NodeConfigPanel';
-import { BaseNodeDialogProps } from '../base';
 import { DraggableTextArea } from '../../components/custom/DraggableTextArea';
-import { FileUploader } from '@/components/FileUploader';
-import { CSVAnalysisDisplay } from './components/CSVAnalysisDisplay';
-import { analyzeCSV, CSVAnalysisResult, previewQuery, profileData } from '@/services/mlModels';
-import { useNodeDialogState } from '../useNodeDialogState';
-import { buildProfileDataRequest, getProfileDataAvailability } from './trainDataSourceProfile';
+import { TrainDataSourceNodeData } from '../../types/nodes';
 import {
   applyTrainDataSourceType,
   getTrainDataSourceSelection,
   getTrainDataSourceVisibleFields,
   isTrainingDatabaseSource,
   TRAIN_DATA_SOURCE_TYPE_OPTIONS,
-  TRAINING_FILE_EXTENSIONS,
   TrainDataSourceDialogValues,
   TrainDataSourceType,
   validateTrainDataSource,
 } from '../../utils/trainDataSource';
+import { BaseNodeDialogProps } from '../base';
+import { useNodeDialogState } from '../useNodeDialogState';
+import { CSVAnalysisDisplay } from './components/CSVAnalysisDisplay';
+import {
+  TRAINING_FILE_TYPES,
+  buildProfileDataRequest,
+  createLatestRequestTracker,
+  getProfileDataAvailability,
+  isExcelFile,
+  isSupportedTrainingFile,
+} from './trainDataSourceProfile';
 
 type TrainDataSourceDialogProps = BaseNodeDialogProps<TrainDataSourceNodeData, TrainDataSourceNodeData>;
 
@@ -44,6 +58,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
       csvFilePath: data.csvFilePath ?? null,
       csvFileId: data.csvFileId ?? null,
       csvFileUrl: data.csvFileUrl ?? null,
+      sheetName: data.sheetName ?? null,
       analysisResult: data.analysisResult ?? null,
     }),
     (v) => ({
@@ -55,6 +70,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
       csvFilePath: v.csvFilePath ?? undefined,
       csvFileId: v.csvFileId ?? undefined,
       csvFileUrl: v.csvFileUrl ?? undefined,
+      sheetName: v.sheetName ?? undefined,
       analysisResult: v.analysisResult ?? undefined,
     })
   );
@@ -63,8 +79,11 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isPreviewingQuery, setIsPreviewingQuery] = useState(false);
   const [queryPreviewResult, setQueryPreviewResult] = useState<CSVAnalysisResult | null>(null);
+  // Switching files or Excel sheets quickly can overlap previews; only the latest may land.
+  const [previewRequests] = useState(createLatestRequestTracker);
   const [isProfiling, setIsProfiling] = useState(false);
   const [availableDataSources, setAvailableDataSources] = useState<DataSource[]>([]);
+  const [trainingLimits, setTrainingLimits] = useState<TrainingDataLimits | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -72,6 +91,17 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
       setQueryPreviewResult(null);
       setIsPreviewingQuery(false);
     }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    getTrainingDataLimits().then((limits) => {
+      if (!cancelled) setTrainingLimits(limits);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -95,18 +125,36 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
     }
   }, [isOpen, values.sourceType, toast]);
 
-  const handleAnalyzeFile = async (fileUrl: string, fileName: string) => {
-    // The backend preview endpoint only supports CSV files today.
-    if (!fileName.toLowerCase().endsWith('.csv')) {
+  // Preview any supported file. Local uploads by path; uploads without one
+  // (S3 and other non-local storage) by File Manager id.
+  const handleAnalyzeFile = async (
+    file: { fileId?: string | null; filePath?: string | null; fileName: string },
+    sheetName?: string | null
+  ) => {
+    const requestId = previewRequests.start();
+    if (!isSupportedTrainingFile(file.fileName)) {
+      setIsAnalyzing(false);
       setField('analysisResult', null);
       return;
     }
 
     try {
       setIsAnalyzing(true);
-      const result = await analyzeCSV(fileUrl);
-      setField('analysisResult', result);
+      const result = await analyzeTrainingFile({
+        file_id: file.filePath ? undefined : file.fileId || undefined,
+        file_url: file.filePath || undefined,
+        file_name: file.fileName,
+        sheet_name: sheetName || undefined,
+      });
+      if (!previewRequests.isLatest(requestId)) return;
+      setValues((v) => ({
+        ...v,
+        analysisResult: result,
+        // Excel: remember the sheet that was previewed (the first by default).
+        sheetName: result.sheet_name ?? v.sheetName,
+      }));
     } catch (err) {
+      if (!previewRequests.isLatest(requestId)) return;
       console.error(err);
       setField('analysisResult', null);
       toast({
@@ -115,7 +163,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
         variant: 'destructive',
       });
     } finally {
-      setIsAnalyzing(false);
+      if (previewRequests.isLatest(requestId)) setIsAnalyzing(false);
     }
   };
 
@@ -173,9 +221,15 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
       return handlePreviewQuery();
     }
 
-    const previewTarget = values.csvFilePath || values.csvFileUrl;
-    if (previewTarget && values.csvFileName) {
-      return handleAnalyzeFile(previewTarget, values.csvFileName);
+    if ((values.csvFilePath || values.csvFileId) && values.csvFileName) {
+      return handleAnalyzeFile(
+        {
+          fileId: values.csvFileId,
+          filePath: values.csvFilePath,
+          fileName: values.csvFileName,
+        },
+        values.sheetName
+      );
     }
   };
 
@@ -203,7 +257,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
   const visibleFields = getTrainDataSourceVisibleFields(values.sourceType);
   const profileAvailability = getProfileDataAvailability(values);
   const isPreviewingData = values.sourceType === 'datasource' ? isPreviewingQuery : isAnalyzing;
-  const hasPreviewData = values.sourceType === 'datasource' ? Boolean(queryPreviewResult) : Boolean(values.analysisResult);
+  const hasPreviewData =
+    values.sourceType === 'datasource' ? Boolean(queryPreviewResult) : Boolean(values.analysisResult);
 
   return (
     <NodeConfigPanel
@@ -250,6 +305,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
               ))}
             </SelectContent>
           </Select>
+          <p className="text-xs text-muted-foreground">Choose a database source or upload a training file.</p>
         </div>
 
         {/* Database Configuration */}
@@ -302,11 +358,14 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
         {visibleFields.trainingFile && (
           <FileUploader
             label="Training File *"
-            acceptedFileTypes={[...TRAINING_FILE_EXTENSIONS]}
+            acceptedFileTypes={TRAINING_FILE_TYPES}
             initialServerFilePath={values.csvFilePath ?? ''}
             initialServerFileUrl={values.csvFileUrl ?? ''}
             initialOriginalFileName={values.csvFileName ?? ''}
             onUploadingChange={setIsFileUploading}
+            uploadPurpose="training_data"
+            maxFileSizeBytes={trainingLimits?.max_upload_bytes}
+            maxFileSizeLabel={trainingLimits?.max_upload_label}
             onUploadComplete={(result) => {
               setValues((v) => ({
                 ...v,
@@ -314,27 +373,74 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
                 csvFilePath: result.file_path,
                 csvFileId: result.file_id,
                 csvFileUrl: result.file_url,
+                sheetName: null,
                 analysisResult: null,
               }));
+              if (result.file_id || result.file_path) {
+                handleAnalyzeFile({
+                  fileId: result.file_id,
+                  filePath: result.file_path,
+                  fileName: result.original_filename,
+                });
+              }
             }}
             onRemove={() => {
+              previewRequests.start(); // a preview still running is for the removed file
+              setIsAnalyzing(false);
               setValues((v) => ({
                 ...v,
                 csvFileName: null,
                 csvFilePath: null,
                 csvFileId: null,
                 csvFileUrl: null,
+                sheetName: null,
                 analysisResult: null,
               }));
             }}
-            placeholder="Select a training file to upload"
+            placeholder="Select a CSV, Parquet, Excel or JSON file to upload"
           />
         )}
         {visibleFields.trainingFile && (
           <p className="text-xs text-muted-foreground">
-            Upload a CSV file to use as training data. CSV files can be previewed and profiled.
+            Supported: {TRAINING_FILE_TYPES.join(', ')}. Excel reads one sheet; a .json file must be an array of objects
+            {trainingLimits &&
+              trainingLimits.json_max_bytes < trainingLimits.max_upload_bytes &&
+              ` of up to ${formatBytes(trainingLimits.json_max_bytes)}`}{' '}
+            (use .jsonl for large data).
           </p>
         )}
+        {visibleFields.trainingFile &&
+          isExcelFile(values.csvFileName) &&
+          (values.analysisResult?.sheet_names?.length ?? 0) > 1 && (
+            <div className="space-y-2">
+              <Label htmlFor="sheet">Sheet</Label>
+              <Select
+                value={values.sheetName ?? values.analysisResult?.sheet_name ?? ''}
+                onValueChange={(sheet) => {
+                  setField('sheetName', sheet);
+                  handleAnalyzeFile(
+                    {
+                      fileId: values.csvFileId,
+                      filePath: values.csvFilePath,
+                      fileName: values.csvFileName ?? '',
+                    },
+                    sheet
+                  );
+                }}
+              >
+                <SelectTrigger id="sheet" className="w-full">
+                  <SelectValue placeholder="Select a sheet" />
+                </SelectTrigger>
+                <SelectContent>
+                  {values.analysisResult!.sheet_names!.map((sheet) => (
+                    <SelectItem key={sheet} value={sheet}>
+                      {sheet}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         {visibleFields.trainingFile && isAnalyzing && (
           <p className="text-xs text-muted-foreground">Generating data preview...</p>
         )}
@@ -360,11 +466,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
                 icon={<Eye className="h-4 w-4" />}
                 className="w-fit"
               >
-                {isPreviewingData
-                  ? 'Generating preview...'
-                  : hasPreviewData
-                    ? 'Refresh Preview'
-                    : 'Preview Data'}
+                {isPreviewingData ? 'Generating preview...' : hasPreviewData ? 'Refresh Preview' : 'Preview Data'}
               </Button>
               <Button
                 type="button"

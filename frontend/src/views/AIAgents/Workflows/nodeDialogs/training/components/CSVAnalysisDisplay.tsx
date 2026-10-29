@@ -45,9 +45,21 @@ export const CSVAnalysisDisplay: React.FC<CSVAnalysisDisplayProps> = ({
           <div className="text-xs text-muted-foreground bg-muted p-2 rounded border cursor-pointer hover:bg-muted transition-colors flex items-center justify-between">
             <p>
               {source === "query" && "Showing "}
-              <strong>{analysisResult.row_count}</strong>{" "}
+              <strong>{analysisResult.row_count.toLocaleString()}</strong>
+              {analysisResult.rows_truncated &&
+              analysisResult.row_count <= (analysisResult.rows_analyzed ?? 0)
+                ? "+"
+                : ""}{" "}
               {source === "query" ? `preview ${rowLabel}` : rowLabel},{" "}
               <strong>{analysisResult.column_count}</strong> columns
+              {analysisResult.rows_truncated &&
+                analysisResult.rows_analyzed != null && (
+                  <>
+                    {" "}
+                    (stats from the first{" "}
+                    {analysisResult.rows_analyzed.toLocaleString()} rows)
+                  </>
+                )}
               {analysisResult.column_names.length > 0 && (
                 <>: {analysisResult.column_names.slice(0, 5).join(", ")}
                 {analysisResult.column_names.length > 5 && "..."}</>

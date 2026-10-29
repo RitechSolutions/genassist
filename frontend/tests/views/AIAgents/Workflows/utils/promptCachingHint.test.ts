@@ -168,4 +168,25 @@ describe("promptCachingHint", () => {
       expect(fallbackChainProviders(all, "p1", null)).toEqual([]);
     });
   });
+
+  describe("template variables in the system prompt", () => {
+    const explicit = { llm_model_provider: "anthropic", prompt_caching_mode: "explicit" as const };
+
+    it("warns when the system prompt carries a {{variable}}", () => {
+      expect(promptCachingHint(true, explicit, "agent", "ToolSelector", [], "Hi {{source.message}}")).toEqual({
+        text: "The system prompt contains {{variables}}, so nothing is cached.",
+        tone: "warning",
+      });
+    });
+
+    it("ignores a spaced {{ token }}, like the backend gate", () => {
+      expect(promptCachingHint(true, explicit, "model", "Base", [], "Hi {{ source.message }}")).toBeNull();
+    });
+
+    it("keeps the provider and agent-type verdicts first", () => {
+      const automatic = { llm_model_provider: "OpenAI", prompt_caching_mode: "automatic" as const };
+      expect(promptCachingHint(true, automatic, "model", "Base", [], "{{a}}")?.tone).toBe("info");
+      expect(promptCachingHint(true, explicit, "agent", "ReActAgent", [], "{{a}}")?.text).toMatch(/does not split/);
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { DateRange } from "react-day-picker";
 import {
   toExpandedUTCDateRange,
@@ -6,13 +6,19 @@ import {
   buildQueryString,
 } from "@/helpers/analyticsParams";
 
-// Build dates from local components so the round-trip through
-// start/end-of-day-UTC lands back on the same calendar day regardless of the
-// runner's timezone.
-const range: DateRange = {
+const originalTz = process.env.TZ;
+beforeAll(() => {
+  process.env.TZ = "America/Vancouver";
+});
+afterAll(() => {
+  if (originalTz === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTz;
+});
+
+const range = (): DateRange => ({
   from: new Date(2026, 1, 17),
   to: new Date(2026, 1, 20),
-};
+});
 
 describe("toExpandedUTCDateRange", () => {
   it("returns an empty object without a range", () => {
@@ -20,7 +26,7 @@ describe("toExpandedUTCDateRange", () => {
   });
 
   it("formats from/to as yyyy-MM-dd day strings", () => {
-    expect(toExpandedUTCDateRange(range)).toEqual({
+    expect(toExpandedUTCDateRange(range())).toEqual({
       from_date: "2026-02-17",
       to_date: "2026-02-20",
     });
@@ -44,28 +50,33 @@ describe("toMetricsApiParams", () => {
     });
   });
 
-  it("emits ISO from/to strings for a range", () => {
-    const params = toMetricsApiParams(range);
-    expect(typeof params.from_date).toBe("string");
-    expect(typeof params.to_date).toBe("string");
-    expect(params.from_date).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  it("brackets the picked days in UTC, inclusive end at Postgres resolution", () => {
+    const params = toMetricsApiParams(range());
+    expect(params.from_date).toBe("2026-02-17T00:00:00.000Z");
+    expect(params.to_date).toBe("2026-02-20T23:59:59.999999Z");
+  });
+
+  it("leaves the end open for a from-only pick", () => {
+    const params = toMetricsApiParams({ from: new Date(2026, 1, 17) });
+    expect(params.from_date).toBe("2026-02-17T00:00:00.000Z");
+    expect(params.to_date).toBeUndefined();
   });
 
   it("treats 'all' agent and group as no filter", () => {
-    const params = toMetricsApiParams(range, "all", "all");
+    const params = toMetricsApiParams(range(), "all", "all");
     expect(params.agent_id).toBeUndefined();
     expect(params.group_id).toBeUndefined();
   });
 
   it("passes a concrete agent id and drops group when an agent is set", () => {
-    expect(toMetricsApiParams(range, "agent-1", "grp-1").agent_id).toBe(
+    expect(toMetricsApiParams(range(), "agent-1", "grp-1").agent_id).toBe(
       "agent-1"
     );
-    expect(toMetricsApiParams(range, "agent-1", "grp-1").group_id).toBeUndefined();
+    expect(toMetricsApiParams(range(), "agent-1", "grp-1").group_id).toBeUndefined();
   });
 
   it("uses group id only when no agent is selected", () => {
-    const params = toMetricsApiParams(range, undefined, "grp-1");
+    const params = toMetricsApiParams(range(), undefined, "grp-1");
     expect(params.agent_id).toBeUndefined();
     expect(params.group_id).toBe("grp-1");
   });

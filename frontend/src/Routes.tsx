@@ -67,6 +67,7 @@ import DatasetsPage from "@/views/TestSuites/pages/DatasetsPage";
 import EvaluationsPage from "@/views/TestSuites/pages/EvaluationsPage";
 import DatasetDetailPage from "@/views/TestSuites/pages/DatasetDetailPage";
 import EvaluationDetailPage from "@/views/TestSuites/pages/EvaluationDetailPage";
+import EvaluationEditorPage from "@/views/TestSuites/pages/EvaluationEditorPage";
 import WorkflowEvaluationsPage from "@/views/TestSuites/pages/WorkflowEvaluationsPage";
 import MLModelEvaluationsPage from "@/views/TestSuites/pages/MLModelEvaluationsPage";
 import Privacy from "@/views/Privacy";
@@ -217,7 +218,11 @@ export const RoutesProvider = () => {
             },
             {
               path: "notifications",
-              element: <Notifications />,
+              element: (
+                <ProtectedRoute requiredPermissions={["read:dashboard"]}>
+                  <Notifications />
+                </ProtectedRoute>
+              ),
             },
             {
               path: "settings",
@@ -544,6 +549,22 @@ export const RoutesProvider = () => {
               element: (
                 <ProtectedRoute requiredPermissions={["test:workflow"]}>
                   <WorkflowEvaluationsPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tests/evaluations/new",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <EvaluationEditorPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tests/evaluations/:evaluationId/edit",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <EvaluationEditorPage />
                 </ProtectedRoute>
               ),
             },

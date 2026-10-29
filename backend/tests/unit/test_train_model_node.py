@@ -580,6 +580,45 @@ class TestEngineerFeatures:
         assert steps[0]["new_col"] == "a_bin"
         assert steps[0]["bin_column"] == "a"
         assert steps[0]["bin_edges"][0] <= 0.0 and steps[0]["bin_edges"][-1] >= 10.0
+        assert steps[0]["bin_strategy"] == "uniform"
+
+    def test_bin_numeric_quantile_gives_equal_frequency_bins_on_skewed_data(self, node):
+        # Skewed: uniform bins would put 9 of 10 rows in bin 0.
+        X_train = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 1000.0]})
+        X_val = pd.DataFrame({"a": [-50.0, 5000.0]})
+        X_train_out, X_val_out, steps = node._engineer_features(
+            X_train, X_val,
+            [{"newColumnName": "a_bin", "strategy": "bin_numeric", "binColumn": "a",
+              "numBins": 5, "binStrategy": "quantile"}],
+        )
+        assert X_train_out["a_bin"].value_counts().tolist() == [2, 2, 2, 2, 2]
+        # Out-of-range val values clip into the first/last bin.
+        assert X_val_out["a_bin"].tolist() == [0, 4]
+        assert steps[0]["bin_strategy"] == "quantile"
+        assert len(steps[0]["bin_edges"]) == 6
+
+    def test_bin_numeric_quantile_drops_duplicate_edges(self, node):
+        X_train = pd.DataFrame({"a": [0.0] * 8 + [5.0, 10.0]})
+        X_train_out, _, steps = node._engineer_features(
+            X_train, None,
+            [{"newColumnName": "a_bin", "strategy": "bin_numeric", "binColumn": "a",
+              "numBins": 5, "binStrategy": "quantile"}],
+        )
+        assert X_train_out["a_bin"].notna().all()
+        assert len(steps[0]["bin_edges"]) < 6
+
+    def test_bin_numeric_quantile_replays_identically_at_inference(self, node):
+        from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
+            _replay_feature_engineering,
+        )
+        values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 1000.0]
+        X_train_out, _, steps = node._engineer_features(
+            pd.DataFrame({"a": values}), None,
+            [{"newColumnName": "a_bin", "strategy": "bin_numeric", "binColumn": "a",
+              "numBins": 5, "binStrategy": "quantile"}],
+        )
+        replayed = _replay_feature_engineering({"a": values}, steps, len(values))
+        assert replayed["a_bin"].tolist() == X_train_out["a_bin"].tolist()
 
     def test_normalize_fits_min_max_on_train_only(self, node):
         X_train = pd.DataFrame({"a": [0.0, 10.0]})  # min=0, max=10

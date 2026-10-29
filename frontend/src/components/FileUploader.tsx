@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { Button } from '@/components/button';
 import { Label } from '@/components/label';
 import { FileText, Upload, X, Download } from 'lucide-react';
-import { uploadFiles } from '@/services/api';
+import { uploadFiles, UploadKnowledgeFilesOptions } from '@/services/api';
 import { UploadFileResponse } from '@/interfaces/file-manager.interface';
 import { downloadFile, getFileDownloadUrl } from '@/helpers/utils';
 import { getApiUrlString } from '@/config/api';
 import toast from "react-hot-toast";
 import { Progress } from "@/components/progress";
+import { formatBytes } from "@/helpers/formatters";
+import { uploadSizeError } from "@/helpers/uploadSize";
 
 export interface FileUploaderProps {
   label: string;
@@ -19,6 +21,12 @@ export interface FileUploaderProps {
   onUploadComplete?: (result: UploadFileResponse) => void;
   onRemove?: () => void;
   placeholder?: string;
+  /** Largest file accepted; checked before uploading and shown under the drop zone. */
+  maxFileSizeBytes?: number;
+  /** Server-formatted label for maxFileSizeBytes (e.g. "2 GB"). */
+  maxFileSizeLabel?: string;
+  /** Sent with the upload so the server applies the matching limit (see uploadFiles). */
+  uploadPurpose?: UploadKnowledgeFilesOptions["purpose"];
 }
 
 export const FileUploader: React.FC<FileUploaderProps> = ({
@@ -31,7 +39,12 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   onUploadComplete,
   onRemove,
   placeholder = 'Select a file to upload',
+  maxFileSizeBytes,
+  maxFileSizeLabel,
+  uploadPurpose,
 }) => {
+  const maxSizeLabel =
+    maxFileSizeLabel || (maxFileSizeBytes ? formatBytes(maxFileSizeBytes) : undefined);
   const [file, setFile] = useState<File | null>(null);
   const [originalFileName, setOriginalFileName] = useState(initialOriginalFileName);
   const [serverFilePath, setServerFilePath] = useState<string | undefined>(initialServerFilePath);
@@ -93,6 +106,13 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
       }
     }
 
+    const sizeError = uploadSizeError(selectedFile, maxFileSizeBytes, maxSizeLabel);
+    if (sizeError) {
+      toast.error(sizeError, { duration: 6000, position: 'top-center' });
+      e.target.value = '';
+      return;
+    }
+
     setFile(selectedFile);
     uploadFile(selectedFile);
     e.target.value = ''; // Reset input to allow selecting the same file again or different files
@@ -124,6 +144,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
     try {
       const result = await uploadFiles([targetFile], {
         onProgress: (p) => setUploadProgress(p),
+        purpose: uploadPurpose,
       });
       if (result.length > 0) {
         const fileResponse = result[0];
@@ -168,13 +189,16 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
             className="hidden"
           />
         </label>
+        {maxSizeLabel && (
+          <p className="text-xs text-muted-foreground">Maximum file size: {maxSizeLabel}</p>
+        )}
 
         {file && (
           <div className="flex items-center justify-between p-2 bg-muted rounded-md">
             <div className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               <span className="text-sm">
-                {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                {file.name} ({formatBytes(file.size)})
               </span>
             </div>
             <Button

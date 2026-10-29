@@ -8,7 +8,9 @@ import {
 } from "@/helpers/notificationFeedSync"
 import {
   NOTIFICATIONS_INFINITE_QUERY_KEY,
+  NOTIFICATIONS_READ_PERMISSION,
 } from "@/hooks/useNotifications"
+import { useHasPermission } from "@/hooks/useHasPermission"
 import {
   DEFAULT_NOTIFICATION_USER_SETTINGS,
   useNotificationUserSettings,
@@ -21,11 +23,13 @@ import {
 export function NotificationFeedSync() {
   const queryClient = useQueryClient()
   const { notificationResyncHint } = useWebSocketDashboardContext()
+  const canReadNotifications = useHasPermission(NOTIFICATIONS_READ_PERMISSION)
   const { settings } = useNotificationUserSettings()
   const effectiveSettings = settings ?? DEFAULT_NOTIFICATION_USER_SETTINGS
 
   useEffect(() => {
-    if (notificationResyncHint === 0) return
+    const hasNothingToSync = notificationResyncHint === 0 || !canReadNotifications
+    if (hasNothingToSync) return
 
     let cancelled = false
 
@@ -49,7 +53,7 @@ export function NotificationFeedSync() {
     return () => {
       cancelled = true
     }
-  }, [notificationResyncHint, effectiveSettings, queryClient])
+  }, [notificationResyncHint, canReadNotifications, effectiveSettings, queryClient])
 
   return null
 }

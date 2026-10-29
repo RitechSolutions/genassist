@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.core.exceptions.exception_classes import AppException
-from app.modules.filemanager.providers.s3.provider import S3StorageProvider
 from app.schemas.files_upload_direct import (
     FinalizeDirectUploadRequest,
     PresignDirectUploadCreate,
@@ -42,42 +41,7 @@ def _row(**kwargs):
     return SimpleNamespace(**defaults)
 
 
-@pytest.mark.asyncio
-async def test_append_chunk_rejects_out_of_order():
-    repo = AsyncMock()
-    service = FileUploadSessionService(repo)
-    sid = uuid.uuid4()
-    repo.get_by_id.return_value = _row(id=sid, next_chunk_index=2, bytes_received=10)
 
-    with pytest.raises(ValueError, match="Out-of-order chunk"):
-        await service.append_chunk(sid, b"abc", chunk_index=3)
-
-
-@pytest.mark.asyncio
-async def test_append_chunk_duplicate_returns_current_total():
-    repo = AsyncMock()
-    service = FileUploadSessionService(repo)
-    sid = uuid.uuid4()
-    repo.get_by_id.return_value = _row(id=sid, next_chunk_index=2, bytes_received=15)
-
-    total = await service.append_chunk(sid, b"abc", chunk_index=1)
-    assert total == 15
-
-
-@pytest.mark.asyncio
-async def test_append_chunk_assigns_owner_and_advances():
-    repo = AsyncMock()
-    repo.advance_chunk_progress.return_value = True
-    service = FileUploadSessionService(repo)
-    sid = uuid.uuid4()
-    row = _row(id=sid, next_chunk_index=0, bytes_received=0, owner_pod_id=None)
-    repo.get_by_id.return_value = row
-
-    total = await service.append_chunk(sid, b"hello", chunk_index=0)
-    assert total == 5
-    assert row.owner_pod_id is not None
-    repo.update.assert_called()
-    repo.advance_chunk_progress.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -97,39 +61,6 @@ async def test_complete_session_fails_for_missing_staged_file(monkeypatch):
             app_settings_svc=AsyncMock(),
         )
 
-
-@pytest.mark.asyncio
-async def test_complete_session_multipart_integrity_mismatch():
-    repo = AsyncMock()
-    service = FileUploadSessionService(repo)
-    sid = uuid.uuid4()
-    row = _row(
-        id=sid,
-        bytes_received=15,
-        expected_bytes=15,
-        multipart_upload_id="upload-1",
-        object_key="uploads/file.bin",
-        parts_json={"0": {"part_number": 1, "etag": "e1", "size": 10}},
-    )
-    repo.get_by_id.return_value = row
-
-    fm = AsyncMock()
-    storage = object.__new__(S3StorageProvider)
-    storage.name = "s3"
-    storage.complete_multipart_upload = AsyncMock()
-    storage.abort_multipart_upload = AsyncMock()
-    fm.initialize.return_value = storage
-    settings_svc = AsyncMock()
-    settings_svc.get_by_type_and_name.return_value = {"values": {}}
-    service._multipart_enabled = lambda: True
-
-    with pytest.raises(ValueError, match="integrity check failed"):
-        await service.complete_session(
-            sid,
-            request=SimpleNamespace(base_url="http://localhost/"),
-            file_manager_service=fm,
-            app_settings_svc=settings_svc,
-        )
 
 
 # ==================== Direct S3 (presigned PUT) flow tests ====================

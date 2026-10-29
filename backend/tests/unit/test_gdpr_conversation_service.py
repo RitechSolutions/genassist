@@ -121,11 +121,15 @@ async def test_gdpr_delete_conversation_anonymize_redacts_messages_and_stamps_ti
 ):
     conversation = _build_conversation(with_messages=True)
     mock_repository.fetch_conversation_by_id.return_value = conversation
-    service = _build_service(mock_repository)
+    transcript_repo = AsyncMock(spec=TranscriptMessageRepository)
+    note = MagicMock(body="Customer user@example.com is still charged")
+    transcript_repo.get_issue_notes_by_conversation_id.return_value = [note]
+    service = _build_service(mock_repository, transcript_repo)
 
     result = await service.gdpr_delete_conversation(conversation.id, GdprDeleteMode.ANONYMIZE)
 
     assert result["mode"] == "anonymize"
+    assert "user@example.com" not in note.body
     assert conversation.is_deleted == 0
     assert "pii" not in (conversation.custom_attributes or {})
     assert conversation.pii_redacted_at is not None
@@ -148,6 +152,20 @@ async def test_gdpr_delete_conversation_hard_calls_repository_delete(mock_reposi
     assert result["mode"] == "hard"
     mock_repository.delete_conversation.assert_awaited_once_with(conversation)
     mock_repository.update_conversation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_gdpr_delete_conversation_hard_purges_note_audit_rows(mock_repository):
+    conversation = _build_conversation()
+    mock_repository.fetch_conversation_by_id.return_value = conversation
+    transcript_repo = AsyncMock(spec=TranscriptMessageRepository)
+    note_id = uuid4()
+    transcript_repo.get_issue_notes_by_conversation_id.return_value = [MagicMock(id=note_id)]
+    service = _build_service(mock_repository, transcript_repo)
+
+    await service.gdpr_delete_conversation(conversation.id, GdprDeleteMode.HARD)
+
+    service.audit_log_repo.delete_by_record_ids.assert_awaited_once_with([conversation.id, note_id])
 
 
 @pytest.mark.asyncio
