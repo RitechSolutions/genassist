@@ -6,6 +6,7 @@ import os
 from typing import TYPE_CHECKING, Any, Dict, Optional
 from urllib.parse import urlparse
 import copy
+from botocore.config import Config
 import httpx
 from injector import inject
 if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls torch/transformers
@@ -33,11 +34,24 @@ def _bedrock_supports_prompt_caching(model_name: Optional[str]) -> bool:
     return False
 
 
+def _single_attempt_kwargs(provider: str, seconds: float) -> Dict[str, Any]:
+    if provider == "bedrock_converse":
+        from botocore.config import Config
+
+        return {"config": Config(read_timeout=seconds, retries={"total_max_attempts": 1})}
+    if provider in ("openai", "azure_openai", "anthropic"):
+        return {"timeout": seconds, "max_retries": 0}
+    if provider == "google_genai":
+        return {"timeout": seconds, "max_retries": 1}  # counts the first attempt
+    return {}
+
+
 async def build_chat_model(
     provider_name: Optional[str],
     connection_data: Dict[str, Any],
     model_name: Optional[str],
     prompt_caching_enabled: bool = False,
+    call_timeout_seconds: Optional[float] = None,
 ) -> BaseChatModel:
     cd = dict(connection_data)
     original_provider = (provider_name or "").lower()
@@ -75,6 +89,10 @@ async def build_chat_model(
             cd["additional_model_request_fields"] = extra_fields
         else:
             cd.pop("reasoning_effort", None)
+        # langchain-aws 1.2.0 doesn't list Nova 2 Lite as streaming-capable and would answer streamed turns in one piece.
+        if "nova-2-lite" in (model_name or "").lower():
+            cd["disable_streaming"] = False
+        cd["config"] = Config(read_timeout=300)
         # Use the Converse API instead of the legacy InvokeModel path so inference params
         # (max_tokens, temperature) are normalized into inferenceConfig across model
         # families. Nova rejects a top-level max_tokens on InvokeModel; Converse handles
@@ -95,6 +113,9 @@ async def build_chat_model(
         if cd.get("organization"):
             os.environ["OPENAI_ORG_ID"] = cd["organization"]
 
+    if call_timeout_seconds is not None:
+        cd.update(_single_attempt_kwargs(provider, call_timeout_seconds))
+
     model_kwargs = {
         "model_provider": provider,
         **cd,
@@ -109,6 +130,10 @@ async def build_chat_model(
                 "Select a Model Provider (e.g. amazon, anthropic) when using a Bedrock model ARN."
             )
         model_kwargs["provider"] = bedrock_model_provider
+
+    # langchain-openai leaves usage out of streamed replies whenever a base_url is set (vLLM, OpenRouter, Azure).
+    if provider in ("openai", "azure_openai"):
+        model_kwargs["stream_usage"] = True
 
     # Native Opik LLM tracing: attach the OpikTracer callback at construction so every
     # invocation of this model (including nested agent loops) is traced. No-op unless
@@ -305,10 +330,15 @@ class LLMProvider:
         return await self._build_from_provider(llm_provider, prompt_caching_enabled)
 
     async def get_model_from_provider(
-        self, llm_provider: LlmProviderRead, prompt_caching_enabled: bool = False
+        self,
+        llm_provider: LlmProviderRead,
+        prompt_caching_enabled: bool = False,
+        call_timeout_seconds: Optional[float] = None,
     ) -> BaseChatModel:
         """Public entry; caller passes provider row to report model provenance"""
-        return await self._build_from_provider(llm_provider, prompt_caching_enabled)
+        return await self._build_from_provider(
+            llm_provider, prompt_caching_enabled, call_timeout_seconds=call_timeout_seconds
+        )
 
     async def _build_one(self, model_id: str, prompt_caching_enabled: bool = False) -> BaseChatModel:
         """Build a single chat model from a stored provider id.
@@ -322,7 +352,9 @@ class LLMProvider:
         llm_provider = await llm_provider_service.get_by_id(model_id)
         return await self._build_from_provider(llm_provider, prompt_caching_enabled)
 
-    async def _build_from_provider(self, llm_provider, prompt_caching_enabled: bool = False) -> BaseChatModel:
+    async def _build_from_provider(
+        self, llm_provider, prompt_caching_enabled: bool = False, call_timeout_seconds: Optional[float] = None
+    ) -> BaseChatModel:
         from app.dependencies.injector import injector
         from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
         from app.services.app_settings import AppSettingsService
@@ -369,6 +401,7 @@ class LLMProvider:
                 connection_data=validated_data,
                 model_name=llm_provider.llm_model,
                 prompt_caching_enabled=prompt_caching_enabled,
+                call_timeout_seconds=call_timeout_seconds,
             )
             logger.info(f"Created LLM with init_chat_model for llm provider with ID: {llm_provider.id}")
         except Exception as e:

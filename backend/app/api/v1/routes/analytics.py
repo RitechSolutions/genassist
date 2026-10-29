@@ -108,7 +108,8 @@ async def trigger_analytics_backfill(
     window, repopulating columns that were added after rows were first aggregated
     (e.g. ``unique_conversations``, which made Containment Rate read 100%). Runs
     asynchronously, at large scale, call it in slices (e.g. one month per request).
-    Returns the Celery task id for monitoring (e.g. in Flower).
+    Returns the Celery task id, which identifies the run in the worker logs (task
+    results are not stored).
     Idempotent, but not non-destructive: with ``ANALYTICS_AGG_V2`` enabled every past
     date in the window is rebuilt authoritatively and reconciled, so stats rows that
     the current non-deleted source data no longer supports are soft-deleted (or zeroed,

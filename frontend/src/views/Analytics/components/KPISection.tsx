@@ -24,7 +24,7 @@ const formatResponseTime = (ms: number): string => {
 const formatNumber = (num: number): string => {
   return num.toLocaleString();
 };
-/** No dates picked means show all-time, otherwise use the exact local-day range picked */ 
+/** No dates picked means show all-time, otherwise use the exact UTC-day range picked */
 function toSummaryRange(dateRange: DateRange | undefined): DashboardSummaryRange {
   const { activity_from_datetime, activity_to_datetime } = toExactActivityParams(dateRange);
   if (!activity_from_datetime || !activity_to_datetime) return { all_time: true };

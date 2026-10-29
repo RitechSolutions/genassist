@@ -71,8 +71,15 @@ class LocalFileSystemProvider(BaseStorageProvider):
 
         Returns:
             Absolute Path object
+
+        Raises:
+            ValueError: If the path resolves outside base_path
         """
-        return (self.base_path / Path(file_path)).resolve()
+        base = self.base_path.resolve()
+        full_path = (base / Path(file_path)).resolve()
+        if not full_path.is_relative_to(base):
+            raise ValueError(f"Path is outside the storage folder: {file_path}")
+        return full_path
 
 
     async def upload_file_from_local_path(
@@ -130,6 +137,17 @@ class LocalFileSystemProvider(BaseStorageProvider):
         except Exception as e:
             logger.error(f"Failed to upload file {file_path}: {e}")
             return False
+
+    async def download_file_to_path(self, file_path: str, local_path: str) -> bool:
+        """Copy a stored file to local_path on disk, without reading it into memory."""
+        import asyncio
+        import shutil
+
+        full_path = self._resolve_path(file_path)
+        if not full_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        await asyncio.to_thread(shutil.copyfile, full_path, local_path)
+        return True
 
     async def download_file(self, file_path: str) -> bytes:
         """

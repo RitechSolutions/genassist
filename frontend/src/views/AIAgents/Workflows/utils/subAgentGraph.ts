@@ -5,6 +5,7 @@
 export const SUB_AGENT_SOURCE_HANDLE = "output_sub_agent";
 export const SUB_AGENT_TARGET_HANDLE = "input_sub_agents";
 export const MAX_DELEGATION_DEPTH = 3;
+export const MAX_TOOL_NAME_LENGTH = 64;
 export const RESERVED_TOOL_NAMES = new Set(["finish_task", "return_to_parent"]);
 
 export interface SubAgentGraphNode {
@@ -69,7 +70,7 @@ export function clampToolName(value: string): string {
 
 /** Runtime name of the delegation tool the parent calls for this child */
 export function delegationToolName(childName: string): string {
-  return `request_task_${clampToolName(childName || "")}`;
+  return `request_task_${clampToolName(childName || "")}`.slice(0, MAX_TOOL_NAME_LENGTH);
 }
 
 /** Count of sub-agent children attached to this node's sub-agent port */

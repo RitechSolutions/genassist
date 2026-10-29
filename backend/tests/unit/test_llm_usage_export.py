@@ -1,6 +1,6 @@
 """Unit tests for the LLM usage exporters: provenance, labels and nullables in all three formats"""
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -35,21 +35,22 @@ def _summary(**overrides) -> LlmUsageSummaryResponse:
     return LlmUsageSummaryResponse(**values)
 
 
-def _breakdown(dimension="source") -> LlmUsageBreakdownResponse:
+def _breakdown(dimension="source", labels=("Workflow",)) -> LlmUsageBreakdownResponse:
     return LlmUsageBreakdownResponse(
         dimension=dimension,
         items=[
             LlmUsageBreakdownItem(
                 key="workflow",
-                label="Workflow",
+                label=label,
                 cost_usd=1.0,
                 cost_is_partial=False,
                 total_tokens=800,
                 calls=8,
                 unpriced_calls=0,
             )
+            for label in labels
         ],
-        total=1,
+        total=len(labels),
     )
 
 
@@ -114,11 +115,37 @@ def test_csv_keeps_real_zero_cost_per_conversation():
     assert "Cost per conversation (USD),0.0000" in text
 
 
+def test_csv_reports_the_conversation_split():
+    summary = _summary(distinct_conversations=4, conversation_cost_usd=0.8, non_conversation_cost_usd=0.7)
+    text = _csv_text(summary=summary)
+    assert "Conversations with LLM cost,4" in text
+    assert "Conversation cost (USD),0.8000" in text
+    assert "Non-conversation cost (USD),0.7000" in text
+
+
 def test_xlsx_and_pdf_render_with_the_same_report():
     xlsx, xlsx_type = export_llm_usage("xlsx", _summary(), _breakdown(), date(2026, 7, 1), date(2026, 7, 7))
     pdf, pdf_type = export_llm_usage("pdf", _summary(), _breakdown(), date(2026, 7, 1), date(2026, 7, 7))
     assert xlsx.startswith(b"PK") and "spreadsheet" in xlsx_type
     assert pdf.startswith(b"%PDF") and "pdf" in pdf_type
+
+
+def test_csv_labels_the_exact_period_when_given():
+    content, _ = export_llm_usage(
+        "csv",
+        _summary(),
+        _breakdown(),
+        date(2026, 7, 2),
+        date(2026, 7, 8),
+        datetime(2026, 7, 1, 22, 0, tzinfo=timezone.utc),
+        datetime(2026, 7, 8, 22, 0, tzinfo=timezone.utc),
+    )
+    assert "Period: 2026-07-01 22:00 to 2026-07-08 22:00 UTC" in content.decode("utf-8-sig")
+
+
+def test_pdf_survives_labels_outside_latin_1():
+    breakdown = _breakdown("agent", labels=("Bot — Sales", "It’s bot", "Агент"))
+    assert export_llm_usage("pdf", _summary(), breakdown, None, None)[0].startswith(b"%PDF")
 
 
 def test_xlsx_and_pdf_accept_null_cost_per_conversation():

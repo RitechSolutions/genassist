@@ -54,7 +54,7 @@ class TrainPreprocessNode(BaseNode):
             # Load data from file if fileUrl is provided
             df = None
             if file_url:
-                df = ml_utils.load_csv_file(file_url, self.state.thread_id)
+                df = ml_utils.load_csv_file(file_url, self.state.thread_id, await ml_utils.extra_csv_directories())
                 logger.info(
                     f"Loaded data from file: {file_url} ({len(df) if df is not None else 0} rows)"
                 )

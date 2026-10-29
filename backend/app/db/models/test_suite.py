@@ -14,6 +14,8 @@ class TestEvaluationModel(Base):
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # A team's own label for grouping, shared with datasets; none when not set.
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     suite_id: Mapped[UUID] = mapped_column(
         ForeignKey("test_suites.id"), nullable=False
@@ -38,6 +40,7 @@ class TestSuiteModel(Base):
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     workflow_id: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey("workflows.id"), nullable=True
@@ -136,6 +139,12 @@ class TestRunModel(Base):
 
     # Aggregated metrics for the run, keyed by technique
     summary_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    # The configuration the run executes with, fixed when it is queued
+    config_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    # Conversations and turns finished so far, updated as the run goes
+    progress: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     suite = relationship("TestSuiteModel", back_populates="runs")
     workflow = relationship("WorkflowModel")

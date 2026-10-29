@@ -7,9 +7,11 @@ import json
 import logging
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
+from app.core.config.llm_pricing import canonical_prompt_tokens
 from app.core.utils.llm_usage_utils import extract_cache_tokens
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
@@ -21,6 +23,9 @@ logger = logging.getLogger(__name__)
 # Cap the size of tool arguments/results stored on an event so a large tool
 # result cannot bloat the persisted trace.
 _MAX_EVENT_VALUE_CHARS = 8000
+
+# Set by an evaluation run to read real tool arguments by event id; never stored.
+RAW_TOOL_ARGUMENTS: ContextVar[Optional[Dict[str, Any]]] = ContextVar("raw_tool_arguments", default=None)
 
 
 def _bound_event_value(value: Any) -> Any:
@@ -45,6 +50,20 @@ def _bound_event_value(value: Any) -> Any:
         "chars": len(serialized),
         "preview": serialized[:_MAX_EVENT_VALUE_CHARS],
     }
+
+
+def _without_credentials(value: Any) -> Any:
+    """The value with credential-like keys hidden the way stored events hide them."""
+    from app.core.utils.sensitive_data_utils import is_sensitive_field_name
+
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if is_sensitive_field_name(str(key)) else _without_credentials(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_without_credentials(item) for item in value]
+    return value
 
 
 def _strip_live_tool_refs(node_execution_status: dict) -> dict:
@@ -333,8 +352,19 @@ class WorkflowState:
         """Record a single tool call. Arguments/result are redacted before storing."""
         from app.core.utils.sensitive_data_utils import redact_structure
 
+        event_id = str(uuid.uuid4())
+        raw_arguments = RAW_TOOL_ARGUMENTS.get()
+        if raw_arguments is not None:
+            # Credentials stay hidden, so a check can't confirm a guessed secret; other values stay real.
+            visible = _without_credentials(arguments)
+            # Bounded per argument, so one long argument does not hide the others from checks.
+            raw_arguments[event_id] = (
+                {key: _bound_event_value(value) for key, value in visible.items()}
+                if isinstance(visible, dict)
+                else _bound_event_value(visible)
+            )
         self.tool_events.append({
-            "event_id": str(uuid.uuid4()),
+            "event_id": event_id,
             "agent_id": agent_id,
             "tool_id": tool_id,
             "tool_name": tool_name,
@@ -356,34 +386,48 @@ class WorkflowState:
 
     def get_total_llm_usage(self) -> dict:
         """Sum token usage and compute total cost in USD."""
-        total_input = sum(u.get("input_tokens", 0) for u in self.llm_usage)
-        total_output = sum(u.get("output_tokens", 0) for u in self.llm_usage)
-        total_tokens = sum(
-            max(u.get("total_tokens") or 0, u.get("input_tokens", 0) + u.get("output_tokens", 0))
-            for u in self.llm_usage
-        )
+        total_input = 0
+        total_output = 0
+        total_tokens = 0
         total_cost_usd = 0.0
         total_cache_read = 0
         total_cache_creation = 0
         unpriced_calls = 0
+        fallback_calls = 0
+        fallback_models = set()
+        from app.core.config.llm_pricing import resolve_live_pricing
         from app.services.llm_cost_calculator import LlmCostCalculator
         self.llm_cost_calculator = LlmCostCalculator()
         for u in self.llm_usage:
+            input_tokens = u.get("input_tokens", 0)
+            output_tokens = u.get("output_tokens", 0)
             cache_read, cache_creation = extract_cache_tokens(u.get("token_details"))
+            prompt_tokens = canonical_prompt_tokens(
+                (u.get("provider") or "").strip().lower(), input_tokens, cache_read, cache_creation
+            )
+            total_input += prompt_tokens
+            total_output += output_tokens
+            total_tokens += max(u.get("total_tokens") or 0, prompt_tokens + output_tokens)
             total_cache_read += cache_read
             total_cache_creation += cache_creation
+            pricing = resolve_live_pricing(u.get("provider", ""), u.get("model", ""))
             cost = self.llm_cost_calculator.calculate_cost(
                 u.get("provider", ""),
                 u.get("model", ""),
-                u.get("input_tokens", 0),
-                u.get("output_tokens", 0),
+                input_tokens,
+                output_tokens,
                 cache_read,
                 cache_creation,
+                pricing=pricing,
             )
             if cost is None:
                 unpriced_calls += 1
             else:
                 total_cost_usd += cost
+                if cost > 0 and not pricing.configured:
+                    fallback_calls += 1
+                    provider_key, model_key = ((u.get(k) or "").strip().lower() for k in ("provider", "model"))
+                    fallback_models.add(f"{provider_key}/{model_key}")
         totals = {
             "input_tokens": total_input,
             "output_tokens": total_output,
@@ -392,6 +436,8 @@ class WorkflowState:
             "cache_creation_tokens": total_cache_creation,
             "cost_usd": round(total_cost_usd, 6),
             "cost_is_partial": unpriced_calls > 0,
+            "fallback_calls": fallback_calls,
+            "fallback_models": sorted(fallback_models),
             "calls": len(self.llm_usage),
         }
         if not (total_cache_read or total_cache_creation or self._prompt_caching_requested()):
@@ -581,6 +627,12 @@ class WorkflowState:
                 self.add_error(f"Node {node_id}: {error}", "node_execution")
 
             logger.debug(f"Node execution completed: {node_id}")
+
+    def annotate_node_execution(self, node_id: str, **extra: Any) -> None:
+        """Adds data to the node's execution entry, ignored before the node starts"""
+        entry = self.node_execution_status.get(node_id)
+        if isinstance(entry, dict):
+            entry.update(extra)
 
     def get_thread_id(self) -> str:
         """Get the thread ID for this workflow execution"""

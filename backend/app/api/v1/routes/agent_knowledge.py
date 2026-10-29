@@ -31,7 +31,7 @@ from app.schemas.agent_knowledge import KBBase, KBCreate, KBListItem, KBRead
 from app.schemas.common import PaginatedResponse
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 from app.schemas.file import FileBase, FileUploadResponse
-from app.schemas.filter import BaseFilterModel
+from app.schemas.filter import KnowledgeBaseListFilter
 from app.schemas.knowledge_upload import (
     KbUploadSessionCreate,
     KbUploadSessionCreateResponse,
@@ -81,7 +81,7 @@ async def get_all_knowledge_items(
     dependencies=[Depends(auth)],
 )
 async def get_knowledge_items_list(
-    filter_obj: BaseFilterModel = Depends(),
+    filter_obj: KnowledgeBaseListFilter = Depends(),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
 ):
     """Paginated KB list — optimized for performance (minimal fields only)."""
@@ -310,6 +310,8 @@ async def upload_file(
                 )
                 file_id = str(created_file.id)
                 file_url = await file_manager_service.get_file_source_url(created_file.id)
+
+                result["filename"] = os.path.basename(created_file.path)
 
                 result["file_type"] = "url"
                 result["file_url"] = file_url

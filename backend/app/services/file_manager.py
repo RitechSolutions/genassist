@@ -4,12 +4,12 @@ import tempfile
 from uuid import UUID
 import uuid
 from fastapi import UploadFile
-from fastapi_injector import Injected
 import httpx
 from injector import inject
-from typing import Optional, List
+from typing import Optional
 import logging
 import base64
+from contextlib import suppress
 from urllib.parse import quote
 import os
 from app.modules.filemanager.providers.base import BaseStorageProvider
@@ -19,13 +19,15 @@ from app.repositories.file_manager import FileManagerRepository
 from app.core.tenant_scope import get_tenant_context
 
 from app.modules.filemanager.providers import init_by_name
-from app.core.config.settings import file_storage_settings
+from app.core.config.settings import file_storage_settings, settings
+from app.core.utils.web_scraping_utils import _validate_url
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.app_settings import AppSettingsRead
 from app.core.utils.cache_headers import no_store_headers
 from app.core.utils.file_manager_url_utils import first_file_manager_uuid_from_url
 from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
+from app.core.utils.file_system_utils import get_safe_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +116,30 @@ class FileManagerService:
 
         return headers, media_type
 
+    @staticmethod
+    def _clean_file_extension(filename: Optional[str]) -> str:
+        """Lowercase extension of the file's base name, letters and digits only ("txt" if none)."""
+        base_name = re.split(r"[\\/]", filename or "")[-1]
+        extension = base_name.rsplit(".", 1)[-1] if "." in base_name else ""
+        return re.sub(r"[^a-z0-9]", "", extension.lower()) or "txt"
+
+    @staticmethod
+    def _build_file_path(folder: Optional[str], file_extension: str) -> str:
+        """
+        Storage path for a new file: the cleaned folder plus a uuid file name.
+
+        The folder comes from the request, so empty and "." parts are dropped and ".." is
+        rejected; the file name is never taken from the request.
+        """
+        parts = []
+        for part in re.split(r"[\\/]+", folder or ""):
+            if part in ("", "."):
+                continue
+            if part == "..":
+                raise AppException(ErrorKey.INVALID_FILE_PATH, 400)
+            parts.append(part)
+        return "/".join([*parts, f"{uuid.uuid4()}.{file_extension}"])
+
     # ==================== File Methods ====================
 
     async def create_file(
@@ -133,8 +159,7 @@ class FileManagerService:
         file_path = "unknown"
         file_name = file.filename or "unnamed"
         try:
-            file_extension = file.filename.split(".")[-1] if "." in (file.filename or "") else ""
-            file_extension = file_extension.lower() if file_extension else "txt"
+            file_extension = self._clean_file_extension(file.filename)
 
             if allowed_extensions is not None:
                 self._validate_file_extension(file_extension, allowed_extensions)
@@ -145,8 +170,7 @@ class FileManagerService:
                 or "local"
             )
 
-            unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
-            file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
+            file_path = self._build_file_path(file_base.path, file_extension)
 
             provider_name = file_storage_provider or "local"
             await self._initialize_storage_provider(provider_name)
@@ -157,9 +181,8 @@ class FileManagerService:
 
             # Stream bytes to storage (avoid loading entire file into memory).
             if self.storage_provider.name == "local":
-                dest = os.path.join(
-                    self.storage_provider.get_base_path(),
-                    file_path.replace("\\", "/").lstrip("/"),
+                dest = get_safe_file_path(
+                    file_path, self.storage_provider.get_base_path(), must_exist=False
                 )
                 file_size, streamed_mime = await async_stream_uploadfile_to_path(
                     file, dest, max_file_size
@@ -248,11 +271,7 @@ class FileManagerService:
             if max_file_size is not None:
                 self._validate_file_size(file_size, max_file_size)
 
-            file_extension = (
-                original_filename.split(".")[-1].lower()
-                if "." in original_filename
-                else "txt"
-            )
+            file_extension = self._clean_file_extension(original_filename)
             if allowed_extensions is not None:
                 self._validate_file_extension(file_extension, allowed_extensions)
 
@@ -262,8 +281,7 @@ class FileManagerService:
                 or "local"
             )
 
-            unique_file_name = f"{uuid.uuid4()}.{file_extension}" if file_base.name is None else file_base.name
-            file_path = f"{file_base.path}/{unique_file_name}" if file_base.path else unique_file_name
+            file_path = self._build_file_path(file_base.path, file_extension)
 
             provider_name = file_storage_provider or "local"
             await self._initialize_storage_provider(provider_name)
@@ -273,9 +291,8 @@ class FileManagerService:
             storage_path = file_base.storage_path or self.storage_provider.get_base_path()
 
             if self.storage_provider.name == "local":
-                dest = os.path.join(
-                    self.storage_provider.get_base_path(),
-                    file_path.replace("\\", "/").lstrip("/"),
+                dest = get_safe_file_path(
+                    file_path, self.storage_provider.get_base_path(), must_exist=False
                 )
                 import shutil
 
@@ -348,7 +365,10 @@ class FileManagerService:
     async def get_file_content(self, file: FileModel) -> bytes:
         """Get file content from storage provider."""
         # initialize the storage provider
-        await self._initialize_storage_provider(file.storage_provider)
+        await self._initialize_storage_provider(
+            file.storage_provider,
+            file.storage_path,
+        )
 
         # make sure the storage provider is initialized
         if not self.storage_provider.is_initialized():
@@ -371,37 +391,129 @@ class FileManagerService:
         return file, content
 
     async def download_file_to_path(self, file_id: UUID, path: str) -> None:
-        """Download file to path."""
+        """Download a File Manager file to disk without buffering it here."""
+        partial_path: Optional[str] = None
         try:
             # create the directory if it doesn't exist
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            destination_dir = os.path.dirname(path) or "."
+            os.makedirs(destination_dir, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                dir=destination_dir,
+                prefix=f".{os.path.basename(path)}.",
+                suffix=".part",
+                delete=False,
+            ) as partial_file:
+                partial_path = partial_file.name
 
             file = await self.get_file_by_id(file_id)
-            content = await self.get_file_content(file)
-            with open(path, "wb") as f:
-                f.write(content)
+            await self._initialize_storage_provider(
+                file.storage_provider,
+                file.storage_path,
+            )
+            if not self.storage_provider or not self.storage_provider.is_initialized():
+                raise ValueError("Storage provider not initialized")
+
+            download_path = (
+                file.path
+                if file.storage_provider == "s3"
+                else f"{self.storage_provider.get_base_path()}/{file.path}"
+            )
+            downloaded = await self.storage_provider.download_file_to_path(
+                download_path,
+                partial_path,
+            )
+            if not downloaded:
+                raise OSError("Storage provider did not download the file")
+            os.replace(partial_path, path)
+            partial_path = None
         except Exception as e:
+            if partial_path is not None:
+                try:
+                    os.unlink(partial_path)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    logger.warning(
+                        "Failed to remove partial downloaded file",
+                        exc_info=True,
+                    )
             logger.error(f"Failed to download file to path {path}: {e}")
             raise AppException(error_key=ErrorKey.INTERNAL_ERROR, error_detail=str(e))
 
-    async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
-        """Download file from URL to path."""
-        try:
-            # create the directory if it doesn't exist
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+    @staticmethod
+    def _own_file_id(file_url: str) -> Optional[UUID]:
+        if "/file-manager/files/" not in file_url:
+            return None
+        return first_file_manager_uuid_from_url(file_url)
 
+    @staticmethod
+    def _download_error_message(error: Exception) -> str:
+        """Describe a failed download without server paths; only web errors and the size limit are specific."""
+        if isinstance(error, (httpx.HTTPError, ValueError)):
+            first_line = (str(error).strip().splitlines() or [type(error).__name__])[0]
+            return f"Could not download the file: {first_line}"
+        return "Could not download the file."
+
+    async def _copy_own_file_to_path(self, file_id: UUID, path: str) -> None:
+        try:
+            file = await self.get_file_by_id(file_id)
+            content = await self.get_file_content(file)
+        except AppException as e:
+            if e.error_key == ErrorKey.DATASOURCE_NOT_FOUND:
+                raise AppException(ErrorKey.FILE_NOT_FOUND, 404, "File not found.")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to read file {file_id} from storage: {e}")
+            raise AppException(ErrorKey.FILE_NOT_FOUND, 404, "The file could not be read from storage.")
+
+        file_created = False
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                file_created = True
+                f.write(content)
+        except OSError as e:
+            logger.error(f"Failed to write file {file_id} to path {path}: {e}")
+            if file_created:
+                with suppress(OSError):
+                    os.remove(path)
+            raise AppException(ErrorKey.INVALID_FILE_PATH, 400, "Could not download the file.")
+
+    async def download_file_from_url_to_path(self, file_url: str, path: str) -> bool:
+        """Download a file from a URL to a path. Our own file links are read from storage; other URLs are checked first."""
+        own_file_id = self._own_file_id(file_url)
+        if own_file_id is not None:
+            await self._copy_own_file_to_path(own_file_id, path)
+            return True
+
+        try:
+            await _validate_url(file_url)
+        except ValueError as e:
+            logger.error(f"Refused to download from URL {file_url}: {e}")
+            raise AppException(ErrorKey.INVALID_FILE_PATH, 400, "URL is not allowed or cannot be reached.")
+
+        file_created = False
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream("GET", file_url) as response:
                     response.raise_for_status()
 
+                    downloaded_size = 0
                     with open(path, "wb") as f:
+                        file_created = True
                         async for chunk in response.aiter_bytes(chunk_size=8192):
+                            downloaded_size += len(chunk)
+                            if downloaded_size > settings.MAX_CONTENT_LENGTH:
+                                raise ValueError("File is larger than the allowed upload size")
                             f.write(chunk)
-
             return True
         except Exception as e:
             logger.error(f"Failed to download file from URL {file_url} to path {path}: {e}")
-            return False
+            if file_created:
+                with suppress(OSError):
+                    os.remove(path)
+            raise AppException(ErrorKey.INVALID_FILE_PATH, 400, self._download_error_message(e))
 
     async def get_file_content_from_url(self, file_url: str) -> bytes:
         """Get file content from URL."""
@@ -451,11 +563,19 @@ class FileManagerService:
             delete_from_storage: Whether to delete from storage provider as well
         """
         file = await self.repository.get_file_by_id(file_id)
+        # Before uuid names, uploads with the same folder and name shared one stored
+        # object; keep it while another live record still points at it.
+        if delete_from_storage and await self.repository.is_path_shared(
+            file_id, file.storage_provider, file.path
+        ):
+            logger.info(f"Keeping stored object for file {file_id}: its path is shared by another file")
+            delete_from_storage = False
         if delete_from_storage:
             try:
                 await self._initialize_storage_provider(file.storage_provider)
                 if self.storage_provider and self.storage_provider.is_initialized():
-                    await self.storage_provider.delete_file(file.storage_path)
+                    # storage_path is the provider's base folder; path is the file's key inside it
+                    await self.storage_provider.delete_file(file.path)
             except Exception as e:
                 logger.warning(f"Failed to delete file from storage: {e}")
 
@@ -509,13 +629,29 @@ class FileManagerService:
 
 
     # ==================== Helper Methods ====================
-    async def _initialize_storage_provider(self, storage_provider_name: str) -> BaseStorageProvider:
+    async def _initialize_storage_provider(
+        self,
+        storage_provider_name: str,
+        storage_path: Optional[str] = None,
+    ) -> BaseStorageProvider:
         """Initialize the storage provider."""
         current_name = getattr(self.storage_provider, "name", None) if self.storage_provider else None
+        expected_s3_bucket = (
+            storage_path if storage_provider_name == "s3" and storage_path else None
+        )
+        current_base_path = (
+            self.storage_provider.get_base_path()
+            if self.storage_provider and expected_s3_bucket is not None
+            else None
+        )
         if (
             self.storage_provider
             and self.storage_provider.is_initialized()
             and current_name == storage_provider_name
+            and (
+                expected_s3_bucket is None
+                or current_base_path == expected_s3_bucket
+            )
         ):
             return self.storage_provider
 
@@ -527,6 +663,11 @@ class FileManagerService:
         # get the storage provider configuration for the file storage provider
         # convert pydantic settings object to a plain dict for providers
         config = file_storage_settings.model_dump()
+        if expected_s3_bucket is not None:
+            # The File Manager record captures the bucket selected in File
+            # Manager Settings when the file was created. Use it for reads so
+            # downloads do not silently fall back to the environment bucket.
+            config["AWS_BUCKET_NAME"] = expected_s3_bucket
 
         # initialize the storage provider with the resolved configuration
         await self.set_storage_provider(

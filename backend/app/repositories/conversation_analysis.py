@@ -19,6 +19,7 @@ class ConversationAnalysisRepository(DbRepository[ConversationAnalysisModel]):
         # existing row in place rather than insert a duplicate.
         fields = dict(
                 topic=analysis_data.topic,
+                subtopic=analysis_data.subtopic,
                 summary=analysis_data.summary,
                 positive_sentiment=analysis_data.positive_sentiment,
                 negative_sentiment=analysis_data.negative_sentiment,

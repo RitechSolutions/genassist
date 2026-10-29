@@ -6,10 +6,10 @@ from typing import Any, Dict, Optional
 from pydantic import ValidationError
 
 from app.modules.workflow.agents.agent_runtime import run_agent_once
-from app.modules.workflow.agents.sub_agents import messages
 from app.modules.workflow.agents.sub_agents.models import SubAgentConfig
 from app.modules.workflow.agents.sub_agents.orchestrator import SUB_AGENT_CONTROL_ATTR
-from app.modules.workflow.engine.nodes.agent_node import AgentNode
+from app.modules.workflow.engine.node_result import node_failure
+from app.modules.workflow.engine.nodes.agent_node import AgentNode, agent_failure
 
 logger = logging.getLogger(__name__)
 
@@ -20,19 +20,23 @@ class SubAgentNode(AgentNode):
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         invalid = self._validate_config_values(config)
         if invalid:
-            return invalid
+            return node_failure(invalid["error"], output=invalid)
 
         provider_id = config.get("providerId")
         fallback_chain_id = config.get("fallbackChainId")
         agent_type = config.get("type", "ToolSelector")
         max_iterations = config.get("maxIterations", 7)
-        memory_enabled = config.get("memory", False)
+        memory_enabled = config.get("memory", True)
         mode = config.get("mode", "single_turn")
         prompt_caching_enabled = config.get("promptCaching") is True
 
-        system_prompt = config.get("systemPrompt") or "You are a helpful assistant."
+        system_prompt = config.get("systemPrompt") or "You are a helpful specialist sub-agent."
         system_prompt += self._completion_instructions(mode)
-        prompt = config.get("userPrompt") or "{{session.message}}"
+        prompt = config.get("userPrompt")
+        if not prompt:
+            prompt = self.get_state().get_session().get("message", "")
+            if config.get("piiMasking"):
+                prompt = self._mask_for_llm(prompt)
 
         tools = self.get_connected_nodes("tools")
         from app.modules.workflow.agents.sub_agents.graph import SubAgentTopologyError
@@ -40,7 +44,8 @@ class SubAgentNode(AgentNode):
         try:
             delegation_tools, delegation_map = self._build_delegation_tools(config)
         except SubAgentTopologyError as e:
-            return {"message": f"The sub-agent could not run: {e}", "error": str(e)}
+            logger.error("Invalid sub-agent topology for sub-agent node %s: %s", self.node_id, e)
+            return agent_failure(str(e))
 
         completion_tool = self._build_completion_tool(mode)
         all_tools = tools + delegation_tools + ([completion_tool] if completion_tool else [])
@@ -92,7 +97,7 @@ class SubAgentNode(AgentNode):
             return self._shape_delegated_output(run, run.steps, run.tools_used)
         except Exception as e:
             logger.exception("Error processing sub-agent node")
-            return {"message": messages.child_failed(), "error": str(e)}
+            return agent_failure(str(e) or type(e).__name__)
 
     def _validate_config_values(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         # Provider presence is a runtime-only requirement (drafts save without one)
@@ -128,15 +133,18 @@ class SubAgentNode(AgentNode):
     def _completion_instructions(mode: str) -> str:
         if mode == "task":
             return (
-                "\n\nYou are a task sub-agent. Do the requested task. If you need one "
-                "clarification from the user, reply with only your question as plain text. "
-                "When the task is finished, call the finish_task tool with your final result."
+                "\n\nYou are a task sub-agent. Do the requested task. If you need the user to clarify "
+                "something, reply with only your question as plain text. When the task is finished, call "
+                "the finish_task tool with your final result. If the user asks for something outside your "
+                "task, call finish_task with a short summary that includes the user's latest request."
             )
         if mode == "chat":
             return (
-                "\n\nYou are a conversational sub-agent and own this conversation until you "
-                "hand back. Reply to the user directly. When you are done, call the "
-                "return_to_parent tool with a short summary to return control to the main agent."
+                "\n\nYou are a conversational sub-agent and own this conversation until you hand back. "
+                "Reply to the user directly. When you are done, call the return_to_parent tool with a "
+                "short summary to return control to the main agent. If the user asks for something outside "
+                "your responsibility, call return_to_parent with a short summary that includes the user's "
+                "latest request."
             )
         return (
             "\n\nYou are a single-turn sub-agent. Give one complete answer to the task and "

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import {
   getKnowledgeItemsList,
@@ -9,23 +10,25 @@ import { Button } from '@/components/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/select';
 import {
   Pencil,
-  AlertCircle,
   Plus,
   FileText,
   Trash2,
-  RefreshCw,
   BookText,
 } from 'lucide-react';
 import { SearchInput } from '@/components/SearchInput';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ListEmptyState } from '@/components/ListEmptyState';
+import { ListErrorState } from '@/components/ListErrorState';
+import { PaginationBar } from '@/components/PaginationBar';
 import { PageListSkeleton } from '@/components/skeletons';
+import { LIST_PAGE_SIZE } from '@/constants/pagination';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { KBListItem, FileItem } from '../types/knowledgeBase';
 
-const DEFAULT_PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
 
 const KB_TYPE_OPTIONS = [
-  { value: 'all', label: '(Show all)' },
+  { value: 'all', label: 'Show all' },
   { value: 'text', label: 'Text' },
   { value: 'file', label: 'Files' },
   { value: 'url', label: 'URLs' },
@@ -40,68 +43,43 @@ const KB_TYPE_OPTIONS = [
 
 const KnowledgeBaseManager: React.FC = () => {
   const navigate = useNavigate();
-  const [items, setItems] = useState<KBListItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [loadingMore, setLoadingMore] = useState<boolean>(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [listParams, setListParams] = useState({ search: '', type: 'all', page: 1 });
   const [knowledgeBaseToDelete, setKnowledgeBaseToDelete] = useState<Partial<KBListItem> | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const fetchItems = useCallback(async (currentPage: number, append: boolean = false) => {
-    try {
-      if (append) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-      }
-      const response = await getKnowledgeItemsList(currentPage, DEFAULT_PAGE_SIZE);
-      if (append) {
-        setItems((prev) => [...prev, ...response.items]);
-      } else {
-        setItems(response.items);
-      }
-      setPage(response.page);
-      setHasMore(response.page < response.total_pages);
-      setError(null);
-    } catch {
-      setError('Failed to load knowledge base items');
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, []);
-
-  const loadMore = useCallback(() => {
-    if (!loadingMore && hasMore) {
-      fetchItems(page + 1, true);
-    }
-  }, [loadingMore, hasMore, page, fetchItems]);
+  const debouncedSearch = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS).trim();
 
   useEffect(() => {
-    fetchItems(1);
-  }, [fetchItems]);
+    setListParams((p) => (p.search === debouncedSearch ? p : { ...p, search: debouncedSearch, page: 1 }));
+  }, [debouncedSearch]);
 
-  // Infinite scroll
+  const { data, isPending, isFetching, isError, refetch } = useQuery({
+    queryKey: ['knowledge-list', listParams],
+    queryFn: () =>
+      getKnowledgeItemsList({
+        page: listParams.page,
+        pageSize: LIST_PAGE_SIZE,
+        search: listParams.search,
+        type: listParams.type === 'all' ? undefined : listParams.type,
+      }),
+    // Create and edit happen on other routes, so the list refetches on every visit
+    staleTime: 0,
+    // A failed refetch on tab focus would swap a good list for the error panel
+    refetchOnWindowFocus: false,
+  });
+  const items = data?.items ?? [];
+
+  const lastPage = Math.max(1, data?.total_pages ?? 1);
+  const pastLastPage = !!data && data.items.length === 0 && listParams.page > lastPage;
+
   useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
-          loadMore();
-        }
-      },
-      { threshold: 0.1 }
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, loadingMore, loadMore, loading]);
+    // A cached page can be out of date, so only step back once the fresh page is in
+    if (pastLastPage && !isFetching) setListParams((p) => ({ ...p, page: lastPage }));
+  }, [pastLastPage, isFetching, lastPage]);
+
+  const loading = isPending || pastLastPage;
 
   const handleDeleteClick = (id: string, name: string) => {
     setKnowledgeBaseToDelete({ id, name });
@@ -114,7 +92,7 @@ const KnowledgeBaseManager: React.FC = () => {
       setIsDeleting(true);
       await deleteKnowledgeItem(knowledgeBaseToDelete.id);
       toast.success('Knowledge base deleted successfully.');
-      setItems((prev) => prev.filter((s) => s.id !== knowledgeBaseToDelete.id));
+      void refetch();
     } catch {
       toast.error('Failed to delete knowledge base.');
     } finally {
@@ -134,14 +112,7 @@ const KnowledgeBaseManager: React.FC = () => {
     return fileItem.original_file_name || fileItem.file_path;
   };
 
-  const filteredItems = items.filter((item) => {
-    const matchesQuery =
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.description ?? '').toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesQuery && (item.type.toLowerCase() === typeFilter || typeFilter === 'all');
-  });
-
-  const isFiltering = searchQuery.trim() !== '' || typeFilter !== 'all';
+  const isFiltering = listParams.search !== '' || listParams.type !== 'all';
 
   return (
     <div className="flex flex-col gap-6">
@@ -152,7 +123,11 @@ const KnowledgeBaseManager: React.FC = () => {
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div className="relative">
-            <Select value={typeFilter} onValueChange={setTypeFilter} defaultValue="all">
+            <Select
+              value={listParams.type}
+              onValueChange={(type) => setListParams((p) => ({ ...p, type, page: 1 }))}
+              defaultValue="all"
+            >
               <SelectTrigger className="w-full sm:min-w-32 bg-card">
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
@@ -164,7 +139,7 @@ const KnowledgeBaseManager: React.FC = () => {
             </Select>
           </div>
           <SearchInput
-            placeholder="Search knowledge base..."
+            placeholder="Search knowledge base"
             className="w-full sm:min-w-64"
             value={searchQuery}
             onChange={setSearchQuery}
@@ -179,17 +154,12 @@ const KnowledgeBaseManager: React.FC = () => {
         </div>
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 p-3 text-destructive bg-destructive/10 rounded-md">
-          <AlertCircle className="h-4 w-4" />
-          <p className="text-sm font-medium">{error}</p>
-        </div>
-      )}
-
       <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
         {loading ? (
           <PageListSkeleton variant="rich" bordered={false} />
-        ) : filteredItems.length === 0 ? (
+        ) : isError ? (
+          <ListErrorState message="Failed to load knowledge base items" onRetry={() => void refetch()} />
+        ) : items.length === 0 ? (
           <ListEmptyState
             icon={<BookText className="h-12 w-12 text-muted-foreground" />}
             title={isFiltering ? 'No matching knowledge items' : 'No knowledge items yet'}
@@ -211,7 +181,7 @@ const KnowledgeBaseManager: React.FC = () => {
           />
         ) : (
           <div className="divide-y divide-border">
-            {filteredItems.map((item) => (
+            {items.map((item) => (
               <div key={item.id} className="px-4 py-4 sm:px-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div className="flex-1 flex flex-col space-y-1">
@@ -268,16 +238,18 @@ const KnowledgeBaseManager: React.FC = () => {
                 </div>
               </div>
             ))}
-            {loadingMore && (
-              <div className="flex items-center justify-center py-4 border-t">
-                <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
-                <span className="ml-2 text-sm text-muted-foreground">Loading more...</span>
-              </div>
-            )}
-            <div ref={sentinelRef} className="h-1" />
           </div>
         )}
       </div>
+      {!loading && !isError && (
+        <PaginationBar
+          total={data?.total ?? 0}
+          currentPage={listParams.page}
+          pageSize={LIST_PAGE_SIZE}
+          pageItemCount={items.length}
+          onPageChange={(page) => setListParams((p) => ({ ...p, page }))}
+        />
+      )}
 
       <ConfirmDialog
         isOpen={isDeleteDialogOpen}

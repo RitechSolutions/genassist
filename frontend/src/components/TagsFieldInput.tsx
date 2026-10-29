@@ -27,12 +27,14 @@ export function TagsFieldInput({
   fieldDefault,
   placeholder,
   onChange,
+  className,
 }: {
   id: string;
   value: FieldValue;
   fieldDefault?: FieldValue;
   placeholder?: string;
   onChange: (next: string[]) => void;
+  className?: string;
 }) {
   const tags = normalizeTagsValue(value, fieldDefault);
   const [draft, setDraft] = useState('');
@@ -68,7 +70,8 @@ export function TagsFieldInput({
       className={cn(
         'flex min-h-10 w-full flex-wrap items-center gap-1.5 rounded-full border border-input bg-transparent px-2 py-1.5 text-base ring-offset-background',
         'focus-within:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
-        'md:text-sm'
+        'md:text-sm',
+        className
       )}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) {

@@ -6,6 +6,7 @@ import {
   EvaluationBundleSet,
 } from "@/interfaces/evalBundle.interface";
 import { EvaluationToolCatalog } from "@/interfaces/testEvaluation.interface";
+import type { CategoryQuery } from "@/services/testEvaluations";
 
 const slugify = (value: string): string =>
   value
@@ -17,8 +18,11 @@ const slugify = (value: string): string =>
 export const bundleFilename = (evaluationName: string): string =>
   `evaluation-${slugify(evaluationName) || "bundle"}.json`;
 
-export const bundleSetFilename = (workflowName: string): string =>
-  `evaluations-${slugify(workflowName) || "workflow"}.json`;
+export const bundleSetFilename = (workflowName: string, filter: CategoryQuery = {}): string => {
+  // A file with one category's evaluations is named after it, so it isn't taken for the whole workflow.
+  const scope = filter.uncategorized ? "no-category" : filter.category ? slugify(filter.category) || "category" : "";
+  return `evaluations-${slugify(workflowName) || "workflow"}${scope ? `-${scope}` : ""}.json`;
+};
 
 export const downloadJsonFile = (filename: string, data: unknown): void => {
   const blob = new Blob([JSON.stringify(data, null, 2)], {

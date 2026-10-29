@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
@@ -525,7 +526,8 @@ async def test_non_csv_row_limit_removes_partial_output(monkeypatch, tmp_path):
         )
 
     assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED
-    assert "returned more than 2 rows" in exc_info.value.error_detail
+    # Counted before any row is written, so the limit fails fast.
+    assert "has 3 rows, which exceeds the limit of 2" in exc_info.value.error_detail
     assert not list((tmp_path / "train" / "thread-1").glob("*.csv"))
 
 
@@ -540,10 +542,16 @@ async def test_stale_file_path_download_preserves_extension(monkeypatch, tmp_pat
 
     download_file.side_effect = copy_download
     file_manager = MagicMock()
+    file_manager.get_file_by_id = AsyncMock(
+        return_value=SimpleNamespace(
+            name="training.json",
+            path="uploads/training.json",
+            size=source.stat().st_size,
+            storage_provider="s3",
+        )
+    )
     file_manager.download_file_to_path = download_file
-    (tmp_path / "train").mkdir()
 
-    monkeypatch.setattr(f"{MODULE}.DATA_VOLUME", tmp_path)
     monkeypatch.setattr(f"{MODULE}.ml_utils.DATA_VOLUME", tmp_path)
     monkeypatch.setattr(
         "app.dependencies.injector.injector.get",
@@ -559,7 +567,8 @@ async def test_stale_file_path_download_preserves_extension(monkeypatch, tmp_pat
         }
     )
 
-    downloaded_path = tmp_path / "train" / "file-1.json"
-    download_file.assert_awaited_once_with("file-1", str(downloaded_path))
-    assert downloaded_path.exists()
+    download_file.assert_awaited_once()
+    downloaded_path = Path(download_file.await_args.args[1])
+    assert downloaded_path.suffix == ".json"
+    assert not downloaded_path.exists()
     assert result["metadata"] == {"rowCount": 1, "columns": ["id", "name"]}

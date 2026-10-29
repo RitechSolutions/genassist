@@ -36,10 +36,13 @@ class ConversationAnalysisModel(Base):
         UniqueConstraint(
             "conversation_id", name="uq_conversation_analysis_conversation_id"
         ),
+        # is_deleted keeps the soft-delete filter on an index-only scan
+        Index("ix_conversation_analysis_topic_subtopic", "topic", "subtopic", "is_deleted"),
     )
 
     conversation_id: Mapped[UUID] = mapped_column(UUID)
     topic: Mapped[Optional[str]] = mapped_column(String(255))
+    subtopic: Mapped[Optional[str]] = mapped_column(String(255))
     summary: Mapped[Optional[str]] = mapped_column(Text)
     negative_sentiment: Mapped[Optional[int]] = mapped_column(Integer)
     positive_sentiment: Mapped[Optional[int]] = mapped_column(Integer)

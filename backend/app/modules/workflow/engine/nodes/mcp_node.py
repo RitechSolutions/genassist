@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Any, List, Literal
 import json
 
+from app.core import turn_stream
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.agents.base_tool import BaseTool
@@ -177,9 +178,13 @@ class MCPNode(BaseNode):
 
                         # Get MCP client
                         mcp_client = self._get_mcp_client(current_node_data)
-                        result = await mcp_client.execute_tool(
-                            captured_tool_name, parameters
-                        )
+                        turn_stream.emit_activity("tool", "start")
+                        try:
+                            result = await mcp_client.execute_tool(
+                                captured_tool_name, parameters
+                            )
+                        finally:
+                            turn_stream.emit_activity("tool", "end")
 
                         # Convert result to string (BaseTool.invoke returns str)
                         if isinstance(result, (dict, list)):

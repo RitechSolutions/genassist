@@ -32,10 +32,12 @@ function readStored(key: string): string | null {
   }
 }
 
-function isNewerThanDismissed(latestAt: string, dismissedAt: string | null): boolean {
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
+
+export function isNewerThanDismissed(latestAt: string, dismissedAt: string | null): boolean {
   if (dismissedAt === null) return true;
-  const latest = Date.parse(latestAt);
-  const dismissed = Date.parse(dismissedAt);
+  const latest = ISO_DATE.test(latestAt) ? Date.parse(latestAt) : NaN;
+  const dismissed = ISO_DATE.test(dismissedAt) ? Date.parse(dismissedAt) : NaN;
   if (Number.isNaN(latest) || Number.isNaN(dismissed)) return latestAt !== dismissedAt;
   return latest > dismissed;
 }

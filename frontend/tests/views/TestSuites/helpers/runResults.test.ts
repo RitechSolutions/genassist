@@ -1,21 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
-  groupByTechnique,
   hasMetrics,
-  ruleCheckSummary,
   isResultNotScored,
   isResultPassed,
   isResultFailed,
   isRunInProgress,
   notScoredLabel,
   caseStatusFor,
+  numberRuns,
   runAvgAccuracy,
+  runDuration,
   runFailureReason,
+  runName,
+  runOptionLabel,
   runFailureText,
-  runStatusLabel,
+  runAllStatusText,
+  runInProgressText,
+  runProgressText,
   techniqueAccuracy,
   techniqueSummaries,
   turnsPassed,
+  runOpens,
 } from "@/views/TestSuites/helpers/runResults";
 import type { TestResult, TestRun } from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
@@ -185,6 +190,76 @@ describe("caseStatusFor", () => {
   });
 });
 
+describe("methods that could not grade a turn", () => {
+  const notEvaluated = { score: null, passed: false, not_evaluated: true };
+  const errored = { score: null, passed: false, error: true };
+
+  it("leave the verdict to the methods that did grade it", () => {
+    const turn = result({ metrics: { contains: notEvaluated, judge: metric(true) } });
+    expect(isResultPassed(turn)).toBe(true);
+    expect(caseStatusFor(turn, [])).toBe("passed");
+  });
+
+  it("make a turn not scored when nothing else graded it", () => {
+    const turn = result({ metrics: { contains: notEvaluated } });
+    expect(isResultNotScored(turn)).toBe(true);
+    expect(isResultFailed(turn)).toBe(false);
+    expect(notScoredLabel(turn)).toBe("Not evaluated");
+  });
+
+  it("still let a passed rule pass the turn", () => {
+    expect(caseStatusFor(result({ metrics: { contains: notEvaluated } }), [toolResult("passed")])).toBe(
+      "passed",
+    );
+  });
+
+  it("leave a turn unscored, not failed, when a method broke and nothing failed", () => {
+    const turn = result({ metrics: { judge: errored, contains: metric(true) } });
+    expect(caseStatusFor(turn, [])).toBe("not_scored");
+  });
+
+  it("keep a turn whose method broke unscored even when a rule passed", () => {
+    const turn = result({ metrics: { judge: errored, contains: metric(true) } });
+    expect(caseStatusFor(turn, [toolResult("passed")])).toBe("not_scored");
+  });
+
+  it("keep a turn whose scoring crashed unscored even when a rule passed", () => {
+    const turn = result({ status: "scoring_failed" });
+    expect(caseStatusFor(turn, [toolResult("passed")])).toBe("not_scored");
+  });
+
+  it("never hide a failure", () => {
+    const turn = result({ metrics: { judge: errored, contains: metric(false) } });
+    expect(caseStatusFor(turn, [])).toBe("failed");
+  });
+});
+
+describe("runProgressText", () => {
+  const progress = (done: number, total: number) => ({
+    progress: { conversations_done: done, conversations_total: total, turns_done: 7, turns_total: 40 },
+  });
+
+  it("counts finished conversations, as the results do", () => {
+    expect(runProgressText(progress(3, 11))).toBe("3 of 11 conversations done");
+    expect(runProgressText(progress(0, 1))).toBe("0 of 1 conversation done");
+  });
+
+  it("is null before the run reports progress", () => {
+    expect(runProgressText({ progress: null })).toBeNull();
+    expect(runProgressText(null)).toBeNull();
+  });
+});
+
+describe("runAllStatusText", () => {
+  it("says what the workflow's evaluations are doing", () => {
+    expect(runAllStatusText(true, null, false)).toBe("Starting…");
+    expect(runAllStatusText(true, { done: 3, total: 16 }, true)).toBe("Running… 3 of 16 done");
+    // Runs started from a row, or before the page was opened.
+    expect(runAllStatusText(false, null, true)).toBe("Running…");
+    expect(runAllStatusText(false, null, false)).toBeNull();
+  });
+});
+
 describe("runAvgAccuracy", () => {
   const run = (summary_metrics?: Record<string, unknown>): TestRun => ({
     suite_id: "suite",
@@ -289,11 +364,31 @@ describe("turnsPassed", () => {
       turnRule("d", "passed"), // a passed turn rule scores an unscored case
       turnRule("a", "failed", "conversation"), // conversation rules sit on no case
     ];
-    expect(turnsPassed(results, rules)).toEqual({ passed: 2, total: 4 });
+    expect(turnsPassed(results, rules)).toEqual({ passed: 2, total: 4, notEvaluated: 0 });
+  });
+
+  it("counts turns nothing could grade apart, but keeps failed executions in the total", () => {
+    const notEvaluated = { score: null, passed: false, not_evaluated: true };
+    const results = [
+      result({ case_id: "a", metrics: { contains: metric(true) } }),
+      result({ case_id: "b", metrics: { contains: notEvaluated } }),
+      result({ case_id: "c", status: "execution_failed" }),
+    ];
+    expect(turnsPassed(results, [])).toEqual({ passed: 1, total: 2, notEvaluated: 1 });
+  });
+
+  it("keeps a turn whose method broke in the total, as unscored rather than not evaluated", () => {
+    const errored = { score: null, passed: false, error: true };
+    const results = [
+      result({ case_id: "a", metrics: { contains: metric(true) } }),
+      result({ case_id: "b", metrics: { judge: errored, contains: metric(true) } }),
+    ];
+    expect(turnsPassed(results, [])).toEqual({ passed: 1, total: 2, notEvaluated: 0 });
+    expect(notScoredLabel(results[1])).toBe("Not scored");
   });
 
   it("is zero of zero for a run without results", () => {
-    expect(turnsPassed([], [])).toEqual({ passed: 0, total: 0 });
+    expect(turnsPassed([], [])).toEqual({ passed: 0, total: 0, notEvaluated: 0 });
   });
 });
 
@@ -359,13 +454,6 @@ describe("runFailureText", () => {
 });
 
 describe("run status", () => {
-  it("labels statuses for people", () => {
-    expect(runStatusLabel("queued")).toBe("Queued");
-    expect(runStatusLabel("running")).toBe("Running");
-    expect(runStatusLabel("failed")).toBe("Failed");
-    expect(runStatusLabel("paused")).toBe("paused");
-  });
-
   it("treats queued and running runs as in progress", () => {
     expect(isRunInProgress({ status: "queued" })).toBe(true);
     expect(isRunInProgress({ status: "running" })).toBe(true);
@@ -374,89 +462,73 @@ describe("run status", () => {
   });
 });
 
-describe("groupByTechnique", () => {
-  it("groups rule results per technique, in wizard order", () => {
-    const grouped = groupByTechnique([
-      toolResult("passed", "action_taken"),
-      toolResult("failed", "tool_used"),
-      toolResult("passed", "route_taken"),
-    ]);
-
-    expect(grouped.map(([technique]) => technique)).toEqual([
-      "tool_used",
-      "route_taken",
-      "action_taken",
-    ]);
-    expect(grouped[0][1]).toHaveLength(1);
+describe("run names", () => {
+  it("name a run by the end of its id until it is numbered", () => {
+    expect(runName({ id: "0190-abcd-1234" })).toBe("Run #1234");
+    expect(runName({ id: "0190-abcd-1234", number: 3 })).toBe("Run 3");
   });
 
-  it("treats a row without a technique as tool usage", () => {
-    const legacy = { ...toolResult("passed"), technique: undefined } as unknown as TestToolRuleResult;
-    expect(groupByTechnique([legacy]).map(([technique]) => technique)).toEqual(["tool_used"]);
+  it("number runs from the first, by the evaluation's run ids, newest first", () => {
+    const run = (id: string): TestRun => ({ id, suite_id: "s", workflow_id: "w", status: "completed", techniques: [] });
+    const numbered = numberRuns([run("c"), run("a"), run("x")], ["c", "b", "a"]);
+    expect(numbered.map((entry) => entry.number)).toEqual([3, 1, undefined]);
+    expect(numbered.map(runName)).toEqual(["Run 3", "Run 1", "Run #x"]);
   });
 
-  it("returns nothing for an empty run", () => {
-    expect(groupByTechnique([])).toEqual([]);
+  it("say how long a finished run took", () => {
+    const run = (status: string, updated_at: string) => ({ status, created_at: "2026-10-09T14:02:00Z", updated_at });
+    expect(runDuration(run("completed", "2026-10-09T14:02:34Z"))).toBe("34 s");
+    expect(runDuration(run("completed", "2026-10-09T14:04:05Z"))).toBe("2 min 5 s");
+    expect(runDuration(run("running", "2026-10-09T14:04:05Z"))).toBeNull();
   });
 });
 
-describe("ruleCheckSummary", () => {
-  const check = (
-    status: TestToolRuleResult["status"],
-    ruleId: string,
-    scope: string,
-  ): TestToolRuleResult => ({
-    ...toolResult(status),
-    id: `${ruleId}-${scope}-${Math.random()}`,
-    rule_id: ruleId,
-    scope,
+describe("runOptionLabel", () => {
+  it("names the run, then the workflow version it played, then when", () => {
+    const run = {
+      id: "r1",
+      number: 3,
+      suite_id: "s",
+      workflow_id: "w",
+      status: "completed",
+      techniques: [],
+      workflow_version: "4.1",
+      created_at: "2026-10-09T12:02:00Z",
+    };
+    expect(runOptionLabel(run).startsWith("Run 3 · workflow v4.1 · ")).toBe(true);
+    expect(runOptionLabel({ ...run, workflow_version: null }).startsWith("Run 3 · ")).toBe(true);
+    expect(runOptionLabel({ ...run, workflow_version: null })).not.toContain("workflow");
+  });
+});
+
+describe("runOpens", () => {
+  const turns = (done: number) => ({ turns_done: done, turns_total: 4 }) as TestRun["progress"];
+
+  it("opens a run once it has ended", () => {
+    expect(runOpens({ status: "completed", progress: null })).toBe(true);
+    // A run still going has no results worth a page yet.
+    expect(runOpens({ status: "running", progress: turns(3) })).toBe(false);
+    expect(runOpens({ status: "queued", progress: null })).toBe(false);
   });
 
-  it("counts rule checks, not turns, and says how the count is made up", () => {
-    // Two every-turn rules over 12 turns: 24 checks, 15 of them passing.
-    const results = Array.from({ length: 12 }, (_, index) => [
-      check(index < 9 ? "passed" : "failed", "action-1", "every_turn"),
-      check(index < 6 ? "passed" : "failed", "action-2", "every_turn"),
-    ]).flat();
+  it("opens a failed run only when some turns finished first", () => {
+    expect(runOpens({ status: "failed", progress: null })).toBe(false);
+    expect(runOpens({ status: "failed", progress: turns(0) })).toBe(false);
+    expect(runOpens({ status: "failed", progress: turns(2) })).toBe(true);
+  });
+});
 
-    const { headline, subline } = ruleCheckSummary(results);
+describe("runInProgressText", () => {
+  const progress = { conversations_done: 2, conversations_total: 9, turns_done: 5, turns_total: 13 };
 
-    expect(headline).toBe("15 of 24 checks passed · 63% pass rate");
-    expect(subline).toBe("2 rules · 24 turn checks");
+  it("says a run still going is queued, or how far it got", () => {
+    expect(runInProgressText({ status: "queued", progress: null })).toBe("Queued");
+    expect(runInProgressText({ status: "running", progress })).toBe("Running… 2 of 9 conversations done");
+    expect(runInProgressText({ status: "running", progress: null })).toBe("Running…");
   });
 
-  it("counts a specific-turn rule once per turn it targets", () => {
-    const results = [
-      ...Array.from({ length: 12 }, () => check("passed", "route-2", "every_turn")),
-      check("passed", "route-1", "specific_turn"),
-      check("failed", "route-1", "specific_turn"),
-    ];
-
-    expect(ruleCheckSummary(results).subline).toBe("2 rules · 14 turn checks");
-  });
-
-  it("separates conversation checks from turn checks", () => {
-    const results = [
-      check("passed", "r1", "conversation"),
-      check("failed", "r1", "conversation"),
-      check("passed", "r2", "every_turn"),
-    ];
-
-    const { headline, subline } = ruleCheckSummary(results);
-
-    expect(headline).toBe("2 of 3 checks passed · 67% pass rate");
-    expect(subline).toBe("2 rules · 1 turn check · 2 conversation checks");
-  });
-
-  it("says not evaluated, never 0%, when no check could run", () => {
-    const results = [
-      check("not_evaluated", "r1", "every_turn"),
-      check("not_evaluated", "r1", "every_turn"),
-    ];
-
-    const { headline, subline } = ruleCheckSummary(results);
-
-    expect(headline).toBe("Not evaluated");
-    expect(subline).toBe("1 rule · 2 turn checks");
+  it("never shows a finished run's count, as the last run is just after Run", () => {
+    expect(runInProgressText({ status: "completed", progress })).toBe("Running…");
+    expect(runInProgressText(null)).toBe("Running…");
   });
 });

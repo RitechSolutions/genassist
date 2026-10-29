@@ -1,6 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { cn } from '@/helpers/utils';
+import { cn, formatDateTime } from '@/helpers/utils';
 import JsonViewer from '@/components/JsonViewer';
 import { NodeExecutionView } from '@/interfaces/workflow-execution.interface';
 import { formatDuration } from '../../utils/executionView';
@@ -20,24 +20,24 @@ const toJsonValue = (value: unknown): React.ComponentProps<typeof JsonViewer>['d
   value as React.ComponentProps<typeof JsonViewer>['data'];
 
 /**
- * "Marker applied" is our decision to cache, not the outcome. The provider may
+ * "Marker sent" is our decision to cache, not the outcome. The provider may
  * still reject it (e.g., short prompt below minimum). The actual result comes from
  * what the run reported.
  */
 const promptCachingLine = (diagnostic: NonNullable<NodeExecutionView['promptCaching']>): string => {
   if (!diagnostic.applied) {
-    return 'Prompt caching: requested but not applied';
+    return 'Prompt caching: on, no cache marker sent';
   }
   const { cacheReadTokens, cacheCreationTokens } = diagnostic;
   if (cacheReadTokens === undefined && cacheCreationTokens === undefined) {
-    return 'Prompt caching: cache marker applied';
+    return 'Prompt caching: cache marker sent';
   }
   if (!cacheReadTokens && !cacheCreationTokens) {
-    return 'Prompt caching: cache marker applied — the provider reported no cache activity';
+    return 'Prompt caching: cache marker sent, the provider reported no cache activity';
   }
   const read = (cacheReadTokens ?? 0).toLocaleString();
   const written = (cacheCreationTokens ?? 0).toLocaleString();
-  return `Prompt caching: cache marker applied — ${read} tokens read from cache, ${written} written`;
+  return `Prompt caching: cache marker sent, ${read} tokens read from cache, ${written} written`;
 };
 
 const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, onClose }) => {
@@ -73,6 +73,12 @@ const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, onClose }) => {
             <span className="text-xs text-muted-foreground">
               Duration: <span className="tabular-nums">{formatDuration(node.durationMs)}</span>
             </span>
+            {node.startTime !== undefined && (
+              <span className="text-xs text-muted-foreground">
+                Started:{' '}
+                <span className="tabular-nums">{formatDateTime(new Date(node.startTime).toISOString())}</span>
+              </span>
+            )}
           </div>
           {node.promptCaching && (
             <div className="mt-1 text-xs text-muted-foreground">{promptCachingLine(node.promptCaching)}</div>

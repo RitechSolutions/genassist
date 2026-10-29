@@ -21,6 +21,7 @@ import {
 import { PaginatedResponse } from "@/interfaces/common.interface";
 import { KBListItem } from "@/views/KnowledgeBase/types/knowledgeBase";
 import { getApiKeys, revealApiKey } from "@/services/apiKeys";
+import { hasPermission } from "@/services/auth";
 import { AxiosError } from "axios";
 import { UploadFileResponse } from "@/interfaces/file-manager.interface";
 
@@ -236,15 +237,27 @@ export async function getAllKnowledgeItems() {
   return apiRequest("GET", "genagent/knowledge/items");
 }
 
-export async function getKnowledgeItemsList(
-  page: number = 1,
-  pageSize: number = 20
-): Promise<PaginatedResponse<KBListItem>> {
+export async function getKnowledgeItemsList({
+  page = 1,
+  pageSize = 20,
+  search,
+  type,
+}: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  type?: string;
+} = {}): Promise<PaginatedResponse<KBListItem>> {
   const skip = (page - 1) * pageSize;
-  return apiRequest<PaginatedResponse<KBListItem>>(
+  const params = new URLSearchParams({ skip: String(skip), limit: String(pageSize) });
+  const trimmed = search?.trim();
+  if (trimmed) params.set("search", trimmed);
+  if (type) params.set("type", type);
+  const response = await apiRequest<PaginatedResponse<KBListItem>>(
     "GET",
-    `genagent/knowledge/list?skip=${skip}&limit=${pageSize}`
+    `genagent/knowledge/list?${params.toString()}`
   );
+  return response ?? { items: [], total: 0, page: 1, page_size: pageSize, total_pages: 0 };
 }
 
 export async function getKnowledgeItem(id: string) {
@@ -268,7 +281,28 @@ export async function finalizeKnowledgeItem(id: string) {
 
 export type UploadKnowledgeFilesOptions = {
   onProgress?: (percent: number) => void;
+  /**
+   * "training_data" for Train Data Source files: the server applies the
+   * training upload limit (2 GB by default) instead of the regular one and
+   * only accepts training file types. Sent on every upload path.
+   */
+  purpose?: "training_data";
 };
+
+/** The server rejected the upload itself (too large, wrong type), so retrying another way won't help. */
+class UploadRejectedError extends Error {}
+
+// Error keys that refuse the file itself. Other 400s (e.g. "Uploaded object
+// not found in S3", a size mismatch) can still succeed as a chunked upload.
+const REJECTED_FILE_ERROR_KEYS = new Set(["ML_TRAINING_UPLOAD_TOO_LARGE", "ML_EXTRACT_FILE_UNSUPPORTED"]);
+
+function rejectedUploadError(err: unknown): Error {
+  const response = err instanceof AxiosError ? err.response : undefined;
+  const errorKey = (response?.data as { error_key?: string } | undefined)?.error_key;
+  const message = formatUploadOrNetworkError(err);
+  const rejected = response?.status === 413 || (errorKey !== undefined && REJECTED_FILE_ERROR_KEYS.has(errorKey));
+  return rejected ? new UploadRejectedError(message) : new Error(message);
+}
 
 /** Never show 100% until the server response completes. */
 const capClientProgress = (pct: number): number => Math.min(95, Math.max(0, pct));
@@ -292,6 +326,8 @@ const FILE_MANAGER_CAPS_TTL_MS = 60_000; // 1 minute
 export async function getFileManagerCaps(
   forceRefresh = false
 ): Promise<FileManagerCapabilities> {
+  // Without access to the settings, use the same fallback as a failed read (not cached)
+  if (!hasPermission("read:file")) return { directS3UploadEnabled: false };
   const now = Date.now();
   const stale = now - _fileManagerCapsCachedAt > FILE_MANAGER_CAPS_TTL_MS;
   if (!forceRefresh && _fileManagerCapsCache && !stale) {
@@ -354,15 +390,21 @@ async function uploadFileViaPresignedS3(
   const baseURL = await getApiUrl();
 
   const presignUrl = `${baseURL}file-manager/upload-session/presign`;
-  const { data: presigned } = await api.post<PresignDirectUploadResponse>(
-    presignUrl,
-    {
-      original_filename: file.name,
-      expected_size: file.size,
-      content_type: file.type || "application/octet-stream",
-    },
-    { timeout: API_DEFAULT_TIMEOUT_MS }
-  );
+  let presigned: PresignDirectUploadResponse;
+  try {
+    ({ data: presigned } = await api.post<PresignDirectUploadResponse>(
+      presignUrl,
+      {
+        original_filename: file.name,
+        expected_size: file.size,
+        content_type: file.type || "application/octet-stream",
+        purpose: options?.purpose,
+      },
+      { timeout: API_DEFAULT_TIMEOUT_MS }
+    ));
+  } catch (err) {
+    throw rejectedUploadError(err);
+  }
 
   const finalizeUrl = `${baseURL}file-manager/upload-session/${presigned.session_id}/finalize`;
 
@@ -438,8 +480,9 @@ async function uploadFileViaPresignedS3(
     finalized = data;
   } catch (err) {
     // Server-side validation failure (e.g. size mismatch). The server itself
-    // already cleaned up; we just rethrow so the dispatcher can fall back.
-    throw new Error(formatUploadOrNetworkError(err));
+    // already cleaned up; we just rethrow so the dispatcher can fall back,
+    // unless the file itself was rejected (e.g. over the size limit).
+    throw rejectedUploadError(err);
   }
 
   options?.onProgress?.(100);
@@ -458,7 +501,9 @@ async function uploadFilesMultipartViaFileManager(
   options?: UploadKnowledgeFilesOptions
 ): Promise<UploadFileResponse[]> {
   const baseURL = await getApiUrl();
-  const url = `${baseURL}file-manager/upload`;
+  const url = options?.purpose
+    ? `${baseURL}file-manager/upload?purpose=${encodeURIComponent(options.purpose)}`
+    : `${baseURL}file-manager/upload`;
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
   const fallbackTotalBytes = files.reduce((acc, f) => acc + (f.size ?? 0), 0);
@@ -490,6 +535,17 @@ async function uploadKnowledgeFileViaSession(
   file: File,
   options?: UploadKnowledgeFilesOptions
 ): Promise<UploadFileResponse[]> {
+  try {
+    return await uploadFileViaSessionChunks(file, options);
+  } catch (error: unknown) {
+    throw new Error(formatUploadOrNetworkError(error));
+  }
+}
+
+async function uploadFileViaSessionChunks(
+  file: File,
+  options?: UploadKnowledgeFilesOptions
+): Promise<UploadFileResponse[]> {
   const baseURL = await getApiUrl();
   const createUrl = `${baseURL}file-manager/upload-session`;
   const { data: session } = await api.post<KbUploadSessionCreateResponse>(
@@ -498,6 +554,7 @@ async function uploadKnowledgeFileViaSession(
       original_filename: file.name,
       expected_size: file.size,
       content_type: file.type || undefined,
+      purpose: options?.purpose,
     },
     { timeout: API_UPLOAD_TIMEOUT_MS }
   );
@@ -564,10 +621,16 @@ export const uploadFiles = async (
         options.onProgress(Math.min(100, Math.round(totalPct)));
       };
       try {
-        const one = await uploadFileViaPresignedS3(f, { onProgress: wrapProgress });
+        const one = await uploadFileViaPresignedS3(f, {
+          onProgress: wrapProgress,
+          purpose: options?.purpose,
+        });
         results.push(one);
         continue;
       } catch (err) {
+        // The server refused this file (e.g. over the size limit): the
+        // chunked upload would be refused too, so report it right away.
+        if (err instanceof UploadRejectedError) throw err;
         // Direct path failed (CORS, expired signature, server flag flipped
         // off, etc). Fall back to the legacy session upload so we still
         // succeed; log a warning for diagnostics.
@@ -577,7 +640,7 @@ export const uploadFiles = async (
           err
         );
       }
-      const part = await uploadKnowledgeFileViaSession(f, { onProgress: wrapProgress });
+      const part = await uploadKnowledgeFileViaSession(f, { onProgress: wrapProgress, purpose: options?.purpose });
       results.push(...part);
     }
     return results;
@@ -598,10 +661,10 @@ export const uploadFiles = async (
       options.onProgress(Math.min(100, Math.round(totalPct)));
     };
     if (f.size > FILES_UPLOAD_SESSION_THRESHOLD_BYTES) {
-      const part = await uploadKnowledgeFileViaSession(f, { onProgress: wrapProgress });
+      const part = await uploadKnowledgeFileViaSession(f, { onProgress: wrapProgress, purpose: options?.purpose });
       results.push(...part);
     } else {
-      const part = await uploadFilesMultipartViaFileManager([f], { onProgress: wrapProgress });
+      const part = await uploadFilesMultipartViaFileManager([f], { onProgress: wrapProgress, purpose: options?.purpose });
       results.push(...part);
     }
   }

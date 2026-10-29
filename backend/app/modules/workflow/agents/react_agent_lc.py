@@ -1,10 +1,10 @@
-from typing import List, Dict, Any, Optional, Union
+from typing import TYPE_CHECKING, AsyncIterator, List, Dict, Any, Optional, Union
 import logging
 import uuid
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages.base import BaseMessage
 from langchain_core.tools import StructuredTool
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, SystemMessage, ToolMessage
 from langchain.agents import create_agent
 from langchain.agents.middleware.types import AgentMiddleware
 from langgraph.types import Command
@@ -18,6 +18,8 @@ from app.modules.workflow.agents.agent_utils import (
 )
 import json
 
+if TYPE_CHECKING:
+    from app.core.turn_stream import TokenSink
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,21 @@ class RetryOnToolErrorMiddleware(AgentMiddleware):
         return result
 
 
+def _collect_llm_usage(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
+    """One usage entry per generated AIMessage; each is a billed model call"""
+    entries = []
+    for message in messages:
+        if isinstance(message, AIMessage):
+            try:
+                usage = extract_usage_from_aimessage(message)
+            except Exception:
+                logger.warning("Failed extracting LLM usage from a ReActAgentLC message", exc_info=True)
+                continue
+            if usage:
+                entries.append(usage)
+    return entries
+
+
 class ReActAgentLC(BaseToolAgent):
     """ReAct Agent implementation using LangGraph's prebuilt React agent"""
 
@@ -44,6 +61,7 @@ class ReActAgentLC(BaseToolAgent):
         tools: List[BaseTool],
         verbose: bool = False,
         max_iterations: int = 5,
+        on_token: Optional["TokenSink"] = None,
     ):
         """Initialize a LangGraph ReAct agent
 
@@ -55,6 +73,7 @@ class ReActAgentLC(BaseToolAgent):
             tools: List of tools the agent can use to take actions
             verbose: Whether to enable verbose logging of reasoning cycles
             max_iterations: Maximum number of reasoning/action cycles
+            on_token: Called with (model call id, text) as this agent's own model calls write
         """
         super().__init__(
             llm_model,
@@ -63,6 +82,7 @@ class ReActAgentLC(BaseToolAgent):
             verbose=verbose,
             max_iterations=max_iterations,
         )
+        self.on_token = on_token
 
         # Convert BaseTool instances to LangChain StructuredTool instances
         self.lc_tools = self._convert_tools_to_langchain(self.tools)
@@ -216,12 +236,30 @@ class ReActAgentLC(BaseToolAgent):
 
         return messages
 
+    async def _graph_states(self, input_data: Dict[str, Any], config: Dict[str, Any]) -> AsyncIterator[Dict[str, Any]]:
+        modes = ["values", "tasks", "messages"] if self.on_token else ["values"]
+        model_tasks: set[str] = set()
+        async for mode, payload in self.agent_executor.astream(input_data, config=config, stream_mode=modes):
+            if mode == "values":
+                yield payload
+            elif mode == "tasks":
+                if payload.get("name") == "model":
+                    model_tasks.add(payload["id"])
+            else:
+                # Only this graph's model tasks: an agent run inside a tool reports to the same handler.
+                chunk, metadata = payload
+                task_id = metadata.get("langgraph_checkpoint_ns", "").rpartition(":")[2]
+                if isinstance(chunk, AIMessageChunk) and task_id in model_tasks and chunk.text:
+                    self.on_token(task_id, chunk.text)
+
     async def invoke(
         self, query: str, chat_history: Optional[List] = None, **kwargs
     ) -> Dict[str, Any]:
         """Execute a query using the LangGraph ReAct agent"""
         chat_history = chat_history or []
         thread_id = kwargs.get("thread_id", str(uuid.uuid4()))
+        result: Dict[str, Any] = {}
+        input_message_count = 0
 
         try:
             # Prepare the input for LangGraph
@@ -248,14 +286,14 @@ class ReActAgentLC(BaseToolAgent):
             # Track reasoning steps and tools used
             reasoning_steps = []
             tools_used = []
-            llm_usage_entries = []
 
             # Execute the agent
             if self.verbose:
                 logger.debug(f"Executing LangGraph ReAct agent with query: {query}")
 
-            # Execute the agent and get the final result
-            result = await self.agent_executor.ainvoke(input_data, config=config)
+            # ainvoke runs this same loop but discards the state when the graph raises
+            async for state in self._graph_states(input_data, config):
+                result = state
 
             if self.verbose:
                 logger.debug(f"LangGraph agent result: {result}")
@@ -268,14 +306,6 @@ class ReActAgentLC(BaseToolAgent):
             if "messages" in result and result["messages"]:
                 # Only process messages generated by the agent, not input/history
                 agent_messages = result["messages"][input_message_count:]
-
-                # Each agent-generated AIMessage is a real model call
-                # so usage needs to be recorded for everyone
-                for message in agent_messages:
-                    if isinstance(message, AIMessage):
-                        usage = extract_usage_from_aimessage(message)
-                        if usage:
-                            llm_usage_entries.append(usage)
 
                 # First pass: track tools with return_direct and find their results
                 tool_call_to_name_map = {}  # Map tool_call_id to tool_name
@@ -490,119 +520,28 @@ class ReActAgentLC(BaseToolAgent):
                     response_data["return_direct"] = True
                     response_data["tool"] = return_direct_tool_name
 
-                if llm_usage_entries:
-                    response_data["llm_usage"] = llm_usage_entries
-
-                return create_success_response(
+                response = create_success_response(
                     final_response,
                     self._get_agent_name(),
                     **response_data,
                 )
             else:
-                error_response = create_error_response(
+                response = create_error_response(
                     "No response generated by LangGraph agent",
                     self._get_agent_name(),
                     thread_id=thread_id,
                 )
-                if llm_usage_entries:
-                    error_response["llm_usage"] = llm_usage_entries
-                return error_response
 
         except Exception as e:
             logger.error(f"Error executing ReActAgentLC query: {str(e)}")
-            return create_error_response(
+            response = create_error_response(
                 str(e), self._get_agent_name(), thread_id=thread_id
             )
 
-    async def stream(self, query: str, chat_history: Optional[List] = None, **kwargs):
-        """Stream the agent's reasoning and action process"""
-        chat_history = chat_history or []
-        thread_id = kwargs.get("thread_id", str(uuid.uuid4()))
-
-        try:
-            # Prepare the input for LangGraph.
-            # No system message here: create_agent already injects self.system_prompt
-            messages: List[BaseMessage] = []
-
-            # Add chat history if available
-            if chat_history:
-                history_messages = self._convert_chat_history_to_messages(chat_history)
-                messages.extend(history_messages)
-
-            # Add the current query
-            messages.append(HumanMessage(content=query))
-
-            input_data = {"messages": messages}
-
-            # Configure the execution
-            config = {"configurable": {"thread_id": thread_id}}
-
-            # Stream the agent execution
-            reasoning_steps = []
-            tools_used = []
-            iteration_count = 0
-
-            async for chunk in self.agent_executor.astream(input_data, config):
-                # Process each chunk and yield intermediate results
-                for node_name, node_data in chunk.items():
-                    if node_name == "agent":
-                        # Agent reasoning step
-                        messages = node_data.get("messages", [])
-                        if messages:
-                            last_message = messages[-1]
-                            if hasattr(last_message, "content"):
-                                step = {
-                                    "iteration": iteration_count + 1,
-                                    "thought": last_message.content,
-                                    "full_response": last_message.content,
-                                }
-                                reasoning_steps.append(step)
-                                iteration_count += 1
-
-                                # Yield intermediate step
-                                yield {
-                                    "type": "reasoning_step",
-                                    "data": step,
-                                    "agent": self._get_agent_name(),
-                                }
-
-                    elif node_name == "tools":
-                        # Tool execution step
-                        messages = node_data.get("messages", [])
-                        if messages:
-                            for msg in messages:
-                                if hasattr(msg, "name") and hasattr(msg, "content"):
-                                    tool_step = {
-                                        "tool_name": msg.name,
-                                        "result": msg.content,
-                                        "iteration": iteration_count,
-                                    }
-                                    tools_used.append(tool_step)
-
-                                    # Yield tool execution
-                                    yield {
-                                        "type": "tool_execution",
-                                        "data": tool_step,
-                                        "agent": self._get_agent_name(),
-                                    }
-
-            # Yield final result
-            final_result = await self.invoke(query, chat_history, **kwargs)
-            yield {
-                "type": "final_result",
-                "data": final_result,
-                "agent": self._get_agent_name(),
-            }
-
-        except Exception as e:
-            logger.error(f"Error streaming ReActAgentLC query: {str(e)}")
-            yield {
-                "type": "error",
-                "data": create_error_response(
-                    str(e), self._get_agent_name(), thread_id=thread_id
-                ),
-                "agent": self._get_agent_name(),
-            }
+        llm_usage_entries = _collect_llm_usage(result.get("messages", [])[input_message_count:])
+        if llm_usage_entries:
+            response["llm_usage"] = llm_usage_entries
+        return response
 
     # ==================== TOOL MANAGEMENT ====================
     # Tool management methods are inherited from BaseToolAgent
