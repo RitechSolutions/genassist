@@ -29,6 +29,7 @@ export interface FieldSchema {
   type: FieldType; // Field type
   label: string; // Display label for the field
   required: boolean; // Whether field is required (default: false)
+  alternative_names?: string[]; // Other fields that may satisfy this requirement
   description?: string; // Field description
   placeholder?: string; // Placeholder text
   default?: FieldValue; // Default value
@@ -101,4 +102,3 @@ export interface TypeSchema {
 export interface DynamicFormSchema {
   [key: string]: TypeSchema;
 }
-

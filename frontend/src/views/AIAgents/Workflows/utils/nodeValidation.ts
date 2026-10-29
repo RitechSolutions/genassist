@@ -9,11 +9,12 @@ function isEmptyValue(value: unknown): boolean {
 
 function shouldShowConditionalField(
   field: FieldSchema,
-  data: Record<string, any>,
+  data: object,
 ): boolean {
   if (!field.conditional) return true;
 
-  const conditionalFieldValue = data[field.conditional.field];
+  const values = data as Record<string, unknown>;
+  const conditionalFieldValue = values[field.conditional.field];
   const target = field.conditional.value;
 
   if (typeof target === "boolean") {
@@ -29,18 +30,20 @@ function shouldShowConditionalField(
 }
 
 export function getEmptyRequiredFields(
-  data: Record<string, any>,
+  data: object,
   schemas: FieldSchema[],
 ): string[] {
   if (!schemas || schemas.length === 0) return [];
 
   const missingFields: string[] = [];
+  const values = data as Record<string, unknown>;
 
   for (const field of schemas) {
     // Only validate required fields that should be shown based on conditionals
     if (field.required && shouldShowConditionalField(field, data)) {
-      const value = data[field.name];
-      if (isEmptyValue(value)) {
+      const names = [field.name, ...(field.alternative_names ?? [])];
+      const hasValue = names.some((name) => !isEmptyValue(values[name]));
+      if (!hasValue) {
         missingFields.push(field.label);
       }
     }

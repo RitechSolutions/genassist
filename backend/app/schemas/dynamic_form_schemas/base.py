@@ -34,6 +34,13 @@ class FieldSchema(BaseModel):
     type: FieldType = Field(..., description="Field type")
     label: str = Field(..., description="Display label for the field")
     required: bool = Field(default=False, description="Whether field is required")
+    alternative_names: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Alternative field names that may satisfy this required field. "
+            "The field is considered present when it or any alternative has a value."
+        ),
+    )
     description: Optional[str] = Field(default=None, description="Field description")
     placeholder: Optional[str] = Field(default=None, description="Placeholder text")
     default: Optional[Union[str, int, float, bool]] = Field(
