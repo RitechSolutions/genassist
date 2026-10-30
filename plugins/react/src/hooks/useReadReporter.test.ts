@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ChatMessage } from "../types";
 import {
   countInboundAfter,
+  dividerKeyOnEngage,
   firstInboundKeyAfter,
   messageIdentityKey,
 } from "./useReadReporter";
@@ -85,5 +86,15 @@ describe("firstInboundKeyAfter (New messages divider anchor)", () => {
     // After a2 the next entry is a 'special' takeover banner; the divider still
     // anchors to the following agent reply (a3), not the banner.
     expect(firstInboundKeyAfter(THREAD, "a2")).toBe("a3");
+  });
+});
+
+describe("dividerKeyOnEngage", () => {
+  it("returns no anchor when the visitor engages already caught up", () => {
+    expect(dividerKeyOnEngage(THREAD, "a3")).toBeNull();
+  });
+
+  it("keeps the seen marker as the anchor when a reply is unread", () => {
+    expect(dividerKeyOnEngage(THREAD, "a2")).toBe("a2");
   });
 });
