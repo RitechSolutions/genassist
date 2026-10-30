@@ -34,9 +34,9 @@ import { TagsFieldInput } from "@/components/TagsFieldInput";
 import {
   applySubtopicEdit,
   DEFAULT_ANALYST_TOPICS,
-  parseTopicRows,
   serializeTopicRows,
   topicNameError,
+  topicRowsOrDefaults,
   type TopicRow,
 } from "../helpers/topicRows";
 
@@ -158,7 +158,9 @@ export function LLMAnalystDialog({
     if (!isOpen) return;
     setSelectedEnrichments([]);
     setNodeTypeSearch("");
-    setTopicRows([]);
+    setTopicRows(
+      topicRowsOrDefaults(mode === "edit" ? analystToEdit?.settings?.topics : undefined).map(withRowKey),
+    );
     setSelectedTopicKey(null);
     setNewTopicName("");
     fetchProviders();
@@ -166,7 +168,6 @@ export function LLMAnalystDialog({
     fetchNodeTypes();
     if (analystToEdit && mode === "edit") {
       setSelectedEnrichments(analystToEdit.context_enrichments ?? []);
-      setTopicRows(parseTopicRows(analystToEdit.settings?.topics).map(withRowKey));
     }
   }, [isOpen, analystToEdit, mode]);
 
