@@ -216,7 +216,7 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         """
         base_filters = _issue_filters(filter_obj)
         if filter_obj.status:
-            base_filters.append(_issue_status_col() == filter_obj.status)
+            base_filters.append(_issue_status_col().in_(filter_obj.status))
         if filter_obj.feedback_id:
             base_filters.append(MessageFeedbackModel.id == filter_obj.feedback_id)
 

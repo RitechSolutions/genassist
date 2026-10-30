@@ -4,8 +4,11 @@ import { Badge } from "@/components/badge";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -42,15 +45,41 @@ export interface FilterMenuTextGroup {
   onChange: (value: string) => void;
 }
 
-export type FilterMenuGroup = FilterMenuSelectGroup | FilterMenuTextGroup;
+export interface FilterMenuSection {
+  label?: string;
+  options: FilterMenuOption[];
+}
 
-const isActive = (group: FilterMenuGroup) =>
-  group.type === "text" ? group.value.trim() !== "" : group.value !== ALL_FILTER_VALUE;
+/** Pick-many submenu; an empty value means the filter is off. */
+export interface FilterMenuMultiGroup {
+  type: "multi";
+  key: string;
+  label: string;
+  allLabel: string;
+  value: string[];
+  sections: FilterMenuSection[];
+  onChange: (value: string[]) => void;
+}
 
-const activeLabel = (group: FilterMenuGroup) =>
-  group.type === "text"
-    ? group.value.trim()
-    : group.options.find((o) => o.value === group.value)?.label ?? group.value;
+export type FilterMenuGroup = FilterMenuSelectGroup | FilterMenuTextGroup | FilterMenuMultiGroup;
+
+const isActive = (group: FilterMenuGroup) => {
+  if (group.type === "text") return group.value.trim() !== "";
+  if (group.type === "multi") return group.value.length > 0;
+  return group.value !== ALL_FILTER_VALUE;
+};
+
+const activeLabel = (group: FilterMenuGroup) => {
+  if (group.type === "text") return group.value.trim();
+  if (group.type === "multi") {
+    if (group.value.length > 1) return `${group.value.length} selected`;
+    const [value] = group.value;
+    return group.sections.flatMap((s) => s.options).find((o) => o.value === value)?.label ?? value;
+  }
+  return group.options.find((o) => o.value === group.value)?.label ?? group.value;
+};
+
+const keepMenuOpen = (event: Event) => event.preventDefault();
 
 // Radix menus run typeahead (and arrow-key navigation) on keydown, which would steal focus
 // from a text input nested in the menu. Escape still bubbles so the menu can close.
@@ -75,7 +104,11 @@ export function FilterMenu({ groups, align = "end", className }: FilterMenuProps
   const clearAll = () => {
     // Reset in array order so a parent filter that also clears its dependants (e.g. the
     // Analytics group filter resets the agent) cannot clobber a value set after it.
-    for (const group of groups) group.onChange(group.type === "text" ? "" : ALL_FILTER_VALUE);
+    for (const group of groups) {
+      if (group.type === "text") group.onChange("");
+      else if (group.type === "multi") group.onChange([]);
+      else group.onChange(ALL_FILTER_VALUE);
+    }
   };
 
   return (
@@ -128,6 +161,52 @@ export function FilterMenu({ groups, align = "end", className }: FilterMenuProps
                   <DropdownMenuItem onClick={() => group.onChange("")} className="mt-1 text-muted-foreground">
                     Clear
                   </DropdownMenuItem>
+                )}
+              </DropdownMenuSubContent>
+            ) : group.type === "multi" ? (
+              <DropdownMenuSubContent className="max-h-64 max-w-[16rem] overflow-y-auto">
+                <DropdownMenuCheckboxItem
+                  checked={group.value.length === 0}
+                  onSelect={keepMenuOpen}
+                  onCheckedChange={() => {
+                    if (group.value.length > 0) group.onChange([]);
+                  }}
+                >
+                  <span className="truncate">{group.allLabel}</span>
+                </DropdownMenuCheckboxItem>
+                {group.sections.every((section) => section.options.length === 0) ? (
+                  <DropdownMenuItem disabled>No options available</DropdownMenuItem>
+                ) : (
+                  group.sections.map((section, index) =>
+                    section.options.length === 0 ? null : (
+                      <DropdownMenuGroup key={index}>
+                        <DropdownMenuSeparator />
+                        {section.label && (
+                          <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">
+                            {section.label}
+                          </DropdownMenuLabel>
+                        )}
+                        {section.options.map((option) => (
+                          <DropdownMenuCheckboxItem
+                            key={option.value}
+                            checked={group.value.includes(option.value)}
+                            onSelect={keepMenuOpen}
+                            onCheckedChange={(checked) =>
+                              group.onChange(
+                                checked
+                                  ? [...group.value, option.value]
+                                  : group.value.filter((value) => value !== option.value)
+                              )
+                            }
+                          >
+                            <span className="truncate" title={option.label}>
+                              {option.label}
+                            </span>
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    )
+                  )
                 )}
               </DropdownMenuSubContent>
             ) : (

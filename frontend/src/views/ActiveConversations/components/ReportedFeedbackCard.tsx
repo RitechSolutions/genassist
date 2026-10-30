@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   CircleCheckBig,
   CircleDashed,
@@ -19,6 +19,8 @@ import {
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { ISSUE_CATEGORIES, type IssueCategory } from "@/services/issueStatuses";
 import { CATEGORY_LABELS } from "@/views/ReportedFeedback/constants";
+import { listableStatuses } from "@/views/ReportedFeedback/helpers/issueStatuses";
+import { useIssueStatuses } from "@/views/ReportedFeedback/hooks/useIssueStatuses";
 import { useFeedbackSummary } from "@/views/ReportedFeedback/hooks/useReportedFeedback";
 
 interface CountRowProps {
@@ -28,6 +30,8 @@ interface CountRowProps {
   count: number;
   bgColor: string;
   iconColor: string;
+  to?: string;
+  state?: { dateRange?: DateRange };
 }
 
 const CATEGORY_ROWS: Record<IssueCategory, Omit<CountRowProps, "title" | "count">> = {
@@ -57,9 +61,10 @@ const formatPeriod = (range: DateRange | undefined): string => {
   return formatDateRangeLabel(range.from, range.to);
 };
 
-function CountRow({ icon: Icon, title, description, count, bgColor, iconColor }: CountRowProps) {
-  return (
-    <div className="flex gap-3 items-center p-2 rounded-lg">
+function CountRow({ icon: Icon, title, description, count, bgColor, iconColor, to, state }: CountRowProps) {
+  const rowClass = "flex gap-3 items-center p-2 rounded-lg";
+  const content = (
+    <>
       <div className={cn(bgColor, "flex items-center p-2 rounded-lg shrink-0")}>
         <Icon className={cn("w-5 h-5", iconColor)} />
       </div>
@@ -70,7 +75,20 @@ function CountRow({ icon: Icon, title, description, count, bgColor, iconColor }:
       <span className="text-sm font-semibold text-foreground tabular-nums">
         {count.toLocaleString()}
       </span>
-    </div>
+    </>
+  );
+  if (!to) return <div className={rowClass}>{content}</div>;
+  return (
+    <Link
+      to={to}
+      state={state}
+      className={cn(
+        rowClass,
+        "hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      )}
+    >
+      {content}
+    </Link>
   );
 }
 
@@ -78,9 +96,18 @@ function CountRow({ icon: Icon, title, description, count, bgColor, iconColor }:
 export function ReportedFeedbackCard({ className }: { className?: string }) {
   const navigate = useNavigate();
   const [dateRange] = usePersistedDateRange(dashboardDefaultDateRange());
-  const { total, totals, isLoading, isError } = useFeedbackSummary(
+  const { data: statuses = [] } = useIssueStatuses();
+  const { total, totals, byStatus, isLoading, isError } = useFeedbackSummary(
     toInclusiveDateParams(dateRange),
   );
+  const listedStatuses = listableStatuses(statuses, byStatus);
+  const categoryLink = (category: IssueCategory) => {
+    const keys = listedStatuses
+      .filter((status) => status.category === category)
+      .map((status) => status.key);
+    if (keys.length === 0) return undefined;
+    return `/reported-feedback?${new URLSearchParams(keys.map((key) => ["status", key])).toString()}`;
+  };
 
   return (
     <Card
@@ -124,6 +151,8 @@ export function ReportedFeedbackCard({ className }: { className?: string }) {
                 {...CATEGORY_ROWS[category]}
                 title={CATEGORY_LABELS[category]}
                 count={totals[category]}
+                to={categoryLink(category)}
+                state={{ dateRange }}
               />
             ))}
           </>
