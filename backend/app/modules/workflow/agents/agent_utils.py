@@ -17,18 +17,25 @@ def validate_tool_parameters(tool: BaseTool, args: Dict[str, Any]) -> Dict[str, 
     
     validated_args = {}
     errors = []
-    
+    # Return-direct tools skip BaseTool's missing-value refusal, so a null must be caught here
+    ends_agent_turn = bool(getattr(tool, 'return_direct', False))
+
     for param_name, param_info in tool.parameters.items():
         required = param_info.get('required', False)
         param_type = param_info.get('type', 'any')
         default = param_info.get('default', None)
-        
-        if param_name in args:
+        value_given = args.get(param_name) is not None
+        report_missing_here = param_name not in args or ends_agent_turn
+
+        if value_given:
             value = convert_parameter_type(args[param_name], param_type, param_name, errors)
             if value is not None:
                 validated_args[param_name] = value
-        elif required:
+        elif required and report_missing_here:
             errors.append(f"Required parameter '{param_name}' is missing")
+        elif required:
+            # Left out, so BaseTool refuses the call and the agent asks the user
+            continue
         elif default is not None:
             validated_args[param_name] = default
     
@@ -40,6 +47,8 @@ def validate_tool_parameters(tool: BaseTool, args: Dict[str, Any]) -> Dict[str, 
 
 def convert_parameter_type(value: Any, param_type: str, param_name: str, errors: List[str]) -> Any:
     """Convert parameter to the expected type"""
+    if value is None:
+        return None
     try:
         if param_type == 'string' and not isinstance(value, str):
             return str(value)
