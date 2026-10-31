@@ -59,8 +59,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixToolt
 import { useAgentsList } from "@/views/Analytics/hooks/useAgentsList";
 import { DateRangePicker } from "@/components/date-range-picker";
 import type { DateRange } from "react-day-picker";
-import { subDays } from "date-fns";
-import { toInclusiveDateParams } from "@/helpers/dateRange";
+import { lastDaysDateRange, toInclusiveDateParams } from "@/helpers/dateRange";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { useHasPermission } from "@/hooks/useHasPermission";
 import { Switch } from "@/components/switch";
@@ -189,10 +188,7 @@ const Transcripts = () => {
     return "all";
   };
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initStatusFilter);
-  const [dateRange, setDateRange] = usePersistedDateRange({
-    from: subDays(new Date(), 7),
-    to: new Date(),
-  });
+  const [dateRange, setDateRange] = usePersistedDateRange(lastDaysDateRange(7));
 
   // Calculate hostility parameters based on sentiment
   const getHostilityParams = (sentiment: string) => {

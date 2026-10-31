@@ -4,7 +4,6 @@ import {
   endOfYear,
   format,
   isAfter,
-  startOfDay,
   subDays,
   subMonths,
   subYears,
@@ -18,7 +17,7 @@ import { Button } from "@/components/button";
 import { Calendar } from "@/components/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
 import { cn } from "@/helpers/utils";
-import { formatDateRangeLabel } from "@/helpers/dateRange";
+import { calendarToday, formatDateRangeLabel } from "@/helpers/dateRange";
 
 export interface DatePreset {
   label: string;
@@ -26,23 +25,22 @@ export interface DatePreset {
 }
 
 function getDefaultPresets(): DatePreset[] {
-  const now = new Date();
-  const todayStart = startOfDay(now);
-  const lastYear = subYears(now, 1);
+  const today = calendarToday();
+  const lastYear = subYears(today, 1);
   return [
-    { label: "Today", range: { from: todayStart, to: now } },
-    { label: "Last 7 days", range: { from: subDays(now, 7), to: now } },
-    { label: "Last 30 days", range: { from: subDays(now, 30), to: now } },
-    { label: "This week", range: { from: startOfWeek(now, { weekStartsOn: 1 }), to: now } },
-    { label: "This month", range: { from: startOfMonth(now), to: now } },
+    { label: "Today", range: { from: today, to: today } },
+    { label: "Last 7 days", range: { from: subDays(today, 7), to: today } },
+    { label: "Last 30 days", range: { from: subDays(today, 30), to: today } },
+    { label: "This week", range: { from: startOfWeek(today, { weekStartsOn: 1 }), to: today } },
+    { label: "This month", range: { from: startOfMonth(today), to: today } },
     {
       label: "Last month",
       range: {
-        from: startOfMonth(subMonths(now, 1)),
-        to: endOfDay(subDays(startOfMonth(now), 1)),
+        from: startOfMonth(subMonths(today, 1)),
+        to: endOfDay(subDays(startOfMonth(today), 1)),
       },
     },
-    { label: "Year to date", range: { from: startOfYear(now), to: now } },
+    { label: "Year to date", range: { from: startOfYear(today), to: today } },
     {
       label: "Last year",
       range: { from: startOfYear(lastYear), to: endOfYear(lastYear) },
@@ -71,7 +69,7 @@ export interface DateRangePickerProps {
 
 function clampRangeToToday(range: DateRange | undefined): DateRange | undefined {
   if (!range) return undefined;
-  const todayEnd = endOfDay(new Date());
+  const todayEnd = endOfDay(calendarToday());
   const clamp = (d: Date | undefined) => {
     if (!d) return undefined;
     return isAfter(d, todayEnd) ? todayEnd : d;
@@ -96,8 +94,8 @@ export const DateRangePicker = ({
   disabled = false,
 }: DateRangePickerProps) => {
   const presets = useMemo(() => customPresets ?? getDefaultPresets(), [customPresets]);
-  const todayEnd = useMemo(() => endOfDay(new Date()), []);
-  const todayStart = useMemo(() => startOfDay(new Date()), []);
+  const today = useMemo(() => calendarToday(), []);
+  const todayEnd = useMemo(() => endOfDay(today), [today]);
 
   const handleSelect = useCallback(
     (range: DateRange | undefined) => {
@@ -161,7 +159,7 @@ export const DateRangePicker = ({
           initialFocus
           disabled={disableFutureDates ? { after: todayEnd } : undefined}
           toDate={disableFutureDates ? todayEnd : undefined}
-          defaultMonth={disableFutureDates ? todayStart : undefined}
+          today={today}
         />
       </PopoverContent>
     </Popover>

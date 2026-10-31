@@ -1,5 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { format } from "date-fns";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  calendarToday,
+  lastDaysDateRange,
   normalizeDateRange,
   toExactActivityParams,
   toExactInterval,
@@ -108,6 +111,37 @@ describe("agent performance parameter families", () => {
     expect(new Date(params.activity_from_datetime!).getTime()).toBeLessThan(
       new Date(params.activity_to_datetime!).getTime(),
     );
+  });
+});
+
+describe("calendarToday", () => {
+  afterEach(() => {
+    process.env.TZ = "America/Vancouver";
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ["Pacific/Kiritimati", "2026-10-30T11:53:00Z", "2026-10-30", "2026-10-31"],
+    ["Asia/Tokyo", "2026-10-30T22:00:00Z", "2026-10-30", "2026-10-31"],
+    ["America/Vancouver", "2026-10-31T02:00:00Z", "2026-10-31", "2026-11-01"],
+    ["UTC", "2026-10-30T11:53:00Z", "2026-10-30", "2026-10-31"],
+  ])("in %s at %s, Today is the UTC day the server counts", (tz, now, today, next) => {
+    process.env.TZ = tz;
+    const picked = calendarToday(new Date(now));
+    expect(format(picked, "yyyy-MM-dd HH:mm")).toBe(`${today} 00:00`);
+    expect(toExactActivityParams({ from: picked, to: picked })).toEqual({
+      activity_from_datetime: `${today}T00:00:00.000Z`,
+      activity_to_datetime: `${next}T00:00:00.000Z`,
+    });
+  });
+
+  it("ends the last-7-days default on the UTC day", () => {
+    process.env.TZ = "Pacific/Kiritimati";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-30T11:53:00Z"));
+    const range = lastDaysDateRange(7);
+    expect(format(range.from!, "yyyy-MM-dd HH:mm")).toBe("2026-10-23 00:00");
+    expect(format(range.to!, "yyyy-MM-dd HH:mm")).toBe("2026-10-30 00:00");
   });
 });
 
