@@ -1,5 +1,14 @@
 import { format } from "date-fns";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   calendarToday,
   lastDaysDateRange,
@@ -8,8 +17,8 @@ import {
   toExactInterval,
   toInclusiveDateParams,
   toUtcBucketDateParams,
-  utcDayEnd,
-  utcDayStart,
+  dayEndIso,
+  dayStartIso,
 } from "@/helpers/dateRange";
 
 const originalTz = process.env.TZ;
@@ -147,8 +156,42 @@ describe("calendarToday", () => {
 
 describe("UTC day bounds", () => {
   it("brackets the picked calendar day whatever the local time of the Date", () => {
-    expect(utcDayStart(day(2026, 11, 1, 23))).toBe("2026-11-01T00:00:00.000Z");
-    expect(utcDayEnd(day(2026, 11, 1, 23))).toBe("2026-11-01T23:59:59.999999Z");
+    expect(dayStartIso(day(2026, 11, 1, 23))).toBe("2026-11-01T00:00:00.000Z");
+    expect(dayEndIso(day(2026, 11, 1, 23))).toBe("2026-11-01T23:59:59.999999Z");
+  });
+});
+
+describe("in Local time mode", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", { getItem: () => "local" });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env.TZ = "America/Vancouver";
+  });
+
+  it("spans Vancouver's 25-hour day when DST ends", () => {
+    const interval = toExactInterval({ from: day(2026, 11, 1), to: day(2026, 11, 1) })!;
+    expect(interval.start.toISOString()).toBe("2026-11-01T07:00:00.000Z");
+    expect(interval.endExclusive.toISOString()).toBe("2026-11-02T08:00:00.000Z");
+  });
+
+  it("spans Berlin's 25-hour day when DST ends", () => {
+    process.env.TZ = "Europe/Berlin";
+    const interval = toExactInterval({ from: day(2026, 10, 25), to: day(2026, 10, 25) })!;
+    expect(interval.start.toISOString()).toBe("2026-10-24T22:00:00.000Z");
+    expect(interval.endExclusive.toISOString()).toBe("2026-10-25T23:00:00.000Z");
+  });
+
+  it("brackets the picked day in local time", () => {
+    expect(dayStartIso(day(2026, 11, 1, 23))).toBe("2026-11-01T07:00:00.000Z");
+    expect(dayEndIso(day(2026, 11, 1, 23))).toBe("2026-11-02T07:59:59.999999Z");
+  });
+
+  it("takes Today from the local clock", () => {
+    process.env.TZ = "Pacific/Kiritimati";
+    const picked = calendarToday(new Date("2026-10-30T11:53:00Z"));
+    expect(format(picked, "yyyy-MM-dd HH:mm")).toBe("2026-10-31 00:00");
   });
 });
 

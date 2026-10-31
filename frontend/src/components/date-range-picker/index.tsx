@@ -18,6 +18,7 @@ import { Calendar } from "@/components/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
 import { cn } from "@/helpers/utils";
 import { calendarToday, formatDateRangeLabel } from "@/helpers/dateRange";
+import { readTimeZoneMode } from "@/helpers/timeZone";
 
 export interface DatePreset {
   label: string;
@@ -111,10 +112,11 @@ export const DateRangePicker = ({
     [handleSelect],
   );
 
+  const zoneSuffix = readTimeZoneMode() === "utc" ? " (UTC)" : "";
   const label = value?.from
-    ? value.to
-      ? formatDateRangeLabel(value.from, value.to)
-      : format(value.from, "MMM d, yyyy")
+    ? (value.to
+        ? formatDateRangeLabel(value.from, value.to)
+        : format(value.from, "MMM d, yyyy")) + zoneSuffix
     : placeholder;
 
   return (
