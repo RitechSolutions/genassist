@@ -9,6 +9,7 @@ from uuid import UUID
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils import model_validator
 from app.core.utils.ml_model_feature_contract import (
     _match_registered_feature_names,
     _model_feature_count,
@@ -223,7 +224,12 @@ async def load_model_artifact_contract(
         return extract_model_artifact_contract(await _read_artifact(pkl_file))
 
     if pkl_file_id:
-        with tempfile.TemporaryDirectory(prefix="ml-model-contract-") as temporary_directory:
+        # The safety check only reads files inside the ML models folder, so the
+        # downloaded copy goes to a temporary folder inside it, not the system temp folder.
+        os.makedirs(model_validator.ML_MODELS_DIR, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=".contract-", dir=model_validator.ML_MODELS_DIR
+        ) as temporary_directory:
             temporary_path = os.path.join(temporary_directory, "model.pkl")
             await _download_artifact(pkl_file_id, temporary_path)
             return extract_model_artifact_contract(await _read_artifact(temporary_path))
