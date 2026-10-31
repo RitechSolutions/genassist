@@ -1,3 +1,4 @@
+import os
 import pickle
 import threading
 from pathlib import Path
@@ -12,6 +13,7 @@ from sklearn.linear_model import LinearRegression
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils import model_validator
 from app.services import ml_model_artifacts
 from app.services.ml_model_artifacts import (
     _UNREADABLE_DETAIL,
@@ -131,6 +133,28 @@ class TestExtractContract:
         assert exc.value.error_key is ErrorKey.ML_MODEL_ARTIFACT_INVALID
         assert "safe, unambiguous feature-name order" in exc.value.error_detail
 
+    def test_reloaded_catboost_model_uses_its_recorded_feature_names(self):
+        # CatBoost does not save n_features_in_ in the pickle: a reloaded model reports 0.
+        catboost = pytest.importorskip("catboost")
+        frame = pd.DataFrame(_X, columns=["hour", "lag_24"])
+        model = catboost.CatBoostRegressor(iterations=2, verbose=0, allow_writing_files=False).fit(frame, _Y)
+        reloaded = pickle.loads(pickle.dumps(model))
+        assert reloaded.n_features_in_ == 0
+
+        contract = extract_model_artifact_contract(reloaded)
+
+        assert contract.features == ("hour", "lag_24")
+        assert contract.module_root == "catboost"
+        validate_registry_contract(contract, ["hour", "lag_24"], "revenue")
+
+    def test_zero_feature_count_is_still_rejected_for_other_libraries(self):
+        model = SimpleNamespace(n_features_in_=0, feature_names_in_=np.array(["hour", "lag_24"]))
+
+        with pytest.raises(AppException) as exc:
+            extract_model_artifact_contract(model)
+
+        assert "safe, unambiguous feature-name order" in exc.value.error_detail
+
     def test_lightgbm_feature_names_use_inference_normalization(self):
         class LightGBMModel:
             n_features_in_ = 1
@@ -222,10 +246,19 @@ class TestValidateRegistryContract:
         assert "Duplicate features: 'age'." in exc.value.error_detail
 
 
+@pytest.fixture
+def ml_models_dir(monkeypatch, tmp_path):
+    """Use a test folder as the ML models folder, the only place the safety check reads from."""
+    folder = tmp_path / "ml_models"
+    folder.mkdir()
+    monkeypatch.setattr(model_validator, "ML_MODELS_DIR", os.path.realpath(folder))
+    return folder
+
+
 class TestLoadContract:
     @pytest.mark.asyncio
-    async def test_reads_local_artifact_without_touching_the_model_cache(self, tmp_path):
-        artifact_path = tmp_path / "model.pkl"
+    async def test_reads_local_artifact_without_touching_the_model_cache(self, ml_models_dir):
+        artifact_path = ml_models_dir / "model.pkl"
         artifact_path.write_bytes(pickle.dumps(_named_raw_model()))
         manager = get_ml_model_manager()
         validated_before = set(manager._validated_files)
@@ -272,7 +305,7 @@ class TestLoadContract:
         assert exc.value.error_detail == _UNREADABLE_DETAIL
 
     @pytest.mark.asyncio
-    async def test_missing_local_copy_falls_back_to_the_uploaded_file(self, monkeypatch, tmp_path):
+    async def test_missing_local_copy_falls_back_to_the_uploaded_file(self, monkeypatch, ml_models_dir):
         downloaded_paths = []
 
         async def fake_download(_file_id, destination_path):
@@ -281,11 +314,28 @@ class TestLoadContract:
 
         monkeypatch.setattr(ml_model_artifacts, "_download_artifact", fake_download)
 
-        contract = await load_model_artifact_contract(str(tmp_path / "gone.pkl"), "artifact-id")
+        contract = await load_model_artifact_contract(str(ml_models_dir / "gone.pkl"), "artifact-id")
 
         assert contract.features == ("hour", "lag_24")
         assert len(downloaded_paths) == 1
         assert not Path(downloaded_paths[0]).exists()
+
+    @pytest.mark.asyncio
+    async def test_uploaded_file_is_checked_inside_the_ml_models_folder(self, monkeypatch, ml_models_dir):
+        # Registering with pkl_file_id downloads the upload for the check. The safety
+        # check refuses files outside the ML models folder, so the copy must be inside it.
+        downloaded_paths = []
+
+        async def fake_download(_file_id, destination_path):
+            downloaded_paths.append(destination_path)
+            Path(destination_path).write_bytes(pickle.dumps(_named_raw_model()))
+
+        monkeypatch.setattr(ml_model_artifacts, "_download_artifact", fake_download)
+
+        await validate_model_artifact_registration(None, "artifact-id", ["hour", "lag_24"], "revenue")
+
+        assert model_validator.resolve_model_path(downloaded_paths[0]) is not None
+        assert list(ml_models_dir.iterdir()) == []
 
 
 class TestDownloadArtifact:
