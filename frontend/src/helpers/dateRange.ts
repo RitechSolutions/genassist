@@ -28,6 +28,16 @@ export function normalizeDateRange(
   return { from: range.from, to: range.to ?? range.from };
 }
 
+/** The current UTC calendar date as the local-midnight Date the picker uses. */
+export function calendarToday(now: Date = new Date()): Date {
+  return new Date(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+}
+
+export function lastDaysDateRange(days: number): DateRange {
+  const today = calendarToday();
+  return { from: subDays(today, days), to: today };
+}
+
 function utcMidnight(day: Date): Date {
   return new Date(Date.UTC(day.getFullYear(), day.getMonth(), day.getDate()));
 }
@@ -92,7 +102,7 @@ export function toInclusiveDateParams(range: DateRange | undefined): {
 }
 
 export function dashboardDefaultDateRange(): DateRange {
-  return { from: subDays(new Date(), 30), to: new Date() };
+  return lastDaysDateRange(30);
 }
 
 export function formatDateRangeLabel(from: Date, to: Date): string {
