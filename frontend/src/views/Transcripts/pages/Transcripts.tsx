@@ -77,6 +77,7 @@ import {
 } from "../helpers/conversationsView";
 import { useTopicFilter } from "@/hooks/useTopicFilter";
 import { topicLabel } from "@/views/ReportedFeedback/helpers/triageDraft";
+import { formatDateTime } from "@/helpers/utils";
 
 const ITEMS_PER_PAGE = 10;
 // Minimum characters required before a search is sent to the backend. Short
@@ -1273,7 +1274,7 @@ const Transcripts = () => {
                             <span className="hidden sm:inline h-3 w-px bg-muted" aria-hidden />
                             <span>
                               {transcript?.timestamp
-                                ? new Date(transcript.timestamp).toLocaleString()
+                                ? formatDateTime(transcript.timestamp)
                                 : "N/A"}
                             </span>
                           </div>

@@ -26,7 +26,7 @@ import { getWorkflowById } from "@/services/workflows";
 import { getAgentConfig } from "@/services/api";
 import type { AgentConfig } from "@/interfaces/ai-agent.interface";
 import { Workflow } from "@/interfaces/workflow.interface";
-import { format } from "date-fns";
+import { displayTimeZone } from "@/helpers/timeZone";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
 import { formatUsd } from "@/helpers/formatCurrency";
@@ -51,6 +51,23 @@ interface AgentDetailsDialogProps {
   onOpenChange: (open: boolean) => void;
   onManageKeys?: (agentId: string) => void;
 }
+
+const formatUpdatedAt = (value: string): string => {
+  const date = new Date(value);
+  const timeZone = displayTimeZone();
+  const day = date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone,
+  });
+  const time = date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+  });
+  return `${day} at ${time}`;
+};
 
 export function AgentDetailsDialog({
   agent,
@@ -466,7 +483,7 @@ export function AgentDetailsDialog({
                           <div className="flex items-center gap-1 text-xs text-muted-foreground pt-2 border-t border-border">
                             <Clock className="w-3.5 h-3.5" />
                             Last updated{" "}
-                            {format(new Date(workflow.updated_at), "MMM d, yyyy 'at' h:mm a")}
+                            {formatUpdatedAt(workflow.updated_at)}
                           </div>
                         )}
                       </>

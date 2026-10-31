@@ -1,4 +1,5 @@
 import type { ApiKey } from "@/interfaces/api-key.interface";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 function parseUtc(iso: string): Date {
   return new Date(iso);
@@ -18,13 +19,17 @@ export function ApiKeyExpiryLines({ apiKey }: { apiKey: ApiKey }) {
     <div className="flex flex-col gap-1 text-xs text-muted-foreground">
       {credDate && !Number.isNaN(credDate.getTime()) ? (
         <span className={credExpired ? "text-destructive font-medium" : undefined}>
-          {credExpired ? "Expired" : "Until"} {credDate.toLocaleString()}
+          {credExpired ? "Expired" : "Until"}{" "}
+          {credDate.toLocaleString(undefined, { timeZone: displayTimeZone() })}
         </span>
       ) : (
         <span>No expiry</span>
       )}
       {priorDate && !Number.isNaN(priorDate.getTime()) ? (
-        <span>Prior until {priorDate.toLocaleString()}</span>
+        <span>
+          Prior until{" "}
+          {priorDate.toLocaleString(undefined, { timeZone: displayTimeZone() })}
+        </span>
       ) : null}
     </div>
   );
