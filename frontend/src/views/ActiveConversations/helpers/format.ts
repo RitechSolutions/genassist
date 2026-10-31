@@ -1,4 +1,9 @@
 import { formatDuration as sharedFormatDuration } from "@/helpers/duration";
+import {
+  calendarDayNumber,
+  dateParts,
+  displayTimeZone,
+} from "@/helpers/timeZone";
 
 export const formatDuration = (seconds: number | undefined): string => {
 	return sharedFormatDuration(seconds ?? 0);
@@ -6,22 +11,28 @@ export const formatDuration = (seconds: number | undefined): string => {
 
 export const formatDateTime = (timestamp: string): string => {
   const date = new Date(timestamp);
-  const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
+  const daysAgo = calendarDayNumber(new Date()) - calendarDayNumber(date);
+  const timeZone = displayTimeZone();
 
-  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const timeStr = date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone,
+  });
 
-  if (isToday) {
+  if (daysAgo === 0) {
     return `Today, ${timeStr}`;
   }
 
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (date.toDateString() === yesterday.toDateString()) {
+  if (daysAgo === 1) {
     return `Yesterday, ${timeStr}`;
   }
 
-  const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  const dateStr = date.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    timeZone,
+  });
   return `${dateStr}, ${timeStr}`;
 };
 
@@ -53,7 +64,10 @@ export const formatDateTime = (timestamp: string): string => {
 
       if (isNaN(date.getTime())) return "";
 
-      return date.toTimeString().split(" ")[0];
+      const { hours, minutes, seconds } = dateParts(date);
+      return [hours, minutes, seconds]
+        .map((part) => String(part).padStart(2, "0"))
+        .join(":");
     } catch (error) {
       return "";
     }

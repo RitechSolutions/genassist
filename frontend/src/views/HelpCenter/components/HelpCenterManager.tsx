@@ -25,6 +25,7 @@ import {
   SupportTicketType,
 } from "@/interfaces/helpCenter.interface";
 import { TicketStatusBadge } from "./TicketStatusBadge";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 type ViewMode = "list" | "form";
 
@@ -67,6 +68,7 @@ const formatDate = (value: string): string => {
     year: "numeric",
     month: "short",
     day: "numeric",
+    timeZone: displayTimeZone(),
   });
 };
 

@@ -13,6 +13,7 @@ import { Button } from "@/components/button";
 import { Badge } from "@/components/badge";
 import JsonViewer from "@/components/JsonViewer";
 import { getWorkflowScheduleRuns } from "@/services/workflowSchedules";
+import { formatDateTime } from "@/helpers/utils";
 import {
   WorkflowSchedule,
   WorkflowScheduleRun,
@@ -125,9 +126,9 @@ const RunHistoryDialog: React.FC<RunHistoryDialogProps> = ({
                       <span className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Clock className="h-3 w-3" />
                         {run.started_at
-                          ? new Date(run.started_at).toLocaleString()
+                          ? formatDateTime(run.started_at)
                           : run.created_at
-                          ? new Date(run.created_at).toLocaleString()
+                          ? formatDateTime(run.created_at)
                           : "—"}
                       </span>
                       {duration && (

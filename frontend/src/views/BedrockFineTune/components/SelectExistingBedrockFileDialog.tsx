@@ -14,6 +14,7 @@ import { toast } from "react-hot-toast";
 import { listBedrockTrainingFiles } from "@/services/bedrockFineTune";
 import type { BedrockTrainingFile } from "@/interfaces/bedrockFineTune.interface";
 import type { S3FileRef } from "@/views/BedrockFineTune/types";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 interface Props {
   isOpen: boolean;
@@ -88,7 +89,9 @@ export function SelectExistingBedrockFileDialog({
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {file.size ? `${(file.size / 1024).toFixed(1)} KB` : ""}
                       {file.last_modified
-                        ? ` · ${new Date(file.last_modified).toLocaleDateString()}`
+                        ? ` · ${new Date(file.last_modified).toLocaleDateString(undefined, {
+                            timeZone: displayTimeZone(),
+                          })}`
                         : ""}
                     </p>
                   </div>

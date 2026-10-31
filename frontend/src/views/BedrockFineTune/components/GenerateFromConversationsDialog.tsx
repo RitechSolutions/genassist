@@ -19,6 +19,7 @@ import {
 } from "@/services/bedrockFineTune";
 import type { BackendTranscript, TranscriptEntry } from "@/interfaces/transcript.interface";
 import type { S3FileRef } from "@/views/BedrockFineTune/types";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 const PAGE_SIZE = 20;
 
@@ -255,7 +256,9 @@ export function GenerateFromConversationsDialog({
                           <p className="text-sm font-medium">#{conv.id.slice(-4)}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {conv.conversation_date
-                              ? new Date(conv.conversation_date).toLocaleDateString()
+                              ? new Date(conv.conversation_date).toLocaleDateString(undefined, {
+                                  timeZone: displayTimeZone(),
+                                })
                               : "—"}{" "}
                             · {conv.word_count ?? 0} words · {conv.status}
                           </p>
