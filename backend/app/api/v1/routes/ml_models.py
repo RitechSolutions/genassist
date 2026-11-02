@@ -889,6 +889,21 @@ def _validate_file_manager_file(
     return suffix
 
 
+async def _get_query_database_manager(data_source_id: UUID):
+    """Return the data source's database manager, or 404 when it does not exist."""
+    try:
+        manager = await DBProviderManager.get_instance().get_database_manager(
+            str(data_source_id)
+        )
+    except AppException as exc:
+        if exc.error_key == ErrorKey.DATASOURCE_NOT_FOUND:
+            raise HTTPException(status_code=404, detail="Data source not found.") from exc
+        raise
+    if manager is None:
+        raise HTTPException(status_code=404, detail="Data source not found.")
+    return manager
+
+
 async def _load_query_profile_dataframe(
     request: ProfileDataRequest,
 ) -> pd.DataFrame:
@@ -899,10 +914,7 @@ async def _load_query_profile_dataframe(
             detail="A data source and query are required for SQL profiling.",
         )
 
-    provider = DBProviderManager.get_instance()
-    manager = await provider.get_database_manager(str(request.data_source_id))
-    if manager is None:
-        raise HTTPException(status_code=404, detail="Data source not found.")
+    manager = await _get_query_database_manager(request.data_source_id)
 
     query = request.query.strip()
     if has_volatile_template_vars(query):
@@ -973,10 +985,7 @@ async def preview_query(
             ),
         )
 
-    provider = DBProviderManager.get_instance()
-    manager = await provider.get_database_manager(str(preview_request.data_source_id))
-    if manager is None:
-        raise HTTPException(status_code=404, detail="Data source not found.")
+    manager = await _get_query_database_manager(preview_request.data_source_id)
 
     limited_query = _limit_read_query(
         query,
