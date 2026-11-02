@@ -5,6 +5,7 @@ import {
   parseTopicRows,
   serializeTopicRows,
   topicNameError,
+  topicRowsOrDefaults,
   type TopicRow,
 } from "@/views/LlmAnalyst/helpers/topicRows";
 
@@ -48,6 +49,28 @@ describe("parseTopicRows", () => {
     ]);
     expect(parseTopicRows(undefined)).toEqual([]);
     expect(parseTopicRows("Billing")).toEqual([]);
+  });
+});
+
+describe("topicRowsOrDefaults", () => {
+  const defaults = [
+    { name: "Product Inquiry", subtopics: [] },
+    { name: "Technical Support", subtopics: [] },
+    { name: "Billing Questions", subtopics: [] },
+    { name: "Other", subtopics: [] },
+  ];
+
+  it("gives the four defaults, in order, when nothing usable is stored", () => {
+    expect(topicRowsOrDefaults()).toEqual(defaults);
+    expect(topicRowsOrDefaults(null)).toEqual(defaults);
+    expect(topicRowsOrDefaults("Billing")).toEqual(defaults);
+    expect(topicRowsOrDefaults(["", " > Late", 3])).toEqual(defaults);
+  });
+
+  it("returns a stored list alone, with no defaults merged in", () => {
+    expect(topicRowsOrDefaults(["Refund", "Refund > Late"])).toEqual([
+      { name: "Refund", subtopics: ["Late"] },
+    ]);
   });
 });
 
