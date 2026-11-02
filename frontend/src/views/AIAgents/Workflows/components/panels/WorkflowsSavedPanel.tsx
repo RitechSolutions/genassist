@@ -46,6 +46,7 @@ import {
   TooltipTrigger,
 } from "@/components/RadixTooltip";
 import { calculateNextVersion, findPreviousVersion, isVersionDuplicate } from "../../utils/helpers";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 interface WorkflowsSavedPanelProps {
   isOpen: boolean;
@@ -70,6 +71,7 @@ const formatEditedAt = (iso: string): string => {
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: displayTimeZone(),
   });
 };
 

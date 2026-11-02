@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/tabs';
 import { SettingSection } from '../components/SettingSection';
+import { TimeZoneCard } from '../components/TimeZoneCard';
 import { useSettings } from '../hooks/useSettings';
 import { settingSections } from '../helpers/settingsData';
 import { getAuthMe, hasPermission } from '@/services/auth';
@@ -153,13 +154,16 @@ const SettingsPage = () => {
             </div>
 
             <TabsContent value="profile" className="mt-0">
-              {profileSection && (
-                <SettingSection
-                  section={profileSection}
-                  toggleStates={toggleStates}
-                  onToggle={handleToggle}
-                />
-              )}
+              <div className="space-y-6">
+                {profileSection && (
+                  <SettingSection
+                    section={profileSection}
+                    toggleStates={toggleStates}
+                    onToggle={handleToggle}
+                  />
+                )}
+                <TimeZoneCard />
+              </div>
             </TabsContent>
 
             <TabsContent value="notifications" className="mt-0">

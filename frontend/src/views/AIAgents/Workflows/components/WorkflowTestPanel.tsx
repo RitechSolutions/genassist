@@ -49,6 +49,7 @@ import { STTAudioInput } from "./TestInputFields";
 import JsonViewer from "@/components/JsonViewer";
 import NodeExecutionView from "./execution/NodeExecutionView";
 import { FallbackRatesNotice } from "./FallbackRatesNotice";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 type TestViewMode = "response" | "debug" | "execution";
 
@@ -89,6 +90,7 @@ const formatRunTime = (ts: number): string =>
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    timeZone: displayTimeZone(),
   });
 
 interface PausedFormSchema {
