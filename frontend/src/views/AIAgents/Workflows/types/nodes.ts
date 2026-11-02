@@ -543,6 +543,7 @@ export interface TrainDataSourceNodeData extends BaseNodeData {
   csvFilePath?: string; // Server path to the uploaded CSV file
   csvFileId?: string; // ID of the uploaded CSV file
   csvFileUrl?: string; // URL of the uploaded CSV file
+  sheetName?: string; // Excel uploads: the sheet to read (default: the first)
   analysisResult?: CSVAnalysisResult; // Preview/analysis of the uploaded file
 }
 

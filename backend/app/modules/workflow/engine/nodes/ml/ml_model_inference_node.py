@@ -4,6 +4,8 @@ ML Model Inference node implementation using the BaseNode class.
 
 import json
 import logging
+import re
+from numbers import Number
 from typing import Any, Dict, List, Optional, Sequence
 from uuid import UUID
 
@@ -37,6 +39,10 @@ logger = logging.getLogger(__name__)
 
 _BOOL_TRUE = frozenset({"true"})
 _BOOL_FALSE = frozenset({"false"})
+_INT_PATTERN = re.compile(r"[+-]?[0-9]+")
+_FLOAT_PATTERN = re.compile(
+    r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
+)
 
 
 def convert_value(val: Any) -> Any:
@@ -70,17 +76,19 @@ def convert_value(val: Any) -> Any:
         return True
     if val_lower in _BOOL_FALSE:
         return False
-    # Try float conversion
-    if "." in stripped:
+    # One rule for numbers: plain integers become int, other decimal or
+    # scientific notation becomes float. Python's own int()/float() would
+    # also accept "1_000", "inf" and "nan", which are not valid inputs, so
+    # those stay text and are rejected where a number is required.
+    if _INT_PATTERN.fullmatch(stripped):
         try:
-            return float(stripped)
+            return int(stripped)
         except ValueError:
             return val
-    # Try integer conversion
-    try:
-        return int(stripped)
-    except ValueError:
-        return val
+    if _FLOAT_PATTERN.fullmatch(stripped):
+        converted = float(stripped)
+        return converted if np.isfinite(converted) else val
+    return val
 
 
 def _convert_categorical_input(
@@ -442,15 +450,20 @@ def _prepare_inference_inputs(
         if name in defaults
         and (name in missing_features or name in features_with_missing_values)
     }
-    prepared_defaults = {
-        name: (
-            value
-            if categorical_feature_set is not None and name in categorical_feature_set
-            else convert_value(value)
-        )
-        for name, value in defaults.items()
-        if name in defaults_to_apply
-    }
+    prepared_defaults = {}
+    for name, value in defaults.items():
+        if name not in defaults_to_apply:
+            continue
+        if name in categorical_values:
+            prepared_defaults[name] = _convert_categorical_input(
+                value,
+                categorical_values[name],
+                name in normalized_categorical_feature_set,
+            )
+        elif categorical_feature_set is not None and name in categorical_feature_set:
+            prepared_defaults[name] = value
+        else:
+            prepared_defaults[name] = convert_value(value)
 
     invalid_defaults = [
         name
@@ -471,33 +484,22 @@ def _prepare_inference_inputs(
             ),
         )
 
-    invalid_numeric_defaults = [
-        name
-        for name, value in prepared_defaults.items()
-        if categorical_feature_set is not None
-        and name not in categorical_feature_set
-        and isinstance(value, str)
-    ]
+    invalid_numeric_defaults = []
+    for name, value in prepared_defaults.items():
+        if categorical_feature_set is not None and name in categorical_feature_set:
+            continue
+        if _numeric_value_problem(
+            value,
+            allow_text=categorical_feature_set is None,
+        ) is not None:
+            invalid_numeric_defaults.append(name)
     if invalid_numeric_defaults:
         raise AppException(
             error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
             error_detail=(
-                "Inference fallback value(s) for numeric feature(s) must be numbers or booleans: "
+                "Inference fallback value(s) for numeric feature(s) must be finite scalar "
+                "numbers or booleans: "
                 f"{', '.join(invalid_numeric_defaults)}."
-            ),
-        )
-
-    non_finite_defaults = [
-        name
-        for name, value in prepared_defaults.items()
-        if isinstance(value, (float, np.floating)) and not np.isfinite(value)
-    ]
-    if non_finite_defaults:
-        raise AppException(
-            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
-            error_detail=(
-                "Inference fallback value(s) must be finite numbers for: "
-                f"{', '.join(non_finite_defaults)}."
             ),
         )
 
@@ -595,6 +597,261 @@ def _prepare_inference_inputs(
         prepared_inputs[name] = values
 
     return prepared_inputs, defaults_applied
+
+
+def _numeric_value_problem(value: Any, allow_text: bool) -> Optional[str]:
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, (bool, np.bool_)):
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if _FLOAT_PATTERN.fullmatch(stripped):
+            try:
+                if not np.isfinite(float(stripped)):
+                    return "not finite"
+            except ValueError:
+                pass
+        return None if allow_text else "not numeric"
+    if isinstance(value, (dict, list, tuple, set)) or value is None:
+        return "not numeric"
+
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError, OverflowError):
+        if allow_text and not isinstance(value, Number):
+            return None
+        return "not numeric"
+    return None if np.isfinite(numeric_value) else "not finite"
+
+
+def _wrapped_model_candidates(model: Any) -> List[Any]:
+    """Return a model and fitted estimators held by supported wrappers."""
+    candidates = []
+    pending = [model]
+    visited = set()
+    while pending:
+        candidate = pending.pop()
+        if candidate is None or id(candidate) in visited:
+            continue
+        visited.add(id(candidate))
+        candidates.append(candidate)
+        pending.extend(
+            getattr(candidate, attr, None)
+            for attr in ("best_estimator_", "regressor_")
+        )
+    return candidates
+
+
+def _model_accepts_raw_text_features(model: Any) -> bool:
+    """Return whether a fitted pipeline owns raw feature preprocessing."""
+    for candidate in _wrapped_model_candidates(model):
+        module_root = type(candidate).__module__.split(".", 1)[0]
+        steps = getattr(candidate, "steps", None)
+        if module_root in {"sklearn", "imblearn"} and isinstance(
+            steps, (list, tuple)
+        ) and bool(steps):
+            return True
+    return False
+
+
+def _selected_feature_names(
+    selector: Any, feature_names: Sequence[str]
+) -> List[str]:
+    """Resolve fitted column-transformer selectors to model feature names."""
+    if isinstance(selector, str):
+        return [selector] if selector in feature_names else []
+    if isinstance(selector, (int, np.integer)) and not isinstance(
+        selector, (bool, np.bool_)
+    ):
+        index = int(selector)
+        return [feature_names[index]] if 0 <= index < len(feature_names) else []
+    if isinstance(selector, slice):
+        return list(feature_names[selector])
+    if not isinstance(selector, (list, tuple, np.ndarray, pd.Index)):
+        return []
+
+    selected = list(selector)
+    if len(selected) == len(feature_names) and all(
+        isinstance(value, (bool, np.bool_)) for value in selected
+    ):
+        return [
+            name for name, is_selected in zip(feature_names, selected) if is_selected
+        ]
+
+    names = []
+    for value in selected:
+        if isinstance(value, str) and value in feature_names:
+            names.append(value)
+        elif isinstance(value, (int, np.integer)) and not isinstance(
+            value, (bool, np.bool_)
+        ):
+            index = int(value)
+            if 0 <= index < len(feature_names):
+                names.append(feature_names[index])
+    return names
+
+
+def _transformer_categories(transformer: Any) -> Optional[List[Any]]:
+    if transformer is None or (
+        isinstance(transformer, str) and transformer in {"drop", "passthrough"}
+    ):
+        return None
+    categories = getattr(transformer, "categories_", None)
+    if isinstance(categories, (list, tuple)):
+        return list(categories)
+    steps = getattr(transformer, "steps", None)
+    if isinstance(steps, (list, tuple)):
+        for _, step_transformer in reversed(steps):
+            categories = _transformer_categories(step_transformer)
+            if categories is not None:
+                return categories
+    return None
+
+
+def _pipeline_categorical_values(
+    pipeline: Any, feature_names: Sequence[str]
+) -> Dict[str, set[Any]]:
+    categorical_values: Dict[str, set[Any]] = {}
+    steps = getattr(pipeline, "steps", None)
+    if not isinstance(steps, (list, tuple)):
+        return categorical_values
+
+    for _, transformer in steps:
+        fitted_transformers = getattr(transformer, "transformers_", None)
+        if isinstance(fitted_transformers, (list, tuple)):
+            for _, column_transformer, selector in fitted_transformers:
+                selected_names = _selected_feature_names(selector, feature_names)
+                categories = _transformer_categories(column_transformer)
+                if categories is None or len(categories) != len(selected_names):
+                    continue
+                categorical_values.update(
+                    {
+                        name: {_category_key(value) for value in values.tolist()}
+                        for name, values in zip(selected_names, categories)
+                    }
+                )
+            continue
+
+        categories = _transformer_categories(transformer)
+        if categories is not None and len(categories) == len(feature_names):
+            categorical_values.update(
+                {
+                    name: {_category_key(value) for value in values.tolist()}
+                    for name, values in zip(feature_names, categories)
+                }
+            )
+    return categorical_values
+
+
+def _model_native_text_features(
+    model: Any, feature_names: Sequence[str]
+) -> set[str]:
+    """Return named features a fitted estimator handles as text itself."""
+    text_features = set()
+    for candidate in _wrapped_model_candidates(model):
+        text_features.update(
+            _pipeline_categorical_values(candidate, feature_names)
+        )
+        candidate_names = _normalize_estimator_feature_names(
+            getattr(candidate, "feature_names_", None),
+            None,
+        ) or list(feature_names)
+        if candidate_names == [str(index) for index in range(len(candidate_names))]:
+            candidate_names = list(feature_names)
+        for getter_name in (
+            "get_cat_feature_indices",
+            "get_text_feature_indices",
+        ):
+            getter = getattr(candidate, getter_name, None)
+            if not callable(getter):
+                continue
+            try:
+                indices = getter()
+            except Exception:
+                continue
+            for index in indices or []:
+                if (
+                    isinstance(index, (int, np.integer))
+                    and not isinstance(index, (bool, np.bool_))
+                    and 0 <= int(index) < len(candidate_names)
+                ):
+                    text_features.add(candidate_names[int(index)])
+    return text_features
+
+
+def _model_native_categorical_values(
+    model: Any, feature_names: Sequence[str]
+) -> Dict[str, set[Any]]:
+    """Return fitted categories owned by model-native preprocessing."""
+    categorical_values: Dict[str, set[Any]] = {}
+    for candidate in _wrapped_model_candidates(model):
+        categorical_values.update(
+            _pipeline_categorical_values(candidate, feature_names)
+        )
+    return categorical_values
+
+
+def _validate_numeric_inputs(
+    normalized_inputs: Dict[str, List[Any]],
+    numeric_features: Sequence[str],
+    allow_text: bool,
+    text_features: Optional[Sequence[str]] = None,
+) -> None:
+    """Reject invalid scalar numbers while preserving supported text."""
+    allowed_text_features = set(text_features or [])
+    problems = []
+    for name in numeric_features:
+        invalid_value_rows: Dict[str, List[int]] = {}
+        has_more = False
+        for row_number, value in enumerate(
+            normalized_inputs.get(name, []), start=1
+        ):
+            if name in allowed_text_features and isinstance(value, str):
+                continue
+            if _numeric_value_problem(value, allow_text) is None:
+                continue
+            value_text = _format_error_value(value)
+            if (
+                value_text not in invalid_value_rows
+                and len(invalid_value_rows) >= _MAX_LISTED_VALUES
+            ):
+                has_more = True
+                break
+            rows = invalid_value_rows.setdefault(value_text, [])
+            if len(rows) < _MAX_LISTED_VALUES:
+                rows.append(row_number)
+        if invalid_value_rows:
+            suffix = " …" if has_more else ""
+            problems.append(
+                f"'{_format_error_value(name)}': "
+                f"{_format_value_rows(invalid_value_rows)}{suffix}"
+            )
+    if problems:
+        raise AppException(
+            error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
+            error_detail=(
+                "Numeric feature(s) received values that are not valid finite numbers: "
+                f"{'; '.join(problems)}. Use plain numbers such as 1000, 2.5 or 1e5."
+            ),
+        )
+
+
+def _echo_input_columns(
+    normalized_inputs: Dict[str, List[Any]],
+    feature_names: Sequence[str],
+    batch_size: int,
+) -> Dict[str, List[Any]]:
+    """Echo the prepared inputs column by column, so each value keeps its own
+    type. A single combined numpy array would turn every value into a string
+    as soon as one feature is text (1.5 -> "1.5", True -> "True")."""
+    return {
+        name: [
+            _json_safe_scalar(value)
+            for value in _broadcast_column(normalized_inputs[name], batch_size, name)
+        ]
+        for name in feature_names
+    }
 
 
 def _build_input_array(
@@ -1460,10 +1717,44 @@ class MLModelInferenceNode(BaseNode):
                             )
                         }
                     )
+                label_columns = list(label_encodings.keys())
+                ordinal_columns = list(ordinal_encodings.keys())
+                encoded_feature_columns = (
+                    categorical_columns
+                    + categorical_columns_no_drop
+                    + label_columns
+                    + ordinal_columns
+                )
+                model_handles_raw_text = (
+                    not encoded_feature_columns
+                    and _model_accepts_raw_text_features(model)
+                )
+                model_native_text_features = (
+                    _model_native_text_features(model, feature_names)
+                    if not encoded_feature_columns
+                    else set()
+                )
+                model_native_categorical_values = (
+                    _model_native_categorical_values(model, feature_names)
+                    if not encoded_feature_columns
+                    else {}
+                )
+                categorical_values.update(model_native_categorical_values)
+                conversion_categorical_features = list(
+                    dict.fromkeys(categorical_features + list(model_native_text_features))
+                )
                 inference_inputs = convert_input_types(
                     inference_inputs,
-                    categorical_features=categorical_features if metadata else None,
-                    categorical_values=categorical_values if metadata else None,
+                    categorical_features=(
+                        conversion_categorical_features
+                        if metadata or model_native_text_features
+                        else None
+                    ),
+                    categorical_values=(
+                        categorical_values
+                        if metadata or model_native_categorical_values
+                        else None
+                    ),
                     normalized_categorical_features=list(ordinal_encodings),
                 )
                 normalized_inputs = _normalize_inference_inputs(inference_inputs)
@@ -1496,8 +1787,14 @@ class MLModelInferenceNode(BaseNode):
                     feature_names,
                     defaults=feature_defaults,
                     allowed_extra_features=allowed_extra_features,
-                    categorical_features=categorical_features if metadata else None,
-                    categorical_values=categorical_values if metadata else None,
+                    categorical_features=(
+                        conversion_categorical_features if metadata else None
+                    ),
+                    categorical_values=(
+                        categorical_values
+                        if metadata or model_native_categorical_values
+                        else None
+                    ),
                     normalized_categorical_features=list(ordinal_encodings),
                     default_feature_names=default_feature_names,
                     inference_warnings=inference_warnings,
@@ -1519,8 +1816,7 @@ class MLModelInferenceNode(BaseNode):
                 # Validated raw values aligned to feature_names, including any
                 # deliberate per-model defaults applied above. Used below to
                 # build the model-ready matrix and the echoed "input_data".
-                raw_input_data = _build_input_array(normalized_inputs, feature_names)
-                batch_size = raw_input_data.shape[0]
+                batch_size = _infer_batch_size(normalized_inputs) or 1
                 if target_transform is not None:
                     ratio_baseline_values = _validated_ratio_baseline_values(
                         normalized_inputs,
@@ -1530,7 +1826,7 @@ class MLModelInferenceNode(BaseNode):
                     )
                 logger.debug(
                     "Inference input: batch_size=%d, features=%d, expected=%s",
-                    batch_size, raw_input_data.shape[1] if raw_input_data.ndim == 2 else 0, list(feature_names),
+                    batch_size, len(feature_names), list(feature_names),
                 )
 
                 # Reapply the same categorical encoding fitted at training time
@@ -1538,11 +1834,14 @@ class MLModelInferenceNode(BaseNode):
                 # columns it was trained on, instead of the raw (pre-encoding)
                 # feature names. No-op for models with no categorical features
                 # or legacy models that predate this metadata.
-                label_columns = list(label_encodings.keys())
-                ordinal_columns = list(ordinal_encodings.keys())
-
-                encoded_feature_columns = (
-                    categorical_columns + categorical_columns_no_drop + label_columns + ordinal_columns
+                numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
+                _validate_numeric_inputs(
+                    normalized_inputs,
+                    numeric_order if metadata_is_authoritative else feature_names,
+                    allow_text=(
+                        not metadata_is_authoritative or model_handles_raw_text
+                    ),
+                    text_features=model_native_text_features,
                 )
 
                 # Build every output column by name first, then assemble the
@@ -1557,7 +1856,6 @@ class MLModelInferenceNode(BaseNode):
                 column_arrays: Dict[str, np.ndarray] = {}
 
                 if encoded_feature_columns:
-                    numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
                     numeric_data = (
                         _build_input_array(normalized_inputs, numeric_order).astype(float)
                         if numeric_order else np.empty((batch_size, 0))
@@ -1599,6 +1897,9 @@ class MLModelInferenceNode(BaseNode):
                             column_arrays[col] = encoded_nd[:, i]
                         legacy_order += encoded_nd_columns
                 else:
+                    raw_input_data = _build_input_array(
+                        normalized_inputs, feature_names
+                    )
                     for i, col in enumerate(feature_names):
                         column_arrays[col] = raw_input_data[:, i]
                     legacy_order = list(feature_names)
@@ -1672,11 +1973,16 @@ class MLModelInferenceNode(BaseNode):
                 artifact_model_order = model_input_columns or legacy_order
                 if estimator_feature_names:
                     module_root = type(model).__module__.split(".", 1)[0]
-                    matrix_column_order = _match_registered_feature_names(
-                        estimator_feature_names,
-                        artifact_model_order,
-                        module_root,
-                    )
+                    if module_root == "catboost" and estimator_feature_names == [
+                        str(index) for index in range(len(estimator_feature_names))
+                    ]:
+                        matrix_column_order = artifact_model_order
+                    else:
+                        matrix_column_order = _match_registered_feature_names(
+                            estimator_feature_names,
+                            artifact_model_order,
+                            module_root,
+                        )
                     if matrix_column_order is None:
                         raise AppException(
                             error_key=ErrorKey.ML_INFERENCE_INPUT_INVALID,
@@ -1795,10 +2101,9 @@ class MLModelInferenceNode(BaseNode):
                 # (columns ordered by feature_names) so the echoed input reflects
                 # what the caller actually submitted, not the expanded matrix
                 # handed to the model.
-                input_data_by_column = {
-                    feature_names[i]: raw_input_data[:, i].tolist()
-                    for i in range(len(feature_names))
-                }
+                input_data_by_column = _echo_input_columns(
+                    normalized_inputs, feature_names, batch_size
+                )
 
                 prediction_values, prediction_labels, prediction_entries = _build_prediction_outputs(
                     predictions, class_labels

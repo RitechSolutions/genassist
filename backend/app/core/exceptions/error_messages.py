@@ -138,7 +138,10 @@ class ErrorKey(Enum):
     ML_EXTRACT_QUERY_FAILED = "ML_EXTRACT_QUERY_FAILED"
     ML_EXTRACT_FILE_UNAVAILABLE = "ML_EXTRACT_FILE_UNAVAILABLE"
     ML_EXTRACT_FILE_ENCODING_INVALID = "ML_EXTRACT_FILE_ENCODING_INVALID"
+    ML_EXTRACT_FILE_UNSUPPORTED = "ML_EXTRACT_FILE_UNSUPPORTED"
+    ML_EXTRACT_FILE_INVALID = "ML_EXTRACT_FILE_INVALID"
     ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
+    ML_TRAINING_UPLOAD_TOO_LARGE = "ML_TRAINING_UPLOAD_TOO_LARGE"
     ML_EXTRACT_FAILED = "ML_EXTRACT_FAILED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
@@ -349,7 +352,10 @@ ERROR_MESSAGES = {
         ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
             "The uploaded CSV uses an unsupported character encoding."
         ),
+        ErrorKey.ML_EXTRACT_FILE_UNSUPPORTED: "This training file type is not supported.",
+        ErrorKey.ML_EXTRACT_FILE_INVALID: "The uploaded training file could not be read.",
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
+        ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: "The training data file is too large to upload.",
         ErrorKey.ML_EXTRACT_FAILED: (
             "Train Data Source could not complete the test. "
             "Check its configuration and try again."
@@ -449,8 +455,17 @@ ERROR_MESSAGES = {
         ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
             "Le fichier CSV téléversé utilise un encodage de caractères non pris en charge."
         ),
+        ErrorKey.ML_EXTRACT_FILE_UNSUPPORTED: (
+            "Ce type de fichier de données d'entraînement n'est pas pris en charge."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_INVALID: (
+            "Le fichier de données d'entraînement téléversé n'a pas pu être lu."
+        ),
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: (
             "La limite d'extraction des données d'entraînement a été dépassée."
+        ),
+        ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: (
+            "Le fichier de données d'entraînement est trop volumineux pour être téléversé."
         ),
         ErrorKey.ML_EXTRACT_FAILED: (
             "La source de données d'entraînement n'a pas pu terminer le test. "

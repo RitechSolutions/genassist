@@ -315,6 +315,13 @@ def write_dtypes_sidecar(csv_path: Any, df: pd.DataFrame) -> str:
     return str(sidecar)
 
 
+def write_dtypes_mapping_sidecar(csv_path: Any, dtypes: Dict[str, str]) -> str:
+    """Save an already-known column -> dtype mapping next to csv_path."""
+    sidecar = dtypes_sidecar_path(csv_path)
+    sidecar.write_text(json.dumps({str(c): str(t) for c, t in dtypes.items()}), encoding="utf-8")
+    return str(sidecar)
+
+
 def read_csv_with_dtypes(file_path: Any, **read_csv_kwargs: Any) -> pd.DataFrame:
     """pd.read_csv that reapplies the dtypes saved next to the file, if any.
 
@@ -768,7 +775,11 @@ async def stream_rows_to_csv(
                 elif current_columns != columns:
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail="Database column ordering changed while streaming the query.",
+                        error_detail=(
+                            "Database column ordering changed while streaming the query."
+                            if source_kind == "query"
+                            else "The file's columns changed while it was being read."
+                        ),
                     )
 
                 observed_rows = row_count + len(rows)
@@ -1327,7 +1338,20 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
         # Load CSV using pandas for better analysis (with any saved column
         # types reapplied, so the analysis matches what the next node sees)
         df = read_csv_with_dtypes(file_path, encoding="utf-8", on_bad_lines="skip")
+        return analyze_dataframe(df)
+    except AppException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Failed to analyze CSV file: {str(e)}",
+        ) from e
 
+
+def analyze_dataframe(df: pd.DataFrame) -> Dict[str, Any]:
+    """The analysis report (see analyze_csv_data) for an already-loaded frame."""
+    try:
         # Convert to list of dicts for sample data
         data = df.to_dict("records")
 
@@ -1345,7 +1369,10 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
             col_info = {
                 "name": col,
                 "dtype": str(df[col].dtype),
-                "missing_count": int(df[col].isna().sum() + (df[col] == "").sum()),
+                "missing_count": int(
+                    df[col].isna().sum()
+                    + (df[col].astype(object) == "").sum()
+                ),
             }
 
             # Determine if numeric (bool/boolean count as categorical, not numeric)
@@ -1393,8 +1420,8 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
         return sanitize_for_json(response)
 
     except Exception as e:
-        logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
+        logger.error(f"Error analyzing data: {str(e)}", exc_info=True)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to analyze CSV file: {str(e)}",
+            error_detail=f"Failed to analyze data: {str(e)}",
         ) from e

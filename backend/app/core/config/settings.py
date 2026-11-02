@@ -179,6 +179,11 @@ class ProjectSettings(BaseSettings):
     # values, but these settings remain the operator-controlled upper bounds.
     ML_EXTRACT_MAX_ROWS: int = 2_000_000
     ML_EXTRACT_MAX_BYTES: int = 2 * 1024**3  # 2 GiB
+    # Largest Train Data Source file a user can upload (purpose="training_data"
+    # on /file-manager/upload, /upload-session and /upload-session/presign).
+    # Other File Manager uploads keep FILES_MAX_UPLOAD_BYTES / MAX_CONTENT_LENGTH.
+    # The effective limit never exceeds ML_EXTRACT_MAX_BYTES.
+    ML_TRAINING_UPLOAD_MAX_BYTES: int = Field(default=2 * 1024**3, gt=0)  # 2 GiB
     ML_EXTRACT_TIMEOUT_SECONDS: int = Field(
         default=600,
         validation_alias=AliasChoices(
@@ -187,6 +192,9 @@ class ProjectSettings(BaseSettings):
         ),
     )
     ML_EXTRACT_CHUNK_ROWS: int = Field(default=2_000, gt=0)
+    # A .json array upload is parsed in one piece (JSON Lines and the other
+    # formats stream), so it gets its own, lower ceiling.
+    ML_EXTRACT_JSON_MAX_BYTES: int = Field(default=512 * 1024 * 1024, gt=0)
     # Profiling builds an in-memory DataFrame and therefore uses lower limits
     # than a streamed training-data extraction.
     ML_PROFILE_MAX_ROWS: int = Field(default=100_000, gt=0)

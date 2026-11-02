@@ -18,12 +18,22 @@ import { NodeConfigPanel } from "../../components/NodeConfigPanel";
 import { BaseNodeDialogProps } from "../base";
 import { DraggableTextArea } from "../../components/custom/DraggableTextArea";
 import { FileUploader } from "@/components/FileUploader";
+import { formatBytes } from "@/helpers/formatters";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
-import { analyzeCSV, profileData } from "@/services/mlModels";
+import {
+  analyzeTrainingFile,
+  getTrainingDataLimits,
+  profileData,
+  TrainingDataLimits,
+} from "@/services/mlModels";
 import { useNodeDialogState } from "../useNodeDialogState";
 import {
+  TRAINING_FILE_TYPES,
   buildProfileDataRequest,
+  createLatestRequestTracker,
   getProfileDataAvailability,
+  isExcelFile,
+  isSupportedTrainingFile,
 } from "./trainDataSourceProfile";
 
 type TrainDataSourceDialogProps = BaseNodeDialogProps<
@@ -50,6 +60,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       csvFilePath: data.csvFilePath ?? null,
       csvFileId: data.csvFileId ?? null,
       csvFileUrl: data.csvFileUrl ?? null,
+      sheetName: data.sheetName ?? null,
       analysisResult: data.analysisResult ?? null,
     }),
     (v) => ({
@@ -61,6 +72,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       csvFilePath: v.csvFilePath ?? undefined,
       csvFileId: v.csvFileId ?? undefined,
       csvFileUrl: v.csvFileUrl ?? undefined,
+      sheetName: v.sheetName ?? undefined,
       analysisResult: v.analysisResult ?? undefined,
     })
   );
@@ -74,11 +86,25 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
   });
   const [isCsvUploading, setIsCsvUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  // Switching sheets quickly overlaps previews; only the latest may land.
+  const [previewRequests] = useState(createLatestRequestTracker);
   const [isProfiling, setIsProfiling] = useState(false);
   const [availableDataSources, setAvailableDataSources] = useState<
     DataSource[]
   >([]);
+  const [trainingLimits, setTrainingLimits] = useState<TrainingDataLimits | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    getTrainingDataLimits().then((limits) => {
+      if (!cancelled) setTrainingLimits(limits);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -118,25 +144,36 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
     }
   }, [isOpen, data, toast]);
 
+  // Preview any supported file. Local uploads by path; uploads without one
+  // (S3 and other non-local storage) by File Manager id.
   const handleAnalyzeFile = async (
-    fileUrl: string,
-    fileName: string,
-    fileId?: string,
+    file: { fileId?: string | null; filePath?: string | null; fileName: string },
+    sheetName?: string | null,
   ) => {
-    // The backend preview endpoint only supports CSV files today.
-    if (!fileName.toLowerCase().endsWith(".csv")) {
+    const requestId = previewRequests.start();
+    if (!isSupportedTrainingFile(file.fileName)) {
+      setIsAnalyzing(false);
       setField("analysisResult", null);
       return;
     }
 
     try {
       setIsAnalyzing(true);
-      const result = await analyzeCSV(fileUrl, undefined, {
-        id: fileId,
-        name: fileName,
+      const result = await analyzeTrainingFile({
+        file_id: file.filePath ? undefined : file.fileId || undefined,
+        file_url: file.filePath || undefined,
+        file_name: file.fileName,
+        sheet_name: sheetName || undefined,
       });
-      setField("analysisResult", result);
+      if (!previewRequests.isLatest(requestId)) return;
+      setValues((v) => ({
+        ...v,
+        analysisResult: result,
+        // Excel: remember the sheet that was previewed (the first by default).
+        sheetName: result.sheet_name ?? v.sheetName,
+      }));
     } catch (err) {
+      if (!previewRequests.isLatest(requestId)) return;
       console.error(err);
       toast({
         title: "Preview Failed",
@@ -145,7 +182,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         variant: "destructive",
       });
     } finally {
-      setIsAnalyzing(false);
+      if (previewRequests.isLatest(requestId)) setIsAnalyzing(false);
     }
   };
 
@@ -222,7 +259,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
       ) {
         toast({
           title: "Validation Error",
-          description: "Please upload a CSV file",
+          description: "Please upload a training file",
           variant: "destructive",
         });
         return;
@@ -282,12 +319,12 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
                   {dataSource.name} ({dataSource.source_type})
                 </SelectItem>
               ))}
-              <SelectItem value="csv">CSV Upload</SelectItem>
+              <SelectItem value="csv">File Upload</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
             Select a TimeDB, Snowflake, or other database source, or upload a
-            CSV file
+            file (CSV, Parquet, Excel, JSON or JSON Lines)
           </p>
         </div>
 
@@ -315,11 +352,14 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
         {values.sourceType === "csv" && (
           <FileUploader
             label="Training File"
-            acceptedFileTypes={[".csv"]}
+            acceptedFileTypes={TRAINING_FILE_TYPES}
             initialServerFilePath={values.csvFilePath ?? ""}
             initialServerFileUrl={values.csvFileUrl ?? ""}
             initialOriginalFileName={values.csvFileName ?? ""}
             onUploadingChange={setIsCsvUploading}
+            uploadPurpose="training_data"
+            maxFileSizeBytes={trainingLimits?.max_upload_bytes}
+            maxFileSizeLabel={trainingLimits?.max_upload_label}
             onUploadComplete={(result) => {
               setValues((v) => ({
                 ...v,
@@ -327,32 +367,75 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (
                 csvFilePath: result.file_path,
                 csvFileId: result.file_id,
                 csvFileUrl: result.file_url,
+                sheetName: null,
                 analysisResult: null,
               }));
-              // Local uploads can be previewed by path. Non-local uploads send
-              // their File Manager ID so the backend resolves storage directly.
-              const previewTarget = result.file_path || result.file_url;
-              if (previewTarget) {
-                handleAnalyzeFile(
-                  previewTarget,
-                  result.original_filename,
-                  result.file_path ? undefined : result.file_id,
-                );
+              if (result.file_id || result.file_path) {
+                handleAnalyzeFile({
+                  fileId: result.file_id,
+                  filePath: result.file_path,
+                  fileName: result.original_filename,
+                });
               }
             }}
             onRemove={() => {
+              previewRequests.start(); // a preview still running is for the removed file
+              setIsAnalyzing(false);
               setValues((v) => ({
                 ...v,
                 csvFileName: null,
                 csvFilePath: null,
                 csvFileId: null,
                 csvFileUrl: null,
+                sheetName: null,
                 analysisResult: null,
               }));
             }}
-            placeholder="Select a CSV file to upload"
+            placeholder="Select a CSV, Parquet, Excel or JSON file to upload"
           />
         )}
+        {values.sourceType === "csv" && (
+          <p className="text-xs text-muted-foreground">
+            Supported: {TRAINING_FILE_TYPES.join(", ")}. Excel reads one sheet;
+            a .json file must be an array of objects
+            {trainingLimits &&
+              trainingLimits.json_max_bytes < trainingLimits.max_upload_bytes &&
+              ` of up to ${formatBytes(trainingLimits.json_max_bytes)}`}{" "}
+            (use .jsonl for large data).
+          </p>
+        )}
+        {values.sourceType === "csv" &&
+          isExcelFile(values.csvFileName) &&
+          (values.analysisResult?.sheet_names?.length ?? 0) > 1 && (
+            <div className="space-y-2">
+              <Label htmlFor="sheet">Sheet</Label>
+              <Select
+                value={values.sheetName ?? values.analysisResult?.sheet_name ?? ""}
+                onValueChange={(sheet) => {
+                  setField("sheetName", sheet);
+                  handleAnalyzeFile(
+                    {
+                      fileId: values.csvFileId,
+                      filePath: values.csvFilePath,
+                      fileName: values.csvFileName ?? "",
+                    },
+                    sheet,
+                  );
+                }}
+              >
+                <SelectTrigger id="sheet" className="w-full">
+                  <SelectValue placeholder="Select a sheet" />
+                </SelectTrigger>
+                <SelectContent>
+                  {values.analysisResult!.sheet_names!.map((sheet) => (
+                    <SelectItem key={sheet} value={sheet}>
+                      {sheet}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         {values.sourceType === "csv" && isAnalyzing && (
           <p className="text-xs text-muted-foreground">
             Generating data preview...

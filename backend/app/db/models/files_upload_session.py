@@ -30,4 +30,8 @@ class FilesUploadSessionModel(Base):
     # when NULL) and the new direct browser -> S3 presigned PUT flow ("direct_s3").
     # Added by migration 00075. Nullable for backward compatibility with in-flight rows.
     upload_mode: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    # "training_data" for Train Data Source uploads, which have their own size
+    # limit (ML_TRAINING_UPLOAD_MAX_BYTES). NULL uses the regular File Manager
+    # limit. Added by migration 00125.
+    upload_purpose: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 

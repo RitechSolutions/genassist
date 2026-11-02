@@ -138,6 +138,17 @@ class LocalFileSystemProvider(BaseStorageProvider):
             logger.error(f"Failed to upload file {file_path}: {e}")
             return False
 
+    async def download_file_to_path(self, file_path: str, local_path: str) -> bool:
+        """Copy a stored file to local_path on disk, without reading it into memory."""
+        import asyncio
+        import shutil
+
+        full_path = self._resolve_path(file_path)
+        if not full_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        await asyncio.to_thread(shutil.copyfile, full_path, local_path)
+        return True
+
     async def download_file(self, file_path: str) -> bytes:
         """
         Download a file from local file system.
