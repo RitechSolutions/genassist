@@ -11,7 +11,7 @@ import { Button } from "@/components/button";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { getAllWorkflows } from "@/services/workflows";
 import { Mail, Headset, MessageSquare, MessageCircle, Calendar, ExternalLink, Clock, Sparkles } from "lucide-react";
-import { format } from "date-fns";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 interface Integration {
   id: string;
@@ -245,7 +245,13 @@ export function IntegrationWorkflowsDialog({
                         {workflow.updated_at && (
                           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                             <Clock className="w-3.5 h-3.5" />
-                            Updated {format(new Date(workflow.updated_at), "MMM d, yyyy")}
+                            Updated{" "}
+                            {new Date(workflow.updated_at).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              timeZone: displayTimeZone(),
+                            })}
                           </span>
                         )}
                       </div>

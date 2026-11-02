@@ -35,6 +35,7 @@ import {
   runFailureText,
   runInProgressText,
   runName,
+  runDate,
   runOpens,
   turnsPassed,
 } from "../helpers/runResults";
@@ -128,7 +129,7 @@ const RunFacts: React.FC<{ run: TestRun }> = ({ run }) => (
       </div>
     )}
     <div className="text-xs text-muted-foreground">
-      Ran on: <span className="text-foreground">{new Date(run.created_at ?? "").toLocaleString()}</span>
+      Ran on: <span className="text-foreground">{runDate(run)}</span>
     </div>
   </div>
 );

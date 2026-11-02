@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { subDays } from "date-fns";
-import type { DateRange } from "react-day-picker";
 import { format } from "date-fns";
 import {
   Activity,
@@ -21,7 +19,11 @@ import { Card, CardContent } from "@/components/card";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ExportButton } from "@/components/ui/ExportButton";
 import { formatUsd } from "@/helpers/formatCurrency";
-import { toExactActivityParams, toUtcBucketDateParams } from "@/helpers/dateRange";
+import {
+  lastDaysDateRange,
+  toExactActivityParams,
+  toUtcBucketDateParams,
+} from "@/helpers/dateRange";
 import { cn } from "@/helpers/utils";
 import { useDismissibleNotice } from "@/hooks/useDismissibleNotice";
 import { COMPARE_DATE_RANGE_STORAGE_KEY, usePersistedDateRange } from "@/hooks/usePersistedDateRange";
@@ -142,10 +144,7 @@ function useSourceSubRows(
 }
 
 function LlmUsagePage() {
-  const [dateRange, setDateRange] = usePersistedDateRange({
-    from: subDays(new Date(), 7),
-    to: new Date(),
-  } as DateRange);
+  const [dateRange, setDateRange] = usePersistedDateRange(lastDaysDateRange(7));
   const [compareDateRange, setCompareDateRange] = usePersistedDateRange(undefined, COMPARE_DATE_RANGE_STORAGE_KEY);
   const { groups, showGroupFilter, groupFilter, setGroupFilter, agentFilter, setAgentFilter, agents, filterParams } =
     useAnalyticsFilters();

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { subDays } from "date-fns";
+import { lastDaysDateRange } from "@/helpers/dateRange";
 import { toExpandedUTCDateRange } from "@/helpers/analyticsParams";
 import { DateRange } from "react-day-picker";
 import { DataTable, type Column } from "@/components/ui/data-table";
@@ -29,10 +29,7 @@ interface AgentNodeBreakdown {
 }
 
 const NodeAnalyticsPage = () => {
-  const [dateRange, setDateRange] = usePersistedDateRange({
-    from: subDays(new Date(), 7),
-    to: new Date(),
-  });
+  const [dateRange, setDateRange] = usePersistedDateRange(lastDaysDateRange(7));
   const [nodeTypeFilter, setNodeTypeFilter] = useState("all");
 
   const {
