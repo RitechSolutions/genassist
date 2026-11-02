@@ -9,7 +9,7 @@ Fetches training data from databases or uploaded files.
 
 **Features:**
 - **Data Source Method**: Query TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB
-- **File Upload Method**: Upload CSV files directly to the server
+- **File Upload Method**: Upload CSV (.csv), Excel (.xlsx, .xlsm), JSON (.json), JSON Lines (.jsonl, .ndjson), or Parquet (.parquet) files directly to the server
 - **Bound Query Variables**: Use `{{variable}}` for SQL values; values are sent to the database separately from the query text
 - **File Management**: Server-side file storage and validation
 

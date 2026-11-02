@@ -10,7 +10,6 @@ import {
   hasTrainDataSourceConfigurationChanged,
   isTrainingDatabaseSource,
   TRAIN_DATA_SOURCE_TYPE_OPTIONS,
-  TRAINING_FILE_EXTENSIONS,
   type TrainDataSourceDialogValues,
   validateTrainDataSource,
 } from '@/views/AIAgents/Workflows/utils/trainDataSource';
@@ -269,10 +268,6 @@ describe('Train Data Source UI', () => {
   it('excludes non-database integrations and misleading partial matches', () => {
     expect(isTrainingDatabaseSource(dataSource('gmail'))).toBe(false);
     expect(isTrainingDatabaseSource(dataSource('nosql'))).toBe(false);
-  });
-
-  it('offers CSV as the supported uploaded training-file format', () => {
-    expect(TRAINING_FILE_EXTENSIONS).toEqual(['.csv']);
   });
 
   it('builds a clear uploaded-file summary without showing a query', () => {

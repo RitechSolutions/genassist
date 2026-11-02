@@ -101,7 +101,6 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
     {
       label: "Source Type",
       value: hasSourceType ? summary.sourceTypeLabel : "",
-      isSelection: true,
     },
     {
       label: summary.sourceFieldLabel,

@@ -15,8 +15,6 @@ const TRAINING_DATABASE_SOURCE_TYPES = new Set([
   'timescaledb',
 ]);
 
-export const TRAINING_FILE_EXTENSIONS = ['.csv'] as const;
-
 type TrainDataSourceSelectionData = Partial<
   Pick<
     TrainDataSourceNodeData,

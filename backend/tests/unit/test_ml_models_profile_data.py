@@ -14,6 +14,7 @@ from sqlalchemy import text
 from starlette.requests import Request
 
 from app.api.v1.routes import ml_models
+from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.modules.integration.database.database_manager import DatabaseManager
@@ -532,6 +533,53 @@ async def test_preview_query_rejects_write_sql(monkeypatch):
     assert exc_info.value.status_code == 400
     assert "SQL execution blocked" in exc_info.value.detail
     database_manager.stream_query.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["preview", "profile"])
+@pytest.mark.parametrize("provider_raises", [True, False], ids=["exception", "none"])
+async def test_query_returns_404_for_unknown_data_source(
+    monkeypatch, operation, provider_raises
+):
+    provider = MagicMock()
+    provider.get_database_manager = AsyncMock(
+        return_value=None,
+        side_effect=(
+            AppException(error_key=ErrorKey.DATASOURCE_NOT_FOUND)
+            if provider_raises
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        ml_models.DBProviderManager,
+        "get_instance",
+        MagicMock(return_value=provider),
+    )
+
+    source_id = uuid4()
+    with pytest.raises(HTTPException) as exc_info:
+        if operation == "preview":
+            await ml_models.preview_query(
+                ml_models.QueryPreviewRequest(
+                    data_source_id=source_id,
+                    query="SELECT 1",
+                ),
+                _request(P.DataSource.READ),
+            )
+        else:
+            await ml_models.profile_data(
+                ml_models.ProfileDataRequest(
+                    source_type="datasource",
+                    data_source_id=source_id,
+                    query="SELECT 1",
+                ),
+                _request(P.DataSource.READ),
+                _file_manager(),
+            )
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Data source not found."
+    provider.get_database_manager.assert_awaited_once_with(str(source_id))
 
 
 @pytest.mark.asyncio
