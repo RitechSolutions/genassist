@@ -7,6 +7,7 @@ Optional parameters and non-empty values (including 0 and False) pass through.
 
 import pytest
 
+from app.modules.workflow.agents.agent_utils import convert_parameter_type, validate_tool_parameters
 from app.modules.workflow.agents.base_tool import BaseTool, is_empty_parameter_value
 
 TICKET_PARAMETERS = {
@@ -55,12 +56,14 @@ def _make_tool(parameters=TICKET_PARAMETERS, state=None, return_direct=False):
 # is_empty_parameter_value
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("value", [None, "", "   ", "null", "NULL", "None", " none "])
+@pytest.mark.parametrize("value", [None, "", "   ", "\t\n"])
 def test_empty_values_are_detected(value):
     assert is_empty_parameter_value(value) is True
 
 
-@pytest.mark.parametrize("value", ["Guest", "Guest mode", "a@b.com", 0, 0.0, False, [], {}])
+@pytest.mark.parametrize(
+    "value", ["Guest", "Guest mode", "a@b.com", "none", "None", "null", "NULL", 0, 0.0, False, [], {}]
+)
 def test_real_values_are_not_empty(value):
     assert is_empty_parameter_value(value) is False
 
@@ -87,7 +90,7 @@ async def test_empty_required_string_is_refused_and_function_not_called():
 async def test_all_missing_required_fields_are_listed():
     tool, spy = _make_tool()
 
-    out = await tool.invoke(email="   ", phone_number="null")
+    out = await tool.invoke(email="   ", phone_number=None)
 
     assert spy.calls == []
     assert "email, phone_number" in out
@@ -104,13 +107,17 @@ async def test_omitted_required_parameter_is_refused():
 
 
 @pytest.mark.asyncio
-async def test_placeholder_strings_are_refused():
-    tool, spy = _make_tool()
+async def test_none_and_null_text_answers_are_accepted():
+    parameters = {"allergies": {"type": "string", "required": True}}
+    tool, spy = _make_tool(parameters=parameters)
 
-    out = await tool.invoke(email="None", phone_number="NULL")
+    await tool.invoke(allergies="none")
+    await tool.invoke(allergies="null")
 
-    assert spy.calls == []
-    assert "email, phone_number" in out
+    assert spy.calls == [
+        {"parameters": {"allergies": "none"}},
+        {"parameters": {"allergies": "null"}},
+    ]
 
 
 @pytest.mark.asyncio
@@ -180,3 +187,57 @@ async def test_refused_call_is_recorded_as_failed():
     assert event["arguments"] == {"email": "", "phone_number": "123"}
     assert event["result"] is None
     assert "email" in event["error"]
+
+
+# --------------------------------------------------------------------------- #
+# JSON null through parameter validation
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("param_type", ["string", "number", "integer", "boolean"])
+def test_json_null_is_kept_as_null(param_type):
+    errors = []
+
+    assert convert_parameter_type(None, param_type, "field", errors) is None
+    assert errors == []
+
+
+@pytest.mark.asyncio
+async def test_json_null_required_parameter_is_refused_with_ask_the_user():
+    tool, spy = _make_tool()
+
+    validated = validate_tool_parameters(tool, {"email": None, "phone_number": "123"})
+    out = await tool.invoke(**validated)
+
+    assert "email" not in validated
+    assert spy.calls == []
+    assert "ask the user" in out
+
+
+def test_json_null_required_parameter_of_return_direct_tool_is_reported_missing():
+    parameters = {"order_id": {"type": "integer", "required": True}}
+    tool, _ = _make_tool(parameters=parameters, return_direct=True)
+
+    with pytest.raises(ValueError, match="Required parameter 'order_id' is missing"):
+        validate_tool_parameters(tool, {"order_id": None})
+
+
+def test_omitted_required_parameter_is_still_reported_missing():
+    tool, _ = _make_tool()
+
+    with pytest.raises(ValueError, match="Required parameter 'email' is missing"):
+        validate_tool_parameters(tool, {"phone_number": "123"})
+
+
+def test_json_null_optional_parameter_gets_its_default():
+    parameters = {"priority": {"type": "string", "default": "normal"}}
+    tool, _ = _make_tool(parameters=parameters)
+
+    assert validate_tool_parameters(tool, {"priority": None}) == {"priority": "normal"}
+
+
+def test_json_null_optional_parameter_without_default_is_left_out():
+    tool, _ = _make_tool()
+
+    validated = validate_tool_parameters(tool, {"email": "a@b.com", "phone_number": "123", "notes": None})
+
+    assert validated == {"email": "a@b.com", "phone_number": "123"}
