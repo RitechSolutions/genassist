@@ -2,7 +2,7 @@
 # The first stage builds the application,
 # The second stage serves the built files using Nginx.
 # Use an official Node.js runtime as the base image
-FROM node:18-alpine AS builder
+FROM node:22.23.4-alpine AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
