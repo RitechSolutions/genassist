@@ -92,6 +92,16 @@ async def test_list_status_filter_matches_any_of_the_defaulted_statuses():
 
 
 @pytest.mark.asyncio
+async def test_list_status_filter_ignores_blank_values():
+    rows, count = await _list_statements(status=["", " ", "open"])
+    for stmt in (rows, count):
+        assert "coalesce(message_issues.status, 'open') IN ('open')" in _sql(stmt)
+    rows, count = await _list_statements(status=[""])
+    for stmt in (rows, count):
+        assert "coalesce(message_issues.status, 'open') IN" not in _sql(stmt)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("roles, scoped", [(("operator",), True), (("admin",), False)])
 async def test_group_scope_is_applied_explicitly_to_every_query(roles, scoped):
     with caller(roles=roles):

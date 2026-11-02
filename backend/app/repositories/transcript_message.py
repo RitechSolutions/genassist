@@ -215,8 +215,9 @@ class TranscriptMessageRepository(DbRepository[TranscriptMessageModel]):
         the conversation.
         """
         base_filters = _issue_filters(filter_obj)
-        if filter_obj.status:
-            base_filters.append(_issue_status_col().in_(filter_obj.status))
+        status_keys = [key for key in filter_obj.status or [] if key.strip()]
+        if status_keys:
+            base_filters.append(_issue_status_col().in_(status_keys))
         if filter_obj.feedback_id:
             base_filters.append(MessageFeedbackModel.id == filter_obj.feedback_id)
 
