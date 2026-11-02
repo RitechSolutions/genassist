@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildProfileDataRequest,
+  createLatestRequestTracker,
   getProfileDataAvailability,
+  isExcelFile,
+  isSupportedTrainingFile,
   WORKFLOW_VARIABLE_PROFILE_REASON,
 } from '@/views/AIAgents/Workflows/nodeDialogs/training/trainDataSourceProfile';
 
@@ -57,10 +60,19 @@ describe('Train Data Source profiling', () => {
     });
   });
 
-  it('hides profiling for a non-CSV file', () => {
+  it.each(['training.parquet', 'training.xlsx', 'training.json', 'events.JSONL', 'rows.ndjson'])(
+    'offers profiling for a %s upload',
+    (csvFileName) => {
+      const values = { sourceType: 'csv' as const, csvFileName, csvFileId: 'file-1' };
+      expect(getProfileDataAvailability(values)).toEqual({ visible: true, enabled: true });
+      expect(buildProfileDataRequest(values)).toMatchObject({ source_type: 'csv', file_id: 'file-1' });
+    },
+  );
+
+  it('hides profiling for a file type that cannot be read', () => {
     const values = {
       sourceType: 'csv' as const,
-      csvFileName: 'training.xlsx',
+      csvFileName: 'training.xls',
       csvFileId: 'file-1',
     };
 
@@ -69,6 +81,33 @@ describe('Train Data Source profiling', () => {
       enabled: false,
     });
     expect(buildProfileDataRequest(values)).toBeNull();
+  });
+
+  it('sends the chosen sheet for Excel uploads only', () => {
+    expect(
+      buildProfileDataRequest({
+        sourceType: 'csv',
+        csvFileName: 'book.xlsx',
+        csvFileId: 'file-1',
+        sheetName: 'Sales',
+      }),
+    ).toMatchObject({ sheet_name: 'Sales' });
+    expect(
+      buildProfileDataRequest({
+        sourceType: 'csv',
+        csvFileName: 'rows.csv',
+        csvFileId: 'file-1',
+        sheetName: 'Sales',
+      }),
+    ).toMatchObject({ sheet_name: undefined });
+  });
+
+  it('recognises supported training file types', () => {
+    expect(isSupportedTrainingFile('A.PARQUET')).toBe(true);
+    expect(isSupportedTrainingFile('notes.txt')).toBe(false);
+    expect(isSupportedTrainingFile(null)).toBe(false);
+    expect(isExcelFile('book.xlsm')).toBe(true);
+    expect(isExcelFile('book.csv')).toBe(false);
   });
 
   it('hides profiling for a blank query', () => {
@@ -103,5 +142,25 @@ describe('Train Data Source profiling', () => {
       reason: WORKFLOW_VARIABLE_PROFILE_REASON,
     });
     expect(buildProfileDataRequest(values)).toBeNull();
+  });
+});
+
+describe('Train Data Source preview requests', () => {
+  it('applies only the latest of overlapping previews (switching sheets quickly)', () => {
+    const tracker = createLatestRequestTracker();
+    const sheetA = tracker.start();
+    const sheetB = tracker.start();
+
+    // Sheet A's slower response arrives last: it must not overwrite sheet B.
+    expect(tracker.isLatest(sheetB)).toBe(true);
+    expect(tracker.isLatest(sheetA)).toBe(false);
+  });
+
+  it('drops a running preview once a newer request starts (e.g. the file was removed)', () => {
+    const tracker = createLatestRequestTracker();
+    const preview = tracker.start();
+    tracker.start();
+
+    expect(tracker.isLatest(preview)).toBe(false);
   });
 });
