@@ -71,3 +71,25 @@ async def test_promote_pipeline_run_does_not_expose_or_restatus_internal_error(
     assert body["error"] == "An internal server error occurred. Please try again later."
     assert body["error_detail"] is None
     assert "secret-models" not in str(body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_key", [ErrorKey.NOT_FOUND, ErrorKey.ML_MODEL_NOT_FOUND])
+async def test_promote_pipeline_run_returns_404_for_missing_resources(error_key):
+    # Repositories raise "not found" with the default status 400.
+    error = AppException(error_key=error_key)
+    service = MagicMock()
+    service.promote_run = AsyncMock(side_effect=error)
+
+    with pytest.raises(AppException) as exc_info:
+        await promote_pipeline_run(
+            model_id=uuid.uuid4(),
+            run_id=uuid.uuid4(),
+            promote_data=MLModelPipelineRunPromote(),
+            service=service,
+        )
+
+    assert exc_info.value is error
+    assert exc_info.value.status_code == 404
+    body = _app_exception_body(_request(), exc_info.value)
+    assert body["error_code"] == 404

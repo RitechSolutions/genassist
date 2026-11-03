@@ -237,8 +237,8 @@ class MLModelPipelineRunService:
 
         if run.status != PipelineRunStatusEnum.COMPLETED:
             raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail="Only completed pipeline runs can be promoted",
+                error_key=ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE,
+                error_detail="Only completed pipeline runs can be promoted.",
             )
 
         # Get execution_output immediately while session is still active
