@@ -49,7 +49,15 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     safe_path = resolve_model_path(pkl_file)
     if safe_path is None:
         raise ValueError("Model file is not inside the ML models folder")
+    return _load_pickle_file_sync(safe_path)
 
+
+def _load_pickle_file_sync(safe_path: str) -> Any:
+    """Load a pickle the caller has already placed and vetted.
+
+    No folder check: callers pass either a path resolved inside the ML models
+    folder (``_load_pickle_sync``) or a private temporary copy they created.
+    """
     load_errors = []
 
     # Method 1: restricted unpickler with default encoding

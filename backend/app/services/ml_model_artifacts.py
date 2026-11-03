@@ -4,12 +4,11 @@ import os
 import stat
 import tempfile
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 from uuid import UUID
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.utils import model_validator
 from app.core.utils.ml_model_feature_contract import (
     _match_registered_feature_names,
     _model_feature_count,
@@ -20,6 +19,7 @@ from app.core.utils.ml_model_feature_contract import (
 from app.services.ml_model_manager import (
     _MODEL_LOAD_EXECUTOR,
     MLModelManager,
+    _load_pickle_file_sync,
     _load_pickle_sync,
 )
 
@@ -142,9 +142,7 @@ def extract_model_artifact_contract(artifact: Any) -> ModelArtifactContract:
     return _extract_raw_model_contract(normalized["model"])
 
 
-def _read_artifact_sync(pkl_file: str) -> Any:
-    from app.core.utils.model_validator import validate_pickle_file_safe
-
+def _check_artifact_file(pkl_file: str) -> None:
     try:
         file_stat = os.stat(pkl_file)
     except OSError as exc:
@@ -153,6 +151,13 @@ def _read_artifact_sync(pkl_file: str) -> Any:
         raise _unreadable("not a regular file")
     if file_stat.st_size > MAX_ARTIFACT_BYTES:
         raise _unreadable(f"{file_stat.st_size} bytes exceeds the limit")
+
+
+def _read_artifact_sync(pkl_file: str) -> Any:
+    """Read a registered file, which must be inside the ML models folder."""
+    from app.core.utils.model_validator import validate_pickle_file_safe
+
+    _check_artifact_file(pkl_file)
 
     is_valid, error = validate_pickle_file_safe(pkl_file)
     if not is_valid:
@@ -164,17 +169,56 @@ def _read_artifact_sync(pkl_file: str) -> Any:
         raise _unreadable(f"load failed ({type(exc).__name__})") from exc
 
 
-async def _read_artifact(pkl_file: str) -> Any:
+def _read_downloaded_artifact_sync(temporary_path: str, pkl_file_id: str) -> Any:
+    """Read a copy this module downloaded to its own private temporary folder.
+
+    The copy is outside the ML models folder, so the file-based safety check
+    would refuse it. The bytes are scanned in memory and released before
+    loading, so a large upload is not held twice. mkdtemp creates the folder
+    with mode 0700, so only the backend's own OS user could swap the file
+    between scan and load; the restricted unpickler still applies to the load.
+    """
+    from app.core.utils.model_validator import validate_pickle_bytes_safe
+
+    _check_artifact_file(temporary_path)
+    try:
+        with open(temporary_path, "rb") as file:
+            data = file.read()
+    except OSError as exc:
+        raise _unreadable(f"read failed ({type(exc).__name__})") from exc
+
+    is_valid, error = validate_pickle_bytes_safe(data, f"uploaded file {pkl_file_id}")
+    del data
+    if not is_valid:
+        raise _unreadable(f"safety check failed: {error}")
+
+    try:
+        return _load_pickle_file_sync(temporary_path)
+    except Exception as exc:
+        raise _unreadable(f"load failed ({type(exc).__name__})") from exc
+
+
+async def _run_on_model_loader(reader: Callable[..., Any], *args: Any) -> Any:
     # On the model-loader pool, not the event loop or the shared default
     # executor, and outside the model manager cache.
     loop = asyncio.get_running_loop()
     try:
         return await asyncio.wait_for(
-            loop.run_in_executor(_MODEL_LOAD_EXECUTOR, _read_artifact_sync, pkl_file),
+            loop.run_in_executor(_MODEL_LOAD_EXECUTOR, reader, *args),
             timeout=ARTIFACT_READ_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as exc:
         raise _unavailable(f"read timed out after {ARTIFACT_READ_TIMEOUT_SECONDS}s") from exc
+
+
+async def _read_artifact(pkl_file: str) -> Any:
+    """Read a caller-supplied path; it must be inside the ML models folder."""
+    return await _run_on_model_loader(_read_artifact_sync, pkl_file)
+
+
+async def _read_downloaded_artifact(temporary_path: str, pkl_file_id: str) -> Any:
+    """Read the private temporary copy made by load_model_artifact_contract."""
+    return await _run_on_model_loader(_read_downloaded_artifact_sync, temporary_path, pkl_file_id)
 
 
 def _file_manager() -> Any:
@@ -224,15 +268,14 @@ async def load_model_artifact_contract(
         return extract_model_artifact_contract(await _read_artifact(pkl_file))
 
     if pkl_file_id:
-        # The safety check only reads files inside the ML models folder, so the
-        # downloaded copy goes to a temporary folder inside it, not the system temp folder.
-        os.makedirs(model_validator.ML_MODELS_DIR, exist_ok=True)
-        with tempfile.TemporaryDirectory(
-            prefix=".contract-", dir=model_validator.ML_MODELS_DIR
-        ) as temporary_directory:
+        # The unchecked copy stays in the system temp folder, out of the ML models
+        # folder that registrations may point to.
+        with tempfile.TemporaryDirectory(prefix="ml-model-contract-") as temporary_directory:
             temporary_path = os.path.join(temporary_directory, "model.pkl")
             await _download_artifact(pkl_file_id, temporary_path)
-            return extract_model_artifact_contract(await _read_artifact(temporary_path))
+            return extract_model_artifact_contract(
+                await _read_downloaded_artifact(temporary_path, str(pkl_file_id))
+            )
 
     if pkl_file:
         raise _unreadable("local pkl_file missing and no pkl_file_id")
