@@ -245,6 +245,32 @@ async def upload_pkl_file(
         ) from e
 
 
+@router.delete("/upload/{file_id}", status_code=204, dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.CREATE))
+])
+async def discard_unused_upload(
+    request: Request,
+    file_id: UUID,
+    service: MLModelsService = Injected(MLModelsService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Delete a .pkl uploaded for a save that was then rejected.
+
+    Only a recent ML model upload made by the caller and used by no model is deleted;
+    any other file id answers 404.
+    """
+    # Same storage setup as the upload, so a custom folder or bucket from File Manager
+    # Settings is where the file is deleted from.
+    app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+    await file_manager_service.initialize(
+        base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings=app_settings_config
+    )
+    await service.discard_unused_upload(file_id, file_manager_service)
+    return Response(status_code=204)
+
+
 @router.get("/cache/stats", dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.READ))
