@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -481,3 +481,135 @@ async def test_create_with_an_uploaded_file_ignores_the_caller_path(monkeypatch)
     created_model = repository.create.await_args.args[0]
     assert created_model.pkl_file is None
     assert str(created_model.pkl_file_id) == file_id
+
+
+def _upload_record(**overrides):
+    record = {
+        "id": uuid4(),
+        "path": "ml_models/5f0c.pkl",
+        "file_extension": "pkl",
+        "created_by": "user-a",
+        "created_at": datetime.now(timezone.utc),
+        "storage_provider": "local",
+        "storage_path": "/data",
+    }
+    record.update(overrides)
+    return SimpleNamespace(**record)
+
+
+def _discard_setup(monkeypatch, record, referenced=False, user="user-a"):
+    repository = MagicMock()
+    repository.is_file_referenced = AsyncMock(return_value=referenced)
+    file_manager = MagicMock()
+    file_manager.get_file_by_id = AsyncMock(return_value=record)
+    file_manager.delete_file = AsyncMock()
+    file_manager.storage_provider = SimpleNamespace(name="local", get_base_path=lambda: "/data")
+    monkeypatch.setattr(ml_models_module, "get_current_user_id", lambda: user)
+    return MLModelsService(repository), file_manager
+
+
+@pytest.mark.asyncio
+async def test_discard_removes_the_callers_unused_recent_upload(monkeypatch, tmp_path):
+    record = _upload_record()
+    monkeypatch.setattr(ml_models_module, "ML_MODELS_UPLOAD_DIR", str(tmp_path))
+    copy = tmp_path / f"{record.id}.pkl"
+    copy.write_bytes(b"copy")
+    service, file_manager = _discard_setup(monkeypatch, record)
+
+    await service.discard_unused_upload(record.id, file_manager)
+
+    file_manager.delete_file.assert_awaited_once_with(record.id)
+    assert not copy.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "overrides,referenced,user",
+    [
+        ({}, False, "user-b"),  # someone else's upload
+        ({}, True, "user-a"),  # a model uses it
+        ({"path": "uploads/5f0c.csv", "file_extension": "csv"}, False, "user-a"),  # not an ML model upload
+        ({"file_extension": "csv"}, False, "user-a"),
+        ({"created_by": None}, False, None),  # no recorded uploader
+        ({"created_at": datetime(2020, 1, 1, tzinfo=timezone.utc)}, False, "user-a"),  # old upload
+        ({"storage_path": "/old-folder"}, False, "user-a"),  # saved under other File Manager settings
+        ({"storage_provider": "s3"}, False, "user-a"),
+    ],
+)
+async def test_discard_refuses_any_other_file_with_not_found(monkeypatch, overrides, referenced, user):
+    record = _upload_record(**overrides)
+    service, file_manager = _discard_setup(monkeypatch, record, referenced=referenced, user=user)
+
+    with pytest.raises(AppException) as exc:
+        await service.discard_unused_upload(record.id, file_manager)
+
+    assert exc.value.error_key is ErrorKey.FILE_NOT_FOUND
+    assert exc.value.status_code == 404
+    file_manager.delete_file.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_discard_of_a_missing_file_is_not_found(monkeypatch):
+    service, file_manager = _discard_setup(monkeypatch, _upload_record())
+    file_manager.get_file_by_id = AsyncMock(side_effect=AppException(error_key=ErrorKey.DATASOURCE_NOT_FOUND))
+
+    with pytest.raises(AppException) as exc:
+        await service.discard_unused_upload(uuid4(), file_manager)
+
+    assert exc.value.status_code == 404
+    file_manager.delete_file.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_discard_counts_a_model_that_points_at_the_upload_path(monkeypatch, tmp_path):
+    record = _upload_record()
+    monkeypatch.setattr(ml_models_module, "ML_MODELS_UPLOAD_DIR", str(tmp_path))
+    service, file_manager = _discard_setup(monkeypatch, record, referenced=True)
+
+    with pytest.raises(AppException):
+        await service.discard_unused_upload(record.id, file_manager)
+
+    checked_id, checked_paths = service.repository.is_file_referenced.await_args.args
+    assert checked_id == record.id
+    assert "/data/ml_models/5f0c.pkl" in checked_paths
+    assert str(tmp_path / f"{record.id}.pkl") in checked_paths
+    file_manager.delete_file.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_is_file_referenced_matches_any_spelling_of_the_id_and_the_path():
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    file_id = uuid4()
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        # Only the columns the query reads; the real table uses Postgres-only types.
+        await conn.execute(text(
+            "CREATE TABLE ml_models (id CHAR(32) PRIMARY KEY, pkl_file TEXT, pkl_file_id TEXT, is_deleted INTEGER)"
+        ))
+    async with AsyncSession(engine) as db:
+        repository = MLModelsRepository(db)
+
+        async def stored(pkl_file_id=None, pkl_file=None, is_deleted=0):
+            await db.execute(text("DELETE FROM ml_models"))
+            await db.execute(
+                text("INSERT INTO ml_models VALUES (:id, :pkl_file, :pkl_file_id, :is_deleted)"),
+                {"id": uuid4().hex, "pkl_file": pkl_file, "pkl_file_id": pkl_file_id, "is_deleted": is_deleted},
+            )
+
+        for spelling in (str(file_id), str(file_id).upper(), f"{{{file_id}}}", file_id.hex, f"urn:uuid:{file_id}",
+                         f"uuid:{file_id}", f"urn:{file_id}"):
+            await stored(pkl_file_id=spelling)
+            assert await repository.is_file_referenced(file_id), spelling
+
+        await stored(pkl_file="/data/ml_models/x.pkl")
+        assert await repository.is_file_referenced(file_id, ["/data/ml_models/x.pkl"])
+        assert not await repository.is_file_referenced(file_id, ["/data/ml_models/other.pkl"])
+
+        await stored(pkl_file_id=str(file_id), is_deleted=1)
+        assert not await repository.is_file_referenced(file_id)
+
+        await stored(pkl_file_id=str(uuid4()))
+        assert not await repository.is_file_referenced(file_id)
+    await engine.dispose()

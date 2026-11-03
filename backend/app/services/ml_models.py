@@ -1,11 +1,13 @@
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Sequence
 from uuid import UUID
 
 import numpy as np
 from injector import inject
 
+from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.file import FileModel
@@ -16,9 +18,14 @@ from app.services.ml_model_artifacts import (
     ModelArtifactContract,
     validate_model_artifact_registration,
 )
-from app.services.ml_model_manager import is_outdated_download
+from app.services.ml_model_manager import ML_MODELS_UPLOAD_DIR, is_outdated_download
 
 logger = logging.getLogger(__name__)
+
+# Uploads from POST /ml-models/upload are stored under this File Manager folder.
+ML_MODEL_UPLOAD_FOLDER = "ml_models"
+# A rejected save is cleaned up right away; older uploads are never discarded this way.
+UNUSED_UPLOAD_MAX_AGE = timedelta(hours=1)
 
 _RATIO_BASELINE_PARAM = "ratioBaselineColumn"
 STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX = (
@@ -261,6 +268,59 @@ class MLModelsService:
                 local_copy = None
             return local_copy, file_id
         return update_data.get("pkl_file", existing_model.pkl_file), None
+
+    async def discard_unused_upload(self, file_id: UUID, file_manager: Any) -> None:
+        """Delete a .pkl upload whose model was never saved (a rejected Create or Update).
+
+        The form uploads the file before it saves the model, so a rejected save would
+        otherwise leave the file in File Manager. Only a recent ML model upload made by
+        the caller and used by no model is deleted; anything else answers "not found",
+        so the endpoint can't be used to remove or probe other files.
+        """
+        not_found = AppException(error_key=ErrorKey.FILE_NOT_FOUND, status_code=404)
+        try:
+            file = await file_manager.get_file_by_id(file_id)
+        except AppException:
+            raise not_found from None
+        # The upload route hands the client these on-disk paths, and a model may point
+        # at them through pkl_file alone, so they count as references too.
+        copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{file.id}.pkl")
+        upload_paths = {copy_path}
+        if file.storage_provider == "local" and file.storage_path and file.path:
+            upload_paths.add(f"{file.storage_path}/{file.path}")
+        upload_paths |= {os.path.normpath(p) for p in upload_paths}
+        created_at = file.created_at
+        if created_at is not None and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        # Delete only through the storage the file was saved to: if File Manager Settings
+        # changed since the upload, the delete would miss the file but still drop its record.
+        provider = getattr(file_manager, "storage_provider", None)
+        same_storage = (
+            provider is not None
+            and getattr(provider, "name", None) == file.storage_provider
+            and str(provider.get_base_path()) == str(file.storage_path)
+        )
+        discardable = (
+            same_storage
+            and str(file.path or "").startswith(f"{ML_MODEL_UPLOAD_FOLDER}/")
+            and (file.file_extension or "").lower() == "pkl"
+            and file.created_by is not None
+            and file.created_by == get_current_user_id()
+            and created_at is not None
+            and datetime.now(timezone.utc) - created_at <= UNUSED_UPLOAD_MAX_AGE
+            and not await self.repository.is_file_referenced(file.id, sorted(upload_paths))
+        )
+        if not discardable:
+            raise not_found
+
+        await file_manager.delete_file(file.id)
+        # The upload route also copies the file into the ML models folder when File
+        # Manager stores it elsewhere; remove that copy too.
+        if os.path.isfile(copy_path):
+            try:
+                os.remove(copy_path)
+            except OSError as exc:
+                logger.warning("Could not remove the model file copy %s: %s", copy_path, type(exc).__name__)
 
     async def record_local_pkl_file(self, ml_model_id: UUID, pkl_file: str) -> MLModel:
         """Record where a downloaded copy of the model's own pkl_file_id is stored.
