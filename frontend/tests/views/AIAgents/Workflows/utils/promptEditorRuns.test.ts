@@ -325,7 +325,6 @@ describe("isOptimizeCurrent", () => {
     prompt: "prompt",
     providerId: "prov",
     providerRevision: "",
-    instructions: "",
     caseSplit: null,
     caseRowsKey: "rows",
     techniques: ["contains"],
@@ -359,7 +358,6 @@ describe("isOptimizeCurrent", () => {
   it.each([
     ["prompt", { prompt: "edited" }],
     ["provider", { providerId: "other" }],
-    ["instructions", { instructions: "Be terse." }],
     ["gold dataset", { caseRowsKey: "edited" }],
     ["split", { caseSplit: { holdoutShare: 0.5, holdoutIds: ["c1"] } }],
     ["techniques", { techniques: ["exact_match"] }],
@@ -370,6 +368,15 @@ describe("isOptimizeCurrent", () => {
     expect(
       isOptimizeCurrent(request(), optimizeKeyOf(optimizeInputs(change))),
     ).toBe(false);
+  });
+
+  it("stays current when only the instructions change, so a scored round keeps its scores", () => {
+    expect(
+      isOptimizeCurrent(
+        request(),
+        optimizeKeyOf(optimizeInputs({ instructions: "Be terse." })),
+      ),
+    ).toBe(true);
   });
 
   it("no longer expires on the failure set alone, which is advisory now", () => {

@@ -317,7 +317,7 @@ export const usePromptMeasurement = ({
     caps.canReadCases,
   );
 
-  // Sent, keyed and gated trimmed, blank means no instructions
+  // Sent and gated trimmed, blank means no instructions
   const instructions = optimizeInstructions.trim();
 
   const phrases = useMemo(
@@ -505,7 +505,6 @@ export const usePromptMeasurement = ({
     () => ({
       providerId: activeOptimizeProviderId,
       providerRevision: optimizeProviderRevision,
-      instructions,
       caseSplit,
       caseRowsKey,
       techniques: selectedTechniques,
@@ -515,7 +514,6 @@ export const usePromptMeasurement = ({
     [
       activeOptimizeProviderId,
       optimizeProviderRevision,
-      instructions,
       caseSplit,
       caseRowsKey,
       selectedTechniques,
@@ -978,6 +976,7 @@ export const usePromptMeasurement = ({
       return filed ? [filed, ...kept].slice(0, MAX_ROUNDS) : kept;
     });
     setOptimizeRun(round.source);
+    setOptimizeInstructions(round.source.request.instructions);
     setSuggestionEdit(
       round.suggestion === round.source.result.suggested_prompt
         ? null
