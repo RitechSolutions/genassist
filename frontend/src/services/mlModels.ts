@@ -58,6 +58,18 @@ export const deleteMLModel = async (id: string): Promise<void> => {
   }
 };
 
+/**
+ * Remove a .pkl uploaded for a save that was then rejected, so it doesn't stay in
+ * File Manager. Best effort: a failure here must not hide the save error.
+ */
+export const discardModelUpload = async (fileId: string): Promise<void> => {
+  try {
+    await apiRequest("DELETE", `${BASE}/upload/${encodeURIComponent(fileId)}`);
+  } catch (error) {
+    console.warn("Could not remove the unused model file upload:", error);
+  }
+};
+
 export const uploadModelFile = async (
   file: File,
 ): Promise<{ file_path: string | null; original_filename: string; file_id?: string; file_url?: string }> => {

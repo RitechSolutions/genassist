@@ -1218,6 +1218,55 @@ class TestInferenceFeatureContract:
         assert estimator_names == ["f1", "2023"]
         assert source == "estimator"
 
+    def test_reloaded_catboost_model_uses_its_recorded_feature_names(self):
+        # A pickled CatBoost model reports n_features_in_ == 0 once reloaded; inference
+        # must still use its saved feature_names_ and match them to the registry.
+        import pickle
+
+        catboost = pytest.importorskip("catboost")
+        training_data = pd.DataFrame({"hour": [0.0, 1.0, 2.0, 3.0], "lag_24": [3.0, 2.0, 1.0, 0.0]})
+        model = catboost.CatBoostRegressor(iterations=2, verbose=0, allow_writing_files=False).fit(
+            training_data, [0.0, 1.0, 1.0, 2.0]
+        )
+        reloaded = pickle.loads(pickle.dumps(model))
+        if reloaded.n_features_in_ != 0:
+            pytest.skip("this CatBoost version keeps n_features_in_ when pickled")
+
+        caller_names, estimator_names, source = inference_module._resolve_feature_order(
+            {},
+            reloaded,
+            "forecast",
+            registered_names=["lag_24", "hour"],
+        )
+
+        assert caller_names == ["hour", "lag_24"]
+        assert estimator_names == ["hour", "lag_24"]
+        assert source == "estimator"
+
+    def test_reloaded_catboost_model_with_other_names_is_refused(self):
+        import pickle
+
+        catboost = pytest.importorskip("catboost")
+        training_data = pd.DataFrame({"hour": [0.0, 1.0, 2.0, 3.0], "lag_24": [3.0, 2.0, 1.0, 0.0]})
+        model = catboost.CatBoostRegressor(iterations=2, verbose=0, allow_writing_files=False).fit(
+            training_data, [0.0, 1.0, 1.0, 2.0]
+        )
+        reloaded = pickle.loads(pickle.dumps(model))
+        if reloaded.n_features_in_ != 0:
+            pytest.skip("this CatBoost version keeps n_features_in_ when pickled")
+
+        with pytest.raises(AppException) as exc:
+            inference_module._resolve_feature_order(
+                {},
+                reloaded,
+                "forecast",
+                registered_names=["hour", "lag_48"],
+            )
+
+        # Refused for the name mismatch, not because the saved names were unusable.
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "records estimator feature names ['hour', 'lag_24']" in exc.value.error_detail
+
     def test_custom_model_with_valid_feature_names_is_supported(self):
         class RawModel(_StubModel):
             n_features_in_ = 2
