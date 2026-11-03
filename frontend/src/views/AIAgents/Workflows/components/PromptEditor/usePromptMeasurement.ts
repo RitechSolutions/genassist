@@ -154,6 +154,7 @@ export interface UsePromptMeasurementArgs {
 export interface PromptMeasurementState {
   error: string | null;
   successMessage: string | null;
+  clearSuccessMessage: () => void;
 
   providers: LLMProvider[];
   activeEvalProviderId: string;
@@ -1089,6 +1090,7 @@ export const usePromptMeasurement = ({
   return {
     error,
     successMessage,
+    clearSuccessMessage: () => setSuccessMessage(null),
 
     providers,
     activeEvalProviderId,
