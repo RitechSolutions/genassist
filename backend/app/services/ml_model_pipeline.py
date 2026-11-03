@@ -228,12 +228,12 @@ class MLModelPipelineRunService:
         # Validate model exists
         model = await self.model_repository.get_by_id(model_id)
         if model is None:
-            raise AppException(error_key=ErrorKey.NOT_FOUND)
+            raise AppException(error_key=ErrorKey.NOT_FOUND, status_code=404)
 
         # Validate run exists and is completed
         run = await self.run_repository.get_by_id(run_id)
         if run.model_id != model_id:
-            raise AppException(error_key=ErrorKey.NOT_FOUND)
+            raise AppException(error_key=ErrorKey.NOT_FOUND, status_code=404)
 
         if run.status != PipelineRunStatusEnum.COMPLETED:
             raise AppException(

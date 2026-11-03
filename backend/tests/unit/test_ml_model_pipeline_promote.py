@@ -85,6 +85,38 @@ def _model_update(model_service: MagicMock) -> dict:
 
 
 @pytest.mark.asyncio
+async def test_promote_missing_model_uses_not_found_status():
+    service, _, _, model_id, run_id = _make_service({})
+    service.model_repository.get_by_id = AsyncMock(return_value=None)
+
+    with pytest.raises(AppException) as exc_info:
+        await service.promote_run(
+            model_id=model_id,
+            run_id=run_id,
+            promote_data=MLModelPipelineRunPromote(),
+        )
+
+    assert exc_info.value.error_key is ErrorKey.NOT_FOUND
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_promote_run_for_another_model_uses_not_found_status():
+    service, _, _, model_id, run_id = _make_service({})
+    service.run_repository.get_by_id.return_value.model_id = uuid.uuid4()
+
+    with pytest.raises(AppException) as exc_info:
+        await service.promote_run(
+            model_id=model_id,
+            run_id=run_id,
+            promote_data=MLModelPipelineRunPromote(),
+        )
+
+    assert exc_info.value.error_key is ErrorKey.NOT_FOUND
+    assert exc_info.value.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_promote_surfaces_ratio_baseline_column_as_inference_params():
     service, model_service, _, model_id, run_id = _make_service(
         {

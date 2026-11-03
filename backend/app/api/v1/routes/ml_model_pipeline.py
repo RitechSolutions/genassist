@@ -241,13 +241,8 @@ async def promote_pipeline_run(
     service: MLModelPipelineRunService = Injected(MLModelPipelineRunService)
 ):
     """Promote a completed pipeline run to update the model."""
-    try:
-        result = await service.promote_run(model_id, run_id, promote_data)
-        return PipelineRunPromoteResponse(**result)
-    except AppException as e:
-        if e.error_key == ErrorKey.NOT_FOUND:
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=400, detail=e.error_detail or str(e))
+    result = await service.promote_run(model_id, run_id, promote_data)
+    return PipelineRunPromoteResponse(**result)
 
 
 # ==================== Pipeline Artifact Endpoints ====================
