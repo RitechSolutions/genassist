@@ -46,7 +46,7 @@ describe("fetchReportedFeedback", () => {
     await fetchReportedFeedback({
       skip: 10,
       limit: 50,
-      status: "open",
+      status: ["open"],
       from_date: "2025-01-01",
       to_date: "2025-02-01",
       agent_id: "a1",
@@ -60,7 +60,7 @@ describe("fetchReportedFeedback", () => {
   it("appends topic and subtopic after the existing params", async () => {
     mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
     await fetchReportedFeedback({
-      status: "open",
+      status: ["open"],
       agent_id: "a1",
       topic: "Payment issue",
       subtopic: "Declined payment",
@@ -79,17 +79,26 @@ describe("fetchReportedFeedback", () => {
 
   it("appends the search last, encoded", async () => {
     mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
-    await fetchReportedFeedback({ status: "open", topic: "Refund", search: "50% off" });
+    await fetchReportedFeedback({ status: ["open"], topic: "Refund", search: "50% off" });
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
       "conversations/issues?limit=20&status=open&topic=Refund&search=50%25+off"
     );
   });
 
-  it("omits the status param when status is 'all'", async () => {
+  it("sends no status param for an empty selection", async () => {
     mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
-    await fetchReportedFeedback({ status: "all" });
+    await fetchReportedFeedback({ status: [] });
     expect(mockApiRequest).toHaveBeenCalledWith("GET", "conversations/issues?limit=20");
+  });
+
+  it("repeats the status param once per selected key", async () => {
+    mockApiRequest.mockResolvedValue(EMPTY_RESULT as never);
+    await fetchReportedFeedback({ status: ["open", "resolved"] });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "conversations/issues?limit=20&status=open&status=resolved"
+    );
   });
 
   it("clamps limit to the backend max of 100", async () => {

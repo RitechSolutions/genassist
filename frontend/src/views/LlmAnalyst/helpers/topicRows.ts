@@ -37,6 +37,13 @@ export function parseTopicRows(value: unknown): TopicRow[] {
   return rows;
 }
 
+export function topicRowsOrDefaults(value?: unknown): TopicRow[] {
+  const rows = parseTopicRows(value);
+  return rows.length > 0
+    ? rows
+    : DEFAULT_ANALYST_TOPICS.map((name) => ({ name, subtopics: [] }));
+}
+
 export function serializeTopicRows(rows: TopicRow[]): string[] {
   return rows.flatMap((row) => {
     const name = row.name.trim();

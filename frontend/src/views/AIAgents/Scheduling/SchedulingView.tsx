@@ -33,6 +33,7 @@ import { getAgentConfigsList } from "@/services/api";
 import { WorkflowSchedule } from "@/interfaces/workflow-schedule.interface";
 import ScheduleFormDialog from "./ScheduleFormDialog";
 import RunHistoryDialog from "./RunHistoryDialog";
+import { formatDateTime } from "@/helpers/utils";
 
 const statusVariant = (
   status?: string | null
@@ -242,7 +243,7 @@ const SchedulingView: React.FC<SchedulingViewProps> = ({ agentId, onBack }) => {
                     {schedule.last_run_at && (
                       <>
                         {" · "}Last run:{" "}
-                        {new Date(schedule.last_run_at).toLocaleString()}
+                        {formatDateTime(schedule.last_run_at)}
                       </>
                     )}
                   </div>

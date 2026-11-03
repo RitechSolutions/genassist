@@ -47,6 +47,7 @@ import type {
 } from "@/interfaces/transcript.interface";
 import type { WorkflowMinimal } from "@/interfaces/workflow.interface";
 import { groupWorkflowVersions } from "../helpers/workflowVersions";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 const CONV_BATCH_SIZE = 20;
 
@@ -452,7 +453,9 @@ export const ImportFromConversationDialog: React.FC<
                               {conv.conversation_date
                                 ? new Date(
                                     conv.conversation_date,
-                                  ).toLocaleDateString()
+                                  ).toLocaleDateString(undefined, {
+                                    timeZone: displayTimeZone(),
+                                  })
                                 : "—"}{" "}
                               · {conv.word_count ?? 0} words · {conv.status}
                             </p>
