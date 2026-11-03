@@ -43,6 +43,16 @@ export const latestInferenceParams = (
   cached: MLModel['inference_params']
 ): MLModel['inference_params'] => (latestModel ? latestModel.inference_params : cached);
 
+/**
+ * True when the server answered with a 4xx (other than a timeout), so the request
+ * was refused and nothing was saved. Timeouts, network errors and 5xx answers are
+ * not, because the server may still have saved.
+ */
+export const isRejectedRequest = (error: unknown): boolean => {
+  const status = (error as { response?: { status?: unknown } } | null)?.response?.status;
+  return typeof status === 'number' && status >= 400 && status < 500 && status !== 408;
+};
+
 export const mlModelSaveErrorMessage = (
   error: unknown,
   action: 'create' | 'update'
