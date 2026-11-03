@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.core.exceptions.exception_classes import AppException
 from app.db.models.ml_model_pipeline import PipelineRunStatus as PipelineRunStatusEnum
 from app.schemas.ml_model_pipeline import (
     MLModelPipelineRunPromote,
@@ -22,6 +23,12 @@ def _make_service(execution_output: dict, inference_params=None, features=None):
     model_id = uuid.uuid4()
     run_id = uuid.uuid4()
     config_id = uuid.uuid4()
+    execution_output = execution_output.copy()
+    if (
+        "model_file_path" in execution_output
+        and "pkl_file_id" not in execution_output
+    ):
+        execution_output["pkl_file_id"] = str(uuid.uuid4())
 
     run = MagicMock()
     run.model_id = model_id
@@ -185,7 +192,36 @@ async def test_promote_without_usable_feature_columns_preserves_model_contract(
     )
 
     update_dict = _model_update(model_service)
-    assert update_dict == {"pkl_file": "/tmp/model.pkl", "pkl_file_id": None}
+    assert set(update_dict) == {"pkl_file_id"}
+    assert uuid.UUID(update_dict["pkl_file_id"])
+
+
+@pytest.mark.asyncio
+async def test_promote_rejects_legacy_run_without_file_id_before_any_updates():
+    service, model_service, model_manager, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/worker/models/legacy-run.pkl",
+            "pkl_file_id": None,
+            "target_column": "y",
+            "feature_columns": ["x"],
+        }
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await service.promote_run(
+            model_id=model_id,
+            run_id=run_id,
+            promote_data=MLModelPipelineRunPromote(
+                update_model_file=True, update_metrics=False
+            ),
+        )
+
+    assert "Run the pipeline again" in exc_info.value.error_detail
+    service.config_repository.get_by_id.assert_not_awaited()
+    service.config_repository.unset_default_for_model.assert_not_awaited()
+    service.config_repository.update.assert_not_awaited()
+    model_service.update.assert_not_awaited()
+    model_manager.invalidate_model.assert_not_called()
 
 
 @pytest.mark.asyncio
