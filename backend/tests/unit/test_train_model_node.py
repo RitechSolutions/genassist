@@ -1,5 +1,6 @@
 import pickle
 import uuid
+from unittest.mock import AsyncMock
 
 import numpy as np
 import pandas as pd
@@ -126,6 +127,53 @@ class TestClassificationOverrideSplitFallback:
 
         assert result["success"] is True
         assert "accuracy" in result["metrics"]
+
+
+class TestPipelineRunOutput:
+    @pytest.mark.asyncio
+    async def test_includes_uploaded_model_file_id(self, monkeypatch, tmp_path):
+        dataframe = pd.DataFrame(
+            {
+                "feature": np.arange(20, dtype=float),
+                "target": np.arange(20, dtype=float) * 2,
+            }
+        )
+        csv_path = tmp_path / "training.csv"
+        dataframe.to_csv(csv_path, index=False)
+
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        pkl_file_id = str(uuid.uuid4())
+        monkeypatch.setattr(
+            train_node,
+            "_save_model",
+            AsyncMock(
+                return_value={
+                    "model_file_path": str(tmp_path / "model.pkl"),
+                    "model_version": "v2.0",
+                }
+            ),
+        )
+        monkeypatch.setattr(
+            train_node,
+            "_register_trained_model",
+            AsyncMock(return_value=(str(uuid.uuid4()), pkl_file_id, None, [])),
+        )
+
+        result = await train_node.process(
+            {
+                "name": "pipeline-model",
+                "modelType": "linear_regression",
+                "fileUrl": str(csv_path),
+                "targetColumn": "target",
+                "featureColumns": ["feature"],
+                "validationSplit": 0.2,
+                "taskType": "regression",
+            }
+        )
+
+        assert result["pkl_file_id"] == pkl_file_id
 
 
 class TestCategoricalEncodingEndToEnd:
