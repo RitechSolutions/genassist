@@ -3,6 +3,7 @@ import { Card } from "@/components/card";
 import { useState, useEffect } from "react";
 import { AgentDetailsDialog } from "./AgentDetailsDialog";
 import { fetchDashboardAgents } from "@/services/dashboard";
+import { calendarToday, toExactInterval } from "@/helpers/dateRange";
 import type { AgentStatsItem } from "@/interfaces/dashboard.interface";
 import { useNavigate } from "react-router-dom";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
@@ -73,7 +74,10 @@ export function YourAgentsCard({ agents: propAgents, loading: propLoading, onVie
     const fetchAgents = async () => {
       setLoading(true);
       try {
-        const response = await fetchDashboardAgents();
+        const response = await fetchDashboardAgents(
+          30,
+          toExactInterval({ from: calendarToday() })
+        );
         if (response?.agents) {
           setAgents(response.agents.map(transformApiAgent));
         }

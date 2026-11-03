@@ -85,6 +85,30 @@ def resolve_summary_range(
     return SummaryRange(rolling_from, rolling_to, exact=False)
 
 
+def resolve_today_bounds(
+    today_start: datetime | None,
+    today_end: datetime | None,
+) -> tuple[datetime, datetime] | None:
+    if today_start is None and today_end is None:
+        return None
+    if today_start is None or today_end is None:
+        raise HTTPException(
+            status_code=422,
+            detail="today_start and today_end must be supplied together",
+        )
+    if today_start.utcoffset() is None or today_end.utcoffset() is None:
+        raise HTTPException(
+            status_code=422,
+            detail="today_start and today_end must include a timezone offset",
+        )
+    if today_start >= today_end:
+        raise HTTPException(
+            status_code=422,
+            detail="today_start must be earlier than today_end",
+        )
+    return today_start, today_end
+
+
 @router.get(
     "",
     response_model=DashboardResponse,
@@ -209,6 +233,14 @@ async def get_active_conversations(
 async def get_agents_stats(
     days: int = Query(default=30, ge=1, le=365, description="Number of days to look back"),
     limit: int = Query(default=5, ge=1, le=100, description="Maximum number of agents to return"),
+    today_start: datetime | None = Query(
+        default=None,
+        description="Inclusive start of the client's current day, requires today_end and a timezone offset",
+    ),
+    today_end: datetime | None = Query(
+        default=None,
+        description="Exclusive end of the client's current day, requires today_start and a timezone offset",
+    ),
     dashboard_service: DashboardService = Injected(DashboardService),
 ) -> AgentStatsResponse:
     """
@@ -219,7 +251,10 @@ async def get_agents_stats(
     - Cost (if available)
     """
     from_date, to_date = parse_date_range(days)
-    return await dashboard_service.get_agents_stats(from_date, to_date, limit=limit)
+    today_start, today_end = resolve_today_bounds(today_start, today_end) or (None, None)
+    return await dashboard_service.get_agents_stats(
+        from_date, to_date, limit=limit, today_start=today_start, today_end=today_end
+    )
 
 
 @router.get(

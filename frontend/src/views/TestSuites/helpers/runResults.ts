@@ -1,5 +1,6 @@
 import { TestResult, TestRun } from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 // A turn-scoped result belongs to one case, so it is shown with that case; a
 // conversation-scoped one has no single case to sit on.
@@ -245,7 +246,8 @@ export const numberRuns = (runs: TestRun[], runIds: string[]): TestRun[] => {
   return runs.map((run) => (run.id && numbers.has(run.id) ? { ...run, number: numbers.get(run.id) } : run));
 };
 
-export const runDate = (run: Pick<TestRun, "created_at">): string => new Date(run.created_at ?? "").toLocaleString();
+export const runDate = (run: Pick<TestRun, "created_at">): string =>
+  new Date(run.created_at ?? "").toLocaleString(undefined, { timeZone: displayTimeZone() });
 
 /** How long a finished run took, from when it was queued to its last update. */
 export const runDuration = (run: Pick<TestRun, "status" | "created_at" | "updated_at">): string | null => {

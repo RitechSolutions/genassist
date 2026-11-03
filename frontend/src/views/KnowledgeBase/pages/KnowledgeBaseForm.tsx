@@ -46,6 +46,7 @@ import { isEqual } from 'lodash';
 import { KnowledgeItem, UrlHeaderRow, UploadResult, FileItem } from '../types/knowledgeBase';
 import { useIsMobile } from '@/hooks/useMobile';
 import { Progress } from '@/components/progress';
+import { formatDateTime } from '@/helpers/utils';
 
 const DEFAULT_FORM_DATA: KnowledgeItem = {
   id: uuidv4(),
@@ -1191,7 +1192,7 @@ const KnowledgeBaseForm: React.FC = () => {
                                               <span className="text-xs text-muted-foreground">
                                                 Last sync
                                                 {editingItem.last_synced
-                                                  ? `: ${new Date(editingItem.last_synced).toLocaleString()}`
+                                                  ? `: ${formatDateTime(editingItem.last_synced)}`
                                                   : ''}
                                               </span>
                                               {editingItem.last_sync_status ? (
