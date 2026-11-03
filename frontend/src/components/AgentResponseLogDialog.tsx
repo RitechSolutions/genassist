@@ -4,6 +4,7 @@ import { fetchAgentResponseLog, AgentResponseLog } from "@/services/transcripts"
 import JsonViewer from "@/components/JsonViewer";
 import { extractReferencedArticles } from "@/helpers/referencedArticles";
 import { TruncatedText } from "@/components/TruncatedText";
+import { formatDateTime } from "@/helpers/utils";
 
 type AgentResponseLogDialogProps = {
   isOpen: boolean;
@@ -110,7 +111,7 @@ export function AgentResponseLogDialog({
                   <div><span className="font-medium">Message ID:</span> {String(data.transcript_message_id)}</div>
                 )}
                 {data.logged_at != null && (
-                  <div><span className="font-medium">Logged at:</span> {new Date(data.logged_at).toLocaleString()}</div>
+                  <div><span className="font-medium">Logged at:</span> {formatDateTime(data.logged_at)}</div>
                 )}
               </div>
               <div>

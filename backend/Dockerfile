@@ -90,6 +90,11 @@ COPY --from=builder /opt/venv /opt/venv
 RUN playwright install --with-deps chromium && \
     chown -R genassist:genassist "/opt/playwright"
 
+# Fail the build if libbrotli1 predates the CVE-2026-111497 fix (DLA-4855-1)
+RUN v="$(dpkg-query -W -f='${Version}' libbrotli1 2>/dev/null || true)" && \
+    { [ -z "$v" ] || dpkg --compare-versions "$v" ge 1.0.9-2+deb12u1; } || \
+    { echo "libbrotli1 $v is vulnerable to CVE-2026-111497, need >= 1.0.9-2+deb12u1" >&2; exit 1; }
+
 # 5. Copy Application Code
 COPY --chown=genassist:genassist ./run.py ./run_celery.py ./migrations.py ./alembic.ini /src/
 COPY --chown=genassist:genassist ./app /src/app

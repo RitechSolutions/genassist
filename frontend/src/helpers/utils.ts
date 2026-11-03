@@ -3,12 +3,15 @@
 // existing `@/helpers/utils` import path keeps working.
 export { cn } from "@/lib/utils";
 
+import { dateParts, displayTimeZone } from "@/helpers/timeZone";
+
 export function formatDate(date: string | Date): string {
   const d = new Date(date);
   return d.toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: displayTimeZone(),
   });
 }
 
@@ -19,7 +22,9 @@ export function formatDate(date: string | Date): string {
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "—";
   try {
-    return new Date(value).toLocaleString();
+    return new Date(value).toLocaleString(undefined, {
+      timeZone: displayTimeZone(),
+    });
   } catch {
     return value;
   }
@@ -35,21 +40,21 @@ export function formatChartDate(dateStr: string): string {
 }
 
 export function getTimeFromDatetime(datetimeString: string): string {
-  const date = new Date(datetimeString);
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const seconds = date.getSeconds();
+  const { hours, minutes, seconds } = dateParts(new Date(datetimeString));
 
   return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
 export const formatFeedbackDate = (timestamp: string) => {
   const date = new Date(timestamp);
-  const month = date.toLocaleDateString('en-US', { month: 'long' });
-  const day = date.getDate();
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${month} ${day}, ${hours}:${minutes}`;
+  const month = date.toLocaleDateString('en-US', {
+    month: 'long',
+    timeZone: displayTimeZone(),
+  });
+  const { day, hours, minutes } = dateParts(date);
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  return `${month} ${day}, ${hh}:${mm}`;
 };
 
 export function tryParse(value: any) {

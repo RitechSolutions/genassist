@@ -6,7 +6,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
 import { ALL_FILTER_VALUE, FilterMenu, type FilterMenuGroup } from "@/components/FilterMenu";
 import { startOfDay, subDays, endOfDay, addDays } from "date-fns";
-import { utcDayEnd, utcDayStart } from "@/helpers/dateRange";
+import { dayEndIso, dayStartIso } from "@/helpers/dateRange";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { useHasPermission } from "@/hooks/useHasPermission";
@@ -51,8 +51,8 @@ export default function AuditLogs() {
     return () => clearTimeout(timeout);
   }, [tableName]);
 
-  const dateFrom = dateRange?.from ? utcDayStart(dateRange.from) : "";
-  const dateTo = dateRange?.to ? utcDayEnd(dateRange.to) : "";
+  const dateFrom = dateRange?.from ? dayStartIso(dateRange.from) : "";
+  const dateTo = dateRange?.to ? dayEndIso(dateRange.to) : "";
 
   const fetchPage = useCallback(
     (offset: number) =>

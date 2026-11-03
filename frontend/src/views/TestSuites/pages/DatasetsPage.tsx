@@ -35,6 +35,7 @@ import {CategoryPicker} from "../components/CategoryPicker";
 import {countConversations} from "../helpers/datasetConversations";
 import {ALL_CATEGORIES, matchesCategory} from "../helpers/categories";
 import {CATEGORIES_QUERY_KEY, useCategories} from "../hooks/useCategories";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 const getTimeAgo = (date: Date): string => {
   const now = new Date();
@@ -47,7 +48,7 @@ const getTimeAgo = (date: Date): string => {
   if (diffMins < 60) return `${diffMins} min${diffMins !== 1 ? "s" : ""} ago`;
   if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`;
   if (diffDays < 7) return `${diffDays} day${diffDays !== 1 ? "s" : ""} ago`;
-  return date.toLocaleDateString();
+  return date.toLocaleDateString(undefined, { timeZone: displayTimeZone() });
 };
 
 const DatasetsPage: React.FC = () => {
