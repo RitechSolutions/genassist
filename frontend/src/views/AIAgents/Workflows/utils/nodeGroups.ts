@@ -165,6 +165,14 @@ export const createGroupNode = (id: string, rect: Rect, name: string): Node<Grou
 export const getGroupChildren = (nodes: Node[], groupId: string): Node[] =>
   nodes.filter((n) => getParentId(n) === groupId);
 
+export const getSelectedWithGroupChildren = (nodes: Node[]): Node[] => {
+  const groupIds = new Set(nodes.filter((n) => n.selected && isGroupNode(n)).map((n) => n.id));
+  return nodes.filter((n) => {
+    const parentId = getParentId(n);
+    return !!n.selected || (!!parentId && groupIds.has(parentId));
+  });
+};
+
 /**
  * React Flow v11 needs a parent before its children in the array, and draws same-z nodes in array
  * order. Putting every group first satisfies both. Returns the same array when already ordered.

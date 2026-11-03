@@ -75,6 +75,7 @@ import {
   flattenGroups,
   getAbsolutePosition,
   getParentId,
+  getSelectedWithGroupChildren,
   groupNodes,
   GroupDeletionPlan,
   isGroupNode,
@@ -904,18 +905,23 @@ const GraphFlowContent: React.FC = () => {
   // Keyboard event handlers for copy/paste/undo/redo
   // Copy selected nodes and their internal edges to clipboard
   const copySelectedNodes = useCallback(() => {
-    if (selectedNodes.length === 0) return;
+    const copied = getSelectedWithGroupChildren(nodesRef.current);
+    if (copied.length === 0) return;
 
-    const selectedIds = new Set(selectedNodes.map((n) => n.id));
-    const connectedEdges = edges.filter(
-      (edge) => selectedIds.has(edge.source) && selectedIds.has(edge.target)
+    const copiedIds = new Set(copied.map((n) => n.id));
+    const connectedEdges = edgesRef.current.filter(
+      (edge) => copiedIds.has(edge.source) && copiedIds.has(edge.target)
     );
 
+    const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
     clipboardRef.current = {
-      nodes: selectedNodes.map((n) => ({ ...n })),
+      nodes: copied.map((n) => ({
+        ...n,
+        positionAbsolute: getAbsolutePosition(n, byId),
+      })),
       edges: connectedEdges.map((e) => ({ ...e })),
     };
-  }, [selectedNodes, edges]);
+  }, []);
 
   // Paste nodes and edges from clipboard with new IDs
   const pasteFromClipboard = useCallback(() => {
