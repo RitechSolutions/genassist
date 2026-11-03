@@ -241,7 +241,14 @@ async def promote_pipeline_run(
     service: MLModelPipelineRunService = Injected(MLModelPipelineRunService)
 ):
     """Promote a completed pipeline run to update the model."""
-    result = await service.promote_run(model_id, run_id, promote_data)
+    try:
+        result = await service.promote_run(model_id, run_id, promote_data)
+    except AppException as e:
+        # Repositories raise "not found" with the default 400; keep the 404 and
+        # let the global handler decide which details the client may see.
+        if e.error_key in (ErrorKey.NOT_FOUND, ErrorKey.ML_MODEL_NOT_FOUND):
+            e.status_code = 404
+        raise
     return PipelineRunPromoteResponse(**result)
 
 

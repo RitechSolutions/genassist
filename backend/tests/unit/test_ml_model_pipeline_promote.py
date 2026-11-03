@@ -353,3 +353,28 @@ async def test_promote_switches_uploaded_file_id_and_invalidates_cache():
     model_service.update.assert_awaited_once()
     model_manager.invalidate_model.assert_called_once_with(model_id)
     assert result["model_updated"] is True
+
+
+@pytest.mark.asyncio
+async def test_promote_rejects_incomplete_run_with_client_safe_reason(monkeypatch):
+    from fastapi import Request
+
+    from app.core.exceptions.exception_handler import _app_exception_body
+
+    monkeypatch.setenv("ENV", "prod")
+    service, model_service, _, model_id, run_id = _make_service({})
+    service.run_repository.get_by_id.return_value.status = PipelineRunStatusEnum.RUNNING
+
+    with pytest.raises(AppException) as exc_info:
+        await service.promote_run(
+            model_id=model_id,
+            run_id=run_id,
+            promote_data=MLModelPipelineRunPromote(),
+        )
+
+    assert exc_info.value.error_key is ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE
+    request = Request({"type": "http", "headers": [], "query_string": b""})
+    body = _app_exception_body(request, exc_info.value)
+    assert body["error_detail"] == "Only completed pipeline runs can be promoted."
+    service.config_repository.update.assert_not_awaited()
+    model_service.update.assert_not_awaited()
