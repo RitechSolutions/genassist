@@ -247,7 +247,7 @@ async def promote_pipeline_run(
     except AppException as e:
         if e.error_key == ErrorKey.NOT_FOUND:
             raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=e.error_detail or str(e))
 
 
 # ==================== Pipeline Artifact Endpoints ====================

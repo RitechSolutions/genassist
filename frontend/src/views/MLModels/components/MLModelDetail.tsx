@@ -69,6 +69,7 @@ import {
   TrainingPipelineConfig,
 } from "@/interfaces/ml-model-pipeline.interface";
 import { Workflow, WorkflowCreatePayload } from "@/interfaces/workflow.interface";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { formatDateTime } from "@/helpers/utils";
 import { downloadFileManagerFile } from "@/services/fileManager";
 import { modelTypeLabel } from "../helpers/modelTypes";
@@ -442,8 +443,10 @@ const MLModelDetail: React.FC = () => {
         queryClient.invalidateQueries({ queryKey: ["ml-model", id] }),
         queryClient.invalidateQueries({ queryKey: ["ml-models"] }),
       ]);
-    } catch {
-      toast.error("Failed to promote the pipeline run.");
+    } catch (error) {
+      toast.error(
+        extractErrorMessage(error, "Failed to promote the pipeline run."),
+      );
     } finally {
       setPromotingRunId(null);
     }
