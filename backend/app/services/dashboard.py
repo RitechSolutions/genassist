@@ -192,13 +192,17 @@ class DashboardService:
         self,
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
-        limit: int = 5
+        limit: int = 5,
+        today_start: Optional[datetime] = None,
+        today_end: Optional[datetime] = None,
     ) -> AgentStatsResponse:
         """Get agents with their statistics."""
         agent_stats = await self.dashboard_repo.get_agents_with_stats(
             from_date=from_date,
             to_date=to_date,
             limit=limit,
+            today_start=today_start,
+            today_end=today_end,
         )
 
         agent_items = [

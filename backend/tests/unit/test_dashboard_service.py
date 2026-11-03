@@ -50,8 +50,14 @@ class FakeDashboardRepo:
         self.total_cost_exact = exact
         return 0.0 if agent_ids == [] else TOTAL_COST
 
-    async def get_agents_with_stats(self, from_date, to_date, limit):
-        self.agents_kwargs = {"from_date": from_date, "to_date": to_date, "limit": limit}
+    async def get_agents_with_stats(self, from_date, to_date, limit, today_start=None, today_end=None):
+        self.agents_kwargs = {
+            "from_date": from_date,
+            "to_date": to_date,
+            "limit": limit,
+            "today_start": today_start,
+            "today_end": today_end,
+        }
         return [
             {
                 "id": self._agent_id,
@@ -174,4 +180,19 @@ async def test_agents_stats_surface_ledger_cost_and_per_conversation():
     agent = response.agents[0]
     assert float(agent.cost) == AGENT_COST
     assert float(agent.cost_per_conversation) == PER_CONVERSATION
-    assert repo.agents_kwargs == {"from_date": FROM_DATE, "to_date": TO_DATE, "limit": 5}
+    assert repo.agents_kwargs == {
+        "from_date": FROM_DATE,
+        "to_date": TO_DATE,
+        "limit": 5,
+        "today_start": None,
+        "today_end": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_agents_stats_forward_the_client_today_to_the_repository():
+    service, repo, _ = _service()
+    today_start = datetime(2026, 10, 30, 7, tzinfo=timezone.utc)
+    today_end = datetime(2026, 10, 31, 7, tzinfo=timezone.utc)
+    await service.get_agents_stats(FROM_DATE, TO_DATE, today_start=today_start, today_end=today_end)
+    assert (repo.agents_kwargs["today_start"], repo.agents_kwargs["today_end"]) == (today_start, today_end)

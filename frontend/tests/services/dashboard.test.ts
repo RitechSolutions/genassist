@@ -119,6 +119,18 @@ describe("fetchDashboardAgents", () => {
     expect(mockApiRequest).toHaveBeenCalledWith("get", "/dashboard/agents?days=30");
   });
 
+  it("sends the browser's today as an exact pair", async () => {
+    mockApiRequest.mockResolvedValue(null as never);
+    await fetchDashboardAgents(30, {
+      start: new Date("2026-10-30T00:00:00Z"),
+      endExclusive: new Date("2026-10-31T00:00:00Z"),
+    });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "get",
+      "/dashboard/agents?days=30&today_start=2026-10-30T00%3A00%3A00.000Z&today_end=2026-10-31T00%3A00%3A00.000Z"
+    );
+  });
+
   it("returns null on rejection", async () => {
     mockApiRequest.mockRejectedValue(new Error("boom"));
     expect(await fetchDashboardAgents(90)).toBeNull();
