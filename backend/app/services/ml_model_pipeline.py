@@ -25,9 +25,11 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.ml_model_pipeline import PipelineRunStatus as PipelineRunStatusEnum
 from app.services.ml_models import (
+    MLModelsService,
     STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX,
     merge_model_inference_params,
 )
+from app.services.ml_model_manager import MLModelManager
 
 logger = logging.getLogger(__name__)
 
@@ -156,11 +158,15 @@ class MLModelPipelineRunService:
         run_repository: MLModelPipelineRunRepository,
         config_repository: MLModelPipelineConfigRepository,
         model_repository: MLModelsRepository,
+        model_service: MLModelsService,
+        model_manager: MLModelManager,
         workflow_repository: WorkflowRepository,
     ):
         self.run_repository = run_repository
         self.config_repository = config_repository
         self.model_repository = model_repository
+        self.model_service = model_service
+        self.model_manager = model_manager
         self.workflow_repository = workflow_repository
 
     async def create(
@@ -268,14 +274,17 @@ class MLModelPipelineRunService:
             if stale_default_warnings:
                 result["warnings"] = stale_default_warnings
             model_file_path = execution_output.get("model_file_path")
+            pkl_file_id = execution_output.get("pkl_file_id")
             target_column = execution_output.get("target_column")
             feature_columns = execution_output.get("feature_columns")
             target_transform = execution_output.get("target_transform")
-            if model_file_path:
+            if model_file_path or pkl_file_id:
                 from app.schemas.ml_model import MLModelUpdate
 
                 try:
-                    model_updates = {"pkl_file": model_file_path}
+                    model_updates = {"pkl_file_id": pkl_file_id}
+                    if pkl_file_id is None:
+                        model_updates["pkl_file"] = model_file_path
                     if target_column:
                         model_updates["target_variable"] = target_column
                     if feature_columns:
@@ -286,9 +295,8 @@ class MLModelPipelineRunService:
                             target_transform.get("baselineColumn") if target_transform else None,
                         )
                     update_data = MLModelUpdate(**model_updates)
-                    await self.model_repository.update(
-                        model_id, update_data.model_dump(exclude_unset=True)
-                    )
+                    await self.model_service.update(model_id, update_data)
+                    self.model_manager.invalidate_model(model_id)
                     result["model_updated"] = True
                 except Exception as e:
                     logger.warning(

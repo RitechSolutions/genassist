@@ -47,7 +47,10 @@ def _make_service(execution_output: dict, inference_params=None, features=None):
     model.target_variable = "existing_target"
     model_repository = MagicMock()
     model_repository.get_by_id = AsyncMock(return_value=model)
-    model_repository.update = AsyncMock()
+
+    model_service = MagicMock()
+    model_service.update = AsyncMock(return_value=model)
+    model_manager = MagicMock()
 
     workflow_repository = MagicMock()
 
@@ -55,14 +58,21 @@ def _make_service(execution_output: dict, inference_params=None, features=None):
         run_repository=run_repository,
         config_repository=config_repository,
         model_repository=model_repository,
+        model_service=model_service,
+        model_manager=model_manager,
         workflow_repository=workflow_repository,
     )
-    return service, model_repository, model_id, run_id
+    return service, model_service, model_manager, model_id, run_id
+
+
+def _model_update(model_service: MagicMock) -> dict:
+    update = model_service.update.await_args.args[1]
+    return update.model_dump(exclude_unset=True)
 
 
 @pytest.mark.asyncio
 async def test_promote_surfaces_ratio_baseline_column_as_inference_params():
-    service, model_repository, model_id, run_id = _make_service(
+    service, model_service, _, model_id, run_id = _make_service(
         {
             "model_file_path": "/tmp/model.pkl",
             "target_column": "y",
@@ -81,8 +91,8 @@ async def test_promote_surfaces_ratio_baseline_column_as_inference_params():
         promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
     )
 
-    assert model_repository.update.await_count == 1
-    _, update_dict = model_repository.update.await_args.args
+    assert model_service.update.await_count == 1
+    update_dict = _model_update(model_service)
     assert update_dict["inference_params"] == {
         "featureDefaults": {"x": 1},
         "ratioBaselineColumn": "base",
@@ -91,7 +101,7 @@ async def test_promote_surfaces_ratio_baseline_column_as_inference_params():
 
 @pytest.mark.asyncio
 async def test_promote_without_ratio_target_preserves_feature_defaults():
-    service, model_repository, model_id, run_id = _make_service(
+    service, model_service, _, model_id, run_id = _make_service(
         {
             "model_file_path": "/tmp/model.pkl",
             "target_column": "y",
@@ -109,14 +119,14 @@ async def test_promote_without_ratio_target_preserves_feature_defaults():
         promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
     )
 
-    assert model_repository.update.await_count == 1
-    _, update_dict = model_repository.update.await_args.args
+    assert model_service.update.await_count == 1
+    update_dict = _model_update(model_service)
     assert update_dict["inference_params"] == {"featureDefaults": {"x": 1}}
 
 
 @pytest.mark.asyncio
 async def test_promote_without_existing_inference_params_keeps_none():
-    service, model_repository, model_id, run_id = _make_service({
+    service, model_service, _, model_id, run_id = _make_service({
         "model_file_path": "/tmp/model.pkl",
         "target_column": "y",
         "feature_columns": ["x"],
@@ -128,13 +138,13 @@ async def test_promote_without_existing_inference_params_keeps_none():
         promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
     )
 
-    _, update_dict = model_repository.update.await_args.args
+    update_dict = _model_update(model_service)
     assert update_dict["inference_params"] is None
 
 
 @pytest.mark.asyncio
 async def test_promote_keeps_training_fills_in_the_artifact():
-    service, model_repository, model_id, run_id = _make_service({
+    service, model_service, _, model_id, run_id = _make_service({
         "model_file_path": "/tmp/model.pkl",
         "target_column": "y",
         "feature_columns": ["x"],
@@ -147,7 +157,7 @@ async def test_promote_keeps_training_fills_in_the_artifact():
         promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
     )
 
-    _, update_dict = model_repository.update.await_args.args
+    update_dict = _model_update(model_service)
     assert update_dict["inference_params"] is None
 
 
@@ -156,7 +166,7 @@ async def test_promote_keeps_training_fills_in_the_artifact():
 async def test_promote_without_usable_feature_columns_preserves_model_contract(
     feature_columns,
 ):
-    service, model_repository, model_id, run_id = _make_service(
+    service, model_service, _, model_id, run_id = _make_service(
         {
             "model_file_path": "/tmp/model.pkl",
             "feature_columns": feature_columns,
@@ -174,13 +184,13 @@ async def test_promote_without_usable_feature_columns_preserves_model_contract(
         promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
     )
 
-    _, update_dict = model_repository.update.await_args.args
-    assert update_dict == {"pkl_file": "/tmp/model.pkl"}
+    update_dict = _model_update(model_service)
+    assert update_dict == {"pkl_file": "/tmp/model.pkl", "pkl_file_id": None}
 
 
 @pytest.mark.asyncio
 async def test_promote_warns_when_retained_default_is_not_a_fitted_category():
-    service, model_repository, model_id, run_id = _make_service(
+    service, model_service, _, model_id, run_id = _make_service(
         {
             "model_file_path": "/tmp/model.pkl",
             "target_column": "y",
@@ -201,7 +211,7 @@ async def test_promote_warns_when_retained_default_is_not_a_fitted_category():
         promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
     )
 
-    _, update_dict = model_repository.update.await_args.args
+    update_dict = _model_update(model_service)
     assert update_dict["inference_params"] == {
         "featureDefaults": {"kind": "removed"}
     }
@@ -211,3 +221,31 @@ async def test_promote_warns_when_retained_default_is_not_a_fitted_category():
     response = PipelineRunPromoteResponse(**result)
     assert response.warnings == result["warnings"]
     assert response.model_dump()["warnings"] == result["warnings"]
+
+
+@pytest.mark.asyncio
+async def test_promote_switches_uploaded_file_id_and_invalidates_cache():
+    pkl_file_id = str(uuid.uuid4())
+    service, model_service, model_manager, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/worker/models/run-a.pkl",
+            "pkl_file_id": pkl_file_id,
+            "target_column": "y",
+            "feature_columns": ["age", "visits"],
+        },
+        features=["age", "tenure_months", "monthly_spend", "visits"],
+    )
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
+    )
+
+    update_dict = _model_update(model_service)
+    assert update_dict["pkl_file_id"] == pkl_file_id
+    assert "pkl_file" not in update_dict
+    assert update_dict["features"] == ["age", "visits"]
+    model_service.update.assert_awaited_once()
+    model_manager.invalidate_model.assert_called_once_with(model_id)
+    assert result["model_updated"] is True
