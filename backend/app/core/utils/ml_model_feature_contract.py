@@ -25,21 +25,17 @@ def _model_feature_count(model: Any) -> Optional[int]:
     if count_value is None:
         return None
     if (
-        _is_catboost_model(model)
-        and isinstance(count_value, (int, np.integer))
-        and not isinstance(count_value, (bool, np.bool_))
-        and count_value == 0
-    ):
-        # CatBoost does not save its column count in the pickle, so a reloaded model
-        # reports 0. Its column names come from the saved model, so the count is unknown.
-        return None
-    if (
         count_value is _UNREADABLE_MODEL_ATTRIBUTE
         or isinstance(count_value, (bool, np.bool_))
         or not isinstance(count_value, (int, np.integer))
-        or count_value < 1
+        or count_value < 0
     ):
         return -1
+    if count_value == 0:
+        # CatBoost does not save its column count in the pickle, so a reloaded model
+        # reports 0. Its column names come from the saved model, so the count is unknown.
+        # Used at registration and at inference alike.
+        return None if _is_catboost_model(model) else -1
     return int(count_value)
 
 

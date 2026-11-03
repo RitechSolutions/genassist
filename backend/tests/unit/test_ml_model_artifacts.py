@@ -139,7 +139,8 @@ class TestExtractContract:
         frame = pd.DataFrame(_X, columns=["hour", "lag_24"])
         model = catboost.CatBoostRegressor(iterations=2, verbose=0, allow_writing_files=False).fit(frame, _Y)
         reloaded = pickle.loads(pickle.dumps(model))
-        assert reloaded.n_features_in_ == 0
+        if reloaded.n_features_in_ != 0:
+            pytest.skip("this CatBoost version keeps n_features_in_ when pickled")
 
         contract = extract_model_artifact_contract(reloaded)
 
@@ -321,9 +322,9 @@ class TestLoadContract:
         assert not Path(downloaded_paths[0]).exists()
 
     @pytest.mark.asyncio
-    async def test_uploaded_file_is_checked_inside_the_ml_models_folder(self, monkeypatch, ml_models_dir):
-        # Registering with pkl_file_id downloads the upload for the check. The safety
-        # check refuses files outside the ML models folder, so the copy must be inside it.
+    async def test_uploaded_file_is_checked_outside_the_ml_models_folder(self, monkeypatch, ml_models_dir):
+        # Registering with pkl_file_id downloads the upload for the check. The unchecked
+        # copy must not land in the ML models folder, which registrations may point to.
         downloaded_paths = []
 
         async def fake_download(_file_id, destination_path):
@@ -334,8 +335,23 @@ class TestLoadContract:
 
         await validate_model_artifact_registration(None, "artifact-id", ["hour", "lag_24"], "revenue")
 
-        assert model_validator.resolve_model_path(downloaded_paths[0]) is not None
+        assert model_validator.resolve_model_path(downloaded_paths[0]) is None
+        assert not Path(downloaded_paths[0]).exists()
         assert list(ml_models_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_unsafe_uploaded_file_is_still_refused(self, monkeypatch, ml_models_dir):
+        # The downloaded copy skips the folder check, not the pickle safety check.
+        async def fake_download(_file_id, destination_path):
+            Path(destination_path).write_bytes(pickle.dumps(os.system))
+
+        monkeypatch.setattr(ml_model_artifacts, "_download_artifact", fake_download)
+
+        with pytest.raises(AppException) as exc:
+            await load_model_artifact_contract(None, "artifact-id")
+
+        assert exc.value.error_key is ErrorKey.ML_MODEL_ARTIFACT_INVALID
+        assert exc.value.error_detail == _UNREADABLE_DETAIL
 
 
 class TestDownloadArtifact:
