@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.ml_model_pipeline import PipelineRunStatus as PipelineRunStatusEnum
 from app.schemas.ml_model_pipeline import (
@@ -19,13 +20,19 @@ from app.schemas.ml_model_pipeline import (
 from app.services.ml_model_pipeline import MLModelPipelineRunService
 
 
-def _make_service(execution_output: dict, inference_params=None, features=None):
+def _make_service(
+    execution_output: dict,
+    inference_params=None,
+    features=None,
+    add_default_file_id=True,
+):
     model_id = uuid.uuid4()
     run_id = uuid.uuid4()
     config_id = uuid.uuid4()
     execution_output = execution_output.copy()
     if (
-        "model_file_path" in execution_output
+        add_default_file_id
+        and "model_file_path" in execution_output
         and "pkl_file_id" not in execution_output
     ):
         execution_output["pkl_file_id"] = str(uuid.uuid4())
@@ -201,10 +208,10 @@ async def test_promote_rejects_legacy_run_without_file_id_before_any_updates():
     service, model_service, model_manager, model_id, run_id = _make_service(
         {
             "model_file_path": "/worker/models/legacy-run.pkl",
-            "pkl_file_id": None,
             "target_column": "y",
             "feature_columns": ["x"],
-        }
+        },
+        add_default_file_id=False,
     )
 
     with pytest.raises(AppException) as exc_info:
@@ -217,9 +224,38 @@ async def test_promote_rejects_legacy_run_without_file_id_before_any_updates():
         )
 
     assert "Run the pipeline again" in exc_info.value.error_detail
+    assert "predates stored model file IDs" in exc_info.value.error_detail
+    assert exc_info.value.error_key is ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE
     service.config_repository.get_by_id.assert_not_awaited()
     service.config_repository.unset_default_for_model.assert_not_awaited()
     service.config_repository.update.assert_not_awaited()
+    model_service.update.assert_not_awaited()
+    model_manager.invalidate_model.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_promote_distinguishes_failed_upload_from_historical_run():
+    service, model_service, model_manager, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/worker/models/new-run.pkl",
+            "pkl_file_id": None,
+            "registration_error": "upload failed",
+        }
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await service.promote_run(
+            model_id=model_id,
+            run_id=run_id,
+            promote_data=MLModelPipelineRunPromote(
+                update_model_file=True, update_metrics=False
+            ),
+        )
+
+    assert "was not uploaded to File Manager" in exc_info.value.error_detail
+    assert "predates" not in exc_info.value.error_detail
+    assert exc_info.value.error_key is ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE
+    service.config_repository.get_by_id.assert_not_awaited()
     model_service.update.assert_not_awaited()
     model_manager.invalidate_model.assert_not_called()
 

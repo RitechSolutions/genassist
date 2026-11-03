@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from app.core.exceptions.exception_classes import AppException
+from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml.train_model_node import (
     TREE_BASED_MODEL_TYPES,
     TrainModelNode,
@@ -132,6 +133,10 @@ class TestClassificationOverrideSplitFallback:
 class TestPipelineRunOutput:
     @pytest.mark.asyncio
     async def test_includes_uploaded_model_file_id(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+        monkeypatch.setattr(
+            ml_utils, "extra_csv_directories", AsyncMock(return_value=[])
+        )
         dataframe = pd.DataFrame(
             {
                 "feature": np.arange(20, dtype=float),

@@ -147,6 +147,7 @@ class ErrorKey(Enum):
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
     ML_INFERENCE_INPUT_INVALID = "ML_INFERENCE_INPUT_INVALID"
     ML_MODEL_ARTIFACT_INVALID = "ML_MODEL_ARTIFACT_INVALID"
+    ML_PIPELINE_RUN_NOT_PROMOTABLE = "ML_PIPELINE_RUN_NOT_PROMOTABLE"
     INVALID_PKL_FILE = "INVALID_PKL_FILE"
     PKL_FILE_TOO_LARGE = "PKL_FILE_TOO_LARGE"
     ERROR_UPLOAD_FILE_OPEN_AI = "ERROR_UPLOAD_FILE_OPEN_AI"
@@ -364,6 +365,7 @@ ERROR_MESSAGES = {
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
         ErrorKey.ML_INFERENCE_INPUT_INVALID: "ML model inference received invalid input values.",
         ErrorKey.ML_MODEL_ARTIFACT_INVALID: "The model file does not match the registered features or target.",
+        ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE: "This pipeline run cannot safely replace the model artifact.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",
         ErrorKey.PKL_FILE_TOO_LARGE: "PKL file too large. Maximum size is 500MB.",
         ErrorKey.ERROR_UPLOAD_FILE_OPEN_AI: "Failed to upload file to OpenAI.",

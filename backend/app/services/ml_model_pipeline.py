@@ -252,13 +252,21 @@ class MLModelPipelineRunService:
         pkl_file_id = execution_output.get("pkl_file_id") if execution_output else None
 
         if promote_data.update_model_file and model_file_path and not pkl_file_id:
-            raise AppException(
-                error_key=ErrorKey.ML_MODEL_ARTIFACT_INVALID,
-                error_detail=(
+            if "pkl_file_id" in execution_output:
+                error_detail = (
+                    "This run's trained model file was not uploaded to File Manager, "
+                    "so it cannot safely replace the current model artifact. Run the "
+                    "pipeline again, then promote the new run."
+                )
+            else:
+                error_detail = (
                     "This pipeline run predates stored model file IDs and cannot "
                     "safely replace the model artifact. Run the pipeline again, "
                     "then promote the new run."
-                ),
+                )
+            raise AppException(
+                error_key=ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE,
+                error_detail=error_detail,
             )
 
         # Get the pipeline config used by this run
