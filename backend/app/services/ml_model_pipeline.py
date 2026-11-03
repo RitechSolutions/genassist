@@ -246,6 +246,20 @@ class MLModelPipelineRunService:
         execution_output = (
             run.execution_output.get("output", None) if run.execution_output else None
         )
+        model_file_path = (
+            execution_output.get("model_file_path") if execution_output else None
+        )
+        pkl_file_id = execution_output.get("pkl_file_id") if execution_output else None
+
+        if promote_data.update_model_file and model_file_path and not pkl_file_id:
+            raise AppException(
+                error_key=ErrorKey.ML_MODEL_ARTIFACT_INVALID,
+                error_detail=(
+                    "This pipeline run predates stored model file IDs and cannot "
+                    "safely replace the model artifact. Run the pipeline again, "
+                    "then promote the new run."
+                ),
+            )
 
         # Get the pipeline config used by this run
         config = await self.config_repository.get_by_id(run.pipeline_config_id)
@@ -273,18 +287,14 @@ class MLModelPipelineRunService:
             ]
             if stale_default_warnings:
                 result["warnings"] = stale_default_warnings
-            model_file_path = execution_output.get("model_file_path")
-            pkl_file_id = execution_output.get("pkl_file_id")
             target_column = execution_output.get("target_column")
             feature_columns = execution_output.get("feature_columns")
             target_transform = execution_output.get("target_transform")
-            if model_file_path or pkl_file_id:
+            if pkl_file_id:
                 from app.schemas.ml_model import MLModelUpdate
 
                 try:
                     model_updates = {"pkl_file_id": pkl_file_id}
-                    if pkl_file_id is None:
-                        model_updates["pkl_file"] = model_file_path
                     if target_column:
                         model_updates["target_variable"] = target_column
                     if feature_columns:
