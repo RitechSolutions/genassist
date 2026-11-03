@@ -148,6 +148,19 @@ class TestExtractContract:
         assert contract.module_root == "catboost"
         validate_registry_contract(contract, ["hour", "lag_24"], "revenue")
 
+    def test_catboost_zero_feature_count_is_treated_as_unknown(self):
+        # Runs without catboost installed: a stand-in from the catboost module.
+        class CatBoostRegressor:
+            n_features_in_ = 0
+            feature_names_ = ["hour", "lag_24"]
+
+        CatBoostRegressor.__module__ = "catboost.core"
+
+        contract = extract_model_artifact_contract(CatBoostRegressor())
+
+        assert contract.features == ("hour", "lag_24")
+        validate_registry_contract(contract, ["hour", "lag_24"], "revenue")
+
     def test_zero_feature_count_is_still_rejected_for_other_libraries(self):
         model = SimpleNamespace(n_features_in_=0, feature_names_in_=np.array(["hour", "lag_24"]))
 
@@ -270,8 +283,8 @@ class TestLoadContract:
         assert set(manager._validated_files) == validated_before
 
     @pytest.mark.asyncio
-    async def test_reads_off_the_event_loop(self, monkeypatch, tmp_path):
-        artifact_path = tmp_path / "model.pkl"
+    async def test_reads_off_the_event_loop(self, monkeypatch, ml_models_dir):
+        artifact_path = ml_models_dir / "model.pkl"
         artifact_path.write_bytes(b"unused")
         loop_thread = threading.get_ident()
         read_threads = []
@@ -338,6 +351,67 @@ class TestLoadContract:
         assert model_validator.resolve_model_path(downloaded_paths[0]) is None
         assert not Path(downloaded_paths[0]).exists()
         assert list(ml_models_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_stored_path_outside_the_models_folder_falls_back_to_the_uploaded_file(
+        self, monkeypatch, ml_models_dir, tmp_path
+    ):
+        # Older registrations can hold a path outside the ML models folder; it can't be
+        # read, so the uploaded file is used instead of failing the registration.
+        outside_path = tmp_path / "legacy.pkl"
+        outside_path.write_bytes(pickle.dumps(_unnamed_raw_model()))
+
+        async def fake_download(_file_id, destination_path):
+            Path(destination_path).write_bytes(pickle.dumps(_named_raw_model()))
+
+        monkeypatch.setattr(ml_model_artifacts, "_download_artifact", fake_download)
+
+        contract = await load_model_artifact_contract(str(outside_path), "artifact-id")
+
+        assert contract.features == ("hour", "lag_24")
+
+    @pytest.mark.asyncio
+    async def test_uploaded_file_loads_the_bytes_that_were_scanned(self, monkeypatch, ml_models_dir):
+        # Replacing the file on disk after the scan must not change what is loaded.
+        scan = model_validator.validate_pickle_bytes_safe
+        downloaded_paths = []
+
+        async def fake_download(_file_id, destination_path):
+            downloaded_paths.append(destination_path)
+            Path(destination_path).write_bytes(pickle.dumps(_named_raw_model()))
+
+        def scan_then_swap(data, source):
+            result = scan(data, source)
+            replacement = Path(downloaded_paths[0]).with_name("replacement.pkl")
+            replacement.write_bytes(pickle.dumps(_unnamed_raw_model()))
+            os.replace(replacement, downloaded_paths[0])
+            return result
+
+        monkeypatch.setattr(ml_model_artifacts, "_download_artifact", fake_download)
+        monkeypatch.setattr(model_validator, "validate_pickle_bytes_safe", scan_then_swap)
+
+        contract = await load_model_artifact_contract(None, "artifact-id")
+
+        assert contract.features == ("hour", "lag_24")
+
+    @pytest.mark.asyncio
+    async def test_upload_that_changes_size_while_read_is_refused(self, monkeypatch, ml_models_dir):
+        async def fake_download(_file_id, destination_path):
+            Path(destination_path).write_bytes(pickle.dumps(_named_raw_model()))
+
+        def fstat_reporting_a_smaller_file(fd):
+            # The size seen when the file is opened is smaller than the bytes then read.
+            fields = list(os.fstat(fd))
+            fields[6] = 1  # st_size
+            return os.stat_result(fields)
+
+        monkeypatch.setattr(ml_model_artifacts, "_download_artifact", fake_download)
+        monkeypatch.setattr(ml_model_artifacts, "_fstat", fstat_reporting_a_smaller_file)
+
+        with pytest.raises(AppException) as exc:
+            await load_model_artifact_contract(None, "artifact-id")
+
+        assert exc.value.error_detail == _UNREADABLE_DETAIL
 
     @pytest.mark.asyncio
     async def test_unsafe_uploaded_file_is_still_refused(self, monkeypatch, ml_models_dir):

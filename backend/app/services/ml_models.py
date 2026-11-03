@@ -16,6 +16,7 @@ from app.services.ml_model_artifacts import (
     ModelArtifactContract,
     validate_model_artifact_registration,
 )
+from app.services.ml_model_manager import is_outdated_download
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +253,12 @@ class MLModelsService:
         it cannot be used to probe the filesystem.
         """
         if file_id:
-            local_copy = None if file_id_changed else existing_model.pkl_file
+            # A copy of an earlier upload is not the file inference will use.
+            local_copy = existing_model.pkl_file
+            if file_id_changed or (
+                local_copy and is_outdated_download(existing_model.id, file_id, local_copy)
+            ):
+                local_copy = None
             return local_copy, file_id
         return update_data.get("pkl_file", existing_model.pkl_file), None
 
