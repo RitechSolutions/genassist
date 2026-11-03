@@ -14,6 +14,7 @@ import {
   flattenGroups,
   getAbsolutePosition,
   getParentId,
+  getSelectedWithGroupChildren,
   groupNodes,
   isGroupNode,
   orderGroupsFirst,
@@ -298,6 +299,25 @@ describe("group deletion", () => {
     const result = applyGroupDeletion(nodes, edges, plan, "with-contents");
     expect(result.nodes.map((n) => n.id)).toEqual(["c"]);
     expect(result.edges).toEqual([]);
+  });
+});
+
+describe("getSelectedWithGroupChildren", () => {
+  const select = (nodes: Node[], ids: string[]) =>
+    nodes.map((n) => (ids.includes(n.id) ? { ...n, selected: true } : n));
+
+  it("expands a selected group to its children", () => {
+    const picked = getSelectedWithGroupChildren(select(grouped(), ["g"]));
+    expect(picked.map((n) => n.id)).toEqual(["g", "a", "b"]);
+  });
+
+  it("copies a selected child alone and never a child twice", () => {
+    expect(getSelectedWithGroupChildren(select(grouped(), ["a"])).map((n) => n.id)).toEqual(["a"]);
+    expect(getSelectedWithGroupChildren(select(grouped(), ["g", "a"])).map((n) => n.id)).toEqual([
+      "g",
+      "a",
+      "b",
+    ]);
   });
 });
 
