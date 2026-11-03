@@ -273,7 +273,7 @@ describe("group deletion", () => {
   const nodes = [...grouped(), node("d", 1200, 1000)];
 
   it("plans members separately from other selected nodes", () => {
-    const plan = planGroupDeletion(nodes, ["g"], ["g", "a", "d"], ["e3"]);
+    const plan = planGroupDeletion(nodes, ["g"], ["g", "a", "d"], [edges[2]]);
     expect(plan).toEqual({ groupIds: ["g"], memberIds: ["a", "b"], otherNodeIds: ["d"], edgeIds: ["e3"] });
   });
 
@@ -282,6 +282,14 @@ describe("group deletion", () => {
     const result = applyGroupDeletion(nodes, edges, plan, "group-only");
     expect(result.nodes.map((n) => n.id)).toEqual(["a", "b", "c", "d"]);
     expect(find(result.nodes, "a").position).toEqual({ x: 50, y: 100 });
+    expect(result.edges).toEqual(edges);
+  });
+
+  it("group-only keeps the members' edges even when they were box-selected with the group", () => {
+    const plan = planGroupDeletion(nodes, ["g"], ["g", "a", "b"], [edges[0], edges[1]]);
+    expect(plan.edgeIds).toEqual([]);
+    const result = applyGroupDeletion(nodes, edges, plan, "group-only");
+    expect(result.nodes.map((n) => n.id)).toEqual(["a", "b", "c", "d"]);
     expect(result.edges).toEqual(edges);
   });
 

@@ -1092,9 +1092,14 @@ const GraphFlowContent: React.FC = () => {
             : n
       )
     );
+    setEdges((eds) =>
+      eds.some((e) => e.selected)
+        ? eds.map((e) => (e.selected ? { ...e, selected: false } : e))
+        : eds
+    );
     storeApi.setState({ nodesSelectionActive: false });
     setGroupRenameTarget({ id: groupId, isNew: true });
-  }, [setNodes, storeApi]);
+  }, [setNodes, setEdges, storeApi]);
 
   const ungroupGroup = useCallback(
     (groupId: string) => setNodes((nds) => ungroupNodes(nds, groupId)),
@@ -1240,7 +1245,7 @@ const GraphFlowContent: React.FC = () => {
           getNodes(),
           selectedGroupIds,
           selNodes.map((n) => n.id),
-          selEdges.map((e) => e.id)
+          selEdges
         )
       );
       return true;
@@ -1984,6 +1989,7 @@ const GraphFlowContent: React.FC = () => {
               groupCount={pendingGroupDeletion?.groupIds.length ?? 0}
               memberCount={pendingGroupDeletion?.memberIds.length ?? 0}
               otherCount={pendingGroupDeletion?.otherNodeIds.length ?? 0}
+              edgeCount={pendingGroupDeletion?.edgeIds.length ?? 0}
               onDeleteGroupOnly={() => confirmGroupDeletion("group-only")}
               onDeleteWithContents={() => confirmGroupDeletion("with-contents")}
             />

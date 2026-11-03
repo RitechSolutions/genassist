@@ -434,7 +434,7 @@ export interface GroupDeletionPlan {
   memberIds: string[];
   /** Other selected, non-group nodes that aren't members of a deleted group. */
   otherNodeIds: string[];
-  /** Explicitly selected edges. */
+  /** Selected edges that don't touch a member of a deleted group. */
   edgeIds: string[];
 }
 
@@ -442,7 +442,7 @@ export const planGroupDeletion = (
   nodes: Node[],
   groupIds: string[],
   selectedNodeIds: string[] = [],
-  selectedEdgeIds: string[] = []
+  selectedEdges: Edge[] = []
 ): GroupDeletionPlan => {
   const groups = new Set(groupIds);
   const memberIds = nodes
@@ -456,7 +456,10 @@ export const planGroupDeletion = (
   const otherNodeIds = selectedNodeIds.filter(
     (id) => !groups.has(id) && !members.has(id) && !!byId.get(id) && !isGroupNode(byId.get(id))
   );
-  return { groupIds, memberIds, otherNodeIds, edgeIds: selectedEdgeIds };
+  const edgeIds = selectedEdges
+    .filter((e) => !members.has(e.source) && !members.has(e.target))
+    .map((e) => e.id);
+  return { groupIds, memberIds, otherNodeIds, edgeIds };
 };
 
 /**
