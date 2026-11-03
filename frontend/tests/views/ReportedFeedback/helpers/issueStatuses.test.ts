@@ -3,6 +3,8 @@ import type { IssueStatus } from "@/services/issueStatuses";
 import {
   activeStatuses,
   categoryTotals,
+  listableStatuses,
+  normalizeStatusKeys,
   statusMeta,
   withCurrentStatus,
 } from "@/views/ReportedFeedback/helpers/issueStatuses";
@@ -80,5 +82,24 @@ describe("categoryTotals", () => {
       by_status: { open: 2, in_progress: 1, blocked: 3, resolved: 4, legacy_key: 9 },
     };
     expect(categoryTotals(summary, LIST)).toEqual({ todo: 2, in_progress: 4, done: 4 });
+  });
+});
+
+describe("listableStatuses", () => {
+  it("lists active keys, then a retired key only while it still has rows", () => {
+    expect(listableStatuses(LIST, { blocked: 3 }).map((s) => s.key)).toEqual(["open", "in_progress", "resolved", "blocked"]);
+    expect(listableStatuses(LIST, { blocked: 0 }).map((s) => s.key)).toEqual(["open", "in_progress", "resolved"]);
+    expect(listableStatuses(LIST, {}).map((s) => s.key)).toEqual(["open", "in_progress", "resolved"]);
+  });
+
+  it("keeps a selected retired key listed when its count drops to zero", () => {
+    expect(listableStatuses(LIST, {}, ["blocked"]).map((s) => s.key)).toEqual(["open", "in_progress", "resolved", "blocked"]);
+  });
+});
+
+describe("normalizeStatusKeys", () => {
+  it("drops blanks, merges duplicates and sorts", () => {
+    expect(normalizeStatusKeys(["open", "", "blocked", "open"])).toEqual(["blocked", "open"]);
+    expect(normalizeStatusKeys([])).toEqual([]);
   });
 });

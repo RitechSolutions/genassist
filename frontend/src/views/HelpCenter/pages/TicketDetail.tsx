@@ -13,6 +13,7 @@ import { TicketStatusBadge } from "../components/TicketStatusBadge";
 import { PageListSkeleton } from "@/components/skeletons";
 import toast from "react-hot-toast";
 import { AlertCircle, ChevronLeft, LifeBuoy } from "lucide-react";
+import { formatDateTime } from "@/helpers/utils";
 
 function HtmlBlock({ label, html }: { label: string; html?: string | null }) {
   const isEmpty =
@@ -181,7 +182,7 @@ export default function TicketDetailPage() {
                         <p className="whitespace-pre-wrap">{c.body}</p>
                         {c.created_at && (
                           <p className="text-xs text-muted-foreground mt-2">
-                            {new Date(c.created_at).toLocaleString()}
+                            {formatDateTime(c.created_at)}
                           </p>
                         )}
                       </div>

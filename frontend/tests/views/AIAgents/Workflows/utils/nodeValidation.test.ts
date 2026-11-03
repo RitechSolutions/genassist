@@ -34,6 +34,23 @@ describe("getEmptyRequiredFields", () => {
     ).toEqual([]);
   });
 
+  it("accepts a configured alternative for a required field", () => {
+    const fields = [
+      schema({
+        name: "filePath",
+        label: "Training File",
+        required: true,
+        alternative_names: ["fileId"],
+      }),
+    ];
+
+    expect(getEmptyRequiredFields({}, fields)).toEqual(["Training File"]);
+    expect(
+      getEmptyRequiredFields({ filePath: "/data/training.csv" }, fields)
+    ).toEqual([]);
+    expect(getEmptyRequiredFields({ fileId: "file-1" }, fields)).toEqual([]);
+  });
+
   it("ignores non-required fields", () => {
     expect(
       getEmptyRequiredFields({}, [schema({ required: false })])

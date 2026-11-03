@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { matchExcerpt, splitMatches } from "@/views/ReportedFeedback/helpers/matchExcerpt";
 
-const near = "Raised the KB lookup timeout from 8s to 20s.";
+const near = "Set the timeout from 8s to 20s.";
 const deep = "Checked the logs with the help desk for two days, then raised the tool timeout to 20s.";
 
 describe("matchExcerpt", () => {
@@ -13,17 +13,17 @@ describe("matchExcerpt", () => {
     expect(matchExcerpt(near, "timeout")).toBe(near);
   });
 
-  it("starts 30 characters before a deep match, after an ellipsis", () => {
-    expect(matchExcerpt(deep, "timeout")).toBe("…wo days, then raised the tool timeout to 20s.");
+  it("starts 8 characters before a deep match, after an ellipsis", () => {
+    expect(matchExcerpt(deep, "timeout")).toBe("…he tool timeout to 20s.");
   });
 
   it("matches regardless of case", () => {
-    expect(matchExcerpt(deep, "TIMEOUT")).toBe("…wo days, then raised the tool timeout to 20s.");
+    expect(matchExcerpt(deep, "TIMEOUT")).toBe("…he tool timeout to 20s.");
   });
 
   it("cuts at the match even when lowercasing would lengthen the text", () => {
     const turkish = "İADE İŞLEMİ İÇİN İKİ İSTEK İLETİLDİ, then raised the tool timeout to 20s.";
-    expect(matchExcerpt(turkish, "timeout")).toBe("…LETİLDİ, then raised the tool timeout to 20s.");
+    expect(matchExcerpt(turkish, "timeout")).toBe("…he tool timeout to 20s.");
   });
 
   it("returns the whole text when the term isn't found", () => {

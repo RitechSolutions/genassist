@@ -51,6 +51,10 @@ export function firstInboundKeyAfter(messages: ChatMessage[], key: string | null
   return null;
 }
 
+export function dividerKeyOnEngage(messages: ChatMessage[], key: string | null): string | null {
+  return countInboundAfter(messages, key) > 0 ? key : null;
+}
+
 export interface UseReadReporterOptions {
   /** Master switch (the `readReceipts` prop). */
   enabled: boolean;
@@ -112,6 +116,8 @@ export function useReadReporter({
 
   const seenKeyRef = useRef<string | null>(null);
   seenKeyRef.current = seenKey;
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   const lastEmittedKeyRef = useRef<string | null>(null);
   const prevEngagedRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -207,7 +213,7 @@ export function useReadReporter({
     const wasEngaged = prevEngagedRef.current;
     prevEngagedRef.current = engaged;
     if (engaged && !wasEngaged) {
-      setDividerKey(seenKeyRef.current);
+      setDividerKey(dividerKeyOnEngage(messagesRef.current, seenKeyRef.current));
     }
   }, [engaged]);
 

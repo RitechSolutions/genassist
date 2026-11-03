@@ -1,4 +1,9 @@
 import { Transcript } from "@/interfaces/transcript.interface";
+import {
+  calendarDayNumber,
+  dateParts,
+  displayTimeZone,
+} from "@/helpers/timeZone";
 
 // Hostility constants for live conversations
 export const HOSTILITY_POSITIVE_MAX = 20;
@@ -86,12 +91,35 @@ export const formatDateTime = (dateString: string = ""): string => {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: displayTimeZone(),
     });
   } catch (error) {
     return dateString || "N/A";
   }
 };
+
+/** Time for a list row: clock time for today, short date before that. */
+export function formatRowTimestamp(timestamp?: string): string {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const isToday = calendarDayNumber(date) === calendarDayNumber(new Date());
+  const timeZone = displayTimeZone();
+
+  return isToday
+    ? date.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone,
+      })
+    : date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        timeZone,
+      });
+}
 
 export const formatMetric = (value: number = 0, precision: number = 1): string => {
   if (typeof value !== 'number' || isNaN(value)) {
@@ -133,7 +161,10 @@ export const formatMessageTime = (createTime: string | number | undefined): stri
     
     if (isNaN(date.getTime())) return "";
     
-    return date.toTimeString().split(' ')[0];
+    const { hours, minutes, seconds } = dateParts(date);
+    return [hours, minutes, seconds]
+      .map((part) => String(part).padStart(2, "0"))
+      .join(":");
   } catch (error) {
     return "";
   }
