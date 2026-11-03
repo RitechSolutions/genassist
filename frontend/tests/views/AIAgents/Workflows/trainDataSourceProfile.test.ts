@@ -143,6 +143,16 @@ describe('Train Data Source profiling', () => {
     });
     expect(buildProfileDataRequest(values)).toBeNull();
   });
+
+  it('offers no profile before a source type is selected', () => {
+    const values = { sourceType: '' as const, csvFileName: 'stale.csv', csvFileId: 'file-1' };
+
+    expect(getProfileDataAvailability(values)).toEqual({
+      visible: false,
+      enabled: false,
+    });
+    expect(buildProfileDataRequest(values)).toBeNull();
+  });
 });
 
 describe('Train Data Source preview requests', () => {
