@@ -10,6 +10,7 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.repositories.ml_models import MLModelsRepository
 from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate
+from app.services import ml_model_manager
 from app.services import ml_models as ml_models_module
 from app.services.ml_model_artifacts import ModelArtifactContract
 from app.services.ml_models import (
@@ -434,6 +435,25 @@ async def test_feature_change_reads_the_recorded_copy_not_a_caller_path(monkeypa
         "revenue",
         artifact_contract=None,
     )
+
+
+@pytest.mark.parametrize(
+    "recorded_name,reads_recorded_copy",
+    [("{model_id}_current.pkl", True), ("{model_id}_earlier.pkl", False), ("forecast.pkl", True)],
+)
+def test_artifact_source_skips_a_copy_of_an_earlier_upload(monkeypatch, recorded_name, reads_recorded_copy):
+    model_id, file_id = uuid4(), str(uuid4())
+    monkeypatch.setattr(
+        ml_model_manager,
+        "_downloaded_model_path",
+        lambda _model_id, _file_id: f"/data/ml_models/{model_id}_current.pkl",
+    )
+    recorded = f"/data/ml_models/{recorded_name.format(model_id=model_id)}"
+    existing = SimpleNamespace(id=model_id, pkl_file=recorded)
+
+    source = MLModelsService._artifact_source(existing, {}, file_id, file_id_changed=False)
+
+    assert source == ((recorded if reads_recorded_copy else None), file_id)
 
 
 @pytest.mark.asyncio

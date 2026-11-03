@@ -19,7 +19,7 @@ from app.core.utils.ml_model_feature_contract import (
 from app.services.ml_model_manager import (
     _MODEL_LOAD_EXECUTOR,
     MLModelManager,
-    _load_pickle_file_sync,
+    _load_pickle_open_file_sync,
     _load_pickle_sync,
 )
 
@@ -142,11 +142,19 @@ def extract_model_artifact_contract(artifact: Any) -> ModelArtifactContract:
     return _extract_raw_model_contract(normalized["model"])
 
 
+# Module-level so tests can fake the size of the open file without patching os.
+_fstat = os.fstat
+
+
 def _check_artifact_file(pkl_file: str) -> None:
     try:
         file_stat = os.stat(pkl_file)
     except OSError as exc:
         raise _unreadable(f"stat failed ({type(exc).__name__})") from exc
+    _check_artifact_stat(file_stat)
+
+
+def _check_artifact_stat(file_stat: os.stat_result) -> None:
     if not stat.S_ISREG(file_stat.st_mode):
         raise _unreadable("not a regular file")
     if file_stat.st_size > MAX_ARTIFACT_BYTES:
@@ -173,29 +181,43 @@ def _read_downloaded_artifact_sync(temporary_path: str, pkl_file_id: str) -> Any
     """Read a copy this module downloaded to its own private temporary folder.
 
     The copy is outside the ML models folder, so the file-based safety check
-    would refuse it. The bytes are scanned in memory and released before
-    loading, so a large upload is not held twice. mkdtemp creates the folder
-    with mode 0700, so only the backend's own OS user could swap the file
-    between scan and load; the restricted unpickler still applies to the load.
+    would refuse it. The file is opened once: its bytes are scanned in memory,
+    released, and the load then reads the same open file, so replacing the file
+    (rename) between the scan and the load has no effect. An in-place write to
+    the same file could still change what is loaded; the folder is private to
+    the backend's OS user (mode 0700), and the restricted unpickler still
+    applies to the load.
     """
     from app.core.utils.model_validator import validate_pickle_bytes_safe
 
-    _check_artifact_file(temporary_path)
+    source = f"uploaded file {pkl_file_id}"
     try:
-        with open(temporary_path, "rb") as file:
-            data = file.read()
+        file = open(temporary_path, "rb")
     except OSError as exc:
-        raise _unreadable(f"read failed ({type(exc).__name__})") from exc
+        raise _unreadable(f"open failed ({type(exc).__name__})") from exc
 
-    is_valid, error = validate_pickle_bytes_safe(data, f"uploaded file {pkl_file_id}")
-    del data
-    if not is_valid:
-        raise _unreadable(f"safety check failed: {error}")
+    with file:
+        file_stat = _fstat(file.fileno())
+        _check_artifact_stat(file_stat)
+        try:
+            # One byte past the recorded size (already within the limit), so the
+            # buffer matches the file and a file that grew is caught.
+            data = file.read(file_stat.st_size + 1)
+        except OSError as exc:
+            raise _unreadable(f"read failed ({type(exc).__name__})") from exc
+        if len(data) != file_stat.st_size:
+            raise _unreadable("file changed size while being read")
 
-    try:
-        return _load_pickle_file_sync(temporary_path)
-    except Exception as exc:
-        raise _unreadable(f"load failed ({type(exc).__name__})") from exc
+        is_valid, error = validate_pickle_bytes_safe(data, source)
+        # Release the buffer before unpickling so a large upload is not held twice.
+        del data
+        if not is_valid:
+            raise _unreadable(f"safety check failed: {error}")
+
+        try:
+            return _load_pickle_open_file_sync(file, source)
+        except Exception as exc:
+            raise _unreadable(f"load failed ({type(exc).__name__})") from exc
 
 
 async def _run_on_model_loader(reader: Callable[..., Any], *args: Any) -> Any:
@@ -264,8 +286,14 @@ async def load_model_artifact_contract(
     pkl_file_id: Optional[str],
 ) -> Optional[ModelArtifactContract]:
     """Read the contract of the artifact a registry entry points to, if any."""
-    if pkl_file and os.path.exists(pkl_file):
-        return extract_model_artifact_contract(await _read_artifact(pkl_file))
+    from app.core.utils.model_validator import resolve_model_path
+
+    # Only a file inside the ML models folder is read in place; nothing outside it
+    # is touched. A stored path outside it (older registrations) or a missing copy
+    # falls back to the uploaded file when there is one.
+    local_path = resolve_model_path(pkl_file)
+    if local_path and os.path.isfile(local_path):
+        return extract_model_artifact_contract(await _read_artifact(local_path))
 
     if pkl_file_id:
         # The unchecked copy stays in the system temp folder, out of the ML models
