@@ -1,6 +1,6 @@
 import { escapeRegExp } from "lodash";
 
-const EXCERPT_LEAD = 30;
+const EXCERPT_LEAD = 8;
 
 /** Starts the text shortly before the match, so the matched word survives the cell's truncation */
 export function matchExcerpt(text: string, search: string): string {

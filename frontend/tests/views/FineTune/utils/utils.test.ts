@@ -167,6 +167,7 @@ describe("formatDate", () => {
     hour: "numeric",
     minute: "numeric",
     second: "numeric",
+    timeZone: "UTC",
   } as const;
 
   it("returns em-dash for falsy / unparseable values", () => {

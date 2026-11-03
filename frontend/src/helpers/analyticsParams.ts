@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import type { DateRange } from "react-day-picker";
-import { utcDayEnd, utcDayStart } from "@/helpers/dateRange";
+import { dayEndIso, dayStartIso } from "@/helpers/dateRange";
 
 export type MetricsApiParams = {
   from_date?: string;
@@ -32,8 +32,8 @@ export function toMetricsApiParams(
   const group_id =
     groupId && groupId !== "all" && !agent_id ? groupId : undefined;
   return {
-    from_date: dateRange?.from ? utcDayStart(dateRange.from) : undefined,
-    to_date: dateRange?.to ? utcDayEnd(dateRange.to) : undefined,
+    from_date: dateRange?.from ? dayStartIso(dateRange.from) : undefined,
+    to_date: dateRange?.to ? dayEndIso(dateRange.to) : undefined,
     agent_id,
     group_id,
   };

@@ -1,4 +1,4 @@
-import { subDays } from "date-fns";
+import { lastDaysDateRange } from "@/helpers/dateRange";
 import { usePersistedDateRange, COMPARE_DATE_RANGE_STORAGE_KEY } from "@/hooks/usePersistedDateRange";
 import { AnalyticsMetricsSection } from "../components/AnalyticsMetricsSection";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
@@ -10,10 +10,7 @@ import { useAnalyticsData } from "../hooks/useAnalyticsData";
 import { useAnalyticsFilters } from "../hooks/useAnalyticsFilters";
 
 const AnalyticsPage = () => {
-  const [dateRange, setDateRange] = usePersistedDateRange({
-    from: subDays(new Date(), 7),
-    to: new Date(),
-  });
+  const [dateRange, setDateRange] = usePersistedDateRange(lastDaysDateRange(7));
   const [compareDateRange, setCompareDateRange] = usePersistedDateRange(
     undefined,
     COMPARE_DATE_RANGE_STORAGE_KEY,

@@ -9,6 +9,7 @@ import type {
 import { methodLabel } from "@/views/TestSuites/helpers/methodLabels";
 import { notScoredLabel } from "@/views/TestSuites/helpers/runResults";
 import { formatDuration } from "./executionView";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 /** Shown under every run: the check is not what the node runs */
 export const ISOLATION_NOTE =
@@ -59,7 +60,11 @@ const ranAt = (isoTimestamp: string): string => {
   const at = new Date(isoTimestamp);
   return Number.isNaN(at.getTime())
     ? "unknown time"
-    : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    : at.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: displayTimeZone(),
+      });
 };
 
 export const formatTokens = (count: number): string => count.toLocaleString();
