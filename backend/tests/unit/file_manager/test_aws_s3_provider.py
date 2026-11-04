@@ -1,9 +1,9 @@
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 
 from app.core.utils.s3_utils import S3Client
 from app.modules.filemanager.providers.s3.provider import S3StorageProvider
-
 
 # ==================== Fixtures ====================
 
@@ -117,13 +117,34 @@ class TestS3StorageProvider:
             str(destination),
         )
 
+    @pytest.mark.asyncio
+    async def test_copy_file_uses_configured_bucket(self, s3_provider, mock_s3_client):
+        mock_s3_client.copy_file.return_value = True
+
+        copied = await s3_provider.copy_file("uploads/source.csv", "tenant-a/uploads/source.csv")
+
+        assert copied is True
+        mock_s3_client.copy_file.assert_called_once_with(
+            "uploads/source.csv",
+            "tenant-a/uploads/source.csv",
+        )
+
+    @pytest.mark.asyncio
+    async def test_file_exists_uses_head_not_download(self, s3_provider, mock_s3_client):
+        mock_s3_client.head_object.return_value = {"size": 1}
+
+        assert await s3_provider.file_exists("tenant-a/uploads/source.csv") is True
+
+        mock_s3_client.head_object.assert_called_once_with("tenant-a/uploads/source.csv")
+        mock_s3_client.get_file_content.assert_not_called()
+
     def test_get_stats(self, s3_provider):
         """Test getting provider statistics."""
         stats = s3_provider.get_stats()
 
         assert stats["provider_type"] == "s3"
         assert stats["bucket_name"] == "test-bucket"
-        assert stats["initialized"] == False
+        assert not stats["initialized"]
         assert stats["status"] == "stub - not implemented"
 
     def test_initialization_with_config(self, s3_config, mock_s3_client):
@@ -168,6 +189,20 @@ class TestS3StorageProvider:
 
         assert provider.aws_bucket_name == "test-bucket"
         assert provider.aws_region_name is None
+
+
+def test_s3_client_copy_file_calls_boto3():
+    client = object.__new__(S3Client)
+    client.bucket_name = "shared-bucket"
+    client.s3_client = Mock()
+
+    assert client.copy_file("uploads/source.csv", "tenant-a/uploads/source.csv") is True
+
+    client.s3_client.copy_object.assert_called_once_with(
+        Bucket="shared-bucket",
+        CopySource={"Bucket": "shared-bucket", "Key": "uploads/source.csv"},
+        Key="tenant-a/uploads/source.csv",
+    )
 
 
 class TestS3ClientCredentials:

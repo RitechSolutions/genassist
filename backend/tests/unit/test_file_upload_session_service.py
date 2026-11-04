@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.core.exceptions.exception_classes import AppException
+from app.core.tenant_scope import clear_tenant_context, set_tenant_context
 from app.schemas.files_upload_direct import (
     FinalizeDirectUploadRequest,
     PresignDirectUploadCreate,
@@ -143,24 +144,29 @@ async def test_create_direct_upload_session_happy_path(monkeypatch):
     file_uuid = uuid.uuid4()
     fm.repository.create_file.return_value = SimpleNamespace(id=file_uuid)
 
-    resp = await service.create_direct_upload_session(
-        PresignDirectUploadCreate(
-            original_filename="report.pdf",
-            expected_size=2048,
-            content_type="application/pdf",
-        ),
-        request=SimpleNamespace(base_url="http://localhost/"),
-        file_manager_service=fm,
-        app_settings_svc=_build_settings_svc(),
-        sub_folder="uploads",
-    )
+    set_tenant_context("tenant-a")
+    try:
+        resp = await service.create_direct_upload_session(
+            PresignDirectUploadCreate(
+                original_filename="report.pdf",
+                expected_size=2048,
+                content_type="application/pdf",
+            ),
+            request=SimpleNamespace(base_url="http://localhost/"),
+            file_manager_service=fm,
+            app_settings_svc=_build_settings_svc(),
+            sub_folder="uploads",
+        )
+    finally:
+        clear_tenant_context()
 
     assert resp.file_id == str(file_uuid)
     assert resp.method == "PUT"
     assert resp.required_headers == {"Content-Type": "application/pdf"}
-    assert resp.object_key.startswith("uploads/")
+    assert resp.object_key.startswith("tenant-a/uploads/")
     assert resp.expires_in == 600
     storage.generate_presigned_put_url.assert_awaited_once()
+    assert fm.repository.create_file.await_args.args[0].path == resp.object_key
     repo.create.assert_awaited_once()
     persisted = repo.create.call_args.args[0]
     assert persisted.status == STATUS_AWAITING_CLIENT_UPLOAD

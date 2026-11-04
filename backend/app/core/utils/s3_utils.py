@@ -1,7 +1,8 @@
-from typing import List, Optional, Dict, Any
+import logging
+from typing import Any, Dict, List, Optional
+
 import boto3
 from botocore.exceptions import ClientError
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +233,24 @@ class S3Client:
             return True
         except ClientError as e:
             logger.error(f"Error deleting file from S3: {str(e)}")
+            return False
+
+    def copy_file(self, source_key: str, destination_key: str) -> bool:
+        """Copy an object within the configured bucket."""
+        try:
+            self.s3_client.copy_object(
+                Bucket=self.bucket_name,
+                CopySource={"Bucket": self.bucket_name, "Key": source_key},
+                Key=destination_key,
+            )
+            return True
+        except ClientError as e:
+            logger.error(
+                "Error copying S3 object %s to %s: %s",
+                source_key,
+                destination_key,
+                str(e),
+            )
             return False
 
     @staticmethod

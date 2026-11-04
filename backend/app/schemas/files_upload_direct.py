@@ -21,13 +21,14 @@ class PresignDirectUploadCreate(BaseModel):
 
     original_filename: str = Field(..., min_length=1, max_length=500)
     # Optional file-record fields (used by the settings "Manage Files" UI).
-    # Backward compatible: if omitted, server keeps the old behavior (uuid name under "uploads/").
+    # If omitted, the server generates a UUID name under the tenant-scoped uploads folder.
     path: Optional[str] = Field(
         default=None,
         max_length=1000,
         description=(
             "Optional logical folder. When provided, the server uses it as the S3 key prefix "
-            "(after sanitization). If omitted, defaults to the route's sub_folder."
+            "inside the active tenant namespace (after sanitization). If omitted, defaults "
+            "to the route's sub_folder."
         ),
     )
     name: Optional[str] = Field(

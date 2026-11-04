@@ -6,8 +6,10 @@ TODO: Implement full S3 storage operations using boto3.
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from app.core.utils.s3_utils import S3Client
+
 from ..base import BaseStorageProvider
 
 logger = logging.getLogger(__name__)
@@ -101,10 +103,19 @@ class S3StorageProvider(BaseStorageProvider):
         """Delete a file from S3."""
         return self.s3_client.delete_file(file_path)
 
+    async def copy_file(self, source_path: str, destination_path: str) -> bool:
+        """Copy an object within the configured bucket."""
+        return await asyncio.to_thread(
+            self.s3_client.copy_file,
+            source_path,
+            destination_path,
+        )
+
     async def file_exists(self, file_path: str) -> bool:
         """Check if a file exists in S3."""
         try:
-            return self.s3_client.get_file_content(file_path) is not None
+            await asyncio.to_thread(self.s3_client.head_object, file_path)
+            return True
         except Exception:
             return False
 
