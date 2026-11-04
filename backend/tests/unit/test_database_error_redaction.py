@@ -41,11 +41,62 @@ def test_redact_sql_literals_masks_values_and_keeps_names(sql, expected):
     assert redact_sql_literals(sql) == expected
 
 
-def test_double_quoted_strings_are_masked_only_when_asked():
+def test_double_quoted_text_is_a_string_only_in_mysql():
     sql = 'SELECT * FROM t WHERE password = "secret"'
 
-    assert redact_sql_literals(sql) == sql
-    assert redact_sql_literals(sql, double_quoted=True) == 'SELECT * FROM t WHERE password = "***"'
+    assert redact_sql_literals(sql, dialect="postgresql") == sql
+    assert redact_sql_literals(sql, dialect="mysql") == 'SELECT * FROM t WHERE password = "***"'
+    assert redact_sql_literals(sql, dialect="sql") == 'SELECT * FROM t WHERE password = "***"'
+
+
+# A stray quote in a comment, a quoted name or a backslash-ended string must not
+# shift where the strings start, or the next value leaks.
+TRICKY_QUERIES = [
+    ("postgresql", "SELECT * FROM t -- don't\nWHERE password = 'secret'"),
+    ("postgresql", "SELECT * FROM t /* it's */ WHERE password = 'secret'"),
+    ("postgresql", "SELECT \"o'brien\" FROM t WHERE password = 'secret'"),
+    ("postgresql", "SELECT * FROM t WHERE path = 'C:\\' AND password = 'secret'"),
+    ("postgresql", "SELECT * FROM t WHERE path = E'it\\'s' AND password = 'secret'"),
+    ("postgresql", "SELECT * FROM t WHERE tags = ARRAY['secret']"),
+    ("mysql", "SELECT * FROM t WHERE note = 'it\\'s' AND password = 'secret'"),
+    ("mysql", "SELECT * FROM t # don't\nWHERE password = 'secret'"),
+    ("mysql", "SELECT `o'brien` FROM t WHERE password = 'secret'"),
+    ("mssql", "SELECT [o'brien] FROM t WHERE password = 'secret'"),
+    ("sqlite", "SELECT [o'brien] FROM t WHERE path = 'C:\\' AND password = 'secret'"),
+    ("snowflake", "SELECT * FROM t // don't\nWHERE password = 'secret'"),
+    ("snowflake", "SELECT * FROM t WHERE note = 'it\\'s' AND password = 'secret'"),
+    (None, "SELECT * FROM t -- don't\nWHERE password = 'secret'"),
+]
+
+
+@pytest.mark.parametrize(("dialect", "sql"), TRICKY_QUERIES)
+def test_stray_quotes_do_not_expose_the_next_value(dialect, sql):
+    assert SECRET not in redact_sql_literals(sql, dialect=dialect)
+
+    driver_message = f'relation "t" does not exist [SQL: {sql}] value "{SECRET}"'
+    message = sanitize_database_error(RuntimeError(driver_message), query=sql, dialect=dialect)
+    assert SECRET not in message
+    assert 'relation "t" does not exist' in message
+
+
+def test_quoted_names_survive_and_comments_are_masked():
+    sql = "SELECT \"o'brien\" FROM t -- owner's note\nWHERE password = 'secret'"
+
+    assert redact_sql_literals(sql, dialect="postgresql") == (
+        "SELECT \"o'brien\" FROM t /* *** */\nWHERE password = '***'"
+    )
+
+
+def test_positional_parameters_and_dollar_names_are_not_strings():
+    sql = "SELECT col$a$ FROM t WHERE id = $1 AND p = 'secret'"
+
+    assert redact_sql_literals(sql, dialect="postgresql") == "SELECT col$a$ FROM t WHERE id = $1 AND p = '***'"
+
+
+def test_mysql_double_dash_needs_a_space_to_be_a_comment():
+    sql = "SELECT 5--1, 'secret' FROM t"
+
+    assert redact_sql_literals(sql, dialect="mysql") == "SELECT 5--1, '***' FROM t"
 
 
 @pytest.mark.parametrize(

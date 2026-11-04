@@ -229,10 +229,10 @@ class SnowflakeManager:
                     rows = _run_once()
                     return rows, None
                 except Exception as e2:
-                    safe_error = sanitize_database_error(e2, query=query, parameters=parameters)
+                    safe_error = sanitize_database_error(e2, query=query, parameters=parameters, dialect="snowflake")
                     logger.error("Retry after token expiry failed: %s", safe_error)
                     return [], safe_error
-            safe_error = sanitize_database_error(e, query=query, parameters=parameters)
+            safe_error = sanitize_database_error(e, query=query, parameters=parameters, dialect="snowflake")
             logger.error("Error executing Snowflake query: %s", safe_error)
             return [], safe_error
 
@@ -284,7 +284,7 @@ class SnowflakeManager:
                     break
                 yield columns, [tuple(row) for row in rows]
         except Exception as exc:
-            safe_error = sanitize_database_error(exc, query=query, parameters=parameters)
+            safe_error = sanitize_database_error(exc, query=query, parameters=parameters, dialect="snowflake")
             logger.error("Error streaming Snowflake query: %s", safe_error)
             raise RuntimeError(safe_error) from None
         finally:
