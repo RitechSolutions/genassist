@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from contextlib import nullcontext
 from datetime import timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -51,15 +52,33 @@ class ZendeskAPIError(HTTPException):
         self.field = field
 
 
-def _mark_span_failed(status_code: int, error: str, field: str) -> None:
-    """Tag the active trace span with the Zendesk failure reason and mark it as failed."""
-    span = tracer.current_span() if tracer else None
+def _ticket_span():
+    """Open a dedicated ``zendesk.create_ticket`` span (a no-op without ddtrace).
+
+    Failures are marked on this span only, so the caller's request span (e.g. a
+    ``POST /chat`` that still answers 200) is not counted as an error, and the
+    alert can watch one fixed operation name.
+    """
+    if tracer is None:
+        return nullcontext(None)
+    return tracer.trace("zendesk.create_ticket", resource="create_ticket")
+
+
+def _mark_span_failed(
+    span: Any, error: str, field: str, status_code: Optional[int] = None
+) -> None:
+    """Mark ``span`` failed and tag it with the Zendesk failure reason.
+
+    ``status_code`` is only set when Zendesk actually answered; network errors
+    leave it off so they are not counted as Zendesk 5xx responses.
+    """
     if span is None:
         return
     span.error = 1
-    span.set_tag("zendesk.status_code", status_code)
     span.set_tag("zendesk.error", error)
     span.set_tag("zendesk.field", field)
+    if status_code is not None:
+        span.set_tag("zendesk.status_code", status_code)
 
 
 class ZendeskConnector:
@@ -210,11 +229,13 @@ class ZendeskConnector:
                 logger.error(api_error.detail)
                 raise api_error from e
             except httpx.RequestError as e:
+                # No exc_info: loguru prints the traceback's local variables, which
+                # include the request payload (and the requester's email).
                 logger.error(
-                    "%s network error (check worker outbound access, proxy, DNS): %s",
+                    "%s network error (check worker outbound access, proxy, DNS): %s: %s",
                     context,
+                    type(e).__name__,
                     e,
-                    exc_info=True,
                 )
                 raise HTTPException(
                     status_code=500,
@@ -341,16 +362,17 @@ class ZendeskConnector:
         #         }
         #     ]
 
-        try:
-            result = await self._make_request("POST", url, json=payload)
-            return {"status": 200, "data": result}
-        except ZendeskAPIError as e:
-            _mark_span_failed(e.status_code, e.error, e.field)
-            return None
-        except HTTPException as e:
-            # Network error: Zendesk was never reached.
-            _mark_span_failed(e.status_code, "network_error", "unknown")
-            return None
+        with _ticket_span() as span:
+            try:
+                result = await self._make_request("POST", url, json=payload)
+                return {"status": 200, "data": result}
+            except ZendeskAPIError as e:
+                _mark_span_failed(span, e.error, e.field, e.status_code)
+                return None
+            except HTTPException:
+                # Network error: Zendesk was never reached, so there is no status code.
+                _mark_span_failed(span, "network_error", "unknown")
+                return None
 
     async def update_ticket(
         self,
