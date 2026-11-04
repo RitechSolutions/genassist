@@ -360,11 +360,20 @@ class ToolAgent(BaseToolAgent):
 
         if tool_name not in self.tool_map:
             error_msg = f"Tool '{tool_name}' not found. Available tools: {list(self.tool_map.keys())}"
-            return create_error_response(
-                error_msg,
-                self._get_agent_name(),
-                available_tools=list(self.tool_map.keys())
-            )
+            workflow_steps.append({
+                "step": f"{iteration + 1}_tool_result",
+                "tool": tool_name,
+                "args": tool_args,
+                "reasoning": tool_reasoning,
+                "result": error_msg
+            })
+            tools_used.append({
+                "tool_name": tool_name,
+                "args": tool_args,
+                "reasoning": tool_reasoning,
+                "result": error_msg
+            })
+            return None
 
         try:
             tool = self.tool_map[tool_name]
