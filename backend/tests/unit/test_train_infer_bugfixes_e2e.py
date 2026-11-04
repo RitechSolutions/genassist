@@ -22,6 +22,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.nodes.ml import ml_model_inference_node as inference_module
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import MLModelInferenceNode
@@ -54,8 +55,12 @@ def patch_ml_models_service(monkeypatch):
     return _apply
 
 
-def _make_ml_model(model_file_path, features, target_variable="y", model_type="linear_regression"):
+def _make_ml_model(
+    model_file_path, features, target_variable="y", model_type="linear_regression",
+    inference_params=None,
+):
     return SimpleNamespace(
+        inference_params=inference_params,
         id=uuid.uuid4(),
         name="e2e-model",
         pkl_file=model_file_path,
@@ -440,15 +445,64 @@ async def test_missing_encoded_value_uses_training_fill_at_inference(
     )
     assert train_result["success"] is True
 
+    inference_request = {"inferenceInputs": {"size": [None, "Low"], "price": [6, 6]}}
+
+    # The switch is off by default: the missing size is an error, not a fill.
     ml_model = _make_ml_model(train_result["model_file_path"], ["size", "price"])
     patch_ml_models_service(ml_model)
+    with pytest.raises(AppException) as exc_info:
+        await _make_node(MLModelInferenceNode).process(
+            {"modelId": str(ml_model.id), **inference_request}
+        )
+    assert exc_info.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+    assert "Missing value(s) for feature(s): size." in exc_info.value.error_detail
+
+    ml_model = _make_ml_model(
+        train_result["model_file_path"], ["size", "price"],
+        inference_params={"useTrainingFills": True},
+    )
+    patch_ml_models_service(ml_model)
     result = await _make_node(MLModelInferenceNode).process(
-        {"modelId": str(ml_model.id),
-         "inferenceInputs": {"size": [None, "Low"], "price": [6, 6]}}
+        {"modelId": str(ml_model.id), **inference_request}
     )
     assert result["status"] == "success"
     # The missing size was filled with "Low", so both rows predict the same.
     assert result["prediction"][0] == pytest.approx(result["prediction"][1])
+
+
+@pytest.mark.asyncio
+async def test_unseen_label_encoded_value_is_rejected_at_inference(
+    tmp_path, patch_ml_models_service
+):
+    # MI-14: an unseen value in a label-encoded column used to become -1 and
+    # the model predicted from it with no error or warning.
+    _, rows = _size_rows(lambda size, code, price: 5.0 * code + price)
+    csv_path = tmp_path / "train_data.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    train_result = await _make_node(TrainModelNode).process(
+        {
+            "name": f"e2e-unseen-label-{uuid.uuid4().hex[:8]}",
+            "modelType": "linear_regression",
+            "fileUrl": str(csv_path),
+            "targetColumn": "y",
+            "featureColumns": ["size", "price"],
+            "categoricalEncoding": [{"columnName": "size", "strategy": "label"}],
+            "validationSplit": 0.0,
+            "scalingMethod": "none",
+        }
+    )
+    assert train_result["success"] is True
+
+    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "price"])
+    patch_ml_models_service(ml_model)
+    with pytest.raises(AppException) as exc_info:
+        await _make_node(MLModelInferenceNode).process(
+            {"modelId": str(ml_model.id),
+             "inferenceInputs": {"size": ["Low", "Huge"], "price": [6, 6]}}
+        )
+    assert exc_info.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+    assert "'size'" in exc_info.value.error_detail
+    assert "Huge" in exc_info.value.error_detail
 
 
 @pytest.mark.asyncio
@@ -486,7 +540,10 @@ async def test_ordinal_number_column_encoded_alongside_text_column(tmp_path, pat
     )
     assert train_result["success"] is True
 
-    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "priority"])
+    ml_model = _make_ml_model(
+        train_result["model_file_path"], ["size", "priority"],
+        inference_params={"useTrainingFills": True},
+    )
     patch_ml_models_service(ml_model)
     result = await _make_node(MLModelInferenceNode).process(
         {"modelId": str(ml_model.id),

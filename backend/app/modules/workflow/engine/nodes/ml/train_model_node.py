@@ -979,8 +979,10 @@ class TrainModelNode(BaseNode):
             )
             if missing_value_fills:
                 auto_fill_warnings.append(
-                    "Training-time missing-value fills were stored in the model artifact and will "
-                    "be applied at inference when those features are omitted or null."
+                    "Training-time missing-value fills were stored in the model artifact. They "
+                    "are applied at inference only when 'Fill missing inputs with training values' "
+                    "is turned on for the model; otherwise a missing input fails the run unless "
+                    "the model has a Feature Default for it."
                 )
 
             # Retired strategies still run (so saved workflows and their models
