@@ -964,7 +964,7 @@ class TrainModelNode(BaseNode):
                     }
                 )
             target_model_id = (self.state.initial_values or {}).get("model_id")
-            ml_model_id, registration_error, registration_warnings = (
+            ml_model_id, pkl_file_id, registration_error, registration_warnings = (
                 await self._register_trained_model(
                     name=name,
                     model_type=model_type,
@@ -1014,6 +1014,7 @@ class TrainModelNode(BaseNode):
                 "scaling_method": resolved_scaling_method,
                 "metrics": metrics,
                 "ml_model_id": ml_model_id,
+                "pkl_file_id": pkl_file_id,
                 "model_parameters": model_parameters,
                 **(
                     {"missing_value_fills": ml_utils.sanitize_for_json(missing_value_fills)}
@@ -2229,7 +2230,7 @@ class TrainModelNode(BaseNode):
         target_model_id: Optional[str] = None,
         target_transform: Optional[dict] = None,
         categorical_feature_contracts: Optional[Dict[str, Any]] = None,
-    ) -> tuple[Optional[str], Optional[str], List[str]]:
+    ) -> tuple[Optional[str], Optional[str], Optional[str], List[str]]:
         """
         Upload the trained .pkl through the file manager and create/update the
         matching ``ml_models`` row, so an ML Model Inference node can find it
@@ -2245,10 +2246,12 @@ class TrainModelNode(BaseNode):
                 Model") for ad-hoc/test-node runs with no pipeline context.
 
         Returns:
-            Tuple of (ml_model_id or None, error message or None, warnings). Never
+            Tuple of (ml_model_id, pkl_file_id, error message, warnings). Never
             raises — a registration failure shouldn't fail a training run
-            that already produced a valid .pkl on disk.
+            that already produced a valid .pkl on disk. When upload succeeds,
+            pkl_file_id is retained even if updating the registry fails.
         """
+        resolved_pkl_file_id = None
         try:
             from app.schemas.ml_model import MLModelCreate, MLModelUpdate
             from app.dependencies.injector import injector
@@ -2356,13 +2359,13 @@ class TrainModelNode(BaseNode):
                 updated = await ml_service.update(
                     existing.id, MLModelUpdate(**model_fields), artifact_contract=artifact_contract
                 )
-                return str(updated.id), None, registration_warnings
+                return str(updated.id), resolved_pkl_file_id, None, registration_warnings
 
             created = await ml_service.create(
                 MLModelCreate(name=name, **model_fields), artifact_contract=artifact_contract
             )
-            return str(created.id), None, registration_warnings
+            return str(created.id), resolved_pkl_file_id, None, registration_warnings
 
         except Exception as e:
             logger.error(f"Failed to register trained model '{name}': {str(e)}", exc_info=True)
-            return None, str(e), []
+            return None, resolved_pkl_file_id, str(e), []

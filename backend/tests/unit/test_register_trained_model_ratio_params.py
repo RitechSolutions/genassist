@@ -47,6 +47,7 @@ def _patch_dependencies(monkeypatch, ml_service: MagicMock):
         }[cls]
 
     monkeypatch.setattr(injector, "get", _get)
+    return str(uploaded_file.id)
 
 
 @pytest.mark.asyncio
@@ -56,10 +57,10 @@ async def test_ratio_target_surfaces_baseline_column_as_inference_params(monkeyp
     created = MagicMock()
     created.id = uuid.uuid4()
     ml_service.create = AsyncMock(return_value=created)
-    _patch_dependencies(monkeypatch, ml_service)
+    uploaded_file_id = _patch_dependencies(monkeypatch, ml_service)
 
     node = _make_node()
-    ml_model_id, error, warnings = await node._register_trained_model(
+    ml_model_id, pkl_file_id, error, warnings = await node._register_trained_model(
         name="my-model",
         model_type="linear_regression",
         feature_columns=["x"],
@@ -71,6 +72,7 @@ async def test_ratio_target_surfaces_baseline_column_as_inference_params(monkeyp
     assert error is None
     assert warnings == []
     assert ml_model_id == str(created.id)
+    assert pkl_file_id == uploaded_file_id
     ml_service.create.assert_awaited_once()
     create_arg = ml_service.create.await_args.args[0]
     assert create_arg.inference_params == {"ratioBaselineColumn": "base"}
@@ -115,7 +117,7 @@ async def test_retrain_preserves_valid_feature_defaults(monkeypatch):
     _patch_dependencies(monkeypatch, ml_service)
 
     node = _make_node()
-    ml_model_id, error, warnings = await node._register_trained_model(
+    ml_model_id, _, error, warnings = await node._register_trained_model(
         name="my-model",
         model_type="linear_regression",
         feature_columns=["x"],
@@ -179,7 +181,7 @@ async def test_retrain_warns_when_retained_default_is_not_a_fitted_category(monk
     _patch_dependencies(monkeypatch, ml_service)
 
     node = _make_node()
-    _, error, warnings = await node._register_trained_model(
+    _, _, error, warnings = await node._register_trained_model(
         name="my-model",
         model_type="linear_regression",
         feature_columns=["kind"],
@@ -195,3 +197,25 @@ async def test_retrain_warns_when_retained_default_is_not_a_fitted_category(monk
     assert len(warnings) == 1
     assert "kind" in warnings[0]
     assert "no longer match categories" in warnings[0]
+
+
+@pytest.mark.asyncio
+async def test_uploaded_file_id_is_retained_when_registry_update_fails(monkeypatch):
+    ml_service = MagicMock()
+    ml_service.get_by_name = AsyncMock(return_value=None)
+    ml_service.create = AsyncMock(side_effect=RuntimeError("registry unavailable"))
+    uploaded_file_id = _patch_dependencies(monkeypatch, ml_service)
+
+    node = _make_node()
+    ml_model_id, pkl_file_id, error, warnings = await node._register_trained_model(
+        name="my-model",
+        model_type="linear_regression",
+        feature_columns=["x"],
+        target_column="y",
+        local_pkl_path="/tmp/model.pkl",
+    )
+
+    assert ml_model_id is None
+    assert pkl_file_id == uploaded_file_id
+    assert error == "registry unavailable"
+    assert warnings == []
