@@ -27,6 +27,7 @@ from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import send_socket_error
+from app.core.observability import set_agent_span_attributes
 from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.core.turn_stream_response import stream_turn
@@ -422,6 +423,7 @@ async def start(
         raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
     logger.debug(f"agent: {agent.name}")
+    set_agent_span_attributes(agent.id, agent.workflow_id)
 
     # Verify reCAPTCHA token if it is present in the request body, using agent-specific settings
     reCaptchaToken = model.recaptcha_token or None
@@ -823,6 +825,14 @@ async def update(
     Accepts JSON body (text messages) or multipart/form-data (audio messages).
     If agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).
     """
+    # Get agent from request.state (set by get_agent_for_update dependency)
+    agent = getattr(request.state, "agent", None)
+    if not agent:
+        logger.debug("agent not found")
+        raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
+    # Tag before any validation so rejected replies can be split by agent too.
+    set_agent_span_attributes(agent.id, agent.workflow_id)
+
     content_type = request.headers.get("content-type", "")
     audio_bytes: bytes | None = None
     audio_format: str | None = None
@@ -840,12 +850,6 @@ async def update(
         model = ConversationUpdateWithRecaptchaToken.model_validate(body)
 
     tenant_id = get_tenant_context()
-
-    # Get agent from request.state (set by get_agent_for_start dependency)
-    agent = getattr(request.state, "agent", None)
-    if not agent:
-        logger.debug("agent not found")
-        raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
     # validate recaptcha token
     reCaptchaToken = model.recaptcha_token or None
