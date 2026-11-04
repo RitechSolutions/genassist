@@ -1,33 +1,35 @@
 import asyncio
+import base64
+import logging
+import os
 import re
 import tempfile
-from uuid import UUID
 import uuid
-from fastapi import UploadFile
-import httpx
-from injector import inject
-from typing import Optional
-import logging
-import base64
 from contextlib import suppress
+from typing import Optional
 from urllib.parse import quote
-import os
-from app.modules.filemanager.providers.base import BaseStorageProvider
-from app.db.models.file import FileModel
-from app.schemas.file import FileBase
-from app.repositories.file_manager import FileManagerRepository
-from app.core.tenant_scope import get_tenant_context
+from uuid import UUID
 
-from app.modules.filemanager.providers import init_by_name
+import httpx
+from fastapi import UploadFile
+from injector import inject
+
 from app.core.config.settings import file_storage_settings, settings
-from app.core.utils.web_scraping_utils import _validate_url
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.schemas.app_settings import AppSettingsRead
+from app.core.tenant_scope import get_tenant_context
 from app.core.utils.cache_headers import no_store_headers
 from app.core.utils.file_manager_url_utils import first_file_manager_uuid_from_url
-from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
 from app.core.utils.file_system_utils import get_safe_file_path
+from app.core.utils.storage_path import tenant_scoped_storage_prefix
+from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
+from app.core.utils.web_scraping_utils import _validate_url
+from app.db.models.file import FileModel
+from app.modules.filemanager.providers import init_by_name
+from app.modules.filemanager.providers.base import BaseStorageProvider
+from app.repositories.file_manager import FileManagerRepository
+from app.schemas.app_settings import AppSettingsRead
+from app.schemas.file import FileBase
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +172,10 @@ class FileManagerService:
                 or "local"
             )
 
-            file_path = self._build_file_path(file_base.path, file_extension)
+            folder = file_base.path
+            if file_storage_provider == "s3":
+                folder = tenant_scoped_storage_prefix(folder)
+            file_path = self._build_file_path(folder, file_extension)
 
             provider_name = file_storage_provider or "local"
             await self._initialize_storage_provider(provider_name)
@@ -281,7 +286,10 @@ class FileManagerService:
                 or "local"
             )
 
-            file_path = self._build_file_path(file_base.path, file_extension)
+            folder = file_base.path
+            if file_storage_provider == "s3":
+                folder = tenant_scoped_storage_prefix(folder)
+            file_path = self._build_file_path(folder, file_extension)
 
             provider_name = file_storage_provider or "local"
             await self._initialize_storage_provider(provider_name)
