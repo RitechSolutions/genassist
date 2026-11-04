@@ -101,6 +101,32 @@ async def test_without_ratio_target_inference_params_is_none(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_registration_persists_training_metrics(monkeypatch):
+    ml_service = MagicMock()
+    ml_service.get_by_name = AsyncMock(return_value=None)
+    created = MagicMock()
+    created.id = uuid.uuid4()
+    ml_service.create = AsyncMock(return_value=created)
+    _patch_dependencies(monkeypatch, ml_service)
+
+    node = _make_node()
+    await node._register_trained_model(
+        name="my-model",
+        model_type="linear_regression",
+        feature_columns=["x"],
+        target_column="y",
+        local_pkl_path="/tmp/model.pkl",
+        training_metrics={"mse": 0.25, "rmse": 0.5, "r2_score": 0.9},
+    )
+
+    assert ml_service.create.await_args.kwargs["training_metrics"] == {
+        "mse": 0.25,
+        "rmse": 0.5,
+        "r2_score": 0.9,
+    }
+
+
+@pytest.mark.asyncio
 async def test_retrain_preserves_valid_feature_defaults(monkeypatch):
     existing = MagicMock()
     existing.id = uuid.uuid4()
@@ -125,6 +151,7 @@ async def test_retrain_preserves_valid_feature_defaults(monkeypatch):
         local_pkl_path="/tmp/model.pkl",
         target_model_id=str(existing.id),
         target_transform={"type": "ratio", "baselineColumn": "base"},
+        training_metrics={"mse": 0.25, "r2_score": 0.9},
     )
 
     assert error is None
@@ -134,6 +161,10 @@ async def test_retrain_preserves_valid_feature_defaults(monkeypatch):
     assert update_arg.inference_params == {
         "featureDefaults": {"x": 1},
         "ratioBaselineColumn": "base",
+    }
+    assert ml_service.update.await_args.kwargs["training_metrics"] == {
+        "mse": 0.25,
+        "r2_score": 0.9,
     }
 
 
