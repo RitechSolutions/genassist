@@ -549,6 +549,23 @@ async def test_discard_removes_the_callers_unused_recent_upload(monkeypatch, tmp
 
 
 @pytest.mark.asyncio
+async def test_discard_accepts_a_tenant_scoped_s3_upload(monkeypatch):
+    from app.core.tenant_scope import clear_tenant_context, set_tenant_context
+
+    record = _upload_record(path="tenants/tenant-a/ml_models/5f0c.pkl", storage_provider="s3", storage_path="bucket")
+    service, file_manager = _discard_setup(monkeypatch, record)
+    file_manager.storage_provider = SimpleNamespace(name="s3", get_base_path=lambda: "bucket")
+
+    set_tenant_context("tenant-a")
+    try:
+        await service.discard_unused_upload(record.id, file_manager)
+    finally:
+        clear_tenant_context()
+
+    file_manager.delete_file.assert_awaited_once_with(record.id)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "overrides,referenced,user",
     [

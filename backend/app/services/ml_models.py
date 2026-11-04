@@ -12,6 +12,7 @@ from injector import inject
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.storage_path import path_relative_to_tenant_root
 from app.db.models.file import FileModel
 from app.db.models.ml_model import MLModel
 from app.repositories.ml_models import MLModelsRepository
@@ -28,6 +29,13 @@ logger = logging.getLogger(__name__)
 ML_MODEL_UPLOAD_FOLDER = "ml_models"
 # A rejected save is cleaned up right away; older uploads are never discarded this way.
 UNUSED_UPLOAD_MAX_AGE = timedelta(hours=1)
+
+
+def _upload_folder_path(file: FileModel) -> str:
+    """File path without the S3 tenant root, so 'tenants/<slug>/ml_models/x.pkl' reads as 'ml_models/x.pkl'."""
+    if file.storage_provider == "s3":
+        return path_relative_to_tenant_root(file.path)
+    return str(file.path or "")
 
 _RATIO_BASELINE_PARAM = "ratioBaselineColumn"
 STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX = (
@@ -345,7 +353,7 @@ class MLModelsService:
         )
         discardable = (
             same_storage
-            and str(file.path or "").startswith(f"{ML_MODEL_UPLOAD_FOLDER}/")
+            and _upload_folder_path(file).startswith(f"{ML_MODEL_UPLOAD_FOLDER}/")
             and (file.file_extension or "").lower() == "pkl"
             and file.created_by is not None
             and file.created_by == get_current_user_id()
