@@ -1,4 +1,6 @@
 import logging
+import math
+import numbers
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Sequence
@@ -129,6 +131,25 @@ def validate_model_inference_params(
         )
 
 
+def normalize_training_metrics(metrics: Optional[dict]) -> Optional[dict]:
+    """Keep only finite numeric metric values (numpy scalars included).
+
+    ``None`` stays ``None``; anything else that is not a dict becomes ``{}``.
+    """
+    if metrics is None:
+        return None
+    if not isinstance(metrics, dict):
+        return {}
+    clean = {}
+    for key, value in metrics.items():
+        if isinstance(value, bool) or not isinstance(value, numbers.Real):
+            continue
+        value = float(value)
+        if math.isfinite(value):
+            clean[str(key)] = value
+    return clean
+
+
 @inject
 class MLModelsService:
     """Service for ML models business logic."""
@@ -140,8 +161,13 @@ class MLModelsService:
         self,
         ml_model: MLModelCreate,
         artifact_contract: Optional[ModelArtifactContract] = None,
+        training_metrics: Optional[dict] = None,
     ) -> MLModel:
-        """Create a new ML model."""
+        """Create a new ML model.
+
+        ``training_metrics`` is for server-side callers (Train Model registration);
+        the client schemas do not carry it.
+        """
         validate_model_inference_params(ml_model.features, ml_model.inference_params)
 
         # Check if a model with the same name already exists
@@ -162,7 +188,9 @@ class MLModelsService:
         )
 
         model_to_create = ml_model.model_copy(update={"pkl_file": None}) if ml_model.pkl_file_id else ml_model
-        db_ml_model = await self.repository.create(model_to_create)
+        db_ml_model = await self.repository.create(
+            model_to_create, training_metrics=normalize_training_metrics(training_metrics)
+        )
         return db_ml_model
 
     async def get_by_id(self, ml_model_id: UUID) -> MLModel:
@@ -184,9 +212,17 @@ class MLModelsService:
         ml_model_id: UUID,
         ml_model_update: MLModelUpdate,
         artifact_contract: Optional[ModelArtifactContract] = None,
+        training_metrics: Optional[dict] = None,
     ) -> MLModel:
-        """Update an existing ML model."""
+        """Update an existing ML model.
+
+        ``training_metrics`` is for server-side callers (Train Model registration and
+        promotion): a dict replaces the stored metrics. ``None`` keeps them, unless
+        the model file changes, which leaves the model with empty metrics.
+        """
         update_data = ml_model_update.model_dump(exclude_unset=True)
+        if training_metrics is not None:
+            update_data["training_metrics"] = normalize_training_metrics(training_metrics)
         if update_data.get("pkl_file_id") is not None:
             update_data["pkl_file_id"] = str(update_data["pkl_file_id"])
 
@@ -246,6 +282,13 @@ class MLModelsService:
             )
             or (not file_id and update_data.get("pkl_file", existing_model.pkl_file) != existing_model.pkl_file)
         )
+        file_changed = file_id_changed or (
+            not file_id
+            and update_data.get("pkl_file", existing_model.pkl_file) != existing_model.pkl_file
+        )
+        if file_changed and "training_metrics" not in update_data:
+            # The stored metrics belong to the previous file.
+            update_data["training_metrics"] = {}
         if contract_changed:
             await validate_model_artifact_registration(
                 *self._artifact_source(existing_model, update_data, file_id, file_id_changed),
