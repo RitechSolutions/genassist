@@ -25,9 +25,11 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.ml_model_pipeline import PipelineRunStatus as PipelineRunStatusEnum
 from app.services.ml_models import (
+    MLModelsService,
     STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX,
     merge_model_inference_params,
 )
+from app.services.ml_model_manager import MLModelManager
 
 logger = logging.getLogger(__name__)
 
@@ -156,11 +158,15 @@ class MLModelPipelineRunService:
         run_repository: MLModelPipelineRunRepository,
         config_repository: MLModelPipelineConfigRepository,
         model_repository: MLModelsRepository,
+        model_service: MLModelsService,
+        model_manager: MLModelManager,
         workflow_repository: WorkflowRepository,
     ):
         self.run_repository = run_repository
         self.config_repository = config_repository
         self.model_repository = model_repository
+        self.model_service = model_service
+        self.model_manager = model_manager
         self.workflow_repository = workflow_repository
 
     async def create(
@@ -222,17 +228,17 @@ class MLModelPipelineRunService:
         # Validate model exists
         model = await self.model_repository.get_by_id(model_id)
         if model is None:
-            raise AppException(error_key=ErrorKey.NOT_FOUND)
+            raise AppException(error_key=ErrorKey.NOT_FOUND, status_code=404)
 
         # Validate run exists and is completed
         run = await self.run_repository.get_by_id(run_id)
         if run.model_id != model_id:
-            raise AppException(error_key=ErrorKey.NOT_FOUND)
+            raise AppException(error_key=ErrorKey.NOT_FOUND, status_code=404)
 
         if run.status != PipelineRunStatusEnum.COMPLETED:
             raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail="Only completed pipeline runs can be promoted",
+                error_key=ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE,
+                error_detail="Only completed pipeline runs can be promoted.",
             )
 
         # Get execution_output immediately while session is still active
@@ -240,6 +246,28 @@ class MLModelPipelineRunService:
         execution_output = (
             run.execution_output.get("output", None) if run.execution_output else None
         )
+        model_file_path = (
+            execution_output.get("model_file_path") if execution_output else None
+        )
+        pkl_file_id = execution_output.get("pkl_file_id") if execution_output else None
+
+        if promote_data.update_model_file and model_file_path and not pkl_file_id:
+            if "pkl_file_id" in execution_output:
+                error_detail = (
+                    "This run's trained model file was not uploaded to File Manager, "
+                    "so it cannot safely replace the current model artifact. Run the "
+                    "pipeline again, then promote the new run."
+                )
+            else:
+                error_detail = (
+                    "This pipeline run predates stored model file IDs and cannot "
+                    "safely replace the model artifact. Run the pipeline again, "
+                    "then promote the new run."
+                )
+            raise AppException(
+                error_key=ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE,
+                error_detail=error_detail,
+            )
 
         # Get the pipeline config used by this run
         config = await self.config_repository.get_by_id(run.pipeline_config_id)
@@ -267,15 +295,14 @@ class MLModelPipelineRunService:
             ]
             if stale_default_warnings:
                 result["warnings"] = stale_default_warnings
-            model_file_path = execution_output.get("model_file_path")
             target_column = execution_output.get("target_column")
             feature_columns = execution_output.get("feature_columns")
             target_transform = execution_output.get("target_transform")
-            if model_file_path:
+            if pkl_file_id:
                 from app.schemas.ml_model import MLModelUpdate
 
                 try:
-                    model_updates = {"pkl_file": model_file_path}
+                    model_updates = {"pkl_file_id": pkl_file_id}
                     if target_column:
                         model_updates["target_variable"] = target_column
                     if feature_columns:
@@ -286,9 +313,8 @@ class MLModelPipelineRunService:
                             target_transform.get("baselineColumn") if target_transform else None,
                         )
                     update_data = MLModelUpdate(**model_updates)
-                    await self.model_repository.update(
-                        model_id, update_data.model_dump(exclude_unset=True)
-                    )
+                    await self.model_service.update(model_id, update_data)
+                    self.model_manager.invalidate_model(model_id)
                     result["model_updated"] = True
                 except Exception as e:
                     logger.warning(
