@@ -361,8 +361,7 @@ async def test_cleanup_never_deletes_inside_the_reserved_tenant_root():
     provider_factory.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_delete_legacy_requires_apply():
+def _load_migration_script():
     import importlib.util
     import pathlib
 
@@ -370,9 +369,66 @@ async def test_delete_legacy_requires_apply():
     spec = importlib.util.spec_from_file_location("migrate_tenant_s3_paths", script)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.asyncio
+async def test_delete_legacy_requires_apply():
+    module = _load_migration_script()
 
     with pytest.raises(ValueError, match="requires --apply"):
         await module.run("all", apply=False, delete_legacy=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "confirm",
+    [
+        (),
+        ("bucket-a",),
+        ("bucket-a", "old-bucket-a", "someone-elses-bucket"),
+        ("Bucket-A", "old-bucket-a"),
+    ],
+)
+async def test_delete_legacy_requires_every_bucket_confirmed(monkeypatch, confirm):
+    from app.core.config.settings import file_storage_settings
+    from app.db.multi_tenant_session import multi_tenant_manager
+
+    module = _load_migration_script()
+    monkeypatch.setattr(file_storage_settings, "AWS_BUCKET_NAME", "bucket-a")
+    initialize = AsyncMock()
+    monkeypatch.setattr(multi_tenant_manager, "initialize", initialize)
+
+    with pytest.raises(ValueError, match="--confirm-bucket"):
+        await module.run(
+            "all",
+            apply=True,
+            delete_legacy=True,
+            extra_buckets=("old-bucket-a",),
+            confirm_buckets=confirm,
+        )
+    # Refused before touching any database or bucket.
+    initialize.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_legacy_runs_once_every_bucket_is_confirmed(monkeypatch):
+    from app.core.config.settings import file_storage_settings
+    from app.db.multi_tenant_session import multi_tenant_manager
+
+    module = _load_migration_script()
+    monkeypatch.setattr(file_storage_settings, "AWS_BUCKET_NAME", "bucket-a")
+    # Stop right after the guard; reaching initialize means the confirmation was accepted.
+    monkeypatch.setattr(multi_tenant_manager, "initialize", AsyncMock(side_effect=RuntimeError("past the guard")))
+
+    with pytest.raises(RuntimeError, match="past the guard"):
+        await module.run(
+            "all",
+            apply=True,
+            delete_legacy=True,
+            extra_buckets=("old-bucket-a",),
+            confirm_buckets=("old-bucket-a", "bucket-a"),
+        )
 
 
 @pytest.mark.asyncio
