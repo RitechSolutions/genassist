@@ -19,11 +19,21 @@ from sshtunnel import SSHTunnelForwarder
 
 from app.core.config.settings import settings
 from app.core.utils.encryption_utils import decrypt_key
-from app.core.utils.sensitive_data_utils import redact_bound_values
+from app.core.exceptions.error_policy import sanitize_database_error
+from app.core.utils.sensitive_data_utils import redact_sql_literals
 from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.snowflake import SnowflakeManager
 
 logger = logging.getLogger(__name__)
+
+# SQLAlchemy logs every statement when its engine logger is at INFO, which
+# init_logging turns on whenever DEBUG is set. Datasource queries hold user
+# values (e.g. WHERE password = '...'), so their engines log under their own
+# name and stay at WARNING. aiosqlite (only used for SQLite datasources) logs
+# each statement at DEBUG the same way.
+DATASOURCE_ENGINE_LOGGING_NAME = "datasource"
+logging.getLogger(f"sqlalchemy.engine.Engine.{DATASOURCE_ENGINE_LOGGING_NAME}").setLevel(logging.WARNING)
+logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 
 
 POSTGRES_SCHEMA = "public"
@@ -131,6 +141,27 @@ class DatabaseManager:
     def get_db_type(self) -> str:
         return self.db_type
 
+    def _double_quoted_strings(self) -> bool:
+        # MySQL reads "..." as a string; other databases read it as a name.
+        return (self.db_type or "").strip().lower() in {"mysql", "sql"}
+
+    def _loggable_query(self, query: str) -> str:
+        return redact_sql_literals(query, double_quoted=self._double_quoted_strings())
+
+    def _safe_query_error(
+        self,
+        error: Exception,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+    ) -> str:
+        """The driver error without the query's literal or bound values."""
+        return sanitize_database_error(
+            error,
+            query=query,
+            parameters=parameters,
+            double_quoted_strings=self._double_quoted_strings(),
+        )
+
     async def initialize(self):
         await self.connect()
         self.schema = await self._get_schema(include_samples=True, sample_size=1)
@@ -226,6 +257,7 @@ class DatabaseManager:
                     connection_url,
                     echo=False,
                     hide_parameters=True,
+                    logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
                 )
@@ -250,6 +282,7 @@ class DatabaseManager:
                     connection_url,
                     echo=False,
                     hide_parameters=True,
+                    logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
                 )
@@ -286,6 +319,7 @@ class DatabaseManager:
                     connection_url,
                     echo=False,
                     hide_parameters=True,
+                    logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
                 )
@@ -300,6 +334,7 @@ class DatabaseManager:
                     connection_string,
                     echo=False,
                     hide_parameters=True,
+                    logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
                     future=True,
                 )
                 logger.info("Connected to SQLite database")
@@ -468,7 +503,7 @@ class DatabaseManager:
             if not self.engine:
                 await self.connect()
 
-            logger.info(f"Executing query: {query}")
+            logger.info("Executing query: %s", self._loggable_query(query))
 
             async with self.engine.begin() as conn:
                 if parameters:
@@ -487,8 +522,8 @@ class DatabaseManager:
             return results, None
 
         except Exception as e:
-            error_msg = redact_bound_values(e, parameters)
-            logger.error(f"Error executing query: {error_msg}")
+            error_msg = self._safe_query_error(e, query, parameters)
+            logger.error("Error executing query: %s", error_msg)
             return [], error_msg
 
     async def execute_read_query(
@@ -523,7 +558,7 @@ class DatabaseManager:
             if not self.engine:
                 await self.connect()
 
-            logger.info(f"Executing read query: {query}")
+            logger.info("Executing read query: %s", self._loggable_query(query))
 
             if db_type == "postgresql":
                 return await self._execute_postgres_read_query(query, parameters)
@@ -541,8 +576,8 @@ class DatabaseManager:
             logger.error("A bound workflow variable has an invalid database value type")
             raise
         except Exception as e:
-            error_msg = redact_bound_values(e, parameters)
-            logger.error(f"Error executing read query: {error_msg}")
+            error_msg = self._safe_query_error(e, query, parameters)
+            logger.error("Error executing read query: %s", error_msg)
             return [], error_msg
 
     async def stream_query(
@@ -583,7 +618,7 @@ class DatabaseManager:
             if not self.engine:
                 await self.connect()
 
-            logger.info("Streaming read query: %s", query)
+            logger.info("Streaming read query: %s", self._loggable_query(query))
 
             if db_type == "postgresql":
                 stream = self._stream_postgres_read_query(query, parameters, chunk_size)
@@ -616,7 +651,7 @@ class DatabaseManager:
             logger.error("A bound workflow variable has an invalid database value type")
             raise
         except Exception as exc:
-            error_msg = redact_bound_values(exc, parameters)
+            error_msg = self._safe_query_error(exc, query, parameters)
             logger.error("Error streaming read query: %s", error_msg)
             raise RuntimeError(error_msg) from None
 
@@ -672,6 +707,7 @@ class DatabaseManager:
                 readonly_url,
                 echo=False,
                 hide_parameters=True,
+                logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
                 future=True,
                 poolclass=NullPool,
             )
@@ -830,6 +866,7 @@ class DatabaseManager:
                 readonly_url,
                 echo=False,
                 hide_parameters=True,
+                logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
                 future=True,
                 poolclass=NullPool,
             )
