@@ -69,6 +69,7 @@ import {
   TrainingPipelineConfig,
 } from "@/interfaces/ml-model-pipeline.interface";
 import { Workflow, WorkflowCreatePayload } from "@/interfaces/workflow.interface";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { formatDateTime } from "@/helpers/utils";
 import { downloadFileManagerFile } from "@/services/fileManager";
 import { modelTypeLabel } from "../helpers/modelTypes";
@@ -442,8 +443,10 @@ const MLModelDetail: React.FC = () => {
         queryClient.invalidateQueries({ queryKey: ["ml-model", id] }),
         queryClient.invalidateQueries({ queryKey: ["ml-models"] }),
       ]);
-    } catch {
-      toast.error("Failed to promote the pipeline run.");
+    } catch (error) {
+      toast.error(
+        extractErrorMessage(error, "Failed to promote the pipeline run."),
+      );
     } finally {
       setPromotingRunId(null);
     }
@@ -770,11 +773,11 @@ const MLModelDetail: React.FC = () => {
             {runs.map((run) => {
               const duration = formatRunDuration(run.started_at, run.completed_at);
               const isSuccessful = run.status === "completed";
-              const isPromoted = isRunPromoted(run, model.pkl_file);
+              const isPromoted = isRunPromoted(run, model);
               const isDefaultPipeline = isRunDefaultPipeline(run, defaultConfigId);
               const isFullyPromoted = isRunFullyPromoted(
                 run,
-                model.pkl_file,
+                model,
                 defaultConfigId
               );
               return (
@@ -1149,7 +1152,7 @@ const MLModelDetail: React.FC = () => {
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <DialogTitle>Run Details #{selectedRun?.id?.slice(-6)}</DialogTitle>
-                {selectedRun && isRunPromoted(selectedRun, model.pkl_file) && <PromotedBadge />}
+                {selectedRun && isRunPromoted(selectedRun, model) && <PromotedBadge />}
               </div>
               {selectedRun && <RunStatusBadge status={selectedRun.status} />}
             </div>

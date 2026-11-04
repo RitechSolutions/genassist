@@ -6,6 +6,7 @@ avoiding repeated file I/O and deserialization overhead.
 """
 
 import asyncio
+import contextlib
 import glob
 import hashlib
 import logging
@@ -14,7 +15,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, BinaryIO, Callable, Dict, Optional, Tuple
 from uuid import UUID
 
 from injector import inject
@@ -49,23 +50,41 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     safe_path = resolve_model_path(pkl_file)
     if safe_path is None:
         raise ValueError("Model file is not inside the ML models folder")
+    return _load_pickle_stream(lambda: open(safe_path, "rb"), safe_path)
 
+
+def _load_pickle_open_file_sync(file: BinaryIO, source: str) -> Any:
+    """Load a pickle from a file the caller already opened and scanned.
+
+    The load reads the same open file (rewound for each attempt), not a path,
+    so the file can't be replaced with another one between the scan and the load.
+    The caller keeps ownership of the file and closes it.
+    """
+
+    def rewind() -> Any:
+        file.seek(0)
+        return contextlib.nullcontext(file)
+
+    return _load_pickle_stream(rewind, source)
+
+
+def _load_pickle_stream(open_stream: Callable[[], Any], source: str) -> Any:
     load_errors = []
 
     # Method 1: restricted unpickler with default encoding
     try:
-        with open(safe_path, "rb") as f:
+        with open_stream() as f:
             model = safe_pickle_load(f)
-        logger.info("Loaded model from %s", safe_path)
+        logger.info("Loaded model from %s", source)
         return model
     except Exception as e:
         load_errors.append(f"pickle (default) failed: {type(e).__name__}")
 
     # Method 2: restricted unpickler with latin1 encoding (legacy Python 2 pickles)
     try:
-        with open(safe_path, "rb") as f:
+        with open_stream() as f:
             model = safe_pickle_load(f, encoding="latin1")
-        logger.info("Loaded model (latin1) from %s", safe_path)
+        logger.info("Loaded model (latin1) from %s", source)
         return model
     except Exception as e:
         load_errors.append(f"pickle (latin1) failed: {type(e).__name__}")

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Save } from "lucide-react";
+import { Save, Undo2 } from "lucide-react";
 import { Button } from "@/components/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/popover";
 import { RichInput } from "@/components/richInput";
@@ -22,6 +22,8 @@ interface DraftPaneProps {
   value: string;
   onDraftEdit: (newValue: string) => void;
   canEditPrompt: boolean;
+  canUndo: boolean;
+  onUndo: () => void;
   save: DraftSaveState;
 }
 
@@ -31,6 +33,8 @@ export const DraftPane: React.FC<DraftPaneProps> = ({
   value,
   onDraftEdit,
   canEditPrompt,
+  canUndo,
+  onUndo,
   save,
 }) => {
   const [isLabelOpen, setIsLabelOpen] = useState(false);
@@ -61,6 +65,12 @@ export const DraftPane: React.FC<DraftPaneProps> = ({
             >
               {save.status.message}
             </span>
+          )}
+          {canUndo && (
+            <Button type="button" size="sm" variant="ghost" onClick={onUndo}>
+              <Undo2 className="h-3.5 w-3.5 mr-2" />
+              Undo
+            </Button>
           )}
           {canEditPrompt && (
             <Popover open={isLabelOpen} onOpenChange={setIsLabelOpen}>

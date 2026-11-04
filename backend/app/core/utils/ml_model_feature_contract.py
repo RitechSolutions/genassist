@@ -16,6 +16,10 @@ def _read_model_attribute(model: Any, attribute: str) -> Any:
         return _UNREADABLE_MODEL_ATTRIBUTE
 
 
+def _is_catboost_model(model: Any) -> bool:
+    return type(model).__module__.split(".", 1)[0] == "catboost"
+
+
 def _model_feature_count(model: Any) -> Optional[int]:
     count_value = _read_model_attribute(model, "n_features_in_")
     if count_value is None:
@@ -24,9 +28,14 @@ def _model_feature_count(model: Any) -> Optional[int]:
         count_value is _UNREADABLE_MODEL_ATTRIBUTE
         or isinstance(count_value, (bool, np.bool_))
         or not isinstance(count_value, (int, np.integer))
-        or count_value < 1
+        or count_value < 0
     ):
         return -1
+    if count_value == 0:
+        # CatBoost does not save its column count in the pickle, so a reloaded model
+        # reports 0. Its column names come from the saved model, so the count is unknown.
+        # Used at registration and at inference alike.
+        return None if _is_catboost_model(model) else -1
     return int(count_value)
 
 
