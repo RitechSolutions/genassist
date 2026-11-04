@@ -7,7 +7,8 @@ object once none of those rows reference it. On a shared bucket, such as a dev b
 used by several developers' local stacks, that can delete objects another stack still
 needs. A staging copy of production data whose AWS_BUCKET_NAME (or --bucket) is the
 production bucket would make --apply and --delete-legacy change production objects.
-Check AWS_BUCKET_NAME and every --bucket before running.
+Check AWS_BUCKET_NAME and every --bucket before running. --delete-legacy refuses to run
+unless each of those buckets is typed back with --confirm-bucket.
 
 Run it during a maintenance window: rows are read at the start of each tenant and
 written at the end, so file changes made by the live app meanwhile could be overwritten.
@@ -107,6 +108,7 @@ async def run(
     apply: bool,
     delete_legacy: bool,
     extra_buckets: tuple[str, ...] = (),
+    confirm_buckets: tuple[str, ...] = (),
 ) -> int:
     from app.core.config.settings import file_storage_settings
     from app.db.multi_tenant_session import multi_tenant_manager
@@ -125,6 +127,13 @@ async def run(
     allowed_buckets = {bucket for bucket in (file_storage_settings.AWS_BUCKET_NAME, *extra_buckets) if bucket}
     if not allowed_buckets:
         raise ValueError("No S3 bucket configured; set AWS_BUCKET_NAME or pass --bucket.")
+    if delete_legacy and set(confirm_buckets) != allowed_buckets:
+        # Cleanup trusts that no other deployment uses these buckets, so the operator types each one back.
+        raise ValueError(
+            f"--delete-legacy deletes objects in: {', '.join(sorted(allowed_buckets))}. Only run it if "
+            "these buckets belong to this deployment alone, and pass --confirm-bucket <name> once "
+            "for each of them (no others)."
+        )
     logger.info("Allowed buckets: %s", ", ".join(sorted(allowed_buckets)))
 
     await multi_tenant_manager.initialize()
@@ -247,7 +256,17 @@ def _parse_args() -> argparse.Namespace:
             "Requires 'all --apply'. Delete old objects this migration copied, once no file row "
             "in any tenant (active or soft-deleted) still references them. Can be repeated later. "
             "Only rows in the connected databases are checked, so never use it on a bucket "
-            "another deployment or developer stack also uses."
+            "another deployment or developer stack also uses. Needs --confirm-bucket."
+        ),
+    )
+    parser.add_argument(
+        "--confirm-bucket",
+        action="append",
+        default=[],
+        metavar="BUCKET",
+        help=(
+            "Required with --delete-legacy, once for each bucket the run uses (AWS_BUCKET_NAME and "
+            "every --bucket). Confirms these buckets belong to this deployment alone."
         ),
     )
     parser.add_argument(
@@ -271,6 +290,7 @@ if __name__ == "__main__":
                 apply=args.apply,
                 delete_legacy=args.delete_legacy,
                 extra_buckets=tuple(args.bucket),
+                confirm_buckets=tuple(args.confirm_bucket),
             )
         )
     )
