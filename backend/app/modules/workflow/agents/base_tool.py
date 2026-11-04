@@ -5,17 +5,13 @@ from typing import Any, Callable, Protocol
 
 logger = logging.getLogger(__name__)
 
-# String values that carry no real content: blank, or the placeholders the
-# engine and models emit for a value they do not have.
-EMPTY_VALUE_MARKERS = {"", "null", "none"}
-
 
 def is_empty_parameter_value(value: Any) -> bool:
     """Whether a tool argument should count as not provided."""
     if value is None:
         return True
     if isinstance(value, str):
-        return value.strip().lower() in EMPTY_VALUE_MARKERS
+        return value.strip() == ""
     return False
 
 

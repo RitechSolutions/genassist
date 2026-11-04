@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   formatDateTime,
   formatDuration,
@@ -21,10 +21,21 @@ describe("formatDuration", () => {
   });
 });
 
+const originalTz = process.env.TZ;
+const useLocalMode = () =>
+  vi.stubGlobal("localStorage", { getItem: () => "local" });
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  if (originalTz === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTz;
+});
+
 describe("formatDateTime", () => {
   it("prefixes today's timestamps with 'Today, '", () => {
     const todayNoon = new Date();
-    todayNoon.setHours(12, 0, 0, 0);
+    todayNoon.setUTCHours(12, 0, 0, 0);
     expect(formatDateTime(todayNoon.toISOString()).startsWith("Today, ")).toBe(
       true,
     );
@@ -32,8 +43,8 @@ describe("formatDateTime", () => {
 
   it("prefixes yesterday's timestamps with 'Yesterday, '", () => {
     const yesterdayNoon = new Date();
-    yesterdayNoon.setDate(yesterdayNoon.getDate() - 1);
-    yesterdayNoon.setHours(12, 0, 0, 0);
+    yesterdayNoon.setUTCDate(yesterdayNoon.getUTCDate() - 1);
+    yesterdayNoon.setUTCHours(12, 0, 0, 0);
     expect(
       formatDateTime(yesterdayNoon.toISOString()).startsWith("Yesterday, "),
     ).toBe(true);
@@ -45,6 +56,18 @@ describe("formatDateTime", () => {
     expect(result.startsWith("Yesterday,")).toBe(false);
     expect(result).toContain(", ");
   });
+
+  it("decides Today and Yesterday in the chosen time zone", () => {
+    process.env.TZ = "Pacific/Kiritimati";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-30T11:53:00Z"));
+    const lateLocalEvening = "2026-10-30T09:30:00Z";
+    expect(formatDateTime(lateLocalEvening).startsWith("Today, ")).toBe(true);
+    useLocalMode();
+    expect(formatDateTime(lateLocalEvening).startsWith("Yesterday, ")).toBe(
+      true,
+    );
+  });
 });
 
 describe("formatMessageTime", () => {
@@ -54,13 +77,13 @@ describe("formatMessageTime", () => {
     expect(formatMessageTime(0)).toBe("");
   });
 
-  it("formats ISO-like strings using their literal local time", () => {
-    // A datetime string with no timezone is parsed as local and formatted as
-    // local, so the HH:MM:SS is deterministic regardless of the runner's zone.
-    expect(formatMessageTime("2023-06-15T14:05:09")).toBe("14:05:09");
+  it("formats ISO strings in UTC", () => {
+    process.env.TZ = "Pacific/Kiritimati";
+    expect(formatMessageTime("2023-06-15T14:05:09Z")).toBe("14:05:09");
   });
 
   it("formats space-separated datetime strings using their literal local time", () => {
+    useLocalMode();
     expect(formatMessageTime("2023-06-15 14:05:09")).toBe("14:05:09");
   });
 

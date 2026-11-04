@@ -14,28 +14,15 @@ import { cn } from "@/helpers/utils";
 import { Transcript } from "@/interfaces/transcript.interface";
 import { topicLabel } from "@/views/ReportedFeedback/helpers/triageDraft";
 
-import { getEffectiveSentiment, isLiveTranscript } from "../../helpers/formatting";
+import {
+  formatRowTimestamp,
+  getEffectiveSentiment,
+  isLiveTranscript,
+} from "../../helpers/formatting";
 import { SentimentBadge } from "../SentimentBadge";
 
 const isCallTranscript = (transcript: Transcript) =>
   Boolean(transcript?.recording_id) || Boolean(transcript?.metadata?.isCall);
-
-/** Time for a list row: clock time for today, short date before that. */
-function formatRowTimestamp(timestamp?: string): string {
-  if (!timestamp) return "";
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const now = new Date();
-  const isToday =
-    date.getDate() === now.getDate() &&
-    date.getMonth() === now.getMonth() &&
-    date.getFullYear() === now.getFullYear();
-
-  return isToday
-    ? date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 function lastMessagePreview(transcript: Transcript): string {
   if (transcript.last_message_preview?.trim()) return transcript.last_message_preview.trim();

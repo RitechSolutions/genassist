@@ -2,7 +2,8 @@ import { useState } from "react";
 import { MessageSquareDot, NotebookPen, Settings } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { Link } from "react-router-dom";
+import type { DateRange } from "react-day-picker";
+import { Link, useLocation } from "react-router-dom";
 
 import { PageLayout } from "@/components/PageLayout";
 import { buttonVariants } from "@/components/button";
@@ -33,10 +34,11 @@ import {
 } from "../hooks/useReportedFeedback";
 import { useReportLink } from "../hooks/useReportLink";
 import { useIssueStatuses } from "../hooks/useIssueStatuses";
+import { useStatusFilter } from "../hooks/useStatusFilter";
 import { ReportedFeedbackDialog } from "../components/ReportedFeedbackDialog";
 import { StatusBadge, StatusSelect } from "../components/StatusSelect";
 import { CATEGORY_LABELS } from "../constants";
-import { statusMeta, withCurrentStatus } from "../helpers/issueStatuses";
+import { listableStatuses, statusMeta } from "../helpers/issueStatuses";
 import { topicLabel } from "../helpers/triageDraft";
 import { HighlightedExcerpt } from "../components/HighlightedExcerpt";
 import { formatDateTime } from "@/helpers/utils";
@@ -52,10 +54,13 @@ export default function ReportedFeedback() {
   const canManageStatuses =
     permissions.includes("*") || permissions.includes("write:app_settings");
   const [currentPage, setCurrentPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useStatusFilter();
   const [agentFilter, setAgentFilter] = useState("all");
+  const location = useLocation();
   // Shared global range (same component/store as the dashboard).
-  const [dateRange, setDateRange] = usePersistedDateRange(undefined);
+  const [dateRange, setDateRange] = usePersistedDateRange(
+    (location.state as { dateRange?: DateRange } | null)?.dateRange,
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const search = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS).trim();
   const appliedRange = search ? undefined : dateRange;
@@ -175,14 +180,15 @@ export default function ReportedFeedback() {
     {
       header: "Comment",
       key: "comment",
-      headerClassName: "w-[300px]",
+      headerClassName: "min-w-[130px]",
+      className: "max-w-0",
       cell: (item) => (
         <>
-          <span className="block max-w-[280px] truncate text-sm">
+          <span className="block truncate text-sm">
             <HighlightedExcerpt text={item.comment} search={search} />
           </span>
           {item.matched_note && (
-            <p className="mt-1 flex max-w-[280px] gap-1.5 text-xs text-muted-foreground">
+            <p className="mt-1 flex gap-1.5 text-xs text-muted-foreground">
               <NotebookPen className="mt-0.5 h-3 w-3 shrink-0" />
               <span className="sr-only">Matching note: </span>
               <span className="line-clamp-2 break-words">
@@ -196,9 +202,10 @@ export default function ReportedFeedback() {
     {
       header: "Message",
       key: "message",
-      headerClassName: "w-[260px]",
+      headerClassName: "min-w-[120px]",
+      className: "max-w-0",
       cell: (item) => (
-        <span className="block max-w-[240px] truncate text-sm text-muted-foreground">
+        <span className="block truncate text-sm text-muted-foreground">
           <span className="mr-1 text-xs font-medium uppercase">
             {item.speaker}:
           </span>
@@ -210,8 +217,9 @@ export default function ReportedFeedback() {
       header: "Agent",
       key: "agent",
       headerClassName: "w-[150px]",
+      className: "max-w-0",
       cell: (item) => (
-        <span className="block max-w-[140px] truncate text-sm">
+        <span className="block truncate text-sm">
           {item.agent_name || (
             <span className="italic text-muted-foreground">—</span>
           )}
@@ -222,9 +230,10 @@ export default function ReportedFeedback() {
       header: "Topic",
       key: "topic",
       headerClassName: "w-[170px]",
+      className: "max-w-0",
       cell: (item) =>
         item.conversation_topic ? (
-          <TruncatedText className="max-w-[160px] text-sm">
+          <TruncatedText className="text-sm">
             {topicLabel(item.conversation_topic, item.conversation_subtopic)}
           </TruncatedText>
         ) : (
@@ -264,6 +273,25 @@ export default function ReportedFeedback() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
 
+  const listedStatuses = listableStatuses(
+    statuses,
+    summary.byStatus,
+    statusFilter,
+  );
+  const statusSections = [
+    ...ISSUE_CATEGORIES.map((category) => ({
+      label: CATEGORY_LABELS[category],
+      options: listedStatuses
+        .filter((status) => status.category === category)
+        .map((status) => ({ value: status.key, label: status.label })),
+    })),
+    {
+      options: statusFilter
+        .filter((key) => !listedStatuses.some((status) => status.key === key))
+        .map((key) => ({ value: key, label: key })),
+    },
+  ];
+
   const filterGroups: FilterMenuGroup[] = [
     {
       key: "agent",
@@ -300,27 +328,18 @@ export default function ReportedFeedback() {
         ]
       : []),
     {
+      type: "multi",
       key: "status",
       label: "Status",
       allLabel: "All statuses",
       value: statusFilter,
-      options: withCurrentStatus(
-        statuses.filter(
-          (status) =>
-            status.is_active === 1 || (summary.byStatus[status.key] ?? 0) > 0,
-        ),
-        statusFilter,
-        { includeRetired: true },
-      ).map((status) => ({
-        value: status,
-        label: statusMeta(statuses, status).label,
-      })),
+      sections: statusSections,
       onChange: setStatusFilter,
     },
   ];
 
   const hasActiveFilters =
-    statusFilter !== "all" ||
+    statusFilter.length > 0 ||
     topicFilter !== "all" ||
     subtopicFilter !== "all" ||
     agentFilter !== "all" ||

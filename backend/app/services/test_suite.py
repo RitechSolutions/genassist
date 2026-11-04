@@ -6,7 +6,7 @@ import math
 import re
 import time
 from functools import partial
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 from uuid import UUID, uuid4
 
 from injector import inject
@@ -2163,7 +2163,9 @@ class TestSuiteService:
     # ---- Suites -----------------------------------------------------------
 
     async def create_suite(self, data: TestSuiteCreate) -> TestSuiteInDB:
-        orm = TestSuiteModel(**data.model_dump())
+        payload = data.model_dump()
+        payload["category"] = await self._known_category(payload.get("category"))
+        orm = TestSuiteModel(**payload)
         created = await self.suite_repo.create(orm)
         return TestSuiteInDB.model_validate(created, from_attributes=True)
 
@@ -2183,10 +2185,33 @@ class TestSuiteService:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
 
         payload = data.model_dump(exclude_unset=True)
+        if "category" in payload:
+            # As for evaluations: "" clears it, null leaves it.
+            if payload["category"] is None:
+                del payload["category"]
+            else:
+                payload["category"] = await self._known_category(payload["category"]) or None
         for key, value in payload.items():
             setattr(suite, key, value)
         updated = await self.suite_repo.update(suite)
         return TestSuiteInDB.model_validate(updated, from_attributes=True)
+
+    # ---- Categories -------------------------------------------------------
+
+    async def list_categories(self) -> List[str]:
+        """The categories datasets and evaluations use, each once, in alphabetical order."""
+        names = sorted(await self.evaluation_repo.categories(), key=lambda name: (name.casefold(), name))
+        # Spellings that differ only in case, as two saves at once can leave, show once.
+        unique: Dict[str, str] = {}
+        for name in names:
+            unique.setdefault(name.lower(), name)
+        return list(unique.values())
+
+    async def _known_category(self, category: Optional[str]) -> Optional[str]:
+        """The spelling already in use for this category, whatever its case; empty stays empty."""
+        if not category:
+            return category
+        return await self.evaluation_repo.category_spelling(category) or category
 
     async def delete_suite(self, suite_id: UUID) -> None:
         suite = await self.suite_repo.get_by_id(suite_id)
@@ -4061,6 +4086,7 @@ class TestSuiteService:
         self._require_techniques(data.techniques, data.technique_configs)
         payload = data.model_dump()
         payload["run_ids"] = []
+        payload["category"] = await self._known_category(payload.get("category"))
         workflow_id = await self._effective_workflow_id(
             payload.get("workflow_id"), payload.get("suite_id")
         )
@@ -4088,6 +4114,9 @@ class TestSuiteService:
         if not row:
             raise AppException(status_code=404, error_key=ErrorKey.NOT_FOUND)
         updates = data.model_dump(exclude_none=True)
+        if "category" in updates:
+            # "" clears it, since a null is left out of the update.
+            updates["category"] = await self._known_category(updates["category"]) or None
         techniques = updates.get("techniques", row.techniques)
         # An older evaluation saved with no methods keeps running the defaults when only its configs change.
         if "techniques" in updates or ("technique_configs" in updates and techniques):
@@ -4170,6 +4199,7 @@ class TestSuiteService:
             [TestRunInDB, Optional[Dict[str, Any]], Optional[Dict[str, Any]]], None
         ],
         target_workflow_id: Optional[UUID] = None,
+        category: Optional[str] = None,
     ) -> List[StartedEvaluationRun]:
         """Queue and dispatch a run for every evaluation targeting this workflow.
 
@@ -4180,12 +4210,13 @@ class TestSuiteService:
 
         ``target_workflow_id`` runs every evaluation against that version
         instead of its own; it must be a version of ``workflow_id``.
+        ``category`` ("" = none set) starts only the evaluations in it, as the lists filter them.
         """
         if target_workflow_id:
             await self._ensure_version_of_same_workflow(
                 workflow_id, target_workflow_id
             )
-        targeted = await self._evaluations_for_workflow(workflow_id)
+        targeted = await self._evaluations_for_workflow(workflow_id, category)
 
         # Every evaluation in this scope shares ``workflow_id`` as its effective
         # workflow, so the active version is the same for all of them: resolve it
@@ -4278,10 +4309,14 @@ class TestSuiteService:
             )
 
     async def _evaluations_for_workflow(
-        self, workflow_id: UUID
+        self, workflow_id: UUID, category: Optional[str] = None
     ) -> List[TestEvaluationModel]:
-        """The Run all scope: every evaluation for the workflow (DB-filtered)."""
-        return await self.evaluation_repo.get_all_for_workflow(workflow_id)
+        """The Run all scope: every evaluation for the workflow, or in one category (DB-filtered)."""
+        return await self.evaluation_repo.get_all_for_workflow(workflow_id, category=category)
+
+    async def evaluation_ids_in_category(self, category: str) -> Set[UUID]:
+        """Evaluations in this category ("" = none set), as the lists filter them."""
+        return await self.evaluation_repo.ids_in_category(category)
 
     async def _walk_workflow_catalog(self, workflow_id: Any) -> Dict[str, List[Dict[str, Any]]]:
         """One cycle-safe walk of a workflow (+ nested) collecting agents, routers and nodes.
@@ -4345,14 +4380,14 @@ class TestSuiteService:
         )
 
     async def get_workflow_evaluation_summaries(
-        self, search: Optional[str] = None
+        self, search: Optional[str] = None, category: Optional[str] = None
     ) -> List[WorkflowEvaluationSummary]:
         """One row per workflow (and the unassigned bucket): count, health, running.
 
-        A search keeps the workflows with evaluations it matches, summarising only those.
+        A search or category ("" = none set) keeps the workflows with evaluations it matches, summarising only those.
         """
-        count_rows = await self.evaluation_repo.count_by_effective_workflow(search)
-        pointers = await self.evaluation_repo.get_latest_run_pointers(search)
+        count_rows = await self.evaluation_repo.count_by_effective_workflow(search, category)
+        pointers = await self.evaluation_repo.get_latest_run_pointers(search, category)
         stats_by_workflow = await self._compute_workflow_stats(pointers)
         summaries: List[WorkflowEvaluationSummary] = []
         for workflow_id, count in count_rows:
@@ -4458,22 +4493,23 @@ class TestSuiteService:
         page: int,
         page_size: int,
         search: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> PaginatedEvaluations:
         """One page of a workflow's evaluations (``workflow_id=None`` = unassigned).
 
-        Filtering, search and pagination run in the database, so only the
-        requested page is loaded.
+        Filtering, search, category ("" = none set) and pagination run in the
+        database, so only the requested page is loaded.
         """
         page = max(page, 1)
         page_size = max(1, min(page_size, 100))
         offset = (page - 1) * page_size
         rows = await self.evaluation_repo.get_page_for_workflow(
-            workflow_id, offset, page_size, search
+            workflow_id, offset, page_size, search, category
         )
-        total = await self.evaluation_repo.count_for_workflow(workflow_id, search)
+        total = await self.evaluation_repo.count_for_workflow(workflow_id, search, category)
         total_unfiltered = (
             total
-            if not (search and search.strip())
+            if not (search and search.strip()) and category is None
             else await self.evaluation_repo.count_for_workflow(workflow_id, None)
         )
         any_running = await self.workflow_has_active_run(workflow_id)

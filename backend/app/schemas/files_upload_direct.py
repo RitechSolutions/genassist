@@ -11,7 +11,7 @@ unchanged when the feature flag is disabled.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -56,6 +56,13 @@ class PresignDirectUploadCreate(BaseModel):
         ),
     )
     content_type: Optional[str] = Field(default=None, max_length=255)
+    purpose: Optional[Literal["training_data"]] = Field(
+        default=None,
+        description=(
+            "Set to 'training_data' for Train Data Source uploads: they may be up to "
+            "ML_TRAINING_UPLOAD_MAX_BYTES and must be a supported training file type."
+        ),
+    )
 
 
 class PresignDirectUploadResponse(BaseModel):

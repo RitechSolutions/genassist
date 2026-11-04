@@ -19,6 +19,8 @@ import { CHECKS_TECHNIQUE, parseChecks, serializeChecks } from "./checks";
 export interface EvaluationFormData {
   name: string;
   description: string;
+  /** "" when none is set. */
+  category: string;
   suiteId: string;
   workflowId: string;
   metrics: string[];
@@ -477,6 +479,7 @@ export const getEditInitialData = (
   return {
     name: evaluation.name,
     description: evaluation.description ?? "",
+    category: evaluation.category ?? "",
     suiteId: evaluation.suite_id,
     workflowId: evaluation.workflow_id ?? "none",
     metrics: evaluation.techniques,

@@ -14,6 +14,8 @@ class TestEvaluationModel(Base):
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # A team's own label for grouping, shared with datasets; none when not set.
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     suite_id: Mapped[UUID] = mapped_column(
         ForeignKey("test_suites.id"), nullable=False
@@ -38,6 +40,7 @@ class TestSuiteModel(Base):
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     workflow_id: Mapped[Optional[UUID]] = mapped_column(
         ForeignKey("workflows.id"), nullable=True

@@ -1,6 +1,6 @@
 """Schemas for chunked (file-manager) upload sessions."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,13 @@ class FilesUploadSessionCreate(BaseModel):
         description="Optional declared total size in bytes for validation on complete",
     )
     content_type: Optional[str] = Field(default=None, max_length=255)
+    purpose: Optional[Literal["training_data"]] = Field(
+        default=None,
+        description=(
+            "Set to 'training_data' for Train Data Source uploads: they may be up to "
+            "ML_TRAINING_UPLOAD_MAX_BYTES and must be a supported training file type."
+        ),
+    )
 
 
 class FilesUploadSessionCreateResponse(BaseModel):

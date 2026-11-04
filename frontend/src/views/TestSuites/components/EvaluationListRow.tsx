@@ -1,12 +1,13 @@
 import React from "react";
-import { AlertTriangle, Download, Loader2, MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
+import { AlertTriangle, Download, MoreVertical, Pencil, Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/dropdown-menu";
 import { cn } from "@/helpers/utils";
 import { TestEvaluationConfig } from "@/interfaces/testEvaluation.interface";
 import type { ConversationCounts } from "@/interfaces/testSuite.interface";
 import { EntityTitle } from "./EntityTitle";
-import { VerdictTally } from "./resultsParts";
+import { CategoryBadge } from "./CategoryBadge";
+import { RunningStatus, VerdictTally } from "./resultsParts";
 import { accuracyColorClass } from "../helpers/evaluationMetrics";
 import { leftOutNote, parseChecks } from "../helpers/checks";
 
@@ -20,8 +21,8 @@ interface EvaluationListRowProps {
   conversations?: ConversationCounts | null;
   isRunning: boolean;
   lastRunStatus?: string;
-  /** e.g. "12 of 40 turns done" while the last run is going. */
-  progressText?: string | null;
+  /** e.g. "Queued" or "Running… 3 of 9 conversations done" while the last run is going. */
+  runningText: string;
   /** Lines the name up with its workflow's title above it. */
   indent?: boolean;
   onOpen: () => void;
@@ -37,7 +38,7 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
   conversations,
   isRunning,
   lastRunStatus,
-  progressText,
+  runningText,
   indent = false,
   onOpen,
   onEdit,
@@ -49,36 +50,25 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
   const result = (align: "center" | "start") => {
     const line = cn("flex flex-wrap items-center gap-x-2 gap-y-1 text-xs", align === "center" && "justify-center");
     const label = <span className="text-muted-foreground">Last run</span>;
-    const running = (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        {lastRunStatus === "queued" ? "Queued" : progressText ? `Running… ${progressText}` : "Running…"}
-      </span>
-    );
+    const running = <RunningStatus className="text-xs">{runningText}</RunningStatus>;
     if (align === "start") {
       // Under the name, a status stands on its own.
       if (isRunning) return running;
       if (lastRunStatus === "failed")
         return <div className="text-xs font-medium text-red-600 dark:text-red-400">Last run failed</div>;
     } else {
-      // A status sits where the counts would, in a box as wide as their three slots, so it lines up with them.
-      const status = (content: React.ReactNode) => (
-        <div className={line}>
-          {label}
-          <span className="inline-flex w-[14.25em] items-center">{content}</span>
-        </div>
-      );
       // Said from where "Last run" starts; the line keeps its width, so it stays where the others are.
-      const sentence = (text: string, className: string) => (
+      const sentence = (content: React.ReactNode, className?: string) => (
         <div className={line}>
           <span className="relative">
             <span className="invisible">Last run</span>
-            <span className={cn("absolute left-0 top-0 whitespace-nowrap", className)}>{text}</span>
+            <span className={cn("absolute left-0 top-0 whitespace-nowrap", className)}>{content}</span>
           </span>
           <span className="w-[14.25em]" />
         </div>
       );
-      if (isRunning) return status(running);
+      // A run still going is no last run yet, so it is said without that label.
+      if (isRunning) return sentence(running);
       if (lastRunStatus === "failed") return sentence("Last run failed", "font-medium text-red-600 dark:text-red-400");
       if (!conversations && avgAccuracy === null) return sentence("Not run yet", "text-muted-foreground");
     }
@@ -113,9 +103,15 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
   const actions = (
     // Its buttons, and the menu they open, act on their own instead of opening the row.
     <div className="flex shrink-0 items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
-      <Button size="sm" disabled={isRunning} onClick={onRun}>
+      {/* The run's status shows beside it, so it keeps its name while it waits. */}
+      <Button
+        size="sm"
+        disabled={isRunning}
+        onClick={onRun}
+        title={isRunning ? "This evaluation is already running" : undefined}
+      >
         <Play className="h-3.5 w-3.5 mr-1" />
-        {isRunning ? "Running…" : "Run"}
+        Run
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -163,7 +159,10 @@ export const EvaluationListRow: React.FC<EvaluationListRowProps> = ({
       )}
     >
       <button type="button" className={cn("min-w-0 flex-1 text-left", indent && "pl-7")}>
-        <EntityTitle>{evaluation.name}</EntityTitle>
+        <span className="flex min-w-0 items-center gap-2">
+          <EntityTitle className="w-auto shrink">{evaluation.name}</EntityTitle>
+          {evaluation.category && <CategoryBadge name={evaluation.category} />}
+        </span>
         <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">{evaluation.description || "No description"}</p>
         {leftOut && (
           <p className="mt-1 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">

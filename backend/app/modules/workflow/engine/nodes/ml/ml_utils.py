@@ -7,12 +7,14 @@ This module contains shared functionality used across ML-related nodes.
 import ast
 import asyncio
 import csv
+import io
 import json
 import keyword
 import logging
 import math
 import os
 import re
+import tokenize
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
@@ -23,8 +25,10 @@ import numpy as np
 import pandas as pd
 
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,57 @@ _STREAM_SOURCE_DETAILS = {
 
 # Distinct values listed per categorical column in a CSV analysis.
 _MAX_ANALYSIS_CATEGORIES = 100
+
+_QUERY_REASON_PATTERNS = (
+    r"no such (?:column|table): [\w.\"`]+",
+    r"(?:column|relation|table) \"[^\"]+\" does not exist",
+    r"syntax error at or near \"[^\"]*\"",
+    r"Unknown column '[^']+'(?: in '[^']+')?",
+    r"Table '[^']+' doesn't exist",
+    r"You have an error in your SQL syntax.*?near '[^']{0,80}'",
+    r"Invalid (?:column|object) name '[^']+'",
+    r"invalid identifier '[^']+'",
+    r"near [\"'][^\"']{0,80}[\"']: syntax error",
+)
+_QUERY_REASON_RE = re.compile(
+    "|".join(f"(?:{pattern})" for pattern in _QUERY_REASON_PATTERNS),
+    re.IGNORECASE,
+)
+
+
+def sanitized_database_diagnostic(error: Any) -> str:
+    """Return a bounded, redacted database diagnostic suitable for logs."""
+    redacted = redact_sensitive_substrings(str(error))
+    return sanitize_error_detail(str(redacted), max_len=2_000)
+
+
+def client_safe_database_error(
+    error: Any,
+    *,
+    has_bound_parameters: bool,
+) -> str:
+    """Return an actionable database error without exposing driver details."""
+    if has_bound_parameters:
+        return (
+            "Database query failed. Check that each workflow variable's "
+            "value matches the column it is compared with."
+        )
+
+    # Driver errors may contain codes, hosts, credentials and the full SQL.
+    # Publish only a recognized correction phrase and its identifier.
+    match = _QUERY_REASON_RE.search(str(error))
+    if match:
+        safe_reason = sanitize_error_detail(
+            str(redact_sensitive_substrings(match.group(0))),
+            max_len=300,
+        )
+        if safe_reason:
+            return f"Database query failed: {safe_reason}"
+
+    return (
+        "Could not run the query on the selected data source. "
+        "Check the query and connection settings."
+    )
 
 
 # Model types that only support one task type, regardless of the target variable
@@ -144,6 +199,10 @@ def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budg
         return sanitize_for_json(obj.to_dict("records"), _seen, _depth + 1, _budget)
     elif pd.isna(obj):
         return None
+    elif isinstance(obj, datetime):
+        # pd.Timestamp subclasses datetime. Without this it falls through to
+        # the __dict__ branch below and serializes as an empty {}.
+        return obj.isoformat()
     elif isinstance(obj, (str, int, bool, type(None))):
         # Basic JSON-serializable types
         return obj
@@ -309,6 +368,13 @@ def write_dtypes_sidecar(csv_path: Any, df: pd.DataFrame) -> str:
     return str(sidecar)
 
 
+def write_dtypes_mapping_sidecar(csv_path: Any, dtypes: Dict[str, str]) -> str:
+    """Save an already-known column -> dtype mapping next to csv_path."""
+    sidecar = dtypes_sidecar_path(csv_path)
+    sidecar.write_text(json.dumps({str(c): str(t) for c, t in dtypes.items()}), encoding="utf-8")
+    return str(sidecar)
+
+
 def read_csv_with_dtypes(file_path: Any, **read_csv_kwargs: Any) -> pd.DataFrame:
     """pd.read_csv that reapplies the dtypes saved next to the file, if any.
 
@@ -435,23 +501,43 @@ def column_transform_value_problem(
     Shared by training and inference, so a value that would be rejected at
     training is rejected the same way at prediction time.
     """
-    non_finite = ~np.isfinite(values)
-    if non_finite.any():
+    problem_code = column_transform_value_problem_code(
+        strategy, values, power_method
+    )
+    if problem_code == "non_finite":
+        non_finite = ~np.isfinite(values)
         counts = {c: int(n) for c, n in zip(columns, non_finite.sum(axis=0)) if n}
         return f"empty or infinite values in {counts}"
-    if strategy == "log_transform":
+    if problem_code == "negative_log_input":
         negative = values < 0
-        if negative.any():
-            counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
-            return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
-    if strategy == "power_transform" and power_method == "box-cox":
+        counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
+        return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
+    if problem_code == "non_positive_box_cox_input":
         not_positive = values <= 0
-        if not_positive.any():
-            counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
-            return (
-                f"Box-Cox needs values above 0; values of 0 or less in {counts}. "
-                "Use the Yeo-Johnson method instead, which accepts any value"
-            )
+        counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
+        return (
+            f"Box-Cox needs values above 0; values of 0 or less in {counts}. "
+            "Use the Yeo-Johnson method instead, which accepts any value"
+        )
+    return None
+
+
+def column_transform_value_problem_code(
+    strategy: str,
+    values: np.ndarray,
+    power_method: Optional[str] = None,
+) -> Optional[str]:
+    """Stable reason code for an invalid column-transform input matrix."""
+    if (~np.isfinite(values)).any():
+        return "non_finite"
+    if strategy == "log_transform" and (values < 0).any():
+        return "negative_log_input"
+    if all((
+        strategy == "power_transform",
+        power_method == "box-cox",
+        (values <= 0).any(),
+    )):
+        return "non_positive_box_cox_input"
     return None
 
 
@@ -488,6 +574,142 @@ def ordinal_key(value: Any) -> Optional[str]:
     if isinstance(value, (float, np.floating)) and float(value).is_integer():
         return str(int(value))
     return str(value).strip()
+
+
+
+_BACKTICK_NAME = re.compile(r"`([^`]*)`")
+
+
+def _with_pandas_boolean_precedence(expression: str) -> str:
+    """Swap & and | for `and` / `or`, as DataFrame.eval's parser does.
+
+    pandas binds & and | looser than comparisons, so size == "High" & price > 3
+    means (size == "High") & (price > 3). Python binds them tighter - it reads
+    size == ("High" & price) > 3 - so without this the text would never be
+    seen as compared to size.
+    """
+    tokens = tokenize.generate_tokens(io.StringIO(expression).readline)
+    swapped = {"&": "and", "|": "or"}
+    return tokenize.untokenize(
+        (tokenize.NAME, swapped[tok.string]) if tok.type == tokenize.OP and tok.string in swapped
+        else (tok.type, tok.string)
+        for tok in tokens
+    )
+
+
+class _BoolOpToBitwise(ast.NodeTransformer):
+    """Turn `and` / `or` back into & / |, which unparse wraps in parentheses."""
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> ast.AST:
+        self.generic_visit(node)
+        op = ast.BitAnd() if isinstance(node.op, ast.And) else ast.BitOr()
+        result = node.values[0]
+        for value in node.values[1:]:
+            result = ast.BinOp(left=result, op=op, right=value)
+        return result
+
+
+def translate_category_literals(
+    expression: str,
+    label_encodings: Dict[str, Dict[Any, int]],
+    ordinal_encodings: Dict[str, Dict[Any, Any]],
+) -> str:
+    """Rewrite text compared against a label/ordinal column into its code.
+
+    Label/ordinal encoding runs before feature engineering, so in a Custom
+    Expression those columns hold codes, not categories - size == "High"
+    would compare numbers to a string and be False on every row. Each string
+    in a comparison with an encoded column (==, !=, <, >, in, not in, either
+    side) becomes that category's code, so the expression means what it
+    says. Numbers are left alone (they are already codes). Raises ValueError
+    for text that isn't one of the column's categories.
+
+    The result is what training evaluates and stores for inference, which
+    replays it on the same codes. Expressions with nothing to translate come
+    back unchanged.
+    """
+    if not expression or not (label_encodings or ordinal_encodings):
+        return expression
+
+    # `name with spaces` isn't valid Python - parse with placeholders instead.
+    backtick_names: Dict[str, str] = {}
+
+    def to_placeholder(match: "re.Match[str]") -> str:
+        placeholder = f"__col{len(backtick_names)}__"
+        backtick_names[placeholder] = match.group(1)
+        return placeholder
+
+    try:
+        tree = ast.parse(
+            _with_pandas_boolean_precedence(_BACKTICK_NAME.sub(to_placeholder, expression)), mode="eval"
+        )
+    except (SyntaxError, tokenize.TokenError):
+        return expression  # DataFrame.eval reports the real error
+
+    def column_of(node: ast.AST) -> Optional[str]:
+        if isinstance(node, ast.Name):
+            name = backtick_names.get(node.id, node.id)
+            if name in label_encodings or name in ordinal_encodings:
+                return name
+        return None
+
+    def to_code(column: str, value: str) -> Any:
+        if column in label_encodings:
+            mapping = label_encodings[column]
+            code = mapping.get(value, mapping.get(value.strip()))
+        else:
+            code = ordinal_encodings[column].get(ordinal_key(value))
+        if code is None:
+            known = list(label_encodings.get(column) or ordinal_encodings.get(column) or {})
+            raise ValueError(
+                f"compares '{column}' with '{value}', which is not one of its categories (known: {known[:10]}"
+                f"{' ...' if len(known) > 10 else ''})"
+            )
+        return code.item() if isinstance(code, np.generic) else code
+
+    translated_any = False
+
+    def translate(node: ast.AST, column: str) -> ast.AST:
+        nonlocal translated_any
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            translated_any = True
+            return ast.Constant(value=to_code(column, node.value))
+        if isinstance(node, (ast.List, ast.Tuple)):
+            node.elts = [translate(elt, column) for elt in node.elts]
+        return node
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        operands = [node.left] + node.comparators
+        for i, operand in enumerate(operands):
+            neighbours = operands[max(i - 1, 0):i] + operands[i + 1:i + 2]
+            column = next((c for c in map(column_of, neighbours) if c), None)
+            if column is None:
+                continue
+            translated = translate(operand, column)
+            if i == 0:
+                node.left = translated
+            else:
+                node.comparators[i - 1] = translated
+            # Text left inside the operand (e.g. "High" + x) would still
+            # compare a string to codes and quietly be False on every row.
+            leftover = next(
+                (n.value for n in ast.walk(translated) if isinstance(n, ast.Constant) and isinstance(n.value, str)),
+                None,
+            )
+            if leftover is not None:
+                raise ValueError(
+                    f"compares '{column}' with an expression containing '{leftover}', which can't be matched "
+                    f"to one of its categories - wrap each comparison in parentheses, e.g. ({column} == \"{leftover}\")"
+                )
+
+    if not translated_any:
+        return expression
+    result = ast.unparse(_BoolOpToBitwise().visit(tree))
+    for placeholder, name in backtick_names.items():
+        result = re.sub(rf"\b{placeholder}\b", f"`{name}`", result)
+    return result
 
 
 async def save_data_to_csv(
@@ -606,7 +828,11 @@ async def stream_rows_to_csv(
                 elif current_columns != columns:
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail="Database column ordering changed while streaming the query.",
+                        error_detail=(
+                            "Database column ordering changed while streaming the query."
+                            if source_kind == "query"
+                            else "The file's columns changed while it was being read."
+                        ),
                     )
 
                 observed_rows = row_count + len(rows)
@@ -1165,7 +1391,20 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
         # Load CSV using pandas for better analysis (with any saved column
         # types reapplied, so the analysis matches what the next node sees)
         df = read_csv_with_dtypes(file_path, encoding="utf-8", on_bad_lines="skip")
+        return analyze_dataframe(df)
+    except AppException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Failed to analyze CSV file: {str(e)}",
+        ) from e
 
+
+def analyze_dataframe(df: pd.DataFrame) -> Dict[str, Any]:
+    """The analysis report (see analyze_csv_data) for an already-loaded frame."""
+    try:
         # Convert to list of dicts for sample data
         data = df.to_dict("records")
 
@@ -1183,7 +1422,10 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
             col_info = {
                 "name": col,
                 "dtype": str(df[col].dtype),
-                "missing_count": int(df[col].isna().sum() + (df[col] == "").sum()),
+                "missing_count": int(
+                    df[col].isna().sum()
+                    + (df[col].astype(object) == "").sum()
+                ),
             }
 
             # Determine if numeric (bool/boolean count as categorical, not numeric)
@@ -1231,8 +1473,8 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
         return sanitize_for_json(response)
 
     except Exception as e:
-        logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
+        logger.error(f"Error analyzing data: {str(e)}", exc_info=True)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to analyze CSV file: {str(e)}",
+            error_detail=f"Failed to analyze data: {str(e)}",
         ) from e
