@@ -12,7 +12,7 @@ import snowflake.connector
 
 # Local application imports
 from app.core.utils.encryption_utils import decrypt_key
-from app.core.utils.sensitive_data_utils import redact_bound_values
+from app.core.exceptions.error_policy import sanitize_database_error
 
 logger = logging.getLogger(__name__)
 
@@ -229,11 +229,11 @@ class SnowflakeManager:
                     rows = _run_once()
                     return rows, None
                 except Exception as e2:
-                    safe_error = redact_bound_values(e2, parameters)
-                    logger.error(f"Retry after token expiry failed: {safe_error}")
+                    safe_error = sanitize_database_error(e2, query=query, parameters=parameters)
+                    logger.error("Retry after token expiry failed: %s", safe_error)
                     return [], safe_error
-            safe_error = redact_bound_values(e, parameters)
-            logger.error(f"Error executing Snowflake query: {safe_error}")
+            safe_error = sanitize_database_error(e, query=query, parameters=parameters)
+            logger.error("Error executing Snowflake query: %s", safe_error)
             return [], safe_error
 
     async def stream_query(
@@ -284,7 +284,7 @@ class SnowflakeManager:
                     break
                 yield columns, [tuple(row) for row in rows]
         except Exception as exc:
-            safe_error = redact_bound_values(exc, parameters)
+            safe_error = sanitize_database_error(exc, query=query, parameters=parameters)
             logger.error("Error streaming Snowflake query: %s", safe_error)
             raise RuntimeError(safe_error) from None
         finally:

@@ -73,6 +73,83 @@ def redact_bound_values(
     return result
 
 
+SQL_LITERAL_REDACTION = "***"
+
+# String literals: '...' (with '' or backslash escapes, unterminated at the end
+# too) and PostgreSQL dollar-quoted $$...$$ / $tag$...$tag$.
+_SQL_STRING_LITERAL_RE = re.compile(
+    r"'(?:[^'\\]|\\.|'')*(?:'|$)|\$([A-Za-z_]\w*|)\$.*?\$\1\$",
+    re.DOTALL,
+)
+# MySQL also treats "..." as a string literal (PostgreSQL uses it for names).
+_SQL_DOUBLE_QUOTED_RE = re.compile(r'"(?:[^"\\]|\\.|"")*(?:"|$)', re.DOTALL)
+
+
+def _sql_literal_tokens(sql: str, double_quoted: bool) -> list[str]:
+    tokens = [m.group(0) for m in _SQL_STRING_LITERAL_RE.finditer(sql)]
+    if double_quoted:
+        tokens += [m.group(0) for m in _SQL_DOUBLE_QUOTED_RE.finditer(sql)]
+    return tokens
+
+
+def _literal_contents(token: str) -> set[str]:
+    """The value inside a literal token, both as written and unescaped."""
+    if token.startswith("$"):
+        tag_end = token.index("$", 1) + 1
+        return {token[tag_end:len(token) - tag_end]}
+    quote = token[0]
+    inner = token[1:-1] if len(token) > 1 and token.endswith(quote) else token[1:]
+    return {inner, inner.replace(quote * 2, quote), inner.replace("\\" + quote, quote)}
+
+
+def redact_sql_literals(sql: Any, *, double_quoted: bool = False) -> str:
+    """Mask every string literal in SQL text, keeping keywords and table/column names.
+
+    ``WHERE password = 'secret'`` becomes ``WHERE password = '***'``.
+    """
+    text = _SQL_STRING_LITERAL_RE.sub(f"'{SQL_LITERAL_REDACTION}'", str(sql))
+    if double_quoted:
+        text = _SQL_DOUBLE_QUOTED_RE.sub(f'"{SQL_LITERAL_REDACTION}"', text)
+    return text
+
+
+def redact_sql_literal_values(
+    message: Any,
+    sql: Any,
+    *,
+    double_quoted: bool = False,
+) -> str:
+    """Remove the string literals of ``sql`` from a driver message about it.
+
+    Drivers repeat the statement (SQLAlchemy's ``[SQL: ...]``) or a literal on
+    its own (``invalid input syntax for type integer: "secret"``,
+    ``Duplicate entry 'secret'``), so each literal's value is masked wherever
+    it appears. A value is only masked as a whole word, so a literal such as
+    'active' does not mangle a table named active_orders.
+    """
+    result = str(message)
+    if not sql:
+        return result
+
+    tokens = _sql_literal_tokens(str(sql), double_quoted)
+    for token in sorted(set(tokens), key=len, reverse=True):
+        quote = '"' if token.startswith('"') else "'"
+        result = result.replace(token, f"{quote}{SQL_LITERAL_REDACTION}{quote}")
+
+    values = {value for token in tokens for value in _literal_contents(token)}
+    for value in sorted(values, key=len, reverse=True):
+        # One-character values would match everywhere; their quoted form is
+        # already masked above.
+        if len(value.strip()) < 2:
+            continue
+        result = re.sub(
+            rf"(?<!\w){re.escape(value)}(?!\w)",
+            SQL_LITERAL_REDACTION,
+            result,
+        )
+    return result
+
+
 def is_sensitive_field_name(field_name: str) -> bool:
     return bool(_SENSITIVE_FIELD_RE.search(field_name or ""))
 
