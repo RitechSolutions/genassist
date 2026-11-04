@@ -7,6 +7,7 @@ This node fetches training data from databases or uploaded files for ML model tr
 import asyncio
 import logging
 import os
+import re
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -34,6 +35,8 @@ from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     SUPPORTED_TRAINING_FILE_LABEL,
     SUPPORTED_TRAINING_FILE_SUFFIXES,
     TrainingFileReader,
+    stored_file_suffix,
+    training_file_suffix,
 )
 from app.modules.workflow.engine.utils import (
     PARAM_STYLE_NAMED,
@@ -335,18 +338,21 @@ class TrainDataSourceNode(BaseNode):
                     )
                     raise self._file_unavailable_error() from None
 
-                source_name = (
-                    csv_file_name
-                    or getattr(stored_file, "name", None)
-                    or getattr(stored_file, "path", None)
-                    or csv_file_path
-                    or ""
+                if stored_file is None:
+                    raise self._file_unavailable_error()
+
+                # The file type comes from the stored record, read the same way
+                # as the preview and profile endpoints. csvFileName comes from
+                # the client, so it only counts when the record has no extension
+                # at all. Those are older uploads that predate extension
+                # tracking; the endpoints reject them, but saved workflows keep
+                # running on them, falling back to the CSV default as before.
+                suffix = (
+                    stored_file_suffix(stored_file)
+                    or training_file_suffix(csv_file_name or "")
+                    or training_file_suffix(csv_file_path or "")
+                    or ".csv"
                 )
-                # Older saved workflows can reference CSV files whose stored
-                # names predate extension tracking. Preserve their historical
-                # CSV behavior while still rejecting explicit unsupported
-                # extensions below.
-                suffix = Path(source_name).suffix.lower() or ".csv"
                 self._validate_training_file_suffix(suffix)
 
                 stored_size = getattr(stored_file, "size", None)
@@ -707,12 +713,15 @@ class TrainDataSourceNode(BaseNode):
         if suffix in SUPPORTED_TRAINING_FILE_SUFFIXES:
             return
 
+        # The suffix can come from a file name, so only echo a plain extension.
+        shown = suffix if re.fullmatch(r"\.[a-z0-9]{1,10}", suffix) else "unknown"
+
         raise AppException(
             error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
             status_code=400,
             error_detail=(
-                "This training file type is not supported. Use one of: "
-                f"{SUPPORTED_TRAINING_FILE_LABEL}."
+                f"This training file type ({shown}) is not "
+                f"supported. Use one of: {SUPPORTED_TRAINING_FILE_LABEL}."
             ),
         )
 
