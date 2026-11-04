@@ -378,3 +378,84 @@ async def test_promote_rejects_incomplete_run_with_client_safe_reason(monkeypatc
     assert body["error_detail"] == "Only completed pipeline runs can be promoted."
     service.config_repository.update.assert_not_awaited()
     model_service.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_promote_applies_run_metrics_with_its_file():
+    pkl_file_id = str(uuid.uuid4())
+    metrics = {"mse": 0.25, "rmse": 0.5, "mae": 0.4, "r2_score": 0.8}
+    service, model_service, model_manager, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/worker/models/run-a.pkl",
+            "pkl_file_id": pkl_file_id,
+            "target_column": "y",
+            "feature_columns": ["x"],
+            "metrics": metrics,
+        }
+    )
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=True),
+    )
+
+    model_service.update.assert_awaited_once()
+    assert _model_update(model_service)["pkl_file_id"] == pkl_file_id
+    assert model_service.update.await_args.kwargs["training_metrics"] == metrics
+    model_manager.invalidate_model.assert_called_once_with(model_id)
+    assert result["model_updated"] is True
+
+
+@pytest.mark.asyncio
+async def test_promote_without_metrics_lets_the_new_file_clear_them():
+    service, model_service, _, model_id, run_id = _make_service(
+        {"model_file_path": "/worker/models/run-a.pkl", "metrics": {"r2_score": 0.8}}
+    )
+
+    await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
+    )
+
+    # None tells MLModelsService.update the file changed without metrics.
+    assert model_service.update.await_args.kwargs["training_metrics"] is None
+
+
+@pytest.mark.asyncio
+async def test_promote_skips_metrics_of_a_file_the_model_does_not_serve():
+    service, model_service, model_manager, model_id, run_id = _make_service(
+        {"pkl_file_id": str(uuid.uuid4()), "metrics": {"accuracy": 0.91}}
+    )
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=False, update_metrics=True),
+    )
+
+    model_service.update.assert_not_awaited()
+    model_manager.invalidate_model.assert_not_called()
+    assert result["model_updated"] is False
+
+
+@pytest.mark.asyncio
+async def test_promote_updates_metrics_only_when_run_file_is_already_served():
+    pkl_file_id = str(uuid.uuid4())
+    metrics = {"accuracy": 0.91, "f1_score": 0.9}
+    service, model_service, model_manager, model_id, run_id = _make_service(
+        {"pkl_file_id": pkl_file_id, "metrics": metrics}
+    )
+    service.model_repository.get_by_id.return_value.pkl_file_id = pkl_file_id
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=False, update_metrics=True),
+    )
+
+    assert _model_update(model_service) == {}
+    assert model_service.update.await_args.kwargs["training_metrics"] == metrics
+    model_manager.invalidate_model.assert_not_called()
+    assert result["model_updated"] is True

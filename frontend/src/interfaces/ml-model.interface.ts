@@ -29,11 +29,13 @@ export interface MLModel {
     ratioBaselineColumn?: string;
     featureDefaults?: Record<string, string | number | boolean>;
   } | null;
+  // Validation metrics for the training run represented by this registry row.
+  training_metrics?: Record<string, number | null> | null;
   created_at?: string;
   updated_at?: string;
   [key: string]: unknown;
 }
 
-export interface MLModelFormData extends Omit<MLModel, 'created_at' | 'updated_at'> {
+export interface MLModelFormData extends Omit<MLModel, 'created_at' | 'updated_at' | 'training_metrics'> {
   pkl_file_id?: string | null;
 }

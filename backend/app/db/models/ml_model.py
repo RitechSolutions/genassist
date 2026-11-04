@@ -41,6 +41,7 @@ class MLModel(Base):
     features: Mapped[list] = mapped_column(ARRAY(String), nullable=False)
     target_variable: Mapped[str] = mapped_column(String(255), nullable=False)
     inference_params: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    training_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     pipeline_configs = relationship("MLModelPipelineConfig", back_populates="model", cascade="all, delete-orphan")
