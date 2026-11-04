@@ -1,23 +1,36 @@
 import io
+from contextvars import Context
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import UploadFile
 
-from app.core.tenant_scope import clear_tenant_context, set_tenant_context
+from app.core.tenant_scope import TenantContextError, clear_tenant_context, set_tenant_context
 from app.core.utils.storage_path import tenant_scoped_storage_prefix
 from app.schemas.file import FileBase
 from app.services.file_manager import FileManagerService
 
 
-def test_tenant_scoped_storage_prefix_adds_tenant_once():
+def test_tenant_scoped_storage_prefix_always_adds_tenant():
     assert tenant_scoped_storage_prefix("uploads", "tenant-a") == "tenant-a/uploads"
-    assert tenant_scoped_storage_prefix("tenant-a/uploads", "tenant-a") == "tenant-a/uploads"
+    assert tenant_scoped_storage_prefix("tenant-a/uploads", "tenant-a") == "tenant-a/tenant-a/uploads"
+
+
+def test_tenant_name_matching_folder_still_gets_separate_prefix():
+    assert tenant_scoped_storage_prefix("uploads", "uploads") == "uploads/uploads"
+
+
+def test_tenant_scoped_storage_prefix_requires_explicit_context():
+    with pytest.raises(TenantContextError, match="No tenant context"):
+        Context().run(tenant_scoped_storage_prefix, "uploads")
 
 
 def test_tenant_scoped_storage_prefix_rejects_invalid_tenant():
     with pytest.raises(ValueError, match="Invalid tenant identifier"):
         tenant_scoped_storage_prefix("uploads", "../tenant-a")
+
+    with pytest.raises(ValueError, match="Invalid tenant identifier"):
+        tenant_scoped_storage_prefix("uploads", "tenant_name")
 
 
 @pytest.mark.asyncio

@@ -6,18 +6,12 @@ import asyncio
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
+from typing import Awaitable, Callable
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class CleanupBucket:
-    provider: object
-    keys: set[str] = field(default_factory=set)
 
 
 async def _selected_tenants(scope: str) -> list[str]:
@@ -38,39 +32,24 @@ async def _selected_tenants(scope: str) -> list[str]:
         return ["master", *rows.scalars().all()]
 
 
-async def _migrate_tenant(tenant: str, *, dry_run: bool):
-    from app.core.config.settings import file_storage_settings
-    from app.core.project_path import DATA_VOLUME
+async def _migrate_tenant(
+    tenant: str,
+    provider_factory: Callable[[str], Awaitable[object]],
+    *,
+    dry_run: bool,
+):
     from app.core.tenant_scope import set_tenant_context
     from app.db.multi_tenant_session import multi_tenant_manager
-    from app.repositories.app_settings import AppSettingsRepository
     from app.repositories.file_manager import FileManagerRepository
-    from app.services.app_settings import AppSettingsService
-    from app.services.file_manager import FileManagerService
     from app.services.s3_tenant_path_migration import migrate_tenant_s3_file_paths
 
     set_tenant_context(tenant)
     session_factory = multi_tenant_manager.get_tenant_session_factory(tenant)
     async with session_factory() as session:
         file_repository = FileManagerRepository(session)
-        file_manager = FileManagerService(file_repository)
-        app_settings = await AppSettingsService(AppSettingsRepository(session)).get_by_type_and_name(
-            "FileManagerSettings",
-            "File Manager Settings",
-        )
-        provider = await file_manager.initialize(
-            base_url=(file_storage_settings.APP_URL or "http://localhost:8000").rstrip("/"),
-            base_path=str(DATA_VOLUME),
-            app_settings=app_settings,
-        )
-        if provider.name != "s3":
-            logger.info("Tenant %s uses %s storage; skipping", tenant, provider.name)
-            await session.rollback()
-            return None, provider
-
         result = await migrate_tenant_s3_file_paths(
             file_repository,
-            provider,
+            provider_factory,
             tenant,
             dry_run=dry_run,
         )
@@ -78,44 +57,79 @@ async def _migrate_tenant(tenant: str, *, dry_run: bool):
             await session.rollback()
         else:
             await session.commit()
-        return result, provider
+        return result
 
 
 async def run(scope: str, *, apply: bool, delete_legacy: bool) -> int:
+    from app.core.config.settings import file_storage_settings
     from app.db.multi_tenant_session import multi_tenant_manager
+    from app.modules.filemanager.providers.s3.provider import S3StorageProvider
+    from app.services.s3_tenant_path_migration import (
+        S3LegacyCleanupCandidate,
+        S3ObjectLocation,
+        delete_unreferenced_legacy_s3_objects,
+    )
 
-    if delete_legacy and (not apply or scope != "all"):
-        raise ValueError("--delete-legacy requires 'all --apply' to protect shared legacy keys.")
+    if delete_legacy and scope != "all":
+        raise ValueError("--delete-legacy requires scope 'all' to scan every tenant reference.")
 
     await multi_tenant_manager.initialize()
     tenants = await _selected_tenants(scope)
-    cleanup: dict[str, CleanupBucket] = {}
+    providers: dict[str, S3StorageProvider] = {}
+    cleanup_candidates: set[S3LegacyCleanupCandidate] = set()
+    legacy_references: set[S3ObjectLocation] = set()
     total_examined = 0
     total_migrated = 0
+    total_failed = 0
+
+    async def provider_for_bucket(bucket: str) -> S3StorageProvider:
+        if bucket not in providers:
+            config = file_storage_settings.model_dump()
+            config["AWS_BUCKET_NAME"] = bucket
+            provider = S3StorageProvider(config=config)
+            await provider.initialize()
+            providers[bucket] = provider
+        return providers[bucket]
 
     for tenant in tenants:
-        result, provider = await _migrate_tenant(tenant, dry_run=not apply)
-        if result is None:
-            continue
+        result = await _migrate_tenant(
+            tenant,
+            provider_for_bucket,
+            dry_run=not apply,
+        )
         total_examined += result.examined
         total_migrated += result.migrated
+        total_failed += result.failed
+        cleanup_candidates.update(result.cleanup_candidates)
+        legacy_references.update(result.legacy_references)
         logger.info(
-            "Tenant %s: examined=%s migrated=%s already_scoped=%s",
+            "Tenant %s: examined=%s migrated=%s already_scoped=%s failed=%s",
             tenant,
             result.examined,
             result.migrated,
             result.skipped,
+            result.failed,
         )
-        if apply and delete_legacy and result.legacy_keys:
-            bucket = provider.get_base_path()
-            cleanup.setdefault(bucket, CleanupBucket(provider=provider)).keys.update(result.legacy_keys)
+        for error in result.errors:
+            logger.error("Tenant %s: %s", tenant, error)
 
-    if apply and delete_legacy:
-        for bucket, pending in cleanup.items():
-            for key in sorted(pending.keys):
-                if not await pending.provider.delete_file(key):
-                    raise RuntimeError(f"Failed to delete legacy S3 object s3://{bucket}/{key}.")
-                logger.info("Deleted legacy S3 object s3://%s/%s", bucket, key)
+    if delete_legacy:
+        cleanup = await delete_unreferenced_legacy_s3_objects(
+            cleanup_candidates,
+            legacy_references,
+            provider_for_bucket,
+        )
+        total_failed += cleanup.failed
+        logger.info(
+            "Legacy cleanup: examined=%s deleted=%s referenced=%s missing=%s failed=%s",
+            cleanup.examined,
+            cleanup.deleted,
+            cleanup.skipped_referenced,
+            cleanup.skipped_missing,
+            cleanup.failed,
+        )
+        for error in cleanup.errors:
+            logger.error("Legacy cleanup: %s", error)
 
     mode = "applied" if apply else "dry-run"
     logger.info(
@@ -125,7 +139,7 @@ async def run(scope: str, *, apply: bool, delete_legacy: bool) -> int:
         total_examined,
         total_migrated,
     )
-    return 0
+    return 1 if total_failed else 0
 
 
 def _parse_args() -> argparse.Namespace:
@@ -139,7 +153,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--delete-legacy",
         action="store_true",
-        help="After a successful all-tenant apply, delete the old unscoped objects.",
+        help=(
+            "With scope 'all', delete verified old unscoped objects no active file row "
+            "references. May be run separately after --apply."
+        ),
     )
     return parser.parse_args()
 

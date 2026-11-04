@@ -42,9 +42,6 @@ def _row(**kwargs):
     return SimpleNamespace(**defaults)
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_complete_session_fails_for_missing_staged_file(monkeypatch):
     repo = AsyncMock()
@@ -63,7 +60,6 @@ async def test_complete_session_fails_for_missing_staged_file(monkeypatch):
         )
 
 
-
 # ==================== Direct S3 (presigned PUT) flow tests ====================
 
 
@@ -73,9 +69,7 @@ def _build_fm_service(provider_name: str = "s3"):
     storage = MagicMock()
     storage.name = provider_name
     storage.get_base_path = MagicMock(return_value="my-bucket")
-    storage.generate_presigned_put_url = AsyncMock(
-        return_value="https://my-bucket.s3.amazonaws.com/key?sig"
-    )
+    storage.generate_presigned_put_url = AsyncMock(return_value="https://my-bucket.s3.amazonaws.com/key?sig")
     storage.head_object = AsyncMock()
     storage.delete_file = AsyncMock(return_value=True)
     fm.initialize.return_value = storage
@@ -104,9 +98,7 @@ async def test_create_direct_upload_session_disabled_flag_returns_501(monkeypatc
 
     with pytest.raises(AppException) as ei:
         await service.create_direct_upload_session(
-            PresignDirectUploadCreate(
-                original_filename="x.pdf", expected_size=10, content_type="application/pdf"
-            ),
+            PresignDirectUploadCreate(original_filename="x.pdf", expected_size=10, content_type="application/pdf"),
             request=SimpleNamespace(base_url="http://localhost/"),
             file_manager_service=AsyncMock(),
             app_settings_svc=AsyncMock(),
@@ -123,9 +115,7 @@ async def test_create_direct_upload_session_wrong_provider_returns_501(monkeypat
 
     with pytest.raises(AppException) as ei:
         await service.create_direct_upload_session(
-            PresignDirectUploadCreate(
-                original_filename="x.pdf", expected_size=10, content_type="application/pdf"
-            ),
+            PresignDirectUploadCreate(original_filename="x.pdf", expected_size=10, content_type="application/pdf"),
             request=SimpleNamespace(base_url="http://localhost/"),
             file_manager_service=fm,
             app_settings_svc=_build_settings_svc(),
@@ -172,6 +162,34 @@ async def test_create_direct_upload_session_happy_path(monkeypatch):
     assert persisted.status == STATUS_AWAITING_CLIENT_UPLOAD
     assert persisted.upload_mode == UPLOAD_MODE_DIRECT_S3
     assert persisted.result_json["file_id"] == str(file_uuid)
+
+
+@pytest.mark.asyncio
+async def test_direct_upload_prefixes_when_tenant_matches_upload_folder(monkeypatch):
+    repo = AsyncMock()
+    service = FileUploadSessionService(repo)
+    monkeypatch.setattr(service, "_direct_s3_enabled", lambda: True)
+
+    fm, _ = _build_fm_service()
+    fm.repository.create_file.return_value = SimpleNamespace(id=uuid.uuid4())
+
+    set_tenant_context("uploads")
+    try:
+        response = await service.create_direct_upload_session(
+            PresignDirectUploadCreate(
+                original_filename="report.pdf",
+                expected_size=2048,
+                content_type="application/pdf",
+            ),
+            request=SimpleNamespace(base_url="http://localhost/"),
+            file_manager_service=fm,
+            app_settings_svc=_build_settings_svc(),
+            sub_folder="uploads",
+        )
+    finally:
+        clear_tenant_context()
+
+    assert response.object_key.startswith("uploads/uploads/")
 
 
 @pytest.mark.asyncio
@@ -240,9 +258,7 @@ async def test_finalize_direct_upload_client_failure_cleans_up():
     with pytest.raises(ValueError, match="Client reported upload failure"):
         await service.finalize_direct_upload_session(
             sid,
-            FinalizeDirectUploadRequest(
-                success=False, error_message="Client reported upload failure."
-            ),
+            FinalizeDirectUploadRequest(success=False, error_message="Client reported upload failure."),
             request=SimpleNamespace(base_url="http://localhost/"),
             file_manager_service=fm,
             app_settings_svc=_build_settings_svc(),
