@@ -229,10 +229,19 @@ def validate_pickle_file_safe(pkl_file: str, **_kwargs) -> Tuple[bool, Optional[
         logger.error("Unable to read pickle file %s: %s", pkl_file, type(exc).__name__)
         return False, error_msg
 
+    return validate_pickle_bytes_safe(data, pkl_file)
+
+
+def validate_pickle_bytes_safe(data: bytes, source: str) -> Tuple[bool, Optional[str]]:
+    """Run the opcode scan of ``validate_pickle_file_safe`` on bytes already in memory.
+
+    For callers that hold the bytes they will load (for example a copy downloaded
+    to a temporary folder), so the checked bytes are the loaded bytes.
+    """
     try:
         _validate_pickle_data(data)
 
-        logger.info("Model validation passed: %s", pkl_file)
+        logger.info("Model validation passed: %s", source)
         return True, None
 
     except _PickleValidationError as exc:
@@ -241,7 +250,7 @@ def validate_pickle_file_safe(pkl_file: str, **_kwargs) -> Tuple[bool, Optional[
         return False, error_msg
     except Exception as exc:
         error_msg = "Malformed pickle file. Re-export the model with a supported pickle format."
-        logger.error("Pickle parsing failed for %s: %s", pkl_file, type(exc).__name__)
+        logger.error("Pickle parsing failed for %s: %s", source, type(exc).__name__)
         return False, error_msg
 
 

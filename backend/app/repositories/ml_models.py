@@ -1,9 +1,10 @@
 from uuid import UUID
 from injector import inject
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
-from typing import List, Optional
+from typing import List, Optional, Sequence
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.ml_model import MLModel
@@ -69,6 +70,26 @@ class MLModelsRepository(DbRepository[MLModel]):
         )
         result = await self.db.execute(query)
         return result.scalars().first()
+
+    async def is_file_referenced(self, pkl_file_id: UUID, pkl_file_paths: Sequence[str] = ()) -> bool:
+        """True when a live ML model points at this File Manager file, by id or by path.
+
+        pkl_file_id is stored as free text, so the stored id is cleaned the way Python's
+        UUID() reads it (no case, hyphens, braces, "urn:" or "uuid:" prefix): any spelling
+        that still names this file counts.
+        """
+        stored_id = func.lower(MLModel.pkl_file_id)
+        for noise in ("urn:", "uuid:", "-", "{", "}"):
+            stored_id = func.replace(stored_id, noise, "")
+        matches = [stored_id == pkl_file_id.hex]
+        if pkl_file_paths:
+            matches.append(MLModel.pkl_file.in_(list(pkl_file_paths)))
+        query = select(MLModel.id).where(
+            or_(*matches),
+            MLModel.is_deleted == 0,
+        ).limit(1)
+        result = await self.db.execute(query)
+        return result.first() is not None
 
     async def get_all(self) -> List[MLModel]:
         """Fetch all ML models."""
