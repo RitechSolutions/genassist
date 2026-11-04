@@ -42,6 +42,15 @@ class KnowledgeBaseRepository(DbRepository[KnowledgeBaseModel]):
         rows = (await self.db.execute(data_stmt)).all()
         return rows, total
 
+    async def get_all_minimal(self):
+        stmt = (
+            select(KnowledgeBaseModel.id, KnowledgeBaseModel.name)
+            .where(KnowledgeBaseModel.is_deleted == 0)
+            .order_by(KnowledgeBaseModel.created_at.asc())
+        )
+        result = await self.db.execute(stmt)
+        return result.all()
+
     async def get_all(
         self,
         *,
