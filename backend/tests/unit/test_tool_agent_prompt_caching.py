@@ -40,6 +40,9 @@ _TOOL_CALL_JSON = json.dumps(
         "reasoning": "the user asked for weather",
     }
 )
+_UNKNOWN_TOOL_JSON = json.dumps(
+    {"action": "tool_call", "tool_name": "forecast", "parameters": {"city": "Berlin"}, "reasoning": "guess"}
+)
 
 
 class _CapturingModel(BaseChatModel):
@@ -452,6 +455,26 @@ class TestUntouchedPaths:
 
         assert result["status"] == "error"
         assert "provider down" in result["error"]
+
+
+@pytest.mark.asyncio
+class TestUnknownToolName:
+    async def test_the_miss_is_fed_back_and_the_loop_continues(self):
+        tool = _weather_tool()
+        agent, inner = _agent(tools=[tool], replies=[_UNKNOWN_TOOL_JSON, _DIRECT_JSON])
+
+        result = await agent.invoke(_QUERY)
+
+        miss = "Tool 'forecast' not found. Available tools: ['weather']"
+        assert result["status"] == "success"
+        assert result["response"] == "It is sunny."
+        assert len(inner.seen) == 2
+        _, second_user = _split_turns(inner)
+        assert f"Tool Result from forecast: {miss}" in second_user
+        assert result["tools_used"] == [
+            {"tool_name": "forecast", "args": {"city": "Berlin"}, "reasoning": "guess", "result": miss}
+        ]
+        tool.function.assert_not_awaited()
 
 
 _NO_TOOLS_PORTION = """CTX
