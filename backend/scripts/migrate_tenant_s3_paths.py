@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """Move legacy File Manager S3 objects under tenant-scoped keys (tenants/<slug>/...).
 
+Only run it against a bucket that belongs to this one deployment. The script sees only
+the file rows in the databases it is connected to, so --delete-legacy deletes an old
+object once none of those rows reference it. On a shared bucket, such as a dev bucket
+used by several developers' local stacks, that can delete objects another stack still
+needs. A staging copy of production data whose AWS_BUCKET_NAME (or --bucket) is the
+production bucket would make --apply and --delete-legacy change production objects.
+Check AWS_BUCKET_NAME and every --bucket before running.
+
 Run it during a maintenance window: rows are read at the start of each tenant and
 written at the end, so file changes made by the live app meanwhile could be overwritten.
 """
@@ -224,7 +232,7 @@ async def run(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.epilog = "Exit codes: 0 done, 1 errors, 2 some rows need review (see the warnings)."
     parser.add_argument("scope", help="Tenant slug, 'master', or 'all'.")
     parser.add_argument(
@@ -237,14 +245,19 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Requires 'all --apply'. Delete old objects this migration copied, once no file row "
-            "in any tenant (active or soft-deleted) still references them. Can be repeated later."
+            "in any tenant (active or soft-deleted) still references them. Can be repeated later. "
+            "Only rows in the connected databases are checked, so never use it on a bucket "
+            "another deployment or developer stack also uses."
         ),
     )
     parser.add_argument(
         "--bucket",
         action="append",
         default=[],
-        help="Also migrate rows saved in this bucket (repeatable). AWS_BUCKET_NAME is always included.",
+        help=(
+            "Also migrate rows saved in this bucket (repeatable). AWS_BUCKET_NAME is always included. "
+            "Only name buckets that belong to this deployment."
+        ),
     )
     return parser.parse_args()
 
