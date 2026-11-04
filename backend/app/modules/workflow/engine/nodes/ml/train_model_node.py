@@ -971,6 +971,7 @@ class TrainModelNode(BaseNode):
                     feature_columns=feature_columns,
                     target_column=target_column,
                     local_pkl_path=model_artifact["model_file_path"],
+                    training_metrics=metrics,
                     target_model_id=target_model_id,
                     target_transform=target_transform,
                     categorical_feature_contracts=categorical_feature_contracts,
@@ -2227,6 +2228,7 @@ class TrainModelNode(BaseNode):
         feature_columns: list,
         target_column: str,
         local_pkl_path: str,
+        training_metrics: Optional[Dict[str, Any]] = None,
         target_model_id: Optional[str] = None,
         target_transform: Optional[dict] = None,
         categorical_feature_contracts: Optional[Dict[str, Any]] = None,
@@ -2239,6 +2241,9 @@ class TrainModelNode(BaseNode):
 
         Args:
             local_pkl_path: Local path to the freshly fit model to upload.
+            training_metrics: Validation metrics calculated for this training
+                run. The new file replaces the model's, so ``None`` and an empty
+                dictionary both record that it has no validation metrics.
             target_model_id: When set (an ML Model Pipeline run targets a
                 specific model), that model is updated directly. Otherwise
                 falls back to looking the model up by ``name`` — which is
@@ -2357,12 +2362,17 @@ class TrainModelNode(BaseNode):
             )
             if existing:
                 updated = await ml_service.update(
-                    existing.id, MLModelUpdate(**model_fields), artifact_contract=artifact_contract
+                    existing.id,
+                    MLModelUpdate(**model_fields),
+                    artifact_contract=artifact_contract,
+                    training_metrics=training_metrics,
                 )
                 return str(updated.id), resolved_pkl_file_id, None, registration_warnings
 
             created = await ml_service.create(
-                MLModelCreate(name=name, **model_fields), artifact_contract=artifact_contract
+                MLModelCreate(name=name, **model_fields),
+                artifact_contract=artifact_contract,
+                training_metrics=training_metrics,
             )
             return str(created.id), resolved_pkl_file_id, None, registration_warnings
 
