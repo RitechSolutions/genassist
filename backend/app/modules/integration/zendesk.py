@@ -10,7 +10,56 @@ from fastapi import HTTPException
 from app.core.config.settings import settings
 from app.core.utils.date_time_utils import utc_now
 
+try:
+    from ddtrace import tracer
+except ImportError:  # ddtrace is injected by the Datadog agent in deployed envs only
+    tracer = None
+
 logger = logging.getLogger(__name__)
+
+
+def _zendesk_error_details(response: httpx.Response) -> Tuple[str, str]:
+    """Return ``(error, field)`` from a Zendesk error response, without user data.
+
+    Zendesk replies e.g. ``{"error": "RecordInvalid", "details": {"requester": [...]}}``;
+    only the error type and the first rejected field name are kept, never the
+    descriptions (they can contain the requester's email address).
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return "unknown", "unknown"
+    if not isinstance(body, dict):
+        return "unknown", "unknown"
+    error = body.get("error")
+    if isinstance(error, dict):
+        error = error.get("title")
+    details = body.get("details")
+    field = next(iter(details), None) if isinstance(details, dict) else None
+    return str(error or "unknown"), str(field or "unknown")
+
+
+class ZendeskAPIError(HTTPException):
+    """A Zendesk HTTP error that carries only the error type and field, never the body."""
+
+    def __init__(self, context: str, status_code: int, error: str, field: str):
+        super().__init__(
+            status_code=status_code,
+            detail=f"{context} error [{status_code}]: error={error} field={field}",
+        )
+        self.error = error
+        self.field = field
+
+
+def _mark_span_failed(status_code: int, error: str, field: str) -> None:
+    """Tag the active trace span with the Zendesk failure reason and mark it as failed."""
+    span = tracer.current_span() if tracer else None
+    if span is None:
+        return
+    span.error = 1
+    span.set_tag("zendesk.status_code", status_code)
+    span.set_tag("zendesk.error", error)
+    span.set_tag("zendesk.field", field)
 
 
 class ZendeskConnector:
@@ -155,13 +204,11 @@ class ZendeskConnector:
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"{context} error [{e.response.status_code}]: {e.response.text}"
-                )
-                raise HTTPException(
-                    status_code=e.response.status_code,
-                    detail=e.response.text,
-                ) from e
+                # Never log or raise the response body: it can contain the requester's email.
+                error, field = _zendesk_error_details(e.response)
+                api_error = ZendeskAPIError(context, e.response.status_code, error, field)
+                logger.error(api_error.detail)
+                raise api_error from e
             except httpx.RequestError as e:
                 logger.error(
                     "%s network error (check worker outbound access, proxy, DNS): %s",
@@ -297,7 +344,12 @@ class ZendeskConnector:
         try:
             result = await self._make_request("POST", url, json=payload)
             return {"status": 200, "data": result}
-        except HTTPException:
+        except ZendeskAPIError as e:
+            _mark_span_failed(e.status_code, e.error, e.field)
+            return None
+        except HTTPException as e:
+            # Network error: Zendesk was never reached.
+            _mark_span_failed(e.status_code, "network_error", "unknown")
             return None
 
     async def update_ticket(
