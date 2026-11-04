@@ -5,6 +5,8 @@ from fastapi import Form, UploadFile
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from datetime import datetime
 
+from app.core.utils.storage_path import strip_reserved_file_metadata
+
 StorageProviderType = Literal["local", "s3", "azure", "gcs", "sharepoint"]
 
 
@@ -55,6 +57,8 @@ class FileBase(BaseModel):
         out = dict(data)
         if isinstance(out.get("file_metadata"), str):
             out["file_metadata"] = _parse_form_json_dict(out["file_metadata"])
+        if "file_metadata" in out:
+            out["file_metadata"] = strip_reserved_file_metadata(out["file_metadata"])
         if isinstance(out.get("tags"), str):
             out["tags"] = _parse_form_json_list_str(out["tags"])
         if isinstance(out.get("permissions"), str):

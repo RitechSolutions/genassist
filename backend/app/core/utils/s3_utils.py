@@ -225,13 +225,38 @@ class S3Client:
             logger.error(f"Error deleting file from S3: {str(e)}")
             return False
 
+    _COPIED_HEADERS = (
+        "ContentType",
+        "ContentEncoding",
+        "ContentDisposition",
+        "ContentLanguage",
+        "CacheControl",
+        "ServerSideEncryption",
+        "SSEKMSKeyId",
+        "StorageClass",
+    )
+
     def copy_file(self, source_key: str, destination_key: str) -> bool:
-        """Copy an object within the configured bucket."""
+        """Copy an object within the configured bucket, keeping its headers and metadata.
+
+        The managed ``copy`` switches to a multipart copy for large objects, which does
+        not carry over the source headers, so they are passed explicitly, including the
+        encryption settings and storage class.
+        """
         try:
+            source = self.s3_client.head_object(Bucket=self.bucket_name, Key=source_key)
+            extra_args: Dict[str, Any] = {
+                "MetadataDirective": "REPLACE",
+                "Metadata": source.get("Metadata", {}),
+            }
+            for header in self._COPIED_HEADERS:
+                if source.get(header) is not None:
+                    extra_args[header] = source[header]
             self.s3_client.copy(
                 Bucket=self.bucket_name,
                 CopySource={"Bucket": self.bucket_name, "Key": source_key},
                 Key=destination_key,
+                ExtraArgs=extra_args,
             )
             return True
         except ClientError as e:
