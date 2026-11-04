@@ -22,6 +22,7 @@ import {
 } from "../helpers/evaluationForm";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
 import { WORKFLOW_SUMMARIES_QUERY_KEY } from "../hooks/useEvaluationData";
+import { CATEGORIES_QUERY_KEY } from "../hooks/useCategories";
 import { previewedForEditing } from "../hooks/useChecksPreview";
 import { EvaluationEditor } from "./EvaluationEditor";
 
@@ -92,8 +93,12 @@ export const EvaluationEditorView: React.FC<EvaluationEditorViewProps> = ({
     let savedId: string;
     if (evaluationId) {
       try {
-        // "" clears the description; undefined would keep the old one.
-        const updated = await updateTestEvaluation(evaluationId, { ...payload, description: data.description.trim() });
+        // "" clears the description and category; undefined would keep the old ones.
+        const updated = await updateTestEvaluation(evaluationId, {
+          ...payload,
+          description: data.description.trim(),
+          category: data.category,
+        });
         if (!updated) {
           toast.error("You don't have permission to edit evaluations.");
           return;
@@ -109,7 +114,11 @@ export const EvaluationEditorView: React.FC<EvaluationEditorViewProps> = ({
       savedId = evaluationId;
       toast.success("Evaluation updated");
     } else {
-      const created = await createTestEvaluation({ ...payload, description: data.description.trim() || undefined });
+      const created = await createTestEvaluation({
+        ...payload,
+        description: data.description.trim() || undefined,
+        category: data.category || undefined,
+      });
       if (!created?.id) {
         toast.error("You don't have permission to create evaluations.");
         return;
@@ -120,6 +129,7 @@ export const EvaluationEditorView: React.FC<EvaluationEditorViewProps> = ({
     // Its workflow may have changed, so every list and the summaries are read again.
     void queryClient.invalidateQueries({ queryKey: WORKFLOW_SUMMARIES_QUERY_KEY });
     void queryClient.invalidateQueries({ queryKey: ["workflow-evaluations"] });
+    void queryClient.invalidateQueries({ queryKey: CATEGORIES_QUERY_KEY });
     if (options?.run) {
       try {
         const started = await runTestEvaluation(savedId, options.targetWorkflowId);

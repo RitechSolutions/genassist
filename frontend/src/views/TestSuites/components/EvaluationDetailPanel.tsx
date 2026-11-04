@@ -3,8 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { Button } from "@/components/button";
-import { Badge } from "@/components/badge";
-import { ChevronLeft, Pencil, GitCompareArrows, Play, Loader2 } from "lucide-react";
+import { ChevronLeft, Pencil, GitCompareArrows, Play } from "lucide-react";
 import {
   getTestRunsBatch,
   listTestCases,
@@ -34,10 +33,10 @@ import {
   runAvgAccuracy,
   runGradesTurns,
   runFailureText,
-  runHasResults,
+  runInProgressText,
   runName,
-  runProgressText,
-  runStatusLabel,
+  runDate,
+  runOpens,
   turnsPassed,
 } from "../helpers/runResults";
 import { isRunConflict, runStartErrorMessage } from "../helpers/runErrors";
@@ -46,9 +45,10 @@ import { ChecksDialog } from "./ChecksDialog";
 import { CompareConversationView } from "./CompareConversationView";
 import { ConversationResultView } from "./ConversationResultView";
 import { LeftOutNote } from "./LeftOutNote";
+import { CategoryBadge } from "./CategoryBadge";
 import { RunCompareView } from "./RunCompareView";
 import { RunResultsView } from "./RunResultsView";
-import { type RunContext, VerdictTally } from "./resultsParts";
+import { type RunContext, RunningStatus, VerdictTally } from "./resultsParts";
 import { runConversationCounts, tallySlots } from "../helpers/runConversations";
 import {
   backFromConversation,
@@ -118,34 +118,18 @@ const SummaryItem: React.FC<{ label: string; children: React.ReactNode }> = ({ l
   </div>
 );
 
-// "completed" is the happy path and adds no signal, so it is not badged — only
-// in-progress and failure states show.
-const RunStatusBadge: React.FC<{ status: string }> = ({ status }) => {
-  if (status === "completed") return null;
-  const inProgress = status === "queued" || status === "running";
-  return (
-    <Badge variant="outline" className="flex items-center gap-1 shrink-0">
-      {inProgress && <Loader2 className="h-3 w-3 animate-spin" />}
-      {runStatusLabel(status)}
-    </Badge>
-  );
-};
-
 /** A run's name, the workflow version it played and when, one to a line. */
 const RunFacts: React.FC<{ run: TestRun }> = ({ run }) => (
   <div className="min-w-0 space-y-0.5">
-    <div className="flex items-center gap-2">
-      <span className="font-semibold">{runName(run)}</span>
-      {/* A failed run says so beside it, with why. */}
-      {run.status !== "failed" && <RunStatusBadge status={run.status} />}
-    </div>
+    {/* How the run went, or is going, shows where its results are, not as a badge here. */}
+    <div className="font-semibold">{runName(run)}</div>
     {run.workflow_version && (
       <div className="text-xs text-muted-foreground">
         Workflow version: <span className="text-foreground">{run.workflow_version}</span>
       </div>
     )}
     <div className="text-xs text-muted-foreground">
-      Ran on: <span className="text-foreground">{new Date(run.created_at ?? "").toLocaleString()}</span>
+      Ran on: <span className="text-foreground">{runDate(run)}</span>
     </div>
   </div>
 );
@@ -638,6 +622,10 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
       <div className="text-sm text-red-600 dark:text-red-400">
         {runFailureText(lastRun)}
       </div>
+    ) : isRunInProgress(lastRun) ? (
+      <RunningStatus className="text-sm" iconClassName="h-3.5 w-3.5">
+        {runInProgressText(lastRun)}
+      </RunningStatus>
     ) : lastRun.status === "completed" && lastRunCounts ? (
       <VerdictTally counts={lastRunCounts} className="text-lg font-semibold" iconClassName="h-5 w-5" slots={runSlots} />
     ) : lastRun.status === "completed" && verdictFirst && lastRunVerdict && verdictGraded > 0 ? (
@@ -684,11 +672,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
         </span>
       </div>
     ) : (
-      <div className="text-sm text-muted-foreground">
-        {lastRun.status === "completed"
-          ? "No score"
-          : runProgressText(lastRun) ?? "Not scored yet"}
-      </div>
+      <div className="text-sm text-muted-foreground">No score</div>
     )
   );
   const lastRunNotes = lastRun && (
@@ -713,7 +697,10 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   // The facts on the left, the result large on the right.
   const lastRunLayout = (
     <>
-      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Last Run</div>
+      {/* A run still going is no last run yet. */}
+      <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {lastRun && isRunInProgress(lastRun) ? "Current Run" : "Last Run"}
+      </div>
       {lastRun && !isLoadingRuns ? (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 space-y-1">
@@ -733,9 +720,9 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
   );
 
   // Opens the last run on click, like a row in the list.
-  // A failed run with no results says all it has here, so it does not open.
+  // A run still going, or a failed run with no results, says all it has here, so it does not open.
   const lastRunCard =
-    lastRun && !isLoadingRuns && runHasResults(lastRun) ? (
+    lastRun && !isLoadingRuns && runOpens(lastRun) ? (
       <button
         type="button"
         onClick={() => openRun(lastRun.id)}
@@ -780,7 +767,7 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
           {pagedRuns.map((run) => {
             const counts = runConversationCounts(run);
             const avgAccuracy = counts ? null : runAvgAccuracy(run);
-            const opens = runHasResults(run);
+            const opens = runOpens(run);
             const Row = opens ? "button" : "div";
             return (
               <Row
@@ -795,8 +782,10 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
                 <div className="flex min-w-0 sm:max-w-md sm:justify-end sm:text-right">
                   {run.status === "failed" ? (
                     <span className="text-sm text-red-600 dark:text-red-400">{runFailureText(run)}</span>
-                  ) : run.status !== "completed" ? (
-                    <span className="text-sm text-muted-foreground">{runProgressText(run) ?? "Not scored yet"}</span>
+                  ) : isRunInProgress(run) ? (
+                    <RunningStatus className="text-sm" iconClassName="h-3.5 w-3.5">
+                      {runInProgressText(run)}
+                    </RunningStatus>
                   ) : counts ? (
                     <VerdictTally
                       counts={counts}
@@ -847,9 +836,10 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
           <ChevronLeft className="h-5 w-5" />
         </Button>
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold tracking-tight animate-fade-down">
-            {evaluation.name}
-          </h1>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-2xl font-bold tracking-tight animate-fade-down">{evaluation.name}</h1>
+            {evaluation.category && <CategoryBadge name={evaluation.category} />}
+          </div>
           {evaluation.description && (
             <p className="truncate text-sm text-muted-foreground">{evaluation.description}</p>
           )}
@@ -871,13 +861,11 @@ export const EvaluationDetailPanel: React.FC<EvaluationDetailPanelProps> = ({
             onClick={() => (pickVersionOnRun ? setIsVersionDialogOpen(true) : void handleRunEvaluation())}
             disabled={isRunning}
             aria-label="Run evaluation"
+            title={isRunning ? "This evaluation is already running" : undefined}
           >
-            {isRunning ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="mr-2 h-4 w-4" />
-            )}
-            {isRunning ? "Running..." : "Run"}
+            {/* The run card below says how the run is going, so the button keeps its name. */}
+            <Play className="mr-2 h-4 w-4" />
+            Run
           </Button>
         </div>
       </div>

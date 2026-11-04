@@ -48,6 +48,7 @@ import {
   WorkflowTriggerMethod,
   WorkflowTriggerRunStatus,
 } from "@/interfaces/workflow-trigger.interface";
+import { formatDateTime } from "@/helpers/utils";
 
 import { WebhookFieldMapping, WebhookTriggerNodeData } from "../types/nodes";
 import { useNodeDialogState } from "./useNodeDialogState";
@@ -83,8 +84,6 @@ const copy = (text: string, what: string) => {
   void navigator.clipboard.writeText(text);
   toast.success(`${what} copied.`);
 };
-
-const formatDate = (value?: string | null) => (value ? new Date(value).toLocaleString() : "—");
 
 export const WebhookTriggerDialog: React.FC<WebhookTriggerDialogProps> = (props) => {
   const { isOpen, onClose, data, nodeId } = props;
@@ -681,7 +680,7 @@ export const WebhookTriggerDialog: React.FC<WebhookTriggerDialogProps> = (props)
                       {run.status}
                     </Badge>
                     <span className="font-mono">{run.id.slice(0, 8)}</span>
-                    <span className="flex-1 truncate text-muted-foreground">{formatDate(run.created_at)}</span>
+                    <span className="flex-1 truncate text-muted-foreground">{formatDateTime(run.created_at)}</span>
                     {run.idempotency_key && (
                       <span className="truncate font-mono text-muted-foreground" title="Idempotency key">
                         {run.idempotency_key}
@@ -696,8 +695,8 @@ export const WebhookTriggerDialog: React.FC<WebhookTriggerDialogProps> = (props)
                     <p className="text-xs text-destructive">{openRun.error_message}</p>
                   )}
                   <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <span>Started: {formatDate(openRun.started_at)}</span>
-                    <span>Completed: {formatDate(openRun.completed_at)}</span>
+                    <span>Started: {formatDateTime(openRun.started_at)}</span>
+                    <span>Completed: {formatDateTime(openRun.completed_at)}</span>
                     <span className="col-span-2 font-mono">Thread: {openRun.thread_id ?? "—"}</span>
                   </div>
                   <JsonViewer data={(openRun.input_data ?? {}) as unknown as JsonValue} name="input" collapsed />

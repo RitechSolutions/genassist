@@ -535,14 +535,14 @@ export interface MLModelInferenceNodeData extends BaseNodeData {
 
 // Train Data Source Node Data
 export interface TrainDataSourceNodeData extends BaseNodeData {
-  sourceType: "datasource" | "csv"; // Type of data source
-  dataSourceId?: string; // ID of the datasource (for timedb/snowflake)
-  dataSourceType?: string; // Type of datasource (timedb/snowflake)
+  sourceType: "" | "datasource" | "csv"; // Empty until a training source is selected
+  dataSourceId?: string; // ID of the database data source
   query?: string; // SQL query to fetch data
-  csvFileName?: string; // Name of the uploaded CSV file
-  csvFilePath?: string; // Server path to the uploaded CSV file
-  csvFileId?: string; // ID of the uploaded CSV file
-  csvFileUrl?: string; // URL of the uploaded CSV file
+  csvFileName?: string; // Name of the uploaded training file
+  csvFilePath?: string; // Server path to the uploaded training file
+  csvFileId?: string; // ID of the uploaded training file
+  csvFileUrl?: string; // URL of the uploaded training file
+  sheetName?: string; // Excel uploads: the sheet to read (default: the first)
   analysisResult?: CSVAnalysisResult; // Preview/analysis of the uploaded file
 }
 
@@ -552,6 +552,7 @@ export interface PreprocessingNodeData extends BaseNodeData {
   fileUrl?: string; // URL to the file for preprocessing
   analysisResult?: CSVAnalysisResult; // Initial CSV analysis result (for backward compatibility)
   stepAnalysisResults?: Record<string, CSVAnalysisResult>; // Analysis results for each step (keyed by step ID or "initial")
+  analyzedFileUrl?: string; // Resolved file the analysis results were made from; a different current file means they're stale
   // The configured steps, stored as data - the dialog's source of truth.
   // pythonCode is generated from it. Missing on nodes saved before this was
   // added; those are read from pythonCode once and gain it on their next save.
@@ -677,6 +678,8 @@ export interface FeatureEngineeringItem {
   sourceColumns?: string[];
   numBins?: number;
   binColumn?: string;
+  // "uniform" = equal-width bins (default), "quantile" = equal-frequency
+  binStrategy?: "uniform" | "quantile";
   polynomialDegree?: number;
   polynomialColumns?: string[];
   // Column transforms (log/quantile/power/PCA) read sourceColumns, plus:

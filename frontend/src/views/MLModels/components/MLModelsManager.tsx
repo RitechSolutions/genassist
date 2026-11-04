@@ -29,6 +29,7 @@ import { MLModel } from "@/interfaces/ml-model.interface";
 import {
   createMLModel,
   deleteMLModel,
+  discardModelUpload,
   getAllMLModels,
   getMLModel,
   updateMLModel,
@@ -39,6 +40,7 @@ import { ModelFilePicker } from "./ModelFilePicker";
 import {
   buildInferenceParams,
   featureDefaultsUpdate,
+  isRejectedRequest,
   latestInferenceParams,
   mlModelSaveErrorMessage,
 } from "./mlModelForm";
@@ -240,6 +242,11 @@ const MLModelsManager: React.FC = () => {
     e.preventDefault();
     if (!validate()) return;
 
+    // The file is uploaded before the model is saved; if the save is then rejected,
+    // this upload is removed again so it doesn't stay behind in File Manager.
+    let uploadedFileId: string | null = null;
+    let saveSent = false;
+    let saved = false;
     try {
       setIsSaving(true);
 
@@ -248,6 +255,7 @@ const MLModelsManager: React.FC = () => {
       if (values.pendingFile) {
         const uploaded = await uploadModelFile(values.pendingFile);
         if (!uploaded?.file_id && !uploaded?.file_path) throw new Error("File upload failed.");
+        uploadedFileId = uploaded.file_id ?? null;
         pklFile = uploaded.file_path ?? null;
         pklFileId = uploaded.file_id ?? null;
       }
@@ -285,18 +293,26 @@ const MLModelsManager: React.FC = () => {
           ? { ...payload, inference_params: inferenceParams }
           : payload;
 
+      saveSent = true;
       if (editingItem) {
         await updateMLModel(editingItem.id, payloadWithInferenceParams);
+        saved = true;
         void queryClient.invalidateQueries({ queryKey: ["ml-model", editingItem.id] });
         toast.success(`ML model "${payload.name}" updated.`);
       } else {
         await createMLModel({ ...payloadWithInferenceParams, id: uuidv4() });
+        saved = true;
         toast.success(`ML model "${payload.name}" created.`);
       }
 
       closeForm();
       void refetch();
     } catch (err) {
+      // After a timeout or a network/5xx error the server may still save the model,
+      // so the upload is kept unless the save never left or the server refused it.
+      if (uploadedFileId && !saved && (!saveSent || isRejectedRequest(err))) {
+        void discardModelUpload(uploadedFileId);
+      }
       toast.error(mlModelSaveErrorMessage(err, editingItem ? "update" : "create"));
     } finally {
       setIsSaving(false);

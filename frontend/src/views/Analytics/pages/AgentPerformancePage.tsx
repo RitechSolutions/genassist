@@ -1,6 +1,9 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { subDays } from "date-fns";
-import { toExactActivityParams, toUtcBucketDateParams } from "@/helpers/dateRange";
+import {
+  lastDaysDateRange,
+  toExactActivityParams,
+  toUtcBucketDateParams,
+} from "@/helpers/dateRange";
 import { Settings2, TrendingDown, ShieldCheck, ThumbsUp, ThumbsDown } from "lucide-react";
 import { DateRange } from "react-day-picker";
 import {
@@ -57,10 +60,7 @@ function formatResponseTime(ms: number | null): string {
 }
 
 const AgentPerformancePage = () => {
-  const [dateRange, setDateRange] = usePersistedDateRange({
-    from: subDays(new Date(), 7),
-    to: new Date(),
-  });
+  const [dateRange, setDateRange] = usePersistedDateRange(lastDaysDateRange(7));
   const [compareDateRange, setCompareDateRange] = usePersistedDateRange(
     undefined,
     COMPARE_DATE_RANGE_STORAGE_KEY,

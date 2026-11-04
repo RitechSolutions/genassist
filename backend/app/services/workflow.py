@@ -222,13 +222,33 @@ class WorkflowService:
         result.nodes = decrypt_hidden_defaults(result.nodes)
         return result
 
+    async def lock_for_activation(self, workflow_id: UUID) -> None:
+        if not await self.repository.get_locked(workflow_id, shared=True):
+            raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
+
     async def delete(self, workflow_id: UUID) -> None:
-        orm_obj = await self.repository.get_by_id(workflow_id, eager=["agent"])
+        orm_obj = await self.repository.get_locked(workflow_id)
         if not orm_obj:
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
-        if orm_obj.agent:
-            await self._invalidate_agent_caches(orm_obj.agent.id)
-        await self.repository.delete(orm_obj)
+        active_id = await self.get_active_version_id(workflow_id)
+        if active_id == workflow_id:
+            raise AppException(status_code=409, error_key=ErrorKey.WORKFLOW_VERSION_ACTIVE)
+        mcp_servers = await self.repository.live_mcp_server_names(workflow_id)
+        if mcp_servers:
+            raise AppException(
+                status_code=409,
+                error_key=ErrorKey.WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER,
+                error_variables=[", ".join(mcp_servers)],
+            )
+        ml_models = await self.repository.live_ml_model_names(workflow_id)
+        if ml_models:
+            raise AppException(
+                status_code=409,
+                error_key=ErrorKey.WORKFLOW_VERSION_IN_USE_BY_ML_MODEL,
+                error_variables=[", ".join(ml_models)],
+            )
+        await self.repository.repoint_test_data(workflow_id, active_id)
+        await self.repository.soft_delete(orm_obj)
 
     async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> None:
         """Retire every version of an agent's workflow when the agent is deleted."""

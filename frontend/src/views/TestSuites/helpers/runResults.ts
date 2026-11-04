@@ -1,5 +1,6 @@
 import { TestResult, TestRun } from "@/interfaces/testSuite.interface";
 import type { TestToolRuleResult } from "@/interfaces/testEvaluation.interface";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 // A turn-scoped result belongs to one case, so it is shown with that case; a
 // conversation-scoped one has no single case to sit on.
@@ -50,16 +51,37 @@ export const notScoredLabel = (result: Pick<TestResult, "status" | "metrics">): 
   return "Not scored";
 };
 
-/** A failed run has a page worth opening only when some turns finished before it stopped. */
-export const runHasResults = (run: Pick<TestRun, "status" | "progress">): boolean =>
-  run.status !== "failed" || (run.progress?.turns_done ?? 0) > 0;
+/** A run opens once it has ended; a failed one only when some turns finished before it stopped. */
+export const runOpens = (run: Pick<TestRun, "status" | "progress">): boolean => {
+  if (run.status === "queued" || run.status === "running") return false;
+  return run.status !== "failed" || (run.progress?.turns_done ?? 0) > 0;
+};
 
-// "12 of 40 turns done" while a run is in progress; null before it reports any.
+// "3 of 9 conversations done" while a run is in progress, counted as its results are; null before it reports any.
 export const runProgressText = (run: Pick<TestRun, "progress"> | null | undefined): string | null => {
   const progress = run?.progress;
-  if (!progress || !progress.turns_total) return null;
-  const total = progress.turns_total;
-  return `${progress.turns_done} of ${total} turn${total === 1 ? "" : "s"} done`;
+  if (!progress || !progress.conversations_total) return null;
+  const total = progress.conversations_total;
+  return `${progress.conversations_done} of ${total} conversation${total === 1 ? "" : "s"} done`;
+};
+
+/** A run still going, in words: "Queued", or "Running…" with how far it got. */
+export const runInProgressText = (run: Pick<TestRun, "status" | "progress"> | null | undefined): string => {
+  if (run?.status === "queued") return "Queued";
+  // A finished run's count would read as this run's, as it does just after Run.
+  const progress = run?.status === "running" ? runProgressText(run) : null;
+  return progress ? `Running… ${progress}` : "Running…";
+};
+
+/** Said beside Run all: starting its runs, running them, or runs started elsewhere. */
+export const runAllStatusText = (
+  starting: boolean,
+  progress: { done: number; total: number } | null,
+  anyRunning: boolean,
+): string | null => {
+  if (starting && progress) return `Running… ${progress.done} of ${progress.total} done`;
+  if (starting) return "Starting…";
+  return anyRunning ? "Running…" : null;
 };
 
 // A case's status reflects its turn-level rule results too (tool usage, route,
@@ -189,15 +211,6 @@ export const turnsPassed = (
 export const isRunInProgress = (run: Pick<TestRun, "status"> | null | undefined): boolean =>
   run?.status === "queued" || run?.status === "running";
 
-const RUN_STATUS_LABELS: Record<string, string> = {
-  queued: "Queued",
-  running: "Running",
-  completed: "Completed",
-  failed: "Failed",
-};
-
-export const runStatusLabel = (status: string): string => RUN_STATUS_LABELS[status] ?? status;
-
 // Older runs stored the raw exception after this prefix, which can name internal systems.
 const UNEXPECTED_FAILURE_PREFIX = "Run failed unexpectedly";
 const UNEXPECTED_FAILURE_TEXT = "Run failed unexpectedly. Details are in the server logs.";
@@ -233,7 +246,8 @@ export const numberRuns = (runs: TestRun[], runIds: string[]): TestRun[] => {
   return runs.map((run) => (run.id && numbers.has(run.id) ? { ...run, number: numbers.get(run.id) } : run));
 };
 
-export const runDate = (run: Pick<TestRun, "created_at">): string => new Date(run.created_at ?? "").toLocaleString();
+export const runDate = (run: Pick<TestRun, "created_at">): string =>
+  new Date(run.created_at ?? "").toLocaleString(undefined, { timeZone: displayTimeZone() });
 
 /** How long a finished run took, from when it was queued to its last update. */
 export const runDuration = (run: Pick<TestRun, "status" | "created_at" | "updated_at">): string | null => {

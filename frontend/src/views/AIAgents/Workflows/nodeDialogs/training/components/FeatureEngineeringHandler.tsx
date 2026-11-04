@@ -281,6 +281,32 @@ export const FeatureEngineeringHandler: React.FC<
                               className="h-8 text-xs"
                             />
                           </div>
+                          <div>
+                            <Label className="text-xs">Binning Method</Label>
+                            <Select
+                              value={feature.binStrategy || "uniform"}
+                              onValueChange={(value) =>
+                                handleFeatureChange(feature.id, {
+                                  binStrategy: value as "uniform" | "quantile",
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="uniform">
+                                  Equal width (fixed step)
+                                </SelectItem>
+                                <SelectItem value="quantile">
+                                  Quantile (equal frequency)
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Quantile is better for skewed columns like revenue or counts
+                            </p>
+                          </div>
                         </>
                       )}
                       {(feature.strategy === "normalize" ||

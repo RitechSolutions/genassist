@@ -8,6 +8,7 @@ import { Ban, Loader2, MoreHorizontal, Rocket, Trash2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import type { LocalFineTuneJob } from "@/interfaces/localFineTune.interface";
 import { formatStatusLabel, inProgressStatuses } from "@/views/FineTune/utils/utils";
+import { displayTimeZone } from "@/helpers/timeZone";
 import {
   getLocalFineTuneJobDisplayName,
   getLocalFineTuneJobNameSubtitle,
@@ -38,6 +39,7 @@ function formatShortDate(value: unknown): string {
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: displayTimeZone(),
   });
 }
 

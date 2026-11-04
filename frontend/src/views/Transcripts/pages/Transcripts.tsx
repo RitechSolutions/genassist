@@ -59,8 +59,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/RadixToolt
 import { useAgentsList } from "@/views/Analytics/hooks/useAgentsList";
 import { DateRangePicker } from "@/components/date-range-picker";
 import type { DateRange } from "react-day-picker";
-import { subDays } from "date-fns";
-import { toInclusiveDateParams } from "@/helpers/dateRange";
+import { lastDaysDateRange, toInclusiveDateParams } from "@/helpers/dateRange";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { useHasPermission } from "@/hooks/useHasPermission";
 import { Switch } from "@/components/switch";
@@ -78,6 +77,7 @@ import {
 } from "../helpers/conversationsView";
 import { useTopicFilter } from "@/hooks/useTopicFilter";
 import { topicLabel } from "@/views/ReportedFeedback/helpers/triageDraft";
+import { formatDateTime } from "@/helpers/utils";
 
 const ITEMS_PER_PAGE = 10;
 // Minimum characters required before a search is sent to the backend. Short
@@ -189,10 +189,7 @@ const Transcripts = () => {
     return "all";
   };
   const [statusFilter, setStatusFilter] = useState<StatusFilter>(initStatusFilter);
-  const [dateRange, setDateRange] = usePersistedDateRange({
-    from: subDays(new Date(), 7),
-    to: new Date(),
-  });
+  const [dateRange, setDateRange] = usePersistedDateRange(lastDaysDateRange(7));
 
   // Calculate hostility parameters based on sentiment
   const getHostilityParams = (sentiment: string) => {
@@ -1277,7 +1274,7 @@ const Transcripts = () => {
                             <span className="hidden sm:inline h-3 w-px bg-muted" aria-hidden />
                             <span>
                               {transcript?.timestamp
-                                ? new Date(transcript.timestamp).toLocaleString()
+                                ? formatDateTime(transcript.timestamp)
                                 : "N/A"}
                             </span>
                           </div>

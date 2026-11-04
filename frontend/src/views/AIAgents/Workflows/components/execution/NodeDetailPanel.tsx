@@ -1,6 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
-import { cn } from '@/helpers/utils';
+import { cn, formatDateTime } from '@/helpers/utils';
 import JsonViewer from '@/components/JsonViewer';
 import { NodeExecutionView } from '@/interfaces/workflow-execution.interface';
 import { formatDuration } from '../../utils/executionView';
@@ -73,6 +73,12 @@ const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, onClose }) => {
             <span className="text-xs text-muted-foreground">
               Duration: <span className="tabular-nums">{formatDuration(node.durationMs)}</span>
             </span>
+            {node.startTime !== undefined && (
+              <span className="text-xs text-muted-foreground">
+                Started:{' '}
+                <span className="tabular-nums">{formatDateTime(new Date(node.startTime).toISOString())}</span>
+              </span>
+            )}
           </div>
           {node.promptCaching && (
             <div className="mt-1 text-xs text-muted-foreground">{promptCachingLine(node.promptCaching)}</div>

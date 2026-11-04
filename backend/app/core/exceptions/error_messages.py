@@ -97,6 +97,9 @@ class ErrorKey(Enum):
     APP_SETTINGS_NOT_FOUND = "APP_SETTINGS_NOT_FOUND"
     FEATURE_FLAG_NOT_FOUND = "FEATURE_FLAG_NOT_FOUND"
     WORKFLOW_NOT_FOUND = "WORKFLOW_NOT_FOUND"
+    WORKFLOW_VERSION_ACTIVE = "WORKFLOW_VERSION_ACTIVE"
+    WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER = "WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER"
+    WORKFLOW_VERSION_IN_USE_BY_ML_MODEL = "WORKFLOW_VERSION_IN_USE_BY_ML_MODEL"
     SUB_AGENT_SESSION_STALE = "SUB_AGENT_SESSION_STALE"
     SUB_AGENT_INVALID_TOPOLOGY = "SUB_AGENT_INVALID_TOPOLOGY"
     SUB_AGENT_INVALID_CONFIG = "SUB_AGENT_INVALID_CONFIG"
@@ -135,7 +138,10 @@ class ErrorKey(Enum):
     ML_EXTRACT_QUERY_FAILED = "ML_EXTRACT_QUERY_FAILED"
     ML_EXTRACT_FILE_UNAVAILABLE = "ML_EXTRACT_FILE_UNAVAILABLE"
     ML_EXTRACT_FILE_ENCODING_INVALID = "ML_EXTRACT_FILE_ENCODING_INVALID"
+    ML_EXTRACT_FILE_UNSUPPORTED = "ML_EXTRACT_FILE_UNSUPPORTED"
+    ML_EXTRACT_FILE_INVALID = "ML_EXTRACT_FILE_INVALID"
     ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
+    ML_TRAINING_UPLOAD_TOO_LARGE = "ML_TRAINING_UPLOAD_TOO_LARGE"
     ML_EXTRACT_FAILED = "ML_EXTRACT_FAILED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
@@ -300,6 +306,15 @@ ERROR_MESSAGES = {
         ErrorKey.APP_SETTINGS_NOT_FOUND: "App Settings not found.",
         ErrorKey.FEATURE_FLAG_NOT_FOUND: "Feature Flags not found.",
         ErrorKey.WORKFLOW_NOT_FOUND: "The workflow could not be found.",
+        ErrorKey.WORKFLOW_VERSION_ACTIVE: "This version is active. Activate another version before deleting it.",
+        ErrorKey.WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER: (
+            "This version cannot be deleted while an MCP server exposes it as a tool ({0}). "
+            "Remove those tools first."
+        ),
+        ErrorKey.WORKFLOW_VERSION_IN_USE_BY_ML_MODEL: (
+            "This version cannot be deleted while an ML model's pipeline configuration uses it ({0}). "
+            "Remove those configurations first."
+        ),
         ErrorKey.OPERATOR_ROLE_MISSING: "Operator role missing.",
         ErrorKey.CREATE_USER_TYPE_IN_MENU: "Operators and ai agents should be created in their specific menus.",
         ErrorKey.LOGIN_ERROR_CONSOLE_USER: "Failed to give access for console type user.",
@@ -337,7 +352,10 @@ ERROR_MESSAGES = {
         ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
             "The uploaded CSV uses an unsupported character encoding."
         ),
+        ErrorKey.ML_EXTRACT_FILE_UNSUPPORTED: "This training file type is not supported.",
+        ErrorKey.ML_EXTRACT_FILE_INVALID: "The uploaded training file could not be read.",
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
+        ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: "The training data file is too large to upload.",
         ErrorKey.ML_EXTRACT_FAILED: (
             "Train Data Source could not complete the test. "
             "Check its configuration and try again."
@@ -437,8 +455,17 @@ ERROR_MESSAGES = {
         ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
             "Le fichier CSV téléversé utilise un encodage de caractères non pris en charge."
         ),
+        ErrorKey.ML_EXTRACT_FILE_UNSUPPORTED: (
+            "Ce type de fichier de données d'entraînement n'est pas pris en charge."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_INVALID: (
+            "Le fichier de données d'entraînement téléversé n'a pas pu être lu."
+        ),
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: (
             "La limite d'extraction des données d'entraînement a été dépassée."
+        ),
+        ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: (
+            "Le fichier de données d'entraînement est trop volumineux pour être téléversé."
         ),
         ErrorKey.ML_EXTRACT_FAILED: (
             "La source de données d'entraînement n'a pas pu terminer le test. "

@@ -47,7 +47,13 @@ export const updateWorkflow = (id: string, workflow: WorkflowUpdatePayload) =>
 
 // Delete a workflow
 export const deleteWorkflow = (id: string) =>
-  apiRequest<void>("DELETE", `${BASE}/${id}`);
+  apiRequest<void>(
+    "DELETE",
+    `${BASE}/${id}`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
 
 // Test a workflow configuration with a test message
 export interface WorkflowTestPayload {

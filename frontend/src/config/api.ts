@@ -234,7 +234,9 @@ export function formatUploadOrNetworkError(err: unknown): string {
   }
   const code = err.code;
   const status = err.response?.status;
-  const detail = (err.response?.data as { detail?: unknown } | undefined)?.detail;
+  // FastAPI errors use `detail`; AppException errors use `error_detail`.
+  const body = err.response?.data as { detail?: unknown; error_detail?: unknown } | undefined;
+  const detail = body?.detail ?? body?.error_detail;
   const detailStr =
     typeof detail === "string"
       ? detail
@@ -249,7 +251,8 @@ export function formatUploadOrNetworkError(err: unknown): string {
     return "Network error during upload. Check your connection and try again.";
   }
   if (status === 413) {
-    return "File is too large for the server. Reduce file size or ask an admin to raise upload limits.";
+    // The API explains its own limit; a 413 from a proxy in front of it has no detail.
+    return detailStr || "File is too large for the server. Reduce file size or ask an admin to raise upload limits.";
   }
   if (status === 400 && detailStr) {
     return detailStr;

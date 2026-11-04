@@ -13,6 +13,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.test_suite import Category
+
 EVALUATION_BUNDLE_KIND = "genassist.evaluation-bundle"
 EVALUATION_BUNDLE_SCHEMA_VERSION = 1
 
@@ -82,6 +84,8 @@ class BundleDataset(BaseModel):
     # not halfway through an import.
     name: str = Field(max_length=200)
     description: Optional[str] = None
+    # Spaces tidied before the length check, as when a category is typed.
+    category: Category = None
     default_input_metadata: Optional[Dict[str, Any]] = None
     cases: List[BundleCase] = Field(default_factory=list)
 
@@ -89,6 +93,7 @@ class BundleDataset(BaseModel):
 class BundleEvaluation(BaseModel):
     name: str = Field(max_length=200)
     description: Optional[str] = None
+    category: Category = None
     techniques: List[str] = Field(default_factory=list)
     technique_configs: Optional[Dict[str, Any]] = None
     input_metadata: Optional[Dict[str, Any]] = None

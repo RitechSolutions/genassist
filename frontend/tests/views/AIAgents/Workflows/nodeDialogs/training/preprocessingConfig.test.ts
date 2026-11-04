@@ -503,3 +503,43 @@ describe("preprocessingConfig - bug fixes", () => {
     expect(parsePythonCodeToConfig(code).steps).toEqual(config.steps);
   });
 });
+
+describe("preprocessingConfig - string conversion keeps missing values missing", () => {
+  it("generates astype(\"string\"), not astype(\"str\") which turns NaN into the text \"nan\"", () => {
+    const config: PreprocessingConfig = {
+      steps: [
+        {
+          id: "step_1",
+          type: "change_dtype",
+          enabled: true,
+          config: { conversions: [{ columnName: "zip", dtype: "string" }] } as ChangeDtypeStepConfig,
+        },
+      ],
+    };
+
+    const code = generatePythonCodeFromConfig(config, BASE_PYTHON_TEMPLATE);
+    expect(code).toContain('df["zip"] = df["zip"].astype("string")');
+    expect(code).not.toContain('.astype("str")');
+    expect(parsePythonCodeToConfig(code).steps).toEqual(config.steps);
+  });
+
+  it("still parses code saved with the older astype(\"str\") form", () => {
+    const code = generatePythonCodeFromConfig(
+      {
+        steps: [
+          {
+            id: "step_1",
+            type: "change_dtype",
+            enabled: true,
+            config: { conversions: [{ columnName: "zip", dtype: "string" }] } as ChangeDtypeStepConfig,
+          },
+        ],
+      },
+      BASE_PYTHON_TEMPLATE
+    ).replace('.astype("string")', '.astype("str")');
+
+    expect(parsePythonCodeToConfig(code).steps[0].config).toEqual({
+      conversions: [{ columnName: "zip", dtype: "string" }],
+    });
+  });
+});

@@ -7,7 +7,6 @@ This node fetches training data from databases or uploaded files for ML model tr
 import asyncio
 import logging
 import os
-import re
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -19,10 +18,9 @@ from starlette_context import context
 from app.auth.utils import has_permission
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
-from app.core.utils.sensitive_data_utils import redact_bound_values, redact_sensitive_substrings
+from app.core.utils.sensitive_data_utils import redact_bound_values
 from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.database.provider_manager import DBProviderManager
 from app.modules.integration.database.query_validator import AdvancedQueryValidator
@@ -32,6 +30,11 @@ from app.modules.integration.database.read_only_sql import (
 )
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+    SUPPORTED_TRAINING_FILE_LABEL,
+    SUPPORTED_TRAINING_FILE_SUFFIXES,
+    TrainingFileReader,
+)
 from app.modules.workflow.engine.utils import (
     PARAM_STYLE_NAMED,
     PARAM_STYLE_PYFORMAT,
@@ -43,23 +46,6 @@ from app.modules.workflow.engine.utils import (
 logger = logging.getLogger(__name__)
 
 NumericLimit = TypeVar("NumericLimit", int, float)
-
-_QUERY_REASON_PATTERNS = (
-    r"no such (?:column|table): [\w.\"`]+",
-    r"(?:column|relation|table) \"[^\"]+\" does not exist",
-    r"syntax error at or near \"[^\"]*\"",
-    r"Unknown column '[^']+'(?: in '[^']+')?",
-    r"Table '[^']+' doesn't exist",
-    r"You have an error in your SQL syntax.*?near '[^']{0,80}'",
-    r"Invalid (?:column|object) name '[^']+'",
-    r"invalid identifier '[^']+'",
-    r"near [\"'][^\"']{0,80}[\"']: syntax error",
-)
-_QUERY_REASON_RE = re.compile(
-    "|".join(f"(?:{pattern})" for pattern in _QUERY_REASON_PATTERNS),
-    re.IGNORECASE,
-)
-
 
 @dataclass(frozen=True)
 class ExtractionLimits:
@@ -313,6 +299,7 @@ class TrainDataSourceNode(BaseNode):
         csv_file_path = config.get("csvFilePath")
         csv_file_id = config.get("csvFileId")
         csv_file_name = config.get("csvFileName")
+        sheet_name = config.get("sheetName")
 
         if not csv_file_path and not csv_file_id:
             raise AppException(
@@ -425,25 +412,32 @@ class TrainDataSourceNode(BaseNode):
                 limits.max_bytes,
             )
 
-            async def stream_training_file():
-                if suffix == ".csv":
-                    chunks = ml_utils.iter_csv_chunks(str(csv_path), chunk_rows)
-                    source_kind = "csv"
-                else:
-                    records = await asyncio.to_thread(
-                        ml_utils.parse_training_file,
-                        str(csv_path),
-                    )
-                    chunks = ml_utils.iter_record_chunks(records, chunk_rows)
-                    source_kind = "file"
+            reader = TrainingFileReader(
+                csv_path,
+                chunk_rows,
+                max_rows=limits.max_rows,
+                sheet_name=sheet_name,
+                json_max_bytes=settings.ML_EXTRACT_JSON_MAX_BYTES,
+            )
 
-                return await ml_utils.stream_rows_to_csv(
-                    chunks,
+            async def stream_training_file():
+                result = await ml_utils.stream_rows_to_csv(
+                    reader.chunks(),
                     self.state.thread_id,
                     max_rows=limits.max_rows,
                     max_bytes=limits.max_bytes,
-                    source_kind=source_kind,
+                    source_kind="csv" if reader.is_csv else "file",
                 )
+                if not reader.is_csv:
+                    # CSV has no types of its own (they're inferred
+                    # downstream, as before); every other format's column
+                    # types are saved next to the output for the next node.
+                    try:
+                        ml_utils.write_dtypes_mapping_sidecar(result[0], reader.column_dtypes())
+                    except BaseException:
+                        Path(result[0]).unlink(missing_ok=True)
+                        raise
+                return result
 
             try:
                 saved_csv_path, columns, row_count, sample_data = await asyncio.wait_for(
@@ -476,7 +470,7 @@ class TrainDataSourceNode(BaseNode):
             )
             raise AppException(
                 error_key=ErrorKey.ML_EXTRACT_FAILED,
-                error_detail=f"CSV source processing failed: {str(e)}",
+                error_detail=f"Training file processing failed: {str(e)}",
             ) from e
         finally:
             if temporary_source_path is not None:
@@ -681,8 +675,7 @@ class TrainDataSourceNode(BaseNode):
 
     @staticmethod
     def _sanitized_diagnostic(error: Any) -> str:
-        redacted = redact_sensitive_substrings(str(error))
-        return sanitize_error_detail(str(redacted), max_len=2_000)
+        return ml_utils.sanitized_database_diagnostic(error)
 
     @staticmethod
     def _client_safe_database_error(
@@ -690,27 +683,9 @@ class TrainDataSourceNode(BaseNode):
         *,
         has_bound_parameters: bool,
     ) -> str:
-        if has_bound_parameters:
-            return (
-                "Database query failed. Check that each workflow variable's "
-                "value matches the column it is compared with."
-            )
-
-        # Driver errors may include class names, codes, hosts and the full SQL.
-        # Search the complete message but expose only a recognized correction
-        # phrase and its identifier.
-        match = _QUERY_REASON_RE.search(str(error))
-        if match:
-            safe_reason = sanitize_error_detail(
-                str(redact_sensitive_substrings(match.group(0))),
-                max_len=300,
-            )
-            if safe_reason:
-                return f"Database query failed: {safe_reason}"
-
-        return (
-            "Could not run the query on the selected data source. "
-            "Check the query and connection settings."
+        return ml_utils.client_safe_database_error(
+            error,
+            has_bound_parameters=has_bound_parameters,
         )
 
     @staticmethod
@@ -729,15 +704,15 @@ class TrainDataSourceNode(BaseNode):
 
     @staticmethod
     def _validate_training_file_suffix(suffix: str) -> None:
-        if suffix in ml_utils.SUPPORTED_TRAINING_FILE_SUFFIXES:
+        if suffix in SUPPORTED_TRAINING_FILE_SUFFIXES:
             return
 
         raise AppException(
             error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
             status_code=400,
             error_detail=(
-                "This training file type is not supported. Use CSV, Excel (.xlsx), "
-                "JSON, or Parquet."
+                "This training file type is not supported. Use one of: "
+                f"{SUPPORTED_TRAINING_FILE_LABEL}."
             ),
         )
 
