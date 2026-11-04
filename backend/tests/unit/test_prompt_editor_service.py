@@ -182,6 +182,19 @@ class TestContextValidation:
         assert exc_info.value.error_key is ErrorKey.PROMPT_FIELD_NOT_SUPPORTED
 
     @pytest.mark.asyncio
+    async def test_a_switch_node_s_routing_prompt_can_be_saved(self):
+        from app.schemas.prompt_editor import PromptVersionCreate
+
+        service = _service(nodes=[{"id": NODE_ID, "type": "switchNode"}])
+        service.version_repo.next_version_number.return_value = 1
+
+        created = await service.create_version(
+            WORKFLOW_ID, NODE_ID, "smartPrompt", PromptVersionCreate(content="x")
+        )
+
+        assert created.version_number == 1
+
+    @pytest.mark.asyncio
     async def test_a_workflow_with_no_stored_graph_reads_as_a_missing_node(self):
         """MLModelDetail creates node-less workflows, so the column can be NULL."""
         service = _service(nodes=[])
@@ -348,6 +361,38 @@ class TestGetHistory:
 
         assert history.node_type == "routerNode"
         assert history.legacy_shared is None
+
+    @pytest.mark.asyncio
+    async def test_a_switch_node_s_system_prompt_explains_the_route_id_answer(self):
+        service = _service(nodes=[{"id": NODE_ID, "type": "switchNode"}])
+        service.version_repo.get_versions_for_context.return_value = []
+        service.config_repo.get_by_context.return_value = None
+
+        history = await service.get_history(WORKFLOW_ID, NODE_ID, FIELD)
+
+        assert history.node_type == "switchNode"
+        assert history.field_label == "System Prompt"
+        assert history.inline_check_supported is False
+        assert history.unsupported_reason == (
+            "The isolated check cannot reproduce the switch's routing prompt, "
+            "route list, and route id answer."
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_switch_node_s_routing_prompt_reads_with_the_generic_reason(self):
+        service = _service(nodes=[{"id": NODE_ID, "type": "switchNode"}])
+        service.version_repo.get_versions_for_context.return_value = []
+        service.config_repo.get_by_context.return_value = None
+
+        history = await service.get_history(WORKFLOW_ID, NODE_ID, "smartPrompt")
+
+        assert history.node_type == "switchNode"
+        assert history.field_label == "Routing prompt"
+        assert history.inline_check_supported is False
+        assert history.unsupported_reason == (
+            "The isolated check runs the text as a system prompt, "
+            "which is not how this field is used at run time."
+        )
 
 
 class TestDeleteVersion:
