@@ -381,6 +381,11 @@ const GraphFlowContent: React.FC = () => {
   // True from the moment an agent's workflow is requested until its nodes have
   // been mounted and framed — drives the canvas loading overlay.
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(!!agentId);
+  // Set when a fetched workflow's nodes are handed to the canvas; the next settle
+  // pass consumes it to clear the overlay. `workflow` alone can't be the signal:
+  // BottomPanel sets the execution state on mount, which makes `workflow` truthy
+  // before the fetch has resolved.
+  const workflowMountPendingRef = useRef(false);
   const edgeReconnectSuccessful = useRef(true);
 
   // Handle double-click on nodes to focus view using helper function
@@ -426,9 +431,12 @@ const GraphFlowContent: React.FC = () => {
         // a freshly opened workflow (whose nodes can sit at large coordinates) renders off-screen.
         // Frame it now that its nodes have loaded.
         if (nodes.length > 0) reactFlowInstance?.fitView({ padding: 0.2 });
-        // `workflow` is only set once the fetch has resolved, so the settle pass
-        // that runs at mount (before any data) leaves the overlay up.
-        if (workflow) setIsLoadingWorkflow(false);
+        // Only the settle pass that follows a loaded workflow clears the overlay;
+        // the one that runs at mount (before any data) leaves it up.
+        if (workflowMountPendingRef.current) {
+          workflowMountPendingRef.current = false;
+          setIsLoadingWorkflow(false);
+        }
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -564,6 +572,7 @@ const GraphFlowContent: React.FC = () => {
       setWorkflow(loadedWorkflow);
 
       if (!isUploaded) {
+        workflowMountPendingRef.current = true;
         setIsSettling(true);
         setHasUnsavedChanges(false);
       }
@@ -574,6 +583,8 @@ const GraphFlowContent: React.FC = () => {
   const loadWorkflow = useCallback(
     async (workflowId: string) => {
       const workflow = await getWorkflowById(workflowId);
+      // apiRequest answers a 403 with null instead of throwing.
+      if (!workflow) throw new Error(`Workflow ${workflowId} could not be loaded`);
       setWorkflow(workflow);
       handleWorkflowLoaded(workflow);
     },
@@ -583,8 +594,12 @@ const GraphFlowContent: React.FC = () => {
   const loadAgent = useCallback(
     async (agentId: string) => {
       setIsLoadingWorkflow(true);
+      // A settle pass still pending from the previous agent must not clear the
+      // overlay for this one.
+      workflowMountPendingRef.current = false;
       try {
         const agent = await getAgentConfig(agentId);
+        if (!agent) throw new Error(`Agent ${agentId} could not be loaded`);
         setAgent(agent);
         const asked = askedVersion.current;
         askedVersion.current = null;
