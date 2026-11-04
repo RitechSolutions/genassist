@@ -226,13 +226,30 @@ def test_s3_client_copy_file_uses_multipart_capable_boto3_copy():
     client = object.__new__(S3Client)
     client.bucket_name = "shared-bucket"
     client.s3_client = Mock()
+    client.s3_client.head_object.return_value = {
+        "ContentType": "text/csv",
+        "Metadata": {"owner": "tenant-a"},
+        "ContentLength": 10,
+        "ServerSideEncryption": "aws:kms",
+        "SSEKMSKeyId": "key-1",
+        "StorageClass": "STANDARD_IA",
+    }
 
-    assert client.copy_file("uploads/source.csv", "tenant-a/uploads/source.csv") is True
+    assert client.copy_file("uploads/source.csv", "tenants/tenant-a/uploads/source.csv") is True
 
+    # Headers are passed explicitly so large (multipart) copies keep them too.
     client.s3_client.copy.assert_called_once_with(
         Bucket="shared-bucket",
         CopySource={"Bucket": "shared-bucket", "Key": "uploads/source.csv"},
-        Key="tenant-a/uploads/source.csv",
+        Key="tenants/tenant-a/uploads/source.csv",
+        ExtraArgs={
+            "MetadataDirective": "REPLACE",
+            "Metadata": {"owner": "tenant-a"},
+            "ContentType": "text/csv",
+            "ServerSideEncryption": "aws:kms",
+            "SSEKMSKeyId": "key-1",
+            "StorageClass": "STANDARD_IA",
+        },
     )
 
 

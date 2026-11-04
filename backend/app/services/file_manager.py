@@ -126,6 +126,13 @@ class FileManagerService:
         return re.sub(r"[^a-z0-9]", "", extension.lower()) or "txt"
 
     @staticmethod
+    def _storage_folder(storage_provider: Optional[str], folder: Optional[str]) -> Optional[str]:
+        """S3 keys go under the tenant's root (tenants/<slug>/...); other providers are unchanged."""
+        if storage_provider == "s3":
+            return tenant_scoped_storage_prefix(folder)
+        return folder
+
+    @staticmethod
     def _build_file_path(folder: Optional[str], file_extension: str) -> str:
         """
         Storage path for a new file: the cleaned folder plus a uuid file name.
@@ -172,9 +179,7 @@ class FileManagerService:
                 or "local"
             )
 
-            folder = file_base.path
-            if file_storage_provider == "s3":
-                folder = tenant_scoped_storage_prefix(folder)
+            folder = self._storage_folder(file_storage_provider, file_base.path)
             file_path = self._build_file_path(folder, file_extension)
 
             provider_name = file_storage_provider or "local"
@@ -286,9 +291,7 @@ class FileManagerService:
                 or "local"
             )
 
-            folder = file_base.path
-            if file_storage_provider == "s3":
-                folder = tenant_scoped_storage_prefix(folder)
+            folder = self._storage_folder(file_storage_provider, file_base.path)
             file_path = self._build_file_path(folder, file_extension)
 
             provider_name = file_storage_provider or "local"

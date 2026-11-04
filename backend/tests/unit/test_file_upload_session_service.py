@@ -153,7 +153,7 @@ async def test_create_direct_upload_session_happy_path(monkeypatch):
     assert resp.file_id == str(file_uuid)
     assert resp.method == "PUT"
     assert resp.required_headers == {"Content-Type": "application/pdf"}
-    assert resp.object_key.startswith("tenant-a/uploads/")
+    assert resp.object_key.startswith("tenants/tenant-a/uploads/")
     assert resp.expires_in == 600
     storage.generate_presigned_put_url.assert_awaited_once()
     assert fm.repository.create_file.await_args.args[0].path == resp.object_key
@@ -189,7 +189,7 @@ async def test_direct_upload_prefixes_when_tenant_matches_upload_folder(monkeypa
     finally:
         clear_tenant_context()
 
-    assert response.object_key.startswith("uploads/uploads/")
+    assert response.object_key.startswith("tenants/uploads/uploads/")
 
 
 @pytest.mark.asyncio
