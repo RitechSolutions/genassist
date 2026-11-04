@@ -141,12 +141,8 @@ class DatabaseManager:
     def get_db_type(self) -> str:
         return self.db_type
 
-    def _double_quoted_strings(self) -> bool:
-        # MySQL reads "..." as a string; other databases read it as a name.
-        return (self.db_type or "").strip().lower() in {"mysql", "sql"}
-
     def _loggable_query(self, query: str) -> str:
-        return redact_sql_literals(query, double_quoted=self._double_quoted_strings())
+        return redact_sql_literals(query, dialect=self.db_type)
 
     def _safe_query_error(
         self,
@@ -159,7 +155,7 @@ class DatabaseManager:
             error,
             query=query,
             parameters=parameters,
-            double_quoted_strings=self._double_quoted_strings(),
+            dialect=self.db_type,
         )
 
     async def initialize(self):

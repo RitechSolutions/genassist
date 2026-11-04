@@ -74,7 +74,7 @@ def sanitize_database_error(
     *,
     query: Any = None,
     parameters: Mapping[str, Any] | None = None,
-    double_quoted_strings: bool = False,
+    dialect: str | None = None,
     max_len: int = 2_000,
 ) -> str:
     """Return a database or driver error that is safe to log.
@@ -82,13 +82,14 @@ def sanitize_database_error(
     Driver errors repeat the SQL, and with it any value written in the query
     (``WHERE password = 'secret'``). Bound values and the query's string
     literals are masked, then the generic secret and PII redaction runs. The
-    error type and the table and column names stay readable.
+    error type and the table and column names stay readable. ``dialect`` is the
+    datasource type, which decides how the query's quotes are read.
     """
     message = redact_bound_values(error, parameters)
     message = redact_sql_literal_values(
         message,
         query,
-        double_quoted=double_quoted_strings,
+        dialect=dialect,
     )
     message = str(redact_sensitive_substrings(message))
     return sanitize_error_detail(message, max_len=max_len)
