@@ -24,10 +24,12 @@ export interface MLModel {
   target_variable: string;
   // Per-model inference configuration: ratioBaselineColumn is an additional
   // caller input, while featureDefaults contains deliberate fallback values
-  // for missing model features.
+  // for missing model features. useTrainingFills lets the values saved at
+  // training time (e.g. the median) fill any other missing input.
   inference_params?: {
     ratioBaselineColumn?: string;
     featureDefaults?: Record<string, string | number | boolean>;
+    useTrainingFills?: boolean;
   } | null;
   // Validation metrics for the training run represented by this registry row.
   training_metrics?: Record<string, number | null> | null;
