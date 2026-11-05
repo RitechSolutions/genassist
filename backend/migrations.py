@@ -227,6 +227,195 @@ def run_migrations_for_all_tenants() -> bool:
         return False
 
 
+# A database host that does not answer must not stall the schema wait past its deadline
+_CONNECT_ARGS = {"connect_timeout": 10}
+
+
+class SchemaNotReadyError(RuntimeError):
+    """The database did not reach this code's migration head in time."""
+
+
+def _code_head_revisions():
+    """The head revision(s) of the migrations shipped with this code, and their script directory."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    alembic_cfg = Config(os.path.join(here, "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", os.path.join(here, "alembic"))
+    script = ScriptDirectory.from_config(alembic_cfg)
+    return set(script.get_heads()), script
+
+
+def _database_revisions(url: str) -> set:
+    """The revision(s) recorded in a database's alembic_version table."""
+    from alembic.runtime.migration import MigrationContext
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import NullPool
+
+    engine = create_engine(url, poolclass=NullPool, connect_args=_CONNECT_ARGS)
+    try:
+        with engine.connect() as connection:
+            return set(MigrationContext.configure(connection).get_current_heads())
+    finally:
+        engine.dispose()
+
+
+def _active_tenant_urls() -> list:
+    from app.core.config.settings import settings
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.pool import NullPool
+
+    engine = create_engine(
+        settings.get_tenant_database_url_sync(), poolclass=NullPool, connect_args=_CONNECT_ARGS
+    )
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(text("SELECT slug FROM tenants WHERE is_active is True")).fetchall()
+    finally:
+        engine.dispose()
+    return [(f"tenant:({row[0]})", settings.get_tenant_database_url_sync(row[0])) for row in rows]
+
+
+def _is_schema_ready(current: set, heads: set, script) -> bool:
+    """
+    True when the database is at this code's head, or ahead of it.
+    A revision this code does not know comes from a newer release (for example
+    during a rollback); the schema is then newer, not older, so it is not waited on.
+    """
+    if not current:
+        return False
+    known = {revision.revision for revision in script.walk_revisions()}
+    if not current <= known:
+        return True
+    return current == heads
+
+
+MAIN_DATABASE = "main"
+
+
+def _is_database_behind(name: str, url: str, heads: set, script) -> bool:
+    try:
+        current = _database_revisions(url)
+    except Exception as error:
+        logger.info("Schema check for %s could not read its revision yet: %s", name, error)
+        return True
+    return not _is_schema_ready(current, heads, script)
+
+
+def _databases_behind(heads: set, script) -> list:
+    """Names of the databases that are not at this code's head yet."""
+    from app.core.config.settings import settings
+
+    behind = []
+    if _is_database_behind(MAIN_DATABASE, settings.DATABASE_URL_SYNC, heads, script):
+        behind.append(MAIN_DATABASE)
+    if not settings.MULTI_TENANT_ENABLED:
+        return behind
+
+    try:
+        tenants = _active_tenant_urls()
+    except Exception as error:
+        logger.info("Schema check could not list the tenants yet: %s", error)
+        return behind + ["tenants"]
+    for name, url in tenants:
+        if _is_database_behind(name, url, heads, script):
+            behind.append(name)
+    return behind
+
+
+# Set by the first worker that gave up waiting on stale tenants for a migration head.
+# Later worker starts on the same head (crash restarts, scale-out) then skip the tenant
+# wait instead of pausing every tenant's jobs again. A new release has a new head.
+TENANT_WAIT_GIVEN_UP_KEY = "genassist:schema_gate:tenant_wait_given_up:{head}"
+TENANT_WAIT_GIVEN_UP_TTL_SECONDS = 7 * 24 * 3600
+
+
+def _redis_client():
+    import redis
+    from app.core.config.settings import settings
+
+    return redis.Redis.from_url(settings.REDIS_URL, socket_connect_timeout=5, socket_timeout=5)
+
+
+def _tenant_wait_given_up(head_names: str) -> bool:
+    """Whether a worker already gave up waiting on stale tenants for this head."""
+    try:
+        return bool(_redis_client().exists(TENANT_WAIT_GIVEN_UP_KEY.format(head=head_names)))
+    except Exception as error:
+        logger.info("Schema check could not read the tenant wait marker; waiting as usual: %s", error)
+        return False
+
+
+def _remember_tenant_wait_given_up(head_names: str) -> None:
+    try:
+        _redis_client().set(
+            TENANT_WAIT_GIVEN_UP_KEY.format(head=head_names),
+            "1",
+            ex=TENANT_WAIT_GIVEN_UP_TTL_SECONDS,
+        )
+    except Exception as error:
+        logger.warning("Schema check could not save the tenant wait marker: %s", error)
+
+
+def wait_for_schema_at_head(timeout_seconds: int, interval_seconds: int) -> None:
+    """
+    Block until the databases are at the migration head this code ships with.
+
+    Celery workers start alongside the API, which is the process that runs the
+    migrations. Without this wait they can query new columns before the migration
+    has added them (see migration 00126, files_upload_sessions.upload_purpose).
+
+    After timeout_seconds:
+    * main database still behind -> SchemaNotReadyError, so the container exits and
+      is restarted instead of running against an old schema;
+    * only tenant databases behind -> log an error naming them and start anyway.
+      The API treats a failed tenant migration as non-fatal, and one broken tenant
+      must not stop background jobs for every other tenant. The give-up is recorded
+      in Redis for this head, so later worker starts do not wait on those tenants again.
+    """
+    heads, script = _code_head_revisions()
+    head_names = ", ".join(sorted(heads))
+    tenant_wait_given_up = _tenant_wait_given_up(head_names)
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        behind = _databases_behind(heads, script)
+        if not behind:
+            logger.info("Database schema is at head %s; starting.", head_names)
+            return
+        only_tenants_behind = MAIN_DATABASE not in behind
+        if only_tenants_behind and tenant_wait_given_up:
+            logger.error(
+                "Tenant databases are still not at head %s; an earlier worker already "
+                "waited for them, so starting now. Tasks for these tenants may fail "
+                "until their migrations run: %s",
+                head_names,
+                ", ".join(behind),
+            )
+            return
+        if time.monotonic() >= deadline:
+            if not only_tenants_behind:
+                raise SchemaNotReadyError(
+                    f"Database schema is not at head {head_names} after {timeout_seconds}s; "
+                    f"behind: {', '.join(behind)}. Check that the migrations ran."
+                )
+            _remember_tenant_wait_given_up(head_names)
+            logger.error(
+                "Tenant databases are not at head %s after %ss; starting anyway. "
+                "Tasks for these tenants may fail until their migrations run: %s",
+                head_names,
+                timeout_seconds,
+                ", ".join(behind),
+            )
+            return
+        logger.info(
+            "Waiting for migrations to reach head %s (behind: %s)",
+            head_names,
+            ", ".join(behind),
+        )
+        time.sleep(interval_seconds)
+
+
 def stamp_head_for_all_tenants() -> bool:
     """
     Programmatically executes `alembic stamp head` for the main database and all

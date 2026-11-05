@@ -246,6 +246,11 @@ class ProjectSettings(BaseSettings):
     # Lock wait cap for startup migrations (0 waits forever) and the retries after a lock timeout
     MIGRATION_LOCK_TIMEOUT_SECONDS: int = Field(default=5, ge=0, le=2147483)  # Postgres maximum
     MIGRATION_LOCK_RETRIES: int = Field(default=5, ge=0)
+    # Celery workers wait at startup until the databases are at the migration head of
+    # this image, so they never query columns a pending migration adds (see migrations.py)
+    CELERY_WAIT_FOR_SCHEMA: bool = True
+    SCHEMA_WAIT_TIMEOUT_SECONDS: int = Field(default=900, ge=0)
+    SCHEMA_WAIT_INTERVAL_SECONDS: int = Field(default=5, ge=1)
 
     # === Multi-Tenancy ===
     MULTI_TENANT_ENABLED: bool = False
