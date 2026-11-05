@@ -24,7 +24,9 @@ class MLModelsRepository(DbRepository[MLModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(MLModel, db)
 
-    async def create(self, ml_model_data: MLModelCreate) -> MLModel:
+    async def create(
+        self, ml_model_data: MLModelCreate, training_metrics: Optional[dict] = None
+    ) -> MLModel:
         """Create a new ML model."""
         try:
             new_ml_model = MLModel(
@@ -36,6 +38,7 @@ class MLModelsRepository(DbRepository[MLModel]):
                 features=ml_model_data.features,
                 target_variable=ml_model_data.target_variable,
                 inference_params=ml_model_data.inference_params,
+                training_metrics=training_metrics,
             )
             async with self.db.begin_nested():
                 self.db.add(new_ml_model)

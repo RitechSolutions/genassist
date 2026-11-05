@@ -17,6 +17,7 @@ from app.core.config.settings import file_storage_settings, settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.storage_path import tenant_scoped_storage_prefix
 from app.core.utils.training_upload import (
     check_training_upload_name,
     check_training_upload_size,
@@ -396,6 +397,7 @@ class FileUploadSessionService:
 
         # Folder prefix: payload.path (if provided) overrides the route default.
         clean_sub_folder = _clean_prefix(getattr(payload, "path", None)) or _clean_prefix(sub_folder)
+        clean_sub_folder = tenant_scoped_storage_prefix(clean_sub_folder)
         object_key = f"{clean_sub_folder}/{unique_filename}" if clean_sub_folder else unique_filename
 
         # Pre-create a placeholder ``files`` row so the client gets a stable file_id

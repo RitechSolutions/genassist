@@ -285,7 +285,11 @@ class MLModelPipelineRunService:
             "default_config_id": str(config.id),
         }
 
-        # Optionally update model file and metrics
+        # Build one model update so promoting both the artifact and its metrics
+        # is atomic from the repository's perspective.
+        model_updates = {}
+
+        # Optionally update model file and its training contract.
         if promote_data.update_model_file and execution_output:
             stale_default_warnings = [
                 warning
@@ -299,33 +303,49 @@ class MLModelPipelineRunService:
             feature_columns = execution_output.get("feature_columns")
             target_transform = execution_output.get("target_transform")
             if pkl_file_id:
-                from app.schemas.ml_model import MLModelUpdate
-
-                try:
-                    model_updates = {"pkl_file_id": pkl_file_id}
-                    if target_column:
-                        model_updates["target_variable"] = target_column
-                    if feature_columns:
-                        model_updates["features"] = feature_columns
-                        model_updates["inference_params"] = merge_model_inference_params(
-                            model.inference_params,
-                            feature_columns,
-                            target_transform.get("baselineColumn") if target_transform else None,
-                        )
-                    update_data = MLModelUpdate(**model_updates)
-                    await self.model_service.update(model_id, update_data)
-                    self.model_manager.invalidate_model(model_id)
-                    result["model_updated"] = True
-                except Exception as e:
-                    logger.warning(
-                        f"Error updating pkl_file for model {model_id}: {str(e)}. "
-                        "Attempting to update target and features fields."
+                model_updates["pkl_file_id"] = pkl_file_id
+                if target_column:
+                    model_updates["target_variable"] = target_column
+                if feature_columns:
+                    model_updates["features"] = feature_columns
+                    model_updates["inference_params"] = merge_model_inference_params(
+                        model.inference_params,
+                        feature_columns,
+                        target_transform.get("baselineColumn") if target_transform else None,
                     )
-                    raise e
 
-        if promote_data.update_metrics and execution_output:
-            # Update model metadata with metrics if needed
-            pass
+        promotes_run_file = "pkl_file_id" in model_updates
+        # Metrics describe one model file, so they only follow the run when the
+        # model ends up serving that run's file.
+        run_file_is_current = bool(pkl_file_id) and str(model.pkl_file_id or "") == str(pkl_file_id)
+        run_metrics = execution_output.get("metrics") if execution_output else None
+        training_metrics = None
+        if (
+            promote_data.update_metrics
+            and isinstance(run_metrics, dict)
+            and (promotes_run_file or run_file_is_current)
+        ):
+            training_metrics = run_metrics
+
+        if model_updates or training_metrics is not None:
+            from app.schemas.ml_model import MLModelUpdate
+
+            try:
+                # One update, so the file and its metrics change together. A new
+                # file without metrics leaves the model with empty metrics.
+                await self.model_service.update(
+                    model_id,
+                    MLModelUpdate(**model_updates),
+                    training_metrics=training_metrics,
+                )
+                if promotes_run_file:
+                    self.model_manager.invalidate_model(model_id)
+                result["model_updated"] = True
+            except Exception as e:
+                logger.warning(
+                    f"Error promoting model fields for model {model_id}: {str(e)}"
+                )
+                raise
 
         return result
 

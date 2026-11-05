@@ -11,13 +11,13 @@ client (unlike ``_make_request``), so patching ``_make_request`` alone would not
 intercept the token exchange.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 from fastapi import HTTPException
 
-from app.modules.integration.zendesk import ZendeskConnector
+from app.modules.integration.zendesk import ZendeskConnector, _zendesk_error_details
 
 _OAUTH = {
     "subdomain": "acme",
@@ -238,3 +238,261 @@ async def test_test_connection_raises_on_auth_failure():
                     "client_secret": "client-secret",
                 }
             )
+
+
+# --------------------------------------------------------------------------- #
+# Rejected requests: failure reason goes to the trace, never the response body
+# --------------------------------------------------------------------------- #
+
+_REJECTED = {
+    "error": "RecordInvalid",
+    "description": "Record validation errors",
+    "details": {
+        "requester": [
+            {"description": "Requester: Email: john@example.com is invalid"}
+        ]
+    },
+}
+
+
+def _tracer_with_span():
+    """A fake tracer whose ``trace()`` yields a ticket span, plus an open request span.
+
+    The request span stands for the caller's own span (e.g. ``POST /chat``); it
+    must never be marked failed by a ticket failure.
+    """
+    span = MagicMock()
+    span.error = 0
+    request_span = MagicMock()
+    request_span.error = 0
+    fake_tracer = MagicMock()
+    fake_tracer.trace.return_value.__enter__.return_value = span
+    fake_tracer.current_span.return_value = request_span
+    return fake_tracer, span, request_span
+
+
+@pytest.mark.asyncio
+async def test_rejected_ticket_tags_span_and_does_not_log_body(caplog):
+    c = ZendeskConnector(
+        subdomain="acme", email="a@b.com", api_token="tok", auth_method="api_token"
+    )
+    url = f"{c.base_url}/tickets.json"
+    fake_tracer, span, request_span = _tracer_with_span()
+    patcher, _ = _patch_httpx([_resp(422, url, json=_REJECTED)])
+
+    with patcher, patch("app.modules.integration.zendesk.tracer", fake_tracer):
+        result = await c.create_ticket(
+            subject="s", description="d", requester_email="john@example.com"
+        )
+
+    assert result is None
+    fake_tracer.trace.assert_called_once_with(
+        "zendesk.create_ticket", resource="create_ticket"
+    )
+    assert span.error == 1
+    # The caller's request span (which may still answer 200) stays clean.
+    assert request_span.error == 0
+    request_span.set_tag.assert_not_called()
+    span.set_tag.assert_any_call("zendesk.status_code", 422)
+    span.set_tag.assert_any_call("zendesk.error", "RecordInvalid")
+    span.set_tag.assert_any_call("zendesk.field", "requester")
+    assert "error=RecordInvalid field=requester" in caplog.text
+    assert "john@example.com" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_rejected_request_without_tracer_or_json_body(caplog):
+    c = ZendeskConnector(
+        subdomain="acme", email="a@b.com", api_token="tok", auth_method="api_token"
+    )
+    url = f"{c.base_url}/tickets.json"
+    patcher, _ = _patch_httpx([_resp(500, url, text="<html>oops</html>")])
+
+    with patcher, patch("app.modules.integration.zendesk.tracer", None):
+        with pytest.raises(HTTPException):
+            await c._make_request("POST", url)
+
+    assert "error=unknown field=unknown" in caplog.text
+    assert "oops" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        (_REJECTED, ("RecordInvalid", "requester")),
+        # OAuth-style errors nest the type under "title".
+        ({"error": {"title": "Forbidden", "message": "x"}}, ("Forbidden", "unknown")),
+        ({"error": "RecordNotFound"}, ("RecordNotFound", "unknown")),
+        ({"details": {"email": [{"description": "a@b.com"}]}}, ("unknown", "email")),
+        (["not", "a", "dict"], ("unknown", "unknown")),
+        ({}, ("unknown", "unknown")),
+    ],
+)
+def test_zendesk_error_details(body, expected):
+    resp = _resp(422, "https://acme.zendesk.com/api/v2/tickets.json", json=body)
+    assert _zendesk_error_details(resp) == expected
+
+
+def test_zendesk_error_details_never_returns_descriptions():
+    resp = _resp(422, "https://acme.zendesk.com/api/v2/tickets.json", json=_REJECTED)
+    assert "john@example.com" not in "".join(_zendesk_error_details(resp))
+
+
+@pytest.mark.asyncio
+async def test_rejected_ticket_without_ddtrace(caplog):
+    """Without ddtrace there is no span to tag; create_ticket still returns None."""
+    c = ZendeskConnector(
+        subdomain="acme", email="a@b.com", api_token="tok", auth_method="api_token"
+    )
+    url = f"{c.base_url}/tickets.json"
+    patcher, _ = _patch_httpx([_resp(422, url, json=_REJECTED)])
+
+    with patcher, patch("app.modules.integration.zendesk.tracer", None):
+        assert await c.create_ticket(subject="s", description="d") is None
+
+    assert "error=RecordInvalid field=requester" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_oauth_rejected_ticket_tags_span():
+    """The OAuth path goes through the same error handling as API-token auth."""
+    c = ZendeskConnector(**_OAUTH)
+    url = f"{c.base_url}/tickets.json"
+    fake_tracer, span, _ = _tracer_with_span()
+    patcher, _ = _patch_httpx(
+        [
+            _resp(200, c.token_url, json={"access_token": "TOKEN"}),
+            _resp(422, url, json=_REJECTED),
+        ]
+    )
+
+    with patcher, patch("app.modules.integration.zendesk.tracer", fake_tracer):
+        result = await c.create_ticket(subject="s", description="d")
+
+    assert result is None
+    assert span.error == 1
+    span.set_tag.assert_any_call("zendesk.field", "requester")
+
+
+@pytest.mark.asyncio
+async def test_raised_error_detail_has_no_response_body():
+    """str(e) is logged by callers and recorded by ddtrace, so it must not hold the email."""
+    c = ZendeskConnector(
+        subdomain="acme", email="a@b.com", api_token="tok", auth_method="api_token"
+    )
+    url = f"{c.base_url}/tickets/1.json"
+    patcher, _ = _patch_httpx([_resp(422, url, json=_REJECTED)])
+
+    with patcher:
+        with pytest.raises(HTTPException) as exc:
+            await c._make_request("GET", url)
+
+    assert exc.value.status_code == 422
+    assert "john@example.com" not in str(exc.value)
+    assert "error=RecordInvalid field=requester" in exc.value.detail
+
+
+@pytest.mark.asyncio
+async def test_only_create_ticket_marks_span_failed():
+    """Other calls handle their own errors; they must not fail the parent span."""
+    c = ZendeskConnector(
+        subdomain="acme", email="a@b.com", api_token="tok", auth_method="api_token"
+    )
+    url = f"{c.base_url}/tickets/1.json"
+    fake_tracer, span, request_span = _tracer_with_span()
+    patcher, _ = _patch_httpx([_resp(404, url, json={"error": "RecordNotFound"})])
+
+    with patcher, patch("app.modules.integration.zendesk.tracer", fake_tracer):
+        assert await c.update_ticket(1, comment="x") is False
+
+    fake_tracer.trace.assert_not_called()
+    assert request_span.error == 0
+    request_span.set_tag.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_oauth_refresh_then_success_does_not_mark_span_failed():
+    """An expired token (401) that is refreshed and retried is not a failed ticket."""
+    c = ZendeskConnector(**_OAUTH)
+    url = f"{c.base_url}/tickets.json"
+    fake_tracer, span, _ = _tracer_with_span()
+    patcher, _ = _patch_httpx(
+        [
+            _resp(200, c.token_url, json={"access_token": "OLD"}),
+            _resp(401, url, json={"error": "invalid_token"}),
+            _resp(200, c.token_url, json={"access_token": "NEW"}),
+            _resp(201, url, json={"ticket": {"id": 7}}),
+        ]
+    )
+
+    with patcher, patch("app.modules.integration.zendesk.tracer", fake_tracer):
+        result = await c.create_ticket(subject="s", description="d")
+
+    assert result == {"status": 200, "data": {"ticket": {"id": 7}}}
+    assert span.error == 0
+    span.set_tag.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_network_error_marks_span_failed():
+    c = ZendeskConnector(
+        subdomain="acme", email="a@b.com", api_token="tok", auth_method="api_token"
+    )
+    fake_tracer, span, request_span = _tracer_with_span()
+
+    class _FailingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def request(self, *args, **kwargs):
+            raise httpx.ConnectError("connection refused")
+
+    with patch("app.modules.integration.zendesk.httpx.AsyncClient", _FailingClient), patch(
+        "app.modules.integration.zendesk.tracer", fake_tracer
+    ):
+        assert await c.create_ticket(subject="s", description="d") is None
+
+    assert span.error == 1
+    span.set_tag.assert_any_call("zendesk.error", "network_error")
+    # Zendesk never answered, so no status code (the 500 is our own placeholder).
+    assert not any(
+        call.args[0] == "zendesk.status_code" for call in span.set_tag.call_args_list
+    )
+    assert request_span.error == 0
+
+
+@pytest.mark.asyncio
+async def test_network_error_log_has_no_traceback_locals(caplog):
+    """The network-error log carries no traceback, whose locals hold the payload."""
+    c = ZendeskConnector(
+        subdomain="acme", email="a@b.com", api_token="tok", auth_method="api_token"
+    )
+
+    class _FailingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def request(self, *args, **kwargs):
+            raise httpx.ConnectError("connection refused")
+
+    with patch("app.modules.integration.zendesk.httpx.AsyncClient", _FailingClient):
+        await c.create_ticket(
+            subject="s", description="d", requester_email="john@example.com"
+        )
+
+    records = [r for r in caplog.records if "network error" in r.getMessage()]
+    assert records and all(r.exc_info is None for r in records)
+    assert "ConnectError: connection refused" in records[0].getMessage()
+    assert "john@example.com" not in caplog.text
