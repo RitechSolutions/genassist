@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.utils.enums.workflow_schedule_enum import WorkflowScheduleRunStatus
+from app.core.utils.webhook_urls import PublicUrl
 
 TriggerMethod = Literal["POST", "GET"]
 TriggerAuthMode = Literal["bearer", "hmac"]
@@ -15,8 +16,8 @@ class WorkflowTriggerProvision(BaseModel):
 
     agent_id: UUID
     node_id: str = Field(..., min_length=1, max_length=255)
-    # Public API base (e.g. "https://host/api/"); the backend falls back to the
-    # request's own URL when omitted.
+    # Public API base (e.g. "https://host/api/"); PUBLIC_API_URL wins over it, and
+    # the backend falls back to the request's own URL when both are missing.
     base_url: Optional[str] = None
 
 
@@ -31,7 +32,7 @@ class WorkflowTriggerRead(BaseModel):
     id: UUID
     agent_id: UUID
     node_id: str
-    url: str
+    url: PublicUrl
     method: TriggerMethod
     auth_mode: TriggerAuthMode
     rate_limit_per_minute: int

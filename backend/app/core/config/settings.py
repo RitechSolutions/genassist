@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Tuple
 from urllib.parse import quote, unquote, urlparse
 
@@ -258,6 +259,8 @@ class ProjectSettings(BaseSettings):
     LOG_LEVEL: str = "DEBUG"
     SQLALCHEMY_LOG_LEVEL: str = "ERROR"
     FASTAPI_RUN_PORT: int = 8000
+    # Address callers outside the load balancer use, e.g. https://api.example.com/api
+    PUBLIC_API_URL: Optional[str] = None
     # for alembic migration on startup (changed type from int to bool)
     AUTO_MIGRATE: bool = True
     API_VERSION: Optional[str] = "1.0"
@@ -479,6 +482,32 @@ class ProjectSettings(BaseSettings):
         # Blank, whitespace, "none" and "null" all mean unset.
         is_unset_spelling = isinstance(value, str) and value.strip().lower() in ("", "none", "null")
         return None if is_unset_spelling else value
+
+    @field_validator("PUBLIC_API_URL", mode="before")
+    @classmethod
+    def _public_api_url_is_the_api_root(cls, value: object) -> Optional[str]:
+        text = str(value or "").strip().rstrip("/")
+        if text.lower() in ("", "none", "null"):
+            return None
+        try:
+            parsed = urlparse(text)
+            is_api_root = (
+                parsed.scheme in ("http", "https")
+                and bool(parsed.hostname)
+                and (parsed.port is None or parsed.port > 0)
+                and parsed.path.endswith("/api")
+                and not (parsed.username or parsed.password or parsed.params or parsed.query or parsed.fragment)
+                and not any(char.isspace() for char in text)
+            )
+        except ValueError:
+            is_api_root = False
+        if is_api_root:
+            return text
+        # Dropped rather than raised so a typo can't stop startup; not echoed as it can hold credentials
+        logging.getLogger(__name__).error(
+            "Ignoring PUBLIC_API_URL: it must be the API's public root, e.g. https://api.example.com/api"
+        )
+        return None
 
     @property
     def read_statement_timeout(self) -> int:
