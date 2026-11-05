@@ -293,15 +293,15 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           accept=".json"
           className="hidden"
         />
-        {isCheckingUpload && (
-          <span
-            role="status"
-            className="absolute right-0 top-full mt-2 flex items-center gap-1.5 whitespace-nowrap rounded-full bg-background/80 px-3 py-1.5 text-sm text-muted-foreground shadow-sm backdrop-blur-sm"
-          >
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Checking referenced items…
-          </span>
-        )}
+        {/* Screen readers only announce changes to a live region that's already mounted. */}
+        <div role="status" className="absolute right-0 top-full mt-2">
+          {isCheckingUpload && (
+            <span className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-background/80 px-3 py-1.5 text-sm text-muted-foreground shadow-sm backdrop-blur-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking referenced items…
+            </span>
+          )}
+        </div>
       </div>
 
       <ConfirmDialog
