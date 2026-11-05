@@ -44,7 +44,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as hpo_module
-from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml import ml_utils, training_data_storage
 
 logger = logging.getLogger(__name__)
 
@@ -476,7 +476,7 @@ class TrainModelNode(BaseNode):
             logger.info(f"Training {model_type} model: {name}")
 
             # Load data from CSV file
-            df = ml_utils.load_csv_file(file_url, self.state.thread_id, await ml_utils.extra_csv_directories())
+            df = await training_data_storage.load_training_csv(file_url, self.state.thread_id)
             # Column types saved by an upstream Preprocessing node (nullable
             # Int64/boolean, string, category, datetime) are converted to the
             # plain dtypes the steps below select on - see
