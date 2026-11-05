@@ -2,7 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import and_, case, select, update
+from sqlalchemy import and_, case, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models.agent import AgentModel
@@ -113,16 +113,32 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
             await self.db.flush()
         return retired
 
-    async def lock_live_shared(self, workflow_id: UUID) -> bool:
+    async def lock_live_shared(self, workflow_id: UUID, *, visible_to_caller: bool = False) -> bool:
         """Share-lock a live version until commit; False when it is missing or deleted.
 
         A version or agent delete waits for the lock, so a row written against
-        the version cannot be left pointing at a deleted workflow.
+        the version cannot be left pointing at a deleted workflow. With
+        ``visible_to_caller`` a version outside the caller's groups also reads as
+        missing, so one group cannot attach its rows to (and so block the delete
+        of) another group's workflow: an agent's version by its agent's group, a
+        version without an agent by the group of whoever created it.
         """
-        stmt = (
-            select(WorkflowModel.id)
-            .where(WorkflowModel.id == workflow_id, WorkflowModel.is_deleted == 0)
-            .with_for_update(read=True)
+        agent_visible = (
+            select(AgentModel.id)
+            .where(AgentModel.id == WorkflowModel.agent_id, self._visible_agent())
+            .exists()
+        )
+        stmt = select(WorkflowModel.id).where(
+            WorkflowModel.id == workflow_id, WorkflowModel.is_deleted == 0
+        )
+        if visible_to_caller:
+            agentless = WorkflowModel.agent_id.is_(None)
+            creator_scope = get_group_scope_clause(WorkflowModel)
+            if creator_scope is not None:
+                agentless = and_(agentless, creator_scope)
+            stmt = stmt.where(or_(agentless, agent_visible))
+        stmt = stmt.with_for_update(read=True, of=WorkflowModel).execution_options(
+            **{GROUP_SCOPE_BYPASS_FLAG: True}
         )
         return (await self.db.execute(stmt)).scalar_one_or_none() is not None
 

@@ -202,3 +202,63 @@ async def test_a_config_write_started_during_an_agent_delete_finds_the_version_g
                 lock_task.cancel()
             await asyncio.gather(lock_task, return_exceptions=True)
             await configuring.rollback()
+
+
+async def _seed_agent(session):
+    """A live agent with the operator rows it requires."""
+    from app.db.models.agent import AgentModel
+    from app.db.models.operator import OperatorModel, OperatorStatisticsModel
+    from app.db.models.user import UserModel
+
+    user_id = (await session.execute(select(UserModel.id).limit(1))).scalar_one()
+    statistics = OperatorStatisticsModel(id=uuid4(), is_deleted=0)
+    session.add(statistics)
+    await session.flush()
+    operator = OperatorModel(
+        id=uuid4(), first_name="MLP6", last_name="Fixture", statistics_id=statistics.id,
+        is_active=1, user_id=user_id, is_deleted=0,
+    )
+    session.add(operator)
+    await session.flush()
+    agent = AgentModel(
+        id=uuid4(), name=f"zz_{uuid4().hex[:8]}_agent", is_active=1,
+        operator_id=operator.id, welcome_message="Welcome", is_deleted=0,
+    )
+    session.add(agent)
+    await session.flush()
+    return agent.id
+
+
+@pytest.mark.asyncio
+async def test_a_config_cannot_target_a_workflow_outside_the_callers_groups(db_session, monkeypatch):
+    """Otherwise one group could pin (and so block the delete of) another group's workflow."""
+    import app.repositories.workflow as workflow_repo_module
+    from app.db.models.agent import AgentModel
+
+    session = db_session
+    repo = WorkflowRepository(session)
+    try:
+        agent_id = await _seed_agent(session)
+        _, workflow_id, _ = await _seed_pipeline(session, agent_id=agent_id)
+        _, agentless_id, _ = await _seed_pipeline(session)
+        _, foreign_agentless_id, _ = await _seed_pipeline(session)
+
+        assert await repo.lock_live_shared(workflow_id, visible_to_caller=True)
+        assert await repo.lock_live_shared(foreign_agentless_id, visible_to_caller=True)
+
+        # The caller's group scope excludes the agent and the second agentless
+        # version, as for a member of another group.
+        def scope(model):
+            if model is AgentModel:
+                return AgentModel.id != agent_id
+            return WorkflowModel.id != foreign_agentless_id
+
+        monkeypatch.setattr(workflow_repo_module, "get_group_scope_clause", scope)
+        assert await repo.lock_live_shared(workflow_id, visible_to_caller=True) is False
+        assert await repo.lock_live_shared(agentless_id, visible_to_caller=True)
+        assert await repo.lock_live_shared(foreign_agentless_id, visible_to_caller=True) is False
+        # Without the flag the version is not scoped (agent activation still
+        # calls it that way; see the follow-up on cross-group activation).
+        assert await repo.lock_live_shared(workflow_id)
+    finally:
+        await session.rollback()
