@@ -1,4 +1,5 @@
 import { apiRequest } from "@/config/api";
+import { throwIfErrorEnvelope } from "@/helpers/apiError";
 import type {
   CreatePromptVersionPayload,
   GoldSuiteLinkPayload,
@@ -78,7 +79,7 @@ export const evaluatePrompt = (
     "POST",
     `${BASE}/evaluate/${contextPath(workflowId, nodeId, promptField)}`,
     payload as unknown as Record<string, unknown>,
-  );
+  ).then(throwIfErrorEnvelope);
 
 export const optimizePrompt = (
   workflowId: string,
@@ -90,4 +91,4 @@ export const optimizePrompt = (
     "POST",
     `${BASE}/optimize/${contextPath(workflowId, nodeId, promptField)}`,
     payload as unknown as Record<string, unknown>,
-  );
+  ).then(throwIfErrorEnvelope);
