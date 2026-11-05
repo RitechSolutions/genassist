@@ -175,3 +175,146 @@ class TestUploadFilePath:
         assert response.file_path == str(ml_models_dir / f"{response.file_id}.pkl")
         assert (ml_models_dir / f"{response.file_id}.pkl").read_bytes() == b"model"
         assert is_in_ml_models_dir(response.file_path)
+
+
+class TestUploadRemovesFileWhenItFailsAfterStoring:
+    """The client never gets the id of a .pkl whose upload failed, so the route removes it."""
+
+    def _file_manager(self, base_path, file_id):
+        file_manager_service = AsyncMock()
+        file_manager_service.initialize.return_value = SimpleNamespace(
+            name="local", get_base_path=lambda: str(base_path)
+        )
+        file_manager_service.create_file.return_value = SimpleNamespace(
+            id=file_id, path="ml_models/abc.pkl", storage_provider="local"
+        )
+        file_manager_service.get_file_source_url.return_value = "http://test/file"
+        return file_manager_service
+
+    async def _upload(self, file_manager_service):
+        from app.api.v1.routes.ml_models import upload_pkl_file
+
+        return await upload_pkl_file(
+            request=SimpleNamespace(base_url="http://test/"),
+            file=SimpleNamespace(filename="model.pkl", content_type="application/octet-stream"),
+            file_manager_service=file_manager_service,
+            app_settings_svc=AsyncMock(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_source_url_failure_deletes_the_stored_file(self, ml_models_dir):
+        from fastapi import HTTPException
+
+        file_id = uuid4()
+        file_manager_service = self._file_manager(ml_models_dir.parent, file_id)
+        file_manager_service.get_file_source_url.side_effect = RuntimeError("storage not ready")
+
+        with pytest.raises(HTTPException) as exc:
+            await self._upload(file_manager_service)
+
+        assert exc.value.status_code == 500
+        file_manager_service.delete_file.assert_awaited_once_with(file_id)
+
+    @pytest.mark.asyncio
+    async def test_failed_copy_deletes_the_stored_file_and_the_partial_copy(
+        self, ml_models_dir, tmp_path, monkeypatch
+    ):
+        from fastapi import HTTPException
+        from app.api.v1.routes import ml_models as ml_models_routes
+
+        monkeypatch.setattr(ml_models_routes, "ML_MODELS_UPLOAD_DIR", str(ml_models_dir))
+        file_id = uuid4()
+        copy_path = ml_models_dir / f"{file_id}.pkl"
+
+        def failing_copy(src, dst):
+            open(dst, "wb").close()  # a partial copy is left behind before the failure
+            raise OSError("disk full")
+
+        monkeypatch.setattr(ml_models_routes.shutil, "copyfile", failing_copy)
+        # A custom File Manager folder, so the route copies the file into the ML models folder.
+        file_manager_service = self._file_manager(tmp_path / "custom", file_id)
+
+        with pytest.raises(HTTPException):
+            await self._upload(file_manager_service)
+
+        file_manager_service.delete_file.assert_awaited_once_with(file_id)
+        assert not copy_path.exists()
+
+    @pytest.mark.asyncio
+    async def test_cancelled_request_still_deletes_the_stored_file(self, ml_models_dir):
+        import asyncio
+
+        file_id = uuid4()
+        file_manager_service = self._file_manager(ml_models_dir.parent, file_id)
+        file_manager_service.get_file_source_url.side_effect = asyncio.CancelledError()
+
+        with pytest.raises(asyncio.CancelledError):
+            await self._upload(file_manager_service)
+
+        file_manager_service.delete_file.assert_awaited_once_with(file_id)
+
+    @pytest.mark.asyncio
+    async def test_cleanup_finishes_inside_a_cancelled_anyio_scope(self, ml_models_dir):
+        """Starlette cancels through anyio scopes, which cancel every later await too."""
+        import anyio
+
+        file_id = uuid4()
+        file_manager_service = self._file_manager(ml_models_dir.parent, file_id)
+        started = anyio.Event()
+        deleted = []
+
+        async def hanging_source_url(_):
+            started.set()
+            await anyio.sleep_forever()
+
+        async def delete_file(fid):
+            await anyio.sleep(0)  # an await inside the cleanup, like the real DB lookup
+            deleted.append(fid)
+
+        file_manager_service.get_file_source_url.side_effect = hanging_source_url
+        file_manager_service.delete_file.side_effect = delete_file
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(self._upload, file_manager_service)
+            await started.wait()
+            tg.cancel_scope.cancel()
+
+        assert deleted == [file_id]
+
+    @pytest.mark.asyncio
+    async def test_cleanup_failure_still_reports_the_upload_error(self, ml_models_dir):
+        from fastapi import HTTPException
+
+        file_manager_service = self._file_manager(ml_models_dir.parent, uuid4())
+        file_manager_service.get_file_source_url.side_effect = RuntimeError("storage not ready")
+        file_manager_service.delete_file.side_effect = RuntimeError("delete failed too")
+
+        with pytest.raises(HTTPException) as exc:
+            await self._upload(file_manager_service)
+
+        assert "storage not ready" in exc.value.detail
+
+    @pytest.mark.asyncio
+    async def test_successful_upload_deletes_nothing(self, ml_models_dir):
+        file_manager_service = self._file_manager(ml_models_dir.parent, uuid4())
+
+        await self._upload(file_manager_service)
+
+        file_manager_service.delete_file.assert_not_awaited()
+
+
+def test_training_upload_discard_requires_the_file_delete_permission():
+    """Deleting a File Manager file needs delete rights, not just the right to upload."""
+    from app.api.v1.routes.ml_models import router
+    from app.core.permissions.constants import Permissions as P
+
+    route = next(r for r in router.routes if r.path.endswith("/training-data/upload/{file_id}"))
+    assert route.methods == {"DELETE"}
+    closures = [
+        cell.cell_contents
+        for dep in route.dependencies
+        for cell in (getattr(dep.dependency, "__closure__", None) or ())
+    ]
+    flattened = {item for value in closures for item in (value if isinstance(value, (list, tuple, set)) else [value])}
+    assert P.FileManager.DELETE in flattened
+    assert P.FileManager.CREATE not in flattened
