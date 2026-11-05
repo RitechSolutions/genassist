@@ -46,7 +46,7 @@ class KnowledgeBaseRepository(DbRepository[KnowledgeBaseModel]):
         stmt = (
             select(KnowledgeBaseModel.id, KnowledgeBaseModel.name)
             .where(KnowledgeBaseModel.is_deleted == 0)
-            .order_by(KnowledgeBaseModel.created_at.asc())
+            .order_by(KnowledgeBaseModel.created_at.asc(), KnowledgeBaseModel.id.asc())
         )
         result = await self.db.execute(stmt)
         return result.all()
