@@ -27,7 +27,7 @@ from app.modules.data.providers.legra import (
 )
 from app.modules.data.utils import FileExtractor, FileTextExtractor
 from app.modules.workflow.agents.rag import ThreadScopedRAG
-from app.schemas.agent_knowledge import KBBase, KBCreate, KBListItem, KBRead
+from app.schemas.agent_knowledge import KBBase, KBCreate, KBListItem, KBMinimal, KBRead
 from app.schemas.common import PaginatedResponse
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 from app.schemas.file import FileBase, FileUploadResponse
@@ -86,6 +86,18 @@ async def get_knowledge_items_list(
 ):
     """Paginated KB list — optimized for performance (minimal fields only)."""
     return await knowledge_service.get_list_paginated(filter_obj)
+
+
+@router.get(
+    "/minimal",
+    response_model=List[KBMinimal],
+    dependencies=[Depends(auth)],
+)
+async def get_knowledge_items_minimal(
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
+):
+    """Ids and names of all knowledge bases, without their content."""
+    return await knowledge_service.get_all_minimal()
 
 
 @router.get(
