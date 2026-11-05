@@ -29,7 +29,7 @@ from app.modules.integration.database.read_only_sql import (
     read_only_sql_blocked_message,
     validate_read_only_sql,
 )
-from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml import ml_utils, training_data_storage
 from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     CSV_SUFFIXES,
     EXCEL_SUFFIXES,
@@ -797,6 +797,7 @@ async def _resolve_csv_input(
         # Only files inside the data volume, or the configured storage folder, can be read
         extra_directories = await ml_utils.extra_csv_directories()
         if candidate_suffix in ("", ".csv"):
+            await training_data_storage.fetch_training_data(file_url, allowed_directories=extra_directories)
             local_path = ml_utils.resolve_csv_file_path(
                 file_url, allowed_directories=extra_directories
             )
