@@ -38,6 +38,7 @@ from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     ensure_supported_training_file,
     list_excel_sheets,
     read_training_file_preview,
+    stored_file_suffix,
     training_file_suffix,
 )
 from app.modules.workflow.engine.utils import has_volatile_template_vars
@@ -896,20 +897,7 @@ def _validate_file_manager_file(
     allowed_suffixes: frozenset[str] | set[str] = CSV_SUFFIXES,
 ) -> str:
     """Validate a File Manager record using server-controlled metadata; return its suffix."""
-    extension = str(getattr(stored_file, "file_extension", "") or "").strip()
-    if extension:
-        suffix = f".{extension.lstrip('.').lower()}"
-    else:
-        suffix = ""
-        for candidate in (
-            getattr(stored_file, "name", None),
-            getattr(stored_file, "path", None),
-        ):
-            if candidate:
-                suffix = Path(str(candidate)).suffix.lower()
-                if suffix:
-                    break
-
+    suffix = stored_file_suffix(stored_file)
     if suffix not in allowed_suffixes:
         raise _unsupported_file_type_error(suffix, allowed_suffixes)
     return suffix
