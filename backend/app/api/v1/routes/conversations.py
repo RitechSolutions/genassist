@@ -831,7 +831,9 @@ async def update(
         logger.debug("agent not found")
         raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
     # Tag before any validation so rejected replies can be split by agent too.
-    set_agent_span_attributes(agent.id, agent.workflow_id)
+    # The agent here is usually the cached AgentMinimalForCache; entries pickled
+    # before workflow_id was added to it don't have the attribute at all.
+    set_agent_span_attributes(agent.id, getattr(agent, "workflow_id", None))
 
     content_type = request.headers.get("content-type", "")
     audio_bytes: bytes | None = None
