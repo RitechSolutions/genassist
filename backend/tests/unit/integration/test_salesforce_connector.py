@@ -409,3 +409,126 @@ async def test_test_connection_raises_on_auth_failure():
                     "salesforce_client_secret": "client-secret",
                 }
             )
+
+
+def _salesforce_length(text):
+    return len(text.encode("utf-16-le")) // 2
+
+
+@pytest.mark.parametrize(
+    "text, max_length, expected",
+    [
+        ("short", 10, "short"),
+        ("abcdefghij", 10, "abcdefghij"),
+        ("abcdefghijk", 10, "abcdefg..."),
+        ("😀😀😀😀😀😀", 10, "😀😀😀..."),
+        ("ab😀😀😀😀", 6, "ab..."),
+    ],
+)
+def test_fit_to_length_counts_like_salesforce_and_never_splits_emoji(text, max_length, expected):
+    from app.modules.integration.salesforce import _fit_to_length
+
+    fitted = _fit_to_length(text, max_length, "...")
+    assert fitted == expected
+    assert _salesforce_length(fitted) <= max_length
+
+
+@pytest.mark.asyncio
+async def test_create_case_fits_subject_and_description_and_contact_fields_win():
+    connector = _connector()
+
+    async def _fake_request(method, url, json=None, data=None, headers=None, timeout=10.0):
+        if url.endswith("/services/oauth2/token"):
+            return _TOKEN_RESPONSE
+        return {"id": "500AB", "success": True}
+
+    long_chat = "Customer: my card failed 😀 " * 2000
+    with patch.object(connector, "_make_request", new_callable=AsyncMock, side_effect=_fake_request) as mock_request:
+        await connector.create_case(
+            subject="S" * 300,
+            description=long_chat,
+            custom_fields=[{"key": "SuppliedEmail", "value": "old@example.com"}, {"key": "Origin", "value": "Chatbot"}],
+            contact_fields={"SuppliedEmail": "alice@example.com", "SuppliedName": "Alice"},
+        )
+
+    body = mock_request.await_args_list[1].kwargs["json"]
+    assert _salesforce_length(body["Subject"]) <= 255
+    assert body["Subject"].endswith("...")
+    assert _salesforce_length(body["Description"]) <= 32000
+    assert body["Description"].endswith("\n\n[truncated]")
+    assert body["Description"].startswith("Customer: my card failed")
+    assert body["SuppliedEmail"] == "alice@example.com"
+    assert body["SuppliedName"] == "Alice"
+    assert body["Origin"] == "Chatbot"
+
+
+@pytest.mark.asyncio
+async def test_rejected_request_logs_and_returns_only_error_code_and_field():
+    import httpx
+
+    customer_text = "my card 4111 failed, email jane@example.com"
+    url = "https://myorg.my.salesforce.com/services/data/v60.0/sobjects/Case"
+    reply = httpx.Response(
+        400,
+        json=[{"message": f"Description: data value too large: {customer_text}", "errorCode": "STRING_TOO_LONG", "fields": ["Description"]}],
+        request=httpx.Request("POST", url),
+    )
+    connector = _connector()
+
+    with patch.object(httpx.AsyncClient, "request", new=AsyncMock(return_value=reply)), patch(
+        "app.modules.integration.salesforce.logger"
+    ) as logger:
+        with pytest.raises(HTTPException) as raised:
+            await connector._make_request("POST", url, json={})
+
+    assert raised.value.detail == "STRING_TOO_LONG on Description"
+    logged = " ".join(str(arg) for call in logger.error.call_args_list for arg in call.args)
+    assert "STRING_TOO_LONG on Description" in logged
+    assert customer_text not in logged
+
+
+@pytest.mark.parametrize(
+    "status, body, expected",
+    [
+        (400, [{"message": "Email: invalid email address: guest", "errorCode": "INVALID_EMAIL_ADDRESS", "fields": ["SuppliedEmail"]}], "INVALID_EMAIL_ADDRESS on SuppliedEmail"),
+        (400, [{"message": "duplicate value found: Name duplicates value on record", "errorCode": "DUPLICATE_VALUE", "fields": []}], "DUPLICATE_VALUE"),
+        (400, [{"message": "a", "errorCode": "A", "fields": ["X"]}, {"message": "b", "errorCode": "B", "fields": ["Y", "Z"]}], "A on X; B on Y, Z"),
+        (400, {"error": "invalid_client", "error_description": "invalid client credentials"}, "invalid_client: invalid client credentials"),
+        (401, {"error": "invalid_grant"}, "invalid_grant"),
+        (500, None, "HTTP 500"),
+    ],
+)
+def test_safe_error_detail(status, body, expected):
+    import httpx
+
+    from app.modules.integration.salesforce import _safe_error_detail
+
+    response = httpx.Response(status, json=body) if body is not None else httpx.Response(status, text="<html>oops</html>")
+    assert _safe_error_detail(response) == expected
+
+
+def test_custom_subject_and_description_are_cut_too():
+    from app.modules.integration.salesforce import build_case_payload
+
+    payload = build_case_payload(
+        "Help", "short", [{"key": "Description", "value": "x" * 40000}, {"key": "Subject", "value": "S" * 300}], None
+    )
+    assert _salesforce_length(payload["Description"]) == 32000
+    assert _salesforce_length(payload["Subject"]) == 255
+
+
+@pytest.mark.asyncio
+async def test_failed_read_keeps_salesforce_message():
+    import httpx
+
+    url = "https://myorg.my.salesforce.com/services/data/v60.0/query/?q=SELECT"
+    reply = httpx.Response(
+        400,
+        json=[{"message": "No such column 'Body__c' on entity 'Knowledge__kav'", "errorCode": "INVALID_FIELD"}],
+        request=httpx.Request("GET", url),
+    )
+    with patch.object(httpx.AsyncClient, "request", new=AsyncMock(return_value=reply)):
+        with pytest.raises(HTTPException) as raised:
+            await _connector()._make_request("GET", url)
+
+    assert "No such column 'Body__c'" in raised.value.detail
