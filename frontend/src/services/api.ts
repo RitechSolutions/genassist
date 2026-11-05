@@ -163,7 +163,13 @@ export async function updateAgentConfig(
 }
 
 export async function deleteAgentConfig(id: string) {
-  return apiRequest("DELETE", `genagent/agents/configs/${id}`);
+  return apiRequest(
+    "DELETE",
+    `genagent/agents/configs/${id}`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
 }
 
 // Agent image operations

@@ -100,6 +100,7 @@ class ErrorKey(Enum):
     WORKFLOW_VERSION_ACTIVE = "WORKFLOW_VERSION_ACTIVE"
     WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER = "WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER"
     WORKFLOW_VERSION_IN_USE_BY_ML_MODEL = "WORKFLOW_VERSION_IN_USE_BY_ML_MODEL"
+    AGENT_IN_USE_BY_ML_MODEL = "AGENT_IN_USE_BY_ML_MODEL"
     SUB_AGENT_SESSION_STALE = "SUB_AGENT_SESSION_STALE"
     SUB_AGENT_INVALID_TOPOLOGY = "SUB_AGENT_INVALID_TOPOLOGY"
     SUB_AGENT_INVALID_CONFIG = "SUB_AGENT_INVALID_CONFIG"
@@ -315,6 +316,10 @@ ERROR_MESSAGES = {
         ErrorKey.WORKFLOW_VERSION_IN_USE_BY_ML_MODEL: (
             "This version cannot be deleted while an ML model's pipeline configuration uses it ({0}). "
             "Remove those configurations first."
+        ),
+        ErrorKey.AGENT_IN_USE_BY_ML_MODEL: (
+            "This agent cannot be deleted while an ML model's pipeline configuration uses one of its "
+            "workflow versions ({0}). Remove those configurations first."
         ),
         ErrorKey.OPERATOR_ROLE_MISSING: "Operator role missing.",
         ErrorKey.CREATE_USER_TYPE_IN_MENU: "Operators and ai agents should be created in their specific menus.",
