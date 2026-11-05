@@ -4,6 +4,7 @@ Train Model node implementation using the BaseNode class.
 This node trains ML models on CSV data and saves them as .pkl files.
 """
 
+import asyncio
 import logging
 import os
 import pickle
@@ -28,6 +29,7 @@ from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from threadpoolctl import threadpool_limits
 from sklearn.preprocessing import (
     MaxAbsScaler,
     MinMaxScaler,
@@ -45,6 +47,8 @@ from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as hpo_module
 from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml import model_registry
+from app.modules.workflow.engine.nodes.ml import training_progress
 
 logger = logging.getLogger(__name__)
 
@@ -464,6 +468,13 @@ class TrainModelNode(BaseNode):
                         error_detail="targetTransform requires a baselineColumn",
                     )
 
+            # Refuse an oversized search before loading any data. The API
+            # checks this too before queueing a job; this covers every other
+            # caller (pipelines, the execute API).
+            search_plan = hpo_module.check_search_size(
+                model_type, model_parameters, hyperparameter_optimization, optimization_config
+            )
+
             # Check if an optional ML library dependency is installed when needed
             if model_type in _OPTIONAL_MODEL_DEPENDENCIES:
                 package_name, is_available = _OPTIONAL_MODEL_DEPENDENCIES[model_type]
@@ -476,6 +487,7 @@ class TrainModelNode(BaseNode):
             logger.info(f"Training {model_type} model: {name}")
 
             # Load data from CSV file
+            training_progress.report("loading_data", "Loading training data", 5)
             df = ml_utils.load_csv_file(file_url, self.state.thread_id, await ml_utils.extra_csv_directories())
             # Column types saved by an upstream Preprocessing node (nullable
             # Int64/boolean, string, category, datetime) are converted to the
@@ -483,6 +495,7 @@ class TrainModelNode(BaseNode):
             # normalize_dtypes_for_training.
             df = ml_utils.normalize_dtypes_for_training(df)
             logger.info(f"Loaded {len(df)} rows from {file_url}")
+            training_progress.report("preparing", f"Preparing {len(df):,} rows", 15)
 
             # Validate columns exist
             all_columns = list(df.columns)
@@ -821,9 +834,20 @@ class TrainModelNode(BaseNode):
 
             # Train the model — either a plain single fit with fixed params, or a
             # hyperparameter search over the curated space for this model type.
+            # Both run in a worker thread so a long fit never blocks the event
+            # loop, and use at most ML_TRAINING_MAX_CORES cores.
             search_metadata = None
-            if hyperparameter_optimization != "none":
-                optimization_result = hpo_module.optimize_hyperparameters(
+            if search_plan is not None:
+                training_progress.report(
+                    "training",
+                    f"Training {search_plan['fits']:,} models "
+                    f"({search_plan['candidates']:,} parameter combinations x {search_plan['cv_folds']} folds) "
+                    f"on {hpo_module.training_cores()} cores",
+                    30,
+                )
+                optimization_result = await asyncio.to_thread(
+                    self._run_with_core_limit,
+                    hpo_module.optimize_hyperparameters,
                     model_type=model_type,
                     is_classification=is_classification,
                     X_train=X_train,
@@ -832,6 +856,9 @@ class TrainModelNode(BaseNode):
                     user_params=model_parameters,
                     opt_config=optimization_config,
                     is_time_based=(split_method == "time_based"),
+                    on_trial=lambda done, total: training_progress.report(
+                        "training", f"Bayesian optimization: trial {done} of {total}", 30 + 50 * done // max(total, 1)
+                    ),
                 )
             else:
                 optimization_result = None
@@ -848,6 +875,7 @@ class TrainModelNode(BaseNode):
                         f"No tunable hyperparameters available for '{model_type}' "
                         f"(space empty or fully fixed by modelParameters); training with fixed params instead."
                     )
+                training_progress.report("training", f"Training the {model_type} model", 30)
                 model = await self._train_model(
                     model_type=model_type,
                     X_train=X_train,
@@ -865,6 +893,7 @@ class TrainModelNode(BaseNode):
             # trained directly on the real-unit target.
             metrics = {}
             if X_val is not None and y_val is not None:
+                training_progress.report("evaluating", "Evaluating on the validation split", 85)
                 metrics = self._evaluate_model(
                     model, X_val,
                     y_val_actual if y_val_actual is not None else y_val,
@@ -874,6 +903,7 @@ class TrainModelNode(BaseNode):
                 logger.info(f"Validation metrics: {metrics}")
 
             # Save model to .pkl file (model + metadata payload)
+            training_progress.report("saving", "Saving the model", 92)
             model_artifact = await self._save_model(
                 model=model,
                 name=name,
@@ -1757,7 +1787,38 @@ class TrainModelNode(BaseNode):
             Trained model
         """
         logger.info(f"Training {model_type} model (classification={is_classification})")
+        model_parameters = model_registry.cap_estimator_threads(
+            model_type, model_parameters, hpo_module.training_cores()
+        )
+        return await asyncio.to_thread(
+            self._run_with_core_limit,
+            self._fit_model,
+            model_type,
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            is_classification,
+            model_parameters,
+        )
 
+    @staticmethod
+    def _run_with_core_limit(fit, *args, **kwargs):
+        """Run fit with native thread pools (BLAS, OpenMP) capped at ML_TRAINING_MAX_CORES."""
+        with threadpool_limits(limits=hpo_module.training_cores()):
+            return fit(*args, **kwargs)
+
+    def _fit_model(
+        self,
+        model_type: str,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: Optional[pd.DataFrame],
+        y_val: Optional[pd.Series],
+        is_classification: bool,
+        model_parameters: Dict[str, Any],
+    ):
+        """Fit one model with fixed parameters (runs in a worker thread)."""
         if model_type == "xgboost":
             return self._train_xgboost(X_train, y_train, X_val, y_val, is_classification, model_parameters)
         elif model_type == "lightgbm":

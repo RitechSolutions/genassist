@@ -23,6 +23,8 @@ import {
   getAllNodeSchemas,
   testNode,
   testWorkflow,
+  waitForTrainingJob,
+  isTrainingJob,
   getFailedNodeDisplayMessage,
   getTrainDataSourceTestFailureMessage,
   generatePythonTemplate,
@@ -112,6 +114,78 @@ describe("workflows service", () => {
     await testWorkflow(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload, {
       timeout: 1000,
+    });
+  });
+
+  describe("training jobs", () => {
+    const job = (status: string, extra: Record<string, unknown> = {}) => ({
+      job_id: "job-1",
+      kind: "node",
+      status,
+      progress: { stage: "training", message: "Training 729 models", percent: 30 },
+      result: null,
+      error: null,
+      created_at: "",
+      updated_at: "",
+      ...extra,
+    });
+
+    it("recognises a job response but not a normal test result", () => {
+      expect(isTrainingJob(job("queued"))).toBe(true);
+      expect(isTrainingJob({ status: "success", output: {} })).toBe(false);
+      expect(isTrainingJob(null)).toBe(false);
+    });
+
+    it("testNode polls a queued training job and resolves with its result", async () => {
+      vi.useFakeTimers();
+      const result = { status: "success", output: { success: true } };
+      mockApiRequest
+        .mockResolvedValueOnce(job("queued") as never)
+        .mockResolvedValueOnce(job("running") as never)
+        .mockResolvedValueOnce(job("succeeded", { result }) as never);
+      const seen: string[] = [];
+
+      const pending = testNode({ input_data: {}, node_type: "trainModelNode", node_config: {} } as never, {
+        onTrainingProgress: (update) => seen.push(update.status),
+      });
+      await vi.runAllTimersAsync();
+
+      await expect(pending).resolves.toEqual(result);
+      expect(seen).toEqual(["queued", "running", "succeeded"]);
+      expect(mockApiRequest).toHaveBeenLastCalledWith("GET", "genagent/workflow/test-jobs/job-1");
+      vi.useRealTimers();
+    });
+
+    it("rejects with the job's error when training fails", async () => {
+      await expect(
+        waitForTrainingJob(job("failed", { error: "Search too large" }) as never)
+      ).rejects.toThrow("Search too large");
+    });
+
+    it("tolerates a brief polling error", async () => {
+      const result = { status: "success" };
+      mockApiRequest
+        .mockRejectedValueOnce(new Error("network"))
+        .mockResolvedValueOnce(job("succeeded", { result }) as never);
+
+      await expect(waitForTrainingJob(job("running") as never, undefined, 0)).resolves.toEqual(result);
+    });
+
+    it("gives up after repeated polling errors", async () => {
+      mockApiRequest
+        .mockRejectedValueOnce(new Error("network"))
+        .mockRejectedValueOnce(new Error("network"))
+        .mockRejectedValueOnce(new Error("network"));
+
+      await expect(waitForTrainingJob(job("running") as never, undefined, 0)).rejects.toThrow("network");
+      expect(mockApiRequest).toHaveBeenCalledTimes(3);
+    });
+
+    it("stops waiting once the time limit has passed", async () => {
+      await expect(waitForTrainingJob(job("queued") as never, undefined, 0, 0)).rejects.toThrow(
+        "Stopped waiting for the training job"
+      );
+      expect(mockApiRequest).not.toHaveBeenCalled();
     });
   });
 

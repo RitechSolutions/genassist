@@ -12,6 +12,7 @@ import { NodeData, HumanInTheLoopNodeData } from "../types/nodes";
 import {
   getTrainDataSourceTestFailureMessage,
   testNode,
+  TrainingJob,
 } from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
@@ -19,6 +20,7 @@ import { SchemaField, SchemaType } from "../types/schemas";
 import { useAudioTest } from "../hooks/useAudioTest";
 import { TestInputFields, STTAudioInput } from "./TestInputFields";
 import { TestOutputSection } from "./TestOutputSection";
+import { TrainingJobProgress } from "./TrainingJobProgress";
 
 export interface GenericTestInputField {
   id: string;
@@ -54,6 +56,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     null
   );
   const [isLoading, setIsLoading] = useState(false);
+  // Set while a Train Model test runs on the background worker.
+  const [trainingJob, setTrainingJob] = useState<TrainingJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [inputFields, setInputFields] = useState<GenericTestInputField[]>([]);
   const [availableData, setAvailableData] = useState<Record<
@@ -258,11 +262,14 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     setOutput(null);
 
     try {
-      const response = await testNode({
-        input_data: {},
-        node_type: nodeType,
-        node_config: nodeData,
-      });
+      const response = await testNode(
+        {
+          input_data: {},
+          node_type: nodeType,
+          node_config: nodeData,
+        },
+        { onTrainingProgress: setTrainingJob }
+      );
 
       if (nodeType === "trainDataSourceNode") {
         setError(getTrainDataSourceTestFailureMessage(response));
@@ -283,6 +290,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       setOutput({ status: "error", output: errorMessage });
     } finally {
       setIsLoading(false);
+      setTrainingJob(null);
     }
   };
 
@@ -368,11 +376,14 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         }
       }
 
-      const response = await testNode({
-        input_data: parsedData,
-        node_type: nodeType,
-        node_config: nodeData,
-      });
+      const response = await testNode(
+        {
+          input_data: parsedData,
+          node_type: nodeType,
+          node_config: nodeData,
+        },
+        { onTrainingProgress: setTrainingJob }
+      );
 
       if (nodeType === "trainDataSourceNode") {
         setError(getTrainDataSourceTestFailureMessage(response));
@@ -403,6 +414,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       setOutput({ status: "error", output: errorMessage });
     } finally {
       setIsLoading(false);
+      setTrainingJob(null);
     }
   };
 
@@ -449,6 +461,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
                 onTypeChange={handleTypeChange}
               />
             )}
+
+            {isLoading && trainingJob && <TrainingJobProgress job={trainingJob} />}
 
             <TestOutputSection
               output={output}
