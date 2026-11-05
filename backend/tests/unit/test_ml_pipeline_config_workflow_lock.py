@@ -37,7 +37,9 @@ async def test_create_on_a_deleted_or_missing_workflow_is_refused():
 
     assert exc.value.status_code == 404
     assert exc.value.error_key == ErrorKey.WORKFLOW_NOT_FOUND
-    service.workflow_repository.lock_live_shared.assert_awaited_once_with(workflow_id)
+    service.workflow_repository.lock_live_shared.assert_awaited_once_with(
+        workflow_id, visible_to_caller=True
+    )
     service.config_repository.create.assert_not_awaited()
 
 
@@ -45,14 +47,16 @@ async def test_create_on_a_deleted_or_missing_workflow_is_refused():
 async def test_update_onto_a_deleted_or_missing_workflow_is_refused():
     service = _service(workflow=False)
     model_id, config_id, workflow_id = uuid4(), uuid4(), uuid4()
-    service.config_repository.get_by_id = AsyncMock(return_value=SimpleNamespace(id=config_id, model_id=model_id))
+    service.config_repository.get_by_id = AsyncMock(return_value=SimpleNamespace(id=config_id, model_id=model_id, workflow_id=uuid4()))
 
     with pytest.raises(AppException) as exc:
         await service.update(model_id, config_id, MLModelPipelineConfigUpdate(workflow_id=workflow_id))
 
     assert exc.value.status_code == 404
     assert exc.value.error_key == ErrorKey.WORKFLOW_NOT_FOUND
-    service.workflow_repository.lock_live_shared.assert_awaited_once_with(workflow_id)
+    service.workflow_repository.lock_live_shared.assert_awaited_once_with(
+        workflow_id, visible_to_caller=True
+    )
     service.config_repository.update.assert_not_awaited()
 
 
@@ -66,7 +70,9 @@ async def test_create_on_a_live_workflow_locks_it_and_writes_the_config():
     with patch("app.services.ml_model_pipeline.MLModelPipelineConfigRead.model_validate"):
         await service.create(data)
 
-    service.workflow_repository.lock_live_shared.assert_awaited_once_with(workflow_id)
+    service.workflow_repository.lock_live_shared.assert_awaited_once_with(
+        workflow_id, visible_to_caller=True
+    )
     service.config_repository.create.assert_awaited_once_with(data)
 
 
@@ -78,6 +84,24 @@ async def test_update_without_a_workflow_change_takes_no_lock():
 
     with patch("app.services.ml_model_pipeline.MLModelPipelineConfigRead.model_validate"):
         await service.update(model_id, config_id, MLModelPipelineConfigUpdate(cron_schedule="0 2 * * *"))
+
+    service.workflow_repository.lock_live_shared.assert_not_awaited()
+    service.config_repository.update.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_update_resending_the_current_workflow_takes_no_lock():
+    """A config on a deleted workflow can still have its cron cleared."""
+    service = _service(workflow=False)
+    model_id, config_id, workflow_id = uuid4(), uuid4(), uuid4()
+    service.config_repository.get_by_id = AsyncMock(
+        return_value=SimpleNamespace(id=config_id, model_id=model_id, workflow_id=workflow_id)
+    )
+
+    with patch("app.services.ml_model_pipeline.MLModelPipelineConfigRead.model_validate"):
+        await service.update(
+            model_id, config_id, MLModelPipelineConfigUpdate(workflow_id=workflow_id, cron_schedule="")
+        )
 
     service.workflow_repository.lock_live_shared.assert_not_awaited()
     service.config_repository.update.assert_awaited_once()

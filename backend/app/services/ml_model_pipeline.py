@@ -95,7 +95,9 @@ class MLModelPipelineConfigService:
         Takes a shared row lock until commit, so a version or agent delete
         cannot retire the workflow between this check and the config write.
         """
-        if not await self.workflow_repository.lock_live_shared(workflow_id):
+        if not await self.workflow_repository.lock_live_shared(
+            workflow_id, visible_to_caller=True
+        ):
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
 
     async def get_by_id(self, config_id: UUID) -> MLModelPipelineConfigRead:
@@ -123,8 +125,9 @@ class MLModelPipelineConfigService:
         if config.model_id != model_id:
             raise AppException(error_key=ErrorKey.NOT_FOUND)
 
-        # Validate workflow if provided
-        if update_data.workflow_id:
+        # Validate the workflow only when it changes, so resending the current
+        # one (e.g. to clear the cron of a config on a deleted workflow) works
+        if update_data.workflow_id and update_data.workflow_id != config.workflow_id:
             await self._lock_live_workflow(update_data.workflow_id)
 
         # Validate cron schedule if provided
