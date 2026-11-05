@@ -14,6 +14,7 @@ import logging
 import math
 import os
 import re
+import warnings
 import tokenize
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
@@ -490,11 +491,73 @@ COLUMN_TRANSFORM_STRATEGY_LABELS = {
     "quantile_transform": "Quantile Transformer",
     "power_transform": "Power Transformer",
     "pca": "PCA",
+    "math_transform": "Math Function",
 }
+
+# Math Function (math_transform): element-wise functions of numeric columns,
+# with nothing fitted. Log is Log Transform's job, not offered here.
+MATH_FUNCTIONS = {
+    "sin": ("Sine", np.sin),
+    "cos": ("Cosine", np.cos),
+    "sqrt": ("Square Root", np.sqrt),
+    "abs": ("Absolute Value", np.abs),
+    "square": ("Square", np.square),
+    "cbrt": ("Cube Root", np.cbrt),
+}
+
+# Date-Time Features (datetime_features): calendar parts of one date/time
+# column, each a new numeric column named <newColumnName>_<part>.
+DATETIME_PARTS = ("year", "month", "day", "day_of_week", "quarter", "hour", "is_weekend")
+
+
+def parse_datetime_values(values: Any) -> pd.Series:
+    """Read values as dates/times; anything unreadable becomes NaT.
+
+    Shared by training and inference, so a value reads the same way at
+    prediction time as it did when the model was trained. Values are read as
+    text unless they're already dates, so 20240105 isn't taken for a count of
+    nanoseconds. When any value carries a UTC offset (+02:00, Z), all values
+    are read in UTC - whether they arrive together or one at a time - and
+    values without an offset are taken as UTC.
+    """
+    series = pd.Series(values)
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series.dt.tz_convert("UTC") if series.dt.tz is not None else series
+    text = series.astype("string")
+    with warnings.catch_warnings():
+        # pandas 2 warns (pandas 3 raises) on mixed offsets; both are handled below.
+        warnings.simplefilter("ignore", FutureWarning)
+        try:
+            parsed = pd.to_datetime(text, errors="coerce", format="mixed")
+        except (TypeError, ValueError):
+            parsed = None
+    if parsed is None or not pd.api.types.is_datetime64_any_dtype(parsed) or parsed.dt.tz is not None:
+        parsed = pd.to_datetime(text, errors="coerce", format="mixed", utc=True)
+    return parsed
+
+
+def has_time_of_day(parsed: pd.Series) -> bool:
+    """Whether any value has a time other than midnight (so an hour is meaningful)."""
+    times = parsed.dropna()
+    return bool(((times.dt.hour != 0) | (times.dt.minute != 0) | (times.dt.second != 0)).any())
+
+
+def datetime_part_values(parsed: pd.Series, part: str) -> np.ndarray:
+    """One calendar part of parsed dates: day_of_week is 0 (Monday) to 6, is_weekend 1 or 0."""
+    dates = parsed.dt
+    if part == "day_of_week":
+        return dates.dayofweek.to_numpy(dtype=float)
+    if part == "is_weekend":
+        return (dates.dayofweek >= 5).astype(int).to_numpy(dtype=float)
+    return getattr(dates, part).to_numpy(dtype=float)
 
 
 def column_transform_value_problem(
-    strategy: str, values: np.ndarray, columns: List[str], power_method: Optional[str] = None
+    strategy: str,
+    values: np.ndarray,
+    columns: List[str],
+    power_method: Optional[str] = None,
+    math_function: Optional[str] = None,
 ) -> Optional[str]:
     """Why `values` can't go through this transform, or None if they can.
 
@@ -502,7 +565,7 @@ def column_transform_value_problem(
     training is rejected the same way at prediction time.
     """
     problem_code = column_transform_value_problem_code(
-        strategy, values, power_method
+        strategy, values, power_method, math_function
     )
     if problem_code == "non_finite":
         non_finite = ~np.isfinite(values)
@@ -512,6 +575,10 @@ def column_transform_value_problem(
         negative = values < 0
         counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
         return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
+    if problem_code == "negative_sqrt_input":
+        negative = values < 0
+        counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
+        return f"Square Root needs values of 0 or more; negative values in {counts}"
     if problem_code == "non_positive_box_cox_input":
         not_positive = values <= 0
         counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
@@ -526,12 +593,15 @@ def column_transform_value_problem_code(
     strategy: str,
     values: np.ndarray,
     power_method: Optional[str] = None,
+    math_function: Optional[str] = None,
 ) -> Optional[str]:
     """Stable reason code for an invalid column-transform input matrix."""
     if (~np.isfinite(values)).any():
         return "non_finite"
     if strategy == "log_transform" and (values < 0).any():
         return "negative_log_input"
+    if strategy == "math_transform" and math_function == "sqrt" and (values < 0).any():
+        return "negative_sqrt_input"
     if all((
         strategy == "power_transform",
         power_method == "box-cox",
@@ -541,12 +611,26 @@ def column_transform_value_problem_code(
     return None
 
 
-def apply_column_transform(strategy: str, transformer: Any, values: np.ndarray) -> np.ndarray:
-    """Apply a column-transform feature: log(1 + x) for Log Transform, else
-    the transformer fitted on the training split (QuantileTransformer,
-    PowerTransformer, or a [StandardScaler +] PCA pipeline)."""
+def column_transform_output_problem(values: np.ndarray, columns: List[str]) -> Optional[str]:
+    """Why a transform's output can't be used (infinite or empty results), or None."""
+    non_finite = ~np.isfinite(values)
+    if not non_finite.any():
+        return None
+    counts = {c: int(n) for c, n in zip(columns, non_finite.sum(axis=0)) if n}
+    return f"the result is infinite or empty for {counts} - the values are too large for this function"
+
+
+def apply_column_transform(
+    strategy: str, transformer: Any, values: np.ndarray, math_function: Optional[str] = None
+) -> np.ndarray:
+    """Apply a column-transform feature: log(1 + x) for Log Transform, the
+    chosen function for Math Function, else the transformer fitted on the
+    training split (QuantileTransformer, PowerTransformer, or a
+    [StandardScaler +] PCA pipeline)."""
     if strategy == "log_transform":
         return np.log1p(values)
+    if strategy == "math_transform":
+        return MATH_FUNCTIONS[math_function][1](values)
     return transformer.transform(values)
 
 
