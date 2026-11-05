@@ -459,15 +459,15 @@ function LlmUsagePage() {
         {pricingNotice && (
           <div
             className={cn(
-              "flex gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400",
+              "flex flex-wrap gap-3 sm:flex-nowrap rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400",
               bothNotices ? "items-start" : "items-center"
             )}
           >
             <AlertTriangle className={cn("h-4 w-4 shrink-0", bothNotices && "mt-0.5")} />
-            <span className="flex-1">
+            <span className="grow basis-[calc(100%-3.75rem)] sm:basis-0">
               <span className="font-semibold">{pricingNotice.lead}</span> {pricingNotice.body}
             </span>
-            <ManageCostsLink />
+            <ManageCostsLink className="order-last ml-7 sm:order-none sm:ml-0" />
             <button
               type="button"
               onClick={dismissPricingNotice}
