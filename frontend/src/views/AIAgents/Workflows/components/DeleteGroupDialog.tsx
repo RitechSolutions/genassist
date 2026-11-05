@@ -19,6 +19,7 @@ interface DeleteGroupDialogProps {
   memberCount: number;
   /** Other selected nodes deleted either way. */
   otherCount: number;
+  edgeCount: number;
   onDeleteGroupOnly: () => void;
   onDeleteWithContents: () => void;
 }
@@ -36,6 +37,7 @@ const DeleteGroupDialog: React.FC<DeleteGroupDialogProps> = ({
   groupCount,
   memberCount,
   otherCount,
+  edgeCount,
   onDeleteGroupOnly,
   onDeleteWithContents,
 }) => {
@@ -52,8 +54,13 @@ const DeleteGroupDialog: React.FC<DeleteGroupDialogProps> = ({
                   "node"
                 )}. You can remove just the group and keep its nodes on the canvas, or delete the nodes too.`
               : `${groupLabel[0].toUpperCase()}${groupLabel.slice(1)} is empty.`}
-            {otherCount > 0 &&
-              ` The other ${plural(otherCount, "selected node")} will be deleted either way.`}
+            {(otherCount > 0 || edgeCount > 0) &&
+              ` The ${[
+                otherCount > 0 && `other ${plural(otherCount, "selected node")}`,
+                edgeCount > 0 && plural(edgeCount, "selected connection"),
+              ]
+                .filter(Boolean)
+                .join(" and ")} will be deleted either way.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="gap-2 sm:gap-0">

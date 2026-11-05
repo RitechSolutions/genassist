@@ -14,6 +14,7 @@ from app.modules.workflow.agents.sub_agents import messages, orchestrator
 from app.modules.workflow.agents.sub_agents import session as sub_session
 from app.modules.workflow.agents.sub_agents.graph import SubAgentTopologyError
 from app.modules.workflow.agents.sub_agents.models import SubAgentFrame, SubAgentStack
+from app.modules.workflow.engine import pii_anonymizer_mixin as mixin_mod
 from app.modules.workflow.engine.node_result import is_node_failure
 from app.modules.workflow.engine.nodes.agent_node import (
     AGENT_ERROR_MESSAGE,
@@ -493,6 +494,95 @@ async def test_resume_prepends_saved_user_prompt_context():
     first_prompt = run_once.await_args_list[0].kwargs["user_prompt"]
     assert "PRIOR-CONTEXT-FROM-CHILD-A" in first_prompt
     assert "result B" in first_prompt
+
+
+_HANDBACK_RESUME = {
+    "node_outputs": {},
+    "node_execution_status": {},
+    "request_context": {},
+    "completed_count": 1,
+    "accumulated_steps": [],
+    "accumulated_tools_used": [],
+    "child_node_id": "child",
+    "mode": "task",
+    "child_task": "Book a flight to Paris",
+    "child_result": "Booking cancelled by the user.",
+    "user_prompt": "Book me a flight to Paris",
+}
+
+
+@pytest.mark.asyncio
+async def test_in_turn_completion_keeps_the_users_question_above_the_result():
+    node = _parent_node()
+    results = [
+        _rr(_env("completed", "37 EUR = 3700 ALL"), return_direct=True, tool="request_task_child"),
+        _rr("final answer"),
+    ]
+    _, run_once = await _run_loop(node, results, prompt="How many lek is 37 euros?")
+
+    second_prompt = run_once.await_args_list[1].kwargs["user_prompt"]
+    assert second_prompt.startswith("How many lek is 37 euros?\n\n")
+    assert "37 EUR = 3700 ALL" in second_prompt
+
+
+@pytest.mark.asyncio
+async def test_resume_ends_with_the_users_latest_message_and_keeps_the_saved_prompt():
+    node = _parent_node(
+        mode="task",
+        initial_values={
+            "message": "Never mind, what's the capital of Albania?",
+            "agent_id": "agentA",
+            "__sub_agent_resume": dict(_HANDBACK_RESUME),
+        },
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    _, run_once = await _run_loop(node, [_rr("Tirana")], delegation_map=dmap)
+
+    first_prompt = run_once.await_args_list[0].kwargs["user_prompt"]
+    assert first_prompt.startswith("Earlier in this conversation:\nBook me a flight to Paris\n\n")
+    assert first_prompt.index("--- end ---") < first_prompt.index(
+        "The user's latest message:\nNever mind, what's the capital of Albania?"
+    )
+    assert first_prompt.endswith("Respond to the user's latest message, using the sub-agent result where it helps.")
+
+
+@pytest.mark.asyncio
+async def test_resume_with_a_blank_message_keeps_todays_prompt():
+    node = _parent_node(
+        mode="task",
+        initial_values={"message": "  ", "agent_id": "agentA", "__sub_agent_resume": dict(_HANDBACK_RESUME)},
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    _, run_once = await _run_loop(node, [_rr("final")], delegation_map=dmap)
+
+    first_prompt = run_once.await_args_list[0].kwargs["user_prompt"]
+    assert first_prompt.startswith("Book me a flight to Paris\n\nYou delegated a sub-task")
+    assert first_prompt.endswith("--- end ---\nNow continue and produce your response to the user.")
+    assert "latest message" not in first_prompt
+
+
+@pytest.mark.asyncio
+async def test_resume_masks_the_users_latest_message_when_pii_masking_is_on():
+    node = _parent_node(
+        mode="task",
+        initial_values={
+            "message": "Send it to a@b.com",
+            "agent_id": "agentA",
+            "__sub_agent_resume": dict(_HANDBACK_RESUME),
+        },
+    )
+    dmap = {"request_task_child": {"child_node_id": "child", "mode": "task"}}
+    fake = MagicMock()
+    fake.mask.side_effect = lambda text, existing_items=None: (
+        text.replace("a@b.com", "<EMAIL_ADDRESS_1>"),
+        {"items": [{"token": "<EMAIL_ADDRESS_1>", "original": "a@b.com"}]} if "a@b.com" in text else {},
+    )
+    with patch.object(mixin_mod, "_service", fake):
+        _, run_once = await _run_loop(node, [_rr("done")], delegation_map=dmap, config={"piiMasking": True})
+
+    first_prompt = run_once.await_args_list[0].kwargs["user_prompt"]
+    assert "The user's latest message:\nSend it to <EMAIL_ADDRESS_1>\n" in first_prompt
+    assert "a@b.com" not in first_prompt
 
 
 @pytest.mark.asyncio

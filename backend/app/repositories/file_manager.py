@@ -5,6 +5,7 @@ from sqlalchemy import select, and_, or_
 from typing import List, Optional
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.storage_path import RESERVED_FILE_METADATA_KEYS
 from app.db.models.file import FileModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.file import FileBase
@@ -94,9 +95,12 @@ class FileManagerRepository(DbRepository[FileModel]):
         limit: Optional[int] = None,
         offset: Optional[int] = None,
         tag: Optional[str] = None,
+        include_deleted: bool = False,
     ) -> List[FileModel]:
-        """List files with optional filtering."""
-        query = select(FileModel).where(FileModel.is_deleted == 0)
+        """List files with optional filtering. Soft-deleted rows only when asked."""
+        query = select(FileModel)
+        if not include_deleted:
+            query = query.where(FileModel.is_deleted == 0)
 
         if user_id:
             query = query.where(FileModel.created_by == user_id)
@@ -127,6 +131,11 @@ class FileManagerRepository(DbRepository[FileModel]):
         file = await self.get_file_by_id(file_id)
         
         update_dict = update_data.model_dump(exclude_unset=True)
+        if "file_metadata" in update_dict:
+            # Keep system-only keys (e.g. the S3 migration's legacy key) the client can't send.
+            existing = file.file_metadata if isinstance(file.file_metadata, dict) else {}
+            reserved = {k: v for k, v in existing.items() if k in RESERVED_FILE_METADATA_KEYS}
+            update_dict["file_metadata"] = {**(update_dict["file_metadata"] or {}), **reserved}
         for key, value in update_dict.items():
             setattr(file, key, value)
         

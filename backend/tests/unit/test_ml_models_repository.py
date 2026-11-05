@@ -74,6 +74,32 @@ async def test_create_persists_inference_params():
     assert created.inference_params == {"featureDefaults": {"hour": 0}}
 
 
+@pytest.mark.asyncio
+async def test_create_persists_training_metrics():
+    db = MagicMock()
+    transaction = MagicMock()
+    transaction.__aenter__ = AsyncMock()
+    transaction.__aexit__ = AsyncMock()
+    db.begin_nested.return_value = transaction
+    db.flush = AsyncMock()
+    db.refresh = AsyncMock()
+
+    repository = MLModelsRepository(db)
+    metrics = {"mse": 0.25, "rmse": 0.5, "r2_score": 0.9}
+    created = await repository.create(
+        MLModelCreate(
+            name="forecast",
+            description="Forecast model",
+            model_type="linear_regression",
+            features=["hour"],
+            target_variable="revenue",
+        ),
+        training_metrics=metrics,
+    )
+
+    assert created.training_metrics == metrics
+
+
 @pytest.mark.parametrize(
     "inference_params",
     [
@@ -82,6 +108,8 @@ async def test_create_persists_inference_params():
         {"featureDefaults": {"hour": {"value": 0}}},
         {"featureDefaults": {"hour": float("nan")}},
         {"ratioBaselineColumn": ""},
+        {"useTrainingFills": "true"},
+        {"useTrainingFills": 1},
     ],
 )
 def test_schema_rejects_invalid_inference_params(inference_params):
@@ -94,6 +122,20 @@ def test_schema_rejects_invalid_inference_params(inference_params):
             target_variable="revenue",
             inference_params=inference_params,
         )
+
+
+@pytest.mark.parametrize("use_training_fills", [True, False])
+def test_schema_accepts_training_fills_switch(use_training_fills):
+    model = MLModelCreate(
+        name="forecast",
+        description="Forecast model",
+        model_type="linear_regression",
+        features=["hour"],
+        target_variable="revenue",
+        inference_params={"useTrainingFills": use_training_fills},
+    )
+
+    assert model.inference_params == {"useTrainingFills": use_training_fills}
 
 
 def test_update_schema_rejects_invalid_inference_params():
@@ -523,6 +565,23 @@ async def test_discard_removes_the_callers_unused_recent_upload(monkeypatch, tmp
 
 
 @pytest.mark.asyncio
+async def test_discard_accepts_a_tenant_scoped_s3_upload(monkeypatch):
+    from app.core.tenant_scope import clear_tenant_context, set_tenant_context
+
+    record = _upload_record(path="tenants/tenant-a/ml_models/5f0c.pkl", storage_provider="s3", storage_path="bucket")
+    service, file_manager = _discard_setup(monkeypatch, record)
+    file_manager.storage_provider = SimpleNamespace(name="s3", get_base_path=lambda: "bucket")
+
+    set_tenant_context("tenant-a")
+    try:
+        await service.discard_unused_upload(record.id, file_manager)
+    finally:
+        clear_tenant_context()
+
+    file_manager.delete_file.assert_awaited_once_with(record.id)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "overrides,referenced,user",
     [
@@ -613,3 +672,89 @@ async def test_is_file_referenced_matches_any_spelling_of_the_id_and_the_path():
         await stored(pkl_file_id=str(uuid4()))
         assert not await repository.is_file_referenced(file_id)
     await engine.dispose()
+
+
+def test_client_schemas_do_not_accept_training_metrics():
+    update = MLModelUpdate(training_metrics={"accuracy": 1.0})
+    assert "training_metrics" not in update.model_dump(exclude_unset=True)
+
+
+def test_normalize_training_metrics_keeps_finite_numbers_only():
+    import numpy as np
+
+    from app.services.ml_models import normalize_training_metrics
+
+    assert normalize_training_metrics(None) is None
+    assert normalize_training_metrics("bad") == {}
+    assert normalize_training_metrics(
+        {
+            "r2_score": np.float64(0.8),
+            "mse": 1,
+            "rmse": float("nan"),
+            "flag": True,
+            "confusion_matrix": [[1, 0], [0, 1]],
+            "note": "0.5",
+        }
+    ) == {"r2_score": 0.8, "mse": 1.0}
+
+
+def _existing_model(file_id):
+    return SimpleNamespace(
+        features=["hour"],
+        target_variable="revenue",
+        pkl_file="/data/ml_models/forecast_old.pkl",
+        pkl_file_id=file_id,
+        inference_params=None,
+        training_metrics={"r2_score": 0.9},
+    )
+
+
+@pytest.mark.asyncio
+async def test_replacing_the_file_without_metrics_clears_stored_metrics(monkeypatch):
+    existing = _existing_model(uuid4())
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=existing)
+    repository.update = AsyncMock(return_value=existing)
+    monkeypatch.setattr(ml_models_module, "validate_model_artifact_registration", AsyncMock())
+
+    await MLModelsService(repository).update(uuid4(), MLModelUpdate(pkl_file_id=str(uuid4())))
+
+    assert repository.update.await_args.args[1]["training_metrics"] == {}
+
+
+@pytest.mark.asyncio
+async def test_replacing_the_file_with_metrics_stores_them(monkeypatch):
+    existing = _existing_model(uuid4())
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=existing)
+    repository.update = AsyncMock(return_value=existing)
+    monkeypatch.setattr(ml_models_module, "validate_model_artifact_registration", AsyncMock())
+
+    await MLModelsService(repository).update(
+        uuid4(), MLModelUpdate(pkl_file_id=str(uuid4())), training_metrics={"r2_score": 0.7}
+    )
+
+    assert repository.update.await_args.args[1]["training_metrics"] == {"r2_score": 0.7}
+
+
+@pytest.mark.asyncio
+async def test_edits_that_keep_the_file_keep_stored_metrics(monkeypatch):
+    file_id = uuid4()
+    existing = _existing_model(file_id)
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=existing)
+    repository.update = AsyncMock(return_value=existing)
+    monkeypatch.setattr(ml_models_module, "validate_model_artifact_registration", AsyncMock())
+
+    await MLModelsService(repository).update(
+        uuid4(), MLModelUpdate(pkl_file_id=str(file_id), description="new text")
+    )
+
+    assert "training_metrics" not in repository.update.await_args.args[1]
+
+
+def test_service_is_built_by_the_injector():
+    # Train Model registration gets MLModelsService from the injector.
+    from injector import get_bindings
+
+    assert "repository" in get_bindings(MLModelsService.__init__)
