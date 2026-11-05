@@ -1,5 +1,5 @@
 import { Node } from "reactflow";
-import { getAgentConfigsList, getAllKnowledgeItems } from "@/services/api";
+import { getAgentConfigsList, getKnowledgeItemsMinimal } from "@/services/api";
 import { getAllAppSettings } from "@/services/appSettings";
 import { getAudioProvidersMinimal } from "@/services/audioProviders";
 import { hasPermission } from "@/services/auth";
@@ -8,7 +8,6 @@ import { getFallbackChainsMinimal } from "@/services/fallbackChains";
 import { getLLMProvidersMinimal } from "@/services/llmProviders";
 import { getAllMLModels } from "@/services/mlModels";
 import { getAllWorkflows, getWorkflowsMinimal } from "@/services/workflows";
-import { KnowledgeItem } from "@/interfaces/knowledge.interface";
 import { Workflow, WorkflowMinimal } from "@/interfaces/workflow.interface";
 import {
   MissingReference,
@@ -93,7 +92,7 @@ const LOADERS: Record<ReferenceKind, () => Promise<ReferenceTarget[] | null>> = 
       isActive: chain.is_active === 1,
     })) ?? null,
   knowledgeBase: async () =>
-    ((await getAllKnowledgeItems()) as KnowledgeItem[] | null)?.map((base) => ({
+    (await getKnowledgeItemsMinimal())?.map((base) => ({
       id: base.id,
       name: base.name,
       label: base.name,
