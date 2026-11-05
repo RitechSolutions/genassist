@@ -175,17 +175,10 @@ def _masked_token(token: str, kind: str) -> str:
     return f"{quote}{SQL_LITERAL_REDACTION}{quote}"
 
 
-def redact_sql_literals(sql: Any, *, dialect: str | None = None) -> str:
-    """Mask every string literal and comment in SQL text, keeping keywords and names.
-
-    ``WHERE password = 'secret'`` becomes ``WHERE password = '***'``.
-    ``dialect`` is the datasource type (postgresql, mysql, mssql, sqlite,
-    snowflake); it decides which quotes and comment markers apply.
-    """
-    text = str(sql)
+def _apply_redaction_spans(text: str, spans: list[tuple[int, int, str]]) -> str:
     parts: list[str] = []
     position = 0
-    for start, end, kind in _sql_redaction_spans(text, dialect):
+    for start, end, kind in spans:
         if end <= position:
             continue
         if start < position:
@@ -201,6 +194,23 @@ def redact_sql_literals(sql: Any, *, dialect: str | None = None) -> str:
     return "".join(parts)
 
 
+def redact_sql_literals(sql: Any, *, dialect: str | None = None) -> str:
+    """Mask every string literal and comment in SQL text, keeping keywords and names.
+
+    ``WHERE password = 'secret'`` becomes ``WHERE password = '***'``.
+    ``dialect`` is the datasource type (postgresql, mysql, mssql, sqlite,
+    snowflake); it decides which quotes and comment markers apply.
+    """
+    text = str(sql)
+    return _apply_redaction_spans(text, _sql_redaction_spans(text, dialect))
+
+
+# How much of a driver message is searched for the query's values. The result
+# is cut to a couple of thousand characters for the log anyway, and searching
+# a long message for thousands of values would block the worker.
+MAX_SCANNED_DB_MESSAGE = 8_000
+
+
 def redact_sql_literal_values(
     message: Any,
     sql: Any,
@@ -214,15 +224,31 @@ def redact_sql_literal_values(
     ``Duplicate entry 'secret'``), so each literal's value is masked wherever
     it appears. A value is only masked as a whole word, so a literal such as
     'active' does not mangle a table named active_orders.
+
+    Only the first ``MAX_SCANNED_DB_MESSAGE`` characters are kept, so the cost
+    stays proportional to the query size even for thousands of values.
     """
     result = str(message)
     if not sql:
         return result
 
     sql = str(sql)
-    tokens = {(sql[start:end], kind) for start, end, kind in _sql_redaction_spans(sql, dialect)}
+    spans = _sql_redaction_spans(sql, dialect)
+
+    # The usual case: the whole statement is repeated. Masking that copy in one
+    # pass leaves only the driver's own text to search.
+    if sql in result:
+        result = result.replace(sql, _apply_redaction_spans(sql, spans))
+
+    tokens = {(sql[start:end], kind) for start, end, kind in spans}
+    longest_token = max((len(token) for token, _kind in tokens), default=0)
+    truncated = len(result) > MAX_SCANNED_DB_MESSAGE
+    if truncated:
+        result = result[:MAX_SCANNED_DB_MESSAGE]
+
     for token, kind in sorted(tokens, key=lambda item: len(item[0]), reverse=True):
-        result = result.replace(token, _masked_token(token, kind))
+        if token in result:
+            result = result.replace(token, _masked_token(token, kind))
 
     values = {
         value
@@ -233,13 +259,18 @@ def redact_sql_literal_values(
     for value in sorted(values, key=len, reverse=True):
         # One-character values would match everywhere; their quoted form is
         # already masked above.
-        if len(value.strip()) < 2:
+        if len(value.strip()) < 2 or value not in result:
             continue
         result = re.sub(
             rf"(?<!\w){re.escape(value)}(?!\w)",
             SQL_LITERAL_REDACTION,
             result,
         )
+
+    if truncated:
+        # A value cut in half at the end was not recognized; drop the tail it
+        # could be in.
+        result = result[:max(0, len(result) - longest_token)] + " [truncated]"
     return result
 
 
