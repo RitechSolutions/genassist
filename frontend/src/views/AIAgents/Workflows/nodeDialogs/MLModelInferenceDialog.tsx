@@ -18,6 +18,7 @@ import { getAllMLModels } from "@/services/mlModels";
 import { MLModel } from "@/interfaces/ml-model.interface";
 import { useNodeDialogState } from "./useNodeDialogState";
 import { pruneInferenceInputs } from "./mlModelInferenceInputs";
+import { usesTrainingFills } from "@/views/MLModels/components/mlModelForm";
 
 export const MLModelInferenceDialog: React.FC<
   BaseNodeDialogProps<MLModelInferenceNodeData, MLModelInferenceNodeData>
@@ -208,6 +209,9 @@ export const MLModelInferenceDialog: React.FC<
                     key
                   );
                   const configuredDefault = featureDefaults?.[key];
+                  const usesTrainingFill =
+                    !hasDefault &&
+                    usesTrainingFills(selectedModel.inference_params);
 
                   return (
                     <div key={key} className="space-y-1">
@@ -232,8 +236,10 @@ export const MLModelInferenceDialog: React.FC<
                       />
                       <div className="text-xs text-muted-foreground">
                         {hasDefault
-                          ? `Leave empty to use the configured default (${JSON.stringify(configuredDefault)}), or use {{variable}} for a dynamic value`
-                          : `Use {{variable}} for dynamic values`}
+                          ? `Leave empty to use the configured default (${JSON.stringify(configuredDefault)}), or use {{variable}} for a dynamic value (if that node fails, the run fails; the default is not used)`
+                          : usesTrainingFill
+                            ? `If left empty, the value saved at training time is used when this feature had one; otherwise the run fails. Use {{variable}} for dynamic values`
+                            : `Required. Use {{variable}} for dynamic values`}
                       </div>
                     </div>
                   );

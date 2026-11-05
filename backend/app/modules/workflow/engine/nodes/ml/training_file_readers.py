@@ -67,6 +67,26 @@ def training_file_suffix(path: Any) -> str:
     return Path(str(path)).suffix.lower()
 
 
+def stored_file_suffix(stored_file: Any) -> str:
+    """Return a File Manager record's file type from its stored metadata, or "" if it has none.
+
+    Uses the record's file_extension, then its stored name, then its path, never a
+    name taken from a node's config.
+    """
+    extension = str(getattr(stored_file, "file_extension", "") or "").strip().strip(".").lower()
+    if extension:
+        return f".{extension}"
+    for candidate in (
+        getattr(stored_file, "name", None),
+        getattr(stored_file, "path", None),
+    ):
+        if candidate:
+            suffix = training_file_suffix(candidate)
+            if suffix:
+                return suffix
+    return ""
+
+
 def ensure_supported_training_file(path: Any) -> str:
     """Return the file's suffix, or raise a clear error for unsupported types."""
     suffix = training_file_suffix(path)
