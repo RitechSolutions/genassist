@@ -11,6 +11,7 @@ import {
   formatCallTimestamp,
   formatDateTime,
   formatMetric,
+  formatConversationTotalCost,
   getTranscriptTypeLabel,
   formatMessageTime,
   formatRowTimestamp,
@@ -320,5 +321,27 @@ describe("formatRowTimestamp", () => {
     expect(formatRowTimestamp("2026-10-23T09:30:00Z")).toBe("Oct 23");
     vi.stubGlobal("localStorage", { getItem: () => "local" });
     expect(formatRowTimestamp("2026-10-23T09:30:00Z")).toBe("Oct 23");
+  });
+});
+
+describe("formatConversationTotalCost", () => {
+  it("prints the sum when every reply has a cost", () => {
+    expect(formatConversationTotalCost(0.0123, 3, false)).toBe("$0.012300");
+  });
+
+  it("prints a lower bound when only some replies have a cost", () => {
+    expect(formatConversationTotalCost(0.0123, 2, true)).toBe("≥ $0.012300");
+  });
+
+  it("prints N/A when no reply has a cost", () => {
+    expect(formatConversationTotalCost(0, 0, true)).toBe("N/A");
+  });
+
+  it("keeps a free conversation at $0 when its replies are priced at zero", () => {
+    expect(formatConversationTotalCost(0, 2, false)).toBe("$0.000000");
+  });
+
+  it("keeps $0 for a conversation with no agent replies yet", () => {
+    expect(formatConversationTotalCost(0, 0, false)).toBe("$0.000000");
   });
 });
