@@ -259,6 +259,10 @@ export interface ZendeskTicketNodeData extends BaseNodeData {
 export interface SalesforceCaseNodeData extends BaseNodeData {
   subject: string;
   description: string;
+  /** Fill the Case's SuppliedEmail / SuppliedName / SuppliedPhone. */
+  web_email?: string;
+  web_name?: string;
+  web_phone?: string;
   /** Assigned to the created Case as SalesForce Topics. */
   labels?: string[];
   custom_fields?: Array<{ key: string; value: string }>;

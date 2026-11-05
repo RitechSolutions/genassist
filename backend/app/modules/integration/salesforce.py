@@ -22,6 +22,70 @@ logger = logging.getLogger(__name__)
 # SalesForce REST API version used for the sobjects endpoint.
 SALESFORCE_API_VERSION = "v60.0"
 
+SUBJECT_MAX_LENGTH = 255
+DESCRIPTION_MAX_LENGTH = 32000
+SUBJECT_TRUNCATION_NOTE = "..."
+DESCRIPTION_TRUNCATION_NOTE = "\n\n[truncated]"
+
+
+def _salesforce_length(text: str) -> int:
+    """Length as SalesForce counts it (UTF-16 code units)."""
+    return len(text.encode("utf-16-le")) // 2
+
+
+def _fit_to_length(text: str, max_length: int, note: str) -> str:
+    """Cut text to a SalesForce field length, ending with ``note`` when it was cut."""
+    if _salesforce_length(text) <= max_length:
+        return text
+    kept_units = max_length - _salesforce_length(note)
+    kept = text.encode("utf-16-le")[: kept_units * 2].decode("utf-16-le", errors="ignore")
+    return kept + note
+
+
+def build_case_payload(
+    subject: Any,
+    description: Any,
+    custom_fields: Optional[List[Dict[str, Any]]] = None,
+    contact_fields: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Case fields as sent: custom fields, then contact fields, then Subject and Description cut to length."""
+    payload: Dict[str, Any] = {"Subject": subject, "Description": description}
+    for field in custom_fields or []:
+        key = field.get("key")
+        if key:
+            payload[key] = field.get("value")
+    payload.update(contact_fields or {})
+    payload["Subject"] = _fit_to_length(str(payload["Subject"]), SUBJECT_MAX_LENGTH, SUBJECT_TRUNCATION_NOTE)
+    payload["Description"] = _fit_to_length(
+        str(payload["Description"]), DESCRIPTION_MAX_LENGTH, DESCRIPTION_TRUNCATION_NOTE
+    )
+    return payload
+
+
+def _describe_error_item(item: Dict[str, Any]) -> str:
+    code = item.get("errorCode") or "UNKNOWN_ERROR"
+    fields = item.get("fields") or []
+    if not fields:
+        return code
+    return f"{code} on {', '.join(fields)}"
+
+
+def _safe_error_detail(response: httpx.Response) -> str:
+    """Summarize a SalesForce error without its message, which can repeat customer data."""
+    try:
+        body = response.json()
+    except ValueError:
+        return f"HTTP {response.status_code}"
+    if isinstance(body, list):
+        parts = [_describe_error_item(item) for item in body if isinstance(item, dict)]
+        return "; ".join(parts) or f"HTTP {response.status_code}"
+    if isinstance(body, dict) and body.get("error"):
+        description = body.get("error_description")
+        if description:
+            return f"{body['error']}: {description}"
+        return str(body["error"])
+    return f"HTTP {response.status_code}"
+
 
 class SalesforceConnector:
     """SalesForce REST API connector (OAuth2 client-credentials grant, Case creation).
@@ -75,12 +139,13 @@ class SalesforceConnector:
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"SalesForce API error [{e.response.status_code}]: {e.response.text}"
-                )
+                # Errors on requests that send data can echo it back, so only their code and fields are kept.
+                sent_data = json is not None
+                detail = _safe_error_detail(e.response) if sent_data else e.response.text
+                logger.error(f"SalesForce API error [{e.response.status_code}]: {detail}")
                 raise HTTPException(
                     status_code=e.response.status_code,
-                    detail=e.response.text,
+                    detail=detail,
                 ) from e
             except httpx.RequestError as e:
                 logger.error(
@@ -235,6 +300,7 @@ class SalesforceConnector:
         description: str,
         custom_fields: Optional[List[Dict[str, Any]]] = None,
         labels: Optional[List[str]] = None,
+        contact_fields: Optional[Dict[str, str]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Create a SalesForce Case via the REST API.
 
@@ -246,7 +312,9 @@ class SalesforceConnector:
         Beyond ``Subject`` and ``Description``, any additional Case fields (priority,
         origin, custom fields, …) are set via ``custom_fields``: an
         ``Array<{"key": str, "value": str}>`` mapped onto the Case body by Case field
-        **API name** (``key`` → ``value``).
+        **API name** (``key`` → ``value``). ``contact_fields`` (Case API name → value, e.g.
+        ``SuppliedEmail``) are applied after them, so they win over a custom field of the
+        same name. ``Subject`` and ``Description`` are cut to SalesForce's field lengths.
 
         ``labels`` are assigned as SalesForce **Topics** after the Case is created
         (find-or-create the Topic by name, then link it via ``TopicAssignment``).
@@ -258,15 +326,7 @@ class SalesforceConnector:
             instance_url = self._token_instance_url or self.instance_url
             url = f"{instance_url}/services/data/{SALESFORCE_API_VERSION}/sobjects/Case"
 
-            payload: Dict[str, Any] = {
-                "Subject": subject,
-                "Description": description,
-            }
-            if custom_fields:
-                for field in custom_fields:
-                    key = field.get("key")
-                    if key:
-                        payload[key] = field.get("value")
+            payload = build_case_payload(subject, description, custom_fields, contact_fields)
 
             headers = {
                 "Authorization": f"Bearer {access_token}",
