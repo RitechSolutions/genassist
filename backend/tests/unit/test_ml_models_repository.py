@@ -108,6 +108,8 @@ async def test_create_persists_training_metrics():
         {"featureDefaults": {"hour": {"value": 0}}},
         {"featureDefaults": {"hour": float("nan")}},
         {"ratioBaselineColumn": ""},
+        {"useTrainingFills": "true"},
+        {"useTrainingFills": 1},
     ],
 )
 def test_schema_rejects_invalid_inference_params(inference_params):
@@ -120,6 +122,20 @@ def test_schema_rejects_invalid_inference_params(inference_params):
             target_variable="revenue",
             inference_params=inference_params,
         )
+
+
+@pytest.mark.parametrize("use_training_fills", [True, False])
+def test_schema_accepts_training_fills_switch(use_training_fills):
+    model = MLModelCreate(
+        name="forecast",
+        description="Forecast model",
+        model_type="linear_regression",
+        features=["hour"],
+        target_variable="revenue",
+        inference_params={"useTrainingFills": use_training_fills},
+    )
+
+    assert model.inference_params == {"useTrainingFills": use_training_fills}
 
 
 def test_update_schema_rejects_invalid_inference_params():
