@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
 from app.core.config.llm_pricing import canonical_prompt_tokens
-from app.core.utils.llm_usage_utils import extract_cache_tokens
+from app.core.utils.llm_usage_utils import extract_cache_tokens, is_usage_metadata_missing
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
     ConversationMemory,
@@ -411,15 +411,18 @@ class WorkflowState:
             total_cache_read += cache_read
             total_cache_creation += cache_creation
             pricing = resolve_live_pricing(u.get("provider", ""), u.get("model", ""))
-            cost = self.llm_cost_calculator.calculate_cost(
-                u.get("provider", ""),
-                u.get("model", ""),
-                input_tokens,
-                output_tokens,
-                cache_read,
-                cache_creation,
-                pricing=pricing,
-            )
+            if pricing is None or is_usage_metadata_missing(u.get("token_details")):
+                cost = None
+            else:
+                cost = self.llm_cost_calculator.calculate_cost(
+                    u.get("provider", ""),
+                    u.get("model", ""),
+                    input_tokens,
+                    output_tokens,
+                    cache_read,
+                    cache_creation,
+                    pricing=pricing,
+                )
             if cost is None:
                 unpriced_calls += 1
             else:
