@@ -108,6 +108,8 @@ async def test_create_persists_training_metrics():
         {"featureDefaults": {"hour": {"value": 0}}},
         {"featureDefaults": {"hour": float("nan")}},
         {"ratioBaselineColumn": ""},
+        {"useTrainingFills": "true"},
+        {"useTrainingFills": 1},
     ],
 )
 def test_schema_rejects_invalid_inference_params(inference_params):
@@ -120,6 +122,20 @@ def test_schema_rejects_invalid_inference_params(inference_params):
             target_variable="revenue",
             inference_params=inference_params,
         )
+
+
+@pytest.mark.parametrize("use_training_fills", [True, False])
+def test_schema_accepts_training_fills_switch(use_training_fills):
+    model = MLModelCreate(
+        name="forecast",
+        description="Forecast model",
+        model_type="linear_regression",
+        features=["hour"],
+        target_variable="revenue",
+        inference_params={"useTrainingFills": use_training_fills},
+    )
+
+    assert model.inference_params == {"useTrainingFills": use_training_fills}
 
 
 def test_update_schema_rejects_invalid_inference_params():
@@ -546,6 +562,23 @@ async def test_discard_removes_the_callers_unused_recent_upload(monkeypatch, tmp
 
     file_manager.delete_file.assert_awaited_once_with(record.id)
     assert not copy.exists()
+
+
+@pytest.mark.asyncio
+async def test_discard_accepts_a_tenant_scoped_s3_upload(monkeypatch):
+    from app.core.tenant_scope import clear_tenant_context, set_tenant_context
+
+    record = _upload_record(path="tenants/tenant-a/ml_models/5f0c.pkl", storage_provider="s3", storage_path="bucket")
+    service, file_manager = _discard_setup(monkeypatch, record)
+    file_manager.storage_provider = SimpleNamespace(name="s3", get_base_path=lambda: "bucket")
+
+    set_tenant_context("tenant-a")
+    try:
+        await service.discard_unused_upload(record.id, file_manager)
+    finally:
+        clear_tenant_context()
+
+    file_manager.delete_file.assert_awaited_once_with(record.id)
 
 
 @pytest.mark.asyncio
