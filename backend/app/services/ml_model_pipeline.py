@@ -70,8 +70,8 @@ class MLModelPipelineConfigService:
         # Validate model exists
         await self.model_repository.get_by_id(config_data.model_id)
 
-        # Validate workflow exists
-        await self.workflow_repository.get_by_id(config_data.workflow_id)
+        # The workflow must be live; the shared lock holds off a concurrent delete
+        await self._lock_live_workflow(config_data.workflow_id)
 
         # Validate cron schedule if provided
         if config_data.cron_schedule and not validate_cron_expression(
@@ -88,6 +88,15 @@ class MLModelPipelineConfigService:
 
         config = await self.config_repository.create(config_data)
         return MLModelPipelineConfigRead.model_validate(config)
+
+    async def _lock_live_workflow(self, workflow_id: UUID) -> None:
+        """404 unless the workflow exists and is not deleted.
+
+        Takes a shared row lock until commit, so a version or agent delete
+        cannot retire the workflow between this check and the config write.
+        """
+        if not await self.workflow_repository.lock_live_shared(workflow_id):
+            raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
 
     async def get_by_id(self, config_id: UUID) -> MLModelPipelineConfigRead:
         """Get pipeline configuration by ID."""
@@ -116,7 +125,7 @@ class MLModelPipelineConfigService:
 
         # Validate workflow if provided
         if update_data.workflow_id:
-            await self.workflow_repository.get_by_id(update_data.workflow_id)
+            await self._lock_live_workflow(update_data.workflow_id)
 
         # Validate cron schedule if provided
         if update_data.cron_schedule is not None and not validate_cron_expression(
