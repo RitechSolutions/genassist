@@ -123,6 +123,14 @@ class MLModelUpdate(MLModelWriteBase):
 
 class MLModelRead(MLModelBase):
     id: UUID
+    training_metrics: Optional[dict] = Field(
+        None,
+        description=(
+            "Validation metrics of the model's current file. Set only by Train Model "
+            "registration and pipeline-run promotion, never by clients. An empty object "
+            "means the current file has no recorded metrics; null means none were stored."
+        ),
+    )
     created_at: datetime
     updated_at: datetime
 

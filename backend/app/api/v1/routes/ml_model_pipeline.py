@@ -243,11 +243,13 @@ async def promote_pipeline_run(
     """Promote a completed pipeline run to update the model."""
     try:
         result = await service.promote_run(model_id, run_id, promote_data)
-        return PipelineRunPromoteResponse(**result)
     except AppException as e:
-        if e.error_key == ErrorKey.NOT_FOUND:
-            raise HTTPException(status_code=404, detail=str(e))
-        raise HTTPException(status_code=400, detail=str(e))
+        # Repositories raise "not found" with the default 400; keep the 404 and
+        # let the global handler decide which details the client may see.
+        if e.error_key in (ErrorKey.NOT_FOUND, ErrorKey.ML_MODEL_NOT_FOUND):
+            e.status_code = 404
+        raise
+    return PipelineRunPromoteResponse(**result)
 
 
 # ==================== Pipeline Artifact Endpoints ====================

@@ -1,4 +1,6 @@
 import logging
+import math
+import numbers
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Sequence
@@ -10,6 +12,7 @@ from injector import inject
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.storage_path import path_relative_to_tenant_root
 from app.db.models.file import FileModel
 from app.db.models.ml_model import MLModel
 from app.repositories.ml_models import MLModelsRepository
@@ -26,6 +29,13 @@ logger = logging.getLogger(__name__)
 ML_MODEL_UPLOAD_FOLDER = "ml_models"
 # A rejected save is cleaned up right away; older uploads are never discarded this way.
 UNUSED_UPLOAD_MAX_AGE = timedelta(hours=1)
+
+
+def _upload_folder_path(file: FileModel) -> str:
+    """File path without the S3 tenant root, so 'tenants/<slug>/ml_models/x.pkl' reads as 'ml_models/x.pkl'."""
+    if file.storage_provider == "s3":
+        return path_relative_to_tenant_root(file.path)
+    return str(file.path or "")
 
 _RATIO_BASELINE_PARAM = "ratioBaselineColumn"
 STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX = (
@@ -121,6 +131,25 @@ def validate_model_inference_params(
         )
 
 
+def normalize_training_metrics(metrics: Optional[dict]) -> Optional[dict]:
+    """Keep only finite numeric metric values (numpy scalars included).
+
+    ``None`` stays ``None``; anything else that is not a dict becomes ``{}``.
+    """
+    if metrics is None:
+        return None
+    if not isinstance(metrics, dict):
+        return {}
+    clean = {}
+    for key, value in metrics.items():
+        if isinstance(value, bool) or not isinstance(value, numbers.Real):
+            continue
+        value = float(value)
+        if math.isfinite(value):
+            clean[str(key)] = value
+    return clean
+
+
 @inject
 class MLModelsService:
     """Service for ML models business logic."""
@@ -132,8 +161,13 @@ class MLModelsService:
         self,
         ml_model: MLModelCreate,
         artifact_contract: Optional[ModelArtifactContract] = None,
+        training_metrics: Optional[dict] = None,
     ) -> MLModel:
-        """Create a new ML model."""
+        """Create a new ML model.
+
+        ``training_metrics`` is for server-side callers (Train Model registration);
+        the client schemas do not carry it.
+        """
         validate_model_inference_params(ml_model.features, ml_model.inference_params)
 
         # Check if a model with the same name already exists
@@ -154,7 +188,9 @@ class MLModelsService:
         )
 
         model_to_create = ml_model.model_copy(update={"pkl_file": None}) if ml_model.pkl_file_id else ml_model
-        db_ml_model = await self.repository.create(model_to_create)
+        db_ml_model = await self.repository.create(
+            model_to_create, training_metrics=normalize_training_metrics(training_metrics)
+        )
         return db_ml_model
 
     async def get_by_id(self, ml_model_id: UUID) -> MLModel:
@@ -176,9 +212,17 @@ class MLModelsService:
         ml_model_id: UUID,
         ml_model_update: MLModelUpdate,
         artifact_contract: Optional[ModelArtifactContract] = None,
+        training_metrics: Optional[dict] = None,
     ) -> MLModel:
-        """Update an existing ML model."""
+        """Update an existing ML model.
+
+        ``training_metrics`` is for server-side callers (Train Model registration and
+        promotion): a dict replaces the stored metrics. ``None`` keeps them, unless
+        the model file changes, which leaves the model with empty metrics.
+        """
         update_data = ml_model_update.model_dump(exclude_unset=True)
+        if training_metrics is not None:
+            update_data["training_metrics"] = normalize_training_metrics(training_metrics)
         if update_data.get("pkl_file_id") is not None:
             update_data["pkl_file_id"] = str(update_data["pkl_file_id"])
 
@@ -238,6 +282,13 @@ class MLModelsService:
             )
             or (not file_id and update_data.get("pkl_file", existing_model.pkl_file) != existing_model.pkl_file)
         )
+        file_changed = file_id_changed or (
+            not file_id
+            and update_data.get("pkl_file", existing_model.pkl_file) != existing_model.pkl_file
+        )
+        if file_changed and "training_metrics" not in update_data:
+            # The stored metrics belong to the previous file.
+            update_data["training_metrics"] = {}
         if contract_changed:
             await validate_model_artifact_registration(
                 *self._artifact_source(existing_model, update_data, file_id, file_id_changed),
@@ -302,7 +353,7 @@ class MLModelsService:
         )
         discardable = (
             same_storage
-            and str(file.path or "").startswith(f"{ML_MODEL_UPLOAD_FOLDER}/")
+            and _upload_folder_path(file).startswith(f"{ML_MODEL_UPLOAD_FOLDER}/")
             and (file.file_extension or "").lower() == "pkl"
             and file.created_by is not None
             and file.created_by == get_current_user_id()

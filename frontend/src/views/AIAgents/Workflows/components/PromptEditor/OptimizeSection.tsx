@@ -399,10 +399,10 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
           </div>
 
           {draftDiverged && (
-            <p className="text-xs text-muted-foreground">
-              The draft changed since this chain began. Accepting will replace
-              it.
-            </p>
+            <div className="text-amber-700 dark:text-amber-400 text-sm bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-md px-3 py-2">
+              The draft changed after Optimize. Accept replaces it; Undo brings
+              it back.
+            </div>
           )}
 
           {holdoutError && (

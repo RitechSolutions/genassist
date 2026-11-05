@@ -6,11 +6,16 @@ TODO: Implement full S3 storage operations using boto3.
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
-from app.core.utils.s3_utils import S3Client
+from typing import Any, Dict, List, Optional
+
+from botocore.exceptions import ClientError
+
+from app.core.utils.s3_utils import S3Client, is_s3_not_found_error
+
 from ..base import BaseStorageProvider
 
 logger = logging.getLogger(__name__)
+
 
 class S3StorageProvider(BaseStorageProvider):
     """
@@ -73,10 +78,7 @@ class S3StorageProvider(BaseStorageProvider):
         return await asyncio.to_thread(_upload)
 
     async def upload_file(
-        self,
-        file_content: bytes,
-        file_path: str,
-        file_metadata: Optional[Dict[str, Any]] = None
+        self, file_content: bytes, file_path: str, file_metadata: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Upload a file to S3."""
         return self.s3_client.upload_content(file_content, self.aws_bucket_name, file_path)
@@ -101,18 +103,25 @@ class S3StorageProvider(BaseStorageProvider):
         """Delete a file from S3."""
         return self.s3_client.delete_file(file_path)
 
+    async def copy_file(self, source_path: str, destination_path: str) -> bool:
+        """Copy an object within the configured bucket."""
+        return await asyncio.to_thread(
+            self.s3_client.copy_file,
+            source_path,
+            destination_path,
+        )
+
     async def file_exists(self, file_path: str) -> bool:
         """Check if a file exists in S3."""
         try:
-            return self.s3_client.get_file_content(file_path) is not None
-        except Exception:
-            return False
+            await asyncio.to_thread(self.s3_client.head_object, file_path)
+            return True
+        except ClientError as error:
+            if is_s3_not_found_error(error):
+                return False
+            raise
 
-    async def list_files(
-        self,
-        prefix: Optional[str] = None,
-        limit: Optional[int] = None
-    ) -> List[str]:
+    async def list_files(self, prefix: Optional[str] = None, limit: Optional[int] = None) -> List[str]:
         """List files in S3 bucket."""
         result = self.s3_client.list_files(
             prefix=prefix or "",
@@ -125,13 +134,10 @@ class S3StorageProvider(BaseStorageProvider):
         signed_url_expires_in = 3600
 
         # get the presigned url for the file
-        params = {
-            'Bucket': bucket_name,
-            'Key': file_path
-        }
+        params = {"Bucket": bucket_name, "Key": file_path}
 
         # get the presigned url for the file
-        return self.s3_client.generate_presigned_url('get_object', params, signed_url_expires_in)
+        return self.s3_client.generate_presigned_url("get_object", params, signed_url_expires_in)
 
     async def generate_presigned_put_url(
         self,

@@ -168,22 +168,23 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     comparisonPanel?.expand();
   };
 
-  const handleUndoApply = () => {
-    if (undoSnapshot === null) return;
-    commitDraft(undoSnapshot);
-    setUndoSnapshot(null);
-  };
-
   const measurement = usePromptMeasurement({
     workflowId,
     nodeId,
     promptField,
     draft: localPrompt,
-    onAccepted: handleDraftEdit,
+    onAccepted: handleApplyVersion,
     historyState,
     caps,
     defaultProviderId,
   });
+
+  const handleUndoApply = () => {
+    if (undoSnapshot === null) return;
+    commitDraft(undoSnapshot);
+    setUndoSnapshot(null);
+    measurement.clearSuccessMessage();
+  };
 
   const saveVersionMutation = useMutation({
     mutationFn: async ({
@@ -474,6 +475,8 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                               value={localPrompt}
                               onDraftEdit={handleDraftEdit}
                               canEditPrompt={caps.canEditPrompt}
+                              canUndo={undoSnapshot !== null}
+                              onUndo={handleUndoApply}
                               save={{
                                 gate,
                                 enabled: canSaveVersion,
