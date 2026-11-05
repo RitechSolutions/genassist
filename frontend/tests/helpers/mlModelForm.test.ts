@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildInferenceParams,
   featureDefaultsChanged,
-  featureDefaultsUpdate,
+  inferenceParamsUpdate,
   latestInferenceParams,
   mlModelSaveErrorMessage,
 } from '@/views/MLModels/components/mlModelForm';
@@ -14,6 +14,21 @@ describe('buildInferenceParams', () => {
       ratioBaselineColumn: 'latest',
       featureDefaults: { hour: 1 },
     });
+  });
+
+  it('keeps the training-fills switch unless it is changed', () => {
+    expect(buildInferenceParams({ useTrainingFills: true }, { hour: 1 })).toEqual({
+      useTrainingFills: true,
+      featureDefaults: { hour: 1 },
+    });
+    expect(buildInferenceParams({ ratioBaselineColumn: 'latest' }, {}, true)).toEqual({
+      ratioBaselineColumn: 'latest',
+      useTrainingFills: true,
+    });
+  });
+
+  it('removes the training-fills switch when it is turned off', () => {
+    expect(buildInferenceParams({ useTrainingFills: true }, {}, false)).toBeNull();
   });
 
   it('removes defaults without removing the latest baseline', () => {
@@ -37,17 +52,56 @@ describe('featureDefaultsChanged', () => {
   });
 });
 
-describe('featureDefaultsUpdate', () => {
-  it('omits inference params when the defaults field did not change', () => {
+describe('inferenceParamsUpdate', () => {
+  it('omits inference params when neither setting changed', () => {
     expect(
-      featureDefaultsUpdate({ ratioBaselineColumn: 'latest', featureDefaults: { hour: 0 } }, { hour: 0 })
+      inferenceParamsUpdate(
+        { ratioBaselineColumn: 'latest', featureDefaults: { hour: 0 }, useTrainingFills: true },
+        { featureDefaults: { hour: 0 }, useTrainingFills: true }
+      )
+    ).toBeUndefined();
+    expect(
+      inferenceParamsUpdate({ featureDefaults: { hour: 0 } }, { featureDefaults: { hour: 0 }, useTrainingFills: false })
     ).toBeUndefined();
   });
 
-  it('returns only the changed defaults field', () => {
-    expect(featureDefaultsUpdate({ ratioBaselineColumn: 'cached', featureDefaults: { hour: 0 } }, { hour: 1 })).toEqual(
-      { featureDefaults: { hour: 1 } }
+  it('returns only the defaults when only the defaults changed', () => {
+    expect(
+      inferenceParamsUpdate(
+        { ratioBaselineColumn: 'cached', featureDefaults: { hour: 0 } },
+        { featureDefaults: { hour: 1 }, useTrainingFills: false }
+      )
+    ).toEqual({ featureDefaults: { hour: 1 } });
+  });
+
+  it('returns only the switch when only the training-fills switch changed', () => {
+    expect(
+      inferenceParamsUpdate({ featureDefaults: { hour: 0 } }, { featureDefaults: { hour: 0 }, useTrainingFills: true })
+    ).toEqual({ useTrainingFills: true });
+    expect(
+      inferenceParamsUpdate({ useTrainingFills: true }, { featureDefaults: {}, useTrainingFills: false })
+    ).toEqual({ useTrainingFills: false });
+  });
+
+  it('keeps newer stored defaults when only the switch is saved', () => {
+    // The form loaded { hour: 0 }; someone else has since saved { hour: 5 }.
+    const update = inferenceParamsUpdate(
+      { featureDefaults: { hour: 0 } },
+      { featureDefaults: { hour: 0 }, useTrainingFills: true }
     );
+    expect(
+      buildInferenceParams({ featureDefaults: { hour: 5 } }, update?.featureDefaults, update?.useTrainingFills)
+    ).toEqual({ featureDefaults: { hour: 5 }, useTrainingFills: true });
+  });
+
+  it('keeps a newer stored switch when only the defaults are saved', () => {
+    const update = inferenceParamsUpdate(
+      { featureDefaults: { hour: 0 } },
+      { featureDefaults: { hour: 1 }, useTrainingFills: false }
+    );
+    expect(
+      buildInferenceParams({ useTrainingFills: true }, update?.featureDefaults, update?.useTrainingFills)
+    ).toEqual({ featureDefaults: { hour: 1 }, useTrainingFills: true });
   });
 });
 
