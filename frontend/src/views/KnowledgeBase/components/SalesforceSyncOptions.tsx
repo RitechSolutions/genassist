@@ -28,14 +28,16 @@ const SalesforceSyncOptions: React.FC<SalesforceSyncOptionsProps> = ({ extraMeta
         </Select>
       </div>
       <div className="rounded-lg border bg-card dark:bg-zinc-900 p-4">
+        <div className="text-sm font-medium text-foreground mb-3">Articles to copy</div>
         <div className="flex items-center justify-between">
           <div className="flex-1 pr-4">
-            <div className="text-sm font-medium text-foreground">Include Restricted Articles</div>
-            <p className="text-sm text-muted-foreground mt-1">
-              Also index articles not visible in the Public Knowledge Base (internal, customer or partner only).
-            </p>
+            <label htmlFor="include_restricted_articles" className="text-sm text-foreground">
+              Include restricted articles
+            </label>
+            <p className="text-sm text-muted-foreground mt-0.5">Not visible in the Public Knowledge Base.</p>
           </div>
           <Switch
+            id="include_restricted_articles"
             checked={includeRestricted}
             onCheckedChange={(checked) => onChange('include_restricted_articles', checked)}
           />
