@@ -37,6 +37,7 @@ import { HumanInTheLoopFormField } from "../types/nodes";
 import {
   getFailedNodeDisplayMessage,
   testWorkflow,
+  TrainingJob,
   WorkflowTestResponse,
 } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
@@ -49,6 +50,7 @@ import { STTAudioInput } from "./TestInputFields";
 import JsonViewer from "@/components/JsonViewer";
 import NodeExecutionView from "./execution/NodeExecutionView";
 import { FallbackRatesNotice } from "./FallbackRatesNotice";
+import { TrainingJobProgress } from "./TrainingJobProgress";
 import { displayTimeZone } from "@/helpers/timeZone";
 
 type TestViewMode = "response" | "debug" | "execution";
@@ -120,6 +122,8 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
 }) => {
   const [testInput, setTestInputs] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState(false);
+  // Set while a test that trains a model runs on the background worker.
+  const [trainingJob, setTrainingJob] = useState<TrainingJob | null>(null);
   const [response, setResponse] = useState<WorkflowTestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [audioData, setAudioData] = useState<{ data: string; format: string } | null>(null);
@@ -414,10 +418,13 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
         }
       }
 
-      const res = await testWorkflow({
-        input_data: parsedInputs,
-        workflow: workflow,
-      });
+      const res = await testWorkflow(
+        {
+          input_data: parsedInputs,
+          workflow: workflow,
+        },
+        { onTrainingProgress: setTrainingJob }
+      );
 
       if (!res) {
         setError("No response received from server");
@@ -437,6 +444,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       recordRun(null, errorMsg);
     } finally {
       setTesting(false);
+      setTrainingJob(null);
     }
   };
 
@@ -461,14 +469,17 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
         }
       });
 
-      const res = await testWorkflow({
-        input_data: {
-          thread_id: pausedThreadId,
-          human_in_the_loop_from_form: parsedValues,
-          ...(pausedNodeId && { human_in_the_loop_node_id: pausedNodeId }),
+      const res = await testWorkflow(
+        {
+          input_data: {
+            thread_id: pausedThreadId,
+            human_in_the_loop_from_form: parsedValues,
+            ...(pausedNodeId && { human_in_the_loop_node_id: pausedNodeId }),
+          },
+          workflow: workflow,
         },
-        workflow: workflow,
-      });
+        { onTrainingProgress: setTrainingJob }
+      );
 
       if (!res) {
         setError("No response received from server");
@@ -488,6 +499,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       recordRun(null, errorMsg);
     } finally {
       setTesting(false);
+      setTrainingJob(null);
     }
   };
 
@@ -1068,6 +1080,10 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                       error={error}
                       workflow={workflow}
                     />
+                  ) : testing && !response && trainingJob ? (
+                    <div className="flex h-full items-center justify-center px-2">
+                      <TrainingJobProgress job={trainingJob} />
+                    </div>
                   ) : testing && !response ? (
                     <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />

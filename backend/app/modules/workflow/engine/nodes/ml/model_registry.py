@@ -167,6 +167,34 @@ def check_optional_dependency(model_type: str) -> None:
             )
 
 
+# Constructor argument that sets how many threads a model type trains with.
+# These libraries default to every core when the argument is left out.
+THREAD_PARAM_BY_MODEL_TYPE: Dict[str, str] = {
+    "xgboost": "n_jobs",
+    "lightgbm": "n_jobs",
+    "catboost": "thread_count",
+    "random_forest": "n_jobs",
+    "extra_trees": "n_jobs",
+    "knn": "n_jobs",
+}
+
+
+def cap_estimator_threads(model_type: str, params: Dict[str, Any], max_threads: int) -> Dict[str, Any]:
+    """
+    Return params with the model's thread count limited to max_threads.
+
+    A missing value, -1 (all cores) or anything above max_threads becomes
+    max_threads; a smaller positive value the user chose is kept.
+    """
+    thread_param = THREAD_PARAM_BY_MODEL_TYPE.get(model_type)
+    if thread_param is None:
+        return params
+    requested = params.get(thread_param)
+    if isinstance(requested, int) and not isinstance(requested, bool) and 0 < requested <= max_threads:
+        return params
+    return {**params, thread_param: max_threads}
+
+
 def build_estimator(model_type: str, is_classification: bool, params: Dict[str, Any]):
     """
     Construct an unfitted estimator for the given model type.

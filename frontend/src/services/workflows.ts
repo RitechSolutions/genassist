@@ -149,21 +149,103 @@ export const getAllNodeSchemas = async (): Promise<NodeSchemas> => {
   }
 };
 
-export const testNode = (testData: NodeTestPayload) =>
-  apiRequest<WorkflowTestResponse>(
-    "POST",
-    `${BASE}/test-node`,
-    testData as unknown as Record<string, unknown>,
-    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS }
-  );
+export type TrainingJobStatus = "queued" | "running" | "succeeded" | "failed";
 
-export const testWorkflow = (testData: WorkflowTestPayload) =>
-  apiRequest<WorkflowTestResponse>(
+export interface TrainingJobProgress {
+  stage: string;
+  message: string;
+  percent: number;
+  elapsed_seconds?: number;
+}
+
+/** A test run that trains a model runs on the background ML worker as a job. */
+export interface TrainingJob {
+  job_id: string;
+  kind: "workflow" | "node";
+  status: TrainingJobStatus;
+  progress: TrainingJobProgress;
+  result: WorkflowTestResponse | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestRunOptions {
+  /** Called with every status update while a training job runs. */
+  onTrainingProgress?: (job: TrainingJob) => void;
+}
+
+export const TRAINING_JOB_POLL_INTERVAL_MS = 2000;
+// Consecutive failed status checks (e.g. a network blip) tolerated before giving up.
+const TRAINING_JOB_MAX_POLL_ERRORS = 3;
+// A job can wait up to 2h10m for a worker and then train for up to 2h before
+// the server reports it failed; stop waiting a little after that in any case.
+export const TRAINING_JOB_MAX_WAIT_MS = (4 * 60 + 30) * 60 * 1000;
+
+export const isTrainingJob = (value: unknown): value is TrainingJob =>
+  !!value &&
+  typeof value === "object" &&
+  typeof (value as TrainingJob).job_id === "string" &&
+  typeof (value as TrainingJob).status === "string" &&
+  !!(value as TrainingJob).progress;
+
+export const getTrainingJob = (jobId: string) =>
+  apiRequest<TrainingJob>("GET", `${BASE}/test-jobs/${encodeURIComponent(jobId)}`);
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll a training job until it finishes; resolves with the test result or throws its error. */
+export const waitForTrainingJob = async (
+  job: TrainingJob,
+  onProgress?: (job: TrainingJob) => void,
+  pollIntervalMs: number = TRAINING_JOB_POLL_INTERVAL_MS,
+  maxWaitMs: number = TRAINING_JOB_MAX_WAIT_MS
+): Promise<WorkflowTestResponse | null> => {
+  const deadline = Date.now() + maxWaitMs;
+  let current = job;
+  let pollErrors = 0;
+  for (;;) {
+    onProgress?.(current);
+    if (current.status === "succeeded") return current.result;
+    if (current.status === "failed") throw new Error(current.error || "Training failed");
+    if (Date.now() >= deadline) {
+      throw new Error("Stopped waiting for the training job. It took longer than the training time limit.");
+    }
+
+    await delay(pollIntervalMs);
+    try {
+      const next = await getTrainingJob(current.job_id);
+      if (!next) throw new Error("The training job could not be read");
+      current = next;
+      pollErrors = 0;
+    } catch (error) {
+      pollErrors += 1;
+      if (pollErrors >= TRAINING_JOB_MAX_POLL_ERRORS) throw error;
+    }
+  }
+};
+
+const runTest = async (
+  endpoint: string,
+  testData: NodeTestPayload | WorkflowTestPayload,
+  options?: TestRunOptions
+): Promise<WorkflowTestResponse | null> => {
+  const response = await apiRequest<WorkflowTestResponse | TrainingJob>(
     "POST",
-    `${BASE}/test`,
+    endpoint,
     testData as unknown as Record<string, unknown>,
     { timeout: API_WORKFLOW_TEST_TIMEOUT_MS }
   );
+  return isTrainingJob(response)
+    ? waitForTrainingJob(response, options?.onTrainingProgress)
+    : response;
+};
+
+export const testNode = (testData: NodeTestPayload, options?: TestRunOptions) =>
+  runTest(`${BASE}/test-node`, testData, options);
+
+export const testWorkflow = (testData: WorkflowTestPayload, options?: TestRunOptions) =>
+  runTest(`${BASE}/test`, testData, options);
 
 export const generatePythonTemplate = (schema: any, prompt?: string) =>
   apiRequest<{ template: string }>("POST", `${BASE}/generate-python-template`, {
