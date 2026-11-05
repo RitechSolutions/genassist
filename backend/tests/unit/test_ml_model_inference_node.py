@@ -1563,9 +1563,8 @@ class TestInferenceFeatureContract:
             )
 
         assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
-        assert "configured feature default(s) were applied" in exc.value.error_detail
-        assert "lag_24" in exc.value.error_detail
-        assert "model rejected prepared input" in exc.value.error_detail
+        assert "feature default(s) were applied for: lag_24" in exc.value.error_detail
+        assert "model rejected prepared input" not in exc.value.error_detail
 
     @pytest.mark.asyncio
     async def test_text_default_does_not_block_complete_request(self, monkeypatch):
@@ -1585,13 +1584,13 @@ class TestInferenceFeatureContract:
         assert result["defaults_applied"] == []
 
     @pytest.mark.asyncio
-    async def test_data_preparation_failure_keeps_original_cause_with_applied_default(
-        self, monkeypatch
+    async def test_data_preparation_failure_logs_cause_and_shows_applied_default(
+        self, monkeypatch, caplog
     ):
         scaler = MagicMock()
         scaler.transform.side_effect = ValueError("scaler rejected prepared input")
 
-        with pytest.raises(AppException) as exc:
+        with caplog.at_level(logging.ERROR), pytest.raises(AppException) as exc:
             await _predict(
                 monkeypatch,
                 _StubModel(),
@@ -1603,9 +1602,10 @@ class TestInferenceFeatureContract:
             )
 
         assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
-        assert "Data preparation failed after configured feature default(s)" in exc.value.error_detail
-        assert "scaler rejected prepared input" in exc.value.error_detail
+        assert exc.value.error_detail.startswith("Could not prepare the input values")
         assert "applied for: lag_24" in exc.value.error_detail
+        assert "scaler rejected prepared input" not in exc.value.error_detail
+        assert "scaler rejected prepared input" in caplog.text
 
     @pytest.mark.asyncio
     async def test_long_prediction_failure_keeps_default_hint_visible(self, monkeypatch):
@@ -1626,8 +1626,8 @@ class TestInferenceFeatureContract:
 
         visible_detail = truncate_for_log(describe_exception(exc.value), 500)
         assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
-        assert "configured feature default(s) were applied for: lag_24" in visible_detail
-        assert "model rejected hour" in visible_detail
+        assert "feature default(s) were applied for: lag_24" in visible_detail
+        assert "model rejected hour" not in visible_detail
         assert "Stack trace" not in visible_detail
 
     @pytest.mark.asyncio
@@ -2855,6 +2855,301 @@ class TestConvertValueNumbers:
         assert "invalid-5" not in detail
         assert "x" * 40 not in detail
         assert len(detail) < 450
+
+
+class TestInputErrorsNameTheField:
+    """MI-16: a bad value gets a message naming the field, never the
+    library's own text, including for models saved without input metadata."""
+
+    @staticmethod
+    def _legacy_model():
+        from sklearn.linear_model import LinearRegression
+
+        training_data = pd.DataFrame({"age": [1.0, 2.0], "visits": [3.0, 4.0]})
+        return LinearRegression().fit(training_data, [1.0, 2.0])
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["80.5 EUR", "Infinity", "1_000", "١٢"])
+    async def test_legacy_model_names_the_field_with_a_bad_value(
+        self, monkeypatch, value
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                self._legacy_model(),
+                {"age": value, "visits": 3},
+                feature_names=["age", "visits"],
+                legacy=True,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert f"'age': {value} (row 1)" in exc.value.error_detail
+        assert "convert" not in exc.value.error_detail
+        assert "Input X" not in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_legacy_model_still_receives_text_it_can_read(self, monkeypatch):
+        class TextModel(_CapturingModel):
+            feature_names_in_ = np.array(["region"])
+
+        model = TextModel()
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east"},
+            feature_names=["region"],
+            legacy=True,
+        )
+
+        assert result["status"] == "success"
+        assert model.received[0, 0] == "east"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("legacy", [True, False])
+    async def test_prediction_failure_shows_a_plain_message_and_logs_the_cause(
+        self, monkeypatch, caplog, legacy
+    ):
+        class FailingModel(_StubModel):
+            feature_names_in_ = np.array(["age"])
+
+        with caplog.at_level(logging.ERROR), pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                FailingModel(error=ValueError("could not broadcast (1,2) into (1,)")),
+                {"age": 40},
+                feature_names=["age"],
+                legacy=legacy,
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert exc.value.error_detail == inference_module._PREDICTION_FAILED
+        assert "could not broadcast" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["Infinity", "1_000", "١٢"])
+    async def test_custom_legacy_model_still_receives_number_like_text(
+        self, monkeypatch, value
+    ):
+        class CustomTextModel(_CapturingModel):
+            feature_names_in_ = np.array(["code"])
+
+        model = CustomTextModel()
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"code": value},
+            feature_names=["code"],
+            legacy=True,
+        )
+
+        assert result["status"] == "success"
+        assert model.received[0, 0] == value
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("library", ["xgboost", "lightgbm"])
+    async def test_legacy_boosted_model_names_the_field_with_text(
+        self, monkeypatch, library
+    ):
+        training_data = pd.DataFrame(
+            {"age": [1.0, 2.0, 3.0, 4.0] * 5, "visits": [3.0, 4.0, 5.0, 6.0] * 5}
+        )
+        target = list(range(20))
+        if library == "xgboost":
+            XGBRegressor = pytest.importorskip("xgboost").XGBRegressor
+            model = XGBRegressor(n_estimators=2).fit(training_data, target)
+        else:
+            LGBMRegressor = pytest.importorskip("lightgbm").LGBMRegressor
+            model = LGBMRegressor(n_estimators=2, verbose=-1).fit(training_data, target)
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"age": "80.5 EUR", "visits": 3},
+                feature_names=["age", "visits"],
+                legacy=True,
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "'age': 80.5 EUR (row 1)" in exc.value.error_detail
+
+    def test_meta_estimator_around_a_custom_model_is_not_treated_as_numeric(self):
+        from sklearn.ensemble import VotingRegressor
+        from sklearn.linear_model import LinearRegression
+        from sklearn.multioutput import MultiOutputRegressor
+
+        custom = _CapturingModel()
+
+        assert inference_module._model_converts_text_to_numbers(LinearRegression())
+        assert not inference_module._model_converts_text_to_numbers(
+            MultiOutputRegressor(custom)
+        )
+        assert not inference_module._model_converts_text_to_numbers(
+            VotingRegressor([("lr", LinearRegression()), ("custom", custom)])
+        )
+        assert inference_module._model_converts_text_to_numbers(
+            VotingRegressor([("lr", LinearRegression()), ("rf", "drop")])
+        )
+
+    @pytest.mark.asyncio
+    async def test_legacy_wrapper_around_a_text_pipeline_keeps_text(self, monkeypatch):
+        from sklearn.multioutput import MultiOutputRegressor
+        from sklearn.linear_model import LinearRegression
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        training_data = pd.DataFrame({"region": ["east", "west"] * 3})
+        model = MultiOutputRegressor(
+            Pipeline([("ohe", OneHotEncoder()), ("lr", LinearRegression())])
+        ).fit(training_data, [[1.0, 2.0], [3.0, 4.0]] * 3)
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"region": "east"},
+            feature_names=["region"],
+            legacy=True,
+        )
+
+        assert result["status"] == "success"
+
+    def test_legacy_boosted_model_on_native_categories_may_read_text(self):
+        from sklearn.ensemble import HistGradientBoostingRegressor
+
+        training_data = pd.DataFrame(
+            {"color": pd.Categorical(["red", "blue"] * 10), "hour": range(20)}
+        )
+        model = HistGradientBoostingRegressor(
+            max_iter=2, categorical_features="from_dtype"
+        ).fit(training_data, range(20))
+
+        assert not inference_module._model_converts_text_to_numbers(model)
+
+    @pytest.mark.parametrize("library", ["xgboost", "lightgbm"])
+    def test_boosted_model_on_pandas_categories_may_read_text(self, library):
+        training_data = pd.DataFrame(
+            {"color": pd.Categorical(["red", "blue"] * 10), "hour": range(20)}
+        )
+        target = list(range(20))
+        if library == "xgboost":
+            XGBRegressor = pytest.importorskip("xgboost").XGBRegressor
+            model = XGBRegressor(n_estimators=2, enable_categorical=True)
+        else:
+            model = pytest.importorskip("lightgbm").LGBMRegressor(
+                n_estimators=2, verbose=-1, min_child_samples=1
+            )
+        model.fit(training_data, target)
+
+        assert not inference_module._model_converts_text_to_numbers(model)
+        raw_booster = (
+            model.get_booster() if library == "xgboost" else model.booster_
+        )
+        assert not inference_module._model_converts_text_to_numbers(raw_booster)
+
+    def test_every_ensemble_member_is_checked(self):
+        from sklearn.compose import TransformedTargetRegressor
+        from sklearn.ensemble import VotingRegressor
+        from sklearn.linear_model import LinearRegression
+
+        model = VotingRegressor(
+            [
+                ("a", TransformedTargetRegressor(LinearRegression())),
+                ("b", TransformedTargetRegressor(_CapturingModel())),
+            ]
+        )
+
+        assert not inference_module._model_converts_text_to_numbers(model)
+
+    @staticmethod
+    def _legacy_text_model(**kwargs):
+        class LegacyTextModel(_StubModel):
+            feature_names_in_ = np.array(["region"])
+
+        return LegacyTextModel(**kwargs)
+
+    @pytest.mark.asyncio
+    async def test_legacy_model_error_that_is_not_a_conversion_is_not_blamed_on_text(
+        self, monkeypatch
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                self._legacy_text_model(error=ValueError("unseen category: east")),
+                {"region": "east"},
+                feature_names=["region"],
+                legacy=True,
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert exc.value.error_detail == inference_module._PREDICTION_FAILED
+
+    @pytest.mark.asyncio
+    async def test_failure_after_a_successful_prediction_is_not_blamed_on_text(
+        self, monkeypatch
+    ):
+        def fail(*args, **kwargs):
+            raise ValueError("could not convert prediction output")
+
+        monkeypatch.setattr(inference_module, "_build_prediction_outputs", fail)
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                self._legacy_text_model(),
+                {"region": "east"},
+                feature_names=["region"],
+                legacy=True,
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert exc.value.error_detail == inference_module._PREDICTION_FAILED
+
+    @pytest.mark.asyncio
+    async def test_data_preparation_failure_is_not_blamed_on_text(self, monkeypatch):
+        def fail(*args, **kwargs):
+            raise ValueError("could not convert string to float: 'east'")
+
+        monkeypatch.setattr(inference_module, "_build_input_array", fail)
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                self._legacy_text_model(),
+                {"region": "east"},
+                feature_names=["region"],
+                legacy=True,
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert exc.value.error_detail == inference_module._DATA_PREPARATION_FAILED
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("comment", ["Infinity", "nan please", "١٢"])
+    async def test_pipeline_that_reads_free_text_keeps_number_like_words(
+        self, monkeypatch, comment
+    ):
+        from sklearn.compose import ColumnTransformer
+        from sklearn.dummy import DummyRegressor
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.pipeline import Pipeline
+
+        model = Pipeline(
+            [
+                ("text", ColumnTransformer([("comment", TfidfVectorizer(), "comment")])),
+                ("regressor", DummyRegressor(strategy="constant", constant=7.0)),
+            ]
+        ).fit(pd.DataFrame({"comment": ["fast delivery", "slow reply"]}), [1.0, 2.0])
+
+        result = await _predict(
+            monkeypatch,
+            model,
+            {"comment": comment},
+            feature_names=["comment"],
+        )
+
+        assert result["prediction"] == [7.0]
 
 
 class TestEchoedInputTypes:
