@@ -39,7 +39,6 @@ from app.use_cases.chat_as_client_use_case import (
 logger = logging.getLogger(__name__)
 
 
-@inject
 def _reject_trigger_type(webhook_type: Optional[str]) -> None:
     """Workflow-trigger endpoints can only be created via /workflow-triggers."""
     if webhook_type == WebhookType.WORKFLOW_TRIGGER.value:
@@ -49,6 +48,7 @@ def _reject_trigger_type(webhook_type: Optional[str]) -> None:
         )
 
 
+@inject
 class WebhookService:
     """Service for managing webhooks."""
 

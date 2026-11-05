@@ -20,7 +20,6 @@ import logging
 import secrets
 import time
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException, Request
@@ -34,6 +33,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
 from app.core.utils.enums.workflow_schedule_enum import WorkflowScheduleRunStatus
+from app.core.utils.webhook_urls import build_public_url
 from app.db.models.webhook import WebhookAuthMode, WebhookModel, WebhookType
 from app.modules.workflow.webhook_trigger_mapping import (
     build_envelope,
@@ -138,26 +138,6 @@ def parse_body(raw: bytes) -> Any:
         return {"raw": text}
 
 
-def build_public_url(base_url: Optional[str], request: Optional[Request], webhook_id: UUID, method: str) -> str:
-    """Same shape as the existing webhook feature: ``{api}/webhook/execute/{id}?x-tenant-id=<slug>``."""
-    if base_url:
-        base = base_url if base_url.endswith("/") else base_url + "/"
-        url = f"{base}webhook/execute/{webhook_id}"
-    elif request is not None:
-        url = str(
-            request.url_for(
-                "webhook_handler_post" if method == "POST" else "webhook_handler_get",
-                webhook_id=str(webhook_id),
-            )
-        )
-    else:
-        base = settings.APP_URL or ""
-        base = base if base.endswith("/") else base + "/"
-        url = f"{base}api/webhook/execute/{webhook_id}"
-    tenant_param = {settings.TENANT_HEADER_NAME.lower(): get_tenant_context()}
-    return f"{url}?{urlencode(tenant_param)}"
-
-
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
@@ -219,7 +199,7 @@ class WorkflowTriggerService:
         webhook = WebhookModel(
             id=webhook_id,
             name=trigger_name(data.agent_id, data.node_id),
-            url=build_public_url(data.base_url, request, webhook_id, "POST"),
+            url=build_public_url(data.base_url, request, webhook_id),
             method="POST",
             headers={},
             secret=encrypt_key(plain_secret),

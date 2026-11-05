@@ -51,7 +51,7 @@ describe("checkReferences", () => {
       "llm-providers/minimal": [
         { id: "p1", name: "GPT", llm_model_provider: "openai", llm_model: "gpt-4o", is_active: 1 },
       ],
-      "genagent/knowledge/items": [{ id: "kb1", name: "Docs" }],
+      "genagent/knowledge/minimal": [{ id: "kb1", name: "Docs" }],
     });
     const result = await checkReferences([
       node("a", "agentNode", { providerId: "old" }),

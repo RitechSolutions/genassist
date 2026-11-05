@@ -31,7 +31,7 @@ from app.modules.workflow.engine.nodes.ml.ml_utils import (
     normalize_feature_expression,
     ordinal_key,
 )
-from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM
+from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM, TRAINING_FILLS_PARAM
 from app.services.ml_model_manager import get_ml_model_manager, local_model_file
 from app.services.ml_models import MLModelsService
 
@@ -205,9 +205,11 @@ def _validate_categorical_inputs(
     categorical_columns: Sequence[str],
     categories: Sequence[np.ndarray],
 ) -> None:
-    """Reject a caller-supplied categorical value the encoder wasn't trained on,
-    instead of silently encoding it as the dropped baseline category (which is
-    indistinguishable from a legitimate prediction for that category).
+    """Reject a caller-supplied categorical value the model wasn't trained on.
+
+    Used for one-hot columns (an unseen value would otherwise become the
+    dropped baseline category) and label-encoded columns (it would otherwise
+    become -1). Either way the prediction would look legitimate.
 
     Missing columns are handled by the feature-contract validation before this
     transform runs; this helper only validates supplied categorical values.
@@ -544,11 +546,16 @@ def _prepare_inference_inputs(
         problems.append(
             f"Missing value(s) for feature(s): {', '.join(unfilled_features)}."
         )
+    # A 'null' from an upstream node that failed or produced nothing is never
+    # filled, not even by a configured default: the run must fail instead.
     unresolved_upstream_features = [
         name
-        for name in unfilled_features
-        if name in normalized_inputs
-        and any(_is_unresolved_upstream_value(value) for value in normalized_inputs[name])
+        for name in expected_features
+        if name in missing_value_masks
+        and any(
+            is_missing and _is_unresolved_upstream_value(value)
+            for value, is_missing in zip(normalized_inputs[name], missing_value_masks[name])
+        )
     ]
     if unresolved_upstream_features:
         problems.append(
@@ -557,12 +564,13 @@ def _prepare_inference_inputs(
             "upstream node did not produce that field. Fix the upstream node output before "
             "running inference."
         )
+    if set(unfilled_features) - set(unresolved_upstream_features):
         problems.append(
-            f"Required model features: {', '.join(expected_features)}."
+            f"Provide every value, or configure '{FEATURE_DEFAULTS_PARAM}' or turn on "
+            f"'{TRAINING_FILLS_PARAM}' in the model's inference parameters."
         )
-    elif unfilled_features:
+    if problems:
         problems.append(
-            f"Provide every value or configure '{FEATURE_DEFAULTS_PARAM}' in the model's inference parameters. "
             f"Required model features: {', '.join(expected_features)}."
         )
     if problems:
@@ -1764,7 +1772,14 @@ class MLModelInferenceNode(BaseNode):
                     else None,
                     target_transform.get("baselineColumn") if target_transform else None,
                 }
-                legacy_defaults = metadata.get("missing_value_fills")
+                # Saved training fills (e.g. the median) are used only when
+                # the model's useTrainingFills switch is on.
+                legacy_defaults = (
+                    metadata.get("missing_value_fills")
+                    if isinstance(inference_params, dict)
+                    and inference_params.get(TRAINING_FILLS_PARAM) is True
+                    else None
+                )
                 registered_feature_names = list(
                     getattr(ml_model, "features", None) or []
                 )
@@ -1866,6 +1881,16 @@ class MLModelInferenceNode(BaseNode):
                     legacy_order = list(numeric_order)
 
                     if label_columns:
+                        # An unseen value would otherwise be encoded as -1
+                        # and predicted from without any error.
+                        _validate_categorical_inputs(
+                            normalized_inputs,
+                            label_columns,
+                            [
+                                np.array(list(label_encodings[col]), dtype=object)
+                                for col in label_columns
+                            ],
+                        )
                         label_data = _mapped_transform(
                             normalized_inputs, label_columns, label_encodings, batch_size, unseen_value=-1
                         )
