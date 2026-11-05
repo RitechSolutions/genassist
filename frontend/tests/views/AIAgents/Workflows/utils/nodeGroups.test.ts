@@ -14,6 +14,7 @@ import {
   flattenGroups,
   getAbsolutePosition,
   getParentId,
+  getSelectedWithGroupChildren,
   groupNodes,
   isGroupNode,
   orderGroupsFirst,
@@ -273,7 +274,7 @@ describe("group deletion", () => {
   const nodes = [...grouped(), node("d", 1200, 1000)];
 
   it("plans members separately from other selected nodes", () => {
-    const plan = planGroupDeletion(nodes, ["g"], ["g", "a", "d"], ["e3"]);
+    const plan = planGroupDeletion(nodes, ["g"], ["g", "a", "d"], [edges[2]]);
     expect(plan).toEqual({ groupIds: ["g"], memberIds: ["a", "b"], otherNodeIds: ["d"], edgeIds: ["e3"] });
   });
 
@@ -285,11 +286,38 @@ describe("group deletion", () => {
     expect(result.edges).toEqual(edges);
   });
 
+  it("group-only keeps the members' edges even when they were box-selected with the group", () => {
+    const plan = planGroupDeletion(nodes, ["g"], ["g", "a", "b"], [edges[0], edges[1]]);
+    expect(plan.edgeIds).toEqual([]);
+    const result = applyGroupDeletion(nodes, edges, plan, "group-only");
+    expect(result.nodes.map((n) => n.id)).toEqual(["a", "b", "c", "d"]);
+    expect(result.edges).toEqual(edges);
+  });
+
   it("with-contents removes the members and every edge touching them", () => {
     const plan = planGroupDeletion(nodes, ["g"], ["g", "d"]);
     const result = applyGroupDeletion(nodes, edges, plan, "with-contents");
     expect(result.nodes.map((n) => n.id)).toEqual(["c"]);
     expect(result.edges).toEqual([]);
+  });
+});
+
+describe("getSelectedWithGroupChildren", () => {
+  const select = (nodes: Node[], ids: string[]) =>
+    nodes.map((n) => (ids.includes(n.id) ? { ...n, selected: true } : n));
+
+  it("expands a selected group to its children", () => {
+    const picked = getSelectedWithGroupChildren(select(grouped(), ["g"]));
+    expect(picked.map((n) => n.id)).toEqual(["g", "a", "b"]);
+  });
+
+  it("copies a selected child alone and never a child twice", () => {
+    expect(getSelectedWithGroupChildren(select(grouped(), ["a"])).map((n) => n.id)).toEqual(["a"]);
+    expect(getSelectedWithGroupChildren(select(grouped(), ["g", "a"])).map((n) => n.id)).toEqual([
+      "g",
+      "a",
+      "b",
+    ]);
   });
 });
 

@@ -90,6 +90,20 @@ describe("promptDiffSummary", () => {
     expect(promptDiffSummary("a\nb\nc\n", "a\nB\nc\n")).toBe("- b\n+ B");
   });
 
+  it("reports only the added line when the prompt has no trailing newline", () => {
+    expect(promptDiffSummary("a\nb", "a\nb\nc")).toBe("+ c");
+  });
+
+  it("reads the same with and without a trailing newline", () => {
+    expect(promptDiffSummary("a\nb", "a\nb\nc\n")).toBe(
+      promptDiffSummary("a\nb\n", "a\nb\nc\n"),
+    );
+  });
+
+  it("reports only the removed last line when the prompt has no trailing newline", () => {
+    expect(promptDiffSummary("a\nb\nc", "a\nb")).toBe("- c");
+  });
+
   it("is empty when nothing changed", () => {
     expect(promptDiffSummary("same\n", "same\n")).toBe("");
   });
