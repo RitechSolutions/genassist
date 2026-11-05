@@ -20,6 +20,7 @@ from app.api.v1.routes import conversations as routes
 from app.core.exceptions.exception_classes import AppException
 from app.core.observability import set_agent_span_attributes
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
+from app.schemas.conversation import AgentMinimalForCache, ConversationWithOperatorAgentRead
 from app.schemas.conversation_transcript import InProgConvTranscrUpdate
 from app.services.agent_config import AgentConfigService
 from app.services.conversations import ConversationService
@@ -87,9 +88,25 @@ async def test_chat_reply_tags_span_with_agent_and_workflow(monkeypatch):
     assert span.attributes["genassist.workflow_id"] == str(WORKFLOW_ID)
 
 
-def _agent_request():
-    agent = SimpleNamespace(id=AGENT_ID, workflow_id=WORKFLOW_ID, name="Support", operator_id=None)
+def _agent_request(agent=None):
+    if agent is None:
+        agent = SimpleNamespace(id=AGENT_ID, workflow_id=WORKFLOW_ID, name="Support", operator_id=None)
     return SimpleNamespace(state=SimpleNamespace(agent=agent), headers={})
+
+
+def _cached_agent():
+    """The agent the reply route really gets: the cached conversation's operator agent."""
+    orm_conversation = SimpleNamespace(
+        id=UUID("0199e3a0-0000-7000-8000-000000000001"),
+        operator_id=UUID("0199e3a0-0000-7000-8000-000000000003"),
+        operator=SimpleNamespace(
+            id=UUID("0199e3a0-0000-7000-8000-000000000003"),
+            agent=SimpleNamespace(
+                id=AGENT_ID, name="Support", is_active=True, workflow_id=WORKFLOW_ID, security_settings=None
+            ),
+        ),
+    )
+    return ConversationWithOperatorAgentRead.model_validate(orm_conversation).operator.agent
 
 
 @pytest.mark.asyncio
@@ -111,7 +128,7 @@ async def test_reply_route_tags_span_before_reading_the_body(monkeypatch):
     """A reply that fails validation is still counted under its agent."""
     tagged = []
     monkeypatch.setattr(routes, "set_agent_span_attributes", lambda *ids: tagged.append(ids))
-    request = _agent_request()
+    request = _agent_request(_cached_agent())
 
     async def bad_body():
         raise ValueError("invalid JSON")
@@ -123,3 +140,24 @@ async def test_reply_route_tags_span_before_reading_the_body(monkeypatch):
         await update(request, UUID("0199e3a0-0000-7000-8000-000000000001"))
 
     assert tagged == [(AGENT_ID, WORKFLOW_ID)]
+
+
+@pytest.mark.asyncio
+async def test_reply_route_handles_agent_cached_before_workflow_id_existed(monkeypatch):
+    """Entries pickled before the deploy have no workflow_id; the reply must still go through."""
+    tagged = []
+    monkeypatch.setattr(routes, "set_agent_span_attributes", lambda *ids: tagged.append(ids))
+    agent = AgentMinimalForCache(id=AGENT_ID, name="Support")
+    del agent.__dict__["workflow_id"]  # what unpickling an old cache entry gives
+    request = _agent_request(agent)
+
+    async def bad_body():
+        raise ValueError("invalid JSON")
+
+    request.json = bad_body
+    update = inspect.unwrap(routes.update)
+
+    with pytest.raises(ValueError):
+        await update(request, UUID("0199e3a0-0000-7000-8000-000000000001"))
+
+    assert tagged == [(AGENT_ID, None)]
