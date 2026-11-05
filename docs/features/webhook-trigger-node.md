@@ -103,8 +103,9 @@ sample payload with `is_test: true`.
   reused; the service dispatches on the webhook type.
 - **Endpoint URL**: `{api}` is the backend's `PUBLIC_API_URL` when set, and stored http URLs on
   its host are shown with its https address. Otherwise it is the builder's API URL, or the
-  request's own address with the scheme from `X-Forwarded-Proto`. The same applies to the
-  generic, Slack and WhatsApp webhooks.
+  request's own address. Either one takes the scheme from `X-Forwarded-Proto` when it is on
+  the host the request came in on. The same applies to the generic, Slack and WhatsApp
+  webhooks.
 - **Run history**: `workflow_trigger_runs` mirrors `workflow_schedule_runs`
   (`PENDING → RUNNING → COMPLETED/FAILED`, PII-redacted `execution_output`), plus
   `idempotency_key` with a partial unique index. The stuck-run reconciler covers it.
