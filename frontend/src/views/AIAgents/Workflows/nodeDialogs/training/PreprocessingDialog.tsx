@@ -53,6 +53,9 @@ import {
   DropColumnOrRowStepConfig,
   DropHighNullColumnsStepConfig,
   ChangeDtypeStepConfig,
+  getMovedStepNotice,
+  isMovedStepType,
+  withoutMissingMovedSteps,
 } from "./preprocessingConfig";
 import {
   cloneConfig,
@@ -130,11 +133,14 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       setIsDiscardEditsDialogOpen(true);
       return;
     }
+    // A moved step's code deleted in Code mode means the step is gone too.
+    if (newMode === "configure") setConfig((prev) => withoutMissingMovedSteps(prev, pythonCode));
     setMode(newMode);
   };
 
   const discardHandEditsAndConfigure = () => {
     const regenerated = generatePythonCodeFromConfig(config, pythonCode || BASE_PYTHON_TEMPLATE);
+    setConfig((prev) => withoutMissingMovedSteps(prev, pythonCode));
     setPythonCode(regenerated);
     pythonCodeRef.current = regenerated;
     baselineCodeRef.current = regenerated;
@@ -331,7 +337,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       fileUrl,
       // The steps, stored as data (DP-7) - the dialog loads these instead of
       // re-reading them from pythonCode. pythonCode is still what runs.
-      preprocessingConfig: cloneConfig(config),
+      preprocessingConfig: { ...cloneConfig(config), movedStepsKept: true },
       analysisResult: analysisResults.initial || undefined, // For backward compatibility
       stepAnalysisResults:
         Object.keys(analysisResults).length > 0 ? analysisResults : undefined,
@@ -626,9 +632,26 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
           />
         );
       default:
+        if (isMovedStepType(step.type)) {
+          return (
+            <p className="text-xs text-muted-foreground">
+              Read-only here. Its saved code is kept and still runs - see the Code tab.
+            </p>
+          );
+        }
         return null;
     }
   };
+
+  // One notice per moved step type in the node, in step order.
+  const movedStepNotices = Array.from(
+    new Set(
+      config.steps
+        .map((step) => step.type)
+        .filter(isMovedStepType)
+        .map(getMovedStepNotice)
+    )
+  );
 
   const stepTypes: PreprocessingStepType[] = [
     "column_filter",
@@ -705,6 +728,28 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
               <CSVAnalysisDisplay analysisResult={analysisResults.initial} />
             )}
           </div>
+
+          {movedStepNotices.length > 0 && (
+            // Steps from before PR #1076 that now belong in Train Model. Their
+            // code is kept as is and still runs; they just can't be edited here.
+            <div
+              role="status"
+              className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40"
+            >
+              {movedStepNotices.map((notice) => (
+                <p key={notice} className="font-medium">
+                  {notice}
+                </p>
+              ))}
+              <p className="text-xs text-muted-foreground">
+                This node still runs the saved code for{" "}
+                {movedStepNotices.length === 1 ? "this step" : "these steps"}, and saving keeps it
+                unchanged. To change it, delete the step here and set it up in the Train Model node.
+                {movedStepNotices.length > 1 &&
+                  " These steps were set up together, so deleting one can change what the others do - check the Code tab, or move them all."}
+              </p>
+            </div>
+          )}
 
           {/* Mode Toggle */}
           <div className="space-y-2">
@@ -892,15 +937,18 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                             <Play className="h-3 w-3 mr-1" />
                             {runningStepId === step.id ? "Running..." : "Run"}
                           </Button>
-                          <div className="flex items-center gap-2">
-                            <Label className="text-xs">Enabled</Label>
-                            <Switch
-                              checked={step.enabled}
-                              onCheckedChange={(checked) =>
-                                handleToggleStep(step.id, checked)
-                              }
-                            />
-                          </div>
+                          {/* A moved step's code is kept as is - it can't be switched off here. */}
+                          {!isMovedStepType(step.type) && (
+                            <div className="flex items-center gap-2">
+                              <Label className="text-xs">Enabled</Label>
+                              <Switch
+                                checked={step.enabled}
+                                onCheckedChange={(checked) =>
+                                  handleToggleStep(step.id, checked)
+                                }
+                              />
+                            </div>
+                          )}
                           <div className="flex items-center gap-1">
                             <Button
                               type="button"
@@ -939,7 +987,8 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                       </div>
 
                       {/* Step Configuration */}
-                      {step.enabled && (
+                      {/* A moved step always runs, so its note always shows. */}
+                      {(step.enabled || isMovedStepType(step.type)) && (
                         <div className="pl-6 border-l-2 border-border">
                           {renderStepConfig(step, index)}
                         </div>
