@@ -144,6 +144,7 @@ class ErrorKey(Enum):
     ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
     ML_TRAINING_UPLOAD_TOO_LARGE = "ML_TRAINING_UPLOAD_TOO_LARGE"
     ML_EXTRACT_FAILED = "ML_EXTRACT_FAILED"
+    ML_TRAINING_DATA_STORAGE_FAILED = "ML_TRAINING_DATA_STORAGE_FAILED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
     ML_INFERENCE_INPUT_INVALID = "ML_INFERENCE_INPUT_INVALID"
@@ -366,6 +367,7 @@ ERROR_MESSAGES = {
             "Train Data Source could not complete the test. "
             "Check its configuration and try again."
         ),
+        ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED: "Could not reach file storage for the training data.",
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
         ErrorKey.ML_INFERENCE_INPUT_INVALID: "ML model inference received invalid input values.",
@@ -477,6 +479,9 @@ ERROR_MESSAGES = {
         ErrorKey.ML_EXTRACT_FAILED: (
             "La source de données d'entraînement n'a pas pu terminer le test. "
             "Vérifiez sa configuration et réessayez."
+        ),
+        ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED: (
+            "Impossible d'accéder au stockage de fichiers pour les données d'entraînement."
         ),
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
