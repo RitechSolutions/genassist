@@ -51,6 +51,23 @@ def _parse_zendesk_category_ids(conn_data: dict[str, Any]) -> Optional[List[int]
     return None
 
 
+def _is_visible_to_everyone(article: dict) -> bool:
+    """True when the article has no user segment, so anyone can read it."""
+    return article.get("user_segment_id") is None and not article.get("user_segment_ids")
+
+
+def _is_copied(article: dict, include_unpublished: bool, include_restricted: bool) -> bool:
+    """True when the KB settings let this article be copied."""
+    allowed_by_publish_state = include_unpublished or article.get("draft") is False
+    allowed_by_visibility = include_restricted or _is_visible_to_everyone(article)
+    return allowed_by_publish_state and allowed_by_visibility
+
+
+def _select_articles(articles: List[dict], include_unpublished: bool, include_restricted: bool) -> List[dict]:
+    """Keep the articles the KB copies: published and visible to everyone unless included."""
+    return [article for article in articles if _is_copied(article, include_unpublished, include_restricted)]
+
+
 @shared_task
 def import_zendesk_articles_to_kb(kb_id: Optional[str] = None, sync_now: bool = False):
     """
@@ -332,8 +349,8 @@ async def import_zendesk_articles_to_kb_async(
                 section_id=section_id,
             )
 
-            # Check if allow_unpublished_articles is false KB extra_metadata from UI panel
             allow_unpublished_articles = kb.extra_metadata.get("allow_unpublished_articles") or False
+            include_restricted_articles = kb.extra_metadata.get("include_restricted_articles") or False
             content_format = kb.extra_metadata.get("content_format") or "text"
 
             # Parse article body in the configured content format
@@ -348,13 +365,9 @@ async def import_zendesk_articles_to_kb_async(
                     return html2markdown(body, base_url)
                 return html2plaintext(body)
 
-            articles = []
-            if not allow_unpublished_articles:
-                articles.extend([article for article in fetched_articles if article.get("draft") is False])
-            else:
-                articles.extend(fetched_articles)
+            articles = _select_articles(fetched_articles, allow_unpublished_articles, include_restricted_articles)
 
-            if not articles:
+            if not fetched_articles:
                 logger.debug(
                     f"No articles found in Zendesk for datasource {ds.name}"
                 )
