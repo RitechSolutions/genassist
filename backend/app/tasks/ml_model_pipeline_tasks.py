@@ -397,9 +397,18 @@ async def check_and_execute_scheduled_pipelines_async():
             from sqlalchemy import select
             from app.db.models.ml_model_pipeline import MLModelPipelineConfig
 
-            query = select(MLModelPipelineConfig).where(
-                MLModelPipelineConfig.cron_schedule.isnot(None),
-                MLModelPipelineConfig.is_deleted == 0,
+            from app.db.models.workflow import WorkflowModel
+
+            # Skip configs left on a deleted workflow (agents deleted before
+            # MLP-6): every run they start would fail with "workflow not found".
+            query = (
+                select(MLModelPipelineConfig)
+                .join(WorkflowModel, WorkflowModel.id == MLModelPipelineConfig.workflow_id)
+                .where(
+                    MLModelPipelineConfig.cron_schedule.isnot(None),
+                    MLModelPipelineConfig.is_deleted == 0,
+                    WorkflowModel.is_deleted == 0,
+                )
             )
             result = await session.execute(query)
             configs = result.scalars().all()
