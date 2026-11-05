@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
@@ -9,6 +8,7 @@ from celery import shared_task
 from croniter import croniter
 
 from app.core.utils.encryption_utils import decrypt_key
+from app.core.utils.html_utils import html2markdown, html2plaintext
 from app.dependencies.injector import injector
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.integration.salesforce import SalesforceConnector
@@ -23,9 +23,54 @@ from app.services.datasources import DataSourceService
 logger = logging.getLogger(__name__)
 
 
+CONTENT_FORMATS = ("text", "markdown", "html")
+ARTICLE_UPDATED_AT_KEY = "salesforce_article_updated_at"
+
+
 def _kb_update_dict(kb: Any) -> dict[str, Any]:
     """ORM/Pydantic KB row to a dict suitable for KBCreate(**payload)."""
     return json.loads(kb.model_dump_json())
+
+
+def _resolve_content_format(extra_metadata: dict) -> str:
+    """Return the KB's content format; the legacy ``allow_html_content`` flag maps to html."""
+    content_format = extra_metadata.get("content_format")
+    if content_format in CONTENT_FORMATS:
+        return content_format
+    if extra_metadata.get("allow_html_content"):
+        return "html"
+    return "text"
+
+
+def _parse_article_body(body: Optional[str], content_format: str) -> str:
+    """Convert an article's HTML body to the KB's content format."""
+    if not body:
+        return ""
+    if content_format == "html":
+        return body
+    if content_format == "markdown":
+        return html2markdown(body)
+    return html2plaintext(body)
+
+
+def clear_copy_dates_on_content_change(current: Any, incoming: Any) -> None:
+    """On save, clear the per-article copy dates when the format or RAG settings change, so the next sync re-copies every article."""
+    if incoming.type != "salesforce":
+        return
+    current_metadata = current.extra_metadata or {}
+    incoming_metadata = dict(incoming.extra_metadata or {})
+    format_changed = _resolve_content_format(current_metadata) != _resolve_content_format(incoming_metadata)
+    rag_config_changed = incoming.rag_config is not None and (current.rag_config or {}) != incoming.rag_config
+    if format_changed or rag_config_changed:
+        incoming_metadata[ARTICLE_UPDATED_AT_KEY] = {}
+        incoming.extra_metadata = incoming_metadata
+
+
+def _select_articles(articles: List[dict], include_restricted: bool) -> List[dict]:
+    """Keep only public articles unless restricted ones are explicitly included."""
+    if include_restricted:
+        return list(articles)
+    return [article for article in articles if article.get("is_public")]
 
 
 async def _resolve_salesforce_credentials(app_settings_id: Any) -> dict[str, Any]:
@@ -322,17 +367,17 @@ async def import_salesforce_articles_to_kb_async(
                 data_category=data_category,
             )
 
-            allow_html_content = kb.extra_metadata.get("allow_html_content") or False
+            extra_metadata = kb.extra_metadata or {}
+            content_format = _resolve_content_format(extra_metadata)
+            include_restricted = bool(extra_metadata.get("include_restricted_articles"))
+            articles = _select_articles(fetched_articles, include_restricted)
+            skipped_restricted = len(fetched_articles) - len(articles)
+            if skipped_restricted:
+                logger.debug(
+                    f"Skipping {skipped_restricted} non-public articles for knowledge base {kb.id}"
+                )
 
-            # Parse article body based on allow_html_content flag
-            def _parse_article_body(article: dict) -> str:
-                if not allow_html_content and article.get("body"):
-                    return re.sub(r"<[^>]*>", "", article.get("body", ""))
-                return article.get("body", "") or ""
-
-            articles = list(fetched_articles)
-
-            if not articles:
+            if not fetched_articles:
                 logger.debug(
                     f"No articles found in SalesForce for datasource {ds.name}"
                 )
@@ -393,10 +438,8 @@ async def import_salesforce_articles_to_kb_async(
             )
 
             # Load last-known updated_at per article from KB extra_metadata (skip-if-unchanged)
-            article_updated_at_key = "salesforce_article_updated_at"
-            stored_updated_at: dict = (kb.extra_metadata or {}).get(
-                article_updated_at_key
-            ) or {}
+            article_updated_at_key = ARTICLE_UPDATED_AT_KEY
+            stored_updated_at: dict = extra_metadata.get(article_updated_at_key) or {}
             # Work on a copy so we can persist it after add/update/delete
             article_updated_at_map = dict(stored_updated_at)
 
@@ -449,7 +492,7 @@ async def import_salesforce_articles_to_kb_async(
             def _build_content_and_metadata(article: dict) -> tuple[str, dict]:
                 article_title = article.get("title") or "Untitled Article"
                 article_summary = article.get("summary") or ""
-                article_body = _parse_article_body(article)
+                article_body = _parse_article_body(article.get("body"), content_format)
                 parts = [article_title]
                 if article_summary:
                     parts.append(article_summary)
@@ -495,6 +538,7 @@ async def import_salesforce_articles_to_kb_async(
                     error_msg = f"Error processing article {article.get('id')}: {str(e)}"
                     logger.error(error_msg)
                     kb_errors.append(error_msg)
+                    article_updated_at_map.pop(str(article.get("id")), None)
                     continue
 
             # Update existing articles
@@ -529,6 +573,7 @@ async def import_salesforce_articles_to_kb_async(
                     error_msg = f"Error updating article {article.get('id')}: {str(e)}"
                     logger.error(error_msg)
                     kb_errors.append(error_msg)
+                    article_updated_at_map.pop(str(article.get("id")), None)
                     continue
 
             # Update last synced time and persist article updated_at map (skip unchanged next run)

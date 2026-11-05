@@ -46,8 +46,10 @@ Use **Test Connection** to verify the credential resolves and authenticates.
 Under **Knowledge Base**, create a KB of type **SalesForce** and point it at the Data Source from
 step 2. Configure it like a Zendesk KB:
 
-- **Allow HTML content** — off (default) strips HTML tags from the article body; on keeps the
-  rich-text markup.
+- **Content format** — how the article body is stored: **Plain text** (default), **Markdown**
+  (keeps links) or **HTML**. Knowledge bases that had **Allow HTML content** on keep HTML.
+- **Include restricted articles** — off (default) copies only articles marked **Visible in Public
+  Knowledge Base**; on copies every published article (internal, customer and partner ones too).
 - **Sync schedule** — enable automatic sync and set a cron expression (e.g. `*/15 * * * *`).
 - **Sync Now** — trigger an immediate sync and see a summary of articles added / updated /
   deleted, plus the last-sync time, status, and any error.
@@ -57,13 +59,15 @@ step 2. Configure it like a Zendesk KB:
 
 ## What it does (behavior)
 
-- Fetches **published/Online** SalesForce Knowledge articles (`Knowledge__kav`) from the org,
-  optionally filtered by language and/or data category.
+- Fetches **all published/Online** SalesForce Knowledge articles (`Knowledge__kav`) from the org,
+  optionally filtered by language and/or data category, and keeps only the public ones unless
+  **Include restricted articles** is on.
 - Ingests each article's **Title + Summary + configured content field** into the Knowledge Base,
   converting rich-text/HTML the same way the Zendesk sync does.
 - **Incremental reconciliation** on every sync: adds new articles, updates only articles whose
   `LastPublishedDate` advanced since the last sync (tracked per article), and deletes articles
-  that are no longer in scope. Unchanged articles are skipped (not re-indexed).
+  that are no longer in scope. Unchanged articles are skipped (not re-indexed). Saving a new
+  **Content format** or new RAG settings makes the next sync re-index every article once.
 - Records **last sync time, status** (success / success-with-warnings / error) and the **error
   message** on failure, shown in the Knowledge Base UI.
 - Runs both **on a schedule** (Celery beat, every 15 min, honoring the KB's cron) and **on
@@ -96,8 +100,8 @@ step 2. Configure it like a Zendesk KB:
   reference — never the secret. At sync/test time the secret is resolved from App Settings and
   decrypted, exactly as the Case node does. Nothing sensitive is written to the Data Source or KB.
 - **Connector.** `SalesforceConnector.fetch_knowledge_articles` runs a SOQL query over
-  `Knowledge__kav` (`PublishStatus='Online'`, optional `Language`, optional `WITH DATA CATEGORY`)
-  and paginates via the REST `nextRecordsUrl` cursor. The `content_field` and `data_category`
+  `Knowledge__kav` (`PublishStatus='Online'`, optional `Language`, optional `WITH DATA CATEGORY`),
+  reads `IsVisibleInPkb` for the public filter, and paginates via the REST `nextRecordsUrl` cursor. The `content_field` and `data_category`
   inputs are validated to prevent SOQL injection.
 - **Sync task.** `import_salesforce_articles_to_kb` mirrors the Zendesk task: tenant-scoped, RAG
   reconciliation keyed by `KB:{kb_id}#article_{KnowledgeArticleId}`, incremental tracking in the

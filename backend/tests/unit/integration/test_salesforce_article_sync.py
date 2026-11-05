@@ -140,8 +140,8 @@ async def test_first_sync_adds_all_articles():
     kb = _make_kb(kb_id)
     rag = _FakeRagManager(existing_ids=[])
     articles = [
-        {"id": "ka-1", "title": "T1", "summary": "S1", "body": "<p>B1</p>", "updated_at": "2026-01-01T00:00:00Z"},
-        {"id": "ka-2", "title": "T2", "summary": "", "body": "B2", "updated_at": "2026-01-02T00:00:00Z"},
+        {"id": "ka-1", "title": "T1", "summary": "S1", "body": "<p>B1</p>", "updated_at": "2026-01-01T00:00:00Z", "is_public": True},
+        {"id": "ka-2", "title": "T2", "summary": "", "body": "B2", "updated_at": "2026-01-02T00:00:00Z", "is_public": True},
     ]
 
     result, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=articles)
@@ -171,18 +171,16 @@ async def test_incremental_updates_only_edited_articles():
     existing = [f"KB:{kb_id}#article_ka-1", f"KB:{kb_id}#article_ka-2"]
     kb = _make_kb(
         kb_id,
-        extra_metadata={
-            "salesforce_article_updated_at": {
+        extra_metadata={"salesforce_article_updated_at": {
                 "ka-1": "2026-01-01T00:00:00Z",
                 "ka-2": "2026-01-02T00:00:00Z",
-            }
-        },
+            }},
     )
     rag = _FakeRagManager(existing_ids=list(existing))
     articles = [
         # ka-1 unchanged, ka-2 edited (newer timestamp)
-        {"id": "ka-1", "title": "T1", "summary": "", "body": "B1", "updated_at": "2026-01-01T00:00:00Z"},
-        {"id": "ka-2", "title": "T2", "summary": "", "body": "B2 edited", "updated_at": "2026-01-05T00:00:00Z"},
+        {"id": "ka-1", "title": "T1", "summary": "", "body": "B1", "updated_at": "2026-01-01T00:00:00Z", "is_public": True},
+        {"id": "ka-2", "title": "T2", "summary": "", "body": "B2 edited", "updated_at": "2026-01-05T00:00:00Z", "is_public": True},
     ]
 
     result, _ = await _run_sync(kb, _make_datasource(), rag, articles=articles)
@@ -202,16 +200,14 @@ async def test_removed_articles_are_deleted():
     existing = [f"KB:{kb_id}#article_ka-1", f"KB:{kb_id}#article_ka-old"]
     kb = _make_kb(
         kb_id,
-        extra_metadata={
-            "salesforce_article_updated_at": {
+        extra_metadata={"salesforce_article_updated_at": {
                 "ka-1": "2026-01-01T00:00:00Z",
                 "ka-old": "2025-01-01T00:00:00Z",
-            }
-        },
+            }},
     )
     rag = _FakeRagManager(existing_ids=list(existing))
     articles = [
-        {"id": "ka-1", "title": "T1", "summary": "", "body": "B1", "updated_at": "2026-01-01T00:00:00Z"},
+        {"id": "ka-1", "title": "T1", "summary": "", "body": "B1", "updated_at": "2026-01-01T00:00:00Z", "is_public": True},
     ]
 
     result, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=articles)
@@ -336,3 +332,232 @@ async def test_batch_dispatch_routes_salesforce_kb_to_importer():
         {"kb_id": str(kb_id), "type": "salesforce", "result": sf_result}
     ]
     assert result["salesforce_kbs_synced"] == 1
+
+
+def _article(article_id, is_public=True, body="B", updated_at="2026-01-01T00:00:00Z"):
+    return {
+        "id": article_id,
+        "title": f"T-{article_id}",
+        "summary": "",
+        "body": body,
+        "updated_at": updated_at,
+        "is_public": is_public,
+    }
+
+
+@pytest.mark.asyncio
+async def test_non_public_articles_are_skipped_and_removed():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(
+        kb_id,
+        extra_metadata={"salesforce_article_updated_at": {
+                "ka-public": "2026-01-01T00:00:00Z",
+                "ka-internal": "2026-01-01T00:00:00Z",
+            }},
+    )
+    rag = _FakeRagManager(
+        existing_ids=[f"KB:{kb_id}#article_ka-public", f"KB:{kb_id}#article_ka-internal"]
+    )
+    articles = [
+        _article("ka-public"),
+        _article("ka-internal", is_public=False),
+        _article("ka-new-internal", is_public=False),
+    ]
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=articles)
+
+    assert rag.added == []
+    assert rag.deleted == [f"KB:{kb_id}#article_ka-internal"]
+    assert result["articles_deleted"] == 1
+    tracked = kb_service.update.await_args.args[1].extra_metadata["salesforce_article_updated_at"]
+    assert set(tracked) == {"ka-public"}
+
+
+@pytest.mark.asyncio
+async def test_include_restricted_articles_copies_every_article():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={"include_restricted_articles": True})
+    rag = _FakeRagManager(existing_ids=[])
+    articles = [_article("ka-public"), _article("ka-internal", is_public=False)]
+
+    result, _ = await _run_sync(kb, _make_datasource(), rag, articles=articles)
+
+    assert result["articles_added"] == 2
+    added_ids = {doc_id for doc_id, _, _ in rag.added}
+    assert added_ids == {f"KB:{kb_id}#article_ka-public", f"KB:{kb_id}#article_ka-internal"}
+
+
+@pytest.mark.asyncio
+async def test_all_restricted_fetch_still_removes_existing_docs():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={})
+    rag = _FakeRagManager(existing_ids=[f"KB:{kb_id}#article_ka-internal"])
+    articles = [_article("ka-internal", is_public=False)]
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=articles)
+
+    assert rag.deleted == [f"KB:{kb_id}#article_ka-internal"]
+    assert result["articles_deleted"] == 1
+    assert kb_service.update.await_args.args[1].last_sync_status == "success"
+
+
+@pytest.mark.asyncio
+async def test_markdown_format_keeps_links():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={"content_format": "markdown"})
+    rag = _FakeRagManager(existing_ids=[])
+    body = '<p>See <a href="https://example.com/docs">the docs</a> &amp; FAQ.</p>'
+
+    await _run_sync(kb, _make_datasource(), rag, articles=[_article("ka-1", body=body)])
+
+    content = rag.added[0][1]
+    assert "[the docs](https://example.com/docs)" in content
+    assert "&amp;" not in content
+
+
+@pytest.mark.parametrize(
+    "extra_metadata, expected",
+    [
+        ({}, "text"),
+        ({"allow_html_content": True}, "html"),
+        ({"allow_html_content": False}, "text"),
+        ({"content_format": "markdown", "allow_html_content": True}, "markdown"),
+        ({"content_format": "unknown"}, "text"),
+    ],
+)
+def test_resolve_content_format(extra_metadata, expected):
+    from app.tasks.salesforce_article_sync_tasks import _resolve_content_format
+
+    assert _resolve_content_format(extra_metadata) == expected
+
+
+@pytest.mark.parametrize(
+    "body, content_format, expected",
+    [
+        (None, "text", ""),
+        ("", "markdown", ""),
+        ("<p>Fees &amp; charges</p>", "text", "Fees & charges"),
+        ('<p><a href="https://example.com/a">Link</a></p>', "markdown", "[Link](https://example.com/a)"),
+        ("<p>Raw &amp; kept</p>", "html", "<p>Raw &amp; kept</p>"),
+    ],
+)
+def test_parse_article_body(body, content_format, expected):
+    from app.tasks.salesforce_article_sync_tasks import _parse_article_body
+
+    assert _parse_article_body(body, content_format) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kb_type", ["salesforce", "zendesk"])
+async def test_saving_sync_owned_kb_keeps_synced_articles(kb_type):
+    from app.modules.data.manager import AgentRAGServiceManager
+
+    manager = AgentRAGServiceManager()
+    kb = KBRead(id=uuid.uuid4(), name="KB", type=kb_type, extra_metadata={})
+
+    with patch.object(manager, "get_service", new=AsyncMock(return_value=None)) as get_service:
+        await manager.load_knowledge_items([kb], action="update")
+
+    get_service.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_saving_regular_kb_still_reloads_it():
+    from app.modules.data.manager import AgentRAGServiceManager
+
+    manager = AgentRAGServiceManager()
+    kb = KBRead(id=uuid.uuid4(), name="KB", type="text", content="Hello", extra_metadata={})
+
+    with patch.object(manager, "get_service", new=AsyncMock(return_value=None)) as get_service:
+        await manager.load_knowledge_items([kb], action="update")
+
+    get_service.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cleared_copy_dates_recopy_existing_articles():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={"content_format": "markdown", "salesforce_article_updated_at": {}})
+    rag = _FakeRagManager(existing_ids=[f"KB:{kb_id}#article_ka-1"])
+    body = '<p>See <a href="https://example.com/fees">fees</a>.</p>'
+
+    result, _ = await _run_sync(kb, _make_datasource(), rag, articles=[_article("ka-1", body=body)])
+
+    assert result["articles_updated"] == 1
+    assert "[fees](https://example.com/fees)" in rag.added[0][1]
+
+
+class _FailingRagManager(_FakeRagManager):
+    def __init__(self, existing_ids=None, failing_ids=()):
+        super().__init__(existing_ids)
+        self.failing_ids = set(failing_ids)
+
+    async def add_document(self, kb, doc_id, content, metadata):
+        if doc_id in self.failing_ids:
+            raise RuntimeError("embedding failed")
+        return await super().add_document(kb, doc_id, content, metadata)
+
+
+@pytest.mark.asyncio
+async def test_failed_article_is_retried_alone():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={"salesforce_article_updated_at": {}})
+    existing = [f"KB:{kb_id}#article_ka-1", f"KB:{kb_id}#article_ka-2"]
+    articles = [_article("ka-1"), _article("ka-2")]
+    rag = _FailingRagManager(existing_ids=existing, failing_ids=[f"KB:{kb_id}#article_ka-1"])
+
+    _, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=articles)
+
+    stored = kb_service.update.await_args.args[1].extra_metadata
+    assert set(stored["salesforce_article_updated_at"]) == {"ka-2"}
+
+    retry_kb = _make_kb(kb_id, extra_metadata=stored)
+    retry_rag = _FakeRagManager(existing_ids=[f"KB:{kb_id}#article_ka-2"])
+    result, _ = await _run_sync(retry_kb, _make_datasource(), retry_rag, articles=articles)
+
+    assert result["articles_added"] == 1
+    assert result["articles_updated"] == 0
+    assert [doc_id for doc_id, _, _ in retry_rag.added] == [f"KB:{kb_id}#article_ka-1"]
+
+
+def _saved_kb(kb_type="salesforce", extra_metadata=None, rag_config=None):
+    from app.schemas.agent_knowledge import KBBase
+
+    return KBBase(name="SF KB", type=kb_type, extra_metadata=extra_metadata or {}, rag_config=rag_config)
+
+
+def _stored_kb(extra_metadata, rag_config=None):
+    return KBRead(id=uuid.uuid4(), name="SF KB", type="salesforce", extra_metadata=extra_metadata, rag_config=rag_config)
+
+
+_DATES = {"salesforce_article_updated_at": {"ka-1": "2026-01-01T00:00:00Z"}}
+
+
+@pytest.mark.parametrize(
+    "stored_metadata, saved_metadata, stored_rag, saved_rag, dates_cleared",
+    [
+        ({**_DATES, "content_format": "text"}, {**_DATES, "content_format": "markdown"}, None, None, True),
+        ({**_DATES, "content_format": "text"}, {**_DATES, "content_format": "text"}, None, None, False),
+        ({**_DATES, "allow_html_content": True}, {**_DATES, "allow_html_content": True, "content_format": "html"}, None, None, False),
+        ({**_DATES}, {**_DATES, "content_format": "text"}, None, None, False),
+        ({**_DATES}, {**_DATES}, {"vector": {"chunk_size": 1000}}, {"vector": {"chunk_size": 500}}, True),
+        ({**_DATES}, {**_DATES}, {"vector": {"chunk_size": 1000}}, None, False),
+    ],
+)
+def test_save_clears_copy_dates_only_when_content_settings_change(stored_metadata, saved_metadata, stored_rag, saved_rag, dates_cleared):
+    from app.tasks.salesforce_article_sync_tasks import clear_copy_dates_on_content_change
+
+    saved = _saved_kb(extra_metadata=saved_metadata, rag_config=saved_rag)
+    clear_copy_dates_on_content_change(_stored_kb(stored_metadata, stored_rag), saved)
+
+    expected = {} if dates_cleared else _DATES["salesforce_article_updated_at"]
+    assert saved.extra_metadata["salesforce_article_updated_at"] == expected
+
+
+def test_save_of_other_kb_types_keeps_their_metadata():
+    from app.tasks.salesforce_article_sync_tasks import clear_copy_dates_on_content_change
+
+    saved = _saved_kb(kb_type="zendesk", extra_metadata={**_DATES, "content_format": "markdown"})
+    clear_copy_dates_on_content_change(_stored_kb({**_DATES, "content_format": "text"}), saved)
+
+    assert saved.extra_metadata["salesforce_article_updated_at"] == _DATES["salesforce_article_updated_at"]
