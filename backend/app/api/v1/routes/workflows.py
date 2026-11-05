@@ -9,6 +9,7 @@ from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.core.exceptions.exception_classes import AppException
+from app.core.keepalive_json_response import keepalive_json
 from app.core.permissions.constants import Permissions as P
 from app.core.utils.string_utils import truncate_for_log
 from app.core.utils.uuid_utils import coerce_uuid
@@ -295,6 +296,7 @@ async def execute_workflow(
     "/test", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
 )
 async def test_workflow(
+    request: Request,
     test_data: Dict[str, Any],
     workflow_id: Optional[UUID] = None,
     workflow_service: WorkflowService = Injected(WorkflowService),
@@ -354,35 +356,44 @@ async def test_workflow(
                 "edges": workflow.edges,
             }
 
-        # Use the new engine approach
-        workflow_engine = WorkflowEngine(workflow_config)
+        async def run() -> dict:
+            try:
+                # Use the new engine approach
+                workflow_engine = WorkflowEngine(workflow_config)
 
-        thread_id = input_data.get("thread_id", str(uuid.uuid4()))
-        start_node_id = input_data.get("human_in_the_loop_node_id")
+                thread_id = input_data.get("thread_id", str(uuid.uuid4()))
+                start_node_id = input_data.get("human_in_the_loop_node_id")
 
-        usage_context = WorkflowUsageContext(
-            source="workflow_test", workflow_id=coerce_uuid(saved_workflow_id), defer_capture=True
-        )
-        turn_router = SubAgentTurnRouter(workflow_engine, owner_id=workflow_config["id"])
-        supplied_thread = bool(input_data.get("thread_id"))
-        if turn_router.has_sub_agents():
-            input_data.setdefault("agent_id", workflow_config["id"])
-            if supplied_thread and not start_node_id:
-                routed = await turn_router.route_turn(
-                    input_data.get("message", ""), thread_id, input_data, persist=True, usage_context=usage_context
+                usage_context = WorkflowUsageContext(
+                    source="workflow_test", workflow_id=coerce_uuid(saved_workflow_id), defer_capture=True
                 )
-                if routed is not None:
-                    return routed
+                turn_router = SubAgentTurnRouter(workflow_engine, owner_id=workflow_config["id"])
+                supplied_thread = bool(input_data.get("thread_id"))
+                if turn_router.has_sub_agents():
+                    input_data.setdefault("agent_id", workflow_config["id"])
+                    if supplied_thread and not start_node_id:
+                        routed = await turn_router.route_turn(
+                            input_data.get("message", ""), thread_id, input_data, persist=True, usage_context=usage_context
+                        )
+                        if routed is not None:
+                            return routed
 
-        state = await workflow_engine.execute_from_node(
-            start_node_id=start_node_id,
-            input_data=input_data,
-            thread_id=thread_id,
-            registry_managed=supplied_thread,
-            usage_context=usage_context,
-        )
+                state = await workflow_engine.execute_from_node(
+                    start_node_id=start_node_id,
+                    input_data=input_data,
+                    thread_id=thread_id,
+                    registry_managed=supplied_thread,
+                    usage_context=usage_context,
+                )
 
-        return turn_router.finalize(state.format_state_as_response())
+                return turn_router.finalize(state.format_state_as_response())
+            except (HTTPException, AppException):
+                raise
+            except Exception as e:
+                logger.error(f"Error testing workflow with new engine: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        return keepalive_json(request, run, name=f"workflow-test:{workflow_config['id']}")
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
@@ -412,7 +423,7 @@ async def get_node_dialog_schema(node_type: str):
 @router.post(
     "/test-node", dependencies=[Depends(auth), Depends(permissions("test:workflow"))]
 )
-async def test_individual_node(test_data: Dict[str, Any]):
+async def test_individual_node(request: Request, test_data: Dict[str, Any]):
     """
     Test an individual node with the new engine.
 
@@ -443,33 +454,36 @@ async def test_individual_node(test_data: Dict[str, Any]):
             detail=f"Unsupported node type: {node_type}. Supported types: {SUPPORTED_NODE_TYPES}",
         )
 
-    try:
-        # Create a unique test ID
-        test_id = f"test-{node_type}-{int(time.time())}"
+    async def run() -> dict:
+        try:
+            # Create a unique test ID
+            test_id = f"test-{node_type}-{int(time.time())}"
 
-        # Build workflow configuration with single node
-        workflow_config = {
-            "id": test_id,
-            "nodes": [{"id": test_id, "type": node_type, "data": node_config}],
-            "edges": [],
-        }
-        workflow_engine = WorkflowEngine(workflow_config)
+            # Build workflow configuration with single node
+            workflow_config = {
+                "id": test_id,
+                "nodes": [{"id": test_id, "type": node_type, "data": node_config}],
+                "edges": [],
+            }
+            workflow_engine = WorkflowEngine(workflow_config)
 
-        state = await workflow_engine.execute_from_node(
-            start_node_id=test_id,
-            input_data=input_data,
-            usage_context=WorkflowUsageContext(
-                source="node_test",
-                workflow_id=coerce_uuid(workflow_engine.workflow_id),
-                defer_capture=True,
-            ),
-        )
+            state = await workflow_engine.execute_from_node(
+                start_node_id=test_id,
+                input_data=input_data,
+                usage_context=WorkflowUsageContext(
+                    source="node_test",
+                    workflow_id=coerce_uuid(workflow_engine.workflow_id),
+                    defer_capture=True,
+                ),
+            )
 
-        return state.format_state_as_response()
+            return state.format_state_as_response()
 
-    except Exception as e:
-        logger.error(f"Error testing {node_type} node: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            logger.error(f"Error testing {node_type} node: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return keepalive_json(request, run, name=f"node-test:{node_type}")
 
 
 @router.post("/generate-python-template", response_model=Dict[str, Any])
