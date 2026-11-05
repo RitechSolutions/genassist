@@ -93,20 +93,38 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
         result = await self.db.execute(stmt)
         return result.all()
 
-    async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> None:
-        """Retire every version of an agent's workflow.
+    async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> List[UUID]:
+        """Retire every live version of an agent's workflow and return their ids.
 
         Each version is a separate row, so deleting the agent leaves them all
-        behind. Skip the commit to batch this with the agent's own delete.
+        behind. Skip the commit to batch this with the agent's own delete. The
+        row locks this UPDATE takes are held until commit, so a pipeline config
+        write (FOR SHARE) on one of these versions waits for it.
         """
-        await self.db.execute(
+        result = await self.db.execute(
             update(WorkflowModel)
-            .where(WorkflowModel.agent_id == agent_id)
+            .where(WorkflowModel.agent_id == agent_id, WorkflowModel.is_deleted == 0)
             .values(is_deleted=1)
+            .returning(WorkflowModel.id)
             .execution_options(synchronize_session="fetch")
         )
+        retired = list(result.scalars().all())
         if commit:
             await self.db.flush()
+        return retired
+
+    async def lock_live_shared(self, workflow_id: UUID) -> bool:
+        """Share-lock a live version until commit; False when it is missing or deleted.
+
+        A version or agent delete waits for the lock, so a row written against
+        the version cannot be left pointing at a deleted workflow.
+        """
+        stmt = (
+            select(WorkflowModel.id)
+            .where(WorkflowModel.id == workflow_id, WorkflowModel.is_deleted == 0)
+            .with_for_update(read=True)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none() is not None
 
     async def get_locked(self, workflow_id: UUID, *, shared: bool = False) -> Optional[WorkflowModel]:
         stmt = select(WorkflowModel).where(WorkflowModel.id == workflow_id).with_for_update(read=shared)
@@ -125,11 +143,17 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
 
     async def live_ml_model_names(self, workflow_id: UUID) -> List[str]:
         """Models whose live pipeline configuration runs the version"""
+        return await self.live_ml_model_names_for([workflow_id])
+
+    async def live_ml_model_names_for(self, workflow_ids: List[UUID]) -> List[str]:
+        """Models whose live pipeline configuration runs any of the versions"""
+        if not workflow_ids:
+            return []
         stmt = (
             select(MLModel.name)
             .join(MLModelPipelineConfig, MLModelPipelineConfig.model_id == MLModel.id)
             .where(
-                MLModelPipelineConfig.workflow_id == workflow_id,
+                MLModelPipelineConfig.workflow_id.in_(workflow_ids),
                 MLModelPipelineConfig.is_deleted == 0,
                 MLModel.is_deleted == 0,
             )

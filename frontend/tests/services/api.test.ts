@@ -218,7 +218,13 @@ describe("agent config endpoints", () => {
 
     await deleteAgentConfig("gone");
 
-    expect(mockApiRequest).toHaveBeenCalledWith("DELETE", "genagent/agents/configs/gone");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "DELETE",
+      "genagent/agents/configs/gone",
+      undefined,
+      {},
+      { rethrowForbidden: true }
+    );
   });
 
   it("deleteWelcomeImage DELETEs the welcome image endpoint", async () => {
