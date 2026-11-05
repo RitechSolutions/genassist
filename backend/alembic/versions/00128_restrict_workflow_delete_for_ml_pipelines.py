@@ -39,6 +39,7 @@ _FKS = (
 
 _LOCK_NOT_AVAILABLE = "55P03"
 _LOCK_WAIT_MS = 500  # below Postgres's default deadlock_timeout (1s)
+_LOCK_WAIT_HOLDING_MS = 150  # per lock, while the runs table is already held
 _LOCK_PAUSE_SECONDS = 0.2
 _LOCK_PATIENCE_SECONDS = 45
 
@@ -48,25 +49,27 @@ def _lock_up_front() -> None:
 
     The app touches these tables in both orders (a run insert locks runs and then
     reads its config and workflow; run and config creation read the config and
-    workflow first), so no fixed order is safe on its own. The wait is capped
-    below Postgres's deadlock check (deadlock_timeout, 1s by default): if an app
-    transaction holds a lock this migration needs, the attempt gives up and its
-    savepoint releases whatever it took, so Postgres never has to kill an app
-    request. Attempts repeat for _LOCK_PATIENCE_SECONDS to find a quiet moment;
+    workflow first), so no fixed order is safe on its own. Every lock wait is
+    capped below Postgres's deadlock check (deadlock_timeout, 1s by default):
+    if an app transaction holds a lock this migration needs, the attempt gives
+    up and its savepoint releases whatever it took, so Postgres never has to
+    kill an app request. The first table is waited for longest, while nothing
+    is held yet; the other two get a short wait, enough for in-flight app
+    transactions to finish, so a failed attempt holds the runs table only
+    briefly. Attempts repeat for _LOCK_PATIENCE_SECONDS to find a quiet moment;
     after that the 55P03 goes to the runner, which retries the whole migration.
     Once the locks are held no statement below waits for another. Dropping a
     foreign key needs ACCESS EXCLUSIVE on the referenced table too.
     """
     bind = op.get_bind()
-    op.execute(f"SET LOCAL lock_timeout = '{_LOCK_WAIT_MS}ms'")
     deadline = time.monotonic() + _LOCK_PATIENCE_SECONDS
     while True:
         try:
             with bind.begin_nested():
-                op.execute(
-                    "LOCK TABLE ml_model_pipeline_runs, ml_model_pipeline_configs, workflows "
-                    "IN ACCESS EXCLUSIVE MODE"
-                )
+                op.execute(f"SET LOCAL lock_timeout = '{_LOCK_WAIT_MS}ms'")
+                op.execute("LOCK TABLE ml_model_pipeline_runs IN ACCESS EXCLUSIVE MODE")
+                op.execute(f"SET LOCAL lock_timeout = '{_LOCK_WAIT_HOLDING_MS}ms'")
+                op.execute("LOCK TABLE ml_model_pipeline_configs, workflows IN ACCESS EXCLUSIVE MODE")
             return
         except sa.exc.DBAPIError as error:
             if getattr(error.orig, "pgcode", None) != _LOCK_NOT_AVAILABLE or time.monotonic() >= deadline:
