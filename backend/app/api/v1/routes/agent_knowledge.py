@@ -48,6 +48,7 @@ from app.services.app_settings import AppSettingsService
 from app.services.file_manager import FileManagerService
 from app.services.file_upload_session import FileUploadSessionService
 from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
+from app.tasks.salesforce_article_sync_tasks import clear_copy_dates_on_content_change
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 
 router = APIRouter()
@@ -166,7 +167,7 @@ async def update_knowledge_item(
     logger.info(f"update_knowledge_item route : item_id = {item_id}")
     """Update an existing knowledge base item"""
     # Check if item exists
-    await knowledge_service.get_by_id(item_id)
+    current_item = await knowledge_service.get_by_id(item_id)
 
     # Ensure the ID in the path matches the ID in the body
     if "id" in item and item.id != item_id:
@@ -179,6 +180,7 @@ async def update_knowledge_item(
     if item.type == "url":
         await set_url_content_if_no_rag(item)
 
+    clear_copy_dates_on_content_change(current_item, item)
     result = await knowledge_service.update(item_id, item)
 
     # Enrich files with storage metadata when using remote providers (S3, etc.)

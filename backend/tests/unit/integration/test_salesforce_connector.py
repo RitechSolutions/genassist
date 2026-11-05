@@ -238,6 +238,7 @@ async def test_fetch_knowledge_articles_builds_soql_and_normalizes():
                     "Summary": "A summary",
                     "Body__c": "<p>Body HTML</p>",
                     "LastPublishedDate": "2026-01-01T00:00:00.000+0000",
+                    "IsVisibleInPkb": True,
                 }
             ],
         }
@@ -252,6 +253,8 @@ async def test_fetch_knowledge_articles_builds_soql_and_normalizes():
     assert "FROM Knowledge__kav" in soql
     assert "PublishStatus='Online'" in soql
     assert "Body__c" in soql
+    assert "IsVisibleInPkb" in soql
+    assert "LIMIT" not in soql
     assert "Language=" not in soql
     assert "WITH DATA CATEGORY" not in soql
 
@@ -262,6 +265,7 @@ async def test_fetch_knowledge_articles_builds_soql_and_normalizes():
             "summary": "A summary",
             "body": "<p>Body HTML</p>",
             "updated_at": "2026-01-01T00:00:00.000+0000",
+            "is_public": True,
         }
     ]
 
@@ -344,6 +348,32 @@ async def test_fetch_knowledge_articles_follows_next_records_url():
     assert mock_request.await_args_list[2].args[1] == (
         f"https://myorg.my.salesforce.com{next_url}"
     )
+
+
+@pytest.mark.asyncio
+async def test_fetch_knowledge_articles_marks_unticked_or_missing_visibility_as_not_public():
+    connector = _connector()
+
+    async def _fake_request(method, url, json=None, data=None, headers=None, timeout=10.0):
+        if url.endswith("/services/oauth2/token"):
+            return _TOKEN_RESPONSE
+        return {
+            "done": True,
+            "records": [
+                {"KnowledgeArticleId": "ka-1", "IsVisibleInPkb": False},
+                {"KnowledgeArticleId": "ka-2"},
+                {"KnowledgeArticleId": "ka-3", "IsVisibleInPkb": True},
+            ],
+        }
+
+    with patch.object(connector, "_make_request", new_callable=AsyncMock, side_effect=_fake_request):
+        articles = await connector.fetch_knowledge_articles(content_field="Body__c")
+
+    assert [(a["id"], a["is_public"]) for a in articles] == [
+        ("ka-1", False),
+        ("ka-2", False),
+        ("ka-3", True),
+    ]
 
 
 @pytest.mark.asyncio

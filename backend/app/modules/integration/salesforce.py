@@ -134,18 +134,17 @@ class SalesforceConnector:
         content_field: str,
         language: Optional[str] = None,
         data_category: Optional[str] = None,
-        page_size: int = 200,
     ) -> List[Dict[str, Any]]:
         """Fetch published SalesForce Knowledge articles via SOQL over ``Knowledge__kav``.
 
         Selects ``Id, KnowledgeArticleId, ArticleNumber, Title, Summary, {content_field},
-        LastPublishedDate`` for ``PublishStatus='Online'`` articles, optionally filtered by
-        ``Language`` and/or a ``WITH DATA CATEGORY`` clause. Results are paginated from
-        scratch via the REST ``nextRecordsUrl`` cursor (looping until ``done == true``).
+        LastPublishedDate, IsVisibleInPkb`` for ``PublishStatus='Online'`` articles, optionally
+        filtered by ``Language`` and/or a ``WITH DATA CATEGORY`` clause. Every page is fetched
+        via the REST ``nextRecordsUrl`` cursor (looping until ``done == true``).
 
         Each record is normalized to
         ``{"id": <KnowledgeArticleId>, "title", "summary", "body": <content_field>,
-        "updated_at": <LastPublishedDate>}``.
+        "updated_at": <LastPublishedDate>, "is_public": <IsVisibleInPkb>}``.
         """
         if not content_field or not isinstance(content_field, str) or not content_field.strip():
             raise ValueError(
@@ -188,7 +187,7 @@ class SalesforceConnector:
 
         select_clause = (
             f"SELECT Id, KnowledgeArticleId, ArticleNumber, Title, Summary, "
-            f"{content_field}, LastPublishedDate FROM Knowledge__kav"
+            f"{content_field}, LastPublishedDate, IsVisibleInPkb FROM Knowledge__kav"
         )
         where_clause = "WHERE PublishStatus='Online'"
         if language:
@@ -201,7 +200,6 @@ class SalesforceConnector:
         # validated up front (see the guard near content_field) so it is safe to interpolate.
         if data_category:
             soql += f" WITH DATA CATEGORY {data_category}"
-        soql += f" LIMIT {int(page_size)}"
 
         articles: List[Dict[str, Any]] = []
         response = await self._make_request(
@@ -216,6 +214,7 @@ class SalesforceConnector:
                         "summary": record.get("Summary"),
                         "body": record.get(content_field),
                         "updated_at": record.get("LastPublishedDate"),
+                        "is_public": record.get("IsVisibleInPkb") is True,
                     }
                 )
             if response.get("done", True):
