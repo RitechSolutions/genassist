@@ -93,6 +93,16 @@ def test_request_url_takes_the_scheme_the_load_balancer_reports():
     )
 
 
+def test_caller_base_on_the_request_host_takes_the_scheme_the_load_balancer_reports():
+    wid = uuid4()
+    path = f"/api/webhook/execute/{wid}?x-tenant-id=acme"
+    assert build_public_url("http://api.genassist.ai/api/", _request(BEHIND_TLS), wid) == f"https://api.genassist.ai{path}"
+    assert build_public_url("https://api.genassist.ai/api/", _request(BEHIND_TLS), wid) == f"https://api.genassist.ai{path}"
+    assert build_public_url("http://api.genassist.ai/api/", _request(), wid) == f"http://api.genassist.ai{path}"
+    assert build_public_url("http://elsewhere/api/", _request(BEHIND_TLS), wid) == f"http://elsewhere{path}"
+    assert build_public_url("http://[bad/api", _request(BEHIND_TLS), wid) == f"http://[bad{path}"
+
+
 def test_configured_public_url_wins_over_caller_base_and_request(monkeypatch):
     monkeypatch.setattr(settings, "PUBLIC_API_URL", PUBLIC)
     wid = uuid4()
