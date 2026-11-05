@@ -1,6 +1,7 @@
 """Values written in a SQL query never reach the logs through database errors."""
 
 import logging
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -8,7 +9,11 @@ import pytest_asyncio
 from sqlalchemy import text
 
 from app.core.exceptions.error_policy import sanitize_database_error, sanitize_error_detail
-from app.core.utils.sensitive_data_utils import redact_sql_literal_values, redact_sql_literals
+from app.core.utils.sensitive_data_utils import (
+    MAX_SCANNED_DB_MESSAGE,
+    redact_sql_literal_values,
+    redact_sql_literals,
+)
 from app.modules.integration.database.database_manager import DatabaseManager
 from app.modules.integration.snowflake.snowflake_manager import SnowflakeManager
 from app.modules.workflow.engine.nodes.ml import ml_utils
@@ -262,3 +267,56 @@ async def test_snowflake_error_logs_no_query_values(caplog):
     assert SECRET not in error
     assert SECRET not in caplog.text
     assert "MISSING_ACCOUNTS" in error
+
+
+# --------------------------------------------------------------------------- #
+# Cost and readability of the returned error
+# --------------------------------------------------------------------------- #
+def _in_list_query(count: int) -> str:
+    return "SELECT * FROM missing WHERE v IN (" + ", ".join(f"'value_{i}'" for i in range(count)) + ")"
+
+
+def test_a_failing_statement_with_thousands_of_values_is_redacted_quickly():
+    query = _in_list_query(5_000)
+    error = RuntimeError(f'relation "missing" does not exist\n[SQL: {query}]')
+
+    started = time.perf_counter()
+    message = sanitize_database_error(error, query=query, dialect="postgresql")
+    elapsed = time.perf_counter() - started
+
+    # Took ~3.5 s when every value was searched across the whole message.
+    assert elapsed < 1.0
+    assert "value_" not in message
+    assert 'relation "missing" does not exist' in message
+
+
+def test_a_long_message_without_the_statement_is_also_bounded():
+    query = _in_list_query(5_000)
+    error = RuntimeError("driver says: " + " ".join(f"bad value_{i}" for i in range(5_000)))
+
+    started = time.perf_counter()
+    message = sanitize_database_error(error, query=query, dialect="postgresql")
+
+    assert time.perf_counter() - started < 1.0
+    assert "value_" not in message
+
+
+def test_a_value_cut_at_the_scan_limit_is_not_exposed():
+    query = "SELECT * FROM t WHERE password = 'supersecretvalue'"
+    padding = "x " * ((MAX_SCANNED_DB_MESSAGE - 8) // 2)
+    message = redact_sql_literal_values(f"{padding} supersecretvalue", query)
+
+    assert message.endswith("[truncated]")
+    assert "supe" not in message
+
+
+def test_long_table_names_stay_readable_in_the_returned_error():
+    table = "customer_transactions_archive_2024"
+    query = f"SELECT * FROM {table} WHERE password = 'secret'"
+    error = RuntimeError(f'relation "{table}" does not exist\n[SQL: {query}]')
+
+    message = sanitize_database_error(error, query=query, dialect="postgresql")
+
+    assert f'relation "{table}" does not exist' in message
+    assert "[TOKEN]" not in message
+    assert SECRET not in message

@@ -10,7 +10,6 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.sensitive_data_utils import (
     redact_bound_values,
-    redact_sensitive_substrings,
     redact_sql_literal_values,
 )
 
@@ -81,9 +80,11 @@ def sanitize_database_error(
 
     Driver errors repeat the SQL, and with it any value written in the query
     (``WHERE password = 'secret'``). Bound values and the query's string
-    literals are masked, then the generic secret and PII redaction runs. The
-    error type and the table and column names stay readable. ``dialect`` is the
-    datasource type, which decides how the query's quotes are read.
+    literals are masked and obvious credentials (``password=...``) are hidden.
+    The error type and the table and column names stay readable, because this
+    message is also returned to the user. The general PII filter is left to the
+    log sinks: it would turn long table names into ``[TOKEN]``. ``dialect`` is
+    the datasource type, which decides how the query's quotes are read.
     """
     message = redact_bound_values(error, parameters)
     message = redact_sql_literal_values(
@@ -91,7 +92,6 @@ def sanitize_database_error(
         query,
         dialect=dialect,
     )
-    message = str(redact_sensitive_substrings(message))
     return sanitize_error_detail(message, max_len=max_len)
 
 
