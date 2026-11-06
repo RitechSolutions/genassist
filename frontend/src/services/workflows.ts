@@ -265,9 +265,18 @@ export const waitForTrainingJob = async (
   }
 };
 
+type ErrorResponse = { response?: { status?: number; data?: { error_key?: string; error_detail?: unknown; detail?: unknown } } };
+
 const isAlreadyRunningError = (error: unknown): boolean => {
-  const response = (error as { response?: { status?: number; data?: { error_key?: string } } })?.response;
+  const response = (error as ErrorResponse)?.response;
   return response?.status === 409 && response.data?.error_key === TRAINING_JOB_ALREADY_RUNNING;
+};
+
+/** The server's own explanation of a refused test (AppException error_detail, or FastAPI detail). */
+const serverMessage = (error: unknown): string | null => {
+  const data = (error as ErrorResponse)?.response?.data;
+  const message = data?.error_detail ?? data?.detail;
+  return typeof message === "string" && message.trim() ? message : null;
 };
 
 const startTest = async (
@@ -279,16 +288,55 @@ const startTest = async (
       "POST",
       endpoint,
       testData as unknown as Record<string, unknown>,
-      { timeout: API_WORKFLOW_TEST_TIMEOUT_MS }
+      { timeout: API_WORKFLOW_TEST_TIMEOUT_MS },
+      // A 403 here explains itself (e.g. a training test needs a signed-in user).
+      { rethrowForbidden: true }
     );
   } catch (error) {
-    if (!isAlreadyRunningError(error)) throw error;
-    // The user's earlier training test is still running (e.g. they closed the
-    // dialog): follow it, so they can see it finish or cancel it.
-    const active = await getActiveTrainingJob().catch(() => null);
-    if (!active) throw error;
-    return { ...active, reattached: true };
+    if (isAlreadyRunningError(error)) {
+      // The user's earlier training test is still running (e.g. they closed the
+      // dialog): follow it, so they can see it finish or cancel it.
+      const active = await getActiveTrainingJob().catch(() => null);
+      if (active) return { ...active, reattached: true };
+    }
+    // e.g. an oversized hyperparameter search: show why, not "status code 400".
+    const message = serverMessage(error);
+    throw message ? Object.assign(new Error(message), { cause: error }) : error;
   }
+};
+
+const REATTACHED_OUTCOME: Record<TrainingJobStatus, string> = {
+  queued: "is still queued",
+  running: "is still running",
+  succeeded: "has finished",
+  failed: "has failed",
+  cancelled: "was cancelled",
+};
+
+/**
+ * Follow the user's earlier training test to its end, then tell them to run
+ * this one again. Its result belongs to another node or workflow (or to an
+ * older configuration), so it is never returned as this test's result.
+ */
+const followEarlierJob = async (job: TrainingJob, options?: TestRunOptions): Promise<never> => {
+  let outcome: TrainingJobStatus = job.status;
+  try {
+    await waitForTrainingJob(
+      job,
+      (update) => {
+        outcome = update.status;
+        options?.onTrainingProgress?.(update);
+      },
+      TRAINING_JOB_POLL_INTERVAL_MS,
+      TRAINING_JOB_MAX_WAIT_MS,
+      options?.signal
+    );
+  } catch (error) {
+    if (isTrainingWaitAborted(error)) throw error;
+  }
+  throw new Error(
+    `Your earlier training test ${REATTACHED_OUTCOME[outcome]}. Run the test again to test this configuration.`
+  );
 };
 
 const runTest = async (
@@ -297,15 +345,15 @@ const runTest = async (
   options?: TestRunOptions
 ): Promise<WorkflowTestResponse | null> => {
   const response = await startTest(endpoint, testData);
-  return isTrainingJob(response)
-    ? waitForTrainingJob(
-        response,
-        options?.onTrainingProgress,
-        TRAINING_JOB_POLL_INTERVAL_MS,
-        TRAINING_JOB_MAX_WAIT_MS,
-        options?.signal
-      )
-    : response;
+  if (!isTrainingJob(response)) return response;
+  if (response.reattached) return followEarlierJob(response, options);
+  return waitForTrainingJob(
+    response,
+    options?.onTrainingProgress,
+    TRAINING_JOB_POLL_INTERVAL_MS,
+    TRAINING_JOB_MAX_WAIT_MS,
+    options?.signal
+  );
 };
 
 export const testNode = (testData: NodeTestPayload, options?: TestRunOptions) =>

@@ -102,17 +102,20 @@ def _stop_worker() -> None:
     os._exit(1)
 
 
-def _free_worker_if_still_fitting(job_id: str, reason: str) -> None:
-    """Stop the worker when the job ended but a model fit still runs in a thread.
+def _free_worker_if_still_fitting(job_id: str) -> None:
+    """Stop the worker when a job timed out while a model fit still runs in a thread.
 
     A thread can't be stopped: cancelling the job's coroutine leaves the fit
     running, holding the "ml" worker (and asyncio.run would wait for it on exit).
+    Only the timeout does this. A user's cancel lets the fit end on its own
+    (it is bounded by ML_HPO_MAX_FITS and this timeout), so cancelling can't
+    be used to keep restarting the worker every tenant shares.
     """
     from app.modules.workflow.engine.nodes.ml import training_progress
 
     if training_progress.fits_running() == 0:
         return
-    logger.critical(f"Training job {job_id} {reason} while a model fit was still running; stopping the worker to end it")
+    logger.critical(f"Training job {job_id} timed out while a model fit was still running; stopping the worker to end it")
     _stop_worker()
 
 
@@ -182,7 +185,15 @@ async def _run_job(store: training_jobs.TrainingJobStore, job_id: str, payload: 
     def progress_snapshot() -> Dict[str, Any]:
         return {**progress, "elapsed_seconds": int(time.monotonic() - started)}
 
-    await store.update(tenant_id, job_id, status=training_jobs.STATUS_RUNNING, progress=progress_snapshot())
+    if not await store.update(
+        tenant_id,
+        job_id,
+        expect=(training_jobs.STATUS_QUEUED,),
+        status=training_jobs.STATUS_RUNNING,
+        progress=progress_snapshot(),
+    ):
+        logger.info(f"Skipping training job {job_id}: it was cancelled before it started")
+        return
     loop = asyncio.get_running_loop()
     with training_progress.reporting_to(reporter):
         # A task (created inside the block, so it carries the reporter) that
@@ -198,9 +209,11 @@ async def _run_job(store: training_jobs.TrainingJobStore, job_id: str, payload: 
     try:
         result = await run
         stop_heartbeat.set()
+        # Only over "running": a cancel that came in meanwhile stands.
         await store.update(
             tenant_id,
             job_id,
+            expect=(training_jobs.STATUS_RUNNING,),
             status=training_jobs.STATUS_SUCCEEDED,
             result=result,
             progress={**progress_snapshot(), "stage": "done", "message": "Finished", "percent": 100},
@@ -208,9 +221,9 @@ async def _run_job(store: training_jobs.TrainingJobStore, job_id: str, payload: 
     except asyncio.CancelledError:
         stop_heartbeat.set()
         if cancel_requested.is_set() and not _being_cancelled():
-            # The user cancelled: the job already says so.
+            # The user cancelled: the job already says so. A fit still running
+            # in its thread ends on its own; the worker is not restarted.
             logger.info(f"Training job {job_id} was cancelled")
-            _free_worker_if_still_fitting(job_id, "was cancelled")
             return
         # run_async_in_celery's timeout cancelled this coroutine.
         run.cancel()
@@ -218,11 +231,12 @@ async def _run_job(store: training_jobs.TrainingJobStore, job_id: str, payload: 
         await store.update(
             tenant_id,
             job_id,
+            expect=(training_jobs.STATUS_RUNNING,),
             status=training_jobs.STATUS_FAILED,
             error=_error_message(asyncio.TimeoutError()),
             progress=progress_snapshot(),
         )
-        _free_worker_if_still_fitting(job_id, "timed out")
+        _free_worker_if_still_fitting(job_id)
         raise
     except Exception as e:
         stop_heartbeat.set()
@@ -230,6 +244,7 @@ async def _run_job(store: training_jobs.TrainingJobStore, job_id: str, payload: 
         await store.update(
             tenant_id,
             job_id,
+            expect=(training_jobs.STATUS_RUNNING,),
             status=training_jobs.STATUS_FAILED,
             error=_error_message(e),
             progress=progress_snapshot(),

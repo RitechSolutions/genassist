@@ -134,6 +134,8 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
     return testAbortRef.current.signal;
   };
   useEffect(() => () => testAbortRef.current?.abort(), []);
+  // A run aborted because a new one started must not reset the new run's state.
+  const isCurrentRun = (signal: AbortSignal) => testAbortRef.current?.signal === signal;
   const [response, setResponse] = useState<WorkflowTestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [audioData, setAudioData] = useState<{ data: string; format: string } | null>(null);
@@ -373,6 +375,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       }
     }
 
+    const signal = startTestRun();
     setTesting(true);
     setError(null);
     setResponse(null);
@@ -433,7 +436,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
           input_data: parsedInputs,
           workflow: workflow,
         },
-        { onTrainingProgress: setTrainingJob, signal: startTestRun() }
+        { onTrainingProgress: setTrainingJob, signal }
       );
 
       if (!res) {
@@ -454,8 +457,10 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       setError(errorMsg);
       recordRun(null, errorMsg);
     } finally {
-      setTesting(false);
-      setTrainingJob(null);
+      if (isCurrentRun(signal)) {
+        setTesting(false);
+        setTrainingJob(null);
+      }
     }
   };
 
@@ -463,6 +468,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
   const handleResumeWorkflow = async () => {
     if (!workflow || !pausedThreadId || !pausedFormSchema) return;
 
+    const signal = startTestRun();
     setTesting(true);
     setError(null);
 
@@ -489,7 +495,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
           },
           workflow: workflow,
         },
-        { onTrainingProgress: setTrainingJob, signal: startTestRun() }
+        { onTrainingProgress: setTrainingJob, signal }
       );
 
       if (!res) {
@@ -510,8 +516,10 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       setError(errorMsg);
       recordRun(null, errorMsg);
     } finally {
-      setTesting(false);
-      setTrainingJob(null);
+      if (isCurrentRun(signal)) {
+        setTesting(false);
+        setTrainingJob(null);
+      }
     }
   };
 

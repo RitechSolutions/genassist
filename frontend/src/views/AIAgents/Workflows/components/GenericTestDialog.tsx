@@ -73,6 +73,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
   }, [isOpen]);
 
   useEffect(() => () => testAbortRef.current?.abort(), []);
+  // A run aborted because a new one started must not reset the new run's state.
+  const isCurrentRun = (signal: AbortSignal) => testAbortRef.current?.signal === signal;
   const [error, setError] = useState<string | null>(null);
   const [inputFields, setInputFields] = useState<GenericTestInputField[]>([]);
   const [availableData, setAvailableData] = useState<Record<
@@ -306,8 +308,10 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       setError(errorMessage);
       setOutput({ status: "error", output: errorMessage });
     } finally {
-      setIsLoading(false);
-      setTrainingJob(null);
+      if (isCurrentRun(signal)) {
+        setIsLoading(false);
+        setTrainingJob(null);
+      }
     }
   };
 
@@ -432,8 +436,10 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       setError(errorMessage);
       setOutput({ status: "error", output: errorMessage });
     } finally {
-      setIsLoading(false);
-      setTrainingJob(null);
+      if (isCurrentRun(signal)) {
+        setIsLoading(false);
+        setTrainingJob(null);
+      }
     }
   };
 

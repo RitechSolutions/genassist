@@ -48,19 +48,79 @@ JOB_TIMEOUT_SECONDS = 2 * 60 * 60
 # or the queue is too long. Jobs started later than this skip themselves.
 QUEUED_TIMEOUT_SECONDS = JOB_TIMEOUT_SECONDS + 10 * 60
 NOT_STARTED_ERROR = "No training worker started this job in time. Run the test again later."
+# The user's slot lives as long as a job can: the longest wait for a worker
+# plus the longest run. A job that finishes sooner frees it by its status.
+ACTIVE_SLOT_TTL_SECONDS = QUEUED_TIMEOUT_SECONDS + JOB_TIMEOUT_SECONDS + STALE_AFTER_SECONDS
 
 
 def _node_field(node: Any, name: str) -> Any:
     return node.get(name) if isinstance(node, dict) else getattr(node, name, None)
 
 
-def train_model_nodes(nodes: Optional[Iterable[Any]]) -> List[Dict[str, Any]]:
-    """The Train Model nodes' data (configuration) in a workflow's node list."""
+# Edges into these handles attach a node (a tool, a sub-agent) to the node they
+# point at; the attached node runs as part of it.
+_ATTACHMENT_HANDLES = frozenset({"input_tools", "input_sub_agents"})
+
+
+def _reachable_node_ids(
+    nodes: List[Any], edges: Iterable[Dict[str, Any]], start_node_id: Optional[str]
+) -> set:
+    """Ids of the nodes a turn can run: those reachable from where it starts.
+
+    A turn starts at start_node_id (a resume), else at every node with no
+    incoming edge. From each node it can go on along its outgoing edges, and
+    it can run the nodes attached to it as tools or sub-agents.
+    """
+    outgoing: Dict[str, List[str]] = {}
+    attached: Dict[str, List[str]] = {}
+    has_incoming = set()
+    for edge in edges:
+        source, target = edge.get("source"), edge.get("target")
+        if not source or not target:
+            continue
+        outgoing.setdefault(source, []).append(target)
+        has_incoming.add(target)
+        if edge.get("targetHandle") in _ATTACHMENT_HANDLES:
+            attached.setdefault(target, []).append(source)
+
+    node_ids = [_node_field(node, "id") for node in nodes]
+    if start_node_id and start_node_id in node_ids:
+        stack = [start_node_id]
+    else:
+        stack = [node_id for node_id in node_ids if node_id not in has_incoming]
+    seen = set()
+    while stack:
+        node_id = stack.pop()
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        stack.extend(outgoing.get(node_id, []))
+        stack.extend(attached.get(node_id, []))
+    return seen
+
+
+def train_model_nodes(
+    nodes: Optional[Iterable[Any]],
+    edges: Optional[Iterable[Dict[str, Any]]] = None,
+    start_node_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """The data (configuration) of the Train Model nodes a test turn can run.
+
+    Without edges every Train Model node counts. With them, only those
+    reachable from the turn's start, so e.g. resuming a human-in-the-loop
+    form after the training step runs in the request as before. A branch the
+    turn won't take at run time still counts: that is only known by running.
+    """
+    nodes = list(nodes or [])
+    reachable = _reachable_node_ids(nodes, edges, start_node_id) if edges is not None else None
     found = []
-    for node in nodes or []:
-        if _node_field(node, "type") == TRAIN_MODEL_NODE_TYPE:
-            data = _node_field(node, "data")
-            found.append(data if isinstance(data, dict) else {})
+    for node in nodes:
+        if _node_field(node, "type") != TRAIN_MODEL_NODE_TYPE:
+            continue
+        if reachable is not None and _node_field(node, "id") not in reachable:
+            continue
+        data = _node_field(node, "data")
+        found.append(data if isinstance(data, dict) else {})
     return found
 
 
@@ -124,6 +184,21 @@ return false
 """
 _CLAIM_ATTEMPTS = 3
 
+# Write the job only if its stored status is still one of ARGV[3..], so the
+# user's cancel and the worker's own status writes never overwrite each other.
+_SET_IF_STATUS = """
+local raw = redis.call('GET', KEYS[1])
+if not raw then return false end
+local status = cjson.decode(raw)['status']
+for i = 3, #ARGV do
+    if ARGV[i] == status then
+        redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+        return 1
+    end
+end
+return false
+"""
+
 
 class TrainingJobStore:
     """Reads and writes training job state in Redis."""
@@ -144,7 +219,7 @@ class TrainingJobStore:
         job_id = str(uuid.uuid4())
         key = _active_key(tenant_id, user_id)
         for _ in range(_CLAIM_ATTEMPTS):
-            if await self._redis.set(key, job_id, ex=QUEUED_TIMEOUT_SECONDS, nx=True):
+            if await self._redis.set(key, job_id, ex=ACTIVE_SLOT_TTL_SECONDS, nx=True):
                 return await self._create(tenant_id, user_id, kind, job_id), None
             current_id = await self._redis.get(key)
             if current_id is None:
@@ -152,7 +227,7 @@ class TrainingJobStore:
             current = await self.get(tenant_id, current_id)
             if current is not None and public_view(current)["status"] not in FINISHED_STATUSES:
                 return None, current
-            if await self._redis.eval(_REPLACE_IF_UNCHANGED, 1, key, current_id, job_id, QUEUED_TIMEOUT_SECONDS):
+            if await self._redis.eval(_REPLACE_IF_UNCHANGED, 1, key, current_id, job_id, ACTIVE_SLOT_TTL_SECONDS):
                 return await self._create(tenant_id, user_id, kind, job_id), None
         # Other requests kept taking the slot: report whichever job holds it now.
         current_id = await self._redis.get(key)
@@ -205,22 +280,47 @@ class TrainingJobStore:
         """Mark a queued or running job cancelled; a finished job is returned as it is.
 
         A queued job then skips itself when a worker picks it up; the worker
-        running a job sees the status on its next heartbeat and stops.
+        running a job sees the status on its next heartbeat and stops. If the
+        job finished in the meantime, its own status stands.
         """
         job = await self.get(tenant_id, job_id)
         if job is None or public_view(job)["status"] in FINISHED_STATUSES:
             return job
-        return await self.update(tenant_id, job_id, status=STATUS_CANCELLED, error=CANCELLED_ERROR)
+        cancelled = await self.update(
+            tenant_id,
+            job_id,
+            expect=(STATUS_QUEUED, STATUS_RUNNING),
+            status=STATUS_CANCELLED,
+            error=CANCELLED_ERROR,
+        )
+        return cancelled or await self.get(tenant_id, job_id)
 
-    async def update(self, tenant_id: str, job_id: str, **fields: Any) -> Optional[Dict[str, Any]]:
+    async def update(
+        self, tenant_id: str, job_id: str, expect: Optional[Tuple[str, ...]] = None, **fields: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Merge fields into the job. With expect, only if its stored status is one of those.
+
+        Returns the updated job, or None if the job is gone or its status
+        moved on (e.g. the user cancelled it while the worker finished).
+        """
         job = await self.get(tenant_id, job_id)
         if job is None:
             return None
         job.update(fields)
         job["updated_at"] = _now()
         job["heartbeat"] = time.time()
-        await self._save(tenant_id, job)
-        return job
+        if expect is None:
+            await self._save(tenant_id, job)
+            return job
+        written = await self._redis.eval(
+            _SET_IF_STATUS,
+            1,
+            job_key(tenant_id, job_id),
+            json.dumps(jsonable_encoder(job)),
+            settings.ML_TRAINING_JOB_TTL_SECONDS,
+            *expect,
+        )
+        return job if written else None
 
     async def _save(self, tenant_id: str, job: Dict[str, Any]) -> None:
         await self._redis.set(

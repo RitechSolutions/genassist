@@ -351,7 +351,11 @@ async def _queue_training_job(
     except Exception as e:
         logger.error(f"Could not queue training job {job['job_id']}: {e}")
         await store.update(
-            tenant_id, job["job_id"], status=training_jobs.STATUS_FAILED, error="Could not start the training job."
+            tenant_id,
+            job["job_id"],
+            expect=(training_jobs.STATUS_QUEUED,),
+            status=training_jobs.STATUS_FAILED,
+            error="Could not start the training job.",
         )
         raise HTTPException(status_code=503, detail="Could not start the training job. Try again.")
 
@@ -478,7 +482,9 @@ async def test_workflow(
         # fit takes, so it runs as a background job instead. The job runs the
         # same turn (sub-agent routing, registry-managed threads) via
         # run_workflow_test.
-        training_nodes = training_jobs.train_model_nodes(workflow_config["nodes"])
+        training_nodes = training_jobs.train_model_nodes(
+            workflow_config["nodes"], workflow_config.get("edges") or [], start_node_id
+        )
         if training_nodes:
             return await _queue_training_job(
                 "workflow",
