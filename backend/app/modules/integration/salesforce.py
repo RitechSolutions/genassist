@@ -21,6 +21,11 @@ logger = logging.getLogger(__name__)
 
 # SalesForce REST API version used for the sobjects endpoint.
 SALESFORCE_API_VERSION = "v60.0"
+PUBLIC_FLAG_MISSING_TEXT = "No such column 'IsVisibleInPkb'"
+PUBLIC_FLAG_UNREADABLE_ERROR = (
+    "SalesForce does not let the integration user read 'Visible in Public Knowledge Base' (IsVisibleInPkb). "
+    "Give that user read access to the field, or turn on Include restricted articles."
+)
 
 
 class SalesforceConnector:
@@ -134,11 +139,13 @@ class SalesforceConnector:
         content_field: str,
         language: Optional[str] = None,
         data_category: Optional[str] = None,
+        read_public_flag: bool = True,
     ) -> List[Dict[str, Any]]:
         """Fetch published SalesForce Knowledge articles via SOQL over ``Knowledge__kav``.
 
         Selects ``Id, KnowledgeArticleId, ArticleNumber, Title, Summary, {content_field},
-        LastPublishedDate, IsVisibleInPkb`` for ``PublishStatus='Online'`` articles, optionally
+        LastPublishedDate`` (plus ``IsVisibleInPkb`` when ``read_public_flag``) for
+        ``PublishStatus='Online'`` articles, optionally
         filtered by ``Language`` and/or a ``WITH DATA CATEGORY`` clause. Every page is fetched
         via the REST ``nextRecordsUrl`` cursor (looping until ``done == true``).
 
@@ -185,9 +192,10 @@ class SalesforceConnector:
         }
         base = f"{instance_url}/services/data/{SALESFORCE_API_VERSION}"
 
+        public_flag_field = ", IsVisibleInPkb" if read_public_flag else ""
         select_clause = (
             f"SELECT Id, KnowledgeArticleId, ArticleNumber, Title, Summary, "
-            f"{content_field}, LastPublishedDate, IsVisibleInPkb FROM Knowledge__kav"
+            f"{content_field}, LastPublishedDate{public_flag_field} FROM Knowledge__kav"
         )
         where_clause = "WHERE PublishStatus='Online'"
         if language:
@@ -202,11 +210,20 @@ class SalesforceConnector:
             soql += f" WITH DATA CATEGORY {data_category}"
 
         articles: List[Dict[str, Any]] = []
-        response = await self._make_request(
-            "GET", f"{base}/query/?q={quote(soql)}", headers=headers
-        )
+        try:
+            response = await self._make_request(
+                "GET", f"{base}/query/?q={quote(soql)}", headers=headers
+            )
+        except HTTPException as error:
+            public_flag_unreadable = read_public_flag and PUBLIC_FLAG_MISSING_TEXT in str(error.detail)
+            if public_flag_unreadable:
+                raise ValueError(PUBLIC_FLAG_UNREADABLE_ERROR) from error
+            raise
         while True:
             for record in response.get("records") or []:
+                is_public = None
+                if read_public_flag:
+                    is_public = record.get("IsVisibleInPkb") is True
                 articles.append(
                     {
                         "id": record.get("KnowledgeArticleId"),
@@ -214,7 +231,7 @@ class SalesforceConnector:
                         "summary": record.get("Summary"),
                         "body": record.get(content_field),
                         "updated_at": record.get("LastPublishedDate"),
-                        "is_public": record.get("IsVisibleInPkb") is True,
+                        "is_public": is_public,
                     }
                 )
             if response.get("done", True):

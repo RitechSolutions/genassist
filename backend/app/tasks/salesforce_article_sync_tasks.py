@@ -1,18 +1,24 @@
-import json
+import copy
 import logging
 from datetime import datetime
 from typing import Any, List, Optional
+from urllib.parse import urlparse
 from uuid import UUID
 
+from bs4 import BeautifulSoup
 from celery import shared_task
 from croniter import croniter
+from sqlalchemy import select
 
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.html_utils import html2markdown, html2plaintext
+from app.db.models.knowledge_base import KnowledgeBaseModel
+from app.db.transaction_manager import TransactionManager
 from app.dependencies.injector import injector
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.integration.salesforce import SalesforceConnector
-from app.schemas.agent_knowledge import KBCreate
+from app.schemas.agent_knowledge import KBRead
+from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 from app.schemas.dynamic_form_schemas.app_settings_schemas import (
     get_encrypted_fields_for_type,
 )
@@ -25,11 +31,11 @@ logger = logging.getLogger(__name__)
 
 CONTENT_FORMATS = ("text", "markdown", "html")
 ARTICLE_UPDATED_AT_KEY = "salesforce_article_updated_at"
-
-
-def _kb_update_dict(kb: Any) -> dict[str, Any]:
-    """ORM/Pydantic KB row to a dict suitable for KBCreate(**payload)."""
-    return json.loads(kb.model_dump_json())
+FULL_LINK_SCHEMES = ("http", "https", "mailto", "tel")
+PROGRESS_SAVE_EVERY = 50
+SETTINGS_CHANGED_WARNING = (
+    "The format or RAG settings changed during this sync. The next sync copies every article again."
+)
 
 
 def _resolve_content_format(extra_metadata: dict) -> str:
@@ -42,28 +48,201 @@ def _resolve_content_format(extra_metadata: dict) -> str:
     return "text"
 
 
+def _is_full_link(href: str) -> bool:
+    return urlparse(href).scheme in FULL_LINK_SCHEMES or href.startswith("//")
+
+
+def _keep_only_full_links(html: str) -> str:
+    """Relative links lead nowhere outside SalesForce, so only their text is kept."""
+    soup = BeautifulSoup(html, "html.parser")
+    changed = False
+    for link in soup.find_all("a", href=True):
+        if not _is_full_link(link["href"].strip()):
+            link.unwrap()
+            changed = True
+    return str(soup) if changed else html
+
+
 def _parse_article_body(body: Optional[str], content_format: str) -> str:
     """Convert an article's HTML body to the KB's content format."""
     if not body:
         return ""
     if content_format == "html":
-        return body
+        return _keep_only_full_links(body)
     if content_format == "markdown":
-        return html2markdown(body)
+        return html2markdown(_keep_only_full_links(body))
     return html2plaintext(body)
 
 
+def _fill_field_default(values: dict, field: dict) -> None:
+    if "default" in field and field["name"] not in values:
+        values[field["name"]] = field["default"]
+
+
+def _controlling_field(section: dict) -> Optional[dict]:
+    conditional_fields = section.get("conditional_fields") or {}
+    for field in section["fields"]:
+        option_values = {option["value"] for option in field.get("options") or []}
+        if option_values & conditional_fields.keys():
+            return field
+    return None
+
+
+def _fill_section_defaults(values: dict, section: dict) -> None:
+    for field in section["fields"]:
+        _fill_field_default(values, field)
+    controlling_field = _controlling_field(section)
+    if controlling_field is None:
+        return
+    control_value = values.get(controlling_field["name"]) or controlling_field.get("default")
+    for field in section["conditional_fields"].get(control_value, []):
+        _fill_field_default(values, field)
+
+
+def _with_rag_editor_defaults(rag_config: Optional[dict]) -> dict:
+    """Fill only the values the RAG editor adds when missing; values already set are never changed, so real changes stay visible."""
+    config = copy.deepcopy(rag_config or {})
+    for rag_type, type_schema in AGENT_RAG_FORM_SCHEMAS_DICT.items():
+        if config.get(rag_type) is None:
+            config[rag_type] = {}
+        values = config[rag_type]
+        if not isinstance(values, dict):
+            continue
+        values.setdefault("enabled", rag_type == "vector")
+        for section in type_schema["sections"]:
+            _fill_section_defaults(values, section)
+    return config
+
+
+def _copy_settings(kb: Any) -> tuple[str, dict]:
+    """The settings an article copy depends on, compared the same way on save and at the end of a sync."""
+    return _resolve_content_format(kb.extra_metadata or {}), _with_rag_editor_defaults(kb.rag_config)
+
+
 def clear_copy_dates_on_content_change(current: Any, incoming: Any) -> None:
-    """On save, clear the per-article copy dates when the format or RAG settings change, so the next sync re-copies every article."""
+    """On save, keep the stored copy dates; clear them when the format or RAG settings change, so the next sync re-copies every article."""
     if incoming.type != "salesforce":
         return
     current_metadata = current.extra_metadata or {}
     incoming_metadata = dict(incoming.extra_metadata or {})
     format_changed = _resolve_content_format(current_metadata) != _resolve_content_format(incoming_metadata)
-    rag_config_changed = incoming.rag_config is not None and (current.rag_config or {}) != incoming.rag_config
+    rag_config_changed = incoming.rag_config is not None and (
+        _with_rag_editor_defaults(current.rag_config) != _with_rag_editor_defaults(incoming.rag_config)
+    )
+    stored_copy_dates = current_metadata.get(ARTICLE_UPDATED_AT_KEY)
     if format_changed or rag_config_changed:
         incoming_metadata[ARTICLE_UPDATED_AT_KEY] = {}
-        incoming.extra_metadata = incoming_metadata
+    elif stored_copy_dates is None:
+        incoming_metadata.pop(ARTICLE_UPDATED_AT_KEY, None)
+    else:
+        incoming_metadata[ARTICLE_UPDATED_AT_KEY] = stored_copy_dates
+    incoming.extra_metadata = incoming_metadata
+
+
+async def apply_stored_copy_dates_on_save(kb_service: KnowledgeBaseService, kb_id: UUID, incoming: Any) -> None:
+    """Lock the KB row while a save reads its copy dates, so a running sync cannot write between the read and the save."""
+    if incoming.type != "salesforce":
+        return
+    current_row = await _current_kb_row(kb_service, kb_id)
+    if current_row is not None:
+        clear_copy_dates_on_content_change(current_row, incoming)
+
+
+def _sync_fields(status: str, error: str = "") -> dict[str, Any]:
+    return {"last_synced": datetime.now(), "last_sync_status": status, "last_sync_error": error}
+
+
+def _with_settings_warning(fields: dict[str, Any]) -> dict[str, Any]:
+    error = fields.get("last_sync_error") or ""
+    return {
+        **fields,
+        "last_sync_status": "success_with_warnings",
+        "last_sync_error": f"{SETTINGS_CHANGED_WARNING}; {error}" if error else SETTINGS_CHANGED_WARNING,
+    }
+
+
+async def _current_kb_row(
+    kb_service: KnowledgeBaseService, kb_id: UUID, lock: bool = True
+) -> Optional[KnowledgeBaseModel]:
+    """Re-read the KB row (locked for a write), so the sync sees changes saved since it started."""
+    stmt = select(KnowledgeBaseModel).where(KnowledgeBaseModel.id == kb_id).execution_options(populate_existing=True)
+    if lock:
+        stmt = stmt.with_for_update(key_share=True)
+    result = await kb_service.repository.db.execute(stmt)
+    return result.scalars().first()
+
+
+async def _kb_as_it_is_now(kb_service: KnowledgeBaseService, kb_id: UUID) -> Optional[KBRead]:
+    """Read the KB when its turn comes, so a scheduled run uses the settings saved since the run started."""
+    row = await _current_kb_row(kb_service, kb_id, lock=False)
+    return KBRead.model_validate(row, from_attributes=True) if row is not None else None
+
+
+async def _save_sync_result(
+    kb_service: KnowledgeBaseService,
+    started_kb: Any,
+    fields: dict[str, Any],
+    copy_dates: Optional[dict] = None,
+) -> dict[str, Any]:
+    """Write only the sync's own fields onto the current KB row and commit, so the row is not held for later KBs."""
+    row = await _current_kb_row(kb_service, started_kb.id)
+    if row is None:
+        logger.warning(f"Knowledge base {started_kb.id} was deleted during the sync; its result is not saved")
+    else:
+        fields = await _write_sync_fields(kb_service, row, started_kb, fields, copy_dates)
+    await injector.get(TransactionManager).commit()
+    return fields
+
+
+async def _write_sync_fields(
+    kb_service: KnowledgeBaseService,
+    row: KnowledgeBaseModel,
+    started_kb: Any,
+    fields: dict[str, Any],
+    copy_dates: Optional[dict],
+) -> dict[str, Any]:
+    if copy_dates is not None:
+        if _settings_unchanged(row, started_kb):
+            _set_copy_dates(row, copy_dates)
+        else:
+            fields = _with_settings_warning(fields)
+    for name, value in fields.items():
+        setattr(row, name, value)
+    await kb_service.repository.update(row)
+    return fields
+
+
+def _settings_unchanged(row: KnowledgeBaseModel, started_kb: Any) -> bool:
+    return _copy_settings(row) == _copy_settings(started_kb)
+
+
+def _set_copy_dates(row: KnowledgeBaseModel, copy_dates: dict) -> None:
+    row.extra_metadata = {**(row.extra_metadata or {}), ARTICLE_UPDATED_AT_KEY: dict(copy_dates)}
+
+
+async def _save_progress(kb_service: KnowledgeBaseService, started_kb: Any, copy_dates: dict) -> None:
+    """Save only the copy dates so far, so a sync cut off by the time limit continues where it stopped."""
+    row = await _current_kb_row(kb_service, started_kb.id)
+    if row is not None and _settings_unchanged(row, started_kb):
+        _set_copy_dates(row, copy_dates)
+        await kb_service.repository.update(row)
+    await injector.get(TransactionManager).commit()
+
+
+class _ProgressSaver:
+    """Saves the copy dates after every PROGRESS_SAVE_EVERY copied articles."""
+
+    def __init__(self, kb_service: KnowledgeBaseService, started_kb: Any, copy_dates: dict):
+        self._kb_service = kb_service
+        self._started_kb = started_kb
+        self._copy_dates = copy_dates
+        self._copied_since_save = 0
+
+    async def before_next_article(self) -> None:
+        if self._copied_since_save >= PROGRESS_SAVE_EVERY:
+            await _save_progress(self._kb_service, self._started_kb, self._copy_dates)
+            self._copied_since_save = 0
+        self._copied_since_save += 1
 
 
 def _select_articles(articles: List[dict], include_restricted: bool) -> List[dict]:
@@ -136,9 +315,7 @@ async def import_salesforce_articles_to_kb_async(
 
     Persists ``last_synced``, ``last_sync_status``, and ``last_sync_error`` on the KB row so
     the UI can show outcome. Returns aggregate counts plus ``per_kb`` for API responses.
-
-    Note: ``KnowledgeBaseService.update`` uses ``exclude_none=True``; use ``last_sync_error=""``
-    to clear a previous error on success.
+    Only these sync fields and the copy dates are written, so changes saved during a sync are kept.
     """
     logger.info("Starting SalesForce article import...")
 
@@ -211,7 +388,13 @@ async def import_salesforce_articles_to_kb_async(
     articles_updated_tot = 0
     last_file_date = None
 
-    for kb in kbList:
+    for listed_kb in kbList:
+        kb = await _kb_as_it_is_now(kb_service, listed_kb.id)
+        if kb is None:
+            per_kb.append(
+                {"kb_id": str(listed_kb.id), "name": listed_kb.name, "status": "skipped", "reason": "not_found"}
+            )
+            continue
         logger.debug(f"Processing knowledge base {kb.name}")
         # Reset per-KB so one KB's newest article date can't leak onto another KB in a
         # multi-KB (scheduled) run.
@@ -249,13 +432,11 @@ async def import_salesforce_articles_to_kb_async(
                 f"Knowledge base {kb.id} has a sync source that is not SalesForce ({ds.source_type})"
             )
             if sync_now or kb_id is not None:
-                ku = _kb_update_dict(kb)
-                ku["last_synced"] = datetime.now()
-                ku["last_sync_status"] = "error"
-                ku["last_sync_error"] = (
-                    f"Sync source is not SalesForce (type={ds.source_type})"
+                await _save_sync_result(
+                    kb_service,
+                    kb,
+                    _sync_fields("error", f"Sync source is not SalesForce (type={ds.source_type})"),
                 )
-                await kb_service.update(kb.id, KBCreate(**ku))
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -312,11 +493,9 @@ async def import_salesforce_articles_to_kb_async(
                 f"Knowledge base {kb.id} has no connection data for sync source {ds.name}"
             )
             if sync_now or kb_id is not None:
-                ku = _kb_update_dict(kb)
-                ku["last_synced"] = datetime.now()
-                ku["last_sync_status"] = "error"
-                ku["last_sync_error"] = "SalesForce datasource has no connection data"
-                await kb_service.update(kb.id, KBCreate(**ku))
+                await _save_sync_result(
+                    kb_service, kb, _sync_fields("error", "SalesForce datasource has no connection data")
+                )
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -337,11 +516,7 @@ async def import_salesforce_articles_to_kb_async(
         if not app_settings_id or not content_field:
             err = "Incomplete SalesForce connection (app_settings_id and content_field required)"
             logger.error(f"Knowledge base {kb.id}: {err}")
-            ku = _kb_update_dict(kb)
-            ku["last_synced"] = datetime.now()
-            ku["last_sync_status"] = "error"
-            ku["last_sync_error"] = err
-            await kb_service.update(kb.id, KBCreate(**ku))
+            await _save_sync_result(kb_service, kb, _sync_fields("error", err))
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -361,15 +536,16 @@ async def import_salesforce_articles_to_kb_async(
                 client_secret=values.get("salesforce_client_secret"),
             )
 
+            extra_metadata = kb.extra_metadata or {}
+            include_restricted = bool(extra_metadata.get("include_restricted_articles"))
             fetched_articles = await salesforce_connector.fetch_knowledge_articles(
                 content_field=content_field,
                 language=language,
                 data_category=data_category,
+                read_public_flag=not include_restricted,
             )
 
-            extra_metadata = kb.extra_metadata or {}
             content_format = _resolve_content_format(extra_metadata)
-            include_restricted = bool(extra_metadata.get("include_restricted_articles"))
             articles = _select_articles(fetched_articles, include_restricted)
             skipped_restricted = len(fetched_articles) - len(articles)
             if skipped_restricted:
@@ -382,11 +558,7 @@ async def import_salesforce_articles_to_kb_async(
                     f"No articles found in SalesForce for datasource {ds.name}"
                 )
                 processed_ds += 1
-                ku = _kb_update_dict(kb)
-                ku["last_synced"] = datetime.now()
-                ku["last_sync_status"] = "success"
-                ku["last_sync_error"] = ""
-                await kb_service.update(kb.id, KBCreate(**ku))
+                await _save_sync_result(kb_service, kb, _sync_fields("success"))
                 per_kb.append(
                     {
                         "kb_id": str(kb.id),
@@ -442,6 +614,7 @@ async def import_salesforce_articles_to_kb_async(
             stored_updated_at: dict = extra_metadata.get(article_updated_at_key) or {}
             # Work on a copy so we can persist it after add/update/delete
             article_updated_at_map = dict(stored_updated_at)
+            progress = _ProgressSaver(kb_service, kb, article_updated_at_map)
 
             def _is_article_edited(article: dict) -> bool:
                 """True if we have no stored updated_at or SalesForce's is newer."""
@@ -510,6 +683,7 @@ async def import_salesforce_articles_to_kb_async(
 
             # Add new articles to RAG
             for article in new_articles:
+                await progress.before_next_article()
                 try:
                     article_id = f"KB:{str(kb.id)}#article_{article['id']}"
                     content, metadata = _build_content_and_metadata(article)
@@ -543,6 +717,7 @@ async def import_salesforce_articles_to_kb_async(
 
             # Update existing articles
             for article in updated_articles:
+                await progress.before_next_article()
                 try:
                     article_id = f"KB:{str(kb.id)}#article_{article['id']}"
                     content, metadata = _build_content_and_metadata(article)
@@ -578,20 +753,13 @@ async def import_salesforce_articles_to_kb_async(
 
             # Update last synced time and persist article updated_at map (skip unchanged next run)
             logger.debug(f"Updating knowledge base {kb.id} last synced time...")
-            kb_update = _kb_update_dict(kb)
-            kb_update["last_synced"] = datetime.now()
-            kb_update["last_sync_status"] = (
-                "success_with_warnings" if kb_errors else "success"
-            )
-            kb_update["last_sync_error"] = (
-                "; ".join(kb_errors[:5]) if kb_errors else ""
-            )
+            sync_status = "success_with_warnings" if kb_errors else "success"
+            final_fields = _sync_fields(sync_status, "; ".join(kb_errors[:5]))
             if last_file_date:
-                kb_update["last_file_date"] = last_file_date
-            extra = dict(kb_update.get("extra_metadata") or {})
-            extra[article_updated_at_key] = article_updated_at_map
-            kb_update["extra_metadata"] = extra
-            await kb_service.update(kb.id, KBCreate(**kb_update))
+                final_fields["last_file_date"] = last_file_date
+            saved_fields = await _save_sync_result(
+                kb_service, kb, final_fields, copy_dates=article_updated_at_map
+            )
 
             articles_added_tot += articles_added
             articles_deleted_tot += articles_deleted
@@ -600,7 +768,7 @@ async def import_salesforce_articles_to_kb_async(
             entry: dict[str, Any] = {
                 "kb_id": str(kb.id),
                 "name": kb.name,
-                "status": kb_update["last_sync_status"],
+                "status": saved_fields["last_sync_status"],
                 "articles_added": articles_added,
                 "articles_updated": articles_updated,
                 "articles_deleted": articles_deleted,
@@ -612,12 +780,8 @@ async def import_salesforce_articles_to_kb_async(
         except Exception as e:
             error_msg = f"Error processing SalesForce datasource {ds.name}: {str(e)}"
             logger.error(error_msg)
-            # Update KB with error status
-            kb_update = _kb_update_dict(kb)
-            kb_update["last_synced"] = datetime.now()
-            kb_update["last_sync_status"] = "error"
-            kb_update["last_sync_error"] = str(e)
-            await kb_service.update(kb.id, KBCreate(**kb_update))
+            await injector.get(TransactionManager).rollback()
+            await _save_sync_result(kb_service, kb, _sync_fields("error", str(e)))
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
