@@ -35,7 +35,7 @@ export const TrainingJobProgress = ({ job }: TrainingJobProgressProps) => {
     <div className="w-full space-y-2 text-sm" data-testid="training-job-progress">
       {job.reattached && (
         <p className="text-muted-foreground" data-testid="training-job-reattached">
-          You already had a training test running, so this shows that one. Cancel it to run a new test.
+          You already had a training test running, so this shows that one; its result won't be used for this test. Cancel it, or wait for it to end, then run the test again.
         </p>
       )}
       <div className="flex items-center justify-between gap-2">

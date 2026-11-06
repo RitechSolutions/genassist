@@ -243,6 +243,21 @@ def native_thread_limit() -> Iterator[None]:
                 _native_limiter = None
 
 
+def _fit_best(model_type, is_classification, constant_params, best_params, X_train, y_train):
+    """Fit the final model with the best parameters, using training_cores() threads.
+
+    The search's estimators are single-threaded (the CV workers give the
+    parallelism); the model that is kept gets the full core allowance, so
+    neither its fit nor later predictions run on one thread.
+    """
+    final_params = model_registry.cap_estimator_threads(
+        model_type, {**constant_params, **best_params}, training_cores()
+    )
+    model = model_registry.build_estimator(model_type, is_classification, final_params)
+    model.fit(X_train, y_train)
+    return model
+
+
 @contextmanager
 def _single_threaded_cv_workers() -> Iterator[None]:
     """Give each cross-validation worker process one native thread.
@@ -301,8 +316,11 @@ def optimize_hyperparameters(
     constant_params = {
         k: v for k, v in {**defaults, **user_params}.items() if k not in tunable_space
     }
-    # Parallelism comes from the CV workers; threaded estimators inside them
-    # would multiply the cores used, so each fit gets one thread.
+    # The final model is fitted with the user's own thread setting (capped at
+    # training_cores()); the search's estimators get one thread each, because
+    # parallelism comes from the CV workers and threaded estimators inside
+    # them would multiply the cores used.
+    final_constant_params = constant_params
     constant_params = model_registry.cap_estimator_threads(model_type, constant_params, 1)
     n_jobs = training_cores()
 
@@ -318,12 +336,14 @@ def optimize_hyperparameters(
     if method == "grid_search":
         param_grid = _build_param_grid(tunable_space, points=int(opt_config.get("gridPoints", _DEFAULT_GRID_POINTS)))
         estimator = model_registry.build_estimator(model_type, is_classification, constant_params)
-        search = GridSearchCV(estimator, param_grid, cv=cv, scoring=scoring, refit=True, n_jobs=n_jobs, error_score="raise")
+        search = GridSearchCV(estimator, param_grid, cv=cv, scoring=scoring, refit=False, n_jobs=n_jobs, error_score="raise")
         with _single_threaded_cv_workers():
             search.fit(X_train, y_train)
         n_candidates = len(search.cv_results_["params"])
         return {
-            "model": search.best_estimator_,
+            "model": _fit_best(
+                model_type, is_classification, final_constant_params, search.best_params_, X_train, y_train
+            ),
             "best_params": search.best_params_,
             "search_metadata": {
                 "method": method,
@@ -347,7 +367,7 @@ def optimize_hyperparameters(
             n_iter=n_iter,
             cv=cv,
             scoring=scoring,
-            refit=True,
+            refit=False,
             n_jobs=n_jobs,
             random_state=42,
             error_score="raise",
@@ -355,7 +375,9 @@ def optimize_hyperparameters(
         with _single_threaded_cv_workers():
             search.fit(X_train, y_train)
         return {
-            "model": search.best_estimator_,
+            "model": _fit_best(
+                model_type, is_classification, final_constant_params, search.best_params_, X_train, y_train
+            ),
             "best_params": search.best_params_,
             "search_metadata": {
                 "method": method,
@@ -396,14 +418,9 @@ def optimize_hyperparameters(
             )
 
         best_params = study.best_params
-        final_params = model_registry.cap_estimator_threads(
-            model_type, {**constant_params, **best_params}, n_jobs
-        )
-        best_estimator = model_registry.build_estimator(model_type, is_classification, final_params)
-        best_estimator.fit(X_train, y_train)
 
         return {
-            "model": best_estimator,
+            "model": _fit_best(model_type, is_classification, final_constant_params, best_params, X_train, y_train),
             "best_params": best_params,
             "search_metadata": {
                 "method": method,

@@ -8,6 +8,7 @@ queueing a job for Train Model, and the Celery job runner.
 """
 
 import asyncio
+import json
 import threading
 import time
 from types import SimpleNamespace
@@ -38,15 +39,24 @@ class FakeRedis:
         if nx and key in self.values:
             return None
         self.values[key] = value
+        self.expiries = {**getattr(self, "expiries", {}), key: ex}
         return True
 
-    async def eval(self, script, numkeys, key, expected, new_value, ex):
-        # The store's only script: replace the value if it is still `expected`.
-        assert script == training_jobs._REPLACE_IF_UNCHANGED
-        if self.values.get(key) != expected:
+    async def eval(self, script, numkeys, key, *args):
+        if script == training_jobs._REPLACE_IF_UNCHANGED:
+            expected, new_value, _ex = args
+            if self.values.get(key) != expected:
+                return None
+            self.values[key] = new_value
+            return True
+        # _SET_IF_STATUS: write the job only if its stored status is allowed.
+        assert script == training_jobs._SET_IF_STATUS
+        new_value, _ex, *allowed = args
+        raw = self.values.get(key)
+        if raw is None or json.loads(raw)["status"] not in allowed:
             return None
         self.values[key] = new_value
-        return True
+        return 1
 
     async def aclose(self):
         self.closed = True
@@ -830,3 +840,200 @@ def test_native_limit_is_only_set_inside_a_training_job(monkeypatch):
     with training_progress.reporting_to(lambda _update: None):
         assert TrainModelNode._run_with_core_limit(lambda: "fit") == "fit"
     limit.assert_called_once()
+
+
+# --- Second review: status races, slot lifetime, reachability, thread caps ---
+
+
+@pytest.mark.asyncio
+async def test_the_workers_result_does_not_overwrite_a_cancel():
+    store = training_jobs.TrainingJobStore(FakeRedis())
+    job, _ = await store.start("tenant-a", "user-1", "node")
+    await store.update("tenant-a", job["job_id"], status=training_jobs.STATUS_RUNNING)
+    await store.cancel("tenant-a", job["job_id"])
+
+    written = await store.update(
+        "tenant-a",
+        job["job_id"],
+        expect=(training_jobs.STATUS_RUNNING,),
+        status=training_jobs.STATUS_SUCCEEDED,
+    )
+
+    assert written is None
+    assert (await store.get("tenant-a", job["job_id"]))["status"] == training_jobs.STATUS_CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_does_not_overwrite_a_finished_job():
+    redis = FakeRedis()
+    store = training_jobs.TrainingJobStore(redis)
+    job, _ = await store.start("tenant-a", "user-1", "node")
+    await store.update("tenant-a", job["job_id"], status=training_jobs.STATUS_RUNNING)
+    real_get = store.get
+    calls = {"n": 0}
+
+    async def get_then_finish(tenant_id, job_id):
+        # The cancel reads "running"; the worker finishes before it writes.
+        current = await real_get(tenant_id, job_id)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            finished = {**current, "status": training_jobs.STATUS_SUCCEEDED, "result": {"ok": True}}
+            await store._save(tenant_id, finished)
+        return current
+
+    store.get = get_then_finish
+    returned = await store.cancel("tenant-a", job["job_id"])
+
+    assert returned["status"] == training_jobs.STATUS_SUCCEEDED
+    assert json.loads(redis.values[training_jobs.job_key("tenant-a", job["job_id"])])["result"] == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_a_job_cancelled_before_it_starts_is_skipped(runner_env, monkeypatch):
+    from app.modules.workflow.engine import workflow_engine
+
+    engine = MagicMock()
+    monkeypatch.setattr(workflow_engine, "WorkflowEngine", engine)
+    job, _ = await runner_env.start("tenant-a", "user-1", "node")
+    await runner_env.cancel("tenant-a", job["job_id"])
+
+    await ml_training_job_tasks.run_training_job_async(job["job_id"], {"workflow_config": {}})
+
+    engine.assert_not_called()
+    assert (await runner_env.get("tenant-a", job["job_id"]))["status"] == training_jobs.STATUS_CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_the_users_slot_outlives_the_longest_wait_plus_run():
+    redis = FakeRedis()
+    store = training_jobs.TrainingJobStore(redis)
+    await store.start("tenant-a", "user-1", "node")
+
+    ttl = redis.expiries["ml_training_job_active:tenant-a:user-1"]
+    assert ttl >= training_jobs.QUEUED_TIMEOUT_SECONDS + training_jobs.JOB_TIMEOUT_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_during_a_fit_does_not_restart_the_worker(runner_env, monkeypatch):
+    from app.modules.workflow.engine import workflow_engine
+
+    monkeypatch.setattr(training_jobs, "HEARTBEAT_SECONDS", 0.01)
+    stop_worker = MagicMock()
+    monkeypatch.setattr(ml_training_job_tasks, "_stop_worker", stop_worker)
+    job, _ = await runner_env.start("tenant-a", "user-1", "node")
+    release_fit = threading.Event()
+
+    def fit():
+        with training_progress.fitting():
+            release_fit.wait(5)
+
+    async def behaviour(_kwargs):
+        await runner_env.cancel("tenant-a", job["job_id"])
+        await asyncio.to_thread(fit)
+        return _FakeState()
+
+    monkeypatch.setattr(workflow_engine, "WorkflowEngine", _fake_engine(behaviour))
+    try:
+        await asyncio.wait_for(
+            ml_training_job_tasks.run_training_job_async(job["job_id"], {"workflow_config": {}}), 2
+        )
+    finally:
+        release_fit.set()
+
+    assert (await runner_env.get("tenant-a", job["job_id"]))["status"] == training_jobs.STATUS_CANCELLED
+    stop_worker.assert_not_called()
+
+
+TRAINING_GRAPH_NODES = [
+    {"id": "input", "type": "chatInputNode", "data": {}},
+    {"id": "train", "type": "trainModelNode", "data": {"modelType": "knn"}},
+    {"id": "form", "type": "humanInTheLoopNode", "data": {}},
+    {"id": "output", "type": "chatOutputNode", "data": {}},
+]
+TRAINING_GRAPH_EDGES = [
+    {"source": "input", "target": "train"},
+    {"source": "train", "target": "form"},
+    {"source": "form", "target": "output"},
+]
+
+
+def test_a_turn_from_the_start_reaches_the_train_model_node():
+    found = training_jobs.train_model_nodes(TRAINING_GRAPH_NODES, TRAINING_GRAPH_EDGES, None)
+
+    assert found == [{"modelType": "knn"}]
+
+
+def test_resuming_after_the_training_step_runs_without_a_job():
+    assert training_jobs.train_model_nodes(TRAINING_GRAPH_NODES, TRAINING_GRAPH_EDGES, "form") == []
+
+
+def test_a_train_model_tool_attached_to_a_reachable_agent_counts():
+    nodes = [
+        {"id": "input", "type": "chatInputNode", "data": {}},
+        {"id": "agent", "type": "agentNode", "data": {}},
+        {"id": "train", "type": "trainModelNode", "data": {"modelType": "knn"}},
+    ]
+    edges = [
+        {"source": "input", "target": "agent"},
+        {"source": "train", "target": "agent", "targetHandle": "input_tools"},
+    ]
+
+    assert training_jobs.train_model_nodes(nodes, edges, "agent") == [{"modelType": "knn"}]
+
+
+@pytest.mark.asyncio
+async def test_a_hitl_resume_after_training_is_not_queued(route_env, monkeypatch):
+    executed = {}
+
+    async def fake_run_workflow_test(engine, owner_id, input_data, thread_id, start_node_id, usage_context):
+        executed["start_node_id"] = start_node_id
+        return {"status": "success"}
+
+    monkeypatch.setattr(workflow_routes, "run_workflow_test", fake_run_workflow_test)
+    monkeypatch.setattr(workflow_routes, "WorkflowEngine", MagicMock())
+    workflow = {"id": "wf-1", "name": "t", "nodes": TRAINING_GRAPH_NODES, "edges": TRAINING_GRAPH_EDGES}
+
+    response = await workflow_routes.test_workflow(
+        {"input_data": {"thread_id": "t-1", "human_in_the_loop_node_id": "form"}, "workflow": workflow},
+        workflow_id=None,
+        workflow_service=MagicMock(),
+    )
+
+    assert response == {"status": "success"}
+    assert executed["start_node_id"] == "form"
+    route_env.delay.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "model_type, params, expected",
+    [
+        ("lightgbm", {"num_threads": -1}, {"n_jobs": 2}),
+        ("lightgbm", {"num_threads": 1}, {"n_jobs": 1}),
+        ("xgboost", {"nthread": 0, "max_depth": 3}, {"n_jobs": 2, "max_depth": 3}),
+        ("xgboost", {"n_jobs": 1, "nthread": 16}, {"n_jobs": 1}),
+    ],
+)
+def test_thread_aliases_are_capped_under_the_canonical_name(model_type, params, expected):
+    assert model_registry.cap_estimator_threads(model_type, params, 2) == expected
+
+
+def test_the_kept_model_gets_the_core_allowance_not_one_thread(monkeypatch):
+    monkeypatch.setattr(settings, "ML_TRAINING_MAX_CORES", 2)
+    rng = np.random.default_rng(0)
+    X = pd.DataFrame({"a": rng.normal(size=40), "b": rng.normal(size=40)})
+
+    result = hpo_module.optimize_hyperparameters(
+        "random_forest",
+        False,
+        X,
+        X["a"] * 2,
+        "grid_search",
+        {"n_estimators": 10, "max_depth": 3, "min_samples_split": 2, "max_features": "sqrt"},
+        {"cvFolds": 2},
+        is_time_based=False,
+    )
+
+    assert result["model"].get_params()["n_jobs"] == 2
+    assert result["best_params"] == {
+        key: value for key, value in result["model"].get_params().items() if key in result["best_params"]
+    }

@@ -106,17 +106,25 @@ describe("workflows service", () => {
   it("testNode POSTs the node test payload", async () => {
     const payload = { input_data: {}, node_type: "agent", node_config: {} };
     await testNode(payload as never);
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-node", payload, {
-      timeout: 1000,
-    });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/workflow/test-node",
+      payload,
+      { timeout: 1000 },
+      { rethrowForbidden: true }
+    );
   });
 
   it("testWorkflow POSTs the workflow test payload", async () => {
     const payload = { input_data: {}, workflow: { id: "w" } };
     await testWorkflow(payload as never);
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload, {
-      timeout: 1000,
-    });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/workflow/test",
+      payload,
+      { timeout: 1000 },
+      { rethrowForbidden: true }
+    );
   });
 
   describe("training jobs", () => {
@@ -218,8 +226,8 @@ describe("workflows service", () => {
       expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-jobs/job-1/cancel");
     });
 
-    it("follows the user's running job when a new test gets 409 already-running", async () => {
-      const result = { status: "success", output: {} };
+    it("follows the user's running job on a 409 but never returns its result", async () => {
+      const result = { status: "success", output: { model: "another node's model" } };
       const conflict = Object.assign(new Error("conflict"), {
         response: { status: 409, data: { error_key: "ML_TRAINING_JOB_ALREADY_RUNNING" } },
       });
@@ -233,10 +241,13 @@ describe("workflows service", () => {
       const pending = testWorkflow({ input_data: {}, workflow: {} } as never, {
         onTrainingProgress: (update) => seen.push({ id: update.job_id, reattached: update.reattached }),
       });
+      const settled = pending.catch((error: Error) => error);
       await vi.runAllTimersAsync();
       vi.useRealTimers();
 
-      await expect(pending).resolves.toEqual(result);
+      expect(((await settled) as Error).message).toBe(
+        "Your earlier training test has finished. Run the test again to test this configuration."
+      );
       expect(mockApiRequest).toHaveBeenNthCalledWith(2, "GET", "genagent/workflow/test-jobs/active");
       expect(seen).toEqual([
         { id: "job-old", reattached: true },
@@ -250,6 +261,29 @@ describe("workflows service", () => {
 
       await expect(testWorkflow({ input_data: {}, workflow: {} } as never)).rejects.toThrow("bad request");
       expect(mockApiRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows the server's reason when a test is refused", async () => {
+      const tooLarge = Object.assign(new Error("Request failed with status code 400"), {
+        response: { status: 400, data: { error_key: "ML_TRAINING_SEARCH_TOO_LARGE", error_detail: "This grid search would train 1,215 models" } },
+      });
+      mockApiRequest.mockRejectedValueOnce(tooLarge);
+
+      await expect(testNode({ input_data: {}, node_type: "trainModelNode", node_config: {} } as never)).rejects.toThrow(
+        "This grid search would train 1,215 models"
+      );
+    });
+
+    it("asks for 403s to be thrown, so their reason can be shown", async () => {
+      const forbidden = Object.assign(new Error("Request failed with status code 403"), {
+        response: { status: 403, data: { error_key: "ML_TRAINING_JOB_NEEDS_USER", error_detail: "Testing a model training needs a signed-in user." } },
+      });
+      mockApiRequest.mockRejectedValueOnce(forbidden);
+
+      await expect(testWorkflow({ input_data: {}, workflow: {} } as never)).rejects.toThrow(
+        "Testing a model training needs a signed-in user."
+      );
+      expect(mockApiRequest.mock.calls[0][4]).toEqual({ rethrowForbidden: true });
     });
   });
 
