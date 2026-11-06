@@ -47,9 +47,14 @@ Under **Knowledge Base**, create a KB of type **SalesForce** and point it at the
 step 2. Configure it like a Zendesk KB:
 
 - **Content format** — how the article body is stored: **Plain text** (default), **Markdown**
-  (keeps links) or **HTML**. Knowledge bases that had **Allow HTML content** on keep HTML.
+  (keeps links) or **HTML**. Knowledge bases that had **Allow HTML content** on keep HTML. Full
+  links (`https://...`, `mailto:`) are kept; relative links (`/articles/...`) lead nowhere outside
+  SalesForce, so only their text is kept.
 - **Include restricted articles** — off (default) copies only articles marked **Visible in Public
   Knowledge Base**; on copies every published article (internal, customer and partner ones too).
+  Knowledge bases created before this option start with it off, so their next sync removes the
+  restricted articles; turn it on and sync again to keep them. With it off, the integration user
+  needs read access to the article field **Visible in Public Knowledge Base**.
 - **Sync schedule** — enable automatic sync and set a cron expression (e.g. `*/15 * * * *`).
 - **Sync Now** — trigger an immediate sync and see a summary of articles added / updated /
   deleted, plus the last-sync time, status, and any error.
@@ -68,6 +73,12 @@ step 2. Configure it like a Zendesk KB:
   `LastPublishedDate` advanced since the last sync (tracked per article), and deletes articles
   that are no longer in scope. Unchanged articles are skipped (not re-indexed). Saving a new
   **Content format** or new RAG settings makes the next sync re-index every article once.
+- Writes only its own fields (sync time, status, error, copy dates) and saves each knowledge
+  base's result as soon as it finishes, so changes saved while a sync runs are kept. If the
+  format or RAG settings change during a sync, it ends with a warning and the next sync re-copies
+  every article with the new settings.
+- **Saves its progress every 50 articles**, so a scheduled sync cut off by the 15-minute limit
+  continues where it stopped on the next run.
 - Records **last sync time, status** (success / success-with-warnings / error) and the **error
   message** on failure, shown in the Knowledge Base UI.
 - Runs both **on a schedule** (Celery beat, every 15 min, honoring the KB's cron) and **on
@@ -101,7 +112,7 @@ step 2. Configure it like a Zendesk KB:
   decrypted, exactly as the Case node does. Nothing sensitive is written to the Data Source or KB.
 - **Connector.** `SalesforceConnector.fetch_knowledge_articles` runs a SOQL query over
   `Knowledge__kav` (`PublishStatus='Online'`, optional `Language`, optional `WITH DATA CATEGORY`),
-  reads `IsVisibleInPkb` for the public filter, and paginates via the REST `nextRecordsUrl` cursor. The `content_field` and `data_category`
+  reads `IsVisibleInPkb` for the public filter (only when restricted articles are off), and paginates via the REST `nextRecordsUrl` cursor. The `content_field` and `data_category`
   inputs are validated to prevent SOQL injection.
 - **Sync task.** `import_salesforce_articles_to_kb` mirrors the Zendesk task: tenant-scoped, RAG
   reconciliation keyed by `KB:{kb_id}#article_{KnowledgeArticleId}`, incremental tracking in the

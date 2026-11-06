@@ -2,7 +2,7 @@
 
 import uuid
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -213,6 +213,9 @@ async def _save_through_route(current, incoming, saved):
     knowledge_service = AsyncMock()
     knowledge_service.get_by_id = AsyncMock(return_value=current)
     knowledge_service.update = AsyncMock(return_value=saved)
+    locked_read = MagicMock()
+    locked_read.scalars.return_value.first.return_value = current
+    knowledge_service.repository.db.execute = AsyncMock(return_value=locked_read)
     rag_manager = AsyncMock()
     with patch.object(route_module, "schedule_rag_load") as schedule, patch.object(
         route_module, "populate_remote_file_metadata", new=AsyncMock()

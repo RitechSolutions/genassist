@@ -48,7 +48,7 @@ from app.services.app_settings import AppSettingsService
 from app.services.file_manager import FileManagerService
 from app.services.file_upload_session import FileUploadSessionService
 from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
-from app.tasks.salesforce_article_sync_tasks import clear_copy_dates_on_content_change
+from app.tasks.salesforce_article_sync_tasks import apply_stored_copy_dates_on_save
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 
 router = APIRouter()
@@ -180,7 +180,7 @@ async def update_knowledge_item(
     if item.type == "url":
         await set_url_content_if_no_rag(item)
 
-    clear_copy_dates_on_content_change(current_item, item)
+    await apply_stored_copy_dates_on_save(knowledge_service, item_id, item)
     load_action = save_load_action(current_item, item)
     result = await knowledge_service.update(item_id, item)
 
