@@ -23,6 +23,10 @@ import {
   getAllNodeSchemas,
   testNode,
   testWorkflow,
+  waitForTrainingJob,
+  isTrainingJob,
+  isTrainingWaitAborted,
+  cancelTrainingJob,
   getFailedNodeDisplayMessage,
   getTrainDataSourceTestFailureMessage,
   generatePythonTemplate,
@@ -102,16 +106,184 @@ describe("workflows service", () => {
   it("testNode POSTs the node test payload", async () => {
     const payload = { input_data: {}, node_type: "agent", node_config: {} };
     await testNode(payload as never);
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-node", payload, {
-      timeout: 1000,
-    });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/workflow/test-node",
+      payload,
+      { timeout: 1000 },
+      { rethrowForbidden: true }
+    );
   });
 
   it("testWorkflow POSTs the workflow test payload", async () => {
     const payload = { input_data: {}, workflow: { id: "w" } };
     await testWorkflow(payload as never);
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload, {
-      timeout: 1000,
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/workflow/test",
+      payload,
+      { timeout: 1000 },
+      { rethrowForbidden: true }
+    );
+  });
+
+  describe("training jobs", () => {
+    const job = (status: string, extra: Record<string, unknown> = {}) => ({
+      job_id: "job-1",
+      kind: "node",
+      status,
+      progress: { stage: "training", message: "Training 729 models", percent: 30 },
+      result: null,
+      error: null,
+      created_at: "",
+      updated_at: "",
+      ...extra,
+    });
+
+    it("recognises a job response but not a normal test result", () => {
+      expect(isTrainingJob(job("queued"))).toBe(true);
+      expect(isTrainingJob({ status: "success", output: {} })).toBe(false);
+      expect(isTrainingJob(null)).toBe(false);
+    });
+
+    it("testNode polls a queued training job and resolves with its result", async () => {
+      vi.useFakeTimers();
+      const result = { status: "success", output: { success: true } };
+      mockApiRequest
+        .mockResolvedValueOnce(job("queued") as never)
+        .mockResolvedValueOnce(job("running") as never)
+        .mockResolvedValueOnce(job("succeeded", { result }) as never);
+      const seen: string[] = [];
+
+      const pending = testNode({ input_data: {}, node_type: "trainModelNode", node_config: {} } as never, {
+        onTrainingProgress: (update) => seen.push(update.status),
+      });
+      await vi.runAllTimersAsync();
+
+      await expect(pending).resolves.toEqual(result);
+      expect(seen).toEqual(["queued", "running", "succeeded"]);
+      expect(mockApiRequest).toHaveBeenLastCalledWith("GET", "genagent/workflow/test-jobs/job-1");
+      vi.useRealTimers();
+    });
+
+    it("rejects with the job's error when training fails", async () => {
+      await expect(
+        waitForTrainingJob(job("failed", { error: "Search too large" }) as never)
+      ).rejects.toThrow("Search too large");
+    });
+
+    it("tolerates a brief polling error", async () => {
+      const result = { status: "success" };
+      mockApiRequest
+        .mockRejectedValueOnce(new Error("network"))
+        .mockResolvedValueOnce(job("succeeded", { result }) as never);
+
+      await expect(waitForTrainingJob(job("running") as never, undefined, 0)).resolves.toEqual(result);
+    });
+
+    it("gives up after repeated polling errors", async () => {
+      mockApiRequest
+        .mockRejectedValueOnce(new Error("network"))
+        .mockRejectedValueOnce(new Error("network"))
+        .mockRejectedValueOnce(new Error("network"));
+
+      await expect(waitForTrainingJob(job("running") as never, undefined, 0)).rejects.toThrow("network");
+      expect(mockApiRequest).toHaveBeenCalledTimes(3);
+    });
+
+    it("stops waiting once the time limit has passed", async () => {
+      await expect(waitForTrainingJob(job("queued") as never, undefined, 0, 0)).rejects.toThrow(
+        "Stopped waiting for the training job"
+      );
+      expect(mockApiRequest).not.toHaveBeenCalled();
+    });
+
+    it("stops polling when the signal aborts (e.g. the dialog closed)", async () => {
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      mockApiRequest.mockResolvedValue(job("running") as never);
+
+      const pending = waitForTrainingJob(job("running") as never, undefined, 2000, 60_000, controller.signal);
+      const settled = pending.catch((error) => error);
+      await vi.advanceTimersByTimeAsync(4100);
+      const pollsBeforeAbort = mockApiRequest.mock.calls.length;
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(isTrainingWaitAborted(await settled)).toBe(true);
+      expect(mockApiRequest).toHaveBeenCalledTimes(pollsBeforeAbort);
+      vi.useRealTimers();
+    });
+
+    it("rejects with the cancelled message once the job is cancelled", async () => {
+      await expect(
+        waitForTrainingJob(job("cancelled", { error: "The training test was cancelled." }) as never)
+      ).rejects.toThrow("The training test was cancelled.");
+    });
+
+    it("cancelTrainingJob POSTs to the job's cancel endpoint", async () => {
+      await cancelTrainingJob("job-1");
+      expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-jobs/job-1/cancel");
+    });
+
+    it("follows the user's running job on a 409 but never returns its result", async () => {
+      const result = { status: "success", output: { model: "another node's model" } };
+      const conflict = Object.assign(new Error("conflict"), {
+        response: { status: 409, data: { error_key: "ML_TRAINING_JOB_ALREADY_RUNNING" } },
+      });
+      mockApiRequest
+        .mockRejectedValueOnce(conflict)
+        .mockResolvedValueOnce(job("running", { job_id: "job-old" }) as never)
+        .mockResolvedValueOnce(job("succeeded", { job_id: "job-old", result }) as never);
+      const seen: Array<{ id: string; reattached?: boolean }> = [];
+
+      vi.useFakeTimers();
+      const pending = testWorkflow({ input_data: {}, workflow: {} } as never, {
+        onTrainingProgress: (update) => seen.push({ id: update.job_id, reattached: update.reattached }),
+      });
+      const settled = pending.catch((error: Error) => error);
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
+
+      expect(((await settled) as Error).message).toBe(
+        "Your earlier training test has finished. Run the test again to test this configuration."
+      );
+      expect(mockApiRequest).toHaveBeenNthCalledWith(2, "GET", "genagent/workflow/test-jobs/active");
+      expect(seen).toEqual([
+        { id: "job-old", reattached: true },
+        { id: "job-old", reattached: true },
+      ]);
+    });
+
+    it("rethrows other errors from starting a test", async () => {
+      const conflict = Object.assign(new Error("bad request"), { response: { status: 400, data: {} } });
+      mockApiRequest.mockRejectedValueOnce(conflict);
+
+      await expect(testWorkflow({ input_data: {}, workflow: {} } as never)).rejects.toThrow("bad request");
+      expect(mockApiRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows the server's reason when a test is refused", async () => {
+      const tooLarge = Object.assign(new Error("Request failed with status code 400"), {
+        response: { status: 400, data: { error_key: "ML_TRAINING_SEARCH_TOO_LARGE", error_detail: "This grid search would train 1,215 models" } },
+      });
+      mockApiRequest.mockRejectedValueOnce(tooLarge);
+
+      await expect(testNode({ input_data: {}, node_type: "trainModelNode", node_config: {} } as never)).rejects.toThrow(
+        "This grid search would train 1,215 models"
+      );
+    });
+
+    it("asks for 403s to be thrown, so their reason can be shown", async () => {
+      const forbidden = Object.assign(new Error("Request failed with status code 403"), {
+        response: { status: 403, data: { error_key: "ML_TRAINING_JOB_NEEDS_USER", error_detail: "Testing a model training needs a signed-in user." } },
+      });
+      mockApiRequest.mockRejectedValueOnce(forbidden);
+
+      await expect(testWorkflow({ input_data: {}, workflow: {} } as never)).rejects.toThrow(
+        "Testing a model training needs a signed-in user."
+      );
+      expect(mockApiRequest.mock.calls[0][4]).toEqual({ rethrowForbidden: true });
     });
   });
 
