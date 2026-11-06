@@ -439,3 +439,49 @@ async def test_test_connection_raises_on_auth_failure():
                     "salesforce_client_secret": "client-secret",
                 }
             )
+
+
+@pytest.mark.asyncio
+async def test_fetch_knowledge_articles_skips_the_public_flag_when_not_needed():
+    connector = _connector()
+
+    async def _fake_request(method, url, json=None, data=None, headers=None, timeout=10.0):
+        if url.endswith("/services/oauth2/token"):
+            return _TOKEN_RESPONSE
+        return {"done": True, "records": [{"KnowledgeArticleId": "kA1", "Title": "T", "Body__c": "B"}]}
+
+    with patch.object(
+        connector, "_make_request", new_callable=AsyncMock, side_effect=_fake_request
+    ) as mock_request:
+        articles = await connector.fetch_knowledge_articles(content_field="Body__c", read_public_flag=False)
+
+    soql = _extract_soql(mock_request.await_args_list[1].args[1])
+    assert "IsVisibleInPkb" not in soql
+    assert articles[0]["is_public"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "salesforce_error, expected",
+    [
+        ('[{"message":"No such column \'IsVisibleInPkb\' on entity \'Knowledge__kav\'.","errorCode":"INVALID_FIELD"}]', ValueError),
+        ('[{"message":"\\nLastPublishedDate, IsVisibleInPkb FROM Knowledge__kav\\nNo such column \'Body__c\' on entity \'Knowledge__kav\'.","errorCode":"INVALID_FIELD"}]', HTTPException),
+        ('[{"message":"Session expired","errorCode":"INVALID_SESSION_ID"}]', HTTPException),
+    ],
+)
+async def test_unreadable_public_flag_gives_an_actionable_error(salesforce_error, expected):
+    from app.modules.integration.salesforce import PUBLIC_FLAG_UNREADABLE_ERROR
+
+    connector = _connector()
+
+    async def _fake_request(method, url, json=None, data=None, headers=None, timeout=10.0):
+        if url.endswith("/services/oauth2/token"):
+            return _TOKEN_RESPONSE
+        raise HTTPException(status_code=400, detail=salesforce_error)
+
+    with patch.object(connector, "_make_request", new_callable=AsyncMock, side_effect=_fake_request):
+        with pytest.raises(expected) as raised:
+            await connector.fetch_knowledge_articles(content_field="Body__c")
+
+    if expected is ValueError:
+        assert str(raised.value) == PUBLIC_FLAG_UNREADABLE_ERROR
