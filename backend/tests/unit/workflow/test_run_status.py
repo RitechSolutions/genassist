@@ -32,8 +32,11 @@ def _edge(edge):
     return {"source": source, "target": target, "sourceHandle": source_handle, "targetHandle": target_handle}
 
 
-def _state(node_ids, edges=()) -> WorkflowState:
-    nodes = [{"id": node_id, "type": "testNode", "data": {"name": node_id}} for node_id in node_ids]
+def _state(node_ids, edges=(), types=None) -> WorkflowState:
+    types = types or {}
+    nodes = [
+        {"id": node_id, "type": types.get(node_id, "testNode"), "data": {"name": node_id}} for node_id in node_ids
+    ]
     workflow = {"nodes": nodes, "edges": [_edge(edge) for edge in edges]}
     state = WorkflowState(workflow=workflow, thread_id=THREAD, initial_values={"message": "hi"})
     state.start_execution()
@@ -121,6 +124,32 @@ def test_a_failed_end_node_that_returned_an_error_body_is_failed():
     _fails_with_output(state, "api", {"status": 500, "body": "boom"}, "HTTP 500")
 
     assert _response(state)["status"] == "failed"
+
+
+def test_a_side_branch_does_not_hide_an_agent_that_failed_before_chat_output():
+    # Chat Input fans out to [Agent -> Chat Output] and [Slack]. The Agent raised,
+    # so Chat Output never ran; the Slack branch finishing is not an answer.
+    edges = [("input", "agent"), ("agent", "output"), ("input", "slack")]
+    state = _state(["input", "agent", "output", "slack"], edges, types={"output": "chatOutputNode"})
+    _succeeds(state, "input", "hi")
+    _succeeds(state, "slack", {"ok": True})
+    _raises(state, "agent", "LLM provider timed out")
+
+    response = _response(state)
+
+    assert response["status"] == "failed"
+    assert [n["node_id"] for n in response["failed_nodes"]] == ["agent"]
+
+
+def test_a_failed_side_branch_with_an_answered_chat_output_is_partial():
+    edges = [("input", "agent"), ("agent", "output"), ("input", "slack")]
+    state = _state(["input", "agent", "output", "slack"], edges, types={"output": "chatOutputNode"})
+    _succeeds(state, "input", "hi")
+    _fails_with_output(state, "slack", {"error": "x"}, "Slack refused the message")
+    _succeeds(state, "agent", "hello")
+    _succeeds(state, "output", "hello")
+
+    assert _response(state)["status"] == "partial"
 
 
 @pytest.mark.parametrize("branch_a_last", [True, False])
