@@ -29,6 +29,10 @@ from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+    ensure_unique_columns,
+    ensure_unique_query_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -816,6 +820,10 @@ async def stream_rows_to_csv(
             async for chunk_columns, rows in row_chunks:
                 current_columns = list(chunk_columns)
                 if writer is None:
+                    if source_kind == "query":
+                        # Both columns would land in the CSV, and the next
+                        # node's read_csv would rename one to "<name>.1".
+                        ensure_unique_query_columns(current_columns)
                     columns = current_columns
                     writer = csv.writer(handle, lineterminator="\n")
                     writer.writerow(columns)
@@ -924,21 +932,46 @@ async def iter_csv_chunks(
             except Exception:
                 delimiter = ","
 
-            reader = csv.DictReader(handle, delimiter=delimiter)
-            columns = list(dict.fromkeys(reader.fieldnames or []))
+            reader = csv.reader(handle, delimiter=delimiter)
+            header = next(reader, [])
+            # Spreadsheet exports often end the header with empty cells
+            # ("price,size,,"); those columns are dropped, as the Excel
+            # reader drops them, as long as no row puts a value in one.
+            width = len(header)
+            while width and not header[width - 1].strip():
+                width -= 1
+            columns = header[:width]
+            # Rows are matched to columns by position, so a repeated name
+            # would reach the next node as "<name>.1" - refuse it instead.
+            ensure_unique_columns(columns, "CSV file")
             yield columns, []
 
             batch: List[Tuple[Any, ...]] = []
             for row in reader:
-                if None in row:
+                if not row:
+                    continue
+                if len(row) > len(header):
                     raise AppException(
-                        error_key=ErrorKey.INVALID_FILE_FORMAT,
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
                         error_detail=(
                             f"Line {reader.line_num} has more values than the header has columns."
                         ),
                     )
+                unnamed = next((i for i in range(width, len(row)) if row[i].strip()), None)
+                if unnamed is not None:
+                    raise AppException(
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
+                        error_detail=(
+                            f"Line {reader.line_num} has a value in column {unnamed + 1}, which "
+                            "has no name in the header. Name the column or delete it, and "
+                            "upload the file again."
+                        ),
+                    )
                 batch.append(
-                    tuple(None if row[column] == "" else row[column] for column in columns)
+                    tuple(
+                        None if index >= len(row) or row[index] == "" else row[index]
+                        for index in range(width)
+                    )
                 )
                 if len(batch) >= chunk_size:
                     yield columns, batch
