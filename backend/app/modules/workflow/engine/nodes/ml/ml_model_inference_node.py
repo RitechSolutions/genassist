@@ -1557,7 +1557,12 @@ def _replay_feature_engineering(
                 if column not in available:
                     record_absent_inputs(step, [column])
                     continue
-                parsed = parse_datetime_values(_build_input_array(available, [column])[:, 0])
+                # The day/month order training found for this column; models
+                # saved before it was recorded read month first, as they did.
+                parsed = parse_datetime_values(
+                    _build_input_array(available, [column])[:, 0],
+                    day_first=bool(step.get("day_first", False)),
+                )
                 if parsed.isna().any():
                     record_problem(
                         step,

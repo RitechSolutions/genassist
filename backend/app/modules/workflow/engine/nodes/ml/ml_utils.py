@@ -510,7 +510,57 @@ MATH_FUNCTIONS = {
 DATETIME_PARTS = ("year", "month", "day", "day_of_week", "quarter", "hour", "is_weekend")
 
 
-def parse_datetime_values(values: Any) -> pd.Series:
+# A date written with the day and month as numbers before a year, e.g.
+# 01/02/2024, 13.02.2024 or 1-2-24. Which number is the day can't be told from
+# one such value; dates that start with the year (2024-02-01) aren't affected.
+_DAY_MONTH_YEAR = re.compile(r"^\s*(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4}|\d{2})(?!\d)")
+
+
+def numeric_date_order(values: Any) -> Dict[str, Any]:
+    """Whether a column's numeric dates (01/02/2024) put the day or the month first.
+
+    Read from the whole column, since one value like 01/02/2024 can't say.
+    Returns {"order": ..., "day_first_example": ..., "month_first_example": ...}
+    where order is:
+    - "none": no value is written that way, so the order doesn't matter;
+    - "day_first": some value has a first number over 12 (13/02/2024);
+    - "month_first": some value has a second number over 12 (02/13/2024);
+    - "mixed": both - the column mixes the two orders;
+    - "ambiguous": every such value has both numbers 12 or less, so either
+      order reads them and gives different dates.
+    """
+    day_first_example = month_first_example = None
+    seen = False
+    for value in pd.Series(values).dropna():
+        if isinstance(value, (pd.Timestamp, datetime)):
+            continue
+        match = _DAY_MONTH_YEAR.match(str(value))
+        if not match:
+            continue
+        seen = True
+        first, second = int(match.group(1)), int(match.group(2))
+        if first > 12 and day_first_example is None:
+            day_first_example = value
+        if second > 12 and month_first_example is None:
+            month_first_example = value
+    if not seen:
+        order = "none"
+    elif day_first_example is not None and month_first_example is not None:
+        order = "mixed"
+    elif day_first_example is not None:
+        order = "day_first"
+    elif month_first_example is not None:
+        order = "month_first"
+    else:
+        order = "ambiguous"
+    return {
+        "order": order,
+        "day_first_example": day_first_example,
+        "month_first_example": month_first_example,
+    }
+
+
+def parse_datetime_values(values: Any, day_first: bool = False) -> pd.Series:
     """Read values as dates/times; anything unreadable becomes NaT.
 
     Shared by training and inference, so a value reads the same way at
@@ -519,6 +569,11 @@ def parse_datetime_values(values: Any) -> pd.Series:
     nanoseconds. When any value carries a UTC offset (+02:00, Z), all values
     are read in UTC - whether they arrive together or one at a time - and
     values without an offset are taken as UTC.
+
+    `day_first` reads a numeric date like 01/02/2024 as 1 February; training
+    works it out for the column (numeric_date_order) and saves it, so
+    prediction reads every value the same way. Year-first dates (2024-02-01)
+    read the same either way.
     """
     series = pd.Series(values)
     if pd.api.types.is_datetime64_any_dtype(series):
@@ -528,11 +583,11 @@ def parse_datetime_values(values: Any) -> pd.Series:
         # pandas 2 warns (pandas 3 raises) on mixed offsets; both are handled below.
         warnings.simplefilter("ignore", FutureWarning)
         try:
-            parsed = pd.to_datetime(text, errors="coerce", format="mixed")
+            parsed = pd.to_datetime(text, errors="coerce", format="mixed", dayfirst=day_first)
         except (TypeError, ValueError):
             parsed = None
     if parsed is None or not pd.api.types.is_datetime64_any_dtype(parsed) or parsed.dt.tz is not None:
-        parsed = pd.to_datetime(text, errors="coerce", format="mixed", utc=True)
+        parsed = pd.to_datetime(text, errors="coerce", format="mixed", dayfirst=day_first, utc=True)
     return parsed
 
 
