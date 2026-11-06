@@ -1,10 +1,12 @@
 """Celery task running a workflow test run that trains a model (see app.modules.workflow.training_jobs)."""
 
 import asyncio
+import json
 import logging
+import os
 import threading
 import time
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 import redis
 from celery import shared_task
@@ -53,15 +55,21 @@ def _open_heartbeat_redis() -> redis.Redis:
     return redis.Redis.from_url(settings.REDIS_URL, **_redis_options())
 
 
-def _start_heartbeat(tenant_id: str, job_id: str, progress_snapshot) -> threading.Event:
+def _start_heartbeat(tenant_id: str, job_id: str, progress_snapshot, on_cancel: Callable[[], None]) -> threading.Event:
     """Publish the job's progress every HEARTBEAT_SECONDS until the returned event is set.
 
     A thread rather than an asyncio task: loading or preparing a large file
     runs on the event loop and would hold an asyncio heartbeat back long
     enough for a job that is still running to look like its worker died.
+    Each beat also checks whether the user cancelled the job, and calls
+    on_cancel once if they did.
     """
     stop = threading.Event()
     client = _open_heartbeat_redis()
+
+    def cancelled() -> bool:
+        raw = client.get(training_jobs.job_key(tenant_id, job_id))
+        return bool(raw) and json.loads(raw).get("status") == training_jobs.STATUS_CANCELLED
 
     def beat() -> None:
         try:
@@ -72,6 +80,9 @@ def _start_heartbeat(tenant_id: str, job_id: str, progress_snapshot) -> threadin
                         training_jobs.heartbeat_value(progress_snapshot()),
                         ex=settings.ML_TRAINING_JOB_TTL_SECONDS,
                     )
+                    if cancelled():
+                        on_cancel()
+                        return
                 except Exception as e:
                     logger.warning(f"Could not update training job {job_id}: {e}")
         finally:
@@ -79,6 +90,30 @@ def _start_heartbeat(tenant_id: str, job_id: str, progress_snapshot) -> threadin
 
     threading.Thread(target=beat, name=f"training-job-heartbeat-{job_id}", daemon=True).start()
     return stop
+
+
+def _stop_worker() -> None:
+    """End the worker process, as tasks.solo_watchdog does for a wedged task.
+
+    The orchestrator restarts the worker; the job is already marked
+    finished, so its redelivered message skips itself.
+    """
+    logging.shutdown()
+    os._exit(1)
+
+
+def _free_worker_if_still_fitting(job_id: str, reason: str) -> None:
+    """Stop the worker when the job ended but a model fit still runs in a thread.
+
+    A thread can't be stopped: cancelling the job's coroutine leaves the fit
+    running, holding the "ml" worker (and asyncio.run would wait for it on exit).
+    """
+    from app.modules.workflow.engine.nodes.ml import training_progress
+
+    if training_progress.fits_running() == 0:
+        return
+    logger.critical(f"Training job {job_id} {reason} while a model fit was still running; stopping the worker to end it")
+    _stop_worker()
 
 
 async def run_training_job_async(job_id: str, payload: Dict[str, Any]) -> None:
@@ -90,17 +125,50 @@ async def run_training_job_async(job_id: str, payload: Dict[str, Any]) -> None:
         await redis.aclose()
 
 
+async def _execute(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run the test exactly as the test endpoint would have, and return its response."""
+    from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+    from app.modules.workflow.test_runs import run_workflow_test
+
+    workflow_config = payload["workflow_config"]
+    engine = WorkflowEngine(workflow_config)
+    input_data = payload.get("input_data") or {}
+    usage_context = WorkflowUsageContext(
+        source=payload.get("usage_source", "workflow_test"),
+        workflow_id=coerce_uuid(payload.get("workflow_id") or engine.workflow_id),
+        # Recorded inline: asyncio.run cancels deferred capture tasks when the task ends.
+        defer_capture=False,
+    )
+    if payload.get("kind") == "workflow":
+        # Sub-agent routing and registry-managed threads, as in POST /workflows/test.
+        return await run_workflow_test(
+            engine,
+            workflow_config["id"],
+            input_data,
+            payload["thread_id"],
+            payload.get("start_node_id"),
+            usage_context,
+        )
+    state = await engine.execute_from_node(
+        start_node_id=payload.get("start_node_id"),
+        input_data=input_data,
+        thread_id=payload.get("thread_id"),
+        usage_context=usage_context,
+    )
+    return state.format_state_as_response()
+
+
 async def _run_job(store: training_jobs.TrainingJobStore, job_id: str, payload: Dict[str, Any]) -> None:
     # Imported here so the worker master stays free of ML libraries.
     from app.modules.workflow.engine.nodes.ml import training_progress
-    from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
     tenant_id = get_tenant_context()
     job = await store.get(tenant_id, job_id)
     status = training_jobs.public_view(job)["status"] if job else "not found"
     if status != training_jobs.STATUS_QUEUED:
-        # Expired, a redelivered message for a job that already ran, or a job
-        # that waited so long the client was already told it failed.
+        # Expired, cancelled before it started, a redelivered message for a job
+        # that already ran, or a job that waited so long the client was already
+        # told it failed.
         logger.info(f"Skipping training job {job_id}: {status}")
         return
 
@@ -115,44 +183,63 @@ async def _run_job(store: training_jobs.TrainingJobStore, job_id: str, payload: 
         return {**progress, "elapsed_seconds": int(time.monotonic() - started)}
 
     await store.update(tenant_id, job_id, status=training_jobs.STATUS_RUNNING, progress=progress_snapshot())
-    stop_heartbeat = _start_heartbeat(tenant_id, job_id, progress_snapshot)
+    loop = asyncio.get_running_loop()
+    with training_progress.reporting_to(reporter):
+        # A task (created inside the block, so it carries the reporter) that
+        # the heartbeat thread can cancel when the user cancels the job.
+        run = asyncio.create_task(_execute(payload))
+    cancel_requested = threading.Event()
+
+    def on_cancel() -> None:
+        cancel_requested.set()
+        loop.call_soon_threadsafe(run.cancel)
+
+    stop_heartbeat = _start_heartbeat(tenant_id, job_id, progress_snapshot, on_cancel)
     try:
-        workflow_config = payload["workflow_config"]
-        with training_progress.reporting_to(reporter):
-            engine = WorkflowEngine(workflow_config)
-            state = await engine.execute_from_node(
-                start_node_id=payload.get("start_node_id"),
-                input_data=payload.get("input_data") or {},
-                thread_id=payload.get("thread_id"),
-                usage_context=WorkflowUsageContext(
-                    source=payload.get("usage_source", "workflow_test"),
-                    workflow_id=coerce_uuid(payload.get("workflow_id") or engine.workflow_id),
-                    # Recorded inline: asyncio.run cancels deferred capture
-                    # tasks when the task ends.
-                    defer_capture=False,
-                ),
-            )
+        result = await run
         stop_heartbeat.set()
         await store.update(
             tenant_id,
             job_id,
             status=training_jobs.STATUS_SUCCEEDED,
-            result=state.format_state_as_response(),
+            result=result,
             progress={**progress_snapshot(), "stage": "done", "message": "Finished", "percent": 100},
         )
-    except (Exception, asyncio.CancelledError) as e:
-        # CancelledError: run_async_in_celery's timeout cancels this coroutine.
+    except asyncio.CancelledError:
+        stop_heartbeat.set()
+        if cancel_requested.is_set() and not _being_cancelled():
+            # The user cancelled: the job already says so.
+            logger.info(f"Training job {job_id} was cancelled")
+            _free_worker_if_still_fitting(job_id, "was cancelled")
+            return
+        # run_async_in_celery's timeout cancelled this coroutine.
+        run.cancel()
+        logger.error(f"Training job {job_id} timed out")
+        await store.update(
+            tenant_id,
+            job_id,
+            status=training_jobs.STATUS_FAILED,
+            error=_error_message(asyncio.TimeoutError()),
+            progress=progress_snapshot(),
+        )
+        _free_worker_if_still_fitting(job_id, "timed out")
+        raise
+    except Exception as e:
         stop_heartbeat.set()
         logger.error(f"Training job {job_id} failed: {e}", exc_info=not isinstance(e, AppException))
         await store.update(
             tenant_id,
             job_id,
             status=training_jobs.STATUS_FAILED,
-            error=_error_message(asyncio.TimeoutError() if isinstance(e, asyncio.CancelledError) else e),
+            error=_error_message(e),
             progress=progress_snapshot(),
         )
-        if isinstance(e, asyncio.CancelledError):
-            raise
+
+
+def _being_cancelled() -> bool:
+    """Whether this coroutine itself was cancelled (the timeout), not only the run it awaited."""
+    task = asyncio.current_task()
+    return bool(task and task.cancelling())
 
 
 async def run_training_job_for_tenant(job_id: str, tenant_id: str, payload: Dict[str, Any]):

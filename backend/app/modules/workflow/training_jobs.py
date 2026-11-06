@@ -8,7 +8,9 @@ Such test runs now become a job on the "ml" Celery worker: the endpoint
 returns a job id straight away and the UI polls the job's status.
 
 Job state lives in Redis, scoped to the tenant and the user who started it,
-and expires after ML_TRAINING_JOB_TTL_SECONDS.
+and expires after ML_TRAINING_JOB_TTL_SECONDS. A user has at most one queued
+or running job; the endpoint hands back that job instead of starting a second,
+and the user can cancel it.
 """
 
 import json
@@ -16,7 +18,7 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi.encoders import jsonable_encoder
 
@@ -30,7 +32,9 @@ STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
 STATUS_SUCCEEDED = "succeeded"
 STATUS_FAILED = "failed"
-FINISHED_STATUSES = (STATUS_SUCCEEDED, STATUS_FAILED)
+STATUS_CANCELLED = "cancelled"
+FINISHED_STATUSES = (STATUS_SUCCEEDED, STATUS_FAILED, STATUS_CANCELLED)
+CANCELLED_ERROR = "The training test was cancelled."
 
 # The worker writes a heartbeat this often while a job runs. A running job
 # with no heartbeat for STALE_AFTER_SECONDS lost its worker (restart, crash).
@@ -89,7 +93,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _key(tenant_id: str, job_id: str) -> str:
+def job_key(tenant_id: str, job_id: str) -> str:
     return f"ml_training_job:{tenant_id or 'master'}:{job_id}"
 
 
@@ -110,15 +114,56 @@ def _active_key(tenant_id: str, user_id: str) -> str:
     return f"ml_training_job_active:{tenant_id or 'master'}:{user_id}"
 
 
+# Replace the user's active job id only if it is still the one we read, so
+# two requests that both found a finished job can't both take its place.
+_REPLACE_IF_UNCHANGED = """
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+    return redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+end
+return false
+"""
+_CLAIM_ATTEMPTS = 3
+
+
 class TrainingJobStore:
     """Reads and writes training job state in Redis."""
 
     def __init__(self, redis):
         self._redis = redis
 
-    async def create(self, tenant_id: str, user_id: Optional[str], kind: str) -> Dict[str, Any]:
+    async def start(
+        self, tenant_id: str, user_id: str, kind: str
+    ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        """Create a queued job for the user, unless they already have one.
+
+        Returns (new job, None), or (None, the user's queued or running job).
+        Claiming the user's slot is atomic, so a double-click queues one job.
+        """
+        if not user_id:
+            raise ValueError("A training job needs an owner")
+        job_id = str(uuid.uuid4())
+        key = _active_key(tenant_id, user_id)
+        for _ in range(_CLAIM_ATTEMPTS):
+            if await self._redis.set(key, job_id, ex=QUEUED_TIMEOUT_SECONDS, nx=True):
+                return await self._create(tenant_id, user_id, kind, job_id), None
+            current_id = await self._redis.get(key)
+            if current_id is None:
+                continue  # expired between the two calls
+            current = await self.get(tenant_id, current_id)
+            if current is not None and public_view(current)["status"] not in FINISHED_STATUSES:
+                return None, current
+            if await self._redis.eval(_REPLACE_IF_UNCHANGED, 1, key, current_id, job_id, QUEUED_TIMEOUT_SECONDS):
+                return await self._create(tenant_id, user_id, kind, job_id), None
+        # Other requests kept taking the slot: report whichever job holds it now.
+        current_id = await self._redis.get(key)
+        current = await self.get(tenant_id, current_id) if current_id else None
+        if current is None:
+            raise RuntimeError("Could not claim a training job slot")
+        return None, current
+
+    async def _create(self, tenant_id: str, user_id: str, kind: str, job_id: str) -> Dict[str, Any]:
         job = {
-            "job_id": str(uuid.uuid4()),
+            "job_id": job_id,
             "kind": kind,
             "status": STATUS_QUEUED,
             "progress": {"stage": "queued", "message": "Waiting for a training worker", "percent": 0},
@@ -130,8 +175,6 @@ class TrainingJobStore:
             "error": None,
         }
         await self._save(tenant_id, job)
-        if user_id:
-            await self._redis.set(_active_key(tenant_id, user_id), job["job_id"], ex=QUEUED_TIMEOUT_SECONDS)
         return job
 
     async def active_job(self, tenant_id: str, user_id: Optional[str]) -> Optional[Dict[str, Any]]:
@@ -145,7 +188,7 @@ class TrainingJobStore:
         return job
 
     async def get(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
-        raw = await self._redis.get(_key(tenant_id, job_id))
+        raw = await self._redis.get(job_key(tenant_id, job_id))
         if not raw:
             return None
         job = json.loads(raw)
@@ -157,6 +200,17 @@ class TrainingJobStore:
                     job["heartbeat"] = beat["at"]
                     job["progress"] = beat["progress"]
         return job
+
+    async def cancel(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        """Mark a queued or running job cancelled; a finished job is returned as it is.
+
+        A queued job then skips itself when a worker picks it up; the worker
+        running a job sees the status on its next heartbeat and stops.
+        """
+        job = await self.get(tenant_id, job_id)
+        if job is None or public_view(job)["status"] in FINISHED_STATUSES:
+            return job
+        return await self.update(tenant_id, job_id, status=STATUS_CANCELLED, error=CANCELLED_ERROR)
 
     async def update(self, tenant_id: str, job_id: str, **fields: Any) -> Optional[Dict[str, Any]]:
         job = await self.get(tenant_id, job_id)
@@ -170,7 +224,7 @@ class TrainingJobStore:
 
     async def _save(self, tenant_id: str, job: Dict[str, Any]) -> None:
         await self._redis.set(
-            _key(tenant_id, job["job_id"]),
+            job_key(tenant_id, job["job_id"]),
             json.dumps(jsonable_encoder(job)),
             ex=settings.ML_TRAINING_JOB_TTL_SECONDS,
         )

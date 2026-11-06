@@ -20,7 +20,7 @@ from app.core.utils.uuid_utils import coerce_uuid
 from app.dependencies.dependency_injection import RedisString
 from app.dependencies.injector import injector
 from app.modules.workflow import training_jobs
-from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
+from app.modules.workflow.test_runs import run_workflow_test
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.llm.provider import LLMProvider
@@ -298,6 +298,27 @@ async def execute_workflow(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _training_job_owner() -> str:
+    """The signed-in user a training test job belongs to.
+
+    Jobs are scoped to their owner (status reads, cancelling, one job at a
+    time), so a caller without a user id, e.g. an API key with no user,
+    can't start one: such callers would all share one anonymous owner.
+    """
+    user_id = get_current_user_id()
+    if not user_id:
+        raise AppException(
+            error_key=ErrorKey.ML_TRAINING_JOB_NEEDS_USER,
+            status_code=403,
+            error_detail="Testing a model training needs a signed-in user. Use a user's login or an API key that belongs to a user.",
+        )
+    return str(user_id)
+
+
+def _training_job_store() -> training_jobs.TrainingJobStore:
+    return training_jobs.TrainingJobStore(injector.get(RedisString))
+
+
 async def _queue_training_job(
     kind: str, training_nodes: List[Dict[str, Any]], payload: Dict[str, Any]
 ) -> JSONResponse:
@@ -306,26 +327,27 @@ async def _queue_training_job(
 
     An oversized hyperparameter search is refused here, before anything is
     queued. Returns 202 with the job; the client polls GET /workflows/test-jobs/{job_id}.
+    A user who already has a queued or running job gets 409; GET
+    /workflows/test-jobs/active returns that job, to follow or cancel it.
     """
     for node_data in training_nodes:
         training_jobs.check_training_config(node_data)
 
     tenant_id = get_tenant_context()
-    user_id = get_current_user_id()
-    owner = str(user_id) if user_id else None
-    store = training_jobs.TrainingJobStore(injector.get(RedisString))
+    owner = _training_job_owner()
+    store = _training_job_store()
     # One job per user at a time: the "ml" queue is shared by every tenant.
-    if await store.active_job(tenant_id, owner):
+    job, running = await store.start(tenant_id, owner, kind)
+    if running is not None:
         raise AppException(
             error_key=ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING,
             status_code=409,
-            error_detail="You already have a training test running. Wait for it to finish, then run the test again.",
+            error_detail="You already have a training test running. Wait for it to finish or cancel it, then run the test again.",
         )
-    job = await store.create(tenant_id, owner, kind)
     try:
         from app.tasks.ml_training_job_tasks import run_training_job_task
 
-        run_training_job_task.delay(job["job_id"], tenant_id, jsonable_encoder(payload))
+        run_training_job_task.delay(job["job_id"], tenant_id, jsonable_encoder({**payload, "kind": kind}))
     except Exception as e:
         logger.error(f"Could not queue training job {job['job_id']}: {e}")
         await store.update(
@@ -337,20 +359,52 @@ async def _queue_training_job(
     return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=training_jobs.public_view(job))
 
 
+def _training_job_not_found() -> AppException:
+    return AppException(
+        error_key=ErrorKey.ML_TRAINING_JOB_NOT_FOUND,
+        status_code=404,
+        error_detail="The training job was not found or has expired.",
+    )
+
+
+async def _owned_training_job(store: training_jobs.TrainingJobStore, job_id: str) -> Dict[str, Any]:
+    owner = _training_job_owner()
+    job = await store.get(get_tenant_context(), job_id)
+    if job is None or job.get("user_id") != owner:
+        raise _training_job_not_found()
+    return job
+
+
+@router.get(
+    "/test-jobs/active", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
+)
+async def get_active_training_job():
+    """The user's queued or running training test, to follow or cancel after leaving it."""
+    job = await _training_job_store().active_job(get_tenant_context(), _training_job_owner())
+    if job is None:
+        raise _training_job_not_found()
+    return training_jobs.public_view(job)
+
+
 @router.get(
     "/test-jobs/{job_id}", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
 )
 async def get_training_job(job_id: str):
     """Status, progress and (once finished) result of a training test run."""
-    store = training_jobs.TrainingJobStore(injector.get(RedisString))
-    job = await store.get(get_tenant_context(), job_id)
-    user_id = get_current_user_id()
-    if job is None or job.get("user_id") != (str(user_id) if user_id else None):
-        raise AppException(
-            error_key=ErrorKey.ML_TRAINING_JOB_NOT_FOUND,
-            status_code=404,
-            error_detail="The training job was not found or has expired.",
-        )
+    store = _training_job_store()
+    return training_jobs.public_view(await _owned_training_job(store, job_id))
+
+
+@router.post(
+    "/test-jobs/{job_id}/cancel", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
+)
+async def cancel_training_job(job_id: str):
+    """Cancel a queued or running training test. A finished job is returned unchanged."""
+    store = _training_job_store()
+    await _owned_training_job(store, job_id)
+    job = await store.cancel(get_tenant_context(), job_id)
+    if job is None:
+        raise _training_job_not_found()
     return training_jobs.public_view(job)
 
 
@@ -421,7 +475,9 @@ async def test_workflow(
         start_node_id = input_data.get("human_in_the_loop_node_id")
 
         # Training would hold this request (and the API) for as long as the
-        # fit takes, so it runs as a background job instead.
+        # fit takes, so it runs as a background job instead. The job runs the
+        # same turn (sub-agent routing, registry-managed threads) via
+        # run_workflow_test.
         training_nodes = training_jobs.train_model_nodes(workflow_config["nodes"])
         if training_nodes:
             return await _queue_training_job(
@@ -443,26 +499,9 @@ async def test_workflow(
         usage_context = WorkflowUsageContext(
             source="workflow_test", workflow_id=coerce_uuid(saved_workflow_id), defer_capture=True
         )
-        turn_router = SubAgentTurnRouter(workflow_engine, owner_id=workflow_config["id"])
-        supplied_thread = bool(input_data.get("thread_id"))
-        if turn_router.has_sub_agents():
-            input_data.setdefault("agent_id", workflow_config["id"])
-            if supplied_thread and not start_node_id:
-                routed = await turn_router.route_turn(
-                    input_data.get("message", ""), thread_id, input_data, persist=True, usage_context=usage_context
-                )
-                if routed is not None:
-                    return routed
-
-        state = await workflow_engine.execute_from_node(
-            start_node_id=start_node_id,
-            input_data=input_data,
-            thread_id=thread_id,
-            registry_managed=supplied_thread,
-            usage_context=usage_context,
+        return await run_workflow_test(
+            workflow_engine, workflow_config["id"], input_data, thread_id, start_node_id, usage_context
         )
-
-        return turn_router.finalize(state.format_state_as_response())
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is

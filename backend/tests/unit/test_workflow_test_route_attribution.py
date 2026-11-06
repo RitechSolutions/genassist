@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 import app.api.v1.routes.workflows as workflows_route
+from app.modules.workflow import test_runs
 
 
 class FakeEngine:
@@ -48,7 +49,8 @@ class FakeWorkflowService:
 @pytest.fixture(autouse=True)
 def _stub_engine(monkeypatch):
     monkeypatch.setattr(workflows_route, "WorkflowEngine", FakeEngine)
-    monkeypatch.setattr(workflows_route, "SubAgentTurnRouter", FakeTurnRouter)
+    # The test turn (routing included) runs in app.modules.workflow.test_runs.
+    monkeypatch.setattr(test_runs, "SubAgentTurnRouter", FakeTurnRouter)
     FakeEngine.last = None
 
 

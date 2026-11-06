@@ -29,7 +29,6 @@ from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.svm import SVC, SVR
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-from threadpoolctl import threadpool_limits
 from sklearn.preprocessing import (
     MaxAbsScaler,
     MinMaxScaler,
@@ -1804,9 +1803,18 @@ class TrainModelNode(BaseNode):
 
     @staticmethod
     def _run_with_core_limit(fit, *args, **kwargs):
-        """Run fit with native thread pools (BLAS, OpenMP) capped at ML_TRAINING_MAX_CORES."""
-        with threadpool_limits(limits=hpo_module.training_cores()):
-            return fit(*args, **kwargs)
+        """Run fit (in a worker thread) as a tracked fit, under the native thread limit.
+
+        The native (BLAS, OpenMP) limit is process-wide, so it is only set in
+        a background training job, which has its worker process to itself.
+        Elsewhere (the API process) the estimator thread caps and the
+        cross-validation worker caps still apply.
+        """
+        with training_progress.fitting():
+            if not training_progress.in_training_job():
+                return fit(*args, **kwargs)
+            with hpo_module.native_thread_limit():
+                return fit(*args, **kwargs)
 
     def _fit_model(
         self,
