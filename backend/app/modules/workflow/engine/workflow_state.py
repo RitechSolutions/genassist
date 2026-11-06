@@ -910,7 +910,10 @@ class WorkflowState:
         - "success": no node failed.
 
         End nodes rather than the order nodes finished in, so parallel branches
-        give the same status on every run.
+        give the same status on every run. When the main flow ends in a Chat
+        Output, only a Chat Output counts as an answer: a side branch (a Slack
+        or log node) that finished does not hide an Agent that failed before
+        the Chat Output could run.
         """
         if isinstance(output, dict) and output.get("status") == "awaiting_input":
             return "awaiting_input"
@@ -920,9 +923,17 @@ class WorkflowState:
             return "success"
         reached_an_end = any(
             (self.node_execution_status.get(node_id) or {}).get("status") == "success"
-            for node_id in self._main_flow_end_nodes()
+            for node_id in self._answer_nodes()
         )
         return "partial" if reached_an_end else "failed"
+
+    def _answer_nodes(self) -> list[str]:
+        """The end nodes that give the run its answer: the Chat Outputs among
+        the main flow's end nodes, or every end node when there is none."""
+        end_nodes = self._main_flow_end_nodes()
+        types = {node.get("id"): node.get("type") for node in self.workflow.get("nodes") or []}
+        chat_outputs = [node_id for node_id in end_nodes if types.get(node_id) == "chatOutputNode"]
+        return chat_outputs or end_nodes
 
     def _main_flow_end_nodes(self) -> list[str]:
         """The last nodes of the main flow: reached from its start nodes along
