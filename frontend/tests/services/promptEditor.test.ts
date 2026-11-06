@@ -136,6 +136,13 @@ describe("optimizePrompt", () => {
     expect(result).toEqual(response);
   });
 
+  it("throws an error envelope that arrives in a 200 body", async () => {
+    mockApiRequest.mockResolvedValue({ error: "boom", error_code: 500 } as never);
+    await expect(
+      optimizePrompt(WF, NODE, FIELD, { prompt: "hi" } as never)
+    ).rejects.toThrow("boom");
+  });
+
   it("carries the grading configuration and the graders' feedback unchanged", async () => {
     const payload: PromptOptimizeRequestPayload = {
       provider_id: "p1",
