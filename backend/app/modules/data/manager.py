@@ -25,6 +25,8 @@ from .utils.doc import bulk_delete_documents, format_search_results
 
 logger = logging.getLogger(__name__)
 
+SYNC_OWNED_KB_TYPES = ("zendesk", "salesforce")
+
 
 class AgentRAGServiceManager:
     """
@@ -259,11 +261,12 @@ class AgentRAGServiceManager:
             # Use first item to get service
             representative_item = items[0]
 
-            # Leave Zendesk KBs untouched because the sync task owns them.
-            if getattr(representative_item, "type", "") == "zendesk":
+            # Leave Zendesk and Salesforce KBs untouched because their sync tasks own them.
+            kb_type = getattr(representative_item, "type", "")
+            if kb_type in SYNC_OWNED_KB_TYPES:
                 logger.info(
-                    f"Skipping generic RAG load for Zendesk KB {kb_id}; "
-                    "handled by Zendesk sync task"
+                    f"Skipping generic RAG load for {kb_type} KB {kb_id}; "
+                    "handled by its sync task"
                 )
                 continue
 
