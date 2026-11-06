@@ -14,6 +14,7 @@ import {
   testNode,
 } from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
+import { upstreamSourcesKey } from "../utils/trainingInputFile";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { SchemaField, SchemaType } from "../types/schemas";
 import { useAudioTest } from "../hooks/useAudioTest";
@@ -66,8 +67,31 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     getAudioKey, handleAudioFileUpload, startRecording, stopRecording,
   } = useAudioTest({ nodeType, nodeData, setFormData, setError });
 
-  const { updateNodeOutput, getAvailableDataForNode, getNodeOutput } =
-    useWorkflowExecution();
+  const {
+    updateNodeOutput,
+    getAvailableDataForNode,
+    getNodeOutput,
+    getLatestNodeOutput,
+    nodes,
+    edges,
+  } = useWorkflowExecution();
+
+  // The Train Data Source settings this test's output comes from - see
+  // upstreamSourcesKey. A Train Data Source is tagged with its own (possibly
+  // unsaved) settings. Any other node read its input from the upstream node's
+  // recorded output, so it inherits that output's tag: if the source changed
+  // since that output was made, this result is just as old.
+  const testSettingsKey = () => {
+    if (!nodeId) return undefined;
+    if (nodeType === "trainDataSourceNode") {
+      return upstreamSourcesKey(nodeId, nodes, edges, { id: nodeId, type: nodeType, data: nodeData });
+    }
+    const upstreamIds = [
+      ...new Set(edges.filter((edge) => edge.target === nodeId).map((edge) => edge.source)),
+    ];
+    if (upstreamIds.length === 1) return getLatestNodeOutput(upstreamIds[0])?.settingsKey;
+    return upstreamSourcesKey(nodeId, nodes, edges);
+  };
 
   // Extract variables from node config when dialog opens
   useEffect(() => {
@@ -272,7 +296,13 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
         setOutput(Object.assign({}, response, { output: truncatedOutput }));
         if (nodeId) {
-          updateNodeOutput(nodeId, truncatedOutput, nodeType, nodeData.name || nodeType);
+          updateNodeOutput(
+            nodeId,
+            truncatedOutput,
+            nodeType,
+            nodeData.name || nodeType,
+            testSettingsKey()
+          );
         }
       } else {
         setOutput(response);
@@ -389,7 +419,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
               nodeId,
               truncatedOutput,
               nodeType,
-              nodeData.name || nodeType
+              nodeData.name || nodeType,
+              testSettingsKey()
             );
         }
       } else {

@@ -7,6 +7,7 @@ import {
   RawNodeExecutionEntry,
 } from '@/interfaces/workflow-execution.interface';
 import { Workflow } from '@/interfaces/workflow.interface';
+import { upstreamSourcesKey } from './trainingInputFile';
 
 /**
  * Pure adapters that turn the loosely-typed workflow-test response into the normalized model
@@ -227,4 +228,41 @@ export const formatDuration = (ms?: number): string => {
   const minutes = Math.floor(seconds / 60);
   const rem = Math.round(seconds % 60);
   return `${minutes} m ${String(rem).padStart(2, '0')} s`;
+};
+
+/** A node's output from a whole-workflow run, ready for the execution context. */
+export interface RunNodeOutput {
+  output: Record<string, unknown>;
+  nodeType: string;
+  nodeName: string;
+  /** Settings of the Train Data Sources the output came from - see upstreamSourcesKey. */
+  settingsKey?: string;
+}
+
+/**
+ * The outputs of the nodes that completed in a whole-workflow run, keyed by node id. `workflow`
+ * must be the workflow that was run, so each output is tagged with the Train Data Source settings
+ * it was made from. Never throws.
+ */
+export const collectRunOutputs = (
+  response: unknown,
+  workflow?: Workflow | null
+): Record<string, RunNodeOutput> => {
+  const { nodes } = buildExecutionViewModel(response, workflow);
+  const workflowNodes = new Map((workflow?.nodes ?? []).map((node) => [node.id, node]));
+  const workflowEdges = workflow?.edges ?? [];
+  const outputs: Record<string, RunNodeOutput> = {};
+  for (const node of nodes) {
+    if (node.status !== 'completed' || !isRecord(node.output)) continue;
+    const workflowNode = workflowNodes.get(node.nodeId);
+    const nodeType = node.type ?? workflowNode?.type ?? '';
+    const settingsKey = upstreamSourcesKey(node.nodeId, workflow?.nodes ?? [], workflowEdges);
+    outputs[node.nodeId] = {
+      output: node.output,
+      nodeType,
+      nodeName: node.name,
+      ...(settingsKey !== undefined && { settingsKey }),
+    };
+  }
+  return outputs;
 };
