@@ -106,7 +106,6 @@ async def test_streamed_file_matches_legacy_writer_byte_for_byte(monkeypatch, tm
         ("semicolon", b"id;name\n1;Ada\n"),
         ("blank-lines", b"id,name\n\n1,Ada\n\n2,Linus\n"),
         ("short-row", b"id,name,note\n1,Ada\n"),
-        ("duplicate-header", b"a,a,b\n1,2,3\n"),
     ],
 )
 async def test_uploaded_csv_stream_matches_legacy_output(
@@ -552,3 +551,17 @@ async def test_uploaded_csv_memory_does_not_scale_with_total_rows(monkeypatch, t
     peak_large = await peak_for(200_000)
 
     assert peak_large < peak_small * 1.5
+
+
+@pytest.mark.asyncio
+async def test_csv_with_a_repeated_header_is_refused_not_merged(tmp_path):
+    # The legacy reader kept only the last "a" and wrote "a,b".
+    source = tmp_path / "duplicate-header.csv"
+    source.write_bytes(b"a,a,b\n1,2,3\n")
+
+    with pytest.raises(AppException) as exc_info:
+        async for _chunk in ml_utils.iter_csv_chunks(str(source), chunk_size=2):
+            pass
+
+    assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_FILE_INVALID
+    assert "two columns named 'a'" in exc_info.value.error_detail

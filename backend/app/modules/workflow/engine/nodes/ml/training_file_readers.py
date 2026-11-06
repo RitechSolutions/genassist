@@ -129,17 +129,91 @@ def _not_utf8() -> AppException:
     )
 
 
+def duplicate_column_name(columns: Sequence[Any]) -> Optional[str]:
+    """The first column name that repeats (compared after strip()), or None."""
+    seen: Set[str] = set()
+    for column in columns:
+        name = "" if column is None else str(column).strip()
+        if name in seen:
+            return name
+        seen.add(name)
+    return None
+
+
+def _two_columns_named(name: str) -> str:
+    if not name:
+        return "two columns with no name"
+    # The name comes from the user's file or query: keep the message short.
+    shown = " ".join(name.split())
+    if len(shown) > 60:
+        shown = shown[:57] + "..."
+    return f"two columns named '{shown}'"
+
+
+def ensure_unique_columns(columns: Sequence[Any], where: str) -> None:
+    """Refuse a file whose header repeats a name; the names are kept as given.
+
+    Every reader turns rows into name -> value lookups somewhere, so a repeated
+    name would silently keep one of the columns and drop the other.
+    """
+    duplicate = duplicate_column_name(columns)
+    if duplicate is not None:
+        raise _invalid(
+            f"The {where} has {_two_columns_named(duplicate)}. Give every column a unique "
+            "name and upload the file again."
+        )
+
+
+def ensure_unique_query_columns(columns: Sequence[Any]) -> None:
+    """Refuse a query result whose columns repeat a name (e.g. two tables' id)."""
+    duplicate = duplicate_column_name(columns)
+    if duplicate is not None:
+        raise AppException(
+            error_key=ErrorKey.ML_EXTRACT_QUERY_FAILED,
+            error_detail=(
+                f"The query returns {_two_columns_named(duplicate)}. Give each column a "
+                "unique name in the query, e.g. with AS."
+            ),
+        )
+
+
 def _unique_columns(columns: Sequence[Any], where: str) -> List[str]:
     names = ["" if c is None else str(c).strip() for c in columns]
-    seen: Set[str] = set()
-    for name in names:
-        if name in seen:
-            raise _invalid(
-                f"The {where} has two columns named '{name}'. Give every column a unique name "
-                "and upload the file again."
-            )
-        seen.add(name)
+    ensure_unique_columns(names, where)
     return names
+
+
+class _JsonObject(dict):
+    """A parsed JSON object that had a key twice (json.loads kept the last)."""
+
+    __slots__ = ("duplicate_key",)
+
+
+def _json_object(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
+    # The hook sees every key, so a repeated one can be refused instead of
+    # silently keeping its last value. The common case stays a plain dict.
+    record = dict(pairs)
+    if len(record) == len(pairs):
+        return record
+    marked = _JsonObject(record)
+    marked.duplicate_key = duplicate_column_name([key for key, _ in pairs])
+    return marked
+
+
+def _load_json(text: str) -> Any:
+    return json.loads(text, object_pairs_hook=_json_object)
+
+
+def _ensure_unique_record_keys(record: Dict[str, Any], where: str) -> None:
+    """Refuse a record that repeats a key, exactly or once stripped."""
+    duplicate = getattr(record, "duplicate_key", None)
+    if duplicate is None:
+        duplicate = duplicate_column_name(record)
+    if duplicate is not None:
+        raise _invalid(
+            f"{where} has {_two_columns_named(duplicate)}. Give every key a unique name "
+            "and upload the file again."
+        )
 
 
 def csv_cell(value: Any) -> Any:
@@ -455,7 +529,7 @@ class TrainingFileReader:
                     state["complete"] = False
                     return False
                 try:
-                    record = json.loads(text)
+                    record = _load_json(text)
                 except json.JSONDecodeError as exc:
                     raise _invalid(
                         f"Line {state['line']} isn't valid JSON ({exc.msg}). Each line of a JSON "
@@ -466,6 +540,7 @@ class TrainingFileReader:
                         f"Line {state['line']} is a JSON {type(record).__name__}, not an object. "
                         "Each line must be one object such as {\"price\": 10, \"size\": \"M\"}."
                     )
+                _ensure_unique_record_keys(record, f"Line {state['line']}")
                 for key in record:
                     keys.setdefault(str(key), None)
                 state["rows"] += 1
@@ -477,6 +552,7 @@ class TrainingFileReader:
             pass
         if not keys:
             raise _invalid("The JSON Lines file has no records.")
+        ensure_unique_columns(keys, "JSON Lines file")
         return list(keys), state["rows"], state["complete"]
 
     # -- JSON array --------------------------------------------------------
@@ -499,7 +575,7 @@ class TrainingFileReader:
         except UnicodeDecodeError:
             raise _not_utf8() from None
         try:
-            data = json.loads(text)
+            data = _load_json(text)
         except json.JSONDecodeError as exc:
             if exc.msg == "Extra data":
                 # One object per line saved as .json - read it as JSON Lines.
@@ -511,6 +587,13 @@ class TrainingFileReader:
         del text
 
         if isinstance(data, dict):
+            duplicate = getattr(data, "duplicate_key", None)
+            if duplicate is not None:
+                # {"rows": [...], "rows": [...]} would keep only the last array.
+                raise _invalid(
+                    f"The JSON file has two keys named '{' '.join(duplicate.split())[:60]}'. "
+                    "Give every key a unique name and upload the file again."
+                )
             lists = [v for v in data.values() if isinstance(v, list)]
             if len(lists) == 1:
                 data = lists[0]
@@ -527,9 +610,12 @@ class TrainingFileReader:
             if not item.strip():
                 continue
             try:
-                records.append(json.loads(item))
+                record = _load_json(item)
             except json.JSONDecodeError as exc:
                 raise _invalid(f"Line {line} isn't valid JSON ({exc.msg}).") from None
+            if isinstance(record, dict):
+                _ensure_unique_record_keys(record, f"Line {line}")
+            records.append(record)
         return self._records_source(records)
 
     def _records_source(self, records: List[Any]):
@@ -540,10 +626,12 @@ class TrainingFileReader:
                     f"Item {index} of the JSON array is a {type(record).__name__}, not an object. "
                     "Every item must be an object such as {\"price\": 10}."
                 )
+            _ensure_unique_record_keys(record, f"Item {index} of the JSON file")
             for key in record:
                 keys.setdefault(str(key), None)
         if not keys:
             raise _invalid("The JSON file has no records.")
+        ensure_unique_columns(keys, "JSON file")
         self.total_rows = len(records)
         if self.max_rows is not None and len(records) > self.max_rows:
             raise _too_many_rows(len(records), self.max_rows)
