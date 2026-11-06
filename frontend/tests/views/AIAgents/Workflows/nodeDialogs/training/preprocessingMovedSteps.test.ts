@@ -241,6 +241,60 @@ describe("preprocessingConfig - step types moved to Train Model (68076)", () => 
     expect(saved).not.toContain("median()");
   });
 
+  it("discarding hand edits takes a moved step's code from before the edits", () => {
+    const code = legacyNodeCode([MOVED_BLOCKS.missing_value_handling]);
+    const { config } = loadPreprocessingConfig({ pythonCode: code });
+    const edited = code.replace('df["age"].median()', 'df["age"].mean()');
+
+    // What "Discard hand edits" does: the code before the edits is the source.
+    const discarded = generatePythonCodeFromConfig(config, edited, code);
+    expect(discarded).toContain(MOVED_BLOCKS.missing_value_handling);
+    expect(discarded).not.toContain("mean()");
+    expect(sameGeneratedSection(discarded, code)).toBe(true);
+  });
+
+  it("a switched-off moved step doesn't run, and runs again when switched back on", () => {
+    const code = legacyNodeCode([MOVED_BLOCKS.missing_value_handling]);
+    const stored: PreprocessingConfig = {
+      steps: [{ id: "step_mv", type: "missing_value_handling", enabled: false, config: {} }],
+      movedStepsKept: true,
+    };
+    const { config } = loadPreprocessingConfig({ pythonCode: code, preprocessingConfig: stored });
+    expect(config.steps[0].enabled).toBe(false);
+
+    const off = generatePythonCodeFromConfig(config, code);
+    // Its markers stay, but its cleaning is not code that runs.
+    expect(off).toContain("# STEP_START:step_mv:missing_value_handling");
+    expect(off).toContain("# Step disabled - skipped");
+    expect(off).not.toMatch(/^\s*if "age" in df\.columns:/m);
+    expect(off).not.toMatch(/^\s*df\.loc\[:, "age"\]/m);
+
+    // Reopened from the code alone, it is still off.
+    const reread = loadPreprocessingConfig({ pythonCode: off }).config;
+    expect(reread.steps).toEqual([
+      { id: "step_mv", type: "missing_value_handling", enabled: false, config: {} },
+    ]);
+    expect(generatePythonCodeFromConfig(reread, off)).toBe(off);
+
+    const on = generatePythonCodeFromConfig(
+      { steps: [{ ...reread.steps[0], enabled: true }] },
+      off
+    );
+    expect(on).toContain(MOVED_BLOCKS.missing_value_handling);
+    expect(sameGeneratedSection(on, code)).toBe(true);
+  });
+
+  it("switching a moved step off and on keeps Windows line endings in its code", () => {
+    const code = legacyNodeCode([MOVED_BLOCKS.categorical_encoding]).replace(/\n/g, "\r\n");
+    const { config } = loadPreprocessingConfig({ pythonCode: code });
+    const off = generatePythonCodeFromConfig(
+      { steps: [{ ...config.steps[0], enabled: false }] },
+      code
+    );
+    const on = generatePythonCodeFromConfig({ steps: [{ ...config.steps[0], enabled: true }] }, off);
+    expect(on).toContain(MOVED_BLOCKS.categorical_encoding.replace(/\n/g, "\r\n"));
+  });
+
   it("recognizes moved steps in code with Windows line endings", () => {
     const code = legacyNodeCode([MOVED_BLOCKS.categorical_encoding]).replace(/\n/g, "\r\n");
     const { config } = loadPreprocessingConfig({ pythonCode: code });
