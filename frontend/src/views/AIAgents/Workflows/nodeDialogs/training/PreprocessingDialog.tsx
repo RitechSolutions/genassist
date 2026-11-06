@@ -138,9 +138,16 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     setMode(newMode);
   };
 
+  // Moved steps have no settings to regenerate their code from, so their
+  // code comes from the code before the hand edits, not the edited text.
   const discardHandEditsAndConfigure = () => {
-    const regenerated = generatePythonCodeFromConfig(config, pythonCode || BASE_PYTHON_TEMPLATE);
-    setConfig((prev) => withoutMissingMovedSteps(prev, pythonCode));
+    const beforeEdits = baselineCodeRef.current || BASE_PYTHON_TEMPLATE;
+    const regenerated = generatePythonCodeFromConfig(
+      config,
+      pythonCode || BASE_PYTHON_TEMPLATE,
+      beforeEdits
+    );
+    setConfig((prev) => withoutMissingMovedSteps(prev, beforeEdits));
     setPythonCode(regenerated);
     pythonCodeRef.current = regenerated;
     baselineCodeRef.current = regenerated;
@@ -635,7 +642,9 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
         if (isMovedStepType(step.type)) {
           return (
             <p className="text-xs text-muted-foreground">
-              Read-only here. Its saved code is kept and still runs - see the Code tab.
+              {step.enabled
+                ? "Read-only here. Its saved code is kept and still runs - see the Code tab."
+                : "Switched off - its saved code is kept but doesn't run. Switch it on to run it again."}
             </p>
           );
         }
@@ -937,18 +946,15 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                             <Play className="h-3 w-3 mr-1" />
                             {runningStepId === step.id ? "Running..." : "Run"}
                           </Button>
-                          {/* A moved step's code is kept as is - it can't be switched off here. */}
-                          {!isMovedStepType(step.type) && (
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs">Enabled</Label>
-                              <Switch
-                                checked={step.enabled}
-                                onCheckedChange={(checked) =>
-                                  handleToggleStep(step.id, checked)
-                                }
-                              />
-                            </div>
-                          )}
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs">Enabled</Label>
+                            <Switch
+                              checked={step.enabled}
+                              onCheckedChange={(checked) =>
+                                handleToggleStep(step.id, checked)
+                              }
+                            />
+                          </div>
                           <div className="flex items-center gap-1">
                             <Button
                               type="button"
@@ -987,7 +993,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                       </div>
 
                       {/* Step Configuration */}
-                      {/* A moved step always runs, so its note always shows. */}
+                      {/* A moved step's note shows even when it is switched off. */}
                       {(step.enabled || isMovedStepType(step.type)) && (
                         <div className="pl-6 border-l-2 border-border">
                           {renderStepConfig(step, index)}

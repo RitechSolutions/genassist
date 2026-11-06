@@ -73,6 +73,55 @@ function movedStepBlock(code: string, stepId: string): string | null {
 }
 
 /**
+ * A moved step's code as it runs when the step is on. A switched-off moved
+ * step keeps that code in its STEP_CONFIG comment (see movedStepCode), so it
+ * stays in the Code tab, never runs, and comes back when switched on again.
+ */
+function liveMovedStepBlock(block: string): string {
+  const startEnd = block.search(/[\r\n]/);
+  const endAt = block.lastIndexOf("# STEP_END:");
+  if (startEnd === -1 || endAt === -1) return block;
+  const disabled = movedStepDisabledConfig(block.slice(startEnd, endAt));
+  if (!disabled) return block;
+  return `${block.slice(0, startEnd)}${disabled.code}${block.slice(endAt)}`;
+}
+
+/** The {enabled: false, code} STEP_CONFIG of a switched-off moved step, if it is one. */
+function movedStepDisabledConfig(stepCode: string): { code: string } | null {
+  const match = stepCode.match(/# STEP_CONFIG:([^\r\n]+)/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]) as { enabled?: unknown; code?: unknown };
+    if (parsed.enabled === false && typeof parsed.code === "string") return { code: parsed.code };
+  } catch {
+    // Not a switched-off moved step's config.
+  }
+  return null;
+}
+
+/**
+ * The code to write for a moved step: its block copied unchanged from
+ * `source` when it is on; when it is off, only its markers, with the code it
+ * would run kept in STEP_CONFIG so it doesn't run (matching how the old
+ * generator skipped a switched-off step) but isn't lost either.
+ */
+function movedStepCode(source: string, step: PreprocessingStep): string | null {
+  const block = movedStepBlock(source, step.id);
+  if (block === null) return null;
+  const live = liveMovedStepBlock(block);
+  if (step.enabled) return live;
+  const startEnd = live.search(/[\r\n]/);
+  const endAt = live.lastIndexOf("# STEP_END:");
+  const code = live.slice(startEnd, endAt);
+  return [
+    live.slice(0, startEnd),
+    `    # STEP_CONFIG:${JSON.stringify({ enabled: false, code })}`,
+    "    # Step disabled - skipped",
+    `    ${live.slice(endAt)}`,
+  ].join("\n");
+}
+
+/**
  * The config without moved steps whose code is no longer in the generated
  * function of `pythonCode` (deleted by hand, or replaced by Generate
  * Template) - they have nothing left to run, so they aren't listed as if they
@@ -238,7 +287,10 @@ def executable_function(params):
  */
 export function generatePythonCodeFromConfig(
   config: PreprocessingConfig,
-  existingCode?: string
+  existingCode?: string,
+  // Where moved steps' code is copied from, when not from existingCode - e.g.
+  // the code before hand edits, when discarding them.
+  movedStepSource?: string
 ): string {
   const codeToModify = existingCode || BASE_PYTHON_TEMPLATE;
 
@@ -266,8 +318,10 @@ export function generatePythonCodeFromConfig(
   autogenBodyLines.push("    df = df.copy()");
   autogenBodyLines.push("");
 
+  const movedSource = movedStepSource ?? codeToModify;
+  const movedSourceBody = movedSource.match(AUTOGEN_FUNCTION_SOURCE)?.[1] ?? "";
   // A moved step whose code is gone has nothing to write.
-  const steps = withoutMissingMovedSteps(config, codeToModify).steps;
+  const steps = withoutMissingMovedSteps(config, movedSource).steps;
 
   // Generate code for each step
   steps.forEach((step, index) => {
@@ -276,10 +330,10 @@ export function generatePythonCodeFromConfig(
     }
 
     // A moved step's code is copied unchanged from the current code, so its
-    // cleaning still runs and nothing about it changes on save. It can't be
-    // switched off here, so `enabled` doesn't apply.
+    // cleaning still runs and nothing about it changes on save. Switched off,
+    // it keeps its markers but doesn't run (see movedStepCode).
     if (isMovedStepType(step.type)) {
-      autogenBodyLines.push(`    ${movedStepBlock(existingAutogenBody, step.id)}`);
+      autogenBodyLines.push(`    ${movedStepCode(movedSourceBody, step)}`);
       return;
     }
 
@@ -533,7 +587,8 @@ export function parsePythonCodeToConfig(code: string): PreprocessingConfig {
 
     // Moved to Train Model - its code is kept as is (see MovedStepType).
     if (isMovedStepType(stepType)) {
-      config.steps.push({ id: stepId, type: stepType, enabled: true, config: {} });
+      const enabled = movedStepDisabledConfig(stepCode) === null;
+      config.steps.push({ id: stepId, type: stepType, enabled, config: {} });
       continue;
     }
 
