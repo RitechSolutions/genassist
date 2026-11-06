@@ -25,6 +25,8 @@ import {
   testWorkflow,
   waitForTrainingJob,
   isTrainingJob,
+  isTrainingWaitAborted,
+  cancelTrainingJob,
   getFailedNodeDisplayMessage,
   getTrainDataSourceTestFailureMessage,
   generatePythonTemplate,
@@ -186,6 +188,68 @@ describe("workflows service", () => {
         "Stopped waiting for the training job"
       );
       expect(mockApiRequest).not.toHaveBeenCalled();
+    });
+
+    it("stops polling when the signal aborts (e.g. the dialog closed)", async () => {
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      mockApiRequest.mockResolvedValue(job("running") as never);
+
+      const pending = waitForTrainingJob(job("running") as never, undefined, 2000, 60_000, controller.signal);
+      const settled = pending.catch((error) => error);
+      await vi.advanceTimersByTimeAsync(4100);
+      const pollsBeforeAbort = mockApiRequest.mock.calls.length;
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(isTrainingWaitAborted(await settled)).toBe(true);
+      expect(mockApiRequest).toHaveBeenCalledTimes(pollsBeforeAbort);
+      vi.useRealTimers();
+    });
+
+    it("rejects with the cancelled message once the job is cancelled", async () => {
+      await expect(
+        waitForTrainingJob(job("cancelled", { error: "The training test was cancelled." }) as never)
+      ).rejects.toThrow("The training test was cancelled.");
+    });
+
+    it("cancelTrainingJob POSTs to the job's cancel endpoint", async () => {
+      await cancelTrainingJob("job-1");
+      expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-jobs/job-1/cancel");
+    });
+
+    it("follows the user's running job when a new test gets 409 already-running", async () => {
+      const result = { status: "success", output: {} };
+      const conflict = Object.assign(new Error("conflict"), {
+        response: { status: 409, data: { error_key: "ML_TRAINING_JOB_ALREADY_RUNNING" } },
+      });
+      mockApiRequest
+        .mockRejectedValueOnce(conflict)
+        .mockResolvedValueOnce(job("running", { job_id: "job-old" }) as never)
+        .mockResolvedValueOnce(job("succeeded", { job_id: "job-old", result }) as never);
+      const seen: Array<{ id: string; reattached?: boolean }> = [];
+
+      vi.useFakeTimers();
+      const pending = testWorkflow({ input_data: {}, workflow: {} } as never, {
+        onTrainingProgress: (update) => seen.push({ id: update.job_id, reattached: update.reattached }),
+      });
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
+
+      await expect(pending).resolves.toEqual(result);
+      expect(mockApiRequest).toHaveBeenNthCalledWith(2, "GET", "genagent/workflow/test-jobs/active");
+      expect(seen).toEqual([
+        { id: "job-old", reattached: true },
+        { id: "job-old", reattached: true },
+      ]);
+    });
+
+    it("rethrows other errors from starting a test", async () => {
+      const conflict = Object.assign(new Error("bad request"), { response: { status: 400, data: {} } });
+      mockApiRequest.mockRejectedValueOnce(conflict);
+
+      await expect(testWorkflow({ input_data: {}, workflow: {} } as never)).rejects.toThrow("bad request");
+      expect(mockApiRequest).toHaveBeenCalledTimes(1);
     });
   });
 

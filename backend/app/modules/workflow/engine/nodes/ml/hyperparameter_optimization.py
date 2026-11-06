@@ -13,10 +13,13 @@ search space per model type, so results are comparable across methods.
 """
 
 import logging
-from typing import Any, Callable, Dict, Optional
+import threading
+from contextlib import contextmanager
+from typing import Any, Callable, Dict, Iterator, Optional
 
 import numpy as np
 import pandas as pd
+from joblib import parallel_config
 from sklearn.model_selection import (
     GridSearchCV,
     KFold,
@@ -26,6 +29,7 @@ from sklearn.model_selection import (
     TimeSeriesSplit,
     cross_val_score,
 )
+from threadpoolctl import threadpool_limits
 
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
@@ -211,6 +215,45 @@ def training_cores() -> int:
     return max(1, int(settings.ML_TRAINING_MAX_CORES))
 
 
+_native_limit_lock = threading.Lock()
+_native_limit_users = 0
+_native_limiter = None
+
+
+@contextmanager
+def native_thread_limit() -> Iterator[None]:
+    """Cap the process's native thread pools (BLAS, OpenMP) at training_cores().
+
+    The limit is process-wide, so overlapping fits share one: the first fit
+    to start sets it and the last one to finish restores the original
+    values, instead of the first to finish lifting it under the others.
+    """
+    global _native_limit_users, _native_limiter
+    with _native_limit_lock:
+        if _native_limit_users == 0:
+            _native_limiter = threadpool_limits(limits=training_cores())
+        _native_limit_users += 1
+    try:
+        yield
+    finally:
+        with _native_limit_lock:
+            _native_limit_users -= 1
+            if _native_limit_users == 0 and _native_limiter is not None:
+                _native_limiter.restore_original_limits()
+                _native_limiter = None
+
+
+@contextmanager
+def _single_threaded_cv_workers() -> Iterator[None]:
+    """Give each cross-validation worker process one native thread.
+
+    joblib otherwise lets every loky worker use cpu_count // n_jobs BLAS and
+    OpenMP threads, so n_jobs workers would still use every core.
+    """
+    with parallel_config(backend="loky", inner_max_num_threads=1):
+        yield
+
+
 def optimize_hyperparameters(
     model_type: str,
     is_classification: bool,
@@ -276,7 +319,8 @@ def optimize_hyperparameters(
         param_grid = _build_param_grid(tunable_space, points=int(opt_config.get("gridPoints", _DEFAULT_GRID_POINTS)))
         estimator = model_registry.build_estimator(model_type, is_classification, constant_params)
         search = GridSearchCV(estimator, param_grid, cv=cv, scoring=scoring, refit=True, n_jobs=n_jobs, error_score="raise")
-        search.fit(X_train, y_train)
+        with _single_threaded_cv_workers():
+            search.fit(X_train, y_train)
         n_candidates = len(search.cv_results_["params"])
         return {
             "model": search.best_estimator_,
@@ -308,7 +352,8 @@ def optimize_hyperparameters(
             random_state=42,
             error_score="raise",
         )
-        search.fit(X_train, y_train)
+        with _single_threaded_cv_workers():
+            search.fit(X_train, y_train)
         return {
             "model": search.best_estimator_,
             "best_params": search.best_params_,
@@ -345,7 +390,10 @@ def optimize_hyperparameters(
         if on_trial is not None:
             callbacks.append(lambda study, _trial: on_trial(len(study.trials), n_trials))
         study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=42))
-        study.optimize(objective, n_trials=n_trials, timeout=timeout, show_progress_bar=False, callbacks=callbacks)
+        with _single_threaded_cv_workers():
+            study.optimize(
+                objective, n_trials=n_trials, timeout=timeout, show_progress_bar=False, callbacks=callbacks
+            )
 
         best_params = study.best_params
         final_params = model_registry.cap_estimator_threads(

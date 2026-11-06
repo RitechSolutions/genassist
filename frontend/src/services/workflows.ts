@@ -149,7 +149,7 @@ export const getAllNodeSchemas = async (): Promise<NodeSchemas> => {
   }
 };
 
-export type TrainingJobStatus = "queued" | "running" | "succeeded" | "failed";
+export type TrainingJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 export interface TrainingJobProgress {
   stage: string;
@@ -168,11 +168,15 @@ export interface TrainingJob {
   error: string | null;
   created_at: string;
   updated_at: string;
+  /** Set by the client: the user already had this job running, so the new test followed it instead. */
+  reattached?: boolean;
 }
 
 export interface TestRunOptions {
   /** Called with every status update while a training job runs. */
   onTrainingProgress?: (job: TrainingJob) => void;
+  /** Stops waiting for a training job (e.g. the dialog closed). The job itself keeps running. */
+  signal?: AbortSignal;
 }
 
 export const TRAINING_JOB_POLL_INTERVAL_MS = 2000;
@@ -181,6 +185,17 @@ const TRAINING_JOB_MAX_POLL_ERRORS = 3;
 // A job can wait up to 2h10m for a worker and then train for up to 2h before
 // the server reports it failed; stop waiting a little after that in any case.
 export const TRAINING_JOB_MAX_WAIT_MS = (4 * 60 + 30) * 60 * 1000;
+const TRAINING_JOB_ALREADY_RUNNING = "ML_TRAINING_JOB_ALREADY_RUNNING";
+
+/** Thrown when waiting for a training job stops because its AbortSignal fired. */
+export class TrainingWaitAbortedError extends Error {
+  constructor() {
+    super("Stopped waiting for the training job");
+    this.name = "TrainingWaitAbortedError";
+  }
+}
+
+export const isTrainingWaitAborted = (error: unknown): boolean => error instanceof TrainingWaitAbortedError;
 
 export const isTrainingJob = (value: unknown): value is TrainingJob =>
   !!value &&
@@ -192,31 +207,56 @@ export const isTrainingJob = (value: unknown): value is TrainingJob =>
 export const getTrainingJob = (jobId: string) =>
   apiRequest<TrainingJob>("GET", `${BASE}/test-jobs/${encodeURIComponent(jobId)}`);
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** The user's queued or running training test, if any. */
+export const getActiveTrainingJob = () => apiRequest<TrainingJob>("GET", `${BASE}/test-jobs/active`);
+
+/** Cancel a queued or running training test; resolves with the job as it now is. */
+export const cancelTrainingJob = (jobId: string) =>
+  apiRequest<TrainingJob>("POST", `${BASE}/test-jobs/${encodeURIComponent(jobId)}/cancel`);
+
+const delay = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new TrainingWaitAbortedError());
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new TrainingWaitAbortedError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 
 /** Poll a training job until it finishes; resolves with the test result or throws its error. */
 export const waitForTrainingJob = async (
   job: TrainingJob,
   onProgress?: (job: TrainingJob) => void,
   pollIntervalMs: number = TRAINING_JOB_POLL_INTERVAL_MS,
-  maxWaitMs: number = TRAINING_JOB_MAX_WAIT_MS
+  maxWaitMs: number = TRAINING_JOB_MAX_WAIT_MS,
+  signal?: AbortSignal
 ): Promise<WorkflowTestResponse | null> => {
   const deadline = Date.now() + maxWaitMs;
   let current = job;
   let pollErrors = 0;
   for (;;) {
+    if (signal?.aborted) throw new TrainingWaitAbortedError();
     onProgress?.(current);
     if (current.status === "succeeded") return current.result;
     if (current.status === "failed") throw new Error(current.error || "Training failed");
+    if (current.status === "cancelled") throw new Error(current.error || "The training test was cancelled.");
     if (Date.now() >= deadline) {
       throw new Error("Stopped waiting for the training job. It took longer than the training time limit.");
     }
 
-    await delay(pollIntervalMs);
+    await delay(pollIntervalMs, signal);
     try {
       const next = await getTrainingJob(current.job_id);
       if (!next) throw new Error("The training job could not be read");
-      current = next;
+      current = job.reattached ? { ...next, reattached: true } : next;
       pollErrors = 0;
     } catch (error) {
       pollErrors += 1;
@@ -225,19 +265,46 @@ export const waitForTrainingJob = async (
   }
 };
 
+const isAlreadyRunningError = (error: unknown): boolean => {
+  const response = (error as { response?: { status?: number; data?: { error_key?: string } } })?.response;
+  return response?.status === 409 && response.data?.error_key === TRAINING_JOB_ALREADY_RUNNING;
+};
+
+const startTest = async (
+  endpoint: string,
+  testData: NodeTestPayload | WorkflowTestPayload
+): Promise<WorkflowTestResponse | TrainingJob | null> => {
+  try {
+    return await apiRequest<WorkflowTestResponse | TrainingJob>(
+      "POST",
+      endpoint,
+      testData as unknown as Record<string, unknown>,
+      { timeout: API_WORKFLOW_TEST_TIMEOUT_MS }
+    );
+  } catch (error) {
+    if (!isAlreadyRunningError(error)) throw error;
+    // The user's earlier training test is still running (e.g. they closed the
+    // dialog): follow it, so they can see it finish or cancel it.
+    const active = await getActiveTrainingJob().catch(() => null);
+    if (!active) throw error;
+    return { ...active, reattached: true };
+  }
+};
+
 const runTest = async (
   endpoint: string,
   testData: NodeTestPayload | WorkflowTestPayload,
   options?: TestRunOptions
 ): Promise<WorkflowTestResponse | null> => {
-  const response = await apiRequest<WorkflowTestResponse | TrainingJob>(
-    "POST",
-    endpoint,
-    testData as unknown as Record<string, unknown>,
-    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS }
-  );
+  const response = await startTest(endpoint, testData);
   return isTrainingJob(response)
-    ? waitForTrainingJob(response, options?.onTrainingProgress)
+    ? waitForTrainingJob(
+        response,
+        options?.onTrainingProgress,
+        TRAINING_JOB_POLL_INTERVAL_MS,
+        TRAINING_JOB_MAX_WAIT_MS,
+        options?.signal
+      )
     : response;
 };
 
