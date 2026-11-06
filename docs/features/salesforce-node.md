@@ -53,7 +53,10 @@ is stored in GenAssist.
    - **Subject** → Case `Subject` (required)
    - **Description** → Case `Description` (required)
    - **Web Email / Web Name / Web Phone** (optional) → Case `SuppliedEmail` / `SuppliedName` /
-     `SuppliedPhone`. A box overrides a custom field with the same API name.
+     `SuppliedPhone`. A box with a usable value overrides a custom field with the same API name.
+     The same check applies when these fields are set as custom fields: an empty or invalid email
+     is left out (`Jane <jane@acme.com>` is sent as `jane@acme.com`), and names and phones are cut
+     to 80 and 40 characters, so a bad value never stops the Case from being created.
    - **Labels** (optional) — a comma-separated tags input. Each label is assigned to the
      created Case as a SalesForce **Topic** (the node finds or creates the Topic by name, then
      links it via `TopicAssignment`). Requires **Topics for Objects** enabled on Case; label
@@ -82,8 +85,10 @@ credential within the run's tenant context, authenticates to SalesForce, and cre
 
 Subject and Description are cut to SalesForce's lengths (255 and 32,000 characters, counted the
 way SalesForce counts them); a cut Description ends with `[truncated]`. When SalesForce rejects a
-request, the logged and returned error holds only the error code and field names (for example
-`STRING_TOO_LONG on Description`), because SalesForce's message can repeat customer data.
+Case, Topic or Topic assignment the node creates, the logged and returned error holds only the
+error code and field names (for example `STRING_TOO_LONG on Description`), because SalesForce's
+message can repeat customer data. Errors from lookups, such as finding a Topic by its label,
+keep SalesForce's full message.
 
 After the Case is created, the Web Email and Web Name (or the `SuppliedEmail` / `SuppliedName`
 custom fields) are saved on the conversation for GDPR lookups, as the Zendesk node does.

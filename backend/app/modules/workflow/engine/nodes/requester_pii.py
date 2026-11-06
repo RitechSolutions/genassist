@@ -51,7 +51,8 @@ async def persist_requester_pii(
             conversation_uuid, existing_attrs
         )
     except Exception as exc:
+        # Only the error type: database errors include the saved values.
         logger.warning(
             f"{node_label}: failed to persist PII to conversation custom_attributes: %s",
-            exc,
+            type(exc).__name__,
         )

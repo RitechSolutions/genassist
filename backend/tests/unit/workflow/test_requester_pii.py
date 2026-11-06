@@ -106,3 +106,21 @@ async def test_zendesk_database_error_is_logged_and_never_raised():
     assert warning.call_args.args[0] == (
         "Zendesk node: failed to persist PII to conversation custom_attributes: %s"
     )
+
+
+@pytest.mark.asyncio
+async def test_database_error_log_leaves_out_the_saved_values():
+    repo = _repo(SimpleNamespace(custom_attributes={}))
+    repo.update_custom_attributes = AsyncMock(
+        side_effect=RuntimeError("UPDATE failed [parameters: {'requester_email': 'bob@example.com', 'requester_name': 'Bob Stone'}]")
+    )
+
+    with patch.object(injector, "get", return_value=repo), patch.object(logging.Logger, "warning") as warning:
+        await _zendesk_node(str(uuid.uuid4()))._persist_pii_to_conversation(
+            requester_email="bob@example.com", requester_name="Bob Stone"
+        )
+
+    logged = " ".join(str(arg) for arg in warning.call_args.args)
+    assert "RuntimeError" in logged
+    assert "bob@example.com" not in logged
+    assert "Bob Stone" not in logged
