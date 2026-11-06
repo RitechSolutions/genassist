@@ -223,7 +223,7 @@ class WorkflowService:
         return result
 
     async def lock_for_activation(self, workflow_id: UUID) -> None:
-        if not await self.repository.get_locked(workflow_id, shared=True):
+        if not await self.repository.lock_live_shared(workflow_id):
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
 
     async def delete(self, workflow_id: UUID) -> None:
@@ -251,8 +251,25 @@ class WorkflowService:
         await self.repository.soft_delete(orm_obj)
 
     async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> None:
-        """Retire every version of an agent's workflow when the agent is deleted."""
-        await self.repository.soft_delete_by_agent(agent_id, commit=commit)
+        """Retire every version of an agent's workflow when the agent is deleted.
+
+        Refused with a 409 while a live ML pipeline configuration trains on one
+        of the versions, so the model never ends up on a deleted workflow. The
+        versions are retired first and the check runs on exactly those ids: a
+        config write in flight holds its version, so the UPDATE waits for it
+        and the check then sees the new config. A refusal undoes the UPDATE.
+        """
+        async with self.repository.db.begin_nested():
+            retired = await self.repository.soft_delete_by_agent(agent_id, commit=False)
+            ml_models = await self.repository.live_ml_model_names_for(retired)
+            if ml_models:
+                raise AppException(
+                    status_code=409,
+                    error_key=ErrorKey.AGENT_IN_USE_BY_ML_MODEL,
+                    error_variables=[", ".join(ml_models)],
+                )
+        if commit:
+            await self.repository.db.flush()
 
     async def _invalidate_agent_caches(self, agent_id: UUID) -> None:
         """Best-effort bust of every agent cache that embeds the workflow.
