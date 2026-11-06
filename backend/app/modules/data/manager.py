@@ -25,7 +25,34 @@ from .utils.doc import bulk_delete_documents, format_search_results
 
 logger = logging.getLogger(__name__)
 
-SYNC_OWNED_KB_TYPES = ("zendesk", "salesforce")
+ARTICLE_SYNC_KB_TYPES = ("zendesk", "salesforce")
+FILE_SYNC_KB_TYPES = ("s3", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket")
+SYNC_OWNED_KB_TYPES = ARTICLE_SYNC_KB_TYPES + FILE_SYNC_KB_TYPES
+
+
+def _stored_values_changed(stored: Dict[str, Any], incoming: Dict[str, Any]) -> bool:
+    """True when a value the stored config holds differs in the incoming one; settings it never had are ignored."""
+    for key, stored_value in stored.items():
+        incoming_value = incoming.get(key)
+        both_sections = isinstance(stored_value, dict) and isinstance(incoming_value, dict)
+        if both_sections and _stored_values_changed(stored_value, incoming_value):
+            return True
+        if not both_sections and incoming_value != stored_value:
+            return True
+    return False
+
+
+def save_load_action(current: Any, incoming: Any) -> str:
+    """Return "clear" when a save makes a synced KB's documents outdated, otherwise "update"."""
+    if incoming.type not in SYNC_OWNED_KB_TYPES:
+        return "update"
+    type_changed = current.type != incoming.type
+    rag_config_changed = incoming.rag_config is not None and _stored_values_changed(
+        current.rag_config or {}, incoming.rag_config
+    )
+    source_changed = current.sync_source_id != incoming.sync_source_id
+    file_sync_settings_changed = incoming.type in FILE_SYNC_KB_TYPES and (rag_config_changed or source_changed)
+    return "clear" if type_changed or file_sync_settings_changed else "update"
 
 
 class AgentRAGServiceManager:
@@ -153,6 +180,17 @@ class AgentRAGServiceManager:
 
         return await service.delete_document(doc_id)
 
+    async def _clear_documents(self, kb_obj: KBRead) -> None:
+        """Delete every document of a knowledge base."""
+        service = await self.get_service(kb_obj)
+        if not service:
+            logger.warning(f"Could not get service for KB {kb_obj.id}")
+            return
+        existing_ids = await service.get_document_ids()
+        if existing_ids:
+            delete_result = await bulk_delete_documents(service, existing_ids)
+            logger.debug(f"KB document deletion results: {delete_result}")
+
     async def search(
         self,
         kb_objects: List[KBRead],
@@ -261,9 +299,11 @@ class AgentRAGServiceManager:
             # Use first item to get service
             representative_item = items[0]
 
-            # Leave Zendesk and Salesforce KBs untouched because their sync tasks own them.
+            # Synced KBs are filled by their sync tasks; a save only clears them when asked to.
             kb_type = getattr(representative_item, "type", "")
             if kb_type in SYNC_OWNED_KB_TYPES:
+                if action == "clear":
+                    await self._clear_documents(representative_item)
                 logger.info(
                     f"Skipping generic RAG load for {kb_type} KB {kb_id}; "
                     "handled by its sync task"

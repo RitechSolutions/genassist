@@ -16,7 +16,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import set_url_content_if_no_rag
-from app.modules.data.manager import AgentRAGServiceManager
+from app.modules.data.manager import AgentRAGServiceManager, save_load_action
 from app.modules.data.providers.legra import (
     FaissFlatIndexer,
     HuggingFaceGenerator,
@@ -181,6 +181,7 @@ async def update_knowledge_item(
         await set_url_content_if_no_rag(item)
 
     clear_copy_dates_on_content_change(current_item, item)
+    load_action = save_load_action(current_item, item)
     result = await knowledge_service.update(item_id, item)
 
     # Enrich files with storage metadata when using remote providers (S3, etc.)
@@ -192,7 +193,7 @@ async def update_knowledge_item(
     await rag_manager.cleanup_service(str(item_id))
 
     # Load knowledge item using simplified manager
-    schedule_rag_load(rag_manager, result, action="update")
+    schedule_rag_load(rag_manager, result, action=load_action)
     return result
 
 
