@@ -1560,8 +1560,25 @@ class TrainModelNode(BaseNode):
             fail(f"column '{column}' holds numbers, not dates or times (e.g. 2024-03-15 or 2024-03-15 14:30)")
 
         splits = {"training": X_train, "validation": X_val}
+        # One day/month order for the whole column (both splits), saved with
+        # the step so prediction reads values like 01/02/2024 the same way.
+        all_values = pd.concat([split[column] for split in splits.values() if split is not None])
+        date_order = ml_utils.numeric_date_order(all_values)
+        if date_order["order"] == "mixed":
+            fail(
+                f"'{column}' mixes day-first and month-first dates, e.g. "
+                f"{date_order['day_first_example']!r} (day first) and "
+                f"{date_order['month_first_example']!r} (month first) - write them all one way, "
+                f"ideally as YYYY-MM-DD"
+            )
+        if date_order["order"] == "ambiguous":
+            fail(
+                f"the dates in '{column}' (e.g. 01/02/2024) could be day-first or month-first, and no value "
+                f"shows which - write them as YYYY-MM-DD, or include a date with a day over 12"
+            )
+        day_first = date_order["order"] == "day_first"
         parsed = {
-            name: ml_utils.parse_datetime_values(split[column]).set_axis(split.index)
+            name: ml_utils.parse_datetime_values(split[column], day_first=day_first).set_axis(split.index)
             for name, split in splits.items() if split is not None
         }
         for name, values in parsed.items():
@@ -1603,6 +1620,7 @@ class TrainModelNode(BaseNode):
             "column": column,
             "parts": parts,
             "output_columns": output_columns,
+            "day_first": day_first,
         }
 
     @staticmethod

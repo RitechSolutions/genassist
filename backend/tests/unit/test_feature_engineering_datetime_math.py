@@ -117,6 +117,62 @@ class TestDatetimeFeatures:
         replayed = _replay_feature_engineering({"ts": ["2024-03-15T23:30:00+02:00"]}, steps, 1)
         assert [replayed["t_day"][0], replayed["t_hour"][0]] == [15, 21]
 
+    def test_day_first_dates_read_day_first_in_every_row_and_at_prediction(self, node):
+        # 13/02/2024 shows the column is day first, so 01/02/2024 is 1 February.
+        X_train = _dates(["01/02/2024", "13/02/2024"])
+        X_val = _dates(["05/03/2024"])
+        X_train2, X_val2, steps = _fe(node, X_train, X_val, {
+            "newColumnName": "d", "strategy": "datetime_features", "datetimeColumn": "ts",
+            "datetimeParts": ["month", "day"],
+        })
+
+        assert X_train2[["d_month", "d_day"]].values.tolist() == [[2, 1], [2, 13]]
+        assert X_val2[["d_month", "d_day"]].values.tolist() == [[3, 5]]
+        assert steps[0]["day_first"] is True
+
+        # One ambiguous value at prediction is still read day first.
+        replayed = _replay_feature_engineering({"ts": ["01/02/2024"]}, steps, 1)
+        assert [replayed["d_month"][0], replayed["d_day"][0]] == [2, 1]
+
+    def test_month_first_dates_and_year_first_dates_are_unchanged(self, node):
+        X_train2, _, steps = _fe(node, _dates(["01/02/2024", "02/13/2024", "2024-03-04"]), None, {
+            "newColumnName": "d", "strategy": "datetime_features", "datetimeColumn": "ts",
+            "datetimeParts": ["month", "day"],
+        })
+        assert X_train2[["d_month", "d_day"]].values.tolist() == [[1, 2], [2, 13], [3, 4]]
+        assert steps[0]["day_first"] is False
+
+    def test_day_first_does_not_change_year_first_dates(self, node):
+        X_train2, _, _ = _fe(node, _dates(["13/02/2024", "2024-03-04", "2024-03-04T10:00:00+02:00"]), None, {
+            "newColumnName": "d", "strategy": "datetime_features", "datetimeColumn": "ts",
+            "datetimeParts": ["month", "day"],
+        })
+        assert X_train2[["d_month", "d_day"]].values.tolist() == [[2, 13], [3, 4], [3, 4]]
+
+    @pytest.mark.parametrize(
+        "train, val, problem",
+        [
+            (["13/02/2024", "02/13/2024"], None, "mixes day-first and month-first dates"),
+            # The day-first value is only in the validation data.
+            (["02/13/2024"], ["13/02/2024"], "mixes day-first and month-first dates"),
+            (["01/02/2024", "03/04/2024"], None, "could be day-first or month-first"),
+        ],
+    )
+    def test_dates_whose_day_and_month_order_is_unclear_are_refused(self, node, train, val, problem):
+        with pytest.raises(AppException) as exc_info:
+            _fe(node, _dates(train), _dates(val) if val else None, {
+                "newColumnName": "d", "strategy": "datetime_features", "datetimeColumn": "ts",
+            })
+        assert problem in exc_info.value.error_detail
+
+    def test_a_model_saved_before_the_date_order_was_recorded_reads_month_first(self):
+        steps = [{
+            "strategy": "datetime_features", "new_col": "d", "column": "ts",
+            "parts": ["month", "day"], "output_columns": ["d_month", "d_day"],
+        }]
+        replayed = _replay_feature_engineering({"ts": ["01/02/2024"]}, steps, 1)
+        assert [replayed["d_month"][0], replayed["d_day"][0]] == [1, 2]
+
     def test_a_numeric_column_is_refused(self, node):
         with pytest.raises(AppException) as exc_info:
             _fe(node, pd.DataFrame({"ts": [20240316, 20240402]}), None, {
