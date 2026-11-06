@@ -9,11 +9,14 @@ and creating SalesForce **Case** records.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 import httpx
 from fastapi import HTTPException
+from email.utils import parseaddr
+
+from email_validator import EmailNotValidError, validate_email
 
 from app.core.config.settings import settings
 
@@ -26,6 +29,8 @@ SUBJECT_MAX_LENGTH = 255
 DESCRIPTION_MAX_LENGTH = 32000
 SUBJECT_TRUNCATION_NOTE = "..."
 DESCRIPTION_TRUNCATION_NOTE = "\n\n[truncated]"
+CONTACT_FIELD_MAX_LENGTHS = {"SuppliedEmail": 80, "SuppliedName": 80, "SuppliedPhone": 40}
+MISSING_VALUE_TEXTS = {"null", "none", "undefined"}
 
 
 def _salesforce_length(text: str) -> int:
@@ -42,19 +47,81 @@ def _fit_to_length(text: str, max_length: int, note: str) -> str:
     return kept + note
 
 
+def _email_address(value: str) -> Optional[str]:
+    """The plain ASCII address in ``value`` (``Dr. Jane <jane@acme.com>`` gives ``jane@acme.com``), or None when invalid."""
+    _, address = parseaddr(value)
+    try:
+        ascii_address = validate_email(address, check_deliverability=False).ascii_email
+    except EmailNotValidError:
+        return None
+    address_fits = bool(ascii_address) and _salesforce_length(ascii_address) <= CONTACT_FIELD_MAX_LENGTHS["SuppliedEmail"]
+    return ascii_address if address_fits else None
+
+
+def clean_contact_fields(contact_fields: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    """Contact fields SalesForce accepts: missing values and invalid emails are left out, the rest is cut to length."""
+    cleaned: Dict[str, str] = {}
+    for field, value in (contact_fields or {}).items():
+        text = str(value if value is not None else "").strip()
+        is_missing = not text or text.lower() in MISSING_VALUE_TEXTS
+        if is_missing:
+            continue
+        if field == "SuppliedEmail":
+            address = _email_address(text)
+            if address is None:
+                logger.warning(
+                    "SalesForce Case: SuppliedEmail left out because it is not a valid email address of at most 80 characters"
+                )
+                continue
+            text = address
+        elif field in CONTACT_FIELD_MAX_LENGTHS:
+            text = _fit_to_length(text, CONTACT_FIELD_MAX_LENGTHS[field], "")
+        cleaned[field] = text
+    return cleaned
+
+
+_CHECKED_FIELD_BY_LOWER_NAME = {
+    name.lower(): name for name in ("Subject", "Description", *CONTACT_FIELD_MAX_LENGTHS)
+}
+
+
+def _split_custom_fields(
+    custom_fields: Optional[List[Dict[str, Any]]],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Custom fields split into other fields and contact fields.
+
+    SalesForce field names ignore case, so fields this module checks are matched ignoring case and
+    stored under their SalesForce name.
+    """
+    other_fields: Dict[str, Any] = {}
+    contact_fields: Dict[str, Any] = {}
+    for field in custom_fields or []:
+        key = field.get("key")
+        if not key:
+            continue
+        checked_name = _CHECKED_FIELD_BY_LOWER_NAME.get(str(key).strip().lower())
+        is_contact_field = checked_name in CONTACT_FIELD_MAX_LENGTHS
+        if is_contact_field:
+            contact_fields[checked_name] = field.get("value")
+        else:
+            other_fields[checked_name or key] = field.get("value")
+    return other_fields, contact_fields
+
+
 def build_case_payload(
     subject: Any,
     description: Any,
     custom_fields: Optional[List[Dict[str, Any]]] = None,
     contact_fields: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """Case fields as sent: custom fields, then contact fields, then Subject and Description cut to length."""
-    payload: Dict[str, Any] = {"Subject": subject, "Description": description}
-    for field in custom_fields or []:
-        key = field.get("key")
-        if key:
-            payload[key] = field.get("value")
-    payload.update(contact_fields or {})
+    """Case fields as sent: custom fields, then contact fields, then Subject and Description cut to length.
+
+    Contact fields set as custom fields are cleaned the same way; a usable box value wins over them.
+    """
+    other_fields, contact_from_custom_fields = _split_custom_fields(custom_fields)
+    payload: Dict[str, Any] = {"Subject": subject, "Description": description, **other_fields}
+    payload.update(clean_contact_fields(contact_from_custom_fields))
+    payload.update(clean_contact_fields(contact_fields))
     payload["Subject"] = _fit_to_length(str(payload["Subject"]), SUBJECT_MAX_LENGTH, SUBJECT_TRUNCATION_NOTE)
     payload["Description"] = _fit_to_length(
         str(payload["Description"]), DESCRIPTION_MAX_LENGTH, DESCRIPTION_TRUNCATION_NOTE
@@ -149,9 +216,9 @@ class SalesforceConnector:
                 ) from e
             except httpx.RequestError as e:
                 logger.error(
-                    "SalesForce network error (check worker outbound access, proxy, DNS): %s",
+                    "SalesForce network error (check worker outbound access, proxy, DNS): %s: %s",
+                    type(e).__name__,
                     e,
-                    exc_info=True,
                 )
                 raise HTTPException(
                     status_code=500,

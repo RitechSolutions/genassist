@@ -532,3 +532,121 @@ async def test_failed_read_keeps_salesforce_message():
             await _connector()._make_request("GET", url)
 
     assert "No such column 'Body__c'" in raised.value.detail
+
+
+@pytest.mark.parametrize(
+    "contact_fields, expected",
+    [
+        ({"SuppliedEmail": "null", "SuppliedName": "None", "SuppliedPhone": "undefined"}, {}),
+        ({"SuppliedEmail": "guest"}, {}),
+        ({"SuppliedEmail": "n/a"}, {}),
+        ({"SuppliedEmail": "alice%40example.com"}, {}),
+        ({"SuppliedEmail": "jürgen@例え.jp"}, {}),
+        ({"SuppliedEmail": "a.b+tag@sub.example.co.uk"}, {"SuppliedEmail": "a.b+tag@sub.example.co.uk"}),
+        ({"SuppliedEmail": "a" * 69 + "@example.com"}, {}),
+        ({"SuppliedEmail": " alice@example.com "}, {"SuppliedEmail": "alice@example.com"}),
+        ({"SuppliedEmail": "Jane <jane@acme.com>"}, {"SuppliedEmail": "jane@acme.com"}),
+        ({"SuppliedEmail": '"Jane" <jane@acme.com>'}, {"SuppliedEmail": "jane@acme.com"}),
+        ({"SuppliedEmail": "<jane@acme.com>"}, {"SuppliedEmail": "jane@acme.com"}),
+        ({"SuppliedEmail": "Jürgen <j@example.com>"}, {"SuppliedEmail": "j@example.com"}),
+        ({"SuppliedEmail": "Dr. Jane Doe <jane@acme.com>"}, {"SuppliedEmail": "jane@acme.com"}),
+        ({"SuppliedEmail": "Jane Doe (Acme) <jane@acme.com>"}, {"SuppliedEmail": "jane@acme.com"}),
+        ({"SuppliedEmail": "jane@xn--mnchen-3ya.de"}, {"SuppliedEmail": "jane@xn--mnchen-3ya.de"}),
+        ({"SuppliedEmail": "jane@münchen.de"}, {"SuppliedEmail": "jane@xn--mnchen-3ya.de"}),
+        ({"SuppliedEmail": "jane@acme.com, bob@acme.com"}, {}),
+        ({"SuppliedEmail": "jane@corp.local"}, {}),
+        ({"SuppliedEmail": "qa@example.test"}, {}),
+        ({"SuppliedName": "N" * 100}, {"SuppliedName": "N" * 80}),
+        ({"SuppliedPhone": "+1 555 0100 ext 22, call after 5pm 📞 mobile"}, {"SuppliedPhone": "+1 555 0100 ext 22, call after 5pm 📞 mo"}),
+        ({"SuppliedName": None, "SuppliedPhone": ""}, {}),
+    ],
+)
+def test_contact_fields_are_cleaned_before_sending(contact_fields, expected):
+    from app.modules.integration.salesforce import clean_contact_fields
+
+    assert clean_contact_fields(contact_fields) == expected
+
+
+@pytest.mark.asyncio
+async def test_case_with_unusable_contact_boxes_is_still_sent():
+    connector = _connector()
+
+    async def _fake_request(method, url, json=None, data=None, headers=None, timeout=10.0):
+        if url.endswith("/services/oauth2/token"):
+            return _TOKEN_RESPONSE
+        return {"id": "500AB", "success": True}
+
+    with patch.object(connector, "_make_request", new_callable=AsyncMock, side_effect=_fake_request) as mock_request:
+        result = await connector.create_case(
+            subject="Refund",
+            description="Customer asked about a refund",
+            contact_fields={"SuppliedEmail": "guest", "SuppliedName": "null", "SuppliedPhone": "5" * 60},
+        )
+
+    body = mock_request.await_args_list[1].kwargs["json"]
+    assert result["status"] == 200
+    assert "SuppliedEmail" not in body
+    assert "SuppliedName" not in body
+    assert body["SuppliedPhone"] == "5" * 40
+
+
+@pytest.mark.asyncio
+async def test_network_error_log_has_no_request_details():
+    import httpx
+
+    url = "https://myorg.my.salesforce.com/services/data/v60.0/sobjects/Case"
+    connector = _connector()
+
+    with patch.object(httpx.AsyncClient, "request", new=AsyncMock(side_effect=httpx.ReadTimeout("timed out"))), patch(
+        "app.modules.integration.salesforce.logger"
+    ) as logger:
+        with pytest.raises(HTTPException) as raised:
+            await connector._make_request("POST", url, json={"Description": "Customer Jane Doe says: card charged twice"})
+
+    assert raised.value.status_code == 500
+    call = logger.error.call_args
+    assert "exc_info" not in call.kwargs
+    logged = " ".join(str(arg) for arg in call.args)
+    assert "ReadTimeout" in logged
+    assert "Jane Doe" not in logged
+
+
+@pytest.mark.parametrize(
+    "custom_fields, contact_fields, expected",
+    [
+        ([{"key": "SuppliedEmail", "value": "null"}, {"key": "SuppliedName", "value": "N" * 200}], None, {"SuppliedName": "N" * 80}),
+        ([{"key": "SuppliedEmail", "value": "Jane <jane@acme.com>"}], None, {"SuppliedEmail": "jane@acme.com"}),
+        ([{"key": "SuppliedEmail", "value": "custom@example.com"}], {"SuppliedEmail": "guest"}, {"SuppliedEmail": "custom@example.com"}),
+        ([{"key": "SuppliedEmail", "value": "bad"}], {"SuppliedEmail": "also bad"}, {}),
+        ([{"key": "SuppliedEmail", "value": "custom@example.com"}], {"SuppliedEmail": "box@example.com"}, {"SuppliedEmail": "box@example.com"}),
+        ([{"key": "SuppliedPhone", "value": "5" * 60}], {"SuppliedPhone": "null"}, {"SuppliedPhone": "5" * 40}),
+        ([{"key": "suppliedemail", "value": "guest"}], {"SuppliedEmail": "Jane <jane@acme.com>"}, {"SuppliedEmail": "jane@acme.com"}),
+        ([{"key": " SUPPLIEDNAME ", "value": "N" * 120}], None, {"SuppliedName": "N" * 80}),
+        ([{"key": "suppliedEmail", "value": "custom@example.com"}], {"SuppliedEmail": "null"}, {"SuppliedEmail": "custom@example.com"}),
+    ],
+)
+def test_contact_fields_from_custom_fields_are_cleaned_and_a_usable_box_wins(custom_fields, contact_fields, expected):
+    from app.modules.integration.salesforce import build_case_payload
+
+    payload = build_case_payload("Subject", "Description", custom_fields, contact_fields)
+
+    assert {k: v for k, v in payload.items() if k.startswith("Supplied")} == expected
+
+
+@pytest.mark.parametrize("key", ["description", " DESCRIPTION ", "Description"])
+def test_description_custom_field_in_any_case_is_cut_to_length(key):
+    from app.modules.integration.salesforce import _salesforce_length, build_case_payload
+
+    payload = build_case_payload("Subject", "Short", [{"key": key, "value": "x" * 40000}])
+
+    assert [k for k in payload if k.strip().lower() == "description"] == ["Description"]
+    assert _salesforce_length(payload["Description"]) == 32000
+
+
+def test_subject_custom_field_in_any_case_is_cut_to_length():
+    from app.modules.integration.salesforce import build_case_payload
+
+    payload = build_case_payload("Short", "Description", [{"key": "subject", "value": "s" * 300}])
+
+    assert [k for k in payload if k.lower() == "subject"] == ["Subject"]
+    assert len(payload["Subject"]) == 255
