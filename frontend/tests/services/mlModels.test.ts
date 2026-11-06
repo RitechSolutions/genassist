@@ -19,6 +19,7 @@ import {
   updateMLModel,
   deleteMLModel,
   analyzeCSV,
+  analyzeTrainingFile,
   previewQuery,
   profileData,
 } from "@/services/mlModels";
@@ -162,6 +163,39 @@ describe("analyzeCSV", () => {
 
     await expect(analyzeCSV("http://x/file.csv")).rejects.toThrow(
       "The CSV file could not be decoded as UTF-8.",
+    );
+  });
+});
+
+describe("analyzeTrainingFile", () => {
+  it("previews a training file", async () => {
+    const result = { row_count: 1, column_count: 1, column_names: ["id"], sample_data: [{ id: 1 }], columns_info: [] };
+    mockApiRequest.mockResolvedValue(result as never);
+
+    await expect(analyzeTrainingFile({ file_id: "f1", file_name: "data.csv" })).resolves.toBe(result);
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "ml-models/analyze-file",
+      { file_id: "f1", file_name: "data.csv" },
+      { timeout: API_PREPROCESSING_TIMEOUT_MS },
+    );
+  });
+
+  it("surfaces the backend detail, e.g. a repeated column name", async () => {
+    const detail = "The CSV file has two columns named 'id'. Give every column a unique name and upload the file again.";
+    mockApiRequest.mockRejectedValue({
+      message: "Request failed with status code 400",
+      response: { data: { detail } },
+    });
+
+    await expect(analyzeTrainingFile({ file_id: "f1", file_name: "data.csv" })).rejects.toThrow(detail);
+  });
+
+  it("uses a clear fallback when the backend provides no detail", async () => {
+    mockApiRequest.mockRejectedValue(new Error("Request failed with status code 500"));
+
+    await expect(analyzeTrainingFile({ file_id: "f1", file_name: "data.csv" })).rejects.toThrow(
+      "The file preview could not be generated. Please try again.",
     );
   });
 });

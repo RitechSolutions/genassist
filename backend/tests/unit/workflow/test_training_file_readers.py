@@ -13,6 +13,7 @@ import pytest
 from openpyxl import Workbook
 
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.error_policy import client_safe_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml.train_data_source_node import TrainDataSourceNode
@@ -531,6 +532,20 @@ async def test_csv_value_under_a_trailing_unnamed_column_is_refused(monkeypatch,
 
     assert run.error_detail == preview.error_detail
     assert "Line 3 has a value in column 4" in run.error_detail
+    # The API shows only allow-listed details; anything else becomes "Invalid file format."
+    assert client_safe_error_detail(run) == run.error_detail
+
+
+@pytest.mark.asyncio
+async def test_csv_row_with_more_values_than_the_header_reaches_the_client(monkeypatch, tmp_path):
+    path = tmp_path / "wide.csv"
+    path.write_text("price,size\n10,M\n12,L,x\n", encoding="utf-8")
+
+    run, preview = await _run_and_preview_errors(monkeypatch, tmp_path, path)
+
+    assert run.error_detail == preview.error_detail
+    assert "Line 3 has more values than the header has columns" in run.error_detail
+    assert client_safe_error_detail(run) == run.error_detail
 
 
 @pytest.mark.asyncio
