@@ -1091,7 +1091,7 @@ async def iter_csv_chunks(
                     continue
                 if len(row) > len(header):
                     raise AppException(
-                        error_key=ErrorKey.INVALID_FILE_FORMAT,
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
                         error_detail=(
                             f"Line {reader.line_num} has more values than the header has columns."
                         ),
@@ -1099,7 +1099,7 @@ async def iter_csv_chunks(
                 unnamed = next((i for i in range(width, len(row)) if row[i].strip()), None)
                 if unnamed is not None:
                     raise AppException(
-                        error_key=ErrorKey.INVALID_FILE_FORMAT,
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
                         error_detail=(
                             f"Line {reader.line_num} has a value in column {unnamed + 1}, which "
                             "has no name in the header. Name the column or delete it, and "
