@@ -1,13 +1,12 @@
 import React, { useRef, useState } from "react";
 import { defaultFilter } from "cmdk";
-import { AlertCircle, Check, CheckCircle2, ChevronDown } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/button";
 import {
   Command,
   CommandEmpty,
   CommandGroup,
   CommandInput,
-  CommandItem,
   CommandList,
 } from "@/components/command";
 import {
@@ -42,6 +41,7 @@ import {
   ReferenceTarget,
   acceptedTargets,
 } from "../utils/workflowReferences";
+import { PickerFooter, TargetOption } from "./TargetMultiSelectParts";
 
 const KEEP = "__keep__";
 const NONE_AVAILABLE = "None in this environment";
@@ -125,31 +125,18 @@ const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, la
           <CommandList>
             <CommandEmpty>No matches</CommandEmpty>
             <CommandGroup>
-              {value.length > 0 && (
-                <CommandItem value={KEEP} keywords={["None"]} onSelect={() => onChange([])}>
-                  <span className="pl-6">None</span>
-                </CommandItem>
-              )}
               {options.map((target) => (
-                <CommandItem
+                <TargetOption
                   key={target.id}
-                  value={target.id}
-                  keywords={[target.label]}
-                  onSelect={() => toggle(target.id)}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4 shrink-0",
-                      value.includes(target.id) ? "opacity-100" : "opacity-0"
-                    )}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">{target.label}</span>
-                </CommandItem>
+                  target={target}
+                  checked={value.includes(target.id)}
+                  onToggle={() => toggle(target.id)}
+                />
               ))}
             </CommandGroup>
           </CommandList>
         </Command>
+        <PickerFooter onClear={() => onChange([])} onDone={() => setOpen(false)} />
       </PopoverContent>
     </Popover>
   );
