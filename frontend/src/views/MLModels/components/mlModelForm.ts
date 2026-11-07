@@ -3,6 +3,76 @@ import { extractErrorMessage } from '@/helpers/apiError';
 
 type FeatureDefault = string | number | boolean;
 
+const jsonStringList = (text: string): string[] | null => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    // Names are kept exactly as quoted; featuresText relies on this to show any list.
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const readFeatures = (raw: string): { names: string[]; broken: boolean } => {
+  const text = raw.trim();
+  // A JSON array is read whole, so a quoted name may itself contain a comma.
+  const json = text.startsWith('[') ? jsonStringList(text) : null;
+  const names =
+    json ??
+    text
+      .replace(/^\[([\s\S]*)\]$/, '$1')
+      .split(',')
+      .map((value) => {
+        const name = value.trim();
+        const quote = name[0];
+        return name.length >= 2 && (quote === "'" || quote === '"') && name.endsWith(quote)
+          ? name.slice(1, -1).trim()
+          : name;
+      });
+  return {
+    names: [...new Set(names.filter((name) => name.trim()))],
+    // Outside a valid JSON list, a leftover bracket or double quote means a list
+    // was mistyped (e.g. text after `]`), not that a name really contains it.
+    broken: !json && names.some((name) => /["[\]]/.test(name)),
+  };
+};
+
+/**
+ * Reads the Features text box: plain comma-separated names, or a list copied from
+ * Python/JSON such as `'x', 'y'` or `["x", "y"]`. Order is kept; blanks and repeated
+ * names are dropped, as the tag input this box replaced did.
+ */
+export const parseModelFeatures = (raw: string): string[] => readFeatures(raw).names;
+
+/** The validation message for a Features box that can't be read reliably, or null. */
+export const featureListError = (raw: string): string | null =>
+  readFeatures(raw).broken
+    ? 'Check the brackets and quotes, or write plain names separated by commas.'
+    : null;
+
+// A name the plain comma form would change: commas, quotes, brackets, line breaks or
+// outer spaces.
+const needsQuoting = (name: string): boolean =>
+  /[,'"[\]\r\n\t]/.test(name) || name !== name.trim();
+
+/**
+ * How stored features are shown in the Features box: `a, b, c`, or a JSON list when a
+ * name would not survive that form, so parseModelFeatures reads back the same names.
+ */
+export const featuresText = (features: string[] | null | undefined): string => {
+  const list = features ?? [];
+  return list.some(needsQuoting) ? JSON.stringify(list) : list.join(', ');
+};
+
+/**
+ * The features to save. While the box still shows the stored list, that list is sent
+ * exactly as stored, so editing another field never rewrites the model's features.
+ */
+export const formFeatures = (raw: string, stored?: string[] | null): string[] =>
+  stored && raw === featuresText(stored) ? [...stored] : parseModelFeatures(raw);
+
 export const usesTrainingFills = (params: MLModel['inference_params']): boolean =>
   params?.useTrainingFills === true;
 
