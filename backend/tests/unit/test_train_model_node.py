@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from app.core.exceptions.exception_classes import AppException
+from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml.train_model_node import (
     TREE_BASED_MODEL_TYPES,
@@ -253,8 +254,11 @@ class TestCategoricalEncodingEndToEnd:
 
         assert result["success"] is True
         assert "accuracy" in result["metrics"]
+        # The output names the model file inside the data volume, not the server path (TDS-24).
+        assert result["model_file_path"].startswith("ml_models/")
+        assert str(DATA_VOLUME) not in result["model_file_path"]
 
-        with open(result["model_file_path"], "rb") as f:
+        with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
             payload = pickle.load(f)
         metadata = payload["metadata"]
 
@@ -352,7 +356,7 @@ class TestTargetTransformEndToEnd:
         assert result["success"] is True
         assert result["metrics"]["r2_score"] > 0.5
 
-        with open(result["model_file_path"], "rb") as f:
+        with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
             payload = pickle.load(f)
         metadata = payload["metadata"]
         assert metadata["target_transform"] == {"type": "ratio", "baselineColumn": "baseline"}
