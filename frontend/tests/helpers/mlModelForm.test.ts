@@ -5,8 +5,95 @@ import {
   featureDefaultsChanged,
   inferenceParamsUpdate,
   latestInferenceParams,
+  featureListError,
+  featuresText,
+  formFeatures,
   mlModelSaveErrorMessage,
+  parseModelFeatures,
 } from '@/views/MLModels/components/mlModelForm';
+
+describe('parseModelFeatures', () => {
+  it.each([
+    ['year, month, dow', ['year', 'month', 'dow']],
+    ['x,y', ['x', 'y']],
+    ["'x', 'y'", ['x', 'y']],
+    ['"x", "y"', ['x', 'y']],
+    ["['x', 'y']", ['x', 'y']],
+    ['["x", "y"]', ['x', 'y']],
+    ["year, month, dow,", ['year', 'month', 'dow']],
+    [" 'hour_cos', 'hour_sin', 'sessions', ", ['hour_cos', 'hour_sin', 'sessions']],
+    ["O'Brien, customer_age", ["O'Brien", 'customer_age']],
+    [" , , ", []],
+    ["'', \"\"", []],
+    ['', []],
+    ['hour, dow, hour', ['hour', 'dow']],
+    ["'hour', 'dow', 'hour'", ['hour', 'dow']],
+    ['["a,b", "c"]', ['a,b', 'c']],
+    ['["say \\"hi\\"", "x"]', ['say "hi"', 'x']],
+    ['["x", "x", " "]', ['x']],
+  ])('reads %j in order', (raw, expected) => {
+    expect(parseModelFeatures(raw)).toEqual(expected);
+  });
+});
+
+describe('featuresText', () => {
+  it('shows ordinary names as a plain comma list', () => {
+    expect(featuresText(['year', 'month', 'dow'])).toBe('year, month, dow');
+    expect(featuresText(null)).toBe('');
+  });
+
+  it.each([
+    [['a,b', 'year']],
+    [[' padded', 'year']],
+    [["O'Brien", 'x']],
+    [['"quoted"', 'x']],
+    [['[x]']],
+    [['line\nbreak', 'x']],
+    [['year', 'month', 'dow']],
+  ])('reads %j back exactly', (stored) => {
+    expect(parseModelFeatures(featuresText(stored))).toEqual(stored);
+  });
+
+  it('keeps an odd name intact when another feature is added', () => {
+    expect(parseModelFeatures(featuresText(['a,b', 'year']).replace(/]$/, ', "month"]'))).toEqual([
+      'a,b',
+      'year',
+      'month',
+    ]);
+  });
+});
+
+describe('featureListError', () => {
+  it.each([
+    ['["a,b","year"], month'],
+    ['["a", "b]'],
+    ['["a", "b"'],
+  ])('rejects the mistyped list %j', (raw) => {
+    expect(featureListError(raw)).toMatch(/brackets and quotes/);
+  });
+
+  it.each([
+    ['year, month'],
+    ["['x', 'y']"],
+    ['["a,b", "c"]'],
+    ["O'Brien, x"],
+    [''],
+  ])('accepts %j', (raw) => {
+    expect(featureListError(raw)).toBeNull();
+  });
+});
+
+describe('formFeatures', () => {
+  it('sends the stored list unchanged while the box still shows it', () => {
+    const stored = [' ', 'x', 'x'];
+    expect(formFeatures(featuresText(stored), stored)).toEqual(stored);
+  });
+
+  it('reads the box once it has been edited', () => {
+    expect(formFeatures('x, y', ['x'])).toEqual(['x', 'y']);
+    expect(formFeatures("'x', 'y'", null)).toEqual(['x', 'y']);
+  });
+});
 
 describe('buildInferenceParams', () => {
   it('applies changed defaults to the latest model settings', () => {
