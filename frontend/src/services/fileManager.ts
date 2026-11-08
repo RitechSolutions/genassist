@@ -115,6 +115,15 @@ export const listFiles = async (
   return apiRequest<FileRecord[]>("GET", `file-manager/files${q ? `?${q}` : ""}`);
 };
 
+/** One file's record (name, size, …). Null when it can't be read, e.g. 403 or a failed request. */
+export const getFileManagerFile = async (fileId: string): Promise<FileRecord | null> => {
+  try {
+    return await apiRequest<FileRecord>("GET", `file-manager/files/${fileId}`);
+  } catch {
+    return null;
+  }
+};
+
 export const getFileBase64 = async (fileId: string): Promise<FileBase64Response | null> => {
   return apiRequest<FileBase64Response>("GET", `file-manager/files/${fileId}/base64`);
 };
