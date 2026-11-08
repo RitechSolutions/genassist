@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 from app.core.config.settings import file_storage_settings
 from app.db.models import StorageProvider
 from app.modules.data.utils import FileTextExtractor
-from app.schemas.agent_knowledge import KBRead
+from app.schemas.agent_knowledge import KBBase, KBRead
 
 from .providers import SearchResult
 from .service import AgentRAGService
@@ -25,7 +25,89 @@ from .utils.doc import bulk_delete_documents, format_search_results
 
 logger = logging.getLogger(__name__)
 
-SYNC_OWNED_KB_TYPES = ("zendesk", "salesforce")
+ARTICLE_SYNC_KB_TYPES = ("zendesk", "salesforce")
+FILE_SYNC_KB_TYPES = ("s3", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket")
+SYNC_OWNED_KB_TYPES = ARTICLE_SYNC_KB_TYPES + FILE_SYNC_KB_TYPES
+
+
+EMBEDDING_STORAGE_FIELDS = ("type", "model_name", "model_id", "max_length", "normalize_embeddings")
+LEGRA_STORAGE_FIELDS = (
+    "enabled", "embedding_model", "min_sents", "max_sents", "min_sent_length", "n_neighbors", "metric",
+    "cluster_resolution", "working_dir",
+)
+LIGHTRAG_STORAGE_FIELDS = (
+    "enabled", "working_dir", "embedding_func_name", "llm_model_func_name", "chunk_token_size",
+    "chunk_overlap_token_size", "vector_storage", "vector_db_storage_cls_kwargs",
+)
+
+
+def _pick(section: Optional[Dict[str, Any]], fields: tuple) -> Optional[Dict[str, Any]]:
+    return {field: section.get(field) for field in fields} if section else None
+
+
+def _vector_storage_setup(vector: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Vector settings that decide what is stored and where; pgvector always uses the tenant database."""
+    if not vector:
+        return None
+    database = vector["vector_db"]
+    uses_own_server = database["type"] != "pgvector"
+    database_fields = ("type", "collection_name") + (("host", "port", "persist_directory") if uses_own_server else ())
+    return {
+        "enabled": vector["enabled"],
+        "chunking": vector["chunking"],
+        "embedding": _pick(vector["embedding"], EMBEDDING_STORAGE_FIELDS),
+        "vector_db": _pick(database, database_fields),
+    }
+
+
+def _stored_content_setup(rag_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The settings a KB's stored documents depend on; settings only used when searching are left out."""
+    setup = AgentRAGService.from_kb_config("", rag_config).config.model_dump()
+    return {
+        "vector": _vector_storage_setup(setup.get("vector_config")),
+        "legra": _pick(setup.get("legra_config"), LEGRA_STORAGE_FIELDS),
+        "lightrag": _pick(setup.get("lightrag_config"), LIGHTRAG_STORAGE_FIELDS),
+    }
+
+
+def _rag_config_changed(stored: Optional[Dict[str, Any]], incoming: Dict[str, Any]) -> bool:
+    """True when the saved settings change what the KB stores; unreadable settings count as unchanged."""
+    try:
+        return _stored_content_setup(stored) != _stored_content_setup(incoming)
+    except Exception:
+        return False
+
+
+def _first_url(urls: Optional[List[str]]) -> Optional[str]:
+    return urls[0] if urls else None
+
+
+def _file_sync_source_changed(current: KBRead, incoming: KBBase) -> bool:
+    """True when a save points a file-synced KB at another data source or SharePoint site."""
+    source_changed = incoming.sync_source_id is not None and current.sync_source_id != incoming.sync_source_id
+    site_given = incoming.type == "sharepoint" and incoming.urls is not None
+    site_changed = site_given and _first_url(current.urls) != _first_url(incoming.urls)
+    return source_changed or site_changed
+
+
+def save_load_action(current: KBRead, incoming: KBBase) -> str:
+    """Return "clear" when a save makes a synced KB's documents outdated, otherwise "update"."""
+    if incoming.type not in SYNC_OWNED_KB_TYPES:
+        return "update"
+    type_changed = current.type != incoming.type
+    rag_config_changed = incoming.rag_config is not None and _rag_config_changed(current.rag_config, incoming.rag_config)
+    file_sync_inputs_changed = incoming.type in FILE_SYNC_KB_TYPES and (
+        rag_config_changed or _file_sync_source_changed(current, incoming)
+    )
+    return "clear" if type_changed or file_sync_inputs_changed else "update"
+
+
+def _service_setup(kb_id: str, rag_config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The full setup a KB's service is built from; None when the settings cannot be read."""
+    try:
+        return AgentRAGService.from_kb_config(kb_id, rag_config).config.model_dump()
+    except Exception:
+        return None
 
 
 class AgentRAGServiceManager:
@@ -42,9 +124,18 @@ class AgentRAGServiceManager:
 
     def __init__(self):
         self._services: Dict[str, AgentRAGService] = {}
+        self._service_setups: Dict[str, Optional[Dict[str, Any]]] = {}
         self._initialization_locks: Dict[str, asyncio.Lock] = {}
         self._lock = asyncio.Lock()
         logger.info("AgentRAGServiceManager initialized")
+
+    def _cached_service_is_current(self, kb_id: str, requested_setup: Optional[Dict[str, Any]]) -> bool:
+        """True when the cached service is ready and was built from the settings the KB has now."""
+        service = self._services.get(kb_id)
+        if not service or not service.is_initialized():
+            return False
+        settings_unreadable = requested_setup is None
+        return settings_unreadable or self._service_setups.get(kb_id) == requested_setup
 
     async def get_service(self, kb_obj: KBRead) -> Optional[AgentRAGService]:
         """
@@ -58,17 +149,14 @@ class AgentRAGServiceManager:
             AgentRAGService instance or None if creation fails
         """
         kb_id = str(kb_obj.id)
+        # Each process keeps its own cache, so a settings change saved elsewhere is caught here.
+        requested_setup = _service_setup(kb_id, kb_obj.rag_config)
 
-        # Return existing service if available and initialized
+        if self._cached_service_is_current(kb_id, requested_setup):
+            return self._services[kb_id]
         if kb_id in self._services:
-            service = self._services[kb_id]
-            if service.is_initialized():
-                return service
-            else:
-                # Remove failed service
-                logger.warning(
-                    f"Removing uninitialized service for KB {kb_id}")
-                await self._remove_service(kb_id)
+            logger.warning(f"Rebuilding service for KB {kb_id}: it is not initialized or its settings changed")
+            await self._remove_service(kb_id)
 
         # Ensure we have a lock for this KB
         if kb_id not in self._initialization_locks:
@@ -77,7 +165,7 @@ class AgentRAGServiceManager:
         # Use lock to prevent concurrent initialization
         async with self._initialization_locks[kb_id]:
             # Double-check pattern - service might have been created while waiting
-            if kb_id in self._services and self._services[kb_id].is_initialized():
+            if self._cached_service_is_current(kb_id, requested_setup):
                 return self._services[kb_id]
 
             try:
@@ -98,6 +186,7 @@ class AgentRAGServiceManager:
 
                 # Cache the service
                 self._services[kb_id] = service
+                self._service_setups[kb_id] = requested_setup
                 logger.info(
                     f"[AgentRAGServiceManager] Created and cached AgentRAGService for KB {kb_id}")
                 return service
@@ -152,6 +241,22 @@ class AgentRAGServiceManager:
             return {}
 
         return await service.delete_document(doc_id)
+
+    async def clear_documents(self, kb_obj: KBRead) -> None:
+        """Delete every document of a knowledge base from the stores its settings point to."""
+        try:
+            service = await self.get_service(kb_obj)
+            if not service:
+                logger.warning(f"Could not get service for KB {kb_obj.id}")
+                return
+            delete_result = await service.delete_by_metadata({"kb_id": str(kb_obj.id)})
+            # Stores without a bulk delete (such as LEGRA) still list their documents.
+            remaining_ids = await service.get_document_ids()
+            if remaining_ids:
+                await bulk_delete_documents(service, remaining_ids)
+            logger.info(f"Cleared documents of KB {kb_obj.id}: {delete_result}, {len(remaining_ids)} removed one by one")
+        except Exception as e:
+            logger.error(f"Failed to clear documents of KB {kb_obj.id}: {e}")
 
     async def search(
         self,
@@ -261,7 +366,7 @@ class AgentRAGServiceManager:
             # Use first item to get service
             representative_item = items[0]
 
-            # Leave Zendesk and Salesforce KBs untouched because their sync tasks own them.
+            # Leave synced KBs untouched because their sync tasks own their documents.
             kb_type = getattr(representative_item, "type", "")
             if kb_type in SYNC_OWNED_KB_TYPES:
                 logger.info(
@@ -376,6 +481,7 @@ class AgentRAGServiceManager:
         """Remove a service from cache"""
         if kb_id in self._services:
             del self._services[kb_id]
+        self._service_setups.pop(kb_id, None)
         if kb_id in self._initialization_locks:
             del self._initialization_locks[kb_id]
 
@@ -394,6 +500,7 @@ class AgentRAGServiceManager:
         """Clean up all services"""
         async with self._lock:
             self._services.clear()
+            self._service_setups.clear()
             self._initialization_locks.clear()
             logger.info("Cleaned up all AgentRAGService instances")
 
