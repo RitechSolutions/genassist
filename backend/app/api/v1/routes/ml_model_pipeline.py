@@ -93,7 +93,7 @@ async def create_pipeline_config(
     try:
         return await service.create(config_data)
     except AppException as e:
-        if e.error_key == ErrorKey.ML_MODEL_NOT_FOUND:
+        if e.error_key in (ErrorKey.ML_MODEL_NOT_FOUND, ErrorKey.WORKFLOW_NOT_FOUND):
             raise HTTPException(status_code=404, detail=str(e))
         if e.error_key == ErrorKey.INTERNAL_ERROR and "cron" in str(e).lower():
             raise HTTPException(status_code=409, detail=str(e))
@@ -115,7 +115,7 @@ async def update_pipeline_config(
     try:
         return await service.update(model_id, config_id, config_update)
     except AppException as e:
-        if e.error_key == ErrorKey.NOT_FOUND:
+        if e.error_key in (ErrorKey.NOT_FOUND, ErrorKey.WORKFLOW_NOT_FOUND):
             raise HTTPException(status_code=404, detail=str(e))
         if e.error_key == ErrorKey.INTERNAL_ERROR and "cron" in str(e).lower():
             raise HTTPException(status_code=409, detail=str(e))
