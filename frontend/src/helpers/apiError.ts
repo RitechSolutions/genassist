@@ -63,3 +63,29 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
   if (typeof e.message === "string" && e.message.trim()) return e.message;
   return fallback;
 }
+
+export const KEEPALIVE_HEADERS = { "X-Keepalive": "1" };
+
+interface ErrorEnvelope {
+  error: string;
+  error_code: number;
+  error_key?: string;
+  error_detail?: string | null;
+}
+
+const isErrorEnvelope = (data: unknown): data is ErrorEnvelope =>
+  typeof data === "object" &&
+  data !== null &&
+  typeof (data as ErrorEnvelope).error === "string" &&
+  typeof (data as ErrorEnvelope).error_code === "number";
+
+export function throwIfErrorEnvelope<T>(data: T | null): T | null {
+  if (!isErrorEnvelope(data)) return data;
+  const message =
+    data.error_detail ||
+    data.error ||
+    `Request failed with status code ${data.error_code}`;
+  throw Object.assign(new Error(message), {
+    response: { status: data.error_code, data },
+  });
+}

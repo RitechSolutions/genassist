@@ -3,7 +3,8 @@ from typing import List
 from ..base import FieldSchema
 
 # SalesForce Case node config. Only ``subject``, ``description`` and
-# ``app_settings_id`` are required. ``labels`` are assigned to the created Case as
+# ``app_settings_id`` are required. ``web_email``/``web_name``/``web_phone`` fill the Case's
+# SuppliedEmail/SuppliedName/SuppliedPhone. ``labels`` are assigned to the created Case as
 # SalesForce Topics; further Case fields go via the dynamic ``custom_fields`` editor.
 SALESFORCE_CASE_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
     FieldSchema(
@@ -29,6 +30,24 @@ SALESFORCE_CASE_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         type="text",
         label="Description",
         required=True
+    ),
+    FieldSchema(
+        name="web_email",
+        type="text",
+        label="Web Email",
+        required=False
+    ),
+    FieldSchema(
+        name="web_name",
+        type="text",
+        label="Web Name",
+        required=False
+    ),
+    FieldSchema(
+        name="web_phone",
+        type="text",
+        label="Web Phone",
+        required=False
     ),
     FieldSchema(
         name="labels",
