@@ -16,9 +16,12 @@ from typing import Callable, Dict, Any, List, Union
 import logging
 import asyncio
 
+from app.core.config.settings import settings
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.sandbox import (
+    block_internal_connections,
     make_sandboxed_namespace,
+    parse_allowed_networks,
     validate_code_ast,
     SandboxViolation,
 )
@@ -126,6 +129,7 @@ def _subprocess_worker(
     conn: Connection,
     max_result_bytes: int = _MAX_RESULT_BYTES,
     prelude: str = "",
+    allowed_networks: tuple = (),
 ) -> None:
     """Worker that runs inside an isolated subprocess.
 
@@ -133,6 +137,7 @@ def _subprocess_worker(
     - All environment variables cleared so user code cannot read secrets
       (JWT_SECRET_KEY, FERNET_KEY, DATABASE_URL, AWS credentials, etc.)
     - OS-level resource limits applied on Linux (256 MB address space, CPU time cap)
+    - Python-level connections to non-public addresses refused, except allowed_networks
     """
     # Strip all env vars — user code must not access container secrets
     os.environ.clear()
@@ -153,6 +158,7 @@ def _subprocess_worker(
     payload = None
 
     try:
+        block_internal_connections(allowed_networks)
         executable = add_executable_function(code) if wrap_code else code
         validate_code_ast(executable)
         namespace = make_sandboxed_namespace(params, logging.getLogger(__name__))
@@ -221,9 +227,10 @@ def _execute_python_code_sync(
     """
     ctx = _script_context()
     parent_conn, child_conn = ctx.Pipe(duplex=False)
+    allowed_networks = parse_allowed_networks(settings.SANDBOX_ALLOWED_NETWORKS)
     process = ctx.Process(
         target=_subprocess_worker,
-        args=(code, params, wrap_code, child_conn, max_result_bytes, prelude),
+        args=(code, params, wrap_code, child_conn, max_result_bytes, prelude, allowed_networks),
         daemon=True,
     )
     started = False
