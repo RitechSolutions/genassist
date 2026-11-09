@@ -7,9 +7,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
+from botocore.exceptions import ClientError
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.tenant_scope import TenantContextError
 from app.core.utils.storage_path import tenant_scoped_storage_prefix
 from app.modules.filemanager.providers.base import BaseStorageProvider
 from app.modules.workflow.engine.nodes.ml import ml_utils
@@ -19,6 +21,10 @@ logger = logging.getLogger(__name__)
 # DATA_VOLUME/train/<thread>/<file> is stored as tenants/<slug>/ml_training/<thread>/<file>
 STORAGE_FOLDER = "ml_training"
 
+SAVE_FAILED_DETAIL = (
+    "Could not save the training data to file storage. "
+    "Try again, or check the File Manager settings."
+)
 FETCH_FAILED_DETAIL = (
     "Could not read the training data from file storage. "
     "Try again, or run the node that produced it again."
@@ -82,7 +88,7 @@ async def _download(provider: BaseStorageProvider, key: str, destination: Path) 
 
 
 async def save_training_data(csv_path: Any) -> None:
-    """Copy an output CSV under DATA_VOLUME/train and its column types to storage; on failure keep them here and log it."""
+    """Copy an output CSV under DATA_VOLUME/train and its column types to storage; raise when that fails."""
     path = Path(csv_path)
     if _train_relative_path(path) is None:
         return
@@ -97,8 +103,36 @@ async def save_training_data(csv_path: Any) -> None:
             if not await provider.upload_file_from_local_path(str(local_file), key):
                 raise OSError(f"the storage provider did not store {key}")
     except Exception as exc:
-        # The run still works on this server; other servers can't read the output, and the reason is only in this log
-        logger.error("Could not save training data to file storage, so only this server has it: %s", exc)
+        # The next step may run on another server, which can only read the output from storage
+        logger.error("Could not save training data %s to file storage: %s", path.name, exc)
+        raise AppException(
+            error_key=ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED, error_detail=SAVE_FAILED_DETAIL
+        ) from None
+
+
+async def _exists(provider: BaseStorageProvider, key: str) -> bool:
+    try:
+        return await provider.file_exists(key)
+    except ClientError as error:
+        # S3 answers 403 instead of 404 for a missing key when the role can't list the bucket
+        if (error.response or {}).get("ResponseMetadata", {}).get("HTTPStatusCode") != 403:
+            raise
+        return False
+
+
+async def _find_in_storage(candidates: list) -> Optional[tuple[BaseStorageProvider, Any, str]]:
+    """The provider, path and key of the first candidate that storage has, or None."""
+    try:
+        keys = [_storage_key(candidate) for candidate in candidates]
+    except (TenantContextError, ValueError) as exc:
+        # Without a valid tenant there is no storage folder to look in
+        logger.error("Could not check file storage for training data: %s", exc)
+        return None
+    provider = await _storage_provider()
+    for candidate, key in zip(candidates, keys):
+        if not _already_in_storage(provider, candidate) and await _exists(provider, key):
+            return provider, candidate, key
+    return None
 
 
 async def fetch_training_data(
@@ -121,26 +155,22 @@ async def fetch_training_data(
     if not missing:
         return
     try:
-        provider = await _storage_provider()
-        for candidate in missing:
-            if _already_in_storage(provider, candidate):
-                continue
-            key = _storage_key(candidate)
-            if not await provider.file_exists(key):
-                continue
-            destination = Path(os.path.realpath(str(candidate)))
-            sidecar = ml_utils.dtypes_sidecar_path(destination)
-            sidecar_key = _storage_key(sidecar)
-            if await provider.file_exists(sidecar_key):
-                await _download(provider, sidecar_key, sidecar)
-            await _download(provider, key, destination)
-            logger.info("Downloaded training data %s from file storage", key)
-            return
+        stored = await _find_in_storage(missing)
+        if stored is None:
+            return  # resolve_csv_file_path reports it as not found
+        provider, candidate, key = stored
+        destination = Path(os.path.realpath(str(candidate)))
+        sidecar = ml_utils.dtypes_sidecar_path(destination)
+        sidecar_key = _storage_key(sidecar)
+        if await _exists(provider, sidecar_key):
+            await _download(provider, sidecar_key, sidecar)
+        await _download(provider, key, destination)
     except Exception as exc:
         logger.error("Could not read training data from file storage: %s", exc)
         raise AppException(
             error_key=ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED, error_detail=FETCH_FAILED_DETAIL
         ) from None
+    logger.info("Downloaded training data %s from file storage", key)
 
 
 async def load_training_csv(file_url: str, thread_id: Optional[str] = None) -> pd.DataFrame:
