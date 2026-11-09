@@ -342,13 +342,18 @@ def _is_unresolved_upstream_value(value: Any) -> bool:
     return isinstance(value, str) and value.strip().lower() == "null"
 
 
+# The library's error is only logged, so the hint names every usual cause
+# instead of guessing one (an unseen category is not a wrong value type).
+_INPUT_MISMATCH_HINT = (
+    "Check the inputs against what the model was trained on: the type of each "
+    "value, category values it saw in training, and the number of features."
+)
 _DATA_PREPARATION_FAILED = (
-    "Could not prepare the input values for this model. Check that every "
-    "feature has a value of the type the model was trained on."
+    f"Could not prepare the input values for this model. {_INPUT_MISMATCH_HINT}"
 )
 _PREDICTION_FAILED = (
-    "The model could not make a prediction from these input values. Check "
-    "that every feature has a value of the type the model was trained on."
+    "The model could not make a prediction from these input values. "
+    f"{_INPUT_MISMATCH_HINT}"
 )
 
 
