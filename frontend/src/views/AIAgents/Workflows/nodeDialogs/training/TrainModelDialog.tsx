@@ -20,7 +20,9 @@ import { Label } from "@/components/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
@@ -38,6 +40,13 @@ import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { OutlierHandler } from "./components/OutlierHandler";
 import { CategoricalEncodingHandler } from "./components/CategoricalEncodingHandler";
 import { MissingValueHandler } from "./components/MissingValueHandler";
+import {
+  AUTO_SCORING,
+  isAutoScoring,
+  scoringGroupsFor,
+  scoringLabel,
+  scoringTaskTypeFor,
+} from "./scoringOptions";
 import { FeatureEngineeringHandler } from "./components/FeatureEngineeringHandler";
 import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
 import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
@@ -364,6 +373,19 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
   const handleHyperparameterOptimizationChange = (value: string) => {
     setField("hyperparameterOptimization", value as HyperparameterOptimizationMethod);
   };
+
+  const scoringTaskType = scoringTaskTypeFor(values.modelType, values.taskType);
+  // "auto" typed into the old free-text field means the same as unset.
+  const savedScoring = isAutoScoring(values.optimizationConfig.scoring)
+    ? undefined
+    : values.optimizationConfig.scoring;
+  // A scoring value saved before the dropdown (free text) or for another task
+  // stays selectable so it isn't silently dropped; training explains the problem.
+  const savedScoringNotOffered =
+    !!savedScoring &&
+    !scoringGroupsFor(scoringTaskType).some((group) =>
+      group.options.some((option) => option.value === savedScoring)
+    );
 
   const updateOptimizationConfig = (patch: Partial<OptimizationConfig>) => {
     setField("optimizationConfig", { ...values.optimizationConfig, ...patch });
@@ -745,13 +767,39 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                       <Label htmlFor="scoring" className="text-xs">
                         Scoring Metric
                       </Label>
-                      <RichInput
-                        id="scoring"
-                        value={values.optimizationConfig.scoring ?? ""}
-                        onChange={(e) => updateOptimizationConfig({ scoring: e.target.value })}
-                        placeholder="auto (accuracy / r2)"
-                        className="w-full"
-                      />
+                      <Select
+                        value={savedScoring || AUTO_SCORING}
+                        onValueChange={(value) =>
+                          updateOptimizationConfig({
+                            scoring: value === AUTO_SCORING ? undefined : value,
+                          })
+                        }
+                      >
+                        <SelectTrigger id="scoring" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={AUTO_SCORING}>
+                            Auto (accuracy / R²)
+                          </SelectItem>
+                          {scoringGroupsFor(scoringTaskType).map((group) => (
+                            <SelectGroup key={group.label}>
+                              <SelectLabel>{group.label}</SelectLabel>
+                              {group.options.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          ))}
+                          {savedScoringNotOffered && (
+                            <SelectItem value={savedScoring as string}>
+                              {scoringLabel(savedScoring as string) ?? savedScoring}
+                              {scoringLabel(savedScoring as string) ? " (not for this task)" : ""}
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     {values.hyperparameterOptimization === "random_search" && (
