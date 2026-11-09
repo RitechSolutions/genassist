@@ -19,6 +19,20 @@ from app.modules.workflow.engine.nodes.ml import ml_model_inference_node as infe
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import MLModelInferenceNode
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from tests.unit.ml_training_fixtures import removing_trained_models, training_tmp_dir
+
+
+@pytest.fixture
+def tmp_path():
+    # Training only reads files inside the data volume, not pytest's temp folder.
+    with training_tmp_dir() as path:
+        yield path
+
+
+@pytest.fixture(autouse=True)
+def _remove_trained_models(monkeypatch):
+    with removing_trained_models(monkeypatch):
+        yield
 
 
 def _make_outlier_heavy_csv(tmp_path) -> str:
