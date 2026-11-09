@@ -33,6 +33,7 @@ import decimal
 import io
 import json
 import math
+from collections import Counter
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, Iterator, List, Optional, Sequence, Set, Tuple
 
@@ -186,7 +187,7 @@ def _unique_columns(columns: Sequence[Any], where: str) -> List[str]:
 class _JsonObject(dict):
     """A parsed JSON object that had a key twice (json.loads kept the last)."""
 
-    __slots__ = ("duplicate_key",)
+    __slots__ = ("duplicate_key", "duplicate_list_key")
 
 
 def _json_object(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
@@ -197,6 +198,12 @@ def _json_object(pairs: List[Tuple[str, Any]]) -> Dict[str, Any]:
         return record
     marked = _JsonObject(record)
     marked.duplicate_key = duplicate_column_name([key for key, _ in pairs])
+    # A wrapper object only loses rows when the repeated key holds an array.
+    counts = Counter(key for key, _ in pairs)
+    marked.duplicate_list_key = next(
+        (key for key, value in pairs if counts[key] > 1 and isinstance(value, list)),
+        None,
+    )
     return marked
 
 
@@ -587,9 +594,10 @@ class TrainingFileReader:
         del text
 
         if isinstance(data, dict):
-            duplicate = getattr(data, "duplicate_key", None)
+            duplicate = getattr(data, "duplicate_list_key", None)
             if duplicate is not None:
-                # {"rows": [...], "rows": [...]} would keep only the last array.
+                # {"rows": [...], "rows": [...]} would keep only the last array;
+                # a repeated metadata key next to the rows loses no row.
                 raise _invalid(
                     f"The JSON file has two keys named '{' '.join(duplicate.split())[:60]}'. "
                     "Give every key a unique name and upload the file again."
