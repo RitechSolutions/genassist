@@ -87,15 +87,21 @@ const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, la
   const picked = options.filter((target) => value.includes(target.id));
   const summary =
     picked.length > 1 ? `${picked[0].label} +${picked.length - 1}` : picked[0]?.label;
-  const spokenName = summary ? `${label}: ${summary}` : label;
+  const spokenName = picked.length ? `${label}: ${picked.map((target) => target.label).join(", ")}` : label;
+  const pickHint = `${label}. You can pick several.`;
   const toggle = (target: ReferenceTarget) => {
     const wasPicked = value.includes(target.id);
     onChange(wasPicked ? value.filter((pickedId) => pickedId !== target.id) : [...value, target.id]);
     setAnnouncement(`${target.label} ${wasPicked ? "unchecked" : "checked"}`);
   };
   const clearAll = () => {
-    onChange([]);
-    setAnnouncement("Selection cleared");
+    const nothingPicked = value.length === 0;
+    if (!nothingPicked) onChange([]);
+    setAnnouncement(nothingPicked ? "Nothing to clear" : "Selection cleared");
+  };
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) setAnnouncement("");
+    setOpen(nextOpen);
   };
 
   if (options.length === 0) {
@@ -108,7 +114,7 @@ const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, la
 
   return (
     // Modal, so the wheel scrolls its list inside the dialog's scroll lock.
-    <Popover modal open={open} onOpenChange={setOpen}>
+    <Popover modal open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -128,10 +134,11 @@ const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, la
       <PopoverContent className="z-[1400] w-[--radix-popover-trigger-width] p-0" align="end">
         {/* Match labels only, since the values are ids. */}
         <Command
+          label={pickHint}
           filter={(_value, search, keywords) => defaultFilter(keywords?.join(" ") ?? "", search)}
         >
           <CommandInput placeholder="Search" />
-          <CommandList label={`${label}. You can pick several.`}>
+          <CommandList label={pickHint}>
             <CommandEmpty>No matches</CommandEmpty>
             <CommandGroup>
               {options.map((target) => (
