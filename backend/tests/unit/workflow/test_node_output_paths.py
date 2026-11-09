@@ -108,3 +108,19 @@ async def test_registration_error_does_not_show_the_model_file_path(monkeypatch)
     assert (model_id, pkl_file_id, warnings) == (None, None, [])
     assert error == "Could not store the model file: No such file or directory"
     assert "/app/backend" not in error
+
+
+def test_load_error_does_not_show_the_server_path(data_volume, monkeypatch):
+    # An IO error from reading the file names the resolved server path.
+    _write_csv(data_volume / "train" / "thread-1" / "thread-1_x.csv")
+
+    def fail_read(path, *_args, **_kwargs):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(ml_utils, "read_csv_with_dtypes", fail_read)
+
+    with pytest.raises(ml_utils.AppException) as raised:
+        ml_utils.load_csv_file("thread-1/thread-1_x.csv", thread_id="thread-1")
+
+    assert raised.value.error_detail == "Failed to load file: Permission denied"
+    assert str(data_volume) not in raised.value.error_detail

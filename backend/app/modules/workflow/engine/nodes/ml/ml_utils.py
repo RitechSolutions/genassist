@@ -1394,9 +1394,11 @@ def load_csv_file(
         raise
     except Exception as e:
         logger.error(f"Error loading file {file_url}: {str(e)}", exc_info=True)
+        # An OSError's message names the resolved server path; show only the reason.
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to load file: {str(e)}",
+            error_detail=f"Failed to load file: {reason}",
         ) from e
 
 
