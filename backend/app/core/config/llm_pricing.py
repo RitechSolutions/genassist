@@ -44,15 +44,6 @@ STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
         "gemini-1.5-flash": {"input_per_1k": 0.000075, "output_per_1k": 0.0003},
         "gemini-1.0-pro": {"input_per_1k": 0.0005, "output_per_1k": 0.0015},
     },
-    "openrouter": {
-        "_default": {"input_per_1k": 0.001, "output_per_1k": 0.002},
-    },
-    "vllm": {
-        "_default": {"input_per_1k": 0.0, "output_per_1k": 0.0},
-    },
-    "ollama": {
-        "_default": {"input_per_1k": 0.0, "output_per_1k": 0.0},
-    },
     "bedrock": {
         "eu.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.0001, "output_per_1k": 0.0004},
         "ca.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.0001, "output_per_1k": 0.0004},
@@ -67,7 +58,6 @@ STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
     },
 }
 
-DEFAULT_PRICING = {"input_per_1k": 0.001, "output_per_1k": 0.002}
 CACHE_EXCLUSIVE_PROVIDERS = frozenset({"bedrock"})
 # Cache ratios off the input rate, shared by Anthropic and the cache-capable Bedrock families
 CACHE_READ_MULTIPLIER = Decimal("0.1")
@@ -361,29 +351,17 @@ def _float_rates(rates: tuple[Decimal, Decimal], row: Mapping[str, Any]) -> Dict
     return pricing
 
 
-def resolve_live_pricing(provider: str, model: str) -> LivePricing:
+def resolve_live_pricing(provider: str, model: str) -> Optional[LivePricing]:
     tenant = get_tenant_context()
     provider_key = (provider or "").strip().lower()
     model_key = _normalize_model_name(model)
 
-    _, _, layers = _pricing_layers(provider_key, get_db_pricing_nested(tenant))
+    configured_table, _, layers = _pricing_layers(provider_key, get_db_pricing_nested(tenant))
 
     matches = _collect_layer_matches(provider_key, model_key, layers)
-    selected = _select_base_rates(matches)
+    selected = _select_base_rates(matches) or _default_row_match(configured_table, PricingStatus.CONFIGURED)
     if selected is None:
-        for table, status in layers:
-            selected = _default_row_match(table, status)
-            if selected is not None:
-                break
-    if selected is None:
-        default_input = Decimal(str(DEFAULT_PRICING["input_per_1k"]))
-        cache_read = _family_cache_rate(provider_key, model_key, default_input, CACHE_READ_MULTIPLIER)
-        cache_creation = _family_cache_rate(provider_key, model_key, default_input, CACHE_WRITE_5M_MULTIPLIER)
-        return LivePricing(
-            DEFAULT_PRICING.copy(),
-            None if cache_read is None else float(cache_read),
-            None if cache_creation is None else float(cache_creation),
-        )
+        return None
 
     cache_read, cache_creation = _resolve_cache_bucket_rates(provider_key, model_key, selected, _bundled_match(matches))
     return LivePricing(
