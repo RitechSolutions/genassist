@@ -302,7 +302,7 @@ async def test_parquet_through_node_keeps_types_for_the_next_node(monkeypatch, t
     result = await _node().process({"sourceType": "csv", "csvFilePath": str(source)})
 
     assert result["metadata"]["rowCount"] == 6
-    reloaded = ml_utils.read_csv_with_dtypes(result["data_path"])
+    reloaded = ml_utils.read_csv_with_dtypes(ml_utils.DATA_VOLUME / "train" / result["data_path"])
     assert reloaded["code"].tolist()[:2] == ["000", "001"]
     assert str(reloaded["count"].dtype) == "Int64" and reloaded["count"].isna().sum() == 2
     assert str(reloaded["active"].dtype) == "boolean"

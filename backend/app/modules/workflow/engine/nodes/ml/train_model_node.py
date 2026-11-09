@@ -1074,7 +1074,9 @@ class TrainModelNode(BaseNode):
                 "success": True,
                 "model_name": name,
                 "model_type": model_type,
-                "model_file_path": model_artifact["model_file_path"],
+                "model_file_path": ml_utils.data_volume_reference(
+                    model_artifact["model_file_path"], base=""
+                ),
                 "model_version": model_artifact["model_version"],
                 "target_column": target_column,
                 "feature_columns": feature_columns,
@@ -2619,4 +2621,9 @@ class TrainModelNode(BaseNode):
 
         except Exception as e:
             logger.error(f"Failed to register trained model '{name}': {str(e)}", exc_info=True)
+            # An OSError's message names the file it failed on, which is a
+            # server path; the output only gets the reason (TDS-24).
+            if isinstance(e, OSError):
+                reason = e.strerror or type(e).__name__
+                return None, resolved_pkl_file_id, f"Could not store the model file: {reason}", []
             return None, resolved_pkl_file_id, str(e), []

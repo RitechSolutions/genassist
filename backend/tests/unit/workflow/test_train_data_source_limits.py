@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import time
-from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -159,7 +158,7 @@ async def test_csv_header_only_preserves_columns(monkeypatch, tmp_path):
 
     assert result["data"] == []
     assert result["metadata"] == {"rowCount": 0, "columns": ["id", "name"]}
-    assert Path(result["data_path"]).read_text(encoding="utf-8") == "id,name\n"
+    assert (tmp_path / "train" / result["data_path"]).read_text(encoding="utf-8") == "id,name\n"
 
 
 @pytest.mark.asyncio
