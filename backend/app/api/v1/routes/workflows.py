@@ -393,7 +393,7 @@ async def test_workflow(
                 logger.error(f"Error testing workflow with new engine: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        return keepalive_json(request, run, name=f"workflow-test:{workflow_config['id']}")
+        return await keepalive_json(request, run, name=f"workflow-test:{workflow_config['id']}")
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
@@ -483,7 +483,7 @@ async def test_individual_node(request: Request, test_data: Dict[str, Any]):
             logger.error(f"Error testing {node_type} node: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    return keepalive_json(request, run, name=f"node-test:{node_type}")
+    return await keepalive_json(request, run, name=f"node-test:{node_type}")
 
 
 @router.post("/generate-python-template", response_model=Dict[str, Any])

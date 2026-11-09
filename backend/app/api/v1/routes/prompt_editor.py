@@ -144,7 +144,7 @@ async def evaluate_prompt(
     prompt_field: PromptFieldPath,
     data: PromptEvalRequest,
 ):
-    return keepalive_json(
+    return await keepalive_json(
         request,
         lambda: injector.get(PromptEditorService).evaluate_prompt(workflow_id, node_id, prompt_field, data),
         name=f"prompt-check:{workflow_id}:{node_id}",
@@ -163,7 +163,7 @@ async def optimize_prompt(
     prompt_field: PromptFieldPath,
     data: PromptOptimizeRequest,
 ):
-    return keepalive_json(
+    return await keepalive_json(
         request,
         lambda: injector.get(PromptEditorService).optimize_prompt(workflow_id, node_id, prompt_field, data),
         name=f"prompt-rewrite:{workflow_id}:{node_id}",
