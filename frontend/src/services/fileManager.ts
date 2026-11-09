@@ -115,12 +115,16 @@ export const listFiles = async (
   return apiRequest<FileRecord[]>("GET", `file-manager/files${q ? `?${q}` : ""}`);
 };
 
-/** One file's record (name, size, …). Null when it can't be read, e.g. 403 or a failed request. */
+/**
+ * One file's record (name, size, …). Null on 403 (apiRequest maps it) or 404.
+ * Other errors are rethrown so React Query doesn't cache them as "no file".
+ */
 export const getFileManagerFile = async (fileId: string): Promise<FileRecord | null> => {
   try {
     return await apiRequest<FileRecord>("GET", `file-manager/files/${fileId}`);
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof AxiosError && error.response?.status === 404) return null;
+    throw error;
   }
 };
 
