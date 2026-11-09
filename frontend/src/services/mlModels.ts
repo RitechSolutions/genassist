@@ -184,14 +184,23 @@ export const getTrainingDataLimits = async (): Promise<TrainingDataLimits | null
 export const analyzeTrainingFile = async (
   request: AnalyzeTrainingFileRequest,
 ): Promise<CSVAnalysisResult> => {
-  const response = await apiRequest<CSVAnalysisResult>(
-    "POST",
-    `${BASE}/analyze-file`,
-    { ...request },
-    { timeout: API_PREPROCESSING_TIMEOUT_MS },
-  );
-  if (!response) throw new Error("Failed to preview the file");
-  return response;
+  try {
+    const response = await apiRequest<CSVAnalysisResult>(
+      "POST",
+      `${BASE}/analyze-file`,
+      { ...request },
+      { timeout: API_PREPROCESSING_TIMEOUT_MS },
+    );
+    if (!response) throw new Error("Failed to preview the file");
+    return response;
+  } catch (error) {
+    // The server explains what is wrong with the file (e.g. two columns
+    // with the same name); show that instead of the HTTP status.
+    throw await actionableApiError(
+      error,
+      "The file preview could not be generated. Please try again.",
+    );
+  }
 };
 
 export const analyzeCSV = async (
