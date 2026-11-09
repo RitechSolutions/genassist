@@ -104,18 +104,28 @@ describe("workflows service", () => {
 
   it("testNode POSTs the node test payload", async () => {
     const payload = { input_data: {}, node_type: "agent", node_config: {} };
+    mockApiRequest.mockResolvedValue({ status: "success" } as never);
     await testNode(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-node", payload, {
       timeout: 1000,
+      headers: { "X-Keepalive": "1" },
     });
   });
 
   it("testWorkflow POSTs the workflow test payload", async () => {
     const payload = { input_data: {}, workflow: { id: "w" } };
+    mockApiRequest.mockResolvedValue({ status: "success" } as never);
     await testWorkflow(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload, {
       timeout: 1000,
+      headers: { "X-Keepalive": "1" },
     });
+  });
+
+  it("testWorkflow throws an error envelope that arrives in a 200 body", async () => {
+    const payload = { input_data: {}, workflow: { id: "w" } };
+    mockApiRequest.mockResolvedValue({ error: "boom", error_code: 500 } as never);
+    await expect(testWorkflow(payload as never)).rejects.toThrow("boom");
   });
 
   describe("workflowRunOutcome", () => {
