@@ -356,21 +356,28 @@ class MLModelPipelineRunService:
             model_update = MLModelUpdate(**model_updates)
         except ValidationError as e:
             fields = {err["loc"][0] for err in e.errors() if err["loc"]}
-            if fields == {"inference_params"}:
+            run_fields = sorted(
+                _RUN_OUTPUT_FIELD.get(field, str(field))
+                for field in fields - {"inference_params"}
+            )
+            if "inference_params" in fields:
                 # The run's baseline was checked above, so the bad value comes
                 # from the model's saved settings, not from this run.
+                detail = (
+                    "This model's saved inference settings are not valid, so "
+                    "the run's model file cannot be applied. Fix the model's "
+                    "inference settings, then promote the run again."
+                )
+                if run_fields:
+                    detail += (
+                        " This run's training output also has unexpected values for "
+                        f"{', '.join(run_fields)}."
+                    )
                 raise AppException(
                     error_key=ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE,
-                    error_detail=(
-                        "This model's saved inference settings are not valid, so "
-                        "the run's model file cannot be applied. Fix the model's "
-                        "inference settings, then promote the run again."
-                    ),
+                    error_detail=detail,
                 ) from e
-            raise _malformed_run_output(
-                sorted(_RUN_OUTPUT_FIELD.get(field, str(field)) for field in fields)
-                or ["model fields"]
-            ) from e
+            raise _malformed_run_output(run_fields or ["model fields"]) from e
 
         # Get the pipeline config used by this run
         config = await self.config_repository.get_by_id(run.pipeline_config_id)
