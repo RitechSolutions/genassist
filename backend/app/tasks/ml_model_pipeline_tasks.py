@@ -52,7 +52,16 @@ def _training_succeeded(execution_output: Dict[str, Any]) -> bool:
     training chain) fail independently while the actual Train Data Source ->
     Train Model chain still completes and produces real metrics - has_failures
     would be true there even though training succeeded.
+
+    A failed Train Model node always fails the run, though: the final output
+    is then an upstream node's (e.g. Data Preprocessing's own success), so it
+    would otherwise read as a completed run with no model.
     """
+    failed_nodes = execution_output.get("failed_nodes") or []
+    if any(
+        isinstance(node, dict) and node.get("type") == "trainModelNode" for node in failed_nodes
+    ):
+        return False
     output = execution_output.get("output")
     return isinstance(output, dict) and output.get("success") is True
 
