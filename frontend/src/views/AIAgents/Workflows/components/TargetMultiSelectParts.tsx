@@ -25,9 +25,11 @@ const CheckboxMark: React.FC<{ checked: boolean }> = ({ checked }) => (
 );
 
 export const TargetOption: React.FC<TargetOptionProps> = ({ target, checked, onToggle }) => (
-  <CommandItem value={target.id} keywords={[target.label]} onSelect={onToggle} aria-checked={checked}>
+  <CommandItem value={target.id} keywords={[target.label]} onSelect={onToggle}>
     <CheckboxMark checked={checked} />
     <span className="truncate">{target.label}</span>
+    {/* The list's own "selected" means highlighted, so the picked state is read out as text. */}
+    <span className="sr-only">{checked ? ", checked" : ", not checked"}</span>
   </CommandItem>
 );
 
