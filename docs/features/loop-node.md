@@ -80,6 +80,7 @@ After the loop, from Done:
 - A failing pass ends the loop (or is skipped with `onError: continue`); either way the workflow continues from Done with the failures in `errors`, and the run reports `has_failures`.
 - A deactivated Loop skips its body and continues from Done with its input unchanged.
 - Server limits (settings): `WORKFLOW_LOOP_MAX_ITERATIONS` (1000 per loop) and `WORKFLOW_LOOP_MAX_TOTAL_ITERATIONS` (5000 per run, across nested loops).
+- A Studio test run can take up to 20 minutes, and a prompt editor check or rewrite about 2 minutes.
 - The run trace keeps the 20 most recent earlier passes of each body node; the latest pass carries `run`, the number of times the node ran, which the Execution view shows as `×N`.
 
 ## Implementation

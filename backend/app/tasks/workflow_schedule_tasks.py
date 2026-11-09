@@ -173,6 +173,7 @@ async def execute_workflow_run_async(run_id: UUID):
                 }
                 # Imported lazily so the worker master never loads ML libs before forking
                 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+                from app.modules.workflow.engine.workflow_state import run_failure_message
 
                 workflow_engine = WorkflowEngine(workflow_config)
 
@@ -191,9 +192,12 @@ async def execute_workflow_run_async(run_id: UUID):
                     state.format_state_as_response()
                 )
 
+                # Redacted like execution_output: node errors can repeat run input.
+                failure = _redact_structure(run_failure_message(state, execution_output))
                 await run_repository.update_status(
                     run_id,
-                    WorkflowScheduleRunStatus.COMPLETED,
+                    WorkflowScheduleRunStatus.FAILED if failure else WorkflowScheduleRunStatus.COMPLETED,
+                    error_message=failure,
                     execution_output=execution_output,
                     execution_id=(
                         UUID(state.execution_id) if state.execution_id else None
@@ -202,7 +206,11 @@ async def execute_workflow_run_async(run_id: UUID):
                     thread_id=thread_id,
                 )
                 await session.commit()
-                logger.info(f"Workflow schedule run {run_id} completed successfully")
+                if failure:
+                    _notify_run_failed(tenant_id, run_id)
+                    logger.warning(f"Workflow schedule run {run_id} finished with failed nodes")
+                else:
+                    logger.info(f"Workflow schedule run {run_id} completed successfully")
 
             except Exception as e:
                 logger.error(

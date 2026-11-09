@@ -13,6 +13,7 @@ import pytest
 from openpyxl import Workbook
 
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.error_policy import client_safe_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml.train_data_source_node import TrainDataSourceNode
@@ -301,7 +302,7 @@ async def test_parquet_through_node_keeps_types_for_the_next_node(monkeypatch, t
     result = await _node().process({"sourceType": "csv", "csvFilePath": str(source)})
 
     assert result["metadata"]["rowCount"] == 6
-    reloaded = ml_utils.read_csv_with_dtypes(result["data_path"])
+    reloaded = ml_utils.read_csv_with_dtypes(ml_utils.DATA_VOLUME / "train" / result["data_path"])
     assert reloaded["code"].tolist()[:2] == ["000", "001"]
     assert str(reloaded["count"].dtype) == "Int64" and reloaded["count"].isna().sum() == 2
     assert str(reloaded["active"].dtype) == "boolean"
@@ -412,3 +413,206 @@ async def test_json_preview_uses_the_configured_size_limit(tmp_path):
         await read_training_file_preview(path, 10, json_max_bytes=100)
 
     assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED
+
+
+# -- Duplicate column names (TDS-28) ------------------------------------------
+
+DUPLICATE_SCORE = {
+    "data.csv": "id,score,score\n1,10,99\n2,20,88\n",
+    "data.json": '[{"id": 1, "score": 10, "score": 99}, {"id": 2, "score": 20, "score": 88}]',
+    "data.jsonl": '{"id": 1, "score": 10, "score": 99}\n{"id": 2, "score": 20, "score": 88}\n',
+}
+
+
+async def _run_and_preview_errors(monkeypatch, tmp_path, path):
+    monkeypatch.setattr(f"{MODULE}.ml_utils.DATA_VOLUME", tmp_path)
+    with pytest.raises(AppException) as run:
+        await _node().process({"sourceType": "csv", "csvFilePath": str(path)})
+    with pytest.raises(AppException) as preview:
+        await read_training_file_preview(path, 100)
+    assert not list((tmp_path / "train").rglob("*.csv"))
+    return run.value, preview.value
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", list(DUPLICATE_SCORE))
+async def test_duplicate_columns_are_refused_by_run_and_preview_alike(monkeypatch, tmp_path, name):
+    path = tmp_path / name
+    path.write_text(DUPLICATE_SCORE[name], encoding="utf-8")
+
+    run, preview = await _run_and_preview_errors(monkeypatch, tmp_path, path)
+
+    assert run.error_key == preview.error_key == ErrorKey.ML_EXTRACT_FILE_INVALID
+    assert run.error_detail == preview.error_detail
+    assert "two columns named 'score'" in run.error_detail
+    assert "unique name" in run.error_detail
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "content", "message"),
+    [
+        # Names are compared after strip(), as Parquet and Excel headers are.
+        ("spaces.csv", "id,score, score \n1,10,99\n", "two columns named 'score'"),
+        ("blank.csv", "id,,,x\n1,2,3,4\n", "two columns with no name"),
+        ("keys.json", '[{"id": 1, "score": 10}, {"id": 2, " score": 20}]', "two columns named 'score'"),
+        ("keys.jsonl", '{"id": 1, "score": 10, "score ": 99}\n', "two columns named 'score'"),
+    ],
+)
+async def test_names_that_repeat_once_stripped_are_refused(monkeypatch, tmp_path, name, content, message):
+    path = tmp_path / name
+    path.write_text(content, encoding="utf-8")
+
+    run, preview = await _run_and_preview_errors(monkeypatch, tmp_path, path)
+
+    assert message in run.error_detail and run.error_detail == preview.error_detail
+
+
+@pytest.mark.asyncio
+async def test_case_still_tells_columns_apart(monkeypatch, tmp_path):
+    path = tmp_path / "case.csv"
+    path.write_text("Score,score\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr(f"{MODULE}.ml_utils.DATA_VOLUME", tmp_path)
+
+    result = await _node().process({"sourceType": "csv", "csvFilePath": str(path)})
+
+    assert result["metadata"]["columns"] == ["Score", "score"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("name", "content", "columns"),
+    [
+        ("plain.csv", "id, score\n1,10\n", ["id", " score"]),
+        ("plain.json", '[{"id": 1, "score": 10}]', ["id", "score"]),
+        ("plain.jsonl", '{"id": 1, "score": 10}\n', ["id", "score"]),
+    ],
+)
+async def test_unique_headers_come_out_unchanged(monkeypatch, tmp_path, name, content, columns):
+    path = tmp_path / name
+    path.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(f"{MODULE}.ml_utils.DATA_VOLUME", tmp_path)
+
+    result = await _node().process({"sourceType": "csv", "csvFilePath": str(path)})
+    frame, _, _ = await read_training_file_preview(path, 100)
+
+    assert result["metadata"]["columns"] == columns == list(frame.columns)
+    assert pd.read_csv(result["data_path"]).iloc[0].tolist() == [1, 10]
+
+
+@pytest.mark.asyncio
+async def test_repeated_key_inside_a_nested_value_is_not_a_column(tmp_path):
+    path = tmp_path / "nested.jsonl"
+    path.write_text('{"id": 1, "meta": {"a": 1, "a": 2}}\n', encoding="utf-8")
+
+    columns, rows, _ = await _read_all(TrainingFileReader(path, 10))
+
+    assert columns == ["id", "meta"] and rows == [(1, '{"a": 2}')]
+
+
+@pytest.mark.asyncio
+async def test_csv_trailing_unnamed_empty_columns_are_dropped_like_excel(monkeypatch, tmp_path):
+    path = tmp_path / "export.csv"
+    path.write_text("price,size,,\n10,M,,\n12,L\n", encoding="utf-8")
+    monkeypatch.setattr(f"{MODULE}.ml_utils.DATA_VOLUME", tmp_path)
+
+    result = await _node().process({"sourceType": "csv", "csvFilePath": str(path)})
+    frame, _, _ = await read_training_file_preview(path, 100)
+
+    assert result["metadata"]["columns"] == ["price", "size"] == list(frame.columns)
+    assert Path(result["data_path"]).read_text(encoding="utf-8") == "price,size\n10,M\n12,L\n"
+
+
+@pytest.mark.asyncio
+async def test_csv_value_under_a_trailing_unnamed_column_is_refused(monkeypatch, tmp_path):
+    path = tmp_path / "export.csv"
+    path.write_text("price,size,,\n10,M,,\n12,L,,x\n", encoding="utf-8")
+
+    run, preview = await _run_and_preview_errors(monkeypatch, tmp_path, path)
+
+    assert run.error_detail == preview.error_detail
+    assert "Line 3 has a value in column 4" in run.error_detail
+    # The API shows only allow-listed details; anything else becomes "Invalid file format."
+    assert client_safe_error_detail(run) == run.error_detail
+
+
+@pytest.mark.asyncio
+async def test_csv_row_with_more_values_than_the_header_reaches_the_client(monkeypatch, tmp_path):
+    path = tmp_path / "wide.csv"
+    path.write_text("price,size\n10,M\n12,L,x\n", encoding="utf-8")
+
+    run, preview = await _run_and_preview_errors(monkeypatch, tmp_path, path)
+
+    assert run.error_detail == preview.error_detail
+    assert "Line 3 has more values than the header has columns" in run.error_detail
+    assert client_safe_error_detail(run) == run.error_detail
+
+
+@pytest.mark.asyncio
+async def test_csv_whitespace_under_a_trailing_unnamed_column_is_dropped(monkeypatch, tmp_path):
+    # The header cell is blank once stripped, so a blank-once-stripped value is too.
+    path = tmp_path / "export.csv"
+    path.write_text("price,size, ,\n10,M, ,\n12,L,,  \n", encoding="utf-8")
+    monkeypatch.setattr(f"{MODULE}.ml_utils.DATA_VOLUME", tmp_path)
+
+    result = await _node().process({"sourceType": "csv", "csvFilePath": str(path)})
+
+    assert result["metadata"]["columns"] == ["price", "size"]
+    assert Path(result["data_path"]).read_text(encoding="utf-8") == "price,size\n10,M\n12,L\n"
+
+
+@pytest.mark.asyncio
+async def test_csv_single_leading_unnamed_column_is_kept(monkeypatch, tmp_path):
+    # pandas' to_csv() writes the index under an empty header.
+    path = tmp_path / "pandas.csv"
+    path.write_text(",a\n0,1\n1,2\n", encoding="utf-8")
+    monkeypatch.setattr(f"{MODULE}.ml_utils.DATA_VOLUME", tmp_path)
+
+    result = await _node().process({"sourceType": "csv", "csvFilePath": str(path)})
+
+    assert result["metadata"]["columns"] == ["", "a"]
+
+
+@pytest.mark.asyncio
+async def test_json_wrapper_with_a_repeated_key_is_refused(monkeypatch, tmp_path):
+    path = tmp_path / "wrapped.json"
+    path.write_text('{"rows": [{"id": 1}], "rows": [{"id": 2}]}', encoding="utf-8")
+
+    run, preview = await _run_and_preview_errors(monkeypatch, tmp_path, path)
+
+    assert "two keys named 'rows'" in run.error_detail
+    assert run.error_detail == preview.error_detail
+
+
+@pytest.mark.asyncio
+async def test_json_wrapper_with_a_repeated_metadata_key_is_read(tmp_path):
+    # Only the rows array is read; a repeated key beside it loses no row.
+    path = tmp_path / "wrapped.json"
+    path.write_text(
+        '{"count": 1, "count": 2, "rows": [{"id": 1}, {"id": 2}]}', encoding="utf-8"
+    )
+
+    frame, _, _ = await read_training_file_preview(path, 10)
+
+    assert frame["id"].tolist() == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_json_lines_saved_as_json_names_the_line(monkeypatch, tmp_path):
+    path = tmp_path / "lines.json"
+    path.write_text('{"id": 1}\n\n{"id": 2, "id": 3}\n', encoding="utf-8")
+
+    run, _ = await _run_and_preview_errors(monkeypatch, tmp_path, path)
+
+    assert run.error_detail.startswith("Line 3 has two columns named 'id'")
+
+
+@pytest.mark.asyncio
+async def test_long_duplicate_name_is_shortened_in_the_message(monkeypatch, tmp_path):
+    name = "x" * 500
+    path = tmp_path / "long.csv"
+    path.write_text(f"{name},{name}\n1,2\n", encoding="utf-8")
+
+    run, _ = await _run_and_preview_errors(monkeypatch, tmp_path, path)
+
+    assert len(run.error_detail) < 200 and "xxx..." in run.error_detail

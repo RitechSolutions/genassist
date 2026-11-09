@@ -35,7 +35,8 @@ def parse_agent_response_for_stats(agent_response: dict) -> dict | None:
         return None
 
     status = (agent_response.get("status") or "").lower()
-    is_success = status in ("success", "completed")
+    # "partial" answered although a node failed - see analytics_aggregation
+    is_success = status in ("success", "completed", "partial")
 
     # Response timing
     row_response = agent_response.get("row_agent_response") or {}
