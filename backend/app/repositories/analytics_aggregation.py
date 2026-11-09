@@ -250,16 +250,18 @@ class AnalyticsAggregationRepository:
     async def get_agent_id_for_conversation(self, conversation_id: UUID) -> UUID | None:
         """Look up the agent_id for a conversation via its operator_id."""
         result = await self.db.execute(
-            select(ConversationModel.operator_id).where(
-                ConversationModel.id == conversation_id
-            )
+            select(ConversationModel.operator_id)
+            .where(ConversationModel.id == conversation_id)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
         )
         operator_id = result.scalar_one_or_none()
         if not operator_id:
             return None
 
         result = await self.db.execute(
-            select(AgentModel.id).where(AgentModel.operator_id == operator_id)
+            select(AgentModel.id)
+            .where(AgentModel.operator_id == operator_id)
+            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
         )
         return result.scalar_one_or_none()
 
