@@ -77,7 +77,7 @@ def turn(monkeypatch):
     monkeypatch.setattr(limiter, "enabled", False)
 
     async def with_agent(request: Request):
-        request.state.agent = SimpleNamespace(security_settings=None)
+        request.state.agent = SimpleNamespace(id="agent-1", workflow_id="workflow-1", security_settings=None)
 
     app = FastAPI()
     app.add_api_route("/update/{conversation_id}", route.update, methods=["PATCH"], dependencies=[Depends(with_agent)])

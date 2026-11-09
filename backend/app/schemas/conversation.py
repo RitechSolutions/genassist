@@ -61,6 +61,7 @@ class AgentMinimalForCache(BaseModel):
     id: UUID
     name: str
     is_active: bool = False
+    workflow_id: Optional[UUID] = None
     security_settings: Optional[AgentSecuritySettingsUpdate] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -37,7 +37,7 @@ class MLModelPipelineConfig(Base):
     )
     workflow_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey('workflows.id', ondelete='CASCADE'),
+        ForeignKey('workflows.id', ondelete='RESTRICT'),
         nullable=False
     )
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -75,7 +75,7 @@ class MLModelPipelineRun(Base):
     )
     workflow_id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey('workflows.id', ondelete='CASCADE'),
+        ForeignKey('workflows.id', ondelete='RESTRICT'),
         nullable=False
     )
     status: Mapped[PipelineRunStatus] = mapped_column(

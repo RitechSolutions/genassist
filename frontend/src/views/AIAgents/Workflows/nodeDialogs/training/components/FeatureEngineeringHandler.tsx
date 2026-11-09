@@ -11,14 +11,20 @@ import {
   SelectValue,
 } from "@/components/select";
 import {
+  DatetimePart,
   FeatureEngineeringConfig,
   FeatureEngineeringItem,
   FeatureEngineeringStrategy,
+  MathFunction,
 } from "../../../types/nodes";
 import { CSVAnalysisResult } from "@/services/mlModels";
 import {
+  DATETIME_PART_OPTIONS,
+  MATH_FUNCTION_OPTIONS,
   STRATEGY_HINTS,
+  datetimePartsOf,
   defaultsForStrategy,
+  featureOutputColumns,
   isColumnTransformStrategy,
   isRetiredFeatureStrategy,
   outputColumnsHint,
@@ -34,11 +40,13 @@ interface FeatureEngineeringHandlerProps {
   // The target column: never offered as a feature input (it's what the model
   // predicts - using it to build a feature would leak the answer).
   targetColumn?: string;
+  // The chosen feature columns: a Date-Time feature's column must be one of them.
+  featureColumns?: string[];
 }
 
 export const FeatureEngineeringHandler: React.FC<
   FeatureEngineeringHandlerProps
-> = ({ config, onChange, analysisResult, targetColumn }) => {
+> = ({ config, onChange, analysisResult, targetColumn, featureColumns }) => {
   const [features, setFeatures] = useState<FeatureEngineeringItem[]>(
     config?.features || []
   );
@@ -104,9 +112,28 @@ export const FeatureEngineeringHandler: React.FC<
       .map((col) => col.name);
     const earlier = features
       .slice(0, featureIndex)
-      .map((f) => f.newColumnName)
-      .filter((name) => name && !numeric.includes(name));
+      .flatMap(featureOutputColumns)
+      .filter((name) => !numeric.includes(name));
     return [...(numeric.length ? numeric : availableColumns), ...earlier];
+  };
+
+  // Date-Time Features read one date/time column, which must be a feature
+  // column: dates are text (or parsed dates) in the analysis, never numeric.
+  const datetimeColumnCandidates = (() => {
+    const nonNumeric = (analysisResult?.columns_info || [])
+      .filter((col) => col.type !== "numeric" && col.name !== targetColumn)
+      .map((col) => col.name);
+    const candidates = nonNumeric.length ? nonNumeric : availableColumns;
+    return featureColumns?.length ? candidates.filter((col) => featureColumns.includes(col)) : candidates;
+  })();
+
+  const toggleDatetimePart = (feature: FeatureEngineeringItem, part: DatetimePart, checked: boolean) => {
+    const current = datetimePartsOf(feature);
+    const updated = checked ? [...current, part] : current.filter((p) => p !== part);
+    // Keep the listed order, whatever order they were ticked in.
+    handleFeatureChange(feature.id, {
+      datetimeParts: DATETIME_PART_OPTIONS.map((option) => option.value).filter((p) => updated.includes(p)),
+    });
   };
 
   const toggleSourceColumn = (feature: FeatureEngineeringItem, col: string, checked: boolean) => {
@@ -399,8 +426,75 @@ export const FeatureEngineeringHandler: React.FC<
                           </div>
                         </>
                       )}
+                      {feature.strategy === "datetime_features" && (
+                        <>
+                          <div>
+                            <Label className="text-xs">Date/Time Column</Label>
+                            <Select
+                              value={feature.datetimeColumn || ""}
+                              onValueChange={(value) =>
+                                handleFeatureChange(feature.id, { datetimeColumn: value })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Select column" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {datetimeColumnCandidates.map((col) => (
+                                  <SelectItem key={col} value={col}>
+                                    {col}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Values like 2024-03-15 or 2024-03-15 14:30, from the selected
+                              Feature Columns. Values with a UTC offset are read in UTC.
+                            </p>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Parts</Label>
+                            <div className="grid grid-cols-2 gap-1 border rounded p-2">
+                              {DATETIME_PART_OPTIONS.map((option) => (
+                                <label key={option.value} className="flex items-center space-x-2 text-xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={datetimePartsOf(feature).includes(option.value)}
+                                    onChange={(e) => toggleDatetimePart(feature, option.value, e.target.checked)}
+                                    className="rounded"
+                                  />
+                                  <span>{option.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{outputColumnsHint(feature)}.</p>
+                        </>
+                      )}
                       {isColumnTransformStrategy(feature.strategy) && (
                         <>
+                          {feature.strategy === "math_transform" && (
+                            <div>
+                              <Label className="text-xs">Function</Label>
+                              <Select
+                                value={feature.mathFunction || ""}
+                                onValueChange={(value) =>
+                                  handleFeatureChange(feature.id, { mathFunction: value as MathFunction })
+                                }
+                              >
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue placeholder="Select function" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {MATH_FUNCTION_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
                           <div>
                             <Label className="text-xs">Columns</Label>
                             <p className="text-xs text-muted-foreground mb-1">
@@ -527,7 +621,8 @@ export const FeatureEngineeringHandler: React.FC<
                             </Label>
                           </div>
                           <p className="text-xs text-muted-foreground">
-                            {outputColumnsHint(feature)}. Fit on the training split only.
+                            {outputColumnsHint(feature)}.
+                            {feature.strategy !== "math_transform" ? " Fit on the training split only." : ""}
                           </p>
                         </>
                       )}
