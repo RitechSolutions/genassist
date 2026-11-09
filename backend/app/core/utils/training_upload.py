@@ -15,6 +15,19 @@ from app.core.exceptions.exception_classes import AppException
 
 TRAINING_DATA_PURPOSE = "training_data"
 UploadPurpose = Literal["training_data"]
+# Stored in a training upload's file_metadata, so it can be told apart from the other
+# uploads that share the "uploads/" folder (knowledge base files, for example).
+UPLOAD_PURPOSE_METADATA = "upload_purpose"
+
+
+def training_upload_metadata(purpose: Optional[str]) -> dict:
+    """The file_metadata entry that marks a training upload; empty for any other upload."""
+    return {UPLOAD_PURPOSE_METADATA: TRAINING_DATA_PURPOSE} if is_training_upload(purpose) else {}
+
+
+def is_stored_training_upload(file_metadata: Optional[dict]) -> bool:
+    """True for a File Manager record that was uploaded as Train Data Source data."""
+    return isinstance(file_metadata, dict) and file_metadata.get(UPLOAD_PURPOSE_METADATA) == TRAINING_DATA_PURPOSE
 
 
 def is_training_upload(purpose: Optional[str]) -> bool:

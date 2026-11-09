@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import _replay_feature_engineering
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -51,7 +52,7 @@ async def test_saved_workflow_with_a_retired_strategy_still_trains_with_a_warnin
 
     # The model was still trained with the derived column, and inference can
     # still replay it from a raw input row.
-    with open(result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
         metadata = pickle.load(f)["metadata"]
     steps = metadata["feature_engineering_steps"]
     assert steps[0]["strategy"] == strategy

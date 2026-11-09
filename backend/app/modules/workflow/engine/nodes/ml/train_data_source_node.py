@@ -560,7 +560,7 @@ class TrainDataSourceNode(BaseNode):
         return {
             "success": True,
             "data": sample_data,
-            "data_path": data_path,
+            "data_path": ml_utils.data_volume_reference(data_path),
             "metadata": {
                 "rowCount": row_count,
                 "columns": columns,

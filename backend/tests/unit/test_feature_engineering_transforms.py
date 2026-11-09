@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 
 from app.core.exceptions.exception_classes import AppException
+from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
     _prepare_inference_inputs,
     _replay_feature_engineering,
@@ -284,7 +285,7 @@ async def test_each_strategy_trains_end_to_end_with_gaps_and_no_missing_value_se
         "Training-time missing-value fills were" in warning
         for warning in result["warnings"]
     )
-    with open(result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
         metadata = pickle.load(f)["metadata"]
     steps = metadata["feature_engineering_steps"]
     assert steps[0]["strategy"] == item["strategy"]
@@ -311,7 +312,7 @@ async def test_pca_replacing_sources_trains_on_the_components(tmp_path):
     result = await _train(tmp_path, [
         {"newColumnName": "pc", "strategy": "pca", "sourceColumns": ["a", "b"], "pcaComponents": 1},
     ])
-    with open(result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
         metadata = pickle.load(f)["metadata"]
     assert metadata["model_input_columns"] == ["c", "pc_1"]
     assert "warnings" not in result  # no gaps, nothing filled

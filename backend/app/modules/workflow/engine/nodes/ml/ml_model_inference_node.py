@@ -343,6 +343,31 @@ def _is_unresolved_upstream_value(value: Any) -> bool:
     return isinstance(value, str) and value.strip().lower() == "null"
 
 
+# The library's error is only logged, so the hint names every usual cause
+# instead of guessing one (an unseen category is not a wrong value type).
+_INPUT_MISMATCH_HINT = (
+    "Check the inputs against what the model was trained on: the type of each "
+    "value, category values it saw in training, and the number of features."
+)
+_DATA_PREPARATION_FAILED = (
+    f"Could not prepare the input values for this model. {_INPUT_MISMATCH_HINT}"
+)
+_PREDICTION_FAILED = (
+    "The model could not make a prediction from these input values. "
+    f"{_INPUT_MISMATCH_HINT}"
+)
+
+
+def _failure_detail(message: str, defaults_applied: Sequence[str]) -> str:
+    """A client-safe failure message; the library's own error is only logged."""
+    if not defaults_applied:
+        return message
+    return (
+        f"{message} Configured feature default(s) were applied for: "
+        f"{', '.join(defaults_applied)}."
+    )
+
+
 def _summarize_error(error: Exception) -> str:
     detail = str(error).strip()
     return detail.splitlines()[0][:200] if detail else type(error).__name__
@@ -675,6 +700,61 @@ def _model_accepts_raw_text_features(model: Any) -> bool:
         ) and bool(steps):
             return True
     return False
+
+
+_NUMERIC_ESTIMATOR_LIBRARIES = frozenset({"sklearn", "xgboost", "lightgbm"})
+
+
+def _reads_categories_natively(estimator: Any) -> bool:
+    """True when a boosted model was fitted to read category values itself."""
+    is_categorical = getattr(estimator, "is_categorical_", None)
+    if is_categorical is not None and bool(np.any(is_categorical)):
+        return True
+    boosters = [estimator, getattr(estimator, "_Booster", None)]  # lightgbm
+    get_booster = getattr(estimator, "get_booster", None)
+    if callable(get_booster):  # xgboost sklearn wrapper
+        try:
+            boosters.append(get_booster())
+        except Exception:
+            pass
+    for booster in boosters:
+        if booster is None:
+            continue
+        if getattr(booster, "pandas_categorical", None):  # lightgbm
+            return True
+        if "c" in (getattr(booster, "feature_types", None) or []):  # xgboost
+            return True
+    return False
+
+
+def _model_converts_text_to_numbers(model: Any) -> bool:
+    """True when the model and every estimator it wraps come from a library
+    that turns text input into floats itself ("1_000" -> 1000.0). False for a
+    custom or other-library model, a pipeline, or a model fitted on native
+    categories anywhere inside, since those may read text as text."""
+    pending = [model]
+    visited = set()
+    while pending:
+        candidate = pending.pop()
+        if candidate is None or isinstance(candidate, str) or id(candidate) in visited:
+            continue
+        visited.add(id(candidate))
+        if type(candidate).__module__.split(".", 1)[0] not in _NUMERIC_ESTIMATOR_LIBRARIES:
+            return False
+        if getattr(candidate, "steps", None) or _reads_categories_natively(candidate):
+            return False
+        for attr in (
+            "best_estimator_", "regressor", "regressor_", "estimator", "estimator_",
+            "final_estimator_", "base_estimator",
+        ):
+            pending.append(getattr(candidate, attr, None))
+        for attr in ("estimators_", "estimators"):
+            nested = getattr(candidate, attr, None)
+            if isinstance(nested, (list, tuple)):
+                pending.extend(
+                    item[-1] if isinstance(item, tuple) else item for item in nested
+                )
+    return True
 
 
 def _selected_feature_names(
@@ -1917,8 +1997,14 @@ class MLModelInferenceNode(BaseNode):
                 _validate_numeric_inputs(
                     normalized_inputs,
                     numeric_order if metadata_is_authoritative else feature_names,
-                    allow_text=(
-                        not metadata_is_authoritative or model_handles_raw_text
+                    # A model saved without metadata may read text itself, so
+                    # text is only refused up front when the model is known to
+                    # turn its input into floats (where "1_000" would quietly
+                    # become 1000 and "80.5 EUR" a raw library error).
+                    allow_text=model_handles_raw_text
+                    or (
+                        not metadata_is_authoritative
+                        and not _model_converts_text_to_numbers(model)
                     ),
                     text_features=model_native_text_features,
                 )
@@ -2131,17 +2217,9 @@ class MLModelInferenceNode(BaseNode):
                 raise
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
-                if defaults_applied:
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=(
-                            "Data preparation failed after configured feature default(s) were applied "
-                            f"for: {', '.join(defaults_applied)}. "
-                            f"Cause: {_summarize_error(e)}"
-                        ),
-                    ) from e
                 raise AppException(
-                    error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Data preparation failed: {e}"
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=_failure_detail(_DATA_PREPARATION_FAILED, defaults_applied),
                 ) from e
 
             # Make prediction (always returns batch format)
@@ -2271,17 +2349,9 @@ class MLModelInferenceNode(BaseNode):
                 raise
             except Exception as e:
                 logger.error("Error during model prediction: %s", e, exc_info=True)
-                if defaults_applied:
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=(
-                            "Prediction failed after configured feature default(s) were applied for: "
-                            f"{', '.join(defaults_applied)}. "
-                            f"Cause: {_summarize_error(e)}"
-                        ),
-                    ) from e
                 raise AppException(
-                    error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Error during model prediction: {e}"
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=_failure_detail(_PREDICTION_FAILED, defaults_applied),
                 ) from e
 
         except AppException:
