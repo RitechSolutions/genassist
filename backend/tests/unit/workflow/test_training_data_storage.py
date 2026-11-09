@@ -1,5 +1,7 @@
 """Training data written on one server can be read on any other, and after a restart."""
 
+import asyncio
+import contextvars
 import re
 import shutil
 import uuid
@@ -10,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from botocore.exceptions import ClientError
 from starlette.requests import Request
 
 from app.api.v1.routes import ml_models
@@ -26,6 +29,10 @@ from app.modules.workflow.engine.workflow_state import WorkflowState
 from tests.unit.ml_training_fixtures import removing_trained_models
 
 
+def _s3_error(status: int, operation: str) -> ClientError:
+    return ClientError({"Error": {"Code": str(status)}, "ResponseMetadata": {"HTTPStatusCode": status}}, operation)
+
+
 class ObjectStorage:
     """An S3-like File Manager provider kept in memory."""
 
@@ -35,6 +42,7 @@ class ObjectStorage:
         self.objects: dict[str, bytes] = {}
         self.downloads: list[str] = []
         self.upload_result = True
+        self.can_list = True
 
     def get_base_path(self) -> str:
         return "bucket"
@@ -45,6 +53,9 @@ class ObjectStorage:
         return self.upload_result
 
     async def file_exists(self, key):
+        if key not in self.objects and not self.can_list:
+            # What S3 answers for a missing key when the role lacks s3:ListBucket
+            raise _s3_error(403, "HeadObject")
         return key in self.objects
 
     async def download_file_to_path(self, key, local_path):
@@ -260,35 +271,57 @@ async def test_local_provider_with_its_own_folder_keeps_a_copy(volume, monkeypat
     assert loaded["code"].tolist() == ["001", "002"]
 
 
+def _storage_cannot_be_set_up(monkeypatch) -> None:
+    error = AppException(error_key=ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED)
+    monkeypatch.setattr(training_data_storage, "_storage_provider", AsyncMock(side_effect=error))
+
+
 @pytest.mark.asyncio
-async def test_a_failed_upload_keeps_the_output_on_this_server(volume, storage, caplog):
-    storage.upload_result = False
+@pytest.mark.parametrize("failure", ["upload refused", "upload raises", "storage not set up"])
+async def test_a_failed_upload_is_reported(volume, storage, monkeypatch, caplog, failure):
+    if failure == "upload refused":
+        storage.upload_result = False
+    elif failure == "upload raises":
+        storage.upload_file_from_local_path = AsyncMock(side_effect=RuntimeError("S3 unreachable"))
+    else:
+        _storage_cannot_be_set_up(monkeypatch)
     with tenant("acme"):
         csv_path = await _write_output()
-        await training_data_storage.save_training_data(csv_path)
+        with pytest.raises(AppException) as raised:
+            await training_data_storage.save_training_data(csv_path)
 
-    assert csv_path.exists()
-    assert ml_utils.dtypes_sidecar_path(csv_path).exists()
-    assert "Could not save training data to file storage" in caplog.text
+    assert raised.value.error_key == ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED
+    assert raised.value.error_detail == training_data_storage.SAVE_FAILED_DETAIL
+    assert "Could not save training data" in caplog.text
+
+
+async def _unchanged(python_code, df, file_url, raise_on_error=True):
+    return df, None, {}
 
 
 @pytest.mark.asyncio
-async def test_train_data_source_still_succeeds_when_storage_fails(volume, storage):
+@pytest.mark.parametrize("node_type", ["trainDataSourceNode", "preprocessingNode"])
+async def test_a_node_fails_when_its_output_cannot_be_stored(volume, storage, monkeypatch, node_type):
     storage.upload_result = False
+    monkeypatch.setattr(ml_utils, "execute_and_process_preprocessing_code", _unchanged)
     source = volume / "uploads" / "source.csv"
     source.parent.mkdir()
     source.write_text("a,b\n1,2\n")
-    node_config = {
-        "id": "source",
-        "type": "trainDataSourceNode",
-        "data": {"sourceType": "csv", "csvFilePath": str(source), "csvFileName": "source.csv"},
-    }
+    node_class, data = {
+        "trainDataSourceNode": (
+            TrainDataSourceNode,
+            {"sourceType": "csv", "csvFilePath": str(source), "csvFileName": "source.csv"},
+        ),
+        "preprocessingNode": (TrainPreprocessNode, {"pythonCode": "...", "fileUrl": str(source)}),
+    }[node_type]
+    node_config = {"id": "node", "type": node_type, "data": data}
     state = WorkflowState(workflow={"nodes": [node_config], "source_edges": {}, "target_edges": {}}, thread_id="run-a")
     with tenant("acme"):
-        await TrainDataSourceNode("source", node_config, state).execute()
+        await node_class("node", node_config, state).execute()
 
-    assert state.node_execution_status["source"]["status"] == "success"
-    assert len(list((volume / "train").rglob("*.csv"))) == 1
+    execution = state.node_execution_status["node"]
+    assert execution["status"] == "failed"
+    assert training_data_storage.SAVE_FAILED_DETAIL in execution["error"]
 
 
 @pytest.mark.asyncio
@@ -329,11 +362,34 @@ async def test_a_file_in_the_working_folder_does_not_stop_the_download(volume, s
 
 
 @pytest.mark.asyncio
-async def test_a_storage_read_error_is_not_reported_as_file_not_found(volume, storage):
-    storage.file_exists = AsyncMock(side_effect=RuntimeError("S3 unreachable"))
+@pytest.mark.parametrize("situation", ["not in storage", "s3 without list permission", "no tenant context"])
+async def test_a_missing_file_is_reported_as_not_found(volume, storage, situation):
+    storage.can_list = situation != "s3 without list permission"
+    missing = f"{volume}/train/thread-1/missing.csv"
+    context = contextvars.Context() if situation == "no tenant context" else None
     with tenant("acme"):
+        load = asyncio.create_task(training_data_storage.load_training_csv(missing), context=context)
         with pytest.raises(AppException) as raised:
-            await training_data_storage.fetch_training_data(f"{volume}/train/thread-1/missing.csv")
+            await load
+
+    assert raised.value.error_key == ErrorKey.FILE_NOT_FOUND
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["storage not set up", "storage unavailable", "download fails"])
+async def test_a_storage_failure_is_reported_as_a_storage_error(volume, storage, monkeypatch, failure):
+    with tenant("acme"):
+        csv_path = await _write_output()
+        await training_data_storage.save_training_data(csv_path)
+        _new_server(volume)
+        if failure == "storage not set up":
+            _storage_cannot_be_set_up(monkeypatch)
+        elif failure == "storage unavailable":
+            storage.file_exists = AsyncMock(side_effect=_s3_error(503, "HeadObject"))
+        else:
+            storage.download_file_to_path = AsyncMock(side_effect=RuntimeError("connection reset"))
+        with pytest.raises(AppException) as raised:
+            await training_data_storage.fetch_training_data(str(csv_path))
 
     assert raised.value.error_key == ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED
     assert raised.value.error_detail == training_data_storage.FETCH_FAILED_DETAIL
@@ -353,7 +409,10 @@ def _analyze_request() -> Request:
 
 
 @pytest.mark.asyncio
-async def test_each_step_works_on_a_server_that_did_not_run_the_one_before(volume, storage, monkeypatch):
+# Train Data Source's CSV output has no column types file, so without list permission S3 answers 403 for it
+@pytest.mark.parametrize("can_list", [True, False], ids=["s3 with list permission", "s3 without list permission"])
+async def test_each_step_works_on_a_server_that_did_not_run_the_one_before(volume, storage, monkeypatch, can_list):
+    storage.can_list = can_list
     source = volume / "uploads" / "source.csv"
     source.parent.mkdir()
     source.write_text("code,count,target\n" + "".join(f"{i},{i % 7},{i * 1.5}\n" for i in range(40)))
