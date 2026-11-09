@@ -10,6 +10,7 @@ import uuid
 from uuid import UUID
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
+from app.modules.workflow.engine.workflow_state import failed_nodes_summary
 from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
@@ -109,17 +110,45 @@ class WorkflowExecutorNode(BaseNode):
             # Format and return the response
             result = state.format_state_as_response()
 
-            logger.info(
-                f"Workflow executor node executed workflow {workflow_id} successfully"
-            )
-
-            return {
+            response = {
                 "status": "success",
                 "workflow_id": str(workflow_id),
                 "workflow_name": workflow.name,
                 "result": result,
                 "output": state.output,
             }
+            # Node errors are masked and capped (BaseNode); raw engine errors are
+            # not, so they stay in the sub-workflow's own logs and trace.
+            reason = failed_nodes_summary(result)
+            if result.get("status") == "failed":
+                # The sub-workflow did not answer: report its failed nodes as this
+                # node's failure, so the parent run lists them instead of reporting
+                # success. Only its status is passed on, not its internals.
+                return node_failure(
+                    f"Workflow {workflow.name} failed - {reason or 'the sub-workflow did not complete'}",
+                    output={
+                        "status": "failed",
+                        "workflow_id": str(workflow_id),
+                        "workflow_name": workflow.name,
+                    },
+                )
+            if result.get("status") == "partial":
+                # The sub-workflow answered although some of its nodes failed: this
+                # node succeeds and passes the answer on (an Agent using it as a
+                # tool gets the answer, not an error), and the failures are noted
+                # on it so the parent run is "partial" (see _collect_failed_nodes).
+                logger.warning(f"Workflow executor node: workflow {workflow_id} finished partial: {reason}")
+                self.get_state().annotate_node_execution(
+                    self.node_id,
+                    partial_failure=f"Workflow {workflow.name} partial - {reason or 'a node failed'}",
+                )
+                return {**response, "status": "partial"}
+
+            logger.info(
+                f"Workflow executor node executed workflow {workflow_id} successfully"
+            )
+
+            return response
 
         except Exception as e:
             error_msg = f"Error executing workflow {workflow_id_str}: {str(e)}"

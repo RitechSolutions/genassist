@@ -116,7 +116,7 @@ async def test_resume_child_timeout_returns_controlled_message_and_keeps_frame()
         patch(f"{_ORCH}.run_child_turn", AsyncMock(side_effect=asyncio.TimeoutError())),
     ):
         result = await item.execute("a reply", {"thread_id": "t1"})
-    assert result["status"] == "success"
+    assert result["status"] == "failed"  # WB-1: a failed sub-agent turn is not a success
     assert "did not respond in time" in result["output"]["message"]
     assert mem.metadata[sub_session.STACK_KEY]["frames"][0]["invocation_id"] == "inv1"
 
@@ -130,7 +130,7 @@ async def test_resume_child_error_returns_controlled_message_and_keeps_frame():
         patch(f"{_ORCH}.run_child_turn", AsyncMock(side_effect=RuntimeError("db exploded"))),
     ):
         result = await item.execute("a reply", {"thread_id": "t1"})
-    assert result["status"] == "success"
+    assert result["status"] == "failed"  # WB-1: a failed sub-agent turn is not a success
     assert "could not complete the task" in result["output"]["message"]
     assert "db exploded" not in result["output"]["message"]
     assert mem.metadata[sub_session.STACK_KEY]["frames"][0]["invocation_id"] == "inv1"

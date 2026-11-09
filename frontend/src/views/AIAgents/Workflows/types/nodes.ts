@@ -672,7 +672,21 @@ export type FeatureEngineeringStrategy =
   | "log_transform" // log(1 + x), values must be >= 0
   | "quantile_transform" // sklearn QuantileTransformer
   | "power_transform" // sklearn PowerTransformer (Yeo-Johnson / Box-Cox)
-  | "pca"; // [StandardScaler +] PCA -> newColumnName_1..k
+  | "math_transform" // sin / cos / sqrt / abs / square / cube root of each column
+  | "pca" // [StandardScaler +] PCA -> newColumnName_1..k
+  // Calendar parts of one date/time column -> newColumnName_<part>
+  | "datetime_features";
+
+export type DatetimePart =
+  | "year"
+  | "month"
+  | "day"
+  | "day_of_week" // 0 = Monday ... 6 = Sunday
+  | "quarter"
+  | "hour" // only when the values have a time of day
+  | "is_weekend"; // 1 on Saturday and Sunday, else 0
+
+export type MathFunction = "sin" | "cos" | "sqrt" | "abs" | "square" | "cbrt";
 
 export interface FeatureEngineeringItem {
   id: string;
@@ -686,12 +700,16 @@ export interface FeatureEngineeringItem {
   binStrategy?: "uniform" | "quantile";
   polynomialDegree?: number;
   polynomialColumns?: string[];
-  // Column transforms (log/quantile/power/PCA) read sourceColumns, plus:
+  // Column transforms (log/quantile/power/math/PCA) read sourceColumns, plus:
   quantileOutputDistribution?: "uniform" | "normal";
   nQuantiles?: number;
   powerMethod?: "yeo-johnson" | "box-cox";
   pcaComponents?: number; // whole number of components, or a 0-1 share of variance to keep
   pcaStandardize?: boolean;
+  mathFunction?: MathFunction;
+  // Date-Time Features: the date/time column and the parts to create (all by default)
+  datetimeColumn?: string;
+  datetimeParts?: DatetimePart[];
   // Train on the transformed columns instead of the originals (default: on for
   // PCA, off otherwise). Originals are still needed as inputs at prediction.
   replaceSourceColumns?: boolean;
