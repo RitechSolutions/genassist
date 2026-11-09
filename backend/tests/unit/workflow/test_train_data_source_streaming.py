@@ -131,7 +131,10 @@ async def test_empty_stream_reports_columns_and_writes_header(monkeypatch, tmp_p
 
     assert result["data"] == []
     assert result["metadata"] == {"rowCount": 0, "columns": ["id", "name"]}
-    assert Path(result["data_path"]).read_text(encoding="utf-8") == "id,name\n"
+    # The output names the file inside the data volume, not the server path (TDS-24).
+    assert not Path(result["data_path"]).is_absolute()
+    assert result["data_path"].startswith("thread-1/")
+    assert (tmp_path / "train" / result["data_path"]).read_text(encoding="utf-8") == "id,name\n"
 
 
 @pytest.mark.asyncio
@@ -502,7 +505,7 @@ async def test_training_file_formats_use_common_streaming_writer(
         {"id": 1, "name": "Ada"},
         {"id": 2, "name": "Linus"},
     ]
-    assert Path(result["data_path"]).read_text(encoding="utf-8") == (
+    assert (tmp_path / "train" / result["data_path"]).read_text(encoding="utf-8") == (
         "id,name\n1,Ada\n2,Linus\n"
     )
 

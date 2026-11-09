@@ -855,6 +855,21 @@ def translate_category_literals(
     return result
 
 
+def data_volume_reference(file_path: Any, base: str = "train") -> str:
+    """The path a node shows for a file it wrote, relative to DATA_VOLUME/<base>.
+
+    Node outputs are shown to users, so they name files by where they sit in
+    the data volume ("<thread>/<file>.csv"), never by the server's absolute
+    path. resolve_csv_file_path reads these back. A path outside that folder is
+    returned unchanged so it keeps working.
+    """
+    root = os.path.realpath(str(DATA_VOLUME / base))
+    real_path = os.path.realpath(str(file_path))
+    if real_path.startswith(root + os.sep):
+        return Path(os.path.relpath(real_path, root)).as_posix()
+    return str(file_path)
+
+
 async def save_data_to_csv(
     data: List[Dict[str, Any]],
     columns: List[str],
@@ -1328,7 +1343,13 @@ def resolve_csv_file_path(
         else:
             # Try relative to DATA_VOLUME/train/thread_id if thread_id provided, then the current folder
             if thread_id:
-                candidates = [DATA_VOLUME / "train" / thread_id / file_url, os.path.abspath(file_url)]
+                # A node's data_path is relative to DATA_VOLUME/train and may come
+                # from an earlier run with another thread (e.g. testing one node).
+                candidates = [
+                    DATA_VOLUME / "train" / thread_id / file_url,
+                    DATA_VOLUME / "train" / file_url,
+                    os.path.abspath(file_url),
+                ]
             else:
                 # Try relative to DATA_VOLUME/train (common location for CSV files),
                 # then the current folder, then directly in DATA_VOLUME
@@ -1360,7 +1381,7 @@ def resolve_csv_file_path(
         if not os.access(file_path, os.R_OK):
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"CSV file is not readable: {file_path}",
+                error_detail=f"CSV file is not readable: {file_url}",
             )
 
         return file_path
@@ -1406,9 +1427,11 @@ def load_csv_file(
         raise
     except Exception as e:
         logger.error(f"Error loading file {file_url}: {str(e)}", exc_info=True)
+        # An OSError's message names the resolved server path; show only the reason.
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to load file: {str(e)}",
+            error_detail=f"Failed to load file: {reason}",
         ) from e
 
 
