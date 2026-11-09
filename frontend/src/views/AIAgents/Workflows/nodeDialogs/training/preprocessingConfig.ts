@@ -9,7 +9,36 @@ export type PreprocessingStepType =
   | "remove_duplicates"
   | "drop_column_or_row"
   | "drop_high_null_columns"
-  | "change_dtype";
+  | "change_dtype"
+  | MovedStepType;
+
+/**
+ * Step types that moved from Data Preprocessing to Train Model (PR #1076).
+ * A node saved before that still has them in its code. The dialog can't
+ * configure them any more, but it keeps their code exactly as written, so
+ * re-saving the node doesn't silently drop the cleaning they do.
+ */
+export type MovedStepType =
+  | "missing_value_handling"
+  | "outlier_handling"
+  | "categorical_encoding"
+  | "feature_engineering";
+
+const MOVED_STEP_NAMES: Record<MovedStepType, string> = {
+  missing_value_handling: "Missing Value Handling",
+  outlier_handling: "Outlier Handling",
+  categorical_encoding: "Categorical Encoding",
+  feature_engineering: "Feature Engineering",
+};
+
+export function isMovedStepType(type: string): type is MovedStepType {
+  return Object.prototype.hasOwnProperty.call(MOVED_STEP_NAMES, type);
+}
+
+/** e.g. "Missing Value Handling moved to Train Model. Configure it there." */
+export function getMovedStepNotice(type: MovedStepType): string {
+  return `${MOVED_STEP_NAMES[type]} moved to Train Model. Configure it there.`;
+}
 
 export interface PreprocessingStep {
   id: string; // Unique identifier for this step
@@ -23,10 +52,100 @@ export type StepConfig =
   | RemoveDuplicatesStepConfig
   | DropColumnOrRowStepConfig
   | DropHighNullColumnsStepConfig
-  | ChangeDtypeStepConfig;
+  | ChangeDtypeStepConfig
+  | MovedStepConfig;
+
+// A step type that moved to Train Model has nothing to configure: its code is
+// always taken from the node's current pythonCode (see movedStepBlock), never
+// from stored data, so the code that runs is the code the Code tab shows.
+export type MovedStepConfig = Record<string, never>;
+
+/**
+ * The code of the step with this id in `code`, markers included, exactly as
+ * it is there (line endings too), or null if the code has no such step.
+ */
+function movedStepBlock(code: string, stepId: string): string | null {
+  const id = stepId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = code.match(
+    new RegExp(String.raw`# STEP_START:${id}:([^\r\n]+)[\s\S]*?# STEP_END:${id}:\1`)
+  );
+  return match ? match[0] : null;
+}
+
+/**
+ * A moved step's code as it runs when the step is on. A switched-off moved
+ * step keeps that code in its STEP_CONFIG comment (see movedStepCode), so it
+ * stays in the Code tab, never runs, and comes back when switched on again.
+ */
+function liveMovedStepBlock(block: string): string {
+  const startEnd = block.search(/[\r\n]/);
+  const endAt = block.lastIndexOf("# STEP_END:");
+  if (startEnd === -1 || endAt === -1) return block;
+  const disabled = movedStepDisabledConfig(block.slice(startEnd, endAt));
+  if (!disabled) return block;
+  return `${block.slice(0, startEnd)}${disabled.code}${block.slice(endAt)}`;
+}
+
+/** The {enabled: false, code} STEP_CONFIG of a switched-off moved step, if it is one. */
+function movedStepDisabledConfig(stepCode: string): { code: string } | null {
+  const match = stepCode.match(/# STEP_CONFIG:([^\r\n]+)/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]) as { enabled?: unknown; code?: unknown };
+    if (parsed.enabled === false && typeof parsed.code === "string") return { code: parsed.code };
+  } catch {
+    // Not a switched-off moved step's config.
+  }
+  return null;
+}
+
+/**
+ * The code to write for a moved step: its block copied unchanged from
+ * `source` when it is on; when it is off, only its markers, with the code it
+ * would run kept in STEP_CONFIG so it doesn't run (matching how the old
+ * generator skipped a switched-off step) but isn't lost either.
+ */
+function movedStepCode(source: string, step: PreprocessingStep): string | null {
+  const block = movedStepBlock(source, step.id);
+  if (block === null) return null;
+  const live = liveMovedStepBlock(block);
+  if (step.enabled) return live;
+  const startEnd = live.search(/[\r\n]/);
+  const endAt = live.lastIndexOf("# STEP_END:");
+  const code = live.slice(startEnd, endAt);
+  return [
+    live.slice(0, startEnd),
+    `    # STEP_CONFIG:${JSON.stringify({ enabled: false, code })}`,
+    "    # Step disabled - skipped",
+    `    ${live.slice(endAt)}`,
+  ].join("\n");
+}
+
+/**
+ * The config without moved steps whose code is no longer in the generated
+ * function of `pythonCode` (deleted by hand, or replaced by Generate
+ * Template) - they have nothing left to run, so they aren't listed as if they
+ * did. Returns `config` itself when nothing is removed.
+ */
+export function withoutMissingMovedSteps(
+  config: PreprocessingConfig,
+  pythonCode: string | undefined
+): PreprocessingConfig {
+  const body = (pythonCode || "").match(AUTOGEN_FUNCTION_SOURCE)?.[1] ?? "";
+  const steps = config.steps.filter(
+    (step) => !isMovedStepType(step.type) || movedStepBlock(body, step.id) !== null
+  );
+  return steps.length === config.steps.length ? config : { ...config, steps };
+}
+
+const AUTOGEN_FUNCTION_SOURCE = /def autogenerated_preprocessing_function\(df\):([\s\S]*?)(?=def |$)/;
 
 export interface PreprocessingConfig {
   steps: PreprocessingStep[]; // Ordered list of preprocessing steps
+  // Set on every save by a dialog that keeps moved steps (68076). Without it,
+  // the stored steps may have lost moved steps the code still runs, and they
+  // are restored from the code once (see loadPreprocessingConfig).
+  movedStepsKept?: boolean;
 }
 
 // Column Filter Step
@@ -168,7 +287,10 @@ def executable_function(params):
  */
 export function generatePythonCodeFromConfig(
   config: PreprocessingConfig,
-  existingCode?: string
+  existingCode?: string,
+  // Where moved steps' code is copied from, when not from existingCode - e.g.
+  // the code before hand edits, when discarding them.
+  movedStepSource?: string
 ): string {
   const codeToModify = existingCode || BASE_PYTHON_TEMPLATE;
 
@@ -181,6 +303,7 @@ export function generatePythonCodeFromConfig(
     return codeToModify;
   }
 
+  const existingAutogenBody = autogenMatch[1];
   const autogenFunctionStart = codeToModify.indexOf(autogenMatch[0]);
   const beforeAutogen = codeToModify.substring(0, autogenFunctionStart);
   const afterAutogen = codeToModify.substring(
@@ -195,10 +318,23 @@ export function generatePythonCodeFromConfig(
   autogenBodyLines.push("    df = df.copy()");
   autogenBodyLines.push("");
 
+  const movedSource = movedStepSource ?? codeToModify;
+  const movedSourceBody = movedSource.match(AUTOGEN_FUNCTION_SOURCE)?.[1] ?? "";
+  // A moved step whose code is gone has nothing to write.
+  const steps = withoutMissingMovedSteps(config, movedSource).steps;
+
   // Generate code for each step
-  config.steps.forEach((step, index) => {
+  steps.forEach((step, index) => {
     if (index > 0 || autogenBodyLines.length > 3) {
       autogenBodyLines.push("");
+    }
+
+    // A moved step's code is copied unchanged from the current code, so its
+    // cleaning still runs and nothing about it changes on save. Switched off,
+    // it keeps its markers but doesn't run (see movedStepCode).
+    if (isMovedStepType(step.type)) {
+      autogenBodyLines.push(`    ${movedStepCode(movedSourceBody, step)}`);
+      return;
     }
 
     // Step marker with ID and type
@@ -251,7 +387,7 @@ export function generatePythonCodeFromConfig(
   });
 
   // If no steps, add placeholder
-  if (config.steps.length === 0) {
+  if (steps.length === 0) {
     autogenBodyLines.push("    # No preprocessing steps configured");
   }
 
@@ -474,13 +610,21 @@ export function parsePythonCodeToConfig(code: string): PreprocessingConfig {
   const codeToParse = autogenMatch[1];
 
   // Find all step markers
-  const stepPattern = /# STEP_START:([^:]+):([^\n]+)([\s\S]*?)# STEP_END:\1:\2/g;
+  // The type stops before "\r" too, so code with Windows line endings parses.
+  const stepPattern = /# STEP_START:([^:]+):([^\r\n]+)([\s\S]*?)# STEP_END:\1:\2/g;
   let match;
   
   while ((match = stepPattern.exec(codeToParse)) !== null) {
     const stepId = match[1];
     const stepType = match[2] as PreprocessingStepType;
     const stepCode = match[3];
+
+    // Moved to Train Model - its code is kept as is (see MovedStepType).
+    if (isMovedStepType(stepType)) {
+      const enabled = movedStepDisabledConfig(stepCode) === null;
+      config.steps.push({ id: stepId, type: stepType, enabled, config: {} });
+      continue;
+    }
 
     let stepConfig: StepConfig | null = null;
 
@@ -733,6 +877,7 @@ export function getStepTypeDisplayName(type: PreprocessingStepType): string {
     drop_column_or_row: "Remove Column/Row",
     drop_high_null_columns: "Remove High-Null Columns",
     change_dtype: "Change Column Data Type",
+    ...MOVED_STEP_NAMES,
   };
   return names[type] || type;
 }

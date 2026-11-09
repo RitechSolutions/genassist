@@ -16,12 +16,14 @@ vi.mock("@/helpers/utils", async (importOriginal) => ({
 }));
 
 import { api, apiRequest } from "@/config/api";
+import { AxiosError } from "axios";
 import { downloadBlob } from "@/helpers/utils";
 import {
   listFileManagerFiles,
   getFileManagerSettings,
   listFiles,
   getFileBase64,
+  getFileManagerFile,
   downloadFileManagerFile,
 } from "@/services/fileManager";
 
@@ -146,6 +148,39 @@ describe("getFileBase64", () => {
 
     expect(mockApiRequest).toHaveBeenCalledWith("GET", "file-manager/files/f1/base64");
     expect(result).toBe(payload);
+  });
+});
+
+describe("getFileManagerFile", () => {
+  const httpError = (status: number) =>
+    new AxiosError("err", "ERR_BAD_RESPONSE", undefined, undefined, { status } as never);
+
+  it("GETs one file record", async () => {
+    const rec = { id: "f1", original_filename: "a.pkl" };
+    mockApiRequest.mockResolvedValue(rec);
+
+    expect(await getFileManagerFile("f1")).toBe(rec);
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "file-manager/files/f1");
+  });
+
+  it("returns null when the record is not found (404)", async () => {
+    mockApiRequest.mockRejectedValue(httpError(404));
+
+    expect(await getFileManagerFile("f1")).toBeNull();
+  });
+
+  it("returns null on 403 (apiRequest already maps it to null)", async () => {
+    mockApiRequest.mockResolvedValue(null);
+
+    expect(await getFileManagerFile("f1")).toBeNull();
+  });
+
+  it("rethrows server and network errors so they are not cached as 'no file'", async () => {
+    mockApiRequest.mockRejectedValueOnce(httpError(500));
+    await expect(getFileManagerFile("f1")).rejects.toBeInstanceOf(AxiosError);
+
+    mockApiRequest.mockRejectedValueOnce(new AxiosError("net", "ERR_NETWORK"));
+    await expect(getFileManagerFile("f1")).rejects.toBeInstanceOf(AxiosError);
   });
 });
 

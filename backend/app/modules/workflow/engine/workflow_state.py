@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
 from app.core.config.llm_pricing import canonical_prompt_tokens
-from app.core.utils.llm_usage_utils import extract_cache_tokens
+from app.core.utils.llm_usage_utils import extract_cache_tokens, is_usage_metadata_missing
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
     ConversationMemory,
@@ -93,6 +93,36 @@ class WorkflowPausedException(BaseException):
     def __init__(self, pause_data: dict):
         self.pause_data = pause_data
         super().__init__("Workflow paused")
+
+
+# Edges that attach something beside the main flow rather than continue it: a
+# tool or sub-agent hung on an agent, a Tool Builder's sub-flow, a loop body.
+_ATTACHMENT_SOURCE_HANDLES = frozenset({"output_tool", "output_sub_agent", "starter_processor", "output_loop"})
+_ATTACHMENT_TARGET_HANDLES = frozenset({"input_tools", "input_sub_agents", "input_loop"})
+
+
+def _is_main_flow_edge(edge: Dict[str, Any]) -> bool:
+    return (
+        edge.get("sourceHandle") not in _ATTACHMENT_SOURCE_HANDLES
+        and edge.get("targetHandle") not in _ATTACHMENT_TARGET_HANDLES
+    )
+
+
+def failed_nodes_summary(response: Dict[str, Any]) -> str:
+    """One line naming each failed node of a run response and its error ("" when none failed)."""
+    return "; ".join(
+        f"{node.get('name') or node.get('node_id')}: {node.get('error')}"
+        for node in response.get("failed_nodes") or []
+    )
+
+
+def run_failure_message(state: "WorkflowState", response: Dict[str, Any]) -> Optional[str]:
+    """Why a finished run failed, for its run record (schedules, webhooks), or None if it didn't."""
+    if state.status != "failed" and response.get("status") != "failed":
+        return None
+    # Both what the nodes reported and what stopped the run outside any node.
+    reasons = [failed_nodes_summary(response), "; ".join(state.execution_failures())]
+    return "; ".join(reason for reason in reasons if reason) or "Workflow execution failed"
 
 
 class WorkflowState:
@@ -411,15 +441,18 @@ class WorkflowState:
             total_cache_read += cache_read
             total_cache_creation += cache_creation
             pricing = resolve_live_pricing(u.get("provider", ""), u.get("model", ""))
-            cost = self.llm_cost_calculator.calculate_cost(
-                u.get("provider", ""),
-                u.get("model", ""),
-                input_tokens,
-                output_tokens,
-                cache_read,
-                cache_creation,
-                pricing=pricing,
-            )
+            if pricing is None or is_usage_metadata_missing(u.get("token_details")):
+                cost = None
+            else:
+                cost = self.llm_cost_calculator.calculate_cost(
+                    u.get("provider", ""),
+                    u.get("model", ""),
+                    input_tokens,
+                    output_tokens,
+                    cache_read,
+                    cache_creation,
+                    pricing=pricing,
+                )
             if cost is None:
                 unpriced_calls += 1
             else:
@@ -849,15 +882,100 @@ class WorkflowState:
             match = re.match(r"^(.+)_(\d+)$", node_id)
             if match and match.group(1) in keys:
                 continue
-            if not isinstance(entry, dict) or entry.get("status") != "failed":
+            if not isinstance(entry, dict):
+                continue
+            # A node that succeeded but noted a failure inside it (a Workflow
+            # Executor whose sub-workflow was partial) is listed too; it still
+            # counts as having run successfully (see _run_status).
+            partial_failure = entry.get("partial_failure") if entry.get("status") == "success" else None
+            if entry.get("status") != "failed" and not partial_failure:
                 continue
             failed.append({
                 "node_id": node_id,
                 "name": entry.get("name") or "",
                 "type": entry.get("type") or "",
-                "error": entry.get("error") or "",
+                "error": entry.get("error") or partial_failure or "",
             })
         return failed
+
+    def _run_status(self, output: Any, failed_nodes: list[dict]) -> str:
+        """The run's overall status, as reported by every run surface.
+
+        - "awaiting_input": a node (HumanInTheLoopNode) paused the run for the user.
+        - "failed": the engine stopped the run, or a node failed (or a branch
+          stopped outside any node) and no end node of the main flow ran
+          successfully - e.g. Test Node on a node that fails, or an Agent that
+          raised so the Chat Output after it never ran.
+        - "partial": a node failed or a branch stopped, but an end node of the
+          main flow still ran successfully, so the run produced a response;
+          failed_nodes says what went wrong (e.g. a Zendesk ticket that was
+          never created). See node_result.is_node_failure.
+        - "success": no node failed.
+
+        End nodes rather than the order nodes finished in, so parallel branches
+        give the same status on every run. When the main flow ends in a Chat
+        Output, only a Chat Output counts as an answer: a side branch (a Slack
+        or log node) that finished does not hide an Agent that failed before
+        the Chat Output could run.
+        """
+        if isinstance(output, dict) and output.get("status") == "awaiting_input":
+            return "awaiting_input"
+        if self.status == "failed":
+            return "failed"
+        if not failed_nodes and not self.execution_failures():
+            return "success"
+        reached_an_end = any(
+            (self.node_execution_status.get(node_id) or {}).get("status") == "success"
+            for node_id in self._answer_nodes()
+        )
+        return "partial" if reached_an_end else "failed"
+
+    def _answer_nodes(self) -> list[str]:
+        """The end nodes that give the run its answer: the Chat Outputs among
+        the main flow's end nodes, or every end node when there is none."""
+        end_nodes = self._main_flow_end_nodes()
+        types = {node.get("id"): node.get("type") for node in self.workflow.get("nodes") or []}
+        chat_outputs = [node_id for node_id in end_nodes if types.get(node_id) == "chatOutputNode"]
+        return chat_outputs or end_nodes
+
+    def _main_flow_end_nodes(self) -> list[str]:
+        """The last nodes of the main flow: reached from its start nodes along
+        main-flow edges, with no main-flow edge leaving them. Tools, sub-agents,
+        Tool Builder sub-flows and loop bodies are not part of the main flow, so
+        a tool sub-flow's last node never counts as the run's answer."""
+        nodes = [node.get("id") for node in self.workflow.get("nodes") or []]
+        edges = self.workflow.get("edges") or []
+        main_edges = [edge for edge in edges if _is_main_flow_edge(edge)]
+        # A tool or sub-agent hung on a node is not an edge into the flow, so an
+        # entry Agent with tools attached is still a start. A Tool Builder's
+        # sub-flow and a loop body do count as entered, so they are not starts.
+        has_incoming = {
+            edge.get("target") for edge in edges if edge.get("targetHandle") not in _ATTACHMENT_TARGET_HANDLES
+        }
+        attached = {edge.get("source") for edge in edges if not _is_main_flow_edge(edge)}
+        attached -= {edge.get("source") for edge in main_edges}
+        starts = [node_id for node_id in nodes if node_id not in has_incoming and node_id not in attached]
+
+        next_nodes: Dict[str, list] = {}
+        for edge in main_edges:
+            next_nodes.setdefault(edge.get("source"), []).append(edge.get("target"))
+        seen: set = set()
+        stack = list(starts)
+        while stack:
+            node_id = stack.pop()
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            stack.extend(next_nodes.get(node_id, []))
+        return [node_id for node_id in seen if not next_nodes.get(node_id)]
+
+    def execution_failures(self) -> list[str]:
+        """Errors that stopped part of the run outside any node (see add_error), each once."""
+        return list(dict.fromkeys(
+            str(error.get("message") or "")
+            for error in self.errors
+            if isinstance(error, dict) and error.get("type") == "execution_failure"
+        ))
 
     def format_state_as_response(self):
         """
@@ -884,18 +1002,8 @@ class WorkflowState:
         )
         performance_metrics = self.performance_metrics
 
-        # Detect awaiting_input from node output (HumanInTheLoopNode returns form_schema as output)
-        if isinstance(output, dict) and output.get("status") == "awaiting_input":
-            status = "awaiting_input"
-        else:
-            status = "success"
-
-        # Surface node-level failures at the run level. This is ADDITIVE: the
-        # top-level `status` stays "success" (the workflow still completed and
-        # produced a response), but `has_failures`/`failed_nodes` let callers and
-        # the UI know a node did not do its job (e.g. a Zendesk ticket that was
-        # never created despite a 200-style flow). See node_result.is_node_failure.
         failed_nodes = self._collect_failed_nodes()
+        status = self._run_status(output, failed_nodes)
 
         token_usage = self.get_total_llm_usage()
         cost_is_partial = bool(token_usage.get("cost_is_partial"))
