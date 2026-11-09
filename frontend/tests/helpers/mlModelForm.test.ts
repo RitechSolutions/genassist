@@ -31,6 +31,12 @@ describe('parseModelFeatures', () => {
     ['["a,b", "c"]', ['a,b', 'c']],
     ['["say \\"hi\\"", "x"]', ['say "hi"', 'x']],
     ['["x", "x", " "]', ['x']],
+    ["['a,b', 'c']", ['a,b', 'c']],
+    ["'a,b', 'c'", ['a,b', 'c']],
+    ["('x', 'y')", ['x', 'y']],
+    ["('x',)", ['x']],
+    ['("O\'Brien", \'x\')', ["O'Brien", 'x']],
+    ["temp(C), x", ['temp(C)', 'x']],
   ])('reads %j in order', (raw, expected) => {
     expect(parseModelFeatures(raw)).toEqual(expected);
   });
@@ -68,6 +74,8 @@ describe('featureListError', () => {
     ['["a,b","year"], month'],
     ['["a", "b]'],
     ['["a", "b"'],
+    ["['a,b', 'c'"],
+    ["'a' b, c"],
   ])('rejects the mistyped list %j', (raw) => {
     expect(featureListError(raw)).toMatch(/brackets and quotes/);
   });
@@ -77,6 +85,8 @@ describe('featureListError', () => {
     ["['x', 'y']"],
     ['["a,b", "c"]'],
     ["O'Brien, x"],
+    ["('x', 'y')"],
+    ["['a,b', 'c']"],
     [''],
   ])('accepts %j', (raw) => {
     expect(featureListError(raw)).toBeNull();
