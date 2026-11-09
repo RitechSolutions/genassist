@@ -53,16 +53,6 @@ def _notify_run_failed(tenant_id: str, run_id: UUID) -> None:
     )
 
 
-def _engine_error_message(state) -> str:
-    messages = []
-    for entry in getattr(state, "errors", None) or []:
-        if isinstance(entry, dict):
-            messages.append(str(entry.get("message") or entry.get("error") or entry))
-        else:
-            messages.append(str(entry))
-    return "; ".join(m for m in messages if m) or "Workflow execution failed"
-
-
 async def execute_webhook_trigger_run_async(run_id: UUID):
     tenant_id = get_tenant_context()
     session_factory = multi_tenant_manager.get_tenant_session_factory(tenant_id)
@@ -120,6 +110,7 @@ async def execute_webhook_trigger_run_async(run_id: UUID):
                 }
                 # Imported lazily so the worker master never loads ML libs before forking
                 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+                from app.modules.workflow.engine.workflow_state import run_failure_message
                 from app.tasks.workflow_schedule_tasks import _redact_structure
 
                 workflow_engine = WorkflowEngine(workflow_config)
@@ -136,11 +127,13 @@ async def execute_webhook_trigger_run_async(run_id: UUID):
                 execution_output = _redact_structure(state.format_state_as_response())
                 execution_id = UUID(state.execution_id) if state.execution_id else None
 
-                if getattr(state, "status", None) == "failed":
+                # Redacted like execution_output: node errors can repeat run input.
+                failure = _redact_structure(run_failure_message(state, execution_output))
+                if failure:
                     await run_repository.update_status(
                         run_id,
                         WorkflowScheduleRunStatus.FAILED,
-                        error_message=_engine_error_message(state),
+                        error_message=failure,
                         execution_output=execution_output,
                         execution_id=execution_id,
                         workflow_id=workflow.id,

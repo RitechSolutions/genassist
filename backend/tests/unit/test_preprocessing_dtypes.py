@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -177,7 +178,7 @@ class TestPreprocessedTypesTrainEndToEnd:
 
         import pickle
 
-        with open(result["model_file_path"], "rb") as f:
+        with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
             metadata = pickle.load(f)["metadata"]
         assert "count" in metadata["scaled_columns"]
         assert "level" in metadata["categorical_columns"]

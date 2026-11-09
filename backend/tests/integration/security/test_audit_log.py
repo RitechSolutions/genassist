@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config.settings import settings
-from app.db.models import ConversationAnalysisModel, ConversationModel
+from app.core.utils.date_time_utils import utc_now
+from app.db.models import AuditLogModel, ConversationAnalysisModel, ConversationModel
 from app.db.seed.seed_data_config import seed_test_data
 
 # PromptConfigModel.gold_suite has a string relationship() to "TestSuiteModel",
@@ -37,6 +38,41 @@ async def test_search_audit_logs_by_action(client):
     assert response.status_code == 200
     data = response.json()
     assert all(log["action_name"] == "Insert" for log in data)
+
+@pytest.mark.asyncio
+async def test_search_audit_logs_cursor_page_follows_the_last_shown_row_after_an_insert(client):
+    headers = {"X-API-Key": "test123"}
+    window = client.get("/api/audit-logs/search", headers=headers, params={"limit": 6}).json()
+    assert len(window) == 6
+    last_shown = window[2]
+
+    engine = create_async_engine(settings.DATABASE_URL)
+    session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with session_maker() as session:
+            newer = AuditLogModel(
+                table_name="cursor_test", record_id=uuid.uuid4(), action_name="CursorTest", modified_at=utc_now()
+            )
+            session.add(newer)
+            await session.commit()
+            try:
+                response = client.get(
+                    "/api/audit-logs/search",
+                    headers=headers,
+                    params={
+                        "limit": 3,
+                        "before_modified_at": last_shown["modified_at"],
+                        "before_id": last_shown["id"],
+                    },
+                )
+            finally:
+                await session.execute(delete(AuditLogModel).where(AuditLogModel.id == newer.id))
+                await session.commit()
+    finally:
+        await engine.dispose()
+
+    assert response.status_code == 200
+    assert [log["id"] for log in response.json()] == [log["id"] for log in window[3:6]]
 
 @pytest.mark.asyncio
 async def test_get_audit_log_by_id(client):

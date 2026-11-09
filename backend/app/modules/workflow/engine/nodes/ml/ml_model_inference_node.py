@@ -26,8 +26,11 @@ from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml.ml_utils import (
     COLUMN_TRANSFORM_STRATEGY_LABELS,
     apply_column_transform,
+    column_transform_output_problem,
     column_transform_value_problem,
     column_transform_value_problem_code,
+    datetime_part_values,
+    parse_datetime_values,
     normalize_feature_expression,
     ordinal_key,
 )
@@ -339,6 +342,31 @@ def _is_unresolved_upstream_value(value: Any) -> bool:
     return isinstance(value, str) and value.strip().lower() == "null"
 
 
+# The library's error is only logged, so the hint names every usual cause
+# instead of guessing one (an unseen category is not a wrong value type).
+_INPUT_MISMATCH_HINT = (
+    "Check the inputs against what the model was trained on: the type of each "
+    "value, category values it saw in training, and the number of features."
+)
+_DATA_PREPARATION_FAILED = (
+    f"Could not prepare the input values for this model. {_INPUT_MISMATCH_HINT}"
+)
+_PREDICTION_FAILED = (
+    "The model could not make a prediction from these input values. "
+    f"{_INPUT_MISMATCH_HINT}"
+)
+
+
+def _failure_detail(message: str, defaults_applied: Sequence[str]) -> str:
+    """A client-safe failure message; the library's own error is only logged."""
+    if not defaults_applied:
+        return message
+    return (
+        f"{message} Configured feature default(s) were applied for: "
+        f"{', '.join(defaults_applied)}."
+    )
+
+
 def _summarize_error(error: Exception) -> str:
     detail = str(error).strip()
     return detail.splitlines()[0][:200] if detail else type(error).__name__
@@ -386,8 +414,13 @@ def _prepare_inference_inputs(
     normalized_categorical_features: Optional[Sequence[str]] = None,
     default_feature_names: Optional[Sequence[str]] = None,
     inference_warnings: Optional[List[str]] = None,
+    text_features: Optional[Sequence[str]] = None,
 ) -> tuple[Dict[str, List[Any]], List[str]]:
-    """Validate required inputs, apply defaults, and ignore stale extra inputs."""
+    """Validate required inputs, apply defaults, and ignore stale extra inputs.
+
+    text_features are raw inputs read as text (dates for Date-Time Features):
+    their defaults and training fills stay text instead of being checked as numbers.
+    """
     expected_features = list(feature_names)
     if not expected_features:
         raise AppException(
@@ -406,6 +439,7 @@ def _prepare_inference_inputs(
     )
     categorical_values = categorical_values or {}
     normalized_categorical_feature_set = set(normalized_categorical_features or [])
+    text_feature_set = set(text_features or [])
 
     default_feature_set = (
         expected_set
@@ -464,6 +498,8 @@ def _prepare_inference_inputs(
             )
         elif categorical_feature_set is not None and name in categorical_feature_set:
             prepared_defaults[name] = value
+        elif name in text_feature_set:
+            prepared_defaults[name] = str(value)
         else:
             prepared_defaults[name] = convert_value(value)
 
@@ -489,6 +525,8 @@ def _prepare_inference_inputs(
     invalid_numeric_defaults = []
     for name, value in prepared_defaults.items():
         if categorical_feature_set is not None and name in categorical_feature_set:
+            continue
+        if name in text_feature_set:
             continue
         if _numeric_value_problem(
             value,
@@ -661,6 +699,61 @@ def _model_accepts_raw_text_features(model: Any) -> bool:
         ) and bool(steps):
             return True
     return False
+
+
+_NUMERIC_ESTIMATOR_LIBRARIES = frozenset({"sklearn", "xgboost", "lightgbm"})
+
+
+def _reads_categories_natively(estimator: Any) -> bool:
+    """True when a boosted model was fitted to read category values itself."""
+    is_categorical = getattr(estimator, "is_categorical_", None)
+    if is_categorical is not None and bool(np.any(is_categorical)):
+        return True
+    boosters = [estimator, getattr(estimator, "_Booster", None)]  # lightgbm
+    get_booster = getattr(estimator, "get_booster", None)
+    if callable(get_booster):  # xgboost sklearn wrapper
+        try:
+            boosters.append(get_booster())
+        except Exception:
+            pass
+    for booster in boosters:
+        if booster is None:
+            continue
+        if getattr(booster, "pandas_categorical", None):  # lightgbm
+            return True
+        if "c" in (getattr(booster, "feature_types", None) or []):  # xgboost
+            return True
+    return False
+
+
+def _model_converts_text_to_numbers(model: Any) -> bool:
+    """True when the model and every estimator it wraps come from a library
+    that turns text input into floats itself ("1_000" -> 1000.0). False for a
+    custom or other-library model, a pipeline, or a model fitted on native
+    categories anywhere inside, since those may read text as text."""
+    pending = [model]
+    visited = set()
+    while pending:
+        candidate = pending.pop()
+        if candidate is None or isinstance(candidate, str) or id(candidate) in visited:
+            continue
+        visited.add(id(candidate))
+        if type(candidate).__module__.split(".", 1)[0] not in _NUMERIC_ESTIMATOR_LIBRARIES:
+            return False
+        if getattr(candidate, "steps", None) or _reads_categories_natively(candidate):
+            return False
+        for attr in (
+            "best_estimator_", "regressor", "regressor_", "estimator", "estimator_",
+            "final_estimator_", "base_estimator",
+        ):
+            pending.append(getattr(candidate, attr, None))
+        for attr in ("estimators_", "estimators"):
+            nested = getattr(candidate, attr, None)
+            if isinstance(nested, (list, tuple)):
+                pending.extend(
+                    item[-1] if isinstance(item, tuple) else item for item in nested
+                )
+    return True
 
 
 def _selected_feature_names(
@@ -1147,9 +1240,17 @@ def _step_output_columns(step: Dict[str, Any]) -> List[str]:
         return [stats.get("out_col") for stats in (step.get("column_stats") or {}).values()]
     if strategy == "polynomial":
         return list(step.get("new_names") or [])
-    if strategy in COLUMN_TRANSFORM_STRATEGY_LABELS:
+    if strategy in COLUMN_TRANSFORM_STRATEGY_LABELS or strategy == "datetime_features":
         return list(step.get("output_columns") or [])
     return [step.get("new_col")]
+
+
+def _datetime_input_columns(steps: List[Dict[str, Any]]) -> List[str]:
+    """Raw inputs read as dates/times by Date-Time Features steps (text, not numbers)."""
+    return [
+        step.get("column") for step in steps
+        if step.get("strategy") == "datetime_features" and step.get("column")
+    ]
 
 
 def _replay_input_error_detail(step: Dict[str, Any], cause: str) -> str:
@@ -1491,16 +1592,22 @@ def _replay_feature_engineering(
                 except (TypeError, ValueError) as e:
                     record_numeric_problem(step, e)
                     continue
+                math_function = step.get("math_function")
                 problem_code = column_transform_value_problem_code(
-                    strategy, raw, step.get("power_method")
+                    strategy, raw, step.get("power_method"), math_function
                 )
                 problem = column_transform_value_problem(
-                    strategy, raw, columns, step.get("power_method")
+                    strategy, raw, columns, step.get("power_method"), math_function
                 )
                 if problem:
                     if problem_code == "negative_log_input":
                         cause = (
                             "Log Transform needs values of 0 or more; "
+                            "negative values were supplied"
+                        )
+                    elif problem_code == "negative_sqrt_input":
+                        cause = (
+                            "Square Root needs values of 0 or more; "
                             "negative values were supplied"
                         )
                     elif problem_code == "non_positive_box_cox_input":
@@ -1515,9 +1622,35 @@ def _replay_feature_engineering(
                         log_cause=problem,
                     )
                     continue
-                out = apply_column_transform(strategy, step.get("transformer"), raw)
+                out = apply_column_transform(strategy, step.get("transformer"), raw, math_function)
+                output_problem = (
+                    column_transform_output_problem(out, columns) if strategy == "math_transform" else None
+                )
+                if output_problem:
+                    record_problem(step, f"{label}: {output_problem}")
+                    continue
                 for i, name in enumerate(step.get("output_columns") or []):
                     store_output(name, out[:, i])
+
+            elif strategy == "datetime_features":
+                column = step.get("column")
+                if column not in available:
+                    record_absent_inputs(step, [column])
+                    continue
+                # The day/month order training found for this column; models
+                # saved before it was recorded read month first, as they did.
+                parsed = parse_datetime_values(
+                    _build_input_array(available, [column])[:, 0],
+                    day_first=bool(step.get("day_first", False)),
+                )
+                if parsed.isna().any():
+                    record_problem(
+                        step,
+                        "the value(s) could not be read as a date/time (e.g. 2024-03-15 or 2024-03-15 14:30)",
+                    )
+                    continue
+                for part, name in zip(step.get("parts") or [], step.get("output_columns") or []):
+                    store_output(name, datetime_part_values(parsed, part))
         except AppException:
             raise
         except Exception as e:
@@ -1733,6 +1866,12 @@ class MLModelInferenceNode(BaseNode):
                     + label_columns
                     + ordinal_columns
                 )
+                # Date/time inputs are text, read by their Date-Time Features
+                # step; the model never sees them directly, so they are never
+                # checked or stacked as numbers (and their fallbacks stay text).
+                datetime_columns = set(
+                    _datetime_input_columns(metadata.get("feature_engineering_steps") or [])
+                )
                 model_handles_raw_text = (
                     not encoded_feature_columns
                     and _model_accepts_raw_text_features(model)
@@ -1813,6 +1952,7 @@ class MLModelInferenceNode(BaseNode):
                     normalized_categorical_features=list(ordinal_encodings),
                     default_feature_names=default_feature_names,
                     inference_warnings=inference_warnings,
+                    text_features=datetime_columns,
                 )
                 legacy_defaults_applied = [
                     name
@@ -1849,12 +1989,21 @@ class MLModelInferenceNode(BaseNode):
                 # columns it was trained on, instead of the raw (pre-encoding)
                 # feature names. No-op for models with no categorical features
                 # or legacy models that predate this metadata.
-                numeric_order = [f for f in feature_names if f not in encoded_feature_columns]
+                numeric_order = [
+                    f for f in feature_names
+                    if f not in encoded_feature_columns and f not in datetime_columns
+                ]
                 _validate_numeric_inputs(
                     normalized_inputs,
                     numeric_order if metadata_is_authoritative else feature_names,
-                    allow_text=(
-                        not metadata_is_authoritative or model_handles_raw_text
+                    # A model saved without metadata may read text itself, so
+                    # text is only refused up front when the model is known to
+                    # turn its input into floats (where "1_000" would quietly
+                    # become 1000 and "80.5 EUR" a raw library error).
+                    allow_text=model_handles_raw_text
+                    or (
+                        not metadata_is_authoritative
+                        and not _model_converts_text_to_numbers(model)
                     ),
                     text_features=model_native_text_features,
                 )
@@ -1922,12 +2071,13 @@ class MLModelInferenceNode(BaseNode):
                             column_arrays[col] = encoded_nd[:, i]
                         legacy_order += encoded_nd_columns
                 else:
+                    raw_feature_names = [f for f in feature_names if f not in datetime_columns]
                     raw_input_data = _build_input_array(
-                        normalized_inputs, feature_names
+                        normalized_inputs, raw_feature_names
                     )
-                    for i, col in enumerate(feature_names):
+                    for i, col in enumerate(raw_feature_names):
                         column_arrays[col] = raw_input_data[:, i]
-                    legacy_order = list(feature_names)
+                    legacy_order = list(raw_feature_names)
 
                 # Recompute any engineered features (bin_numeric, normalize,
                 # standardize, polynomial, custom_expression) from the inputs, using the exact fitted parameters captured at
@@ -2066,17 +2216,9 @@ class MLModelInferenceNode(BaseNode):
                 raise
             except Exception as e:
                 logger.error("Data preparation failed: %s", e, exc_info=True)
-                if defaults_applied:
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=(
-                            "Data preparation failed after configured feature default(s) were applied "
-                            f"for: {', '.join(defaults_applied)}. "
-                            f"Cause: {_summarize_error(e)}"
-                        ),
-                    ) from e
                 raise AppException(
-                    error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Data preparation failed: {e}"
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=_failure_detail(_DATA_PREPARATION_FAILED, defaults_applied),
                 ) from e
 
             # Make prediction (always returns batch format)
@@ -2193,17 +2335,9 @@ class MLModelInferenceNode(BaseNode):
                 raise
             except Exception as e:
                 logger.error("Error during model prediction: %s", e, exc_info=True)
-                if defaults_applied:
-                    raise AppException(
-                        error_key=ErrorKey.INTERNAL_ERROR,
-                        error_detail=(
-                            "Prediction failed after configured feature default(s) were applied for: "
-                            f"{', '.join(defaults_applied)}. "
-                            f"Cause: {_summarize_error(e)}"
-                        ),
-                    ) from e
                 raise AppException(
-                    error_key=ErrorKey.INTERNAL_ERROR, error_detail=f"Error during model prediction: {e}"
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=_failure_detail(_PREDICTION_FAILED, defaults_applied),
                 ) from e
 
         except AppException:

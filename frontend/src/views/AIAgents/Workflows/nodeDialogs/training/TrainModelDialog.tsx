@@ -956,6 +956,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                     }}
                     analysisResult={values.analysisResult}
                     targetColumn={values.targetColumn}
+                    featureColumns={values.featureColumns}
                     onChange={(config: FeatureEngineeringConfig) =>
                       setField("featureEngineering", config.features)
                     }

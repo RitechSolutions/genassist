@@ -390,8 +390,8 @@ async def test_profile_data_uses_stable_name_for_download_without_file_name(monk
 async def test_profile_data_profiles_read_only_sql_results(monkeypatch):
     database_manager = MagicMock()
     database_manager.get_db_type.return_value = "postgresql"
-    database_manager.execute_read_query = AsyncMock(
-        return_value=([{"id": 1, "name": "Ada"}, {"id": 2, "name": "Linus"}], None)
+    database_manager.stream_query = MagicMock(
+        return_value=_query_preview_chunks(["id", "name"], [(1, "Ada"), (2, "Linus")])
     )
     provider = MagicMock()
     provider.get_database_manager = AsyncMock(return_value=database_manager)
@@ -420,8 +420,12 @@ async def test_profile_data_profiles_read_only_sql_results(monkeypatch):
 
     assert response.body == b"<html>query</html>"
     provider.get_database_manager.assert_awaited_once_with(str(source_id))
-    database_manager.execute_read_query.assert_awaited_once_with(
-        f"SELECT id, name FROM people LIMIT {ml_models.settings.ML_PROFILE_MAX_ROWS}"
+    database_manager.stream_query.assert_called_once_with(
+        f"SELECT id, name FROM people LIMIT {ml_models.settings.ML_PROFILE_MAX_ROWS}",
+        chunk_size=min(
+            ml_models.settings.ML_PROFILE_MAX_ROWS,
+            ml_models.PROFILE_QUERY_CHUNK_ROWS,
+        ),
     )
     dataframe = build_report.call_args.args[0]
     assert isinstance(dataframe, pd.DataFrame)
@@ -654,7 +658,7 @@ async def test_preview_query_hides_connection_details(monkeypatch):
 async def test_profile_data_rejects_write_query(monkeypatch):
     database_manager = MagicMock()
     database_manager.get_db_type.return_value = "postgresql"
-    database_manager.execute_read_query = AsyncMock()
+    database_manager.stream_query = MagicMock()
     provider = MagicMock()
     provider.get_database_manager = AsyncMock(return_value=database_manager)
     monkeypatch.setattr(
@@ -676,7 +680,7 @@ async def test_profile_data_rejects_write_query(monkeypatch):
 
     assert exc_info.value.status_code == 400
     assert "blocked" in exc_info.value.detail.lower()
-    database_manager.execute_read_query.assert_not_awaited()
+    database_manager.stream_query.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -873,7 +877,7 @@ async def test_profile_data_requires_datasource_permission():
 async def test_profile_data_rejects_unresolved_workflow_variables(monkeypatch):
     database_manager = MagicMock()
     database_manager.get_db_type.return_value = "postgresql"
-    database_manager.execute_read_query = AsyncMock()
+    database_manager.stream_query = MagicMock()
     provider = MagicMock()
     provider.get_database_manager = AsyncMock(return_value=database_manager)
     monkeypatch.setattr(
@@ -895,14 +899,16 @@ async def test_profile_data_rejects_unresolved_workflow_variables(monkeypatch):
 
     assert exc_info.value.status_code == 400
     assert "workflow variables" in exc_info.value.detail
-    database_manager.execute_read_query.assert_not_awaited()
+    database_manager.stream_query.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_profile_data_reports_empty_query_result(monkeypatch):
     database_manager = MagicMock()
     database_manager.get_db_type.return_value = "sqlite"
-    database_manager.execute_read_query = AsyncMock(return_value=([], None))
+    database_manager.stream_query = MagicMock(
+        return_value=_query_preview_chunks(["id"], [])
+    )
     provider = MagicMock()
     provider.get_database_manager = AsyncMock(return_value=database_manager)
     monkeypatch.setattr(
@@ -930,9 +936,11 @@ async def test_profile_data_reports_empty_query_result(monkeypatch):
 async def test_profile_data_returns_safe_query_error(monkeypatch):
     database_manager = MagicMock()
     database_manager.get_db_type.return_value = "postgresql"
-    database_manager.execute_read_query = AsyncMock(
-        return_value=([], 'column "secret_column" does not exist')
-    )
+    async def failed_stream():
+        raise RuntimeError('column "secret_column" does not exist')
+        yield
+
+    database_manager.stream_query = MagicMock(return_value=failed_stream())
     provider = MagicMock()
     provider.get_database_manager = AsyncMock(return_value=database_manager)
     monkeypatch.setattr(
@@ -1024,7 +1032,9 @@ async def test_profile_data_caps_query_for_supported_dialects(
     monkeypatch.setattr(ml_models.settings, "ML_PROFILE_MAX_ROWS", 7)
     database_manager = MagicMock()
     database_manager.get_db_type.return_value = db_type
-    database_manager.execute_read_query = AsyncMock(return_value=([{"id": 1}], None))
+    database_manager.stream_query = MagicMock(
+        return_value=_query_preview_chunks(["id"], [(1,)])
+    )
     provider = MagicMock()
     provider.get_database_manager = AsyncMock(return_value=database_manager)
     monkeypatch.setattr(
@@ -1048,7 +1058,7 @@ async def test_profile_data_caps_query_for_supported_dialects(
         _file_manager(),
     )
 
-    executed_query = database_manager.execute_read_query.await_args.args[0]
+    executed_query = database_manager.stream_query.call_args.args[0]
     assert expected_fragment in executed_query
 
 
@@ -1080,7 +1090,9 @@ async def test_profile_data_preserves_smaller_fetch_limit(
     monkeypatch.setattr(ml_models.settings, "ML_PROFILE_MAX_ROWS", 7)
     database_manager = MagicMock()
     database_manager.get_db_type.return_value = db_type
-    database_manager.execute_read_query = AsyncMock(return_value=([{"id": 1}], None))
+    database_manager.stream_query = MagicMock(
+        return_value=_query_preview_chunks(["id"], [(1,)])
+    )
     provider = MagicMock()
     provider.get_database_manager = AsyncMock(return_value=database_manager)
     monkeypatch.setattr(
@@ -1104,7 +1116,7 @@ async def test_profile_data_preserves_smaller_fetch_limit(
         _file_manager(),
     )
 
-    executed_query = database_manager.execute_read_query.await_args.args[0]
+    executed_query = database_manager.stream_query.call_args.args[0]
     assert expected_fragment in executed_query
     assert "100000" not in executed_query
 
@@ -1139,7 +1151,9 @@ async def test_profile_data_executes_validated_sqlglot_rewrite(
     monkeypatch.setattr(ml_models.settings, "ML_PROFILE_MAX_ROWS", 7)
     database_manager = MagicMock()
     database_manager.get_db_type.return_value = db_type
-    database_manager.execute_read_query = AsyncMock(return_value=([{"value": 1}], None))
+    database_manager.stream_query = MagicMock(
+        return_value=_query_preview_chunks(["value"], [(1,)])
+    )
     provider = MagicMock()
     provider.get_database_manager = AsyncMock(return_value=database_manager)
     monkeypatch.setattr(
@@ -1163,7 +1177,7 @@ async def test_profile_data_executes_validated_sqlglot_rewrite(
         _file_manager(),
     )
 
-    executed_query = database_manager.execute_read_query.await_args.args[0]
+    executed_query = database_manager.stream_query.call_args.args[0]
     assert expected_fragment in executed_query
     assert "LIMIT 7" in executed_query
 
@@ -1229,3 +1243,97 @@ async def test_analyze_csv_refuses_unfilled_placeholder(file_url):
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == ml_models.UNFILLED_FILE_PATH_DETAIL
     file_manager.extract_file_id_from_url.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_preview_query_refuses_duplicate_column_names(monkeypatch):
+    database_manager = MagicMock()
+    database_manager.get_db_type.return_value = "sqlite"
+    database_manager.stream_query = MagicMock(
+        return_value=_query_preview_chunks(["id", "score", "score"], [(1, 10, 99)])
+    )
+    provider = MagicMock()
+    provider.get_database_manager = AsyncMock(return_value=database_manager)
+    monkeypatch.setattr(
+        ml_models.DBProviderManager,
+        "get_instance",
+        MagicMock(return_value=provider),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.preview_query(
+            ml_models.QueryPreviewRequest(
+                data_source_id=uuid4(),
+                query="SELECT 1 AS id, 10 AS score, 99 AS score",
+            ),
+            _request(P.DataSource.READ),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "two columns named 'score'" in exc_info.value.detail
+    assert "with AS" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_profile_data_refuses_query_with_repeated_column(monkeypatch):
+    # As dicts, a.score and b.score would profile as one 'score' column.
+    database_manager = MagicMock()
+    database_manager.get_db_type.return_value = "postgresql"
+    database_manager.stream_query = MagicMock(
+        return_value=_query_preview_chunks(["id", "score", "score"], [(1, 2, 3)])
+    )
+    provider = MagicMock()
+    provider.get_database_manager = AsyncMock(return_value=database_manager)
+    monkeypatch.setattr(
+        ml_models.DBProviderManager,
+        "get_instance",
+        MagicMock(return_value=provider),
+    )
+    build_report = MagicMock()
+    monkeypatch.setattr(ml_models, "_build_dataframe_profile_report_html", build_report)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.profile_data(
+            ml_models.ProfileDataRequest(
+                source_type="datasource",
+                data_source_id=uuid4(),
+                query="SELECT a.id, a.score, b.score FROM a JOIN b ON a.id = b.id",
+            ),
+            _request(P.DataSource.READ),
+            _file_manager(),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert "two columns named 'score'" in exc_info.value.detail
+    build_report.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content", "name"),
+    [
+        ("a,a,b\n1,2,3\n", "a"),
+        # Excel's "CSV UTF-8" export starts with a BOM.
+        ("\ufeffid,id\n1,2\n", "id"),
+        # The run sniffs the delimiter, so the profile check must too.
+        ("id;name;id\n1;Ada;2\n", "id"),
+    ],
+)
+async def test_profile_csv_refuses_repeated_header(tmp_path, content, name):
+    # pd.read_csv would rename the second column to '<name>.1'.
+    source = tmp_path / "repeated.csv"
+    source.write_text(content, encoding="utf-8")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models._ensure_unique_csv_header(source)
+
+    assert exc_info.value.status_code == 400
+    assert f"two columns named '{name}'" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_profile_csv_header_check_ignores_trailing_empty_cells(tmp_path):
+    source = tmp_path / "trailing.csv"
+    source.write_text("a,b,,\n1,2,,\n", encoding="utf-8")
+
+    await ml_models._ensure_unique_csv_header(source)
