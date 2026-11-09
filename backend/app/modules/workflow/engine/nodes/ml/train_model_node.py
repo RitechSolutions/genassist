@@ -48,6 +48,13 @@ from app.modules.workflow.engine.nodes.ml import ml_utils
 
 logger = logging.getLogger(__name__)
 
+
+class ModelTypeMismatchError(AppException):
+    """A pipeline run's Train Model type differs from its model's registered type."""
+
+    def __init__(self, detail: str):
+        super().__init__(error_key=ErrorKey.INTERNAL_ERROR, error_detail=detail)
+
 # Feature engineering strategies no longer offered for new features: they
 # duplicate scalingMethod (rescaling numeric columns, fit on the training
 # split) and so scaled the same values twice. Still accepted and run for
@@ -314,10 +321,7 @@ class TrainModelNode(BaseNode):
             target_model_id = (self.state.initial_values or {}).get("model_id")
             type_mismatch = await self._target_model_type_mismatch(target_model_id, model_type)
             if type_mismatch:
-                raise AppException(
-                    error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail=type_mismatch,
-                )
+                raise ModelTypeMismatchError(type_mismatch)
 
             valid_scaling_methods = ["none", "standard", "minmax", "maxabs", "robust", "auto"]
             if scaling_method not in valid_scaling_methods:
@@ -2423,10 +2427,14 @@ class TrainModelNode(BaseNode):
                 Model") for ad-hoc/test-node runs with no pipeline context.
 
         Returns:
-            Tuple of (ml_model_id, pkl_file_id, error message, warnings). Never
-            raises — a registration failure shouldn't fail a training run
-            that already produced a valid .pkl on disk. When upload succeeds,
-            pkl_file_id is retained even if updating the registry fails.
+            Tuple of (ml_model_id, pkl_file_id, error message, warnings). A
+            registration failure doesn't fail a training run that already
+            produced a valid .pkl on disk. When upload succeeds, pkl_file_id
+            is retained even if updating the registry fails.
+
+        Raises:
+            ModelTypeMismatchError: a pipeline's model is registered as another
+                type. Nothing is uploaded and the model is left as it was.
         """
         resolved_pkl_file_id = None
         try:
@@ -2444,6 +2452,28 @@ class TrainModelNode(BaseNode):
             from app.services.app_settings import AppSettingsService
             from app.services.file_manager import FileManagerService
             from app.services.ml_model_artifacts import ModelArtifactContract
+
+            ml_service = injector.get(MLModelsService)
+            pipeline_target = None
+            if target_model_id:
+                try:
+                    pipeline_target = await ml_service.get_by_id(UUID(str(target_model_id)))
+                except Exception as e:
+                    logger.warning(
+                        f"Pipeline target model {target_model_id} not found ({str(e)}); "
+                        f"falling back to lookup by name '{name}'"
+                    )
+            # A pipeline's model keeps its registered type: a file trained as
+            # another type would be served under the wrong type. process()
+            # refuses this before training; this covers a pre-check that
+            # couldn't read the model. Checked before the upload so a refused
+            # run leaves no orphaned file, and raised so the run fails.
+            if pipeline_target is not None:
+                type_mismatch = model_type_mismatch_message(
+                    pipeline_target.name, pipeline_target.model_type, model_type
+                )
+                if type_mismatch:
+                    raise ModelTypeMismatchError(type_mismatch)
 
             fm = injector.get(FileManagerService)
             app_cfg = await injector.get(AppSettingsService).get_by_type_and_name(
@@ -2481,24 +2511,12 @@ class TrainModelNode(BaseNode):
                 "pkl_file": None,
             }
 
-            ml_service = injector.get(MLModelsService)
             # Marker recorded in the description of any model this node registers, so a
             # later run can recognize "its own" row by name. Node IDs are unique per node
             # instance, unlike the (often generic, e.g. "Train Model") display name.
             node_marker = f"[train-model-node:{self.node_id}]"
 
-            existing = None
-            pipeline_target = None
-            if target_model_id:
-                try:
-                    existing = pipeline_target = await ml_service.get_by_id(
-                        UUID(target_model_id)
-                    )
-                except (AppException, ValueError) as e:
-                    logger.warning(
-                        f"Pipeline target model {target_model_id} not found ({str(e)}); "
-                        f"falling back to lookup by name '{name}'"
-                    )
+            existing = pipeline_target
             if existing is None:
                 # Only reuse a name match if this exact node registered it previously —
                 # display names default to the generic "Train Model" label, so two
@@ -2508,17 +2526,7 @@ class TrainModelNode(BaseNode):
                 if by_name and node_marker in (by_name.description or ""):
                     existing = by_name
 
-            # A pipeline's model keeps its registered type: a file trained as
-            # another type would be served under the wrong type, so the model
-            # is left as it was. process() already refuses this before
-            # training; this covers a pre-check that couldn't read the model.
-            if pipeline_target is not None:
-                type_mismatch = model_type_mismatch_message(
-                    pipeline_target.name, pipeline_target.model_type, model_type
-                )
-                if type_mismatch:
-                    return None, None, type_mismatch, []
-            elif existing is not None:
+            if pipeline_target is None and existing is not None:
                 # The node's own ad-hoc model is this node's output, so its type
                 # follows the node's Model Type.
                 model_fields["model_type"] = model_type
@@ -2573,6 +2581,8 @@ class TrainModelNode(BaseNode):
             )
             return str(created.id), resolved_pkl_file_id, None, registration_warnings
 
+        except ModelTypeMismatchError:
+            raise
         except Exception as e:
             logger.error(f"Failed to register trained model '{name}': {str(e)}", exc_info=True)
             return None, resolved_pkl_file_id, str(e), []

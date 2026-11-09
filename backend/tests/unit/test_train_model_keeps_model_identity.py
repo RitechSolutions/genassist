@@ -15,7 +15,10 @@ from app.core.exceptions.exception_classes import AppException
 from app.db.models.ml_model import ModelType as DbModelType
 from app.db.models.ml_model_pipeline import PipelineRunStatus as PipelineRunStatusEnum
 from app.dependencies.injector import injector
-from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
+from app.modules.workflow.engine.nodes.ml.train_model_node import (
+    ModelTypeMismatchError,
+    TrainModelNode,
+)
 from app.modules.workflow.engine.workflow_state import WorkflowState
 from app.schemas.ml_model_pipeline import MLModelPipelineRunPromote
 from app.services.ml_model_pipeline import MLModelPipelineRunService
@@ -158,22 +161,35 @@ async def test_create_sets_description_marker_and_type(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_target_of_another_type_is_not_changed(monkeypatch):
+async def test_pipeline_target_of_another_type_fails_without_uploading(monkeypatch):
     existing = _existing_model(DbModelType.RANDOM_FOREST)
     ml_service = _ml_service(existing=existing)
-    _patch_dependencies(monkeypatch, ml_service)
+    file_manager = _patch_dependencies(monkeypatch, ml_service)
 
-    ml_model_id, pkl_file_id, error, warnings = await _register(
-        _make_node(), "xgboost", target_model_id=str(existing.id)
-    )
+    # Raised (not returned) so the node, and the pipeline run, fail.
+    with pytest.raises(ModelTypeMismatchError) as excinfo:
+        await _register(_make_node(), "xgboost", target_model_id=str(existing.id))
 
-    assert ml_model_id is None
-    # Not handed on, so the run can't be promoted into the model either.
-    assert pkl_file_id is None
-    assert "registered as Random Forest" in error
-    assert warnings == []
+    assert "registered as Random Forest" in excinfo.value.error_detail
+    # Checked before the upload, so no orphaned file is left behind.
+    file_manager.create_file_from_local_path.assert_not_awaited()
     ml_service.update.assert_not_awaited()
     ml_service.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_target_lookup_failure_falls_back_and_keeps_the_file(monkeypatch):
+    ml_service = _ml_service()
+    ml_service.get_by_id = AsyncMock(side_effect=RuntimeError("db hiccup"))
+    file_manager = _patch_dependencies(monkeypatch, ml_service)
+
+    ml_model_id, pkl_file_id, error, _ = await _register(
+        _make_node(), "xgboost", target_model_id=str(uuid.uuid4()), name="Brand new"
+    )
+
+    assert error is None
+    assert ml_model_id is not None
+    assert pkl_file_id == str(file_manager.create_file_from_local_path.return_value.id)
 
 
 @pytest.mark.asyncio

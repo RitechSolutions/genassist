@@ -53,17 +53,21 @@ def _training_succeeded(execution_output: Dict[str, Any]) -> bool:
     Train Model chain still completes and produces real metrics - has_failures
     would be true there even though training succeeded.
 
-    A failed Train Model node always fails the run, though: the final output
-    is then an upstream node's (e.g. Data Preprocessing's own success), so it
-    would otherwise read as a completed run with no model.
+    When a Train Model node failed and the final output isn't a Train Model
+    result, though, the run failed: that output is an upstream node's own
+    success (e.g. Data Preprocessing's), and no model was trained. A failed
+    Train Model next to one that trained (a leftover, disconnected node)
+    doesn't fail the run.
     """
-    failed_nodes = execution_output.get("failed_nodes") or []
-    if any(
-        isinstance(node, dict) and node.get("type") == "trainModelNode" for node in failed_nodes
-    ):
-        return False
     output = execution_output.get("output")
-    return isinstance(output, dict) and output.get("success") is True
+    if not (isinstance(output, dict) and output.get("success") is True):
+        return False
+    failed_nodes = execution_output.get("failed_nodes") or []
+    train_model_failed = any(
+        isinstance(node, dict) and node.get("type") == "trainModelNode" for node in failed_nodes
+    )
+    # Every Train Model result carries the path of the model it trained.
+    return not train_model_failed or "model_file_path" in output
 
 
 def _summarize_run_failure(execution_output: Dict[str, Any]) -> str:
