@@ -585,6 +585,19 @@ async def test_json_wrapper_with_a_repeated_key_is_refused(monkeypatch, tmp_path
 
 
 @pytest.mark.asyncio
+async def test_json_wrapper_with_a_repeated_metadata_key_is_read(tmp_path):
+    # Only the rows array is read; a repeated key beside it loses no row.
+    path = tmp_path / "wrapped.json"
+    path.write_text(
+        '{"count": 1, "count": 2, "rows": [{"id": 1}, {"id": 2}]}', encoding="utf-8"
+    )
+
+    frame, _, _ = await read_training_file_preview(path, 10)
+
+    assert frame["id"].tolist() == [1, 2]
+
+
+@pytest.mark.asyncio
 async def test_json_lines_saved_as_json_names_the_line(monkeypatch, tmp_path):
     path = tmp_path / "lines.json"
     path.write_text('{"id": 1}\n\n{"id": 2, "id": 3}\n', encoding="utf-8")
