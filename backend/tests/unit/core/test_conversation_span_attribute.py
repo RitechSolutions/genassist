@@ -73,17 +73,19 @@ def _connection(conversation_id):
     return SimpleNamespace(path_params={} if conversation_id is None else {"conversation_id": conversation_id})
 
 
-def test_router_dependency_tags_conversation_from_the_url():
+@pytest.mark.asyncio
+async def test_router_dependency_tags_conversation_from_the_url():
     with _tracer.start_as_current_span("fastapi.request") as span:
-        routes.tag_trace_with_conversation(_connection(str(CONVERSATION_ID)))
+        await routes.tag_trace_with_conversation(_connection(str(CONVERSATION_ID)))
 
     assert span.attributes["genassist.conversation_id"] == str(CONVERSATION_ID)
 
 
 @pytest.mark.parametrize("raw", [None, "not-a-uuid", "../../etc"])
-def test_router_dependency_ignores_missing_or_malformed_ids(raw):
+@pytest.mark.asyncio
+async def test_router_dependency_ignores_missing_or_malformed_ids(raw):
     with _tracer.start_as_current_span("fastapi.request") as span:
-        routes.tag_trace_with_conversation(_connection(raw))
+        await routes.tag_trace_with_conversation(_connection(raw))
 
     assert "genassist.conversation_id" not in span.attributes
 
@@ -96,6 +98,11 @@ def test_every_conversation_route_tags_before_its_own_dependencies():
     }
     for route in with_id:
         assert route.dependant.dependencies[0].call is routes.tag_trace_with_conversation, route.path
+
+
+def test_router_dependency_runs_on_the_event_loop():
+    """A plain def would make FastAPI hop to its threadpool on every request to this router."""
+    assert inspect.iscoroutinefunction(routes.tag_trace_with_conversation)
 
 
 def test_request_rejected_by_auth_is_still_tagged():
