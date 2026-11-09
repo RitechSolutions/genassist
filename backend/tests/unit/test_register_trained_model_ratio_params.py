@@ -250,3 +250,91 @@ async def test_uploaded_file_id_is_retained_when_registry_update_fails(monkeypat
     assert pkl_file_id == uploaded_file_id
     assert error == "registry unavailable"
     assert warnings == []
+
+
+@pytest.mark.asyncio
+async def test_a_second_run_of_the_same_node_updates_its_model(monkeypatch):
+    """A retest under the same node id updates the model the first run made (68072)."""
+    ml_service = MagicMock()
+    ml_service.get_by_name = AsyncMock(return_value=None)
+    created = MagicMock()
+    created.id = uuid.uuid4()
+    ml_service.create = AsyncMock(return_value=created)
+    ml_service.update = AsyncMock(return_value=created)
+    _patch_dependencies(monkeypatch, ml_service)
+
+    node_id = str(uuid.uuid4())
+    kwargs = dict(
+        name="my-model",
+        model_type="linear_regression",
+        feature_columns=["x"],
+        target_column="y",
+        local_pkl_path="/tmp/model.pkl",
+    )
+    first = TrainModelNode(node_id=node_id, node_config={}, state=WorkflowState(workflow={}))
+    await first._register_trained_model(**kwargs)
+    created.description = ml_service.create.await_args.args[0].description
+    created.inference_params = None
+    ml_service.get_by_name = AsyncMock(return_value=created)
+
+    second = TrainModelNode(node_id=node_id, node_config={}, state=WorkflowState(workflow={}))
+    ml_model_id, _, error, _ = await second._register_trained_model(**kwargs)
+
+    assert error is None
+    assert ml_model_id == str(created.id)
+    ml_service.create.assert_awaited_once()
+    ml_service.update.assert_awaited_once()
+    assert ml_service.update.await_args.args[0] == created.id
+
+
+@pytest.mark.asyncio
+async def test_another_node_does_not_take_over_a_model_with_the_same_name(monkeypatch):
+    ml_service = MagicMock()
+    other = MagicMock()
+    other.id = uuid.uuid4()
+    other.description = f"Trained by workflow Train Model node [train-model-node:{uuid.uuid4()}]"
+    ml_service.get_by_name = AsyncMock(return_value=other)
+    ml_service.create = AsyncMock(side_effect=Exception("A model with this name already exists."))
+    ml_service.update = AsyncMock()
+    _patch_dependencies(monkeypatch, ml_service)
+
+    _, _, error, _ = await _make_node()._register_trained_model(
+        name="my-model",
+        model_type="linear_regression",
+        feature_columns=["x"],
+        target_column="y",
+        local_pkl_path="/tmp/model.pkl",
+    )
+
+    assert error == "A model with this name already exists."
+    ml_service.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_model_left_by_an_old_node_test_is_taken_over(monkeypatch):
+    """Models registered under the old throwaway test id get updated, not duplicated (68072)."""
+    ml_service = MagicMock()
+    legacy = MagicMock()
+    legacy.id = uuid.uuid4()
+    legacy.inference_params = None
+    legacy.description = (
+        "Trained by workflow Train Model node (thread t) "
+        "[train-model-node:test-trainModelNode-1731000000]"
+    )
+    ml_service.get_by_name = AsyncMock(return_value=legacy)
+    ml_service.create = AsyncMock()
+    ml_service.update = AsyncMock(return_value=legacy)
+    _patch_dependencies(monkeypatch, ml_service)
+
+    ml_model_id, _, error, _ = await _make_node()._register_trained_model(
+        name="my-model",
+        model_type="linear_regression",
+        feature_columns=["x"],
+        target_column="y",
+        local_pkl_path="/tmp/model.pkl",
+    )
+
+    assert error is None
+    assert ml_model_id == str(legacy.id)
+    ml_service.create.assert_not_awaited()
+    assert ml_service.update.await_args.args[0] == legacy.id

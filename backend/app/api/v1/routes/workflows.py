@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -364,6 +365,27 @@ async def _queue_training_job(
     return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=training_jobs.public_view(job))
 
 
+# Canvas node ids are UUIDs; saved templates may use other simple ids.
+TEST_NODE_ID_PATTERN = re.compile(r"[A-Za-z0-9_.:-]{1,200}")
+
+
+def _test_node_id(node_type: str, requested_id: Any, fallback_id: str) -> str:
+    """The id a single-node test runs a node under.
+
+    A Train Model node records its own id on the model it registers and only
+    updates a model carrying that id, so testing it again must reuse the
+    canvas node's id: a fresh id per test made every retest try to create a
+    second model with the same name (ML_MODEL_NAME_EXISTS). Other node types
+    keep a throwaway id so a test run never shares state with the real node.
+    """
+    if node_type != training_jobs.TRAIN_MODEL_NODE_TYPE or not isinstance(requested_id, str):
+        return fallback_id
+    requested_id = requested_id.strip()
+    if not TEST_NODE_ID_PATTERN.fullmatch(requested_id):
+        return fallback_id
+    return requested_id
+
+
 def _training_job_not_found() -> AppException:
     return AppException(
         error_key=ErrorKey.ML_TRAINING_JOB_NOT_FOUND,
@@ -583,11 +605,12 @@ async def test_individual_node(request: Request, test_data: Dict[str, Any]):
         try:
             # Create a unique test ID
             test_id = f"test-{node_type}-{int(time.time())}"
+            node_id = _test_node_id(node_type, test_data.get("node_id"), test_id)
 
             # Build workflow configuration with single node
             workflow_config = {
                 "id": test_id,
-                "nodes": [{"id": test_id, "type": node_type, "data": node_config}],
+                "nodes": [{"id": node_id, "type": node_type, "data": node_config}],
                 "edges": [],
             }
 
@@ -598,7 +621,7 @@ async def test_individual_node(request: Request, test_data: Dict[str, Any]):
                     {
                         "workflow_config": workflow_config,
                         "input_data": input_data,
-                        "start_node_id": test_id,
+                        "start_node_id": node_id,
                         "usage_source": "node_test",
                     },
                 )
@@ -606,7 +629,7 @@ async def test_individual_node(request: Request, test_data: Dict[str, Any]):
             workflow_engine = WorkflowEngine(workflow_config)
 
             state = await workflow_engine.execute_from_node(
-                start_node_id=test_id,
+                start_node_id=node_id,
                 input_data=input_data,
                 usage_context=WorkflowUsageContext(
                     source="node_test",

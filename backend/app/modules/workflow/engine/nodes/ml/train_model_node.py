@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import pickle
+import re
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -50,6 +51,11 @@ from app.modules.workflow.engine.nodes.ml import model_registry
 from app.modules.workflow.engine.nodes.ml import training_progress
 
 logger = logging.getLogger(__name__)
+
+# Single-node tests used to run under a throwaway "test-trainModelNode-<time>" id,
+# so models they registered carry a marker no node can match again. Such a model
+# has no real owner: the next run with the same model name takes it over (68072).
+LEGACY_NODE_TEST_MARKER = re.compile(r"\[train-model-node:test-trainModelNode-\d+\]")
 
 # Feature engineering strategies no longer offered for new features: they
 # duplicate scalingMethod (rescaling numeric columns, fit on the training
@@ -2646,7 +2652,10 @@ class TrainModelNode(BaseNode):
                 # unrelated node instances can otherwise collide and silently overwrite
                 # each other's registered model.
                 by_name = await ml_service.get_by_name(name)
-                if by_name and node_marker in (by_name.description or ""):
+                by_name_description = (by_name.description or "") if by_name else ""
+                if node_marker in by_name_description or LEGACY_NODE_TEST_MARKER.search(
+                    by_name_description
+                ):
                     existing = by_name
 
             model_fields["inference_params"] = merge_model_inference_params(
