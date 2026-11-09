@@ -224,7 +224,10 @@ async def upload_pkl_file(
                 # pkl_file is not accepted, so the model gets a copy inside it.
                 if not is_in_ml_models_dir(file_path):
                     copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
-                    await asyncio.to_thread(shutil.copyfile, file_path, copy_path)
+                    # Not asyncio.to_thread: on cancel its thread kept copying after the cleanup
+                    # below. anyio finishes the copy first; the checkpoint then raises the cancel.
+                    await anyio.to_thread.run_sync(shutil.copyfile, file_path, copy_path)
+                    await anyio.lowlevel.checkpoint_if_cancelled()
                     file_path = copy_path
                 # file_path = await file_manager_service.get_file_url(created_file)
         except BaseException:

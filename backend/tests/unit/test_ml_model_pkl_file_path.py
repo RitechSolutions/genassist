@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -293,6 +294,38 @@ class TestUploadRemovesFileWhenItFailsAfterStoring:
             await self._upload(file_manager_service)
 
         assert "storage not ready" in exc.value.detail
+
+    @pytest.mark.asyncio
+    async def test_cancel_during_the_copy_leaves_no_copy_behind(self, ml_models_dir, tmp_path, monkeypatch):
+        """A cancelled request doesn't stop the copy thread, so the cleanup waits for it."""
+        import threading
+
+        import anyio
+        from app.api.v1.routes import ml_models as ml_models_routes
+
+        monkeypatch.setattr(ml_models_routes, "ML_MODELS_UPLOAD_DIR", str(ml_models_dir))
+        file_id = uuid4()
+        copy_path = ml_models_dir / f"{file_id}.pkl"
+        copy_started, copy_done = threading.Event(), threading.Event()
+
+        def slow_copy(src, dst):
+            copy_started.set()
+            time.sleep(0.3)  # still copying when the request is cancelled and cleaned up
+            with open(dst, "wb") as f:
+                f.write(b"model")
+            copy_done.set()
+
+        monkeypatch.setattr(ml_models_routes.shutil, "copyfile", slow_copy)
+        file_manager_service = self._file_manager(tmp_path / "custom", file_id)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(self._upload, file_manager_service)
+            await anyio.to_thread.run_sync(copy_started.wait, 5)
+            tg.cancel_scope.cancel()
+
+        assert await anyio.to_thread.run_sync(copy_done.wait, 5)
+        file_manager_service.delete_file.assert_awaited_once_with(file_id)
+        assert not copy_path.exists()
 
     @pytest.mark.asyncio
     async def test_successful_upload_deletes_nothing(self, ml_models_dir):
