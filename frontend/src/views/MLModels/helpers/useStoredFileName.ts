@@ -5,6 +5,13 @@ import { FileRecord, getFileManagerFile } from "@/services/fileManager";
 const recordName = (record: FileRecord | null | undefined) =>
   record?.original_filename || record?.name || null;
 
+// Keyed by id, so a replaced file never shows the previous file's name.
+export const storedFileQuery = (fileId: string | null | undefined) => ({
+  queryKey: ["file-manager-file", fileId],
+  queryFn: () => getFileManagerFile(fileId as string),
+  retry: false,
+});
+
 /**
  * The name and size of a model's attached file, read from its File Manager
  * record. The model only stores the file's id, so anything that names the file
@@ -17,12 +24,7 @@ export function useStoredFileName(
 ): { name: string; size: number | null; resolveName: () => Promise<string> } {
   const queryClient = useQueryClient();
   const fallback = `${modelName || "model"}.pkl`;
-  // Keyed by id, so a replaced file never shows the previous file's name.
-  const query = {
-    queryKey: ["file-manager-file", fileId],
-    queryFn: () => getFileManagerFile(fileId as string),
-    retry: false,
-  };
+  const query = storedFileQuery(fileId);
   const { data: record } = useQuery({ ...query, enabled: !!fileId });
 
   return {
