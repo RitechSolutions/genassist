@@ -57,6 +57,20 @@ class TestTrainingSucceeded:
         }
         assert _training_succeeded(execution_output) is False
 
+    def test_true_when_a_leftover_train_model_failed_but_training_finished(self):
+        execution_output = {
+            "has_failures": True,
+            "failed_nodes": [
+                {"name": "Train Model (old)", "type": "trainModelNode", "error": "fileUrl is required"}
+            ],
+            "output": {
+                "success": True,
+                "model_file_path": "/data/train/model.pkl",
+                "metrics": {"accuracy": 0.9},
+            },
+        }
+        assert _training_succeeded(execution_output) is True
+
 
 class TestSummarizeRunFailure:
     def test_prefers_the_final_output_error(self):
