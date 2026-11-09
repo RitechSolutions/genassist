@@ -28,6 +28,7 @@ from app.services.ml_models import (
     MLModelsService,
     STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX,
     merge_model_inference_params,
+    model_type_mismatch_message,
 )
 from app.services.ml_model_manager import MLModelManager
 
@@ -262,6 +263,18 @@ class MLModelPipelineRunService:
             execution_output.get("model_file_path") if execution_output else None
         )
         pkl_file_id = execution_output.get("pkl_file_id") if execution_output else None
+
+        # A file trained as another type can't replace this model's: the
+        # registered type would no longer describe the file being served.
+        if promote_data.update_model_file and execution_output:
+            type_mismatch = model_type_mismatch_message(
+                model.name, model.model_type, execution_output.get("model_type")
+            )
+            if type_mismatch:
+                raise AppException(
+                    error_key=ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE,
+                    error_detail=type_mismatch,
+                )
 
         if promote_data.update_model_file and model_file_path and not pkl_file_id:
             if "pkl_file_id" in execution_output:
