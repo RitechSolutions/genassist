@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import Request
 
 import app.api.v1.routes.workflows as workflows_route
 from app.modules.workflow import test_runs
@@ -64,6 +65,7 @@ def _graph(**overrides) -> dict:
 async def test_saved_graph_attributes_usage_without_changing_execution():
     saved_id = uuid4()
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {"input_data": {"message": "hi"}, "workflow": _graph(id=str(saved_id))},
         workflow_service=FakeWorkflowService(),
     )
@@ -79,6 +81,7 @@ async def test_saved_graph_attributes_usage_without_changing_execution():
 @pytest.mark.asyncio
 async def test_unsaved_graph_stays_unattributed():
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {"input_data": {"message": "hi"}, "workflow": _graph()},
         workflow_service=FakeWorkflowService(),
     )
@@ -91,6 +94,7 @@ async def test_unsaved_graph_stays_unattributed():
 @pytest.mark.asyncio
 async def test_unparsable_submitted_id_stays_unattributed():
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {"input_data": {"message": "hi"}, "workflow": _graph(id="not-a-uuid")},
         workflow_service=FakeWorkflowService(),
     )
@@ -104,6 +108,7 @@ async def test_workflow_id_query_param_path_is_unchanged():
     service = FakeWorkflowService(SimpleNamespace(nodes=[], edges=[]))
 
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {"input_data": {"message": "hi"}},
         workflow_id=saved_id,
         workflow_service=service,
@@ -120,6 +125,7 @@ async def test_submitted_graph_and_run_inputs_reach_the_engine_verbatim():
     nodes = [{"id": "n1", "type": "chatInputNode"}]
     edges = [{"id": "e1", "source": "n1", "target": "n1"}]
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {
             "input_data": {"message": "hi", "thread_id": "t-1", "human_in_the_loop_node_id": "n1"},
             "workflow": _graph(id=str(uuid4()), nodes=nodes, edges=edges),

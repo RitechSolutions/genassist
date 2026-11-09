@@ -22,7 +22,7 @@ Credentials live per tenant in **App Settings** (Configuration Vars) — the *sa
 credential the [Salesforce Case node](salesforce-node.md) uses. Create a credential of type
 **Salesforce** (`salesforce_instance_url`, `salesforce_client_id`, `salesforce_client_secret` —
 the secret is encrypted at rest) and authenticate via the **OAuth2 client-credentials grant**.
-See the Case node doc for the one-time Connected App setup (Enable Client Credentials Flow + a
+See the Case node doc for the one-time External Client App setup (Enable Client Credentials Flow + a
 "Run As" user). You do **not** re-enter these secrets anywhere else.
 
 ### 2. Create a SalesForce Data Source
