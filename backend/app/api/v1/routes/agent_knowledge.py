@@ -16,7 +16,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import set_url_content_if_no_rag
-from app.modules.data.manager import AgentRAGServiceManager
+from app.modules.data.manager import AgentRAGServiceManager, save_load_action
 from app.modules.data.providers.legra import (
     FaissFlatIndexer,
     HuggingFaceGenerator,
@@ -48,6 +48,7 @@ from app.services.app_settings import AppSettingsService
 from app.services.file_manager import FileManagerService
 from app.services.file_upload_session import FileUploadSessionService
 from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
+from app.tasks.salesforce_article_sync_tasks import apply_stored_copy_dates_on_save
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 
 router = APIRouter()
@@ -166,7 +167,7 @@ async def update_knowledge_item(
     logger.info(f"update_knowledge_item route : item_id = {item_id}")
     """Update an existing knowledge base item"""
     # Check if item exists
-    await knowledge_service.get_by_id(item_id)
+    current_item = await knowledge_service.get_by_id(item_id)
 
     # Ensure the ID in the path matches the ID in the body
     if "id" in item and item.id != item_id:
@@ -179,10 +180,16 @@ async def update_knowledge_item(
     if item.type == "url":
         await set_url_content_if_no_rag(item)
 
+    await apply_stored_copy_dates_on_save(knowledge_service, item_id, item)
+    load_action = save_load_action(current_item, item)
     result = await knowledge_service.update(item_id, item)
 
     # Enrich files with storage metadata when using remote providers (S3, etc.)
     await populate_remote_file_metadata(result, file_manager_service)
+
+    # Clear with the previous settings, which point to the store holding the old documents.
+    if load_action == "clear":
+        await rag_manager.clear_documents(current_item)
 
     # Drop any cached RAG service for this KB so the next get_service rebuild
     # picks up the updated rag_config (e.g. an embedding-model swap that
