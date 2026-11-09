@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Literal, Optional
 from uuid import UUID
 
+import anyio
 import pandas as pd
 import sqlglot
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, Response, UploadFile
@@ -211,19 +212,31 @@ async def upload_pkl_file(
         # create file in file manager service
         created_file = await file_manager_service.create_file(file, file_base=file_base, allowed_extensions=["pkl"], max_file_size=MAX_PKL_FILE_SIZE)
 
-        # get file info
-        file_url = await file_manager_service.get_file_source_url(created_file.id)
-        file_path = None
+        copy_path = None
+        try:
+            # get file info
+            file_url = await file_manager_service.get_file_source_url(created_file.id)
+            file_path = None
 
-        if created_file.storage_provider == "local":
-            file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
-            # A custom file manager folder puts the file outside the ML models folder, where
-            # pkl_file is not accepted, so the model gets a copy inside it.
-            if not is_in_ml_models_dir(file_path):
-                copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
-                await asyncio.to_thread(shutil.copyfile, file_path, copy_path)
-                file_path = copy_path
-            # file_path = await file_manager_service.get_file_url(created_file)
+            if created_file.storage_provider == "local":
+                file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
+                # A custom file manager folder puts the file outside the ML models folder, where
+                # pkl_file is not accepted, so the model gets a copy inside it.
+                if not is_in_ml_models_dir(file_path):
+                    copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
+                    # Not asyncio.to_thread: on cancel its thread kept copying after the cleanup
+                    # below. anyio finishes the copy first; the checkpoint then raises the cancel.
+                    await anyio.to_thread.run_sync(shutil.copyfile, file_path, copy_path)
+                    await anyio.lowlevel.checkpoint_if_cancelled()
+                    file_path = copy_path
+                # file_path = await file_manager_service.get_file_url(created_file)
+        except BaseException:
+            # The client never gets this file's id, so it can't discard it: remove it here.
+            # BaseException, so a cancelled request (client gone, timeout) cleans up too; the
+            # cleanup is shielded, or the same cancellation would stop it at its first await.
+            with anyio.CancelScope(shield=True):
+                await _remove_failed_pkl_upload(file_manager_service, created_file.id, copy_path)
+            raise
 
         file_id = str(created_file.id)
 
@@ -246,6 +259,32 @@ async def upload_pkl_file(
         ) from e
 
 
+async def _remove_failed_pkl_upload(
+    file_manager_service: FileManagerService, file_id: UUID, copy_path: Optional[str]
+) -> None:
+    """Best effort: delete a .pkl whose upload failed after it was stored. Never raises."""
+    try:
+        await file_manager_service.delete_file(file_id)
+    except Exception as exc:
+        logger.warning("Could not remove the failed model upload %s: %s", file_id, type(exc).__name__)
+    if copy_path and os.path.isfile(copy_path):
+        try:
+            os.remove(copy_path)
+        except OSError as exc:
+            logger.warning("Could not remove the model file copy %s: %s", copy_path, type(exc).__name__)
+
+
+async def _init_upload_storage(
+    request: Request, file_manager_service: FileManagerService, app_settings_svc: AppSettingsService
+) -> None:
+    """Same storage setup as the uploads, so a custom folder or bucket from File Manager
+    Settings is where an unused upload is deleted from."""
+    app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+    await file_manager_service.initialize(
+        base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings=app_settings_config
+    )
+
+
 @router.delete("/upload/{file_id}", status_code=204, dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.CREATE))
@@ -262,13 +301,29 @@ async def discard_unused_upload(
     Only a recent ML model upload made by the caller and used by no model is deleted;
     any other file id answers 404.
     """
-    # Same storage setup as the upload, so a custom folder or bucket from File Manager
-    # Settings is where the file is deleted from.
-    app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
-    await file_manager_service.initialize(
-        base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings=app_settings_config
-    )
+    await _init_upload_storage(request, file_manager_service, app_settings_svc)
     await service.discard_unused_upload(file_id, file_manager_service)
+    return Response(status_code=204)
+
+
+@router.delete("/training-data/upload/{file_id}", status_code=204, dependencies=[
+    Depends(auth),
+    Depends(permissions(P.FileManager.DELETE))
+])
+async def discard_unused_training_upload(
+    request: Request,
+    file_id: UUID,
+    service: MLModelsService = Injected(MLModelsService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Delete a Train Data Source upload that was rejected, replaced, removed or cancelled.
+
+    Only a recent training upload made by the caller that no live workflow version or ML
+    model points at is deleted; any other file id answers 404.
+    """
+    await _init_upload_storage(request, file_manager_service, app_settings_svc)
+    await service.discard_unused_training_upload(file_id, file_manager_service)
     return Response(status_code=204)
 
 
