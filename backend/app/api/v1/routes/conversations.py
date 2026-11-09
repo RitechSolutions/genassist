@@ -105,12 +105,16 @@ from app.use_cases.chat_as_client_use_case import (
 
 logger = logging.getLogger(__name__)
 
-def tag_trace_with_conversation(connection: HTTPConnection) -> None:
+async def tag_trace_with_conversation(connection: HTTPConnection) -> None:
     """Tag the trace with the conversation id from the URL, for every conversation route.
 
-    Router-level dependencies run before each route's own dependencies and the rate
-    limiter, so requests rejected by auth, the agent lookup or a rate limit are tagged
-    too. Only a valid UUID is used, so a malformed path never ends up in a tag.
+    Router-level dependencies run before each route's own dependencies and its own
+    rate limit, so requests rejected by auth, the agent lookup or a route's rate limit
+    are tagged too. The global per-IP limit is checked in middleware before any
+    dependency runs, so a request it rejects is not tagged. Only a valid UUID is used,
+    so a malformed path never ends up in a tag.
+
+    Async so FastAPI runs it on the event loop instead of its threadpool.
     """
     raw = connection.path_params.get("conversation_id")
     if raw is None:
