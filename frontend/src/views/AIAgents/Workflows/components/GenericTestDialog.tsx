@@ -10,6 +10,7 @@ import { Button } from "@/components/button";
 import { Play, X } from "lucide-react";
 import { NodeData, HumanInTheLoopNodeData } from "../types/nodes";
 import {
+  getNodeTestFailureMessage,
   getTrainDataSourceTestFailureMessage,
   testNode,
 } from "@/services/workflows";
@@ -264,9 +265,11 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         node_config: nodeData,
       });
 
-      if (nodeType === "trainDataSourceNode") {
-        setError(getTrainDataSourceTestFailureMessage(response));
-      }
+      setError(
+        nodeType === "trainDataSourceNode"
+          ? getTrainDataSourceTestFailureMessage(response)
+          : getNodeTestFailureMessage(response)
+      );
 
       if (response && response.output !== undefined) {
         const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
@@ -374,9 +377,11 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         node_config: nodeData,
       });
 
-      if (nodeType === "trainDataSourceNode") {
-        setError(getTrainDataSourceTestFailureMessage(response));
-      }
+      setError(
+        nodeType === "trainDataSourceNode"
+          ? getTrainDataSourceTestFailureMessage(response)
+          : getNodeTestFailureMessage(response)
+      );
 
       if (response && response.output !== undefined) {
         const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;

@@ -53,6 +53,9 @@ import {
   DropColumnOrRowStepConfig,
   DropHighNullColumnsStepConfig,
   ChangeDtypeStepConfig,
+  getMovedStepNotice,
+  isMovedStepType,
+  withoutMissingMovedSteps,
 } from "./preprocessingConfig";
 import {
   cloneConfig,
@@ -134,11 +137,18 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       setIsDiscardEditsDialogOpen(true);
       return;
     }
+    // A moved step's code deleted in Code mode means the step is gone too.
+    if (newMode === "configure") setConfig((prev) => withoutMissingMovedSteps(prev, pythonCode));
     setMode(newMode);
   };
 
+  // Moved steps have no settings to regenerate their code from, so their
+  // code comes from the code before the hand edits, not the edited text.
   const discardHandEditsAndConfigure = () => {
-    syncCodeToConfig(config);
+    const beforeEdits = baselineCodeRef.current || BASE_PYTHON_TEMPLATE;
+    const pruned = withoutMissingMovedSteps(config, beforeEdits);
+    setConfig(pruned);
+    syncCodeToConfig(pruned, beforeEdits);
     setHasHandEdits(false);
     setIsDiscardEditsDialogOpen(false);
     setMode("configure");
@@ -150,9 +160,14 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   }, [pythonCode]);
 
   // Regenerate the code from the steps. Returns the new code.
-  const syncCodeToConfig = (stepsConfig: PreprocessingConfig): string => {
+  // movedStepSource: where moved steps' code is copied from, when not from
+  // the current code - see generatePythonCodeFromConfig.
+  const syncCodeToConfig = (
+    stepsConfig: PreprocessingConfig,
+    movedStepSource?: string
+  ): string => {
     const existingCode = pythonCodeRef.current || BASE_PYTHON_TEMPLATE;
-    const generatedCode = generatePythonCodeFromConfig(stepsConfig, existingCode);
+    const generatedCode = generatePythonCodeFromConfig(stepsConfig, existingCode, movedStepSource);
     setPythonCode(generatedCode);
     pythonCodeRef.current = generatedCode;
     baselineCodeRef.current = generatedCode;
@@ -363,7 +378,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       fileUrl,
       // The steps, stored as data (DP-7) - the dialog loads these instead of
       // re-reading them from pythonCode. pythonCode is still what runs.
-      preprocessingConfig: cloneConfig(config),
+      preprocessingConfig: { ...cloneConfig(config), movedStepsKept: true },
       analysisResult: analysisResults.initial || undefined, // For backward compatibility
       stepAnalysisResults:
         Object.keys(analysisResults).length > 0 ? analysisResults : undefined,
@@ -658,9 +673,28 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
           />
         );
       default:
+        if (isMovedStepType(step.type)) {
+          return (
+            <p className="text-xs text-muted-foreground">
+              {step.enabled
+                ? "Read-only here. Its saved code is kept and still runs - see the Code tab."
+                : "Switched off - its saved code is kept but doesn't run. Switch it on to run it again."}
+            </p>
+          );
+        }
         return null;
     }
   };
+
+  // One notice per moved step type in the node, in step order.
+  const movedStepNotices = Array.from(
+    new Set(
+      config.steps
+        .map((step) => step.type)
+        .filter(isMovedStepType)
+        .map(getMovedStepNotice)
+    )
+  );
 
   const stepTypes: PreprocessingStepType[] = [
     "column_filter",
@@ -743,6 +777,28 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
               <CSVAnalysisDisplay analysisResult={analysisResults.initial} />
             )}
           </div>
+
+          {movedStepNotices.length > 0 && (
+            // Steps from before PR #1076 that now belong in Train Model. Their
+            // code is kept as is and still runs; they just can't be edited here.
+            <div
+              role="status"
+              className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40"
+            >
+              {movedStepNotices.map((notice) => (
+                <p key={notice} className="font-medium">
+                  {notice}
+                </p>
+              ))}
+              <p className="text-xs text-muted-foreground">
+                This node still runs the saved code for{" "}
+                {movedStepNotices.length === 1 ? "this step" : "these steps"}, and saving keeps it
+                unchanged. To change it, delete the step here and set it up in the Train Model node.
+                {movedStepNotices.length > 1 &&
+                  " These steps were set up together, so deleting one can change what the others do - check the Code tab, or move them all."}
+              </p>
+            </div>
+          )}
 
           {/* Mode Toggle */}
           <div className="space-y-2">
@@ -977,7 +1033,8 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                       </div>
 
                       {/* Step Configuration */}
-                      {step.enabled && (
+                      {/* A moved step's note shows even when it is switched off. */}
+                      {(step.enabled || isMovedStepType(step.type)) && (
                         <div className="pl-6 border-l-2 border-border">
                           {renderStepConfig(step, index)}
                         </div>
