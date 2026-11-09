@@ -308,6 +308,17 @@ class TrainModelNode(BaseNode):
                     error_detail=f"Invalid modelType: {model_type}. Must be one of: {', '.join(valid_model_types)}",
                 )
 
+            # A pipeline run trains for one registered model; its type was
+            # chosen when it was registered and a run must not change it. Fail
+            # here, before training, rather than after the work is done.
+            target_model_id = (self.state.initial_values or {}).get("model_id")
+            type_mismatch = await self._target_model_type_mismatch(target_model_id, model_type)
+            if type_mismatch:
+                raise AppException(
+                    error_key=ErrorKey.INTERNAL_ERROR,
+                    error_detail=type_mismatch,
+                )
+
             valid_scaling_methods = ["none", "standard", "minmax", "maxabs", "robust", "auto"]
             if scaling_method not in valid_scaling_methods:
                 raise AppException(
@@ -970,7 +981,6 @@ class TrainModelNode(BaseNode):
                         for name, values in zip(no_drop_columns, encoder_no_drop.categories_)
                     }
                 )
-            target_model_id = (self.state.initial_values or {}).get("model_id")
             ml_model_id, pkl_file_id, registration_error, registration_warnings = (
                 await self._register_trained_model(
                     name=name,
@@ -2357,6 +2367,32 @@ class TrainModelNode(BaseNode):
                 error_detail=f"Failed to save model: {str(e)}",
             ) from e
 
+    async def _target_model_type_mismatch(
+        self, target_model_id: Optional[str], model_type: str
+    ) -> Optional[str]:
+        """
+        Message explaining why this pipeline run can't train for its model, or None.
+
+        Only a pipeline run names a target model. A lookup failure isn't
+        treated as a mismatch: registration falls back to the name lookup for
+        a missing model, as before.
+        """
+        if not target_model_id:
+            return None
+        try:
+            from app.dependencies.injector import injector
+            from app.services.ml_models import MLModelsService, model_type_mismatch_message
+
+            model = await injector.get(MLModelsService).get_by_id(UUID(str(target_model_id)))
+        except Exception as e:
+            logger.warning(
+                f"Could not check pipeline target model {target_model_id} before training: {e}"
+            )
+            return None
+        if model is None:
+            return None
+        return model_type_mismatch_message(model.name, model.model_type, model_type)
+
     async def _register_trained_model(
         self,
         name: str,
@@ -2400,6 +2436,7 @@ class TrainModelNode(BaseNode):
                 MLModelsService,
                 STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX,
                 merge_model_inference_params,
+                model_type_mismatch_message,
                 stale_categorical_defaults,
             )
             from app.core.config.settings import file_storage_settings
@@ -2435,18 +2472,7 @@ class TrainModelNode(BaseNode):
             )
             resolved_pkl_file_id = str(uploaded_file.id)
 
-            ml_service = injector.get(MLModelsService)
-            # Marker recorded in the description of any model this node registers, so a
-            # later run can recognize "its own" row by name. Node IDs are unique per node
-            # instance, unlike the (often generic, e.g. "Train Model") display name.
-            node_marker = f"[train-model-node:{self.node_id}]"
-            description = (
-                f"Trained by workflow Train Model node (thread {self.state.thread_id}) "
-                f"{node_marker}"
-            )
             model_fields = {
-                "description": description,
-                "model_type": model_type,
                 "features": feature_columns,
                 "target_variable": target_column,
                 "pkl_file_id": resolved_pkl_file_id,
@@ -2455,10 +2481,19 @@ class TrainModelNode(BaseNode):
                 "pkl_file": None,
             }
 
+            ml_service = injector.get(MLModelsService)
+            # Marker recorded in the description of any model this node registers, so a
+            # later run can recognize "its own" row by name. Node IDs are unique per node
+            # instance, unlike the (often generic, e.g. "Train Model") display name.
+            node_marker = f"[train-model-node:{self.node_id}]"
+
             existing = None
+            pipeline_target = None
             if target_model_id:
                 try:
-                    existing = await ml_service.get_by_id(UUID(target_model_id))
+                    existing = pipeline_target = await ml_service.get_by_id(
+                        UUID(target_model_id)
+                    )
                 except (AppException, ValueError) as e:
                     logger.warning(
                         f"Pipeline target model {target_model_id} not found ({str(e)}); "
@@ -2472,6 +2507,21 @@ class TrainModelNode(BaseNode):
                 by_name = await ml_service.get_by_name(name)
                 if by_name and node_marker in (by_name.description or ""):
                     existing = by_name
+
+            # A pipeline's model keeps its registered type: a file trained as
+            # another type would be served under the wrong type, so the model
+            # is left as it was. process() already refuses this before
+            # training; this covers a pre-check that couldn't read the model.
+            if pipeline_target is not None:
+                type_mismatch = model_type_mismatch_message(
+                    pipeline_target.name, pipeline_target.model_type, model_type
+                )
+                if type_mismatch:
+                    return None, None, type_mismatch, []
+            elif existing is not None:
+                # The node's own ad-hoc model is this node's output, so its type
+                # follows the node's Model Type.
+                model_fields["model_type"] = model_type
 
             model_fields["inference_params"] = merge_model_inference_params(
                 getattr(existing, "inference_params", None),
@@ -2505,8 +2555,19 @@ class TrainModelNode(BaseNode):
                 )
                 return str(updated.id), resolved_pkl_file_id, None, registration_warnings
 
+            # The description is written only when this node registers the
+            # model. On update it belongs to the user, who may have edited it,
+            # so a run leaves it alone (as it does a pipeline model's type).
             created = await ml_service.create(
-                MLModelCreate(name=name, **model_fields),
+                MLModelCreate(
+                    name=name,
+                    description=(
+                        f"Trained by workflow Train Model node (thread {self.state.thread_id}) "
+                        f"{node_marker}"
+                    ),
+                    model_type=model_type,
+                    **model_fields,
+                ),
                 artifact_contract=artifact_contract,
                 training_metrics=training_metrics,
             )
