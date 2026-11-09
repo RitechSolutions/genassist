@@ -21,6 +21,7 @@ import {
   analyzeCSV,
   previewQuery,
   profileData,
+  discardTrainingUpload,
 } from "@/services/mlModels";
 
 const mockApiRequest = vi.mocked(apiRequest);
@@ -335,5 +336,20 @@ describe("profileData", () => {
         "query_profile.html",
       ),
     ).rejects.toThrow("The query returned no rows.");
+  });
+});
+
+describe("discardTrainingUpload", () => {
+  it("asks the server to remove the unused training upload", async () => {
+    mockApiRequest.mockResolvedValue(null as never);
+    await discardTrainingUpload("f/1");
+    expect(mockApiRequest).toHaveBeenCalledWith("DELETE", "ml-models/training-data/upload/f%2F1");
+  });
+
+  it("only logs a failure, so it never hides the dialog's own error", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockApiRequest.mockRejectedValue(new Error("404"));
+    await expect(discardTrainingUpload("f1")).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
   });
 });
