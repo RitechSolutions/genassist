@@ -38,6 +38,25 @@ class TestTrainingSucceeded:
         }
         assert _training_succeeded(execution_output) is True
 
+    def test_false_when_train_model_failed_after_a_successful_upstream_node(self):
+        """
+        When Train Model fails (e.g. its type doesn't match the registered
+        model), the final output is Data Preprocessing's own success. The run
+        must still fail rather than complete with no model.
+        """
+        execution_output = {
+            "has_failures": True,
+            "failed_nodes": [
+                {
+                    "name": "Train Model",
+                    "type": "trainModelNode",
+                    "error": "Model 'Churn' is registered as Random Forest, but ...",
+                }
+            ],
+            "output": {"success": True, "data_path": "/data/preprocessed.csv"},
+        }
+        assert _training_succeeded(execution_output) is False
+
 
 class TestSummarizeRunFailure:
     def test_prefers_the_final_output_error(self):
