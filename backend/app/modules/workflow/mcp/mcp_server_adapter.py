@@ -14,9 +14,14 @@ from mcp.server import Server
 
 from app.core.utils.uuid_utils import coerce_uuid
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+from app.modules.workflow.engine.workflow_state import failed_nodes_summary
 from app.modules.workflow.usage_context import WorkflowUsageContext
 
 logger = logging.getLogger(__name__)
+
+
+class _WorkflowRunFailed(ValueError):
+    """A run that finished as failed: an expected outcome, already logged."""
 
 
 class WorkflowMCPServerAdapter:
@@ -138,6 +143,15 @@ class WorkflowMCPServerAdapter:
 
             # Format response
             result = state.format_state_as_response()
+            if result.get("status") == "failed":
+                # Node errors can carry internal details (hosts, queries, upstream
+                # bodies): log them, and give the external client a generic reason.
+                logger.warning(
+                    "MCP tool '%s' run failed: %s",
+                    tool_name,
+                    failed_nodes_summary(result) or "; ".join(state.execution_failures()),
+                )
+                raise _WorkflowRunFailed("Workflow execution failed: the workflow did not complete")
 
             output = result.get("output", {})
             if isinstance(output, dict):
@@ -152,6 +166,8 @@ class WorkflowMCPServerAdapter:
             # Return list of ContentBlock - the SDK will wrap it in CallToolResult
             return [text_content]
 
+        except _WorkflowRunFailed:
+            raise
         except Exception as e:
             logger.error(f"Error executing MCP tool '{tool_name}': {e}", exc_info=True)
             raise ValueError(f"Workflow execution failed: {str(e)}")
