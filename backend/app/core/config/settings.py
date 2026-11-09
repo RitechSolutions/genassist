@@ -193,6 +193,14 @@ class ProjectSettings(BaseSettings):
         ),
     )
     ML_EXTRACT_CHUNK_ROWS: int = Field(default=2_000, gt=0)
+    # CPU cores one Train Model job may use, for cross-validation workers and
+    # estimator threads together.
+    ML_TRAINING_MAX_CORES: int = Field(default=2, gt=0)
+    # Largest hyperparameter search (candidates x cross-validation folds) a
+    # Train Model node may run. A bigger search is refused before it starts.
+    ML_HPO_MAX_FITS: int = Field(default=1_000, gt=0)
+    # How long a background training job's status and result stay readable.
+    ML_TRAINING_JOB_TTL_SECONDS: int = Field(default=24 * 60 * 60, gt=0)
     # A .json array upload is parsed in one piece (JSON Lines and the other
     # formats stream), so it gets its own, lower ceiling.
     ML_EXTRACT_JSON_MAX_BYTES: int = Field(default=512 * 1024 * 1024, gt=0)

@@ -311,16 +311,17 @@ def test_a_paused_run_stays_awaiting_input():
 
 @pytest.mark.asyncio
 async def test_test_node_on_a_node_that_fails_returns_failed():
-    # Train Model without a target column fails inside the node.
+    # A Train Data Source whose file doesn't exist fails inside the node. (Train
+    # Model can't be used here: its node tests run as background jobs.)
     response = await workflow_routes.test_individual_node(SimpleNamespace(headers={}), {
-        "node_type": "trainModelNode",
-        "node_config": {"name": "m", "modelType": "linear_regression", "fileUrl": "missing.csv", "featureColumns": ["a"]},
+        "node_type": "trainDataSourceNode",
+        "node_config": {"name": "d", "sourceType": "csv", "fileUrl": "missing.csv"},
         "input_data": {},
     })
 
     assert response["status"] == "failed"
     assert response["has_failures"] is True
-    assert response["failed_nodes"][0]["type"] == "trainModelNode"
+    assert response["failed_nodes"][0]["type"] == "trainDataSourceNode"
 
 
 @pytest.mark.parametrize(
