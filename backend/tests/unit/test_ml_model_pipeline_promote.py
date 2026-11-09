@@ -645,3 +645,30 @@ async def test_promote_blames_invalid_saved_inference_settings_on_the_model():
     assert "target_transform" not in exc_info.value.error_detail
     service.config_repository.unset_default_for_model.assert_not_awaited()
     model_service.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_promote_blames_saved_settings_even_when_run_fields_are_also_malformed():
+    service, model_service, _, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/tmp/model.pkl",
+            "feature_columns": ["x"],
+            "target_column": "y" * 256,
+        },
+        inference_params={"useTrainingFills": "true"},
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await service.promote_run(
+            model_id=model_id,
+            run_id=run_id,
+            promote_data=MLModelPipelineRunPromote(update_model_file=True),
+        )
+
+    detail = exc_info.value.error_detail
+    assert exc_info.value.error_key is ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE
+    assert "saved inference settings" in detail
+    assert "target_column" in detail
+    assert "inference_params" not in detail
+    service.config_repository.unset_default_for_model.assert_not_awaited()
+    model_service.update.assert_not_awaited()
