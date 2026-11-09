@@ -15,33 +15,60 @@ const jsonStringList = (text: string): string[] | null => {
   }
 };
 
+/**
+ * Splits on commas outside quotes, so a quoted name (`'a,b'` or `"a,b"`) is read
+ * whole. A name that opens with a quote must close it before the next comma.
+ */
+const splitNames = (text: string): { names: string[]; broken: boolean } => {
+  const names: string[] = [];
+  let broken = false;
+  let i = 0;
+  while (i <= text.length) {
+    while (/\s/.test(text[i] ?? '')) i += 1;
+    const quote = text[i];
+    if (quote === "'" || quote === '"') {
+      let name = '';
+      i += 1;
+      while (i < text.length && text[i] !== quote) {
+        if (text[i] === '\\' && (text[i + 1] === quote || text[i + 1] === '\\')) i += 1;
+        name += text[i];
+        i += 1;
+      }
+      if (i >= text.length) broken = true; // the quote was never closed
+      i += 1;
+      const end = text.indexOf(',', i);
+      const rest = end === -1 ? text.slice(i) : text.slice(i, end);
+      if (rest.trim()) broken = true; // text after the closing quote
+      names.push(name.trim());
+      i = end === -1 ? text.length + 1 : end + 1;
+    } else {
+      const end = text.indexOf(',', i);
+      const name = (end === -1 ? text.slice(i) : text.slice(i, end)).trim();
+      // Outside quotes, a leftover bracket or double quote means a list was
+      // mistyped (e.g. text after `]`), not that a name really contains it.
+      if (/["[\]]/.test(name)) broken = true;
+      names.push(name);
+      i = end === -1 ? text.length + 1 : end + 1;
+    }
+  }
+  return { names, broken };
+};
+
 const readFeatures = (raw: string): { names: string[]; broken: boolean } => {
   const text = raw.trim();
   // A JSON array is read whole, so a quoted name may itself contain a comma.
   const json = text.startsWith('[') ? jsonStringList(text) : null;
-  const names =
-    json ??
-    text
-      .replace(/^\[([\s\S]*)\]$/, '$1')
-      .split(',')
-      .map((value) => {
-        const name = value.trim();
-        const quote = name[0];
-        return name.length >= 2 && (quote === "'" || quote === '"') && name.endsWith(quote)
-          ? name.slice(1, -1).trim()
-          : name;
-      });
-  return {
-    names: [...new Set(names.filter((name) => name.trim()))],
-    // Outside a valid JSON list, a leftover bracket or double quote means a list
-    // was mistyped (e.g. text after `]`), not that a name really contains it.
-    broken: !json && names.some((name) => /["[\]]/.test(name)),
-  };
+  if (json) return { names: [...new Set(json.filter((name) => name.trim()))], broken: false };
+  // Drop the outer [] of a list, or the () of a Python tuple of quoted names.
+  const inner = text.replace(/^\[([\s\S]*)\]$/, '$1').replace(/^\(\s*(['"][\s\S]*)\)$/, '$1');
+  const { names, broken } = splitNames(inner);
+  return { names: [...new Set(names.filter((name) => name))], broken };
 };
 
 /**
  * Reads the Features text box: plain comma-separated names, or a list copied from
- * Python/JSON such as `'x', 'y'` or `["x", "y"]`. Order is kept; blanks and repeated
+ * Python/JSON such as `'x', 'y'`, `['a,b', 'c']`, `('x', 'y')` or `["x", "y"]`.
+ * Order is kept; blanks and repeated
  * names are dropped, as the tag input this box replaced did.
  */
 export const parseModelFeatures = (raw: string): string[] => readFeatures(raw).names;
