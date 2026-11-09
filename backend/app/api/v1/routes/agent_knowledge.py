@@ -16,7 +16,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import set_url_content_if_no_rag
-from app.modules.data.manager import AgentRAGServiceManager
+from app.modules.data.manager import AgentRAGServiceManager, save_load_action
 from app.modules.data.providers.legra import (
     FaissFlatIndexer,
     HuggingFaceGenerator,
@@ -181,10 +181,15 @@ async def update_knowledge_item(
         await set_url_content_if_no_rag(item)
 
     await apply_stored_copy_dates_on_save(knowledge_service, item_id, item)
+    load_action = save_load_action(current_item, item)
     result = await knowledge_service.update(item_id, item)
 
     # Enrich files with storage metadata when using remote providers (S3, etc.)
     await populate_remote_file_metadata(result, file_manager_service)
+
+    # Clear with the previous settings, which point to the store holding the old documents.
+    if load_action == "clear":
+        await rag_manager.clear_documents(current_item)
 
     # Drop any cached RAG service for this KB so the next get_service rebuild
     # picks up the updated rag_config (e.g. an embedding-model swap that

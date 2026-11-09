@@ -8,7 +8,8 @@ from uuid import UUID
 
 from app.core.utils.encryption_utils import decrypt_key
 from app.dependencies.injector import injector
-from app.modules.integration.salesforce import SalesforceConnector
+from app.modules.integration.salesforce import SalesforceConnector, build_case_payload
+from app.modules.workflow.engine.nodes.requester_pii import persist_requester_pii
 from app.schemas.dynamic_form_schemas.app_settings_schemas import (
     get_encrypted_fields_for_type,
 )
@@ -18,6 +19,18 @@ from ..base_node import BaseNode
 from ..node_result import node_failure
 
 logger = logging.getLogger(__name__)
+
+CONTACT_BOXES = {"web_email": "SuppliedEmail", "web_name": "SuppliedName", "web_phone": "SuppliedPhone"}
+
+
+def _contact_fields(config: Dict[str, Any]) -> Dict[str, str]:
+    """Case contact fields from the Web Email / Web Name / Web Phone boxes, skipping empty ones."""
+    fields = {}
+    for config_key, case_field in CONTACT_BOXES.items():
+        value = str(config.get(config_key) or "").strip()
+        if value:
+            fields[case_field] = value
+    return fields
 
 
 class SalesforceToolNode(BaseNode):
@@ -85,11 +98,13 @@ class SalesforceToolNode(BaseNode):
             )
 
             # Create the SalesForce Case (labels are assigned as Topics afterward).
+            contact_fields = _contact_fields(config)
             result = await salesforce_connector.create_case(
                 subject=subject,
                 description=description,
                 custom_fields=custom_fields,
                 labels=labels,
+                contact_fields=contact_fields,
             )
 
             # The connector returns None on failure; the node owns the 500 envelope.
@@ -98,6 +113,11 @@ class SalesforceToolNode(BaseNode):
                 logger.error(error_msg)
                 return node_failure(error_msg, code=500, output={"status": 500, "data": {"error": error_msg}})
 
+            if result.get("status") == 200:
+                sent = build_case_payload(subject, description, custom_fields, contact_fields)
+                await persist_requester_pii(
+                    self.state, sent.get("SuppliedEmail"), sent.get("SuppliedName"), node_label="Salesforce node"
+                )
             return result
 
         except Exception as e:

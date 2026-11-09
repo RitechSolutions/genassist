@@ -312,7 +312,7 @@ def test_a_paused_run_stays_awaiting_input():
 @pytest.mark.asyncio
 async def test_test_node_on_a_node_that_fails_returns_failed():
     # Train Model without a target column fails inside the node.
-    response = await workflow_routes.test_individual_node({
+    response = await workflow_routes.test_individual_node(SimpleNamespace(headers={}), {
         "node_type": "trainModelNode",
         "node_config": {"name": "m", "modelType": "linear_regression", "fileUrl": "missing.csv", "featureColumns": ["a"]},
         "input_data": {},

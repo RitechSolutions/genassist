@@ -341,7 +341,7 @@ export function TranscriptThread({
                           <span className="font-bold">{costs[messageId].output_tokens ?? '—'}</span>,
                           <Coins className="w-2 h-2 inline-block" /> Cost:{' '}
                           <span className="font-bold">
-                            {costs[messageId].cost_usd == null ? '—' : `$${costs[messageId].cost_usd.toFixed(6)}`}
+                            {costs[messageId].cost_usd == null ? 'N/A' : `$${costs[messageId].cost_usd.toFixed(6)}`}
                           </span>
                         </div>
                       )}

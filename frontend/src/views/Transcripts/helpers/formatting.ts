@@ -128,6 +128,11 @@ export const formatMetric = (value: number = 0, precision: number = 1): string =
   return value.toFixed(precision);
 };
 
+export const formatConversationTotalCost = (total: number, pricedCount: number, incomplete: boolean): string => {
+  if (incomplete && pricedCount === 0) return "N/A";
+  return `${incomplete ? "≥ " : ""}$${total.toFixed(6)}`;
+};
+
 export const getTranscriptTypeLabel = (transcript: Transcript): string => {
   if (!transcript || !transcript.metadata) {
     return "Unknown";

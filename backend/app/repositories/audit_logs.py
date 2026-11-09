@@ -1,6 +1,6 @@
 from uuid import UUID
 from injector import inject
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, tuple_
 from sqlalchemy.orm import load_only
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.audit_log import AuditLogModel
@@ -48,8 +48,14 @@ class AuditLogRepository(DbRepository[AuditLogModel]):
         if search_params.modified_by:
             query = query.where(AuditLogModel.modified_by == search_params.modified_by)
 
+        if search_params.before_modified_at is not None and search_params.before_id is not None:
+            query = query.where(
+                tuple_(AuditLogModel.modified_at, AuditLogModel.id)
+                < tuple_(search_params.before_modified_at, search_params.before_id)
+            )
+
         # Order by modified_at descending to get most recent changes first
-        query = query.order_by(AuditLogModel.modified_at.desc())
+        query = query.order_by(AuditLogModel.modified_at.desc(), AuditLogModel.id.desc())
 
         if search_params.offset is not None:
             query = query.offset(search_params.offset)
