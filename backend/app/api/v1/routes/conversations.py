@@ -31,6 +31,7 @@ from app.core.observability import set_agent_span_attributes
 from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.core.turn_stream_response import stream_turn
+from app.core.utils.background_tasks import spawn
 from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
@@ -443,7 +444,7 @@ async def start(
     conversation = await service.start_in_progress_conversation(model)
 
     # Increment conversation counters in background
-    _ = asyncio.create_task(update_conversation_started(agent.id))
+    spawn(update_conversation_started(agent.id), name=f"analytics:start:{agent.id}")
 
     # Notify dashboard that a new conversation was started (e.g. from chatbot)
     tenant_id = get_tenant_context()
@@ -1003,7 +1004,7 @@ async def finalize(
     notify_socket(SocketRoomType.DASHBOARD)
 
     # Increment finalized conversation counters in background
-    _ = asyncio.create_task(update_conversation_finalized(conversation_id))
+    spawn(update_conversation_finalized(conversation_id), name=f"analytics:finalize:{conversation_id}")
 
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
     return finalized_conversation_analysis
@@ -1212,7 +1213,7 @@ async def add_message_feedback(
 
         # Fire incremental analytics update for thumbs in background
         is_thumbs_up = transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD)
-        _ = asyncio.create_task(update_feedback_given(conversation_id, is_thumbs_up))
+        spawn(update_feedback_given(conversation_id, is_thumbs_up), name=f"analytics:thumbs:{conversation_id}")
 
     return {"message": f"Successfully added message feedback, for message id:{message_id} "}
 
