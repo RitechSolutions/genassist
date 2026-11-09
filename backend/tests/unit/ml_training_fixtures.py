@@ -9,18 +9,16 @@ cleans the folder up, even after a run that was killed mid-test.
 Registering the model (the file manager upload and the ml_models row) is
 skipped, so a run against a real database adds no rows either.
 
-Each test module wires it up as an autouse fixture:
+Call it from a test, or wire it up for a whole module:
 
     @pytest.fixture(autouse=True)
     def _training_sandbox(monkeypatch, tmp_path):
-        with training_sandbox(monkeypatch, tmp_path):
-            yield
+        training_sandbox(monkeypatch, tmp_path)
 """
 
 import inspect
 import os
 import sys
-from contextlib import contextmanager
 from pathlib import Path
 
 from app.core import project_path
@@ -40,18 +38,22 @@ def _skip_registration(monkeypatch):
     monkeypatch.setattr(TrainModelNode, "_register_trained_model", skip_registration)
 
 
-@contextmanager
-def training_sandbox(monkeypatch, root: Path):
-    """Use ``root`` as the data volume while the block runs."""
+def training_sandbox(monkeypatch, root: Path) -> Path:
+    """Use ``root`` as the data volume until the test ends."""
     # The models folder check compares real paths (macOS temp folders are symlinks).
     root = Path(os.path.realpath(root))
     original = project_path.DATA_VOLUME
-    # Modules bind DATA_VOLUME at import, test modules included, so patch every copy.
+    # Modules bind DATA_VOLUME at import, test modules included, so patch every
+    # copy. project_path itself is left alone: a module first imported during
+    # the test must bind the real path, not this test's temp folder, which is
+    # gone after the test while the module keeps the binding.
     for module in list(sys.modules.values()):
+        if module is project_path:
+            continue
         if getattr(module, "__dict__", {}).get("DATA_VOLUME") is original:
             monkeypatch.setattr(module, "DATA_VOLUME", root)
     models_dir = str(root / "ml_models")
     monkeypatch.setattr(model_validator, "ML_MODELS_DIR", models_dir)
     monkeypatch.setattr(ml_model_manager, "ML_MODELS_UPLOAD_DIR", models_dir)
     _skip_registration(monkeypatch)
-    yield root
+    return root

@@ -15,6 +15,7 @@ from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from tests.unit.ml_training_fixtures import training_sandbox
 
 
 def _typed_frame() -> pd.DataFrame:
@@ -143,7 +144,8 @@ class TestMissingValueFill:
 
 class TestPreprocessedTypesTrainEndToEnd:
     @pytest.mark.asyncio
-    async def test_train_model_trains_on_preprocessed_nullable_columns(self, tmp_path):
+    async def test_train_model_trains_on_preprocessed_nullable_columns(self, tmp_path, monkeypatch):
+        training_sandbox(monkeypatch, tmp_path)
         # A preprocessing output with nullable Int64/boolean and category
         # columns (as saved by the Data Preprocessing node) trains, with the
         # Int64 column scaled as numeric and the category one-hot encoded.

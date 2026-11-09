@@ -22,8 +22,7 @@ from tests.unit.ml_training_fixtures import training_sandbox
 @pytest.fixture(autouse=True)
 def _training_sandbox(monkeypatch, tmp_path):
     # Training only reads files inside the data volume; use pytest's temp folder as it.
-    with training_sandbox(monkeypatch, tmp_path):
-        yield
+    training_sandbox(monkeypatch, tmp_path)
 
 
 @pytest.fixture
