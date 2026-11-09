@@ -105,6 +105,7 @@ describe("workflows service", () => {
     await testNode(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-node", payload, {
       timeout: 1000,
+      headers: { "X-Keepalive": "1" },
     });
   });
 
@@ -114,6 +115,7 @@ describe("workflows service", () => {
     await testWorkflow(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload, {
       timeout: 1000,
+      headers: { "X-Keepalive": "1" },
     });
   });
 

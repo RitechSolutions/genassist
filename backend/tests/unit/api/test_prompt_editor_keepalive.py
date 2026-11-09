@@ -96,7 +96,7 @@ def editor(monkeypatch):
         methods=["POST"],
         response_model=PromptOptimizeResponse,
     )
-    return TestClient(app), state
+    return TestClient(app, headers={"X-Keepalive": "1"}), state
 
 
 def test_the_service_is_resolved_inside_the_new_scope_and_the_model_is_encoded(editor):
@@ -137,3 +137,15 @@ def test_a_bad_body_is_refused_before_the_stream(editor):
 
     assert response.status_code == 422
     assert state.calls == []
+
+
+def test_without_the_keepalive_header_a_budget_overrun_keeps_its_504(editor):
+    client, state = editor
+    client.headers.pop("X-Keepalive")
+    state.fail = AppException(status_code=504, error_key=ErrorKey.PROMPT_EXECUTION_TIMEOUT)
+
+    response = client.post(f"/optimize/{CONTEXT}", json=OPTIMIZE_BODY)
+
+    assert response.status_code == 504
+    assert response.json()["error_key"] == "PROMPT_EXECUTION_TIMEOUT"
+    assert "scope-enter" not in state.calls

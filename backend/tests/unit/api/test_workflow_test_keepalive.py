@@ -19,6 +19,7 @@ from app.middlewares.read_after_write_middleware import ReadAfterWriteMiddleware
 WORKFLOW_ID = UUID("0199e3a0-0000-7000-8000-000000000003")
 TEST_BODY = {"input_data": {"message": "hi"}, "workflow": {"name": "g", "version": "1", "nodes": [], "edges": []}}
 NODE_BODY = {"node_type": "pythonToolNode", "node_config": {"code": "x"}, "input_data": {}}
+KEEPALIVE = {"X-Keepalive": "1"}
 
 
 @pytest.fixture
@@ -70,7 +71,7 @@ def studio(monkeypatch):
     app.state.injector = SimpleNamespace(get=lambda cls: FakeWorkflowService())
     app.add_api_route("/test", route.test_workflow, methods=["POST"])
     app.add_api_route("/test-node", route.test_individual_node, methods=["POST"])
-    return TestClient(app), state
+    return TestClient(app, headers=KEEPALIVE), state
 
 
 def test_a_long_run_answers_json_after_keepalive_bytes(studio):
@@ -129,3 +130,26 @@ def test_a_node_test_failure_after_the_start_is_a_200_envelope(studio):
     assert response.status_code == 200
     assert response.json() == {"error": "bad config", "error_code": 500}
     assert state.calls == ["scope-enter", "engine"]
+
+
+@pytest.mark.parametrize("url, body", [("/test", TEST_BODY), ("/test-node", NODE_BODY)])
+def test_without_the_keepalive_header_a_run_failure_keeps_its_error_status(studio, url, body):
+    client, state = studio
+    client.headers.pop("X-Keepalive")
+    state.fail = RuntimeError("boom")
+
+    response = client.post(url, json=body)
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "boom"}
+
+
+def test_without_the_keepalive_header_a_run_answers_plain_json(studio):
+    client, state = studio
+    client.headers.pop("X-Keepalive")
+
+    response = client.post("/test", json=TEST_BODY)
+
+    assert response.status_code == 200
+    assert response.text == '{"status":"completed"}'
+    assert state.calls == ["engine"]

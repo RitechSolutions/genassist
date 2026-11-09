@@ -119,7 +119,9 @@ describe("evaluatePrompt", () => {
 
     const result = await evaluatePrompt(WF, NODE, FIELD, payload as never);
 
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/evaluate/${CTX}`, payload);
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/evaluate/${CTX}`, payload, {
+      headers: { "X-Keepalive": "1" },
+    });
     expect(result).toEqual(response);
   });
 });
@@ -132,7 +134,9 @@ describe("optimizePrompt", () => {
 
     const result = await optimizePrompt(WF, NODE, FIELD, payload as never);
 
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload);
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload, {
+      headers: { "X-Keepalive": "1" },
+    });
     expect(result).toEqual(response);
   });
 
@@ -166,6 +170,8 @@ describe("optimizePrompt", () => {
 
     await optimizePrompt(WF, NODE, FIELD, payload);
 
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload);
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload, {
+      headers: { "X-Keepalive": "1" },
+    });
   });
 });

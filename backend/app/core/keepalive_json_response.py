@@ -17,7 +17,13 @@ from app.middlewares.read_after_write_middleware import ReadAfterWriteMiddleware
 logger = logging.getLogger(__name__)
 
 
-def keepalive_json(request: Request, work: Callable[[], Awaitable[Any]], *, name: str) -> StreamingResponse:
+KEEPALIVE_HEADER = "x-keepalive"
+
+
+async def keepalive_json(request: Request, work: Callable[[], Awaitable[Any]], *, name: str) -> Any:
+    if request.headers.get(KEEPALIVE_HEADER) != "1":
+        return await work()
+
     async def run() -> bytes:
         started = time.perf_counter()
         outcome = "cancelled"

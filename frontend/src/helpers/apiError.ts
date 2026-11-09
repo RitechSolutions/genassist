@@ -64,6 +64,8 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+export const KEEPALIVE_HEADERS = { "X-Keepalive": "1" };
+
 interface ErrorEnvelope {
   error: string;
   error_code: number;
