@@ -105,7 +105,8 @@ class MLModelPipelineRunRead(MLModelPipelineRunBase):
 
 class MLModelPipelineRunPromote(BaseModel):
     update_model_file: bool = Field(
-        default=True, description="Whether to update model.pkl_file"
+        default=True,
+        description="Whether to update the model file path and uploaded file ID",
     )
     update_metrics: bool = Field(
         default=True, description="Whether to update model metadata with metrics"

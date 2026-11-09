@@ -1,13 +1,18 @@
 import logging
+import math
+import numbers
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Sequence
 from uuid import UUID
 
 import numpy as np
 from injector import inject
 
+from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.storage_path import path_relative_to_tenant_root
 from app.db.models.file import FileModel
 from app.db.models.ml_model import MLModel
 from app.repositories.ml_models import MLModelsRepository
@@ -16,8 +21,21 @@ from app.services.ml_model_artifacts import (
     ModelArtifactContract,
     validate_model_artifact_registration,
 )
+from app.services.ml_model_manager import ML_MODELS_UPLOAD_DIR, is_outdated_download
 
 logger = logging.getLogger(__name__)
+
+# Uploads from POST /ml-models/upload are stored under this File Manager folder.
+ML_MODEL_UPLOAD_FOLDER = "ml_models"
+# A rejected save is cleaned up right away; older uploads are never discarded this way.
+UNUSED_UPLOAD_MAX_AGE = timedelta(hours=1)
+
+
+def _upload_folder_path(file: FileModel) -> str:
+    """File path without the S3 tenant root, so 'tenants/<slug>/ml_models/x.pkl' reads as 'ml_models/x.pkl'."""
+    if file.storage_provider == "s3":
+        return path_relative_to_tenant_root(file.path)
+    return str(file.path or "")
 
 _RATIO_BASELINE_PARAM = "ratioBaselineColumn"
 STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX = (
@@ -113,6 +131,25 @@ def validate_model_inference_params(
         )
 
 
+def normalize_training_metrics(metrics: Optional[dict]) -> Optional[dict]:
+    """Keep only finite numeric metric values (numpy scalars included).
+
+    ``None`` stays ``None``; anything else that is not a dict becomes ``{}``.
+    """
+    if metrics is None:
+        return None
+    if not isinstance(metrics, dict):
+        return {}
+    clean = {}
+    for key, value in metrics.items():
+        if isinstance(value, bool) or not isinstance(value, numbers.Real):
+            continue
+        value = float(value)
+        if math.isfinite(value):
+            clean[str(key)] = value
+    return clean
+
+
 @inject
 class MLModelsService:
     """Service for ML models business logic."""
@@ -124,8 +161,13 @@ class MLModelsService:
         self,
         ml_model: MLModelCreate,
         artifact_contract: Optional[ModelArtifactContract] = None,
+        training_metrics: Optional[dict] = None,
     ) -> MLModel:
-        """Create a new ML model."""
+        """Create a new ML model.
+
+        ``training_metrics`` is for server-side callers (Train Model registration);
+        the client schemas do not carry it.
+        """
         validate_model_inference_params(ml_model.features, ml_model.inference_params)
 
         # Check if a model with the same name already exists
@@ -146,7 +188,9 @@ class MLModelsService:
         )
 
         model_to_create = ml_model.model_copy(update={"pkl_file": None}) if ml_model.pkl_file_id else ml_model
-        db_ml_model = await self.repository.create(model_to_create)
+        db_ml_model = await self.repository.create(
+            model_to_create, training_metrics=normalize_training_metrics(training_metrics)
+        )
         return db_ml_model
 
     async def get_by_id(self, ml_model_id: UUID) -> MLModel:
@@ -168,9 +212,17 @@ class MLModelsService:
         ml_model_id: UUID,
         ml_model_update: MLModelUpdate,
         artifact_contract: Optional[ModelArtifactContract] = None,
+        training_metrics: Optional[dict] = None,
     ) -> MLModel:
-        """Update an existing ML model."""
+        """Update an existing ML model.
+
+        ``training_metrics`` is for server-side callers (Train Model registration and
+        promotion): a dict replaces the stored metrics. ``None`` keeps them, unless
+        the model file changes, which leaves the model with empty metrics.
+        """
         update_data = ml_model_update.model_dump(exclude_unset=True)
+        if training_metrics is not None:
+            update_data["training_metrics"] = normalize_training_metrics(training_metrics)
         if update_data.get("pkl_file_id") is not None:
             update_data["pkl_file_id"] = str(update_data["pkl_file_id"])
 
@@ -230,6 +282,13 @@ class MLModelsService:
             )
             or (not file_id and update_data.get("pkl_file", existing_model.pkl_file) != existing_model.pkl_file)
         )
+        file_changed = file_id_changed or (
+            not file_id
+            and update_data.get("pkl_file", existing_model.pkl_file) != existing_model.pkl_file
+        )
+        if file_changed and "training_metrics" not in update_data:
+            # The stored metrics belong to the previous file.
+            update_data["training_metrics"] = {}
         if contract_changed:
             await validate_model_artifact_registration(
                 *self._artifact_source(existing_model, update_data, file_id, file_id_changed),
@@ -252,9 +311,67 @@ class MLModelsService:
         it cannot be used to probe the filesystem.
         """
         if file_id:
-            local_copy = None if file_id_changed else existing_model.pkl_file
+            # A copy of an earlier upload is not the file inference will use.
+            local_copy = existing_model.pkl_file
+            if file_id_changed or (
+                local_copy and is_outdated_download(existing_model.id, file_id, local_copy)
+            ):
+                local_copy = None
             return local_copy, file_id
         return update_data.get("pkl_file", existing_model.pkl_file), None
+
+    async def discard_unused_upload(self, file_id: UUID, file_manager: Any) -> None:
+        """Delete a .pkl upload whose model was never saved (a rejected Create or Update).
+
+        The form uploads the file before it saves the model, so a rejected save would
+        otherwise leave the file in File Manager. Only a recent ML model upload made by
+        the caller and used by no model is deleted; anything else answers "not found",
+        so the endpoint can't be used to remove or probe other files.
+        """
+        not_found = AppException(error_key=ErrorKey.FILE_NOT_FOUND, status_code=404)
+        try:
+            file = await file_manager.get_file_by_id(file_id)
+        except AppException:
+            raise not_found from None
+        # The upload route hands the client these on-disk paths, and a model may point
+        # at them through pkl_file alone, so they count as references too.
+        copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{file.id}.pkl")
+        upload_paths = {copy_path}
+        if file.storage_provider == "local" and file.storage_path and file.path:
+            upload_paths.add(f"{file.storage_path}/{file.path}")
+        upload_paths |= {os.path.normpath(p) for p in upload_paths}
+        created_at = file.created_at
+        if created_at is not None and created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        # Delete only through the storage the file was saved to: if File Manager Settings
+        # changed since the upload, the delete would miss the file but still drop its record.
+        provider = getattr(file_manager, "storage_provider", None)
+        same_storage = (
+            provider is not None
+            and getattr(provider, "name", None) == file.storage_provider
+            and str(provider.get_base_path()) == str(file.storage_path)
+        )
+        discardable = (
+            same_storage
+            and _upload_folder_path(file).startswith(f"{ML_MODEL_UPLOAD_FOLDER}/")
+            and (file.file_extension or "").lower() == "pkl"
+            and file.created_by is not None
+            and file.created_by == get_current_user_id()
+            and created_at is not None
+            and datetime.now(timezone.utc) - created_at <= UNUSED_UPLOAD_MAX_AGE
+            and not await self.repository.is_file_referenced(file.id, sorted(upload_paths))
+        )
+        if not discardable:
+            raise not_found
+
+        await file_manager.delete_file(file.id)
+        # The upload route also copies the file into the ML models folder when File
+        # Manager stores it elsewhere; remove that copy too.
+        if os.path.isfile(copy_path):
+            try:
+                os.remove(copy_path)
+            except OSError as exc:
+                logger.warning("Could not remove the model file copy %s: %s", copy_path, type(exc).__name__)
 
     async def record_local_pkl_file(self, ml_model_id: UUID, pkl_file: str) -> MLModel:
         """Record where a downloaded copy of the model's own pkl_file_id is stored.

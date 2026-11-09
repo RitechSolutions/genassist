@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isLiveConversationStatus,
   isLiveTranscript,
@@ -11,8 +11,10 @@ import {
   formatCallTimestamp,
   formatDateTime,
   formatMetric,
+  formatConversationTotalCost,
   getTranscriptTypeLabel,
   formatMessageTime,
+  formatRowTimestamp,
 } from "@/views/Transcripts/helpers/formatting";
 import type { Transcript } from "@/interfaces/transcript.interface";
 
@@ -283,5 +285,63 @@ describe("formatMessageTime", () => {
 
   it("returns an empty string for an invalid date that contains 'T'", () => {
     expect(formatMessageTime("notadateT")).toBe("");
+  });
+});
+
+describe("formatRowTimestamp", () => {
+  const originalTz = process.env.TZ;
+  const lateLocalEvening = "2026-10-30T09:30:00Z";
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  const at = (now: string) => {
+    process.env.TZ = "Pacific/Kiritimati";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(now));
+  };
+
+  it("shows the clock time for a row from today's UTC day", () => {
+    at("2026-10-30T11:53:00Z");
+    expect(formatRowTimestamp(lateLocalEvening)).toBe("09:30 AM");
+  });
+
+  it("shows the date when the row is from yesterday in Local time mode", () => {
+    at("2026-10-30T11:53:00Z");
+    vi.stubGlobal("localStorage", { getItem: () => "local" });
+    expect(formatRowTimestamp(lateLocalEvening)).toBe("Oct 30");
+  });
+
+  it("shows the date for an older row in both modes", () => {
+    at("2026-10-30T11:53:00Z");
+    expect(formatRowTimestamp("2026-10-23T09:30:00Z")).toBe("Oct 23");
+    vi.stubGlobal("localStorage", { getItem: () => "local" });
+    expect(formatRowTimestamp("2026-10-23T09:30:00Z")).toBe("Oct 23");
+  });
+});
+
+describe("formatConversationTotalCost", () => {
+  it("prints the sum when every reply has a cost", () => {
+    expect(formatConversationTotalCost(0.0123, 3, false)).toBe("$0.012300");
+  });
+
+  it("prints a lower bound when only some replies have a cost", () => {
+    expect(formatConversationTotalCost(0.0123, 2, true)).toBe("≥ $0.012300");
+  });
+
+  it("prints N/A when no reply has a cost", () => {
+    expect(formatConversationTotalCost(0, 0, true)).toBe("N/A");
+  });
+
+  it("keeps a free conversation at $0 when its replies are priced at zero", () => {
+    expect(formatConversationTotalCost(0, 2, false)).toBe("$0.000000");
+  });
+
+  it("keeps $0 for a conversation with no agent replies yet", () => {
+    expect(formatConversationTotalCost(0, 0, false)).toBe("$0.000000");
   });
 });

@@ -2,7 +2,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import and_, case, select, update
+from sqlalchemy import and_, case, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
 from app.db.models.agent import AgentModel
@@ -93,20 +93,54 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
         result = await self.db.execute(stmt)
         return result.all()
 
-    async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> None:
-        """Retire every version of an agent's workflow.
+    async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> List[UUID]:
+        """Retire every live version of an agent's workflow and return their ids.
 
         Each version is a separate row, so deleting the agent leaves them all
-        behind. Skip the commit to batch this with the agent's own delete.
+        behind. Skip the commit to batch this with the agent's own delete. The
+        row locks this UPDATE takes are held until commit, so a pipeline config
+        write (FOR SHARE) on one of these versions waits for it.
         """
-        await self.db.execute(
+        result = await self.db.execute(
             update(WorkflowModel)
-            .where(WorkflowModel.agent_id == agent_id)
+            .where(WorkflowModel.agent_id == agent_id, WorkflowModel.is_deleted == 0)
             .values(is_deleted=1)
+            .returning(WorkflowModel.id)
             .execution_options(synchronize_session="fetch")
         )
+        retired = list(result.scalars().all())
         if commit:
             await self.db.flush()
+        return retired
+
+    async def lock_live_shared(self, workflow_id: UUID, *, visible_to_caller: bool = False) -> bool:
+        """Share-lock a live version until commit; False when it is missing or deleted.
+
+        A version or agent delete waits for the lock, so a row written against
+        the version cannot be left pointing at a deleted workflow. With
+        ``visible_to_caller`` a version outside the caller's groups also reads as
+        missing, so one group cannot attach its rows to (and so block the delete
+        of) another group's workflow: an agent's version by its agent's group, a
+        version without an agent by the group of whoever created it.
+        """
+        agent_visible = (
+            select(AgentModel.id)
+            .where(AgentModel.id == WorkflowModel.agent_id, self._visible_agent())
+            .exists()
+        )
+        stmt = select(WorkflowModel.id).where(
+            WorkflowModel.id == workflow_id, WorkflowModel.is_deleted == 0
+        )
+        if visible_to_caller:
+            agentless = WorkflowModel.agent_id.is_(None)
+            creator_scope = get_group_scope_clause(WorkflowModel)
+            if creator_scope is not None:
+                agentless = and_(agentless, creator_scope)
+            stmt = stmt.where(or_(agentless, agent_visible))
+        stmt = stmt.with_for_update(read=True, of=WorkflowModel).execution_options(
+            **{GROUP_SCOPE_BYPASS_FLAG: True}
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none() is not None
 
     async def get_locked(self, workflow_id: UUID, *, shared: bool = False) -> Optional[WorkflowModel]:
         stmt = select(WorkflowModel).where(WorkflowModel.id == workflow_id).with_for_update(read=shared)
@@ -125,11 +159,17 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
 
     async def live_ml_model_names(self, workflow_id: UUID) -> List[str]:
         """Models whose live pipeline configuration runs the version"""
+        return await self.live_ml_model_names_for([workflow_id])
+
+    async def live_ml_model_names_for(self, workflow_ids: List[UUID]) -> List[str]:
+        """Models whose live pipeline configuration runs any of the versions"""
+        if not workflow_ids:
+            return []
         stmt = (
             select(MLModel.name)
             .join(MLModelPipelineConfig, MLModelPipelineConfig.model_id == MLModel.id)
             .where(
-                MLModelPipelineConfig.workflow_id == workflow_id,
+                MLModelPipelineConfig.workflow_id.in_(workflow_ids),
                 MLModelPipelineConfig.is_deleted == 0,
                 MLModel.is_deleted == 0,
             )

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/label";
+import { Switch } from "@/components/switch";
 import { TagsFieldInput } from "@/components/TagsFieldInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ListEmptyState } from "@/components/ListEmptyState";
@@ -29,6 +30,7 @@ import { MLModel } from "@/interfaces/ml-model.interface";
 import {
   createMLModel,
   deleteMLModel,
+  discardModelUpload,
   getAllMLModels,
   getMLModel,
   updateMLModel,
@@ -38,7 +40,9 @@ import { MLModelType, MODEL_TYPE_OPTIONS, modelTypeLabel } from "../helpers/mode
 import { ModelFilePicker } from "./ModelFilePicker";
 import {
   buildInferenceParams,
-  featureDefaultsUpdate,
+  inferenceParamsUpdate,
+  usesTrainingFills,
+  isRejectedRequest,
   latestInferenceParams,
   mlModelSaveErrorMessage,
 } from "./mlModelForm";
@@ -54,6 +58,7 @@ interface FormValues {
   target_variable: string;
   features: string[];
   featureDefaultsJson: string;
+  useTrainingFills: boolean;
   pkl_file: string | null;
   pkl_file_id: string | null;
   pendingFile: File | null;
@@ -102,6 +107,7 @@ const emptyForm = (): FormValues => ({
   target_variable: "",
   features: [],
   featureDefaultsJson: "",
+  useTrainingFills: false,
   pkl_file: null,
   pkl_file_id: null,
   pendingFile: null,
@@ -117,6 +123,7 @@ const formFromModel = (model: MLModel): FormValues => ({
     Object.keys(model.inference_params?.featureDefaults ?? {}).length > 0
       ? JSON.stringify(model.inference_params?.featureDefaults, null, 2)
       : "",
+  useTrainingFills: usesTrainingFills(model.inference_params),
   pkl_file: model.pkl_file ?? null,
   pkl_file_id: model.pkl_file_id ?? null,
   pendingFile: null,
@@ -240,6 +247,11 @@ const MLModelsManager: React.FC = () => {
     e.preventDefault();
     if (!validate()) return;
 
+    // The file is uploaded before the model is saved; if the save is then rejected,
+    // this upload is removed again so it doesn't stay behind in File Manager.
+    let uploadedFileId: string | null = null;
+    let saveSent = false;
+    let saved = false;
     try {
       setIsSaving(true);
 
@@ -248,6 +260,7 @@ const MLModelsManager: React.FC = () => {
       if (values.pendingFile) {
         const uploaded = await uploadModelFile(values.pendingFile);
         if (!uploaded?.file_id && !uploaded?.file_path) throw new Error("File upload failed.");
+        uploadedFileId = uploaded.file_id ?? null;
         pklFile = uploaded.file_path ?? null;
         pklFileId = uploaded.file_id ?? null;
       }
@@ -265,38 +278,57 @@ const MLModelsManager: React.FC = () => {
         pkl_file: pklFile,
         pkl_file_id: pklFileId,
       };
-      let inferenceParams = buildInferenceParams(
-        editingItem?.inference_params,
-        featureDefaults
-      );
-      const inferenceParamsUpdate = editingItem
-        ? featureDefaultsUpdate(editingItem.inference_params, featureDefaults)
-        : undefined;
-      if (editingItem && inferenceParamsUpdate) {
-        const latestModel = await getMLModel(editingItem.id);
-        inferenceParams = buildInferenceParams(
-          latestInferenceParams(latestModel, editingItem.inference_params),
-          inferenceParamsUpdate.featureDefaults
-        );
+      let payloadWithInferenceParams: typeof payload & {
+        inference_params?: MLModel["inference_params"];
+      } = payload;
+      if (!editingItem) {
+        payloadWithInferenceParams = {
+          ...payload,
+          inference_params: buildInferenceParams(
+            null,
+            featureDefaults,
+            values.useTrainingFills
+          ),
+        };
+      } else {
+        const changed = inferenceParamsUpdate(editingItem.inference_params, {
+          featureDefaults,
+          useTrainingFills: values.useTrainingFills,
+        });
+        if (changed) {
+          // Apply only the changed settings on top of the latest stored ones.
+          const latestModel = await getMLModel(editingItem.id);
+          payloadWithInferenceParams = {
+            ...payload,
+            inference_params: buildInferenceParams(
+              latestInferenceParams(latestModel, editingItem.inference_params),
+              changed.featureDefaults,
+              changed.useTrainingFills
+            ),
+          };
+        }
       }
-      const payloadWithInferenceParams = !editingItem
-        ? { ...payload, inference_params: inferenceParams }
-        : inferenceParamsUpdate
-          ? { ...payload, inference_params: inferenceParams }
-          : payload;
 
+      saveSent = true;
       if (editingItem) {
         await updateMLModel(editingItem.id, payloadWithInferenceParams);
+        saved = true;
         void queryClient.invalidateQueries({ queryKey: ["ml-model", editingItem.id] });
         toast.success(`ML model "${payload.name}" updated.`);
       } else {
         await createMLModel({ ...payloadWithInferenceParams, id: uuidv4() });
+        saved = true;
         toast.success(`ML model "${payload.name}" created.`);
       }
 
       closeForm();
       void refetch();
     } catch (err) {
+      // After a timeout or a network/5xx error the server may still save the model,
+      // so the upload is kept unless the save never left or the server refused it.
+      if (uploadedFileId && !saved && (!saveSent || isRejectedRequest(err))) {
+        void discardModelUpload(uploadedFileId);
+      }
       toast.error(mlModelSaveErrorMessage(err, editingItem ? "update" : "create"));
     } finally {
       setIsSaving(false);
@@ -454,6 +486,28 @@ const MLModelsManager: React.FC = () => {
                     Enter numeric defaults as numbers without quotes.
                   </p>
                 </FormField>
+
+                <div className="mt-6 flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="use_training_fills">
+                      Fill missing inputs with training values
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      When on, an empty input uses the value saved at training time
+                      (for example the median), for features that had missing values
+                      in training. Feature Defaults above always apply and take
+                      priority. Any other missing input, and a value a failed upstream
+                      node did not produce, stops the run with an error.
+                    </p>
+                  </div>
+                  <Switch
+                    id="use_training_fills"
+                    checked={values.useTrainingFills}
+                    onCheckedChange={(checked) =>
+                      setField("useTrainingFills", Boolean(checked))
+                    }
+                  />
+                </div>
               </div>
             </div>
           </div>

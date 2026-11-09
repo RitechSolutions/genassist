@@ -38,6 +38,7 @@ from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     ensure_supported_training_file,
     list_excel_sheets,
     read_training_file_preview,
+    stored_file_suffix,
     training_file_suffix,
 )
 from app.modules.workflow.engine.utils import has_volatile_template_vars
@@ -81,6 +82,16 @@ class AnalyzeFileRequest(BaseModel):
     # The original upload name - its extension picks the reader.
     file_name: Optional[str] = None
     sheet_name: Optional[str] = None
+
+
+class QueryPreviewRequest(BaseModel):
+    """Input for previewing a database query result."""
+
+    data_source_id: UUID
+    query: str
+
+
+QUERY_PREVIEW_ROWS = 6
 
 
 _require_data_source_read = permissions(P.DataSource.READ)
@@ -233,6 +244,32 @@ async def upload_pkl_file(
             status_code=500,
             detail=f"Error uploading file: {str(e)}"
         ) from e
+
+
+@router.delete("/upload/{file_id}", status_code=204, dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.CREATE))
+])
+async def discard_unused_upload(
+    request: Request,
+    file_id: UUID,
+    service: MLModelsService = Injected(MLModelsService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Delete a .pkl uploaded for a save that was then rejected.
+
+    Only a recent ML model upload made by the caller and used by no model is deleted;
+    any other file id answers 404.
+    """
+    # Same storage setup as the upload, so a custom folder or bucket from File Manager
+    # Settings is where the file is deleted from.
+    app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+    await file_manager_service.initialize(
+        base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings=app_settings_config
+    )
+    await service.discard_unused_upload(file_id, file_manager_service)
+    return Response(status_code=204)
 
 
 @router.get("/cache/stats", dependencies=[
@@ -502,6 +539,57 @@ def _normalize_profile_dataframe(df: pd.DataFrame) -> pd.DataFrame:
                 lambda value: str(value) if isinstance(value, UUID) else value
             )
     return normalized
+
+
+def _limit_read_query(query: str, db_type: str, row_limit: int) -> str:
+    """Validate and cap a read-only query without increasing a smaller limit."""
+    validation = validate_read_only_sql(query, db_type)
+    if not validation.is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=read_only_sql_blocked_message(validation),
+        )
+
+    dialect = SQLGLOT_DIALECTS[db_type.strip().lower()]
+    statement = sqlglot.parse_one(query, read=dialect)
+    existing_limit = statement.args.get("limit")
+    effective_limit = row_limit
+    existing_count = None
+    if isinstance(existing_limit, exp.Limit):
+        existing_count = existing_limit.expression
+    elif isinstance(existing_limit, exp.Fetch):
+        existing_count = existing_limit.args.get("count")
+    if isinstance(existing_count, exp.Literal):
+        try:
+            effective_limit = min(effective_limit, int(existing_count.this))
+        except (TypeError, ValueError):
+            pass
+
+    limited_query = statement.limit(effective_limit, copy=True).sql(dialect=dialect)
+    limited_validation = validate_read_only_sql(limited_query, db_type)
+    if not limited_validation.is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=read_only_sql_blocked_message(limited_validation),
+        )
+    return limited_query
+
+
+async def _collect_query_preview(
+    manager,
+    query: str,
+) -> tuple[list[str], list[tuple]]:
+    """Collect the bounded preview while retaining columns for empty results."""
+    columns: list[str] = []
+    rows: list[tuple] = []
+    async for chunk_columns, chunk_rows in manager.stream_query(
+        query,
+        chunk_size=QUERY_PREVIEW_ROWS,
+    ):
+        if not columns:
+            columns = chunk_columns
+        rows.extend(chunk_rows)
+    return columns, rows
 
 
 def _build_dataframe_profile_report_html(
@@ -809,23 +897,25 @@ def _validate_file_manager_file(
     allowed_suffixes: frozenset[str] | set[str] = CSV_SUFFIXES,
 ) -> str:
     """Validate a File Manager record using server-controlled metadata; return its suffix."""
-    extension = str(getattr(stored_file, "file_extension", "") or "").strip()
-    if extension:
-        suffix = f".{extension.lstrip('.').lower()}"
-    else:
-        suffix = ""
-        for candidate in (
-            getattr(stored_file, "name", None),
-            getattr(stored_file, "path", None),
-        ):
-            if candidate:
-                suffix = Path(str(candidate)).suffix.lower()
-                if suffix:
-                    break
-
+    suffix = stored_file_suffix(stored_file)
     if suffix not in allowed_suffixes:
         raise _unsupported_file_type_error(suffix, allowed_suffixes)
     return suffix
+
+
+async def _get_query_database_manager(data_source_id: UUID):
+    """Return the data source's database manager, or 404 when it does not exist."""
+    try:
+        manager = await DBProviderManager.get_instance().get_database_manager(
+            str(data_source_id)
+        )
+    except AppException as exc:
+        if exc.error_key == ErrorKey.DATASOURCE_NOT_FOUND:
+            raise HTTPException(status_code=404, detail="Data source not found.") from exc
+        raise
+    if manager is None:
+        raise HTTPException(status_code=404, detail="Data source not found.")
+    return manager
 
 
 async def _load_query_profile_dataframe(
@@ -838,10 +928,7 @@ async def _load_query_profile_dataframe(
             detail="A data source and query are required for SQL profiling.",
         )
 
-    provider = DBProviderManager.get_instance()
-    manager = await provider.get_database_manager(str(request.data_source_id))
-    if manager is None:
-        raise HTTPException(status_code=404, detail="Data source not found.")
+    manager = await _get_query_database_manager(request.data_source_id)
 
     query = request.query.strip()
     if has_volatile_template_vars(query):
@@ -853,36 +940,11 @@ async def _load_query_profile_dataframe(
             ),
         )
 
-    db_type = manager.get_db_type()
-    validation = validate_read_only_sql(query, db_type)
-    if not validation.is_valid:
-        raise HTTPException(
-            status_code=400,
-            detail=read_only_sql_blocked_message(validation),
-        )
-
-    dialect = SQLGLOT_DIALECTS[db_type.strip().lower()]
-    statement = sqlglot.parse_one(query, read=dialect)
-    existing_limit = statement.args.get("limit")
-    row_limit = settings.ML_PROFILE_MAX_ROWS
-    existing_count = None
-    if isinstance(existing_limit, exp.Limit):
-        existing_count = existing_limit.expression
-    elif isinstance(existing_limit, exp.Fetch):
-        existing_count = existing_limit.args.get("count")
-    if isinstance(existing_count, exp.Literal):
-        try:
-            row_limit = min(row_limit, int(existing_count.this))
-        except (TypeError, ValueError):
-            pass
-    profile_query = statement.limit(row_limit, copy=True).sql(dialect=dialect)
-
-    limited_validation = validate_read_only_sql(profile_query, db_type)
-    if not limited_validation.is_valid:
-        raise HTTPException(
-            status_code=400,
-            detail=read_only_sql_blocked_message(limited_validation),
-        )
+    profile_query = _limit_read_query(
+        query,
+        manager.get_db_type(),
+        settings.ML_PROFILE_MAX_ROWS,
+    )
 
     try:
         rows, error = await asyncio.wait_for(
@@ -896,11 +958,15 @@ async def _load_query_profile_dataframe(
         ) from exc
 
     if error:
-        logger.error("Data profiling query failed: %s", error)
+        logger.error(
+            "Data profiling query failed: %s",
+            ml_utils.sanitized_database_diagnostic(error),
+        )
         raise HTTPException(
             status_code=400,
-            detail=(
-                "The profiling query failed. Check the selected columns and data source."
+            detail=ml_utils.client_safe_database_error(
+                error,
+                has_bound_parameters=False,
             ),
         )
 
@@ -908,6 +974,71 @@ async def _load_query_profile_dataframe(
     if dataframe.empty:
         raise HTTPException(status_code=400, detail="The query returned no rows.")
     return dataframe
+
+
+@router.post("/preview-query", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.READ))
+])
+async def preview_query(
+    preview_request: QueryPreviewRequest,
+    request: Request,
+):
+    """Return a bounded, read-only preview of a database query."""
+    await _require_data_source_read(request)
+
+    query = preview_request.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="A query is required for preview.")
+    if has_volatile_template_vars(query):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Preview cannot resolve workflow variables. Replace {{...}} "
+                "with sample values before previewing."
+            ),
+        )
+
+    manager = await _get_query_database_manager(preview_request.data_source_id)
+
+    limited_query = _limit_read_query(
+        query,
+        manager.get_db_type(),
+        QUERY_PREVIEW_ROWS,
+    )
+    try:
+        columns, rows = await asyncio.wait_for(
+            _collect_query_preview(manager, limited_query),
+            timeout=settings.ML_EXTRACT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=408,
+            detail="The preview query timed out.",
+        ) from exc
+    except Exception as exc:
+        logger.error(
+            "Data preview query failed: %s",
+            ml_utils.sanitized_database_diagnostic(exc),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ml_utils.client_safe_database_error(
+                exc,
+                has_bound_parameters=False,
+            ),
+        ) from exc
+
+    preview_rows = [dict(zip(columns, row)) for row in rows[:QUERY_PREVIEW_ROWS]]
+    return ml_utils.sanitize_for_json(
+        {
+            "row_count": len(preview_rows),
+            "column_count": len(columns),
+            "column_names": columns,
+            "sample_data": preview_rows,
+            "columns_info": [],
+        }
+    )
 
 
 @router.post("/profile-data", dependencies=[

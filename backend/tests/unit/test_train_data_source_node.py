@@ -352,6 +352,12 @@ def test_dialog_schema_lists_source_fields():
         {"label": "Database", "value": "datasource"},
         {"label": "Uploaded File", "value": "csv"},
     ]
+    assert fields["sourceType"].label == "Source Type"
+    assert fields["dataSourceId"].required is True
+    assert fields["query"].required is True
+    assert fields["csvFilePath"].required is True
+    assert fields["csvFilePath"].label == "Training File"
+    assert fields["csvFilePath"].alternative_names == ["csvFileId"]
     assert fields["dataSourceId"].conditional.model_dump() == {
         "field": "sourceType",
         "value": "datasource",
@@ -360,3 +366,207 @@ def test_dialog_schema_lists_source_fields():
         "field": "sourceType",
         "value": "csv",
     }
+
+
+# -- 68074: the file type comes from the stored record, not csvFileName -------
+
+
+def _stored_record(name, *, file_extension=None, path=None):
+    return SimpleNamespace(
+        name=name,
+        path=path or f"uploads/{name}",
+        size=14,
+        storage_provider="s3",
+        file_extension=file_extension,
+    )
+
+
+async def _run_file_source(node, monkeypatch, tmp_path, record, config):
+    """Run the node's file mode against a mocked File Manager; return (result, file manager)."""
+
+    async def fake_download(_file_id, path):
+        Path(path).write_text("col1,col2\n1,2\n", encoding="utf-8")
+
+    file_manager = MagicMock()
+    file_manager.get_file_by_id = AsyncMock(return_value=record)
+    file_manager.download_file_to_path = AsyncMock(side_effect=fake_download)
+    monkeypatch.setattr(
+        "app.modules.workflow.engine.nodes.ml.ml_utils.DATA_VOLUME", tmp_path
+    )
+    with patch("app.dependencies.injector.injector.get", return_value=file_manager):
+        result = await node._process_csv_source(
+            {"csvFileId": "file-id", **config},
+            node._resolve_extraction_limits({}),
+            1,
+        )
+    return result, file_manager
+
+
+class TestFileTypeComesFromStoredRecord:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "record",
+        [
+            _stored_record("model.pkl", file_extension="pkl"),
+            _stored_record("model.pkl"),
+            # file_extension wins even when the stored name looks like a CSV.
+            _stored_record("model.csv", file_extension="pkl"),
+        ],
+        ids=["extension", "stored-name", "extension-over-name"],
+    )
+    @pytest.mark.parametrize(
+        "csv_file_name", ["renamed.csv", "renamed"], ids=["csv-name", "no-suffix-name"]
+    )
+    async def test_pkl_record_is_rejected_before_download_whatever_the_client_name(
+        self, node, monkeypatch, tmp_path, record, csv_file_name
+    ):
+        with pytest.raises(AppException) as exc_info:
+            await _run_file_source(
+                node, monkeypatch, tmp_path, record, {"csvFileName": csv_file_name}
+            )
+
+        assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID
+        assert exc_info.value.status_code == 400
+        assert "(.pkl) is not supported" in exc_info.value.error_detail
+        assert ".csv" in exc_info.value.error_detail
+        assert not list((tmp_path / "train").rglob("*"))
+
+    @pytest.mark.asyncio
+    async def test_missing_record_is_unavailable_and_not_downloaded(
+        self, node, monkeypatch, tmp_path
+    ):
+        with pytest.raises(AppException) as exc_info:
+            await _run_file_source(
+                node, monkeypatch, tmp_path, None, {"csvFileName": "renamed.csv"}
+            )
+
+        assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE
+        assert not list((tmp_path / "train").rglob("*"))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("file_extension", [".", " . ", "CSV.", ".csv"])
+    async def test_badly_formed_stored_extension_still_reads_as_csv(
+        self, node, monkeypatch, tmp_path, file_extension
+    ):
+        record = _stored_record("training.csv", file_extension=file_extension)
+
+        result, _ = await _run_file_source(
+            node, monkeypatch, tmp_path, record, {"csvFileName": "notes.pkl"}
+        )
+
+        assert result["metadata"]["columns"] == ["col1", "col2"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "config",
+        [{}, {"csvFileName": "training.csv"}, {"csvFileName": "notes.pkl"}],
+        ids=["no-client-name", "matching-name", "misleading-name"],
+    )
+    async def test_csv_record_is_accepted_with_or_without_csv_file_name(
+        self, node, monkeypatch, tmp_path, config
+    ):
+        record = _stored_record("training.csv", file_extension="csv")
+
+        result, file_manager = await _run_file_source(
+            node, monkeypatch, tmp_path, record, config
+        )
+
+        file_manager.download_file_to_path.assert_awaited_once()
+        assert Path(file_manager.download_file_to_path.await_args.args[1]).suffix == ".csv"
+        assert result["metadata"]["columns"] == ["col1", "col2"]
+
+    @pytest.mark.asyncio
+    async def test_record_without_extension_falls_back_to_csv_file_name(
+        self, node, monkeypatch, tmp_path
+    ):
+        record = _stored_record("legacy-file", path="uploads/legacy-file")
+
+        result, _ = await _run_file_source(
+            node, monkeypatch, tmp_path, record, {"csvFileName": "legacy.csv"}
+        )
+        assert result["metadata"]["columns"] == ["col1", "col2"]
+
+        with pytest.raises(AppException) as exc_info:
+            await _run_file_source(
+                node, monkeypatch, tmp_path, record, {"csvFileName": "legacy.pkl"}
+            )
+        assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "record",
+        [
+            _stored_record("model.pkl", file_extension="pkl"),
+            _stored_record("model.pkl"),
+            _stored_record("model.csv", file_extension="pkl"),
+            _stored_record("training.csv", file_extension="csv"),
+            _stored_record("training.csv"),
+            _stored_record("rows.jsonl", file_extension="jsonl"),
+            _stored_record("notes.txt", file_extension="TXT"),
+        ],
+    )
+    async def test_node_and_preview_endpoints_make_the_same_decision(
+        self, node, monkeypatch, tmp_path, record
+    ):
+        from fastapi import HTTPException
+
+        from app.api.v1.routes.ml_models import _validate_file_manager_file
+        from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+            SUPPORTED_TRAINING_FILE_SUFFIXES,
+        )
+
+        try:
+            _validate_file_manager_file(record, SUPPORTED_TRAINING_FILE_SUFFIXES)
+            endpoint_accepts = True
+        except HTTPException:
+            endpoint_accepts = False
+
+        # The download fails on purpose: reaching it means the type check accepted the file.
+        file_manager = MagicMock()
+        file_manager.get_file_by_id = AsyncMock(return_value=record)
+        file_manager.download_file_to_path = AsyncMock(side_effect=RuntimeError("stop"))
+        monkeypatch.setattr(
+            "app.modules.workflow.engine.nodes.ml.ml_utils.DATA_VOLUME", tmp_path
+        )
+        with patch("app.dependencies.injector.injector.get", return_value=file_manager):
+            with pytest.raises(AppException) as exc_info:
+                await node._process_csv_source(
+                    {"csvFileId": "file-id", "csvFileName": "renamed.csv"},
+                    node._resolve_extraction_limits({}),
+                    1,
+                )
+        node_accepts = exc_info.value.error_key == ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE
+
+        assert node_accepts == endpoint_accepts
+
+    @pytest.mark.asyncio
+    async def test_record_without_any_extension_is_the_one_deliberate_difference(
+        self, node, monkeypatch, tmp_path
+    ):
+        """Older uploads with no extension: the endpoints reject them, saved workflows keep running."""
+        from fastapi import HTTPException
+
+        from app.api.v1.routes.ml_models import _validate_file_manager_file
+        from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+            SUPPORTED_TRAINING_FILE_SUFFIXES,
+        )
+
+        record = _stored_record("legacy-file", path="uploads/legacy-file")
+
+        with pytest.raises(HTTPException):
+            _validate_file_manager_file(record, SUPPORTED_TRAINING_FILE_SUFFIXES)
+
+        result, _ = await _run_file_source(node, monkeypatch, tmp_path, record, {})
+        assert result["metadata"]["columns"] == ["col1", "col2"]
+
+
+@pytest.mark.parametrize(
+    ("suffix", "shown"),
+    [(".pkl", "(.pkl)"), ("", "(unknown)"), (".<svg onload=x>", "(unknown)"), ("." + "a" * 40, "(unknown)")],
+)
+def test_rejection_message_only_echoes_a_plain_extension(suffix, shown):
+    with pytest.raises(AppException) as exc_info:
+        TrainDataSourceNode._validate_training_file_suffix(suffix)
+
+    assert shown in exc_info.value.error_detail
+    assert "<" not in exc_info.value.error_detail

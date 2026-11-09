@@ -24,7 +24,10 @@ import {
   testNode,
   testWorkflow,
   getFailedNodeDisplayMessage,
+  getEngineErrors,
+  getNodeTestFailureMessage,
   getTrainDataSourceTestFailureMessage,
+  workflowRunOutcome,
   generatePythonTemplate,
   createWorkflowFromWizard,
   createWorkflowFromBuilder,
@@ -101,24 +104,96 @@ describe("workflows service", () => {
 
   it("testNode POSTs the node test payload", async () => {
     const payload = { input_data: {}, node_type: "agent", node_config: {} };
+    mockApiRequest.mockResolvedValue({ status: "success" } as never);
     await testNode(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test-node", payload, {
       timeout: 1000,
+      headers: { "X-Keepalive": "1" },
     });
   });
 
   it("testWorkflow POSTs the workflow test payload", async () => {
     const payload = { input_data: {}, workflow: { id: "w" } };
+    mockApiRequest.mockResolvedValue({ status: "success" } as never);
     await testWorkflow(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/workflow/test", payload, {
       timeout: 1000,
+      headers: { "X-Keepalive": "1" },
+    });
+  });
+
+  it("testWorkflow throws an error envelope that arrives in a 200 body", async () => {
+    const payload = { input_data: {}, workflow: { id: "w" } };
+    mockApiRequest.mockResolvedValue({ error: "boom", error_code: 500 } as never);
+    await expect(testWorkflow(payload as never)).rejects.toThrow("boom");
+  });
+
+  describe("workflowRunOutcome", () => {
+    const run = (status: string, extra: Record<string, unknown> = {}) => ({ status, input: "", output: "", ...extra });
+
+    it("reads the run status", () => {
+      expect(workflowRunOutcome(run("success"))).toBe("success");
+      expect(workflowRunOutcome(run("partial", { has_failures: true }))).toBe("partial");
+      expect(workflowRunOutcome(run("failed", { has_failures: true }))).toBe("failed");
+      expect(workflowRunOutcome(run("awaiting_input"))).toBe("awaiting_input");
+    });
+
+    it("never reads a run with failed nodes as success, even from an older backend", () => {
+      expect(workflowRunOutcome(run("success", { has_failures: true }))).toBe("partial");
+    });
+
+    it("treats a missing or unknown status as failed", () => {
+      expect(workflowRunOutcome(null)).toBe("failed");
+      expect(workflowRunOutcome(run("error"))).toBe("failed");
+    });
+  });
+
+  describe("getNodeTestFailureMessage", () => {
+    const failedNode = {
+      node_id: "test-agentNode-1",
+      name: "Agent",
+      type: "agentNode",
+      error: "Error executing node test-agentNode-1: Agent failed.",
+    };
+
+    it("returns the failed node's error when the test failed", () => {
+      expect(
+        getNodeTestFailureMessage({ status: "failed", input: "", output: "", has_failures: true, failed_nodes: [failedNode] })
+      ).toBe("Error executing node test-agentNode-1: Agent failed.");
+    });
+
+    it("falls back to guidance when the failure has no details", () => {
+      expect(getNodeTestFailureMessage({ status: "failed", input: "", output: "" })).toBe(
+        "The node failed. Check its configuration and try again."
+      );
+    });
+
+    it("shows why the engine stopped a test that has no failed node", () => {
+      const response = {
+        status: "failed",
+        input: "",
+        output: "",
+        state: {
+          errors: [
+            { type: "node_execution", message: "Node x: an older run" },
+            { type: "execution_failure", message: "Node ghost failed: unknown node type" },
+            { type: "execution_failure", message: "Node ghost failed: unknown node type" },
+          ],
+        },
+      };
+      expect(getEngineErrors(response)).toEqual(["Node ghost failed: unknown node type"]);
+      expect(getNodeTestFailureMessage(response)).toBe("Node ghost failed: unknown node type");
+    });
+
+    it("returns null for a successful test", () => {
+      expect(getNodeTestFailureMessage({ status: "success", input: "", output: "ok" })).toBeNull();
     });
   });
 
   describe("getTrainDataSourceTestFailureMessage", () => {
     it("returns the client-safe Train Data Source failure without the engine prefix", () => {
       const response = {
-        status: "success",
+        status: "failed",
         input: "",
         output: "",
         has_failures: true,
@@ -140,7 +215,7 @@ describe("workflows service", () => {
 
     it("ignores failed nodes of other types", () => {
       const response = {
-        status: "success",
+        status: "failed",
         input: "",
         output: "",
         has_failures: true,
@@ -159,7 +234,7 @@ describe("workflows service", () => {
 
     it("uses safe guidance when a Train Data Source failure has no message", () => {
       const response = {
-        status: "success",
+        status: "failed",
         input: "",
         output: "",
         has_failures: true,

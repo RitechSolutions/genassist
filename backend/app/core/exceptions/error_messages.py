@@ -100,6 +100,7 @@ class ErrorKey(Enum):
     WORKFLOW_VERSION_ACTIVE = "WORKFLOW_VERSION_ACTIVE"
     WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER = "WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER"
     WORKFLOW_VERSION_IN_USE_BY_ML_MODEL = "WORKFLOW_VERSION_IN_USE_BY_ML_MODEL"
+    AGENT_IN_USE_BY_ML_MODEL = "AGENT_IN_USE_BY_ML_MODEL"
     SUB_AGENT_SESSION_STALE = "SUB_AGENT_SESSION_STALE"
     SUB_AGENT_INVALID_TOPOLOGY = "SUB_AGENT_INVALID_TOPOLOGY"
     SUB_AGENT_INVALID_CONFIG = "SUB_AGENT_INVALID_CONFIG"
@@ -147,6 +148,7 @@ class ErrorKey(Enum):
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
     ML_INFERENCE_INPUT_INVALID = "ML_INFERENCE_INPUT_INVALID"
     ML_MODEL_ARTIFACT_INVALID = "ML_MODEL_ARTIFACT_INVALID"
+    ML_PIPELINE_RUN_NOT_PROMOTABLE = "ML_PIPELINE_RUN_NOT_PROMOTABLE"
     INVALID_PKL_FILE = "INVALID_PKL_FILE"
     PKL_FILE_TOO_LARGE = "PKL_FILE_TOO_LARGE"
     ERROR_UPLOAD_FILE_OPEN_AI = "ERROR_UPLOAD_FILE_OPEN_AI"
@@ -315,6 +317,10 @@ ERROR_MESSAGES = {
             "This version cannot be deleted while an ML model's pipeline configuration uses it ({0}). "
             "Remove those configurations first."
         ),
+        ErrorKey.AGENT_IN_USE_BY_ML_MODEL: (
+            "This agent cannot be deleted while an ML model's pipeline configuration uses one of its "
+            "workflow versions ({0}). Remove those configurations first."
+        ),
         ErrorKey.OPERATOR_ROLE_MISSING: "Operator role missing.",
         ErrorKey.CREATE_USER_TYPE_IN_MENU: "Operators and ai agents should be created in their specific menus.",
         ErrorKey.LOGIN_ERROR_CONSOLE_USER: "Failed to give access for console type user.",
@@ -364,6 +370,7 @@ ERROR_MESSAGES = {
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
         ErrorKey.ML_INFERENCE_INPUT_INVALID: "ML model inference received invalid input values.",
         ErrorKey.ML_MODEL_ARTIFACT_INVALID: "The model file does not match the registered features or target.",
+        ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE: "This pipeline run cannot safely replace the model artifact.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",
         ErrorKey.PKL_FILE_TOO_LARGE: "PKL file too large. Maximum size is 500MB.",
         ErrorKey.ERROR_UPLOAD_FILE_OPEN_AI: "Failed to upload file to OpenAI.",

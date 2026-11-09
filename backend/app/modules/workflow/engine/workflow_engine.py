@@ -676,12 +676,16 @@ class WorkflowEngine:
                 if isinstance(result, WorkflowPausedException):
                     raise result
 
-            # Log any other exceptions that occurred during parallel execution
+            # Log any other exceptions that occurred during parallel execution.
+            # _execute_single_node already recorded a failing node (fail_execution);
+            # record the branch only if it stopped before reaching that point.
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     logger.error(
                         f"Error in parallel execution of node {next_nodes[i]}: {result}"
                     )
+                    if not state.execution_failures():
+                        state.add_error(f"Node {next_nodes[i]} failed", "execution_failure")
 
     def _find_next_nodes(self, node_id: str) -> List[str]:
         """Find next nodes connected to the current node."""

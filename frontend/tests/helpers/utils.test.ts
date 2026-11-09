@@ -1,4 +1,4 @@
-import { vi, describe, expect, it, afterEach } from "vitest";
+import { vi, describe, expect, it, afterEach, beforeEach } from "vitest";
 
 // `@/helpers/utils` re-imports the axios/env-backed api module purely for an
 // (unused) re-export. Mock it so these pure helpers stay hermetic and never
@@ -29,9 +29,18 @@ describe("cn", () => {
   });
 });
 
+const originalTz = process.env.TZ;
+const restoreTz = () => {
+  if (originalTz === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTz;
+};
+
 describe("formatDate", () => {
-  it("formats a Date as a long en-US date", () => {
-    expect(formatDate(new Date(2026, 1, 17))).toBe("February 17, 2026");
+  afterEach(restoreTz);
+
+  it("formats the UTC calendar day as a long en-US date", () => {
+    process.env.TZ = "Pacific/Kiritimati";
+    expect(formatDate("2026-02-17T23:30:00Z")).toBe("February 17, 2026");
   });
 });
 
@@ -42,14 +51,31 @@ describe("formatChartDate", () => {
 });
 
 describe("getTimeFromDatetime", () => {
-  it("returns zero-padded H:MM:SS in local time", () => {
-    expect(getTimeFromDatetime("2026-02-17T09:05:03")).toBe("9:05:03");
+  afterEach(() => {
+    restoreTz();
+    vi.unstubAllGlobals();
+  });
+
+  it("returns zero-padded H:MM:SS in UTC", () => {
+    process.env.TZ = "Pacific/Kiritimati";
+    expect(getTimeFromDatetime("2026-02-17T09:05:03Z")).toBe("9:05:03");
+  });
+
+  it("returns the browser's clock time in Local time mode", () => {
+    process.env.TZ = "America/Vancouver";
+    vi.stubGlobal("localStorage", { getItem: () => "local" });
+    expect(getTimeFromDatetime("2026-02-17T09:05:03Z")).toBe("1:05:03");
   });
 });
 
 describe("formatFeedbackDate", () => {
-  it("formats a month/day with zero-padded time", () => {
-    expect(formatFeedbackDate("2026-02-17T09:05:00")).toBe("February 17, 09:05");
+  beforeEach(() => {
+    process.env.TZ = "Pacific/Kiritimati";
+  });
+  afterEach(restoreTz);
+
+  it("formats a month/day with zero-padded time in UTC", () => {
+    expect(formatFeedbackDate("2026-02-17T09:05:00Z")).toBe("February 17, 09:05");
   });
 });
 

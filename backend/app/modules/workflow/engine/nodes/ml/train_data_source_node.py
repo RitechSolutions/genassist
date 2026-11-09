@@ -19,10 +19,9 @@ from starlette_context import context
 from app.auth.utils import has_permission
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
-from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
-from app.core.utils.sensitive_data_utils import redact_bound_values, redact_sensitive_substrings
+from app.core.utils.sensitive_data_utils import redact_bound_values
 from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.database.provider_manager import DBProviderManager
 from app.modules.integration.database.query_validator import AdvancedQueryValidator
@@ -36,6 +35,8 @@ from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     SUPPORTED_TRAINING_FILE_LABEL,
     SUPPORTED_TRAINING_FILE_SUFFIXES,
     TrainingFileReader,
+    stored_file_suffix,
+    training_file_suffix,
 )
 from app.modules.workflow.engine.utils import (
     PARAM_STYLE_NAMED,
@@ -48,23 +49,6 @@ from app.modules.workflow.engine.utils import (
 logger = logging.getLogger(__name__)
 
 NumericLimit = TypeVar("NumericLimit", int, float)
-
-_QUERY_REASON_PATTERNS = (
-    r"no such (?:column|table): [\w.\"`]+",
-    r"(?:column|relation|table) \"[^\"]+\" does not exist",
-    r"syntax error at or near \"[^\"]*\"",
-    r"Unknown column '[^']+'(?: in '[^']+')?",
-    r"Table '[^']+' doesn't exist",
-    r"You have an error in your SQL syntax.*?near '[^']{0,80}'",
-    r"Invalid (?:column|object) name '[^']+'",
-    r"invalid identifier '[^']+'",
-    r"near [\"'][^\"']{0,80}[\"']: syntax error",
-)
-_QUERY_REASON_RE = re.compile(
-    "|".join(f"(?:{pattern})" for pattern in _QUERY_REASON_PATTERNS),
-    re.IGNORECASE,
-)
-
 
 @dataclass(frozen=True)
 class ExtractionLimits:
@@ -354,18 +338,21 @@ class TrainDataSourceNode(BaseNode):
                     )
                     raise self._file_unavailable_error() from None
 
-                source_name = (
-                    csv_file_name
-                    or getattr(stored_file, "name", None)
-                    or getattr(stored_file, "path", None)
-                    or csv_file_path
-                    or ""
+                if stored_file is None:
+                    raise self._file_unavailable_error()
+
+                # The file type comes from the stored record, read the same way
+                # as the preview and profile endpoints. csvFileName comes from
+                # the client, so it only counts when the record has no extension
+                # at all. Those are older uploads that predate extension
+                # tracking; the endpoints reject them, but saved workflows keep
+                # running on them, falling back to the CSV default as before.
+                suffix = (
+                    stored_file_suffix(stored_file)
+                    or training_file_suffix(csv_file_name or "")
+                    or training_file_suffix(csv_file_path or "")
+                    or ".csv"
                 )
-                # Older saved workflows can reference CSV files whose stored
-                # names predate extension tracking. Preserve their historical
-                # CSV behavior while still rejecting explicit unsupported
-                # extensions below.
-                suffix = Path(source_name).suffix.lower() or ".csv"
                 self._validate_training_file_suffix(suffix)
 
                 stored_size = getattr(stored_file, "size", None)
@@ -694,8 +681,7 @@ class TrainDataSourceNode(BaseNode):
 
     @staticmethod
     def _sanitized_diagnostic(error: Any) -> str:
-        redacted = redact_sensitive_substrings(str(error))
-        return sanitize_error_detail(str(redacted), max_len=2_000)
+        return ml_utils.sanitized_database_diagnostic(error)
 
     @staticmethod
     def _client_safe_database_error(
@@ -703,27 +689,9 @@ class TrainDataSourceNode(BaseNode):
         *,
         has_bound_parameters: bool,
     ) -> str:
-        if has_bound_parameters:
-            return (
-                "Database query failed. Check that each workflow variable's "
-                "value matches the column it is compared with."
-            )
-
-        # Driver errors may include class names, codes, hosts and the full SQL.
-        # Search the complete message but expose only a recognized correction
-        # phrase and its identifier.
-        match = _QUERY_REASON_RE.search(str(error))
-        if match:
-            safe_reason = sanitize_error_detail(
-                str(redact_sensitive_substrings(match.group(0))),
-                max_len=300,
-            )
-            if safe_reason:
-                return f"Database query failed: {safe_reason}"
-
-        return (
-            "Could not run the query on the selected data source. "
-            "Check the query and connection settings."
+        return ml_utils.client_safe_database_error(
+            error,
+            has_bound_parameters=has_bound_parameters,
         )
 
     @staticmethod
@@ -745,12 +713,15 @@ class TrainDataSourceNode(BaseNode):
         if suffix in SUPPORTED_TRAINING_FILE_SUFFIXES:
             return
 
+        # The suffix can come from a file name, so only echo a plain extension.
+        shown = suffix if re.fullmatch(r"\.[a-z0-9]{1,10}", suffix) else "unknown"
+
         raise AppException(
             error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
             status_code=400,
             error_detail=(
-                "This training file type is not supported. Use one of: "
-                f"{SUPPORTED_TRAINING_FILE_LABEL}."
+                f"This training file type ({shown}) is not "
+                f"supported. Use one of: {SUPPORTED_TRAINING_FILE_LABEL}."
             ),
         )
 

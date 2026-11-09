@@ -4,6 +4,7 @@ import type {
   ConversationDataset,
   ConversationDatasetResult,
 } from "@/interfaces/testSuite.interface";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 /** Most datasets one conversation can be added to at once. Mirrors the API cap. */
 export const MAX_CONVERSATION_DATASETS = 50;
@@ -81,7 +82,10 @@ export const describeDatasetMembership = (
   if (!dataset.added_at) return `Already holds ${held}.`;
   const added = new Date(dataset.added_at);
   if (Number.isNaN(added.getTime())) return `Already holds ${held}.`;
-  return `Already holds ${held}, added ${added.toLocaleDateString()}.`;
+  const day = added.toLocaleDateString(undefined, {
+    timeZone: displayTimeZone(),
+  });
+  return `Already holds ${held}, added ${day}.`;
 };
 
 export interface DatasetAddPlan {

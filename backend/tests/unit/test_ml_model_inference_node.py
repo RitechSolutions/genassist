@@ -146,7 +146,7 @@ class TestPrepareInferenceInputs:
         }
         assert applied == ["is_weekend", "lag_24"]
 
-    @pytest.mark.parametrize("missing_value", ["null", " NULL ", "nan", "NaN", "None"])
+    @pytest.mark.parametrize("missing_value", ["nan", "NaN", "None"])
     def test_unresolved_string_values_use_a_configured_default(self, missing_value):
         prepared, applied = _prepare_inference_inputs(
             {"hour": [8], "is_weekend": [0], "lag_24": [missing_value]},
@@ -167,6 +167,31 @@ class TestPrepareInferenceInputs:
 
         assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
         assert "lag_24" in exc.value.error_detail
+
+    @pytest.mark.parametrize("missing_value", ["null", " NULL "])
+    def test_failed_upstream_null_is_rejected_even_with_a_default(self, missing_value):
+        # MI-15: a 'null' from a failed upstream node must fail the run, not
+        # be replaced by a configured default.
+        with pytest.raises(AppException) as exc:
+            _prepare_inference_inputs(
+                {"hour": [8], "is_weekend": [0], "lag_24": [12, missing_value]},
+                self.FEATURES,
+                defaults={"lag_24": 24},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Unresolved upstream value(s) for feature(s): lag_24." in exc.value.error_detail
+
+    def test_upstream_null_keeps_the_defaults_hint_for_other_missing_features(self):
+        with pytest.raises(AppException) as exc:
+            _prepare_inference_inputs(
+                {"hour": ["null"], "is_weekend": [0]},
+                self.FEATURES,
+            )
+
+        assert "Unresolved upstream value(s) for feature(s): hour." in exc.value.error_detail
+        assert "Missing value(s) for feature(s): hour, lag_24." in exc.value.error_detail
+        assert "useTrainingFills" in exc.value.error_detail
 
     def test_unresolved_null_points_to_the_upstream_node(self):
         with pytest.raises(AppException) as exc:
@@ -864,6 +889,41 @@ class TestInferenceFeatureContract:
         assert "weather" in result["warnings"][0]
 
     @pytest.mark.asyncio
+    async def test_unseen_label_encoded_value_is_rejected(self, monkeypatch):
+        # MI-14: an unseen value used to be encoded as -1 and predicted from.
+        model = _StubModel()
+        model.predict = MagicMock(side_effect=AssertionError("predict must not run"))
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                model,
+                {"hour": [8, 9], "kind": ["a", "zzz"]},
+                feature_names=["hour", "kind"],
+                label_encodings={"kind": {"a": 0, "b": 1}},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Invalid value(s) for feature 'kind': zzz." in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_known_label_encoded_values_are_still_encoded(self, monkeypatch):
+        class _Echo:
+            def predict(self, X):
+                self.X = np.asarray(X, dtype=float)
+                return np.zeros(len(X))
+
+        model = _Echo()
+        await _predict(
+            monkeypatch,
+            model,
+            {"hour": [8, 9], "kind": ["b", "a"]},
+            feature_names=["hour", "kind"],
+            label_encodings={"kind": {"a": 0, "b": 1}},
+        )
+
+        assert model.X.tolist() == [[8.0, 1.0], [9.0, 0.0]]
+
+    @pytest.mark.asyncio
     async def test_unresolved_null_is_rejected_before_label_encoding(self, monkeypatch):
         with pytest.raises(AppException) as exc:
             await _predict(
@@ -1217,6 +1277,55 @@ class TestInferenceFeatureContract:
         assert caller_names == ["f1", "2023"]
         assert estimator_names == ["f1", "2023"]
         assert source == "estimator"
+
+    def test_reloaded_catboost_model_uses_its_recorded_feature_names(self):
+        # A pickled CatBoost model reports n_features_in_ == 0 once reloaded; inference
+        # must still use its saved feature_names_ and match them to the registry.
+        import pickle
+
+        catboost = pytest.importorskip("catboost")
+        training_data = pd.DataFrame({"hour": [0.0, 1.0, 2.0, 3.0], "lag_24": [3.0, 2.0, 1.0, 0.0]})
+        model = catboost.CatBoostRegressor(iterations=2, verbose=0, allow_writing_files=False).fit(
+            training_data, [0.0, 1.0, 1.0, 2.0]
+        )
+        reloaded = pickle.loads(pickle.dumps(model))
+        if reloaded.n_features_in_ != 0:
+            pytest.skip("this CatBoost version keeps n_features_in_ when pickled")
+
+        caller_names, estimator_names, source = inference_module._resolve_feature_order(
+            {},
+            reloaded,
+            "forecast",
+            registered_names=["lag_24", "hour"],
+        )
+
+        assert caller_names == ["hour", "lag_24"]
+        assert estimator_names == ["hour", "lag_24"]
+        assert source == "estimator"
+
+    def test_reloaded_catboost_model_with_other_names_is_refused(self):
+        import pickle
+
+        catboost = pytest.importorskip("catboost")
+        training_data = pd.DataFrame({"hour": [0.0, 1.0, 2.0, 3.0], "lag_24": [3.0, 2.0, 1.0, 0.0]})
+        model = catboost.CatBoostRegressor(iterations=2, verbose=0, allow_writing_files=False).fit(
+            training_data, [0.0, 1.0, 1.0, 2.0]
+        )
+        reloaded = pickle.loads(pickle.dumps(model))
+        if reloaded.n_features_in_ != 0:
+            pytest.skip("this CatBoost version keeps n_features_in_ when pickled")
+
+        with pytest.raises(AppException) as exc:
+            inference_module._resolve_feature_order(
+                {},
+                reloaded,
+                "forecast",
+                registered_names=["hour", "lag_48"],
+            )
+
+        # Refused for the name mismatch, not because the saved names were unusable.
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "records estimator feature names ['hour', 'lag_24']" in exc.value.error_detail
 
     def test_custom_model_with_valid_feature_names_is_supported(self):
         class RawModel(_StubModel):
@@ -1630,12 +1739,54 @@ class TestInferenceFeatureContract:
         assert "kind" in exc.value.error_detail
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "inference_params",
+        [None, {}, {"useTrainingFills": False}, {"useTrainingFills": "true"}],
+    )
+    @pytest.mark.parametrize("missing_value", [None, "", "nan"])
+    async def test_saved_training_fill_is_not_used_unless_switched_on(
+        self, monkeypatch, inference_params, missing_value
+    ):
+        # MI-15: an empty input used to be filled with the saved training
+        # value (e.g. the median) and the run still reported success.
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8, "is_weekend": missing_value},
+                feature_names=["hour", "is_weekend"],
+                inference_params=inference_params,
+                missing_value_fills={"is_weekend": 0},
+            )
+
+        assert exc.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+        assert "Missing value(s) for feature(s): is_weekend." in exc.value.error_detail
+        assert "useTrainingFills" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_saved_training_fill_does_not_cover_a_failed_upstream_value(
+        self, monkeypatch
+    ):
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch,
+                _StubModel(),
+                {"hour": 8, "is_weekend": "null"},
+                feature_names=["hour", "is_weekend"],
+                inference_params={"useTrainingFills": True},
+                missing_value_fills={"is_weekend": 0},
+            )
+
+        assert "upstream node did not produce that field" in exc.value.error_detail
+
+    @pytest.mark.asyncio
     async def test_legacy_training_fill_is_applied_and_reported(self, monkeypatch):
         result = await _predict(
             monkeypatch,
             _StubModel(),
             {"hour": 8},
             feature_names=["hour", "is_weekend"],
+            inference_params={"useTrainingFills": True},
             missing_value_fills={"is_weekend": 0},
         )
 
@@ -1650,7 +1801,7 @@ class TestInferenceFeatureContract:
             _StubModel(),
             {"hour": 8},
             feature_names=["hour", "is_weekend"],
-            inference_params={"featureDefaults": {}},
+            inference_params={"featureDefaults": {}, "useTrainingFills": True},
             missing_value_fills={"is_weekend": 0},
         )
 
@@ -1667,7 +1818,7 @@ class TestInferenceFeatureContract:
             _StubModel(),
             {},
             feature_names=["hour", "is_weekend"],
-            inference_params={"featureDefaults": {"hour": 12}},
+            inference_params={"featureDefaults": {"hour": 12}, "useTrainingFills": True},
             missing_value_fills={"hour": 3, "is_weekend": 0},
         )
 
@@ -1687,6 +1838,7 @@ class TestInferenceFeatureContract:
                 _StubModel(),
                 {"hour": 8},
                 feature_names=["hour", "is_weekend"],
+                inference_params={"useTrainingFills": True},
                 missing_value_fills={"is_weekend": float("nan")},
             )
 

@@ -6,7 +6,7 @@ import { useIsMobile } from "@/hooks/useMobile";
 import { Button } from "@/components/button";
 import { ALL_FILTER_VALUE, FilterMenu, type FilterMenuGroup } from "@/components/FilterMenu";
 import { startOfDay, subDays, endOfDay, addDays } from "date-fns";
-import { utcDayEnd, utcDayStart } from "@/helpers/dateRange";
+import { dayEndIso, dayStartIso } from "@/helpers/dateRange";
 import { DateRangePicker } from "@/components/date-range-picker";
 import { usePersistedDateRange } from "@/hooks/usePersistedDateRange";
 import { useHasPermission } from "@/hooks/useHasPermission";
@@ -51,11 +51,11 @@ export default function AuditLogs() {
     return () => clearTimeout(timeout);
   }, [tableName]);
 
-  const dateFrom = dateRange?.from ? utcDayStart(dateRange.from) : "";
-  const dateTo = dateRange?.to ? utcDayEnd(dateRange.to) : "";
+  const dateFrom = dateRange?.from ? dayStartIso(dateRange.from) : "";
+  const dateTo = dateRange?.to ? dayEndIso(dateRange.to) : "";
 
   const fetchPage = useCallback(
-    (offset: number) =>
+    (before?: AuditLog) =>
       fetchAuditLogs(
         dateFrom,
         dateTo,
@@ -63,7 +63,7 @@ export default function AuditLogs() {
         debouncedTableName,
         selectedUser ?? undefined,
         PAGE_SIZE,
-        offset
+        before
       ),
     [dateFrom, dateTo, selectedAction, debouncedTableName, selectedUser]
   );
@@ -74,7 +74,7 @@ export default function AuditLogs() {
     try {
       setIsRefreshing(true);
       setError(null);
-      const logs = await fetchPage(0);
+      const logs = await fetchPage();
       if (requestId !== requestIdRef.current) return;
       setAuditLogs(logs);
       setHasMore(logs.length === PAGE_SIZE);
@@ -90,7 +90,7 @@ export default function AuditLogs() {
     const requestId = requestIdRef.current;
     try {
       setIsLoadingMore(true);
-      const logs = await fetchPage(auditLogs.length);
+      const logs = await fetchPage(auditLogs[auditLogs.length - 1]);
       if (requestId !== requestIdRef.current) return;
       setAuditLogs((prev) => [...prev, ...logs]);
       setHasMore(logs.length === PAGE_SIZE);
@@ -100,7 +100,7 @@ export default function AuditLogs() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [fetchPage, auditLogs.length]);
+  }, [fetchPage, auditLogs]);
 
   useEffect(() => {
     reloadAuditLogs();

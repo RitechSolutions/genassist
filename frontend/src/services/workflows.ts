@@ -1,5 +1,6 @@
 import { apiRequest, API_WORKFLOW_TEST_TIMEOUT_MS } from "@/config/api";
 import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
+import { KEEPALIVE_HEADERS, throwIfErrorEnvelope } from "@/helpers/apiError";
 
 import {
   Workflow,
@@ -87,16 +88,38 @@ export interface WorkflowTokenUsage {
 }
 
 export interface WorkflowTestResponse {
+  /** "success", "partial", "failed" or "awaiting_input" - see workflowRunOutcome. */
   status: string;
   input: string;
   output: string;
-  /** True when one or more nodes failed even though the run completed. */
+  /** True when one or more nodes failed (status is then "partial" or "failed"). */
   has_failures?: boolean;
   /** Details of the nodes that failed, if any. */
   failed_nodes?: FailedNode[];
   token_usage?: WorkflowTokenUsage;
   [key: string]: any;
 }
+
+/**
+ * How a run ended: "success" (no node failed), "partial" (a node failed but the
+ * run still produced a response), "failed", or "awaiting_input" (paused for the
+ * user). Older backends sent "success" with has_failures for a run where a node
+ * failed; that reads as "partial".
+ */
+export type WorkflowRunOutcome = "success" | "partial" | "failed" | "awaiting_input";
+
+export const workflowRunOutcome = (response: WorkflowTestResponse | null | undefined): WorkflowRunOutcome => {
+  switch (response?.status) {
+    case "awaiting_input":
+    case "partial":
+    case "failed":
+      return response.status;
+    case "success":
+      return response.has_failures ? "partial" : "success";
+    default:
+      return "failed";
+  }
+};
 
 export const TRAIN_DATA_SOURCE_NODE_TYPE = "trainDataSourceNode";
 export const TRAIN_DATA_SOURCE_TEST_FALLBACK =
@@ -130,6 +153,33 @@ export const getTrainDataSourceTestFailureMessage = (
   return getFailedNodeDisplayMessage(failedNode);
 };
 
+/**
+ * The errors that stopped a run outside any node ("execution_failure" entries
+ * in state.errors, as the backend's execution_failures()), each once.
+ */
+export const getEngineErrors = (response: WorkflowTestResponse | null | undefined): string[] => {
+  const errors: unknown[] = Array.isArray(response?.state?.errors) ? response.state.errors : [];
+  const messages = errors
+    .filter(
+      (e): e is { message?: unknown } =>
+        typeof e === "object" && e !== null && (e as { type?: unknown }).type === "execution_failure"
+    )
+    .map((e) => String(e.message ?? ""))
+    .filter(Boolean);
+  return Array.from(new Set(messages));
+};
+
+/** The error to show when a node test failed (status "failed"), or null. */
+export const getNodeTestFailureMessage = (response: WorkflowTestResponse | null): string | null => {
+  if (!response || workflowRunOutcome(response) !== "failed") return null;
+  const failedNode = response.failed_nodes?.[0];
+  return (
+    (failedNode && getFailedNodeDisplayMessage(failedNode)) ||
+    getEngineErrors(response).join("; ") ||
+    "The node failed. Check its configuration and try again."
+  );
+};
+
 export interface NodeTestPayload {
   input_data: Record<string, any>;
   node_type: string;
@@ -154,16 +204,16 @@ export const testNode = (testData: NodeTestPayload) =>
     "POST",
     `${BASE}/test-node`,
     testData as unknown as Record<string, unknown>,
-    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS }
-  );
+    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS, headers: KEEPALIVE_HEADERS }
+  ).then(throwIfErrorEnvelope);
 
 export const testWorkflow = (testData: WorkflowTestPayload) =>
   apiRequest<WorkflowTestResponse>(
     "POST",
     `${BASE}/test`,
     testData as unknown as Record<string, unknown>,
-    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS }
-  );
+    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS, headers: KEEPALIVE_HEADERS }
+  ).then(throwIfErrorEnvelope);
 
 export const generatePythonTemplate = (schema: any, prompt?: string) =>
   apiRequest<{ template: string }>("POST", `${BASE}/generate-python-template`, {
