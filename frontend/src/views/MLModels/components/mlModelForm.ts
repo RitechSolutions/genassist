@@ -3,6 +3,103 @@ import { extractErrorMessage } from '@/helpers/apiError';
 
 type FeatureDefault = string | number | boolean;
 
+const jsonStringList = (text: string): string[] | null => {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    // Names are kept exactly as quoted; featuresText relies on this to show any list.
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === 'string')
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Splits on commas outside quotes, so a quoted name (`'a,b'` or `"a,b"`) is read
+ * whole. A name that opens with a quote must close it before the next comma.
+ */
+const splitNames = (text: string): { names: string[]; broken: boolean } => {
+  const names: string[] = [];
+  let broken = false;
+  let i = 0;
+  while (i <= text.length) {
+    while (/\s/.test(text[i] ?? '')) i += 1;
+    const quote = text[i];
+    if (quote === "'" || quote === '"') {
+      let name = '';
+      i += 1;
+      while (i < text.length && text[i] !== quote) {
+        if (text[i] === '\\' && (text[i + 1] === quote || text[i + 1] === '\\')) i += 1;
+        name += text[i];
+        i += 1;
+      }
+      if (i >= text.length) broken = true; // the quote was never closed
+      i += 1;
+      const end = text.indexOf(',', i);
+      const rest = end === -1 ? text.slice(i) : text.slice(i, end);
+      if (rest.trim()) broken = true; // text after the closing quote
+      names.push(name.trim());
+      i = end === -1 ? text.length + 1 : end + 1;
+    } else {
+      const end = text.indexOf(',', i);
+      const name = (end === -1 ? text.slice(i) : text.slice(i, end)).trim();
+      // Outside quotes, a leftover bracket or double quote means a list was
+      // mistyped (e.g. text after `]`), not that a name really contains it.
+      if (/["[\]]/.test(name)) broken = true;
+      names.push(name);
+      i = end === -1 ? text.length + 1 : end + 1;
+    }
+  }
+  return { names, broken };
+};
+
+const readFeatures = (raw: string): { names: string[]; broken: boolean } => {
+  const text = raw.trim();
+  // A JSON array is read whole, so a quoted name may itself contain a comma.
+  const json = text.startsWith('[') ? jsonStringList(text) : null;
+  if (json) return { names: [...new Set(json.filter((name) => name.trim()))], broken: false };
+  // Drop the outer [] of a list, or the () of a Python tuple of quoted names.
+  const inner = text.replace(/^\[([\s\S]*)\]$/, '$1').replace(/^\(\s*(['"][\s\S]*)\)$/, '$1');
+  const { names, broken } = splitNames(inner);
+  return { names: [...new Set(names.filter((name) => name))], broken };
+};
+
+/**
+ * Reads the Features text box: plain comma-separated names, or a list copied from
+ * Python/JSON such as `'x', 'y'`, `['a,b', 'c']`, `('x', 'y')` or `["x", "y"]`.
+ * Order is kept; blanks and repeated
+ * names are dropped, as the tag input this box replaced did.
+ */
+export const parseModelFeatures = (raw: string): string[] => readFeatures(raw).names;
+
+/** The validation message for a Features box that can't be read reliably, or null. */
+export const featureListError = (raw: string): string | null =>
+  readFeatures(raw).broken
+    ? 'Check the brackets and quotes, or write plain names separated by commas.'
+    : null;
+
+// A name the plain comma form would change: commas, quotes, brackets, line breaks or
+// outer spaces.
+const needsQuoting = (name: string): boolean =>
+  /[,'"[\]\r\n\t]/.test(name) || name !== name.trim();
+
+/**
+ * How stored features are shown in the Features box: `a, b, c`, or a JSON list when a
+ * name would not survive that form, so parseModelFeatures reads back the same names.
+ */
+export const featuresText = (features: string[] | null | undefined): string => {
+  const list = features ?? [];
+  return list.some(needsQuoting) ? JSON.stringify(list) : list.join(', ');
+};
+
+/**
+ * The features to save. While the box still shows the stored list, that list is sent
+ * exactly as stored, so editing another field never rewrites the model's features.
+ */
+export const formFeatures = (raw: string, stored?: string[] | null): string[] =>
+  stored && raw === featuresText(stored) ? [...stored] : parseModelFeatures(raw);
+
 export const usesTrainingFills = (params: MLModel['inference_params']): boolean =>
   params?.useTrainingFills === true;
 

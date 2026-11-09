@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 import app.api.v1.routes.workflows as route
 import app.core.keepalive_json_response as keepalive
+import app.modules.workflow.test_runs as test_runs
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import init_error_handlers
@@ -61,7 +62,8 @@ def studio(monkeypatch):
         state.calls.append("remember")
 
     monkeypatch.setattr(route, "WorkflowEngine", FakeEngine)
-    monkeypatch.setattr(route, "SubAgentTurnRouter", FakeTurnRouter)
+    # The /test route runs the turn through run_workflow_test, which builds the router.
+    monkeypatch.setattr(test_runs, "SubAgentTurnRouter", FakeTurnRouter)
     monkeypatch.setattr(keepalive, "create_tenant_request_scope", scope)
     monkeypatch.setattr(keepalive, "KEEPALIVE_SECONDS", 0.01)
     monkeypatch.setattr(ReadAfterWriteMiddleware, "remember_write", remember)
