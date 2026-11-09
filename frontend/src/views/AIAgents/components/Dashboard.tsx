@@ -13,6 +13,7 @@ import { toast } from "react-hot-toast";
 import AgentList from "./AgentList";
 import ManageApiKeysModal from "./Keys/ManageApiKeysModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { extractErrorMessage } from "@/helpers/apiError";
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -120,8 +121,8 @@ const Dashboard: React.FC = () => {
       // Refetch to update pagination correctly
       await fetchAgents(page, pageSize, false, activeTab);
     } catch (err) {
-      toast.error("Failed to delete agent.");
-      setError("Failed to delete agent");
+      // A refused delete (409, e.g. an ML model trains on this agent's workflow) says why.
+      toast.error(extractErrorMessage(err, "Failed to delete agent."));
     } finally {
       setAgentToDelete(null);
       setIsDeleteDialogOpen(false);

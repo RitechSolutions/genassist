@@ -94,7 +94,8 @@ async def test_corrupt_stack_returns_controlled_message():
     mem.metadata[sub_session.STACK_KEY] = {"version": 1, "agent_id": "agentA", "frames": "junk"}
     with patch.object(ConversationMemory, "get_instance", return_value=mem):
         result = await router.route_turn("msg", "t1", {"message": "msg"}, persist=True)
-    assert result["status"] == "success"
+    # The turn did nothing, so it is not reported as a success
+    assert result["status"] == "failed"
     assert "could not be resumed" in result["output"]["message"]
 
 
@@ -189,7 +190,22 @@ async def test_child_timeout_keeps_frame_intact():
     ):
         result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
     assert "did not respond in time" in result["output"]["message"]
+    # A sub-agent that timed out is a failed turn, not a success.
+    assert result["status"] == "failed"
     assert mem.metadata[sub_session.STACK_KEY]["frames"][0]["invocation_id"] == "inv1"
+
+
+@pytest.mark.asyncio
+async def test_child_that_raises_is_a_failed_turn():
+    router = _make_router()
+    mem = _seed_stack()
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(side_effect=RuntimeError("provider gone"))),
+    ):
+        result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+    assert result["status"] == "failed"
+    assert result["output"]["message"]
 
 
 @pytest.mark.asyncio
