@@ -181,14 +181,19 @@ class TrainModelNode(BaseNode):
                 - featureEngineering: Optional list of derived-feature specs, each a
                             dict with: newColumnName (required), strategy
                             ("custom_expression", "bin_numeric", "polynomial",
-                            "log_transform", "quantile_transform",
-                            "power_transform", or "pca"), plus strategy-specific
+                            "datetime_features", "log_transform",
+                            "quantile_transform", "power_transform",
+                            "math_transform", or "pca"), plus strategy-specific
                             fields (expression / binColumn+numBins+binStrategy
                             ("uniform" equal-width, default, or "quantile"
                             equal-frequency) /
-                            polynomialColumns+polynomialDegree / sourceColumns,
+                            polynomialColumns+polynomialDegree /
+                            datetimeColumn+datetimeParts (year, month, day,
+                            day_of_week, quarter, hour, is_weekend; hour only
+                            when the values have a time of day) / sourceColumns,
                             with quantileOutputDistribution+nQuantiles,
-                            powerMethod, pcaComponents+pcaStandardize, and
+                            powerMethod, mathFunction (sin, cos, sqrt, abs,
+                            square, cbrt), pcaComponents+pcaStandardize, and
                             replaceSourceColumns). Bin edges, polynomial
                             features, quantiles, power-transform lambdas and PCA
                             components are fit on the training split only and
@@ -406,7 +411,7 @@ class TrainModelNode(BaseNode):
                     )
 
             valid_fe_strategies = [
-                "custom_expression", "bin_numeric", "polynomial",
+                "custom_expression", "bin_numeric", "polynomial", "datetime_features",
                 *ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS,
                 *_RETIRED_FE_STRATEGIES,
             ]
@@ -444,6 +449,8 @@ class TrainModelNode(BaseNode):
                     )
                 if strategy in ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS:
                     self._validate_column_transform_config(item)
+                if strategy == "datetime_features":
+                    self._validate_datetime_features_config(item)
                 if strategy == "polynomial" and (not item.get("polynomialColumns") or not item.get("polynomialDegree")):
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
@@ -1527,11 +1534,127 @@ class TrainModelNode(BaseNode):
                 X_train, X_val, step = self._apply_column_transform(X_train, X_val, item)
                 steps.append(step)
 
+            elif strategy == "datetime_features":
+                X_train, X_val, step = self._apply_datetime_features(X_train, X_val, item, label_encodings, ordinal_encodings)
+                steps.append(step)
+
         return X_train, X_val, steps
 
     @staticmethod
+    def _validate_datetime_features_config(item: Dict[str, Any]) -> None:
+        """Config checks for Date-Time Features, before any data is loaded."""
+        name = item.get("newColumnName")
+
+        def fail(problem: str) -> None:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Feature engineering '{name}' (Date-Time Features): {problem}",
+            )
+
+        if not item.get("datetimeColumn"):
+            fail("choose the date/time column")
+        parts = item.get("datetimeParts")
+        if parts is not None:
+            if not isinstance(parts, list) or not parts:
+                fail("choose at least one part (e.g. year, month)")
+            unknown = [p for p in parts if p not in ml_utils.DATETIME_PARTS]
+            if unknown:
+                fail(f"unknown part(s) {unknown} - choose from {', '.join(ml_utils.DATETIME_PARTS)}")
+
+    def _apply_datetime_features(self, X_train, X_val, item, label_encodings=None, ordinal_encodings=None):
+        """Date-Time Features: calendar parts of one date/time column.
+
+        Nothing is fitted - each part is read from the row's own date - so
+        there's no leakage. The parts chosen (all by default) become numeric
+        columns <newColumnName>_<part>; "hour" is left out when no training
+        value has a time of day. The date/time column itself is removed from
+        what the model trains on (one-hot encoding raw timestamps would make a
+        column per distinct value), but it is still collected as a raw input
+        at inference, where the same parts are recomputed.
+        """
+        column = item.get("datetimeColumn")
+        new_col = item.get("newColumnName")
+
+        def fail(problem: str) -> None:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Feature engineering '{new_col}' (Date-Time Features): {problem}",
+            )
+
+        if column not in X_train.columns:
+            fail(f"column '{column}' not found - it must be one of the feature columns")
+        if column in (label_encodings or {}) or column in (ordinal_encodings or {}):
+            fail(f"column '{column}' has a label or ordinal Categorical Encoding - remove it to use its dates")
+        if pd.api.types.is_numeric_dtype(X_train[column]) or pd.api.types.is_bool_dtype(X_train[column]):
+            fail(f"column '{column}' holds numbers, not dates or times (e.g. 2024-03-15 or 2024-03-15 14:30)")
+
+        splits = {"training": X_train, "validation": X_val}
+        # One day/month order for the whole column (both splits), saved with
+        # the step so prediction reads values like 01/02/2024 the same way.
+        all_values = pd.concat([split[column] for split in splits.values() if split is not None])
+        date_order = ml_utils.numeric_date_order(all_values)
+        if date_order["order"] == "mixed":
+            fail(
+                f"'{column}' mixes day-first and month-first dates, e.g. "
+                f"{date_order['day_first_example']!r} (day first) and "
+                f"{date_order['month_first_example']!r} (month first) - write them all one way, "
+                f"ideally as YYYY-MM-DD"
+            )
+        if date_order["order"] == "ambiguous":
+            fail(
+                f"the dates in '{column}' (e.g. 01/02/2024) could be day-first or month-first, and no value "
+                f"shows which - write them as YYYY-MM-DD, or include a date with a day over 12"
+            )
+        day_first = date_order["order"] == "day_first"
+        parsed = {
+            name: ml_utils.parse_datetime_values(split[column], day_first=day_first).set_axis(split.index)
+            for name, split in splits.items() if split is not None
+        }
+        for name, values in parsed.items():
+            unreadable = values.isna()
+            if unreadable.any():
+                example = splits[name][column][unreadable].iloc[0]
+                fail(
+                    f"{int(unreadable.sum())} value(s) of '{column}' in the {name} data could not be read "
+                    f"as a date/time, e.g. {example!r}"
+                )
+
+        parts = list(dict.fromkeys(item.get("datetimeParts") or ml_utils.DATETIME_PARTS))
+        if "hour" in parts and not ml_utils.has_time_of_day(parsed["training"]):
+            logger.info(f"Date-Time Features '{new_col}': '{column}' has no time of day, so no hour feature")
+            parts.remove("hour")
+        if not parts:
+            fail(f"only the hour was chosen, but the values of '{column}' have no time of day")
+
+        output_columns = [f"{new_col}_{part}" for part in parts]
+        kept_columns = [c for c in X_train.columns if c != column]
+        clashes = [c for c in output_columns if c in kept_columns]
+        if clashes:
+            fail(f"output column(s) {clashes} already exist - choose another New Column Name")
+
+        def with_parts(split, dates):
+            new = pd.DataFrame(
+                {out: ml_utils.datetime_part_values(dates, part) for out, part in zip(output_columns, parts)},
+                index=split.index,
+            )
+            return pd.concat([split[kept_columns], new], axis=1)
+
+        X_train = with_parts(X_train, parsed["training"])
+        if X_val is not None:
+            X_val = with_parts(X_val, parsed["validation"])
+
+        return X_train, X_val, {
+            "strategy": "datetime_features",
+            "new_col": new_col,
+            "column": column,
+            "parts": parts,
+            "output_columns": output_columns,
+            "day_first": day_first,
+        }
+
+    @staticmethod
     def _validate_column_transform_config(item: Dict[str, Any]) -> None:
-        """Config checks for log/quantile/power/PCA features, before any data is loaded."""
+        """Config checks for log/quantile/power/math/PCA features, before any data is loaded."""
         strategy = item.get("strategy")
         label = ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS[strategy]
         name = item.get("newColumnName")
@@ -1558,6 +1681,10 @@ class TrainModelNode(BaseNode):
                 )
             if is_count and components > len(set(columns)):
                 fail(f"asks for {components} components from only {len(set(columns))} columns")
+        if strategy == "math_transform" and item.get("mathFunction") not in ml_utils.MATH_FUNCTIONS:
+            fail(
+                f"function must be one of {', '.join(ml_utils.MATH_FUNCTIONS)} - got {item.get('mathFunction')!r}"
+            )
         if strategy == "power_transform" and item.get("powerMethod", "yeo-johnson") not in ("yeo-johnson", "box-cox"):
             fail(f"method must be 'yeo-johnson' or 'box-cox' - got {item.get('powerMethod')!r}")
         if strategy == "quantile_transform":
@@ -1571,8 +1698,8 @@ class TrainModelNode(BaseNode):
                 fail(f"number of quantiles must be a whole number of 2 or more - got {n_quantiles!r}")
 
     def _apply_column_transform(self, X_train, X_val, item):
-        """Log Transform, Quantile Transformer, Power Transformer or PCA on
-        numeric source columns.
+        """Log Transform, Quantile Transformer, Power Transformer, Math
+        Function (sin, cos, sqrt, ...) or PCA on numeric source columns.
 
         Anything fitted (quantiles, power lambdas, PCA components and the
         optional pre-PCA scaling) is fit on X_train only and applied to
@@ -1593,6 +1720,7 @@ class TrainModelNode(BaseNode):
         new_col = item.get("newColumnName")
         columns = list(dict.fromkeys(item.get("sourceColumns") or []))
         power_method = item.get("powerMethod", "yeo-johnson")
+        math_function = item.get("mathFunction") if strategy == "math_transform" else None
 
         def fail(problem: str) -> None:
             raise AppException(
@@ -1619,7 +1747,7 @@ class TrainModelNode(BaseNode):
             for name, split in splits.items() if split is not None
         }
         for name, values in matrices.items():
-            problem = ml_utils.column_transform_value_problem(strategy, values, columns, power_method)
+            problem = ml_utils.column_transform_value_problem(strategy, values, columns, power_method, math_function)
             if problem:
                 if problem.startswith("empty or infinite"):
                     problem = (
@@ -1656,9 +1784,14 @@ class TrainModelNode(BaseNode):
             ]
 
         transformed = {
-            name: ml_utils.apply_column_transform(strategy, transformer, values)
+            name: ml_utils.apply_column_transform(strategy, transformer, values, math_function)
             for name, values in matrices.items()
         }
+        if strategy == "math_transform":
+            for name, values in transformed.items():
+                problem = ml_utils.column_transform_output_problem(values, columns)
+                if problem:
+                    fail(f"{problem} (in the {name} data)")
         if strategy == "pca":
             output_columns = [f"{new_col}_{i + 1}" for i in range(transformed["training"].shape[1])]
         elif len(columns) == 1:
@@ -1688,6 +1821,7 @@ class TrainModelNode(BaseNode):
             "output_columns": output_columns,
             "transformer": transformer,
             "power_method": power_method if strategy == "power_transform" else None,
+            "math_function": math_function,
             "replace_source_columns": replace,
             **extra,
         }

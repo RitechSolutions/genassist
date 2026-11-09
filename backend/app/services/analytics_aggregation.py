@@ -487,7 +487,9 @@ class AnalyticsAggregationService:
             # Execution status
             status = (payload.get("status") or "").lower()
             ab["execution_count"] += 1
-            if status in ("success", "completed"):
+            # "partial": a node failed but the run answered (reported as
+            # "success" with has_failures before WB-1), so it stays a success here
+            if status in ("success", "completed", "partial"):
                 ab["success_count"] += 1
             else:
                 ab["error_count"] += 1

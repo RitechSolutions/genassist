@@ -35,10 +35,12 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { HumanInTheLoopFormField } from "../types/nodes";
 import {
+  getEngineErrors,
   getFailedNodeDisplayMessage,
   isTrainingWaitAborted,
   testWorkflow,
   TrainingJob,
+  workflowRunOutcome,
   WorkflowTestResponse,
 } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
@@ -248,9 +250,34 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
     }
   }, [active]);
 
+  // How the shown run ended, the nodes that failed in it, and whether it
+  // returned a reply to show. A failed run has none: no end node of its main
+  // flow succeeded, so its output is just the last node that ran (often the
+  // Chat Input echoing the user's own message), not the workflow's answer.
+  const responseOutcome = workflowRunOutcome(response);
+  const failedNodes = Array.isArray(response?.failed_nodes) ? response.failed_nodes : [];
+  const runFailed = responseOutcome === "failed";
+  const hasResponseOutput =
+    !runFailed && response?.output !== null && response?.output !== undefined && response?.output !== "";
+  const failureTone = runFailed
+    ? {
+        box: "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400",
+        detail: "",
+      }
+    : { box: "border-amber-200 bg-amber-50 text-amber-800", detail: "text-amber-700" };
+  // Why the engine stopped a run that has no failed node to point at.
+  const engineErrors = getEngineErrors(response);
+  // A failed turn that is only a message (a sub-agent that timed out or could
+  // not be resumed) has no state: its message says what to do, so show it.
+  const plainMessage = (response?.output as unknown as { message?: unknown } | null | undefined)?.message;
+  const failureMessage =
+    engineErrors.join("; ") ||
+    (!response?.state && typeof plainMessage === "string" ? plainMessage : "") ||
+    "Error processing workflow";
+
   // Check if a response indicates a paused workflow
   const isPausedResponse = (res: WorkflowTestResponse): boolean => {
-    return res.status === "awaiting_input" || res.state?.status === "paused";
+    return workflowRunOutcome(res) === "awaiting_input" || res.state?.status === "paused";
   };
 
   // Extract pause info from the response
@@ -291,9 +318,10 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
     err: string | null
   ): TestRunStatus => {
     if (err) return "error";
-    if (res?.has_failures) return "warning";
-    if (res?.status === "success") return "success";
-    return "failed";
+    const outcome = workflowRunOutcome(res);
+    if (outcome === "partial") return "warning";
+    if (outcome === "failed") return "failed";
+    return "success";
   };
 
   // Append a run to the in-memory history (owned by the parent) and select it.
@@ -1049,18 +1077,18 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                     {response && (
                       <span
                         className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                          response.has_failures
+                          responseOutcome === "partial"
                             ? "border-amber-200 bg-amber-50 text-amber-700"
-                            : response.status === "success"
-                            ? "border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/15 dark:text-green-400"
-                            : "border-red-200 bg-red-50 text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400"
+                            : responseOutcome === "failed"
+                            ? "border-red-200 bg-red-50 text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400"
+                            : "border-green-200 bg-green-50 text-green-700 dark:border-green-500/30 dark:bg-green-500/15 dark:text-green-400"
                         }`}
                       >
-                        {response.has_failures
+                        {responseOutcome === "partial"
                           ? "Completed with errors"
-                          : response.status === "success"
-                          ? "Success"
-                          : "Failed"}
+                          : responseOutcome === "failed"
+                          ? "Failed"
+                          : "Success"}
                       </span>
                     )}
                   </div>
@@ -1115,41 +1143,50 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                     </div>
                   ) : response ? (
                     <div className="space-y-3">
-                      {/* One or more nodes failed even though the run completed
-                          (e.g. a ticket that was never created). The workflow still
-                          returned a response; this surfaces what went wrong. */}
-                      {response.has_failures &&
-                        Array.isArray(response.failed_nodes) &&
-                        response.failed_nodes.length > 0 && (
-                          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      {/* The engine stopped the run, or a branch of it, without a failed
+                          node to point at: say why. */}
+                      {/* Shown next to the failed nodes too: a branch can stop outside
+                          any node while another node failed. */}
+                      {((runFailed && failedNodes.length === 0) ||
+                        (responseOutcome !== "success" && engineErrors.length > 0)) && (
+                          <div className={`rounded-md border p-3 text-sm ${failureTone.box}`}>
+                            {failureMessage}
+                          </div>
+                        )}
+                      {/* One or more nodes failed. In a partial run (e.g. a ticket that
+                          was never created) the workflow still returned a response,
+                          shown below; in a failed run there is none. */}
+                      {failedNodes.length > 0 && (
+                          <div className={`rounded-md border p-3 text-sm ${failureTone.box}`}>
                             <div className="flex items-center gap-2 font-medium">
                               <AlertTriangle className="h-4 w-4" />
-                              {response.failed_nodes.length === 1
+                              {failedNodes.length === 1
                                 ? "1 node failed during this run"
-                                : `${response.failed_nodes.length} nodes failed during this run`}
+                                : `${failedNodes.length} nodes failed during this run`}
                             </div>
                             <ul className="mt-1.5 list-disc space-y-1 pl-6">
-                              {response.failed_nodes.map((n) => (
+                              {failedNodes.map((n) => (
                                 <li key={n.node_id}>
                                   <span className="font-medium">
                                     {n.name || n.type || n.node_id}
                                   </span>
                                   {getFailedNodeDisplayMessage(n) ? (
-                                    <span className="text-amber-700">
+                                    <span className={failureTone.detail}>
                                       : {getFailedNodeDisplayMessage(n)}
                                     </span>
                                   ) : null}
                                 </li>
                               ))}
                             </ul>
-                            <div className="mt-1.5 text-xs text-amber-700">
-                              The workflow still returned a response. Open the Execution
-                              tab to inspect each node.
+                            <div className={`mt-1.5 text-xs ${failureTone.detail}`}>
+                              {hasResponseOutput
+                                ? "The workflow still returned a response."
+                                : "The workflow did not return a response."}{" "}
+                              Open the Execution tab to inspect each node.
                             </div>
                           </div>
                         )}
-                      {response?.status === "success" ? (
-                        <>
+                      <>
                           {/* The user's test message */}
                           <div
                             className={`p-3 rounded-md border ${
@@ -1167,8 +1204,23 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                             </div>
                           </div>
 
-                          {/* Response or raw Debug view */}
-                          {viewMode === "response" ? (
+                          {/* Response or raw Debug view. A failed run has no
+                              response to show, but its Debug view stays available. */}
+                          {viewMode !== "response" ? (
+                            <div className="p-3 rounded-md border bg-muted border-border">
+                              <div className="font-semibold mb-1 text-xs uppercase text-green-600 dark:text-green-400">
+                                Debug View
+                              </div>
+                              <JsonViewer
+                                data={stripAudioDataForDisplay(response) as unknown as never}
+                                onCopy={(data) => {
+                                  navigator.clipboard.writeText(
+                                    JSON.stringify(data, null, 2)
+                                  );
+                                }}
+                              />
+                            </div>
+                          ) : !runFailed ? (
                             <div className="p-3 rounded-md border bg-muted border-border">
                               <div className="font-semibold mb-1 text-xs uppercase text-green-600 dark:text-green-400">
                                 Response
@@ -1236,27 +1288,8 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                                 />
                               )}
                             </div>
-                          ) : (
-                            <div className="p-3 rounded-md border bg-muted border-border">
-                              <div className="font-semibold mb-1 text-xs uppercase text-green-600 dark:text-green-400">
-                                Debug View
-                              </div>
-                              <JsonViewer
-                                data={stripAudioDataForDisplay(response) as unknown as never}
-                                onCopy={(data) => {
-                                  navigator.clipboard.writeText(
-                                    JSON.stringify(data, null, 2)
-                                  );
-                                }}
-                              />
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="border border-red-200 rounded-md p-3 bg-red-50 text-sm text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-400">
-                          Error processing workflow
-                        </div>
-                      )}
+                          ) : null}
+                      </>
 
                       {response.workflow_id && (
                         <div className="mt-2 text-xs text-muted-foreground">
