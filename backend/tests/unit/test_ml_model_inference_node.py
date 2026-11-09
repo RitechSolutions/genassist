@@ -2927,6 +2927,40 @@ class TestInputErrorsNameTheField:
         assert "could not broadcast" in caplog.text
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("case", ["unknown_category", "wrong_feature_count"])
+    async def test_generic_failure_does_not_blame_only_the_value_type(
+        self, monkeypatch, case
+    ):
+        from sklearn.compose import make_column_transformer
+        from sklearn.linear_model import LinearRegression
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import OneHotEncoder
+
+        if case == "unknown_category":
+            training_data = pd.DataFrame({"region": ["east", "west"], "age": [1.0, 2.0]})
+            model = make_pipeline(
+                make_column_transformer(
+                    (OneHotEncoder(), ["region"]), remainder="passthrough"
+                ),
+                LinearRegression(),
+            ).fit(training_data, [1.0, 2.0])
+            inputs, legacy = {"region": "north", "age": 2}, True
+        else:
+            model = LinearRegression().fit([[1.0, 3.0], [2.0, 4.0]], [1.0, 2.0])
+            inputs, legacy = {"age": 1, "visits": 2, "extra": 3}, False
+
+        with pytest.raises(AppException) as exc:
+            await _predict(
+                monkeypatch, model, inputs, feature_names=list(inputs), legacy=legacy
+            )
+
+        assert exc.value.error_key is ErrorKey.INTERNAL_ERROR
+        assert "category values" in exc.value.error_detail
+        assert "number of features" in exc.value.error_detail
+        assert "unknown categories" not in exc.value.error_detail
+        assert "expecting 2 features" not in exc.value.error_detail
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("value", ["Infinity", "1_000", "١٢"])
     async def test_custom_legacy_model_still_receives_number_like_text(
         self, monkeypatch, value
