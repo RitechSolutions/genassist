@@ -10,6 +10,7 @@ from ..base_node import BaseNode
 from ..node_result import node_failure
 from app.core.utils.encryption_utils import decrypt_key
 from app.modules.integration.zendesk import ZendeskConnector
+from app.modules.workflow.engine.nodes.requester_pii import persist_requester_pii
 from app.services.app_settings import AppSettingsService
 from app.dependencies.injector import injector
 logger = logging.getLogger(__name__)
@@ -113,50 +114,7 @@ class ZendeskToolNode(BaseNode):
         requester_email: Optional[str],
         requester_name: Optional[str],
     ) -> None:
-        """Persist PII captured by the Zendesk node into the active conversation's
-        ``custom_attributes.pii`` payload so that admins can later locate the
-        conversation by email and fulfil GDPR Right-to-Erasure requests.
-
-        This method is intentionally defensive: any failure here is logged and
-        swallowed because Zendesk ticket creation has already succeeded and must
-        not be undone by an unrelated persistence error (legacy-safe behavior).
-        """
-
-        if not requester_email and not requester_name:
-            return
-
-        try:
-            from app.repositories.conversations import ConversationRepository
-
-            thread_id = getattr(self.state, "thread_id", None)
-            if not thread_id:
-                return
-
-            try:
-                conversation_uuid = UUID(str(thread_id))
-            except (ValueError, TypeError):
-                return
-
-            conversation_repo = injector.get(ConversationRepository)
-            conversation = await conversation_repo.fetch_conversation_by_id(
-                conversation_uuid
-            )
-            if conversation is None:
-                return
-
-            existing_attrs = dict(conversation.custom_attributes or {})
-            existing_pii = dict(existing_attrs.get("pii") or {})
-            if requester_email:
-                existing_pii["requester_email"] = str(requester_email).strip().lower()
-            if requester_name:
-                existing_pii["requester_name"] = str(requester_name).strip()
-            existing_attrs["pii"] = existing_pii
-
-            await conversation_repo.update_custom_attributes(
-                conversation_uuid, existing_attrs
-            )
-        except Exception as exc:
-            logger.warning(
-                "Zendesk node: failed to persist PII to conversation custom_attributes: %s",
-                exc,
-            )
+        """Save the requester's email and name on the conversation for GDPR lookups."""
+        await persist_requester_pii(
+            self.state, requester_email, requester_name, node_label="Zendesk node"
+        )

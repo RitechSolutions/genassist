@@ -13,19 +13,25 @@ search space per model type, so results are comparable across methods.
 """
 
 import logging
-from typing import Any, Dict, Optional
+import threading
+from contextlib import contextmanager
+from typing import Any, Callable, Dict, Iterator, Optional
 
 import numpy as np
 import pandas as pd
+from joblib import parallel_config
 from sklearn.model_selection import (
     GridSearchCV,
     KFold,
+    ParameterGrid,
     RandomizedSearchCV,
     StratifiedKFold,
     TimeSeriesSplit,
     cross_val_score,
 )
+from threadpoolctl import threadpool_limits
 
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.nodes.ml import model_registry
@@ -41,6 +47,15 @@ _MAX_GRID_COMBINATIONS = 250
 _MAX_RANDOM_ITER = 200
 _DEFAULT_GRID_POINTS = 3
 _DEFAULT_RANDOM_POINTS = 8
+_DEFAULT_CV_FOLDS = 3
+_DEFAULT_RANDOM_ITER = 20
+_DEFAULT_BAYESIAN_TRIALS = 30
+
+_SEARCH_LABELS = {
+    "grid_search": "grid search",
+    "random_search": "random search",
+    "bayesian_optimization": "Bayesian optimization",
+}
 
 
 def _discretize(spec: Dict[str, Any], n_points: int) -> list:
@@ -122,6 +137,138 @@ def _build_cv(is_classification: bool, is_time_based: bool, y_train: pd.Series, 
     return KFold(n_splits=cv_folds, shuffle=True, random_state=42)
 
 
+def _tunable_space(model_type: str, user_params: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """The curated space minus every parameter the user fixed in modelParameters."""
+    return {name: spec for name, spec in get_space(model_type).items() if name not in user_params}
+
+
+def _plan_from_space(
+    tunable_space: Dict[str, Dict[str, Any]], method: str, opt_config: Dict[str, Any]
+) -> Dict[str, int]:
+    cv_folds = int(opt_config.get("cvFolds", _DEFAULT_CV_FOLDS))
+    if method == "grid_search":
+        grid = _build_param_grid(tunable_space, points=int(opt_config.get("gridPoints", _DEFAULT_GRID_POINTS)))
+        candidates = len(ParameterGrid(grid))
+    elif method == "random_search":
+        grid = _build_param_grid(tunable_space, points=int(opt_config.get("randomPoints", _DEFAULT_RANDOM_POINTS)))
+        # RandomizedSearchCV samples without replacement from a finite grid,
+        # so it never evaluates more candidates than the grid holds.
+        n_iter = min(int(opt_config.get("nIter", _DEFAULT_RANDOM_ITER)), _MAX_RANDOM_ITER)
+        candidates = min(n_iter, len(ParameterGrid(grid)))
+    else:
+        candidates = int(opt_config.get("nTrials", _DEFAULT_BAYESIAN_TRIALS))
+    return {"candidates": candidates, "cv_folds": cv_folds, "fits": candidates * cv_folds}
+
+
+def plan_search(
+    model_type: str,
+    user_params: Optional[Dict[str, Any]],
+    method: str,
+    opt_config: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, int]]:
+    """
+    Work out how many model fits a hyperparameter search will run, without any data.
+
+    Returns {"candidates", "cv_folds", "fits"}, or None when no search runs
+    (method "none", an unknown method, or nothing left to tune). Folds can only
+    shrink once the data is known (small classes), so this is an upper bound.
+    """
+    if method not in _SEARCH_LABELS:
+        return None
+    tunable_space = _tunable_space(model_type, user_params or {})
+    if not tunable_space:
+        return None
+    return _plan_from_space(tunable_space, method, opt_config or {})
+
+
+def _raise_if_too_large(plan: Dict[str, int], method: str) -> None:
+    max_fits = settings.ML_HPO_MAX_FITS
+    if plan["fits"] <= max_fits:
+        return
+    raise AppException(
+        error_key=ErrorKey.ML_TRAINING_SEARCH_TOO_LARGE,
+        status_code=400,
+        error_detail=(
+            f"This {_SEARCH_LABELS[method]} would train {plan['fits']:,} models "
+            f"({plan['candidates']:,} parameter combinations x {plan['cv_folds']} folds), "
+            f"more than the limit of {max_fits:,}. Use fewer folds, grid points, iterations or trials, "
+            "or fix some parameters in Model Parameters."
+        ),
+    )
+
+
+def check_search_size(
+    model_type: str,
+    user_params: Optional[Dict[str, Any]],
+    method: str,
+    opt_config: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, int]]:
+    """Refuse a search larger than ML_HPO_MAX_FITS before it starts; return its plan."""
+    plan = plan_search(model_type, user_params, method, opt_config)
+    if plan is not None:
+        _raise_if_too_large(plan, method)
+    return plan
+
+
+def training_cores() -> int:
+    """CPU cores one training job may use (ML_TRAINING_MAX_CORES)."""
+    return max(1, int(settings.ML_TRAINING_MAX_CORES))
+
+
+_native_limit_lock = threading.Lock()
+_native_limit_users = 0
+_native_limiter = None
+
+
+@contextmanager
+def native_thread_limit() -> Iterator[None]:
+    """Cap the process's native thread pools (BLAS, OpenMP) at training_cores().
+
+    The limit is process-wide, so overlapping fits share one: the first fit
+    to start sets it and the last one to finish restores the original
+    values, instead of the first to finish lifting it under the others.
+    """
+    global _native_limit_users, _native_limiter
+    with _native_limit_lock:
+        if _native_limit_users == 0:
+            _native_limiter = threadpool_limits(limits=training_cores())
+        _native_limit_users += 1
+    try:
+        yield
+    finally:
+        with _native_limit_lock:
+            _native_limit_users -= 1
+            if _native_limit_users == 0 and _native_limiter is not None:
+                _native_limiter.restore_original_limits()
+                _native_limiter = None
+
+
+def _fit_best(model_type, is_classification, constant_params, best_params, X_train, y_train):
+    """Fit the final model with the best parameters, using training_cores() threads.
+
+    The search's estimators are single-threaded (the CV workers give the
+    parallelism); the model that is kept gets the full core allowance, so
+    neither its fit nor later predictions run on one thread.
+    """
+    final_params = model_registry.cap_estimator_threads(
+        model_type, {**constant_params, **best_params}, training_cores()
+    )
+    model = model_registry.build_estimator(model_type, is_classification, final_params)
+    model.fit(X_train, y_train)
+    return model
+
+
+@contextmanager
+def _single_threaded_cv_workers() -> Iterator[None]:
+    """Give each cross-validation worker process one native thread.
+
+    joblib otherwise lets every loky worker use cpu_count // n_jobs BLAS and
+    OpenMP threads, so n_jobs workers would still use every core.
+    """
+    with parallel_config(backend="loky", inner_max_num_threads=1):
+        yield
+
+
 def optimize_hyperparameters(
     model_type: str,
     is_classification: bool,
@@ -131,9 +278,13 @@ def optimize_hyperparameters(
     user_params: Dict[str, Any],
     opt_config: Optional[Dict[str, Any]],
     is_time_based: bool,
+    on_trial: Optional[Callable[[int, int], None]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Run hyperparameter optimization and return a fitted best estimator.
+
+    The search uses at most ML_TRAINING_MAX_CORES cores: that many
+    cross-validation workers, each fitting a single-threaded estimator.
 
     Args:
         user_params: The raw `modelParameters` the user configured on the
@@ -142,6 +293,8 @@ def optimize_hyperparameters(
             never silently overridden by the search).
         opt_config: Optional `{scoring, cvFolds, nIter, nTrials, timeoutSeconds,
             gridPoints}` overrides.
+        on_trial: Optional callback(finished_trials, total_trials), called
+            after each Bayesian optimization trial.
 
     Returns:
         None if this model type has no curated search space left to tune
@@ -151,19 +304,27 @@ def optimize_hyperparameters(
          "search_metadata": {...}}
     """
     opt_config = opt_config or {}
-    space = get_space(model_type)
-    tunable_space = {name: spec for name, spec in space.items() if name not in user_params}
+    tunable_space = _tunable_space(model_type, user_params)
 
     if not tunable_space:
         logger.info(f"No tunable hyperparameters left for '{model_type}' (space empty or fully fixed by user).")
         return None
 
+    _raise_if_too_large(_plan_from_space(tunable_space, method, opt_config), method)
+
     defaults = model_registry.MODEL_DEFAULT_PARAMS.get(model_type, {})
     constant_params = {
         k: v for k, v in {**defaults, **user_params}.items() if k not in tunable_space
     }
+    # The final model is fitted with the user's own thread setting (capped at
+    # training_cores()); the search's estimators get one thread each, because
+    # parallelism comes from the CV workers and threaded estimators inside
+    # them would multiply the cores used.
+    final_constant_params = constant_params
+    constant_params = model_registry.cap_estimator_threads(model_type, constant_params, 1)
+    n_jobs = training_cores()
 
-    cv_folds = int(opt_config.get("cvFolds", 3))
+    cv_folds = int(opt_config.get("cvFolds", _DEFAULT_CV_FOLDS))
     cv = _build_cv(is_classification, is_time_based, y_train, cv_folds)
     scoring = opt_config.get("scoring") or ("accuracy" if is_classification else "r2")
 
@@ -175,11 +336,14 @@ def optimize_hyperparameters(
     if method == "grid_search":
         param_grid = _build_param_grid(tunable_space, points=int(opt_config.get("gridPoints", _DEFAULT_GRID_POINTS)))
         estimator = model_registry.build_estimator(model_type, is_classification, constant_params)
-        search = GridSearchCV(estimator, param_grid, cv=cv, scoring=scoring, refit=True, n_jobs=-1, error_score="raise")
-        search.fit(X_train, y_train)
+        search = GridSearchCV(estimator, param_grid, cv=cv, scoring=scoring, refit=False, n_jobs=n_jobs, error_score="raise")
+        with _single_threaded_cv_workers():
+            search.fit(X_train, y_train)
         n_candidates = len(search.cv_results_["params"])
         return {
-            "model": search.best_estimator_,
+            "model": _fit_best(
+                model_type, is_classification, final_constant_params, search.best_params_, X_train, y_train
+            ),
             "best_params": search.best_params_,
             "search_metadata": {
                 "method": method,
@@ -195,7 +359,7 @@ def optimize_hyperparameters(
         param_distributions = _build_param_grid(
             tunable_space, points=int(opt_config.get("randomPoints", _DEFAULT_RANDOM_POINTS))
         )
-        n_iter = min(int(opt_config.get("nIter", 20)), _MAX_RANDOM_ITER)
+        n_iter = min(int(opt_config.get("nIter", _DEFAULT_RANDOM_ITER)), _MAX_RANDOM_ITER)
         estimator = model_registry.build_estimator(model_type, is_classification, constant_params)
         search = RandomizedSearchCV(
             estimator,
@@ -203,14 +367,17 @@ def optimize_hyperparameters(
             n_iter=n_iter,
             cv=cv,
             scoring=scoring,
-            refit=True,
-            n_jobs=-1,
+            refit=False,
+            n_jobs=n_jobs,
             random_state=42,
             error_score="raise",
         )
-        search.fit(X_train, y_train)
+        with _single_threaded_cv_workers():
+            search.fit(X_train, y_train)
         return {
-            "model": search.best_estimator_,
+            "model": _fit_best(
+                model_type, is_classification, final_constant_params, search.best_params_, X_train, y_train
+            ),
             "best_params": search.best_params_,
             "search_metadata": {
                 "method": method,
@@ -236,20 +403,24 @@ def optimize_hyperparameters(
         def objective(trial):
             trial_params = {name: _optuna_suggest(trial, name, spec) for name, spec in tunable_space.items()}
             estimator = model_registry.build_estimator(model_type, is_classification, {**constant_params, **trial_params})
-            scores = cross_val_score(estimator, X_train, y_train, cv=cv, scoring=scoring, n_jobs=-1)
+            scores = cross_val_score(estimator, X_train, y_train, cv=cv, scoring=scoring, n_jobs=n_jobs)
             return float(scores.mean())
 
-        n_trials = int(opt_config.get("nTrials", 30))
+        n_trials = int(opt_config.get("nTrials", _DEFAULT_BAYESIAN_TRIALS))
         timeout = opt_config.get("timeoutSeconds")
+        callbacks = []
+        if on_trial is not None:
+            callbacks.append(lambda study, _trial: on_trial(len(study.trials), n_trials))
         study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=42))
-        study.optimize(objective, n_trials=n_trials, timeout=timeout, show_progress_bar=False)
+        with _single_threaded_cv_workers():
+            study.optimize(
+                objective, n_trials=n_trials, timeout=timeout, show_progress_bar=False, callbacks=callbacks
+            )
 
         best_params = study.best_params
-        best_estimator = model_registry.build_estimator(model_type, is_classification, {**constant_params, **best_params})
-        best_estimator.fit(X_train, y_train)
 
         return {
-            "model": best_estimator,
+            "model": _fit_best(model_type, is_classification, final_constant_params, best_params, X_train, y_train),
             "best_params": best_params,
             "search_metadata": {
                 "method": method,

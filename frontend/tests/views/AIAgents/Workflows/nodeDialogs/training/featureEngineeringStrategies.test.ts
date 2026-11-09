@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   FEATURE_ENGINEERING_STRATEGY_OPTIONS,
   defaultsForStrategy,
+  featureOutputColumns,
   isColumnTransformStrategy,
   isRetiredFeatureStrategy,
   outputColumnsHint,
@@ -15,7 +16,9 @@ describe("feature engineering strategies", () => {
       "custom_expression",
       "bin_numeric",
       "polynomial",
+      "datetime_features",
       "log_transform",
+      "math_transform",
       "quantile_transform",
       "power_transform",
       "pca",
@@ -59,6 +62,15 @@ describe("feature engineering strategies", () => {
     expect(isColumnTransformStrategy("polynomial")).toBe(false);
   });
 
+  it("math function and date-time features start from valid defaults", () => {
+    expect(defaultsForStrategy("math_transform")).toEqual({ mathFunction: "sqrt", replaceSourceColumns: false });
+    expect(isColumnTransformStrategy("math_transform")).toBe(true);
+    expect(defaultsForStrategy("datetime_features")).toEqual({
+      datetimeParts: ["year", "month", "day", "day_of_week", "quarter", "hour", "is_weekend"],
+    });
+    expect(isColumnTransformStrategy("datetime_features")).toBe(false);
+  });
+
   it("describes the output column names", () => {
     const base = { id: "f", newColumnName: "t" };
     expect(outputColumnsHint({ ...base, strategy: "log_transform", sourceColumns: ["a"] })).toBe("Creates t");
@@ -66,5 +78,25 @@ describe("feature engineering strategies", () => {
       "Creates t_a, t_b"
     );
     expect(outputColumnsHint({ ...base, strategy: "pca", sourceColumns: ["a", "b"] })).toBe("Creates t_1, t_2, ...");
+    expect(
+      outputColumnsHint({ ...base, strategy: "datetime_features", datetimeParts: ["year", "is_weekend"] })
+    ).toBe("Creates t_year, t_is_weekend");
+    expect(outputColumnsHint({ ...base, strategy: "datetime_features", datetimeParts: ["month", "hour"] })).toBe(
+      "Creates t_month, t_hour (t_hour only if the values have a time of day)"
+    );
+    expect(outputColumnsHint({ ...base, strategy: "datetime_features", datetimeParts: [] })).toBe(
+      "Choose at least one part"
+    );
+  });
+
+  it("offers a date-time feature's part columns, not its bare name, to later features", () => {
+    const base = { id: "f", newColumnName: "ts" };
+    expect(featureOutputColumns({ ...base, strategy: "datetime_features", datetimeParts: ["month", "hour"] })).toEqual([
+      "ts_month",
+      "ts_hour",
+    ]);
+    expect(featureOutputColumns({ ...base, strategy: "datetime_features" })).toHaveLength(7);
+    expect(featureOutputColumns({ ...base, strategy: "custom_expression" })).toEqual(["ts"]);
+    expect(featureOutputColumns({ ...base, newColumnName: "", strategy: "custom_expression" })).toEqual([]);
   });
 });
