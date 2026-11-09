@@ -33,6 +33,13 @@ export const TargetOption: React.FC<TargetOptionProps> = ({ target, checked, onT
   </CommandItem>
 );
 
+// Read out by screen readers when a pick changes; the row itself is not re-read.
+export const PickAnnouncement: React.FC<{ text: string }> = ({ text }) => (
+  <span role="status" className="sr-only">
+    {text}
+  </span>
+);
+
 interface PickerFooterProps {
   onClear: () => void;
   onDone: () => void;
