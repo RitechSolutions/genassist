@@ -148,7 +148,7 @@ export const LOOP_HELP_CONTENT: NodeHelpContent = {
     },
     {
       title: "Stopping and limits",
-      body: "The stop condition is checked after every pass and usually looks at the output of a node inside the loop. In \"For each item\" it is an optional early exit; in \"Repeat until\" it is what ends the loop. Maximum iterations always applies, so a loop can never run forever. A Filter inside the loop skips the current item. Passes run one at a time, and a Human in the Loop node cannot be used inside a loop. Optionally, a wait between passes (doubling after each one if you want to back off) and a time limit after which no new pass starts.",
+      body: "The stop condition is checked after every pass and usually looks at the output of a node inside the loop. In \"For each item\" it is an optional early exit; in \"Repeat until\" it is what ends the loop. Maximum iterations always applies, so a loop can never run forever. A Filter inside the loop skips the current item. Passes run one at a time, and a Human in the Loop node cannot be used inside a loop. Optionally, a wait between passes (doubling after each one if you want to back off) and a time limit after which no new pass starts. A Studio test run can take up to 20 minutes, and a prompt editor check or rewrite about 2 minutes.",
     },
     {
       title: "Batches and results",

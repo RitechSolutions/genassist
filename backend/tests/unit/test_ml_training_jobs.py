@@ -27,6 +27,9 @@ from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as 
 from app.modules.workflow.engine.nodes.ml import model_registry, training_progress
 from app.tasks import ml_training_job_tasks
 
+# The test routes take the request first; no X-Keepalive header runs them inline.
+NO_KEEPALIVE = SimpleNamespace(headers={})
+
 
 class FakeRedis:
     def __init__(self):
@@ -282,6 +285,7 @@ TRAIN_NODE_CONFIG = {
 @pytest.mark.asyncio
 async def test_test_node_queues_train_model_and_returns_a_job_id(route_env):
     response = await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
         {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG, "input_data": {}}
     )
 
@@ -308,6 +312,7 @@ async def test_test_workflow_with_a_train_model_node_is_queued(route_env):
     }
 
     response = await workflow_routes.test_workflow(
+        NO_KEEPALIVE,
         {"input_data": {"message": "go"}, "workflow": workflow}, workflow_id=None, workflow_service=MagicMock()
     )
 
@@ -325,6 +330,7 @@ async def test_oversized_search_is_refused_before_queueing(route_env, monkeypatc
 
     with pytest.raises(AppException) as exc_info:
         await workflow_routes.test_individual_node(
+            NO_KEEPALIVE,
             {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG}
         )
 
@@ -336,6 +342,7 @@ async def test_oversized_search_is_refused_before_queueing(route_env, monkeypatc
 @pytest.mark.asyncio
 async def test_a_job_is_only_visible_to_the_user_who_started_it(route_env, monkeypatch):
     await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
         {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG}
     )
     job_id = route_env.delay.call_args.args[0]
@@ -350,6 +357,7 @@ async def test_a_job_is_only_visible_to_the_user_who_started_it(route_env, monke
 @pytest.mark.asyncio
 async def test_a_caller_without_a_user_id_cannot_start_or_read_jobs(route_env, monkeypatch):
     await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
         {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG}
     )
     job_id = route_env.delay.call_args.args[0]
@@ -357,6 +365,7 @@ async def test_a_caller_without_a_user_id_cannot_start_or_read_jobs(route_env, m
 
     with pytest.raises(AppException) as start_exc:
         await workflow_routes.test_individual_node(
+            NO_KEEPALIVE,
             {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG}
         )
     with pytest.raises(AppException) as read_exc:
@@ -381,8 +390,8 @@ async def test_two_concurrent_requests_queue_one_job(route_env):
     route_env.redis.get = slow_get
 
     results = await asyncio.gather(
-        workflow_routes.test_individual_node(dict(request)),
-        workflow_routes.test_individual_node(dict(request)),
+        workflow_routes.test_individual_node(NO_KEEPALIVE, dict(request)),
+        workflow_routes.test_individual_node(NO_KEEPALIVE, dict(request)),
         return_exceptions=True,
     )
 
@@ -416,6 +425,7 @@ async def test_finished_job_slot_is_taken_by_exactly_one_new_job(route_env):
 @pytest.mark.asyncio
 async def test_the_active_job_can_be_found_and_cancelled(route_env):
     await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
         {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG}
     )
     job_id = route_env.delay.call_args.args[0]
@@ -431,6 +441,7 @@ async def test_the_active_job_can_be_found_and_cancelled(route_env):
     assert exc_info.value.status_code == 404
     # The slot is free again.
     response = await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
         {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG}
     )
     assert response.status_code == 202
@@ -439,6 +450,7 @@ async def test_the_active_job_can_be_found_and_cancelled(route_env):
 @pytest.mark.asyncio
 async def test_another_user_cannot_cancel_a_job(route_env, monkeypatch):
     await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
         {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG}
     )
     job_id = route_env.delay.call_args.args[0]
@@ -455,11 +467,11 @@ async def test_another_user_cannot_cancel_a_job(route_env, monkeypatch):
 @pytest.mark.asyncio
 async def test_a_user_runs_one_training_job_at_a_time(route_env):
     request = {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG}
-    await workflow_routes.test_individual_node(request)
+    await workflow_routes.test_individual_node(NO_KEEPALIVE, request)
     first_job_id = route_env.delay.call_args.args[0]
 
     with pytest.raises(AppException) as exc_info:
-        await workflow_routes.test_individual_node(request)
+        await workflow_routes.test_individual_node(NO_KEEPALIVE, request)
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.error_key == ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING
@@ -468,7 +480,7 @@ async def test_a_user_runs_one_training_job_at_a_time(route_env):
     # Once the first job has finished, the next test is queued.
     store = training_jobs.TrainingJobStore(route_env.redis)
     await store.update("tenant-a", first_job_id, status=training_jobs.STATUS_SUCCEEDED)
-    response = await workflow_routes.test_individual_node(request)
+    response = await workflow_routes.test_individual_node(NO_KEEPALIVE, request)
     assert response.status_code == 202
     assert route_env.delay.call_count == 2
 
@@ -479,6 +491,7 @@ async def test_a_failed_enqueue_marks_the_job_failed(route_env):
 
     with pytest.raises(workflow_routes.HTTPException) as exc_info:
         await workflow_routes.test_individual_node(
+            NO_KEEPALIVE,
             {"node_type": "trainModelNode", "node_config": TRAIN_NODE_CONFIG}
         )
 
@@ -994,6 +1007,7 @@ async def test_a_hitl_resume_after_training_is_not_queued(route_env, monkeypatch
     workflow = {"id": "wf-1", "name": "t", "nodes": TRAINING_GRAPH_NODES, "edges": TRAINING_GRAPH_EDGES}
 
     response = await workflow_routes.test_workflow(
+        NO_KEEPALIVE,
         {"input_data": {"thread_id": "t-1", "human_in_the_loop_node_id": "form"}, "workflow": workflow},
         workflow_id=None,
         workflow_service=MagicMock(),

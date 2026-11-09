@@ -1,5 +1,6 @@
 import { apiRequest, API_WORKFLOW_TEST_TIMEOUT_MS } from "@/config/api";
 import { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
+import { KEEPALIVE_HEADERS, throwIfErrorEnvelope } from "@/helpers/apiError";
 
 import {
   Workflow,
@@ -333,14 +334,17 @@ const startTest = async (
   testData: NodeTestPayload | WorkflowTestPayload
 ): Promise<WorkflowTestResponse | TrainingJob | null> => {
   try {
+    // Kept alive while the test runs; an error then arrives as an error
+    // envelope in the body, which throwIfErrorEnvelope throws as the same
+    // { response: { status, data } } error the checks below read.
     return await apiRequest<WorkflowTestResponse | TrainingJob>(
       "POST",
       endpoint,
       testData as unknown as Record<string, unknown>,
-      { timeout: API_WORKFLOW_TEST_TIMEOUT_MS },
+      { timeout: API_WORKFLOW_TEST_TIMEOUT_MS, headers: KEEPALIVE_HEADERS },
       // A 403 here explains itself (e.g. a training test needs a signed-in user).
       { rethrowForbidden: true }
-    );
+    ).then(throwIfErrorEnvelope);
   } catch (error) {
     if (isAlreadyRunningError(error)) {
       // The user's earlier training test is still running (e.g. they closed the

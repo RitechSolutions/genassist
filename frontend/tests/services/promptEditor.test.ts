@@ -119,7 +119,9 @@ describe("evaluatePrompt", () => {
 
     const result = await evaluatePrompt(WF, NODE, FIELD, payload as never);
 
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/evaluate/${CTX}`, payload);
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/evaluate/${CTX}`, payload, {
+      headers: { "X-Keepalive": "1" },
+    });
     expect(result).toEqual(response);
   });
 });
@@ -132,8 +134,17 @@ describe("optimizePrompt", () => {
 
     const result = await optimizePrompt(WF, NODE, FIELD, payload as never);
 
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload);
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload, {
+      headers: { "X-Keepalive": "1" },
+    });
     expect(result).toEqual(response);
+  });
+
+  it("throws an error envelope that arrives in a 200 body", async () => {
+    mockApiRequest.mockResolvedValue({ error: "boom", error_code: 500 } as never);
+    await expect(
+      optimizePrompt(WF, NODE, FIELD, { prompt: "hi" } as never)
+    ).rejects.toThrow("boom");
   });
 
   it("carries the grading configuration and the graders' feedback unchanged", async () => {
@@ -159,6 +170,8 @@ describe("optimizePrompt", () => {
 
     await optimizePrompt(WF, NODE, FIELD, payload);
 
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload);
+    expect(mockApiRequest).toHaveBeenCalledWith("POST", `${BASE}/optimize/${CTX}`, payload, {
+      headers: { "X-Keepalive": "1" },
+    });
   });
 });

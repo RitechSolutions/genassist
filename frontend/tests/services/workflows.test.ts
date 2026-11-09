@@ -108,24 +108,26 @@ describe("workflows service", () => {
 
   it("testNode POSTs the node test payload", async () => {
     const payload = { input_data: {}, node_type: "agent", node_config: {} };
+    mockApiRequest.mockResolvedValue({ status: "success" } as never);
     await testNode(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith(
       "POST",
       "genagent/workflow/test-node",
       payload,
-      { timeout: 1000 },
+      { timeout: 1000, headers: { "X-Keepalive": "1" } },
       { rethrowForbidden: true }
     );
   });
 
   it("testWorkflow POSTs the workflow test payload", async () => {
     const payload = { input_data: {}, workflow: { id: "w" } };
+    mockApiRequest.mockResolvedValue({ status: "success" } as never);
     await testWorkflow(payload as never);
     expect(mockApiRequest).toHaveBeenCalledWith(
       "POST",
       "genagent/workflow/test",
       payload,
-      { timeout: 1000 },
+      { timeout: 1000, headers: { "X-Keepalive": "1" } },
       { rethrowForbidden: true }
     );
   });
@@ -258,6 +260,36 @@ describe("workflows service", () => {
       ]);
     });
 
+    it("follows the user's running job when the 409 arrives as a kept-alive error envelope", async () => {
+      // With X-Keepalive the server answers 200 and sends the error in the body.
+      const envelope = {
+        error: "A training test is already running.",
+        error_code: 409,
+        error_key: "ML_TRAINING_JOB_ALREADY_RUNNING",
+      };
+      mockApiRequest
+        .mockResolvedValueOnce(envelope as never)
+        .mockResolvedValueOnce(job("succeeded", { job_id: "job-old" }) as never);
+
+      await expect(testNode({ input_data: {}, node_type: "trainModelNode", node_config: {} } as never)).rejects.toThrow(
+        "Your earlier training test has finished. Run the test again to test this configuration."
+      );
+      expect(mockApiRequest).toHaveBeenNthCalledWith(2, "GET", "genagent/workflow/test-jobs/active");
+    });
+
+    it("shows the server's message for a refused test sent as a kept-alive error envelope", async () => {
+      mockApiRequest.mockResolvedValueOnce({
+        error: "Forbidden",
+        error_code: 403,
+        error_key: "ML_TRAINING_JOB_NEEDS_USER",
+        error_detail: "Testing a model training needs a signed-in user.",
+      } as never);
+
+      await expect(testWorkflow({ input_data: {}, workflow: {} } as never)).rejects.toThrow(
+        "Testing a model training needs a signed-in user."
+      );
+    });
+
     it("rethrows other errors from starting a test", async () => {
       const conflict = Object.assign(new Error("bad request"), { response: { status: 400, data: {} } });
       mockApiRequest.mockRejectedValueOnce(conflict);
@@ -288,6 +320,12 @@ describe("workflows service", () => {
       );
       expect(mockApiRequest.mock.calls[0][4]).toEqual({ rethrowForbidden: true });
     });
+  });
+
+  it("testWorkflow throws an error envelope that arrives in a 200 body", async () => {
+    const payload = { input_data: {}, workflow: { id: "w" } };
+    mockApiRequest.mockResolvedValue({ error: "boom", error_code: 500 } as never);
+    await expect(testWorkflow(payload as never)).rejects.toThrow("boom");
   });
 
   describe("workflowRunOutcome", () => {

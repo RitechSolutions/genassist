@@ -13,6 +13,7 @@ from app.auth.dependencies import auth, permissions
 from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.keepalive_json_response import keepalive_json
 from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.string_utils import truncate_for_log
@@ -416,6 +417,7 @@ async def cancel_training_job(job_id: str):
     "/test", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
 )
 async def test_workflow(
+    request: Request,
     test_data: Dict[str, Any],
     workflow_id: Optional[UUID] = None,
     workflow_service: WorkflowService = Injected(WorkflowService),
@@ -475,39 +477,48 @@ async def test_workflow(
                 "edges": workflow.edges,
             }
 
-        thread_id = input_data.get("thread_id", str(uuid.uuid4()))
-        start_node_id = input_data.get("human_in_the_loop_node_id")
+        async def run() -> dict:
+            try:
+                thread_id = input_data.get("thread_id", str(uuid.uuid4()))
+                start_node_id = input_data.get("human_in_the_loop_node_id")
 
-        # Training would hold this request (and the API) for as long as the
-        # fit takes, so it runs as a background job instead. The job runs the
-        # same turn (sub-agent routing, registry-managed threads) via
-        # run_workflow_test.
-        training_nodes = training_jobs.train_model_nodes(
-            workflow_config["nodes"], workflow_config.get("edges") or [], start_node_id
-        )
-        if training_nodes:
-            return await _queue_training_job(
-                "workflow",
-                training_nodes,
-                {
-                    "workflow_config": workflow_config,
-                    "input_data": input_data,
-                    "start_node_id": start_node_id,
-                    "thread_id": thread_id,
-                    "workflow_id": saved_workflow_id,
-                    "usage_source": "workflow_test",
-                },
-            )
+                # Training would hold this request (and the API) for as long as
+                # the fit takes, so it runs as a background job instead. The job
+                # runs the same turn (sub-agent routing, registry-managed
+                # threads) via run_workflow_test.
+                training_nodes = training_jobs.train_model_nodes(
+                    workflow_config["nodes"], workflow_config.get("edges") or [], start_node_id
+                )
+                if training_nodes:
+                    return await _queue_training_job(
+                        "workflow",
+                        training_nodes,
+                        {
+                            "workflow_config": workflow_config,
+                            "input_data": input_data,
+                            "start_node_id": start_node_id,
+                            "thread_id": thread_id,
+                            "workflow_id": saved_workflow_id,
+                            "usage_source": "workflow_test",
+                        },
+                    )
 
-        # Use the new engine approach
-        workflow_engine = WorkflowEngine(workflow_config)
+                # Use the new engine approach
+                workflow_engine = WorkflowEngine(workflow_config)
 
-        usage_context = WorkflowUsageContext(
-            source="workflow_test", workflow_id=coerce_uuid(saved_workflow_id), defer_capture=True
-        )
-        return await run_workflow_test(
-            workflow_engine, workflow_config["id"], input_data, thread_id, start_node_id, usage_context
-        )
+                usage_context = WorkflowUsageContext(
+                    source="workflow_test", workflow_id=coerce_uuid(saved_workflow_id), defer_capture=True
+                )
+                return await run_workflow_test(
+                    workflow_engine, workflow_config["id"], input_data, thread_id, start_node_id, usage_context
+                )
+            except (HTTPException, AppException):
+                raise
+            except Exception as e:
+                logger.error(f"Error testing workflow with new engine: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        return await keepalive_json(request, run, name=f"workflow-test:{workflow_config['id']}")
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
@@ -537,7 +548,7 @@ async def get_node_dialog_schema(node_type: str):
 @router.post(
     "/test-node", dependencies=[Depends(auth), Depends(permissions("test:workflow"))]
 )
-async def test_individual_node(test_data: Dict[str, Any]):
+async def test_individual_node(request: Request, test_data: Dict[str, Any]):
     """
     Test an individual node with the new engine.
 
@@ -568,48 +579,51 @@ async def test_individual_node(test_data: Dict[str, Any]):
             detail=f"Unsupported node type: {node_type}. Supported types: {SUPPORTED_NODE_TYPES}",
         )
 
-    try:
-        # Create a unique test ID
-        test_id = f"test-{node_type}-{int(time.time())}"
+    async def run() -> dict:
+        try:
+            # Create a unique test ID
+            test_id = f"test-{node_type}-{int(time.time())}"
 
-        # Build workflow configuration with single node
-        workflow_config = {
-            "id": test_id,
-            "nodes": [{"id": test_id, "type": node_type, "data": node_config}],
-            "edges": [],
-        }
+            # Build workflow configuration with single node
+            workflow_config = {
+                "id": test_id,
+                "nodes": [{"id": test_id, "type": node_type, "data": node_config}],
+                "edges": [],
+            }
 
-        if node_type == training_jobs.TRAIN_MODEL_NODE_TYPE:
-            return await _queue_training_job(
-                "node",
-                [node_config],
-                {
-                    "workflow_config": workflow_config,
-                    "input_data": input_data,
-                    "start_node_id": test_id,
-                    "usage_source": "node_test",
-                },
+            if node_type == training_jobs.TRAIN_MODEL_NODE_TYPE:
+                return await _queue_training_job(
+                    "node",
+                    [node_config],
+                    {
+                        "workflow_config": workflow_config,
+                        "input_data": input_data,
+                        "start_node_id": test_id,
+                        "usage_source": "node_test",
+                    },
+                )
+
+            workflow_engine = WorkflowEngine(workflow_config)
+
+            state = await workflow_engine.execute_from_node(
+                start_node_id=test_id,
+                input_data=input_data,
+                usage_context=WorkflowUsageContext(
+                    source="node_test",
+                    workflow_id=coerce_uuid(workflow_engine.workflow_id),
+                    defer_capture=True,
+                ),
             )
 
-        workflow_engine = WorkflowEngine(workflow_config)
+            return state.format_state_as_response()
 
-        state = await workflow_engine.execute_from_node(
-            start_node_id=test_id,
-            input_data=input_data,
-            usage_context=WorkflowUsageContext(
-                source="node_test",
-                workflow_id=coerce_uuid(workflow_engine.workflow_id),
-                defer_capture=True,
-            ),
-        )
+        except (HTTPException, AppException):
+            raise
+        except Exception as e:
+            logger.error(f"Error testing {node_type} node: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
-        return state.format_state_as_response()
-
-    except (HTTPException, AppException):
-        raise
-    except Exception as e:
-        logger.error(f"Error testing {node_type} node: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return await keepalive_json(request, run, name=f"node-test:{node_type}")
 
 
 @router.post("/generate-python-template", response_model=Dict[str, Any])

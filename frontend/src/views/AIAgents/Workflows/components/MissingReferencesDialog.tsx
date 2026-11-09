@@ -1,13 +1,12 @@
 import React, { useRef, useState } from "react";
 import { defaultFilter } from "cmdk";
-import { AlertCircle, Check, CheckCircle2, ChevronDown } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/button";
 import {
   Command,
   CommandEmpty,
   CommandGroup,
   CommandInput,
-  CommandItem,
   CommandList,
 } from "@/components/command";
 import {
@@ -42,6 +41,7 @@ import {
   ReferenceTarget,
   acceptedTargets,
 } from "../utils/workflowReferences";
+import { PickAnnouncement, PickerFooter, TargetOption } from "./TargetMultiSelectParts";
 
 const KEEP = "__keep__";
 const NONE_AVAILABLE = "None in this environment";
@@ -83,11 +83,26 @@ const TargetSelect: React.FC<PickerProps> = ({ options, value, onChange, label }
 
 const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, label }) => {
   const [open, setOpen] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   const picked = options.filter((target) => value.includes(target.id));
   const summary =
     picked.length > 1 ? `${picked[0].label} +${picked.length - 1}` : picked[0]?.label;
-  const toggle = (id: string) =>
-    onChange(value.includes(id) ? value.filter((pickedId) => pickedId !== id) : [...value, id]);
+  const spokenName = picked.length ? `${label}: ${picked.map((target) => target.label).join(", ")}` : label;
+  const pickHint = `${label}. You can pick several.`;
+  const toggle = (target: ReferenceTarget) => {
+    const wasPicked = value.includes(target.id);
+    onChange(wasPicked ? value.filter((pickedId) => pickedId !== target.id) : [...value, target.id]);
+    setAnnouncement(`${target.label} ${wasPicked ? "unchecked" : "checked"}`);
+  };
+  const clearAll = () => {
+    const nothingPicked = value.length === 0;
+    if (!nothingPicked) onChange([]);
+    setAnnouncement(nothingPicked ? "Nothing to clear" : "Selection cleared");
+  };
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) setAnnouncement("");
+    setOpen(nextOpen);
+  };
 
   if (options.length === 0) {
     return (
@@ -99,13 +114,13 @@ const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, la
 
   return (
     // Modal, so the wheel scrolls its list inside the dialog's scroll lock.
-    <Popover modal open={open} onOpenChange={setOpen}>
+    <Popover modal open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
           role="combobox"
           aria-expanded={open}
-          aria-label={label}
+          aria-label={spokenName}
           title={picked.map((target) => target.label).join(", ") || undefined}
           className={TRIGGER_CLASS}
         >
@@ -119,37 +134,26 @@ const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, la
       <PopoverContent className="z-[1400] w-[--radix-popover-trigger-width] p-0" align="end">
         {/* Match labels only, since the values are ids. */}
         <Command
+          label={pickHint}
           filter={(_value, search, keywords) => defaultFilter(keywords?.join(" ") ?? "", search)}
         >
           <CommandInput placeholder="Search" />
-          <CommandList>
+          <CommandList label={pickHint}>
             <CommandEmpty>No matches</CommandEmpty>
             <CommandGroup>
-              {value.length > 0 && (
-                <CommandItem value={KEEP} keywords={["None"]} onSelect={() => onChange([])}>
-                  <span className="pl-6">None</span>
-                </CommandItem>
-              )}
               {options.map((target) => (
-                <CommandItem
+                <TargetOption
                   key={target.id}
-                  value={target.id}
-                  keywords={[target.label]}
-                  onSelect={() => toggle(target.id)}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4 shrink-0",
-                      value.includes(target.id) ? "opacity-100" : "opacity-0"
-                    )}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">{target.label}</span>
-                </CommandItem>
+                  target={target}
+                  checked={value.includes(target.id)}
+                  onToggle={() => toggle(target)}
+                />
               ))}
             </CommandGroup>
           </CommandList>
         </Command>
+        <PickerFooter onClear={clearAll} onDone={() => setOpen(false)} />
+        <PickAnnouncement text={announcement} />
       </PopoverContent>
     </Popover>
   );
