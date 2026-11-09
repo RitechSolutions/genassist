@@ -41,7 +41,7 @@ import {
   ReferenceTarget,
   acceptedTargets,
 } from "../utils/workflowReferences";
-import { PickerFooter, TargetOption } from "./TargetMultiSelectParts";
+import { PickAnnouncement, PickerFooter, TargetOption } from "./TargetMultiSelectParts";
 
 const KEEP = "__keep__";
 const NONE_AVAILABLE = "None in this environment";
@@ -83,11 +83,20 @@ const TargetSelect: React.FC<PickerProps> = ({ options, value, onChange, label }
 
 const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, label }) => {
   const [open, setOpen] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   const picked = options.filter((target) => value.includes(target.id));
   const summary =
     picked.length > 1 ? `${picked[0].label} +${picked.length - 1}` : picked[0]?.label;
-  const toggle = (id: string) =>
-    onChange(value.includes(id) ? value.filter((pickedId) => pickedId !== id) : [...value, id]);
+  const spokenName = summary ? `${label}: ${summary}` : label;
+  const toggle = (target: ReferenceTarget) => {
+    const wasPicked = value.includes(target.id);
+    onChange(wasPicked ? value.filter((pickedId) => pickedId !== target.id) : [...value, target.id]);
+    setAnnouncement(`${target.label} ${wasPicked ? "unchecked" : "checked"}`);
+  };
+  const clearAll = () => {
+    onChange([]);
+    setAnnouncement("Selection cleared");
+  };
 
   if (options.length === 0) {
     return (
@@ -105,7 +114,7 @@ const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, la
           type="button"
           role="combobox"
           aria-expanded={open}
-          aria-label={label}
+          aria-label={spokenName}
           title={picked.map((target) => target.label).join(", ") || undefined}
           className={TRIGGER_CLASS}
         >
@@ -122,7 +131,7 @@ const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, la
           filter={(_value, search, keywords) => defaultFilter(keywords?.join(" ") ?? "", search)}
         >
           <CommandInput placeholder="Search" />
-          <CommandList>
+          <CommandList label={`${label}. You can pick several.`}>
             <CommandEmpty>No matches</CommandEmpty>
             <CommandGroup>
               {options.map((target) => (
@@ -130,13 +139,14 @@ const TargetMultiSelect: React.FC<PickerProps> = ({ options, value, onChange, la
                   key={target.id}
                   target={target}
                   checked={value.includes(target.id)}
-                  onToggle={() => toggle(target.id)}
+                  onToggle={() => toggle(target)}
                 />
               ))}
             </CommandGroup>
           </CommandList>
         </Command>
-        <PickerFooter onClear={() => onChange([])} onDone={() => setOpen(false)} />
+        <PickerFooter onClear={clearAll} onDone={() => setOpen(false)} />
+        <PickAnnouncement text={announcement} />
       </PopoverContent>
     </Popover>
   );
