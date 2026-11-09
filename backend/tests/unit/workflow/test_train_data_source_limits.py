@@ -112,6 +112,7 @@ async def test_csv_larger_than_the_byte_cap_is_refused(monkeypatch, tmp_path):
     iter_csv_chunks = Mock()
     monkeypatch.setattr(settings, "ML_EXTRACT_MAX_BYTES", 10)
     monkeypatch.setattr(module.ml_utils, "iter_csv_chunks", iter_csv_chunks)
+    monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
 
     with pytest.raises(AppException) as exc_info:
         await node.process(
@@ -219,6 +220,7 @@ async def test_csv_timeout_uses_extraction_timeout_message(monkeypatch, tmp_path
         await asyncio.Event().wait()
 
     monkeypatch.setattr(module.ml_utils, "stream_rows_to_csv", wait_forever)
+    monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
 
     with pytest.raises(AppException) as exc_info:
         await node.process(
