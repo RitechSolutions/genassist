@@ -44,7 +44,7 @@ class _FakeRagManager:
     async def get_document_ids(self, kb):
         return list(self.existing)
 
-    async def add_document(self, kb, doc_id, content, metadata):
+    async def add_document(self, kb, doc_id, content, metadata, **_):
         self.added.append(doc_id)
         return {"vector": True}
 
@@ -174,3 +174,132 @@ async def test_failed_fetch_keeps_existing_copies():
 
     assert rag.deleted == []
     assert kb_service.update.await_args.args[1].last_sync_status == "error"
+
+
+class _FailingLoadRagManager(_FakeRagManager):
+    """Reports a failed load for the given articles, the way an embedding outage does."""
+
+    def __init__(self, failing_articles, existing_ids=None):
+        super().__init__(existing_ids)
+        self.failing_ids = {f"article_{article['id']}" for article in failing_articles}
+
+    async def add_document(self, kb, doc_id, content, metadata, **_):
+        await super().add_document(kb, doc_id, content, metadata)
+        return {"vector": doc_id.rsplit("#", 1)[-1] not in self.failing_ids}
+
+
+@pytest.mark.asyncio
+async def test_failed_load_is_an_error_not_an_added_article():
+    kb = _make_kb(uuid.uuid4())
+    second = _article(6)
+    rag = _FailingLoadRagManager(failing_articles=[second])
+
+    result, kb_service = await _run_sync(kb, rag, [PUBLIC, second])
+
+    assert result["articles_added"] == 1
+    saved = kb_service.update.await_args.args[1]
+    assert saved.last_sync_status == "success_with_warnings"
+    assert saved.last_sync_error.startswith("1 of 2 articles could not be copied")
+    assert set(saved.extra_metadata["zendesk_article_updated_at"]) == {str(PUBLIC["id"])}
+
+
+@pytest.mark.asyncio
+async def test_sync_where_every_load_fails_ends_in_error():
+    kb = _make_kb(uuid.uuid4())
+    rag = _FailingLoadRagManager(failing_articles=[PUBLIC])
+
+    result, kb_service = await _run_sync(kb, rag, [PUBLIC])
+
+    assert result["articles_added"] == 0
+    saved = kb_service.update.await_args.args[1]
+    assert saved.last_sync_status == "error"
+    assert saved.extra_metadata["zendesk_article_updated_at"] == {}
+
+
+class _PartlyLoadingRagManager(_FakeRagManager):
+    """One store takes every article and the other refuses it."""
+
+    async def add_document(self, kb, doc_id, content, metadata, **_):
+        await super().add_document(kb, doc_id, content, metadata)
+        return {"vector": True, "legra": False}
+
+
+@pytest.mark.asyncio
+async def test_partly_loaded_article_is_counted_and_reported_as_a_warning():
+    kb = _make_kb(uuid.uuid4())
+
+    result, kb_service = await _run_sync(kb, _PartlyLoadingRagManager(), [PUBLIC])
+
+    assert result["articles_added"] == 1
+    saved = kb_service.update.await_args.args[1]
+    assert saved.last_sync_status == "success_with_warnings"
+    assert "was loaded but is missing from: legra" in saved.last_sync_error
+    assert "could not be copied" not in saved.last_sync_error
+    assert set(saved.extra_metadata["zendesk_article_updated_at"]) == {str(PUBLIC["id"])}
+
+
+@pytest.mark.asyncio
+async def test_partly_loaded_article_is_not_copied_again_on_the_next_sync():
+    kb_id = uuid.uuid4()
+    _, kb_service = await _run_sync(_make_kb(kb_id), _PartlyLoadingRagManager(), [PUBLIC])
+    saved_dates = kb_service.update.await_args.args[1].extra_metadata["zendesk_article_updated_at"]
+    kb = _make_kb(kb_id, extra_metadata={"zendesk_article_updated_at": saved_dates})
+    rag = _PartlyLoadingRagManager(existing_ids=[_doc(kb_id, PUBLIC)])
+
+    result, _ = await _run_sync(kb, rag, [PUBLIC])
+
+    assert rag.added == []
+    assert rag.deleted == []
+    assert result["articles_updated"] == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_update_keeps_the_old_copy_date_so_it_is_retried():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={"zendesk_article_updated_at": {str(PUBLIC["id"]): "2025-12-01T00:00:00Z"}})
+    rag = _FailingLoadRagManager(failing_articles=[PUBLIC], existing_ids=[_doc(kb_id, PUBLIC)])
+
+    result, kb_service = await _run_sync(kb, rag, [PUBLIC])
+
+    assert result["articles_updated"] == 0
+    saved = kb_service.update.await_args.args[1]
+    assert saved.last_sync_status == "success_with_warnings"
+    assert saved.last_sync_error.startswith("1 of 1 articles could not be copied")
+    assert saved.extra_metadata["zendesk_article_updated_at"] == {str(PUBLIC["id"]): "2025-12-01T00:00:00Z"}
+
+
+class _UnreachableRagManager(_FakeRagManager):
+    """Answers the way the manager does when the stores of the knowledge base cannot be reached."""
+
+    async def add_document(self, kb, doc_id, content, metadata, **_):
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_unreachable_stores_end_in_error_and_nothing_is_counted():
+    kb = _make_kb(uuid.uuid4())
+
+    result, kb_service = await _run_sync(kb, _UnreachableRagManager(), [PUBLIC])
+
+    assert result["articles_added"] == 0
+    saved = kb_service.update.await_args.args[1]
+    assert saved.last_sync_status == "error"
+    assert "no store reached" in saved.last_sync_error
+    assert saved.extra_metadata["zendesk_article_updated_at"] == {}
+
+
+@pytest.mark.asyncio
+async def test_failed_new_article_on_a_filled_knowledge_base_is_a_warning_not_an_error():
+    kb_id = uuid.uuid4()
+    copied_before = _article(7)
+    kb = _make_kb(kb_id, extra_metadata={"zendesk_article_updated_at": {"7": copied_before["updated_at"]}})
+    rag = _FailingLoadRagManager(failing_articles=[PUBLIC], existing_ids=[_doc(kb_id, copied_before)])
+
+    result, kb_service = await _run_sync(kb, rag, [copied_before, PUBLIC])
+
+    assert result["articles_added"] == 0
+    assert rag.deleted == []
+    saved = kb_service.update.await_args.args[1]
+    assert saved.last_sync_status == "success_with_warnings"
+    assert saved.last_sync_error.startswith("1 of 1 articles could not be copied")
+    assert set(saved.extra_metadata["zendesk_article_updated_at"]) == {"7"}
