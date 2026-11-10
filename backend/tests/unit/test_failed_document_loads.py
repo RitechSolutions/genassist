@@ -106,7 +106,7 @@ async def _run_s3_output_sync(
     )
     rag_manager = MagicMock()
     if store_available:
-        rag_manager.add_document = AsyncMock(side_effect=lambda _kb, doc_id, *_, **__: load_results[doc_id.rsplit("#", 1)[-1]])
+        rag_manager.add_document = AsyncMock(side_effect=lambda _kb, doc_id, *_, **__: load_results[doc_id.rsplit("/", 1)[-1]])
     else:
         rag_manager.add_document = AsyncMock(return_value={})
     rag_manager.delete_document = AsyncMock(return_value={"vector": True})
