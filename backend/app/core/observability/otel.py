@@ -332,3 +332,14 @@ def set_agent_span_attributes(agent_id: Any, workflow_id: Any) -> None:
         span.set_attribute("genassist.agent_id", str(agent_id))
     if workflow_id is not None:
         span.set_attribute("genassist.workflow_id", str(workflow_id))
+
+
+def set_conversation_span_attribute(conversation_id: Any) -> None:
+    """Tag the current trace span with the conversation it serves.
+
+    Lets every request of one chat be found in tracing by its conversation id, and
+    a log line be matched to its trace. Same OTel route as set_agent_span_attributes:
+    a no-op unless DD_TRACE_OTEL_ENABLED=true.
+    """
+    if conversation_id is not None:
+        otel_trace.get_current_span().set_attribute("genassist.conversation_id", str(conversation_id))
