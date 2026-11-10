@@ -61,7 +61,9 @@ import {
   cloneConfig,
   generatedSectionMatchesConfig,
   hasUnsavedHandEdits,
+  keepsOlderNodeCode,
   loadPreprocessingConfig,
+  type ConfigSource,
 } from "./preprocessingConfigState";
 import { ColumnFilter } from "./components/ColumnFilter";
 import { RemoveDuplicatesStep } from "./components/RemoveDuplicatesStep";
@@ -109,8 +111,14 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   // from the steps would overwrite those edits - see generatedSectionMatchesConfig.
   const [hasHandEdits, setHasHandEdits] = useState(false);
   const [isDiscardEditsDialogOpen, setIsDiscardEditsDialogOpen] = useState(false);
-  const isGeneratingCodeRef = useRef(false);
   const isInitializingRef = useRef(true);
+  // The steps the current code was generated from (or loaded with). When the
+  // steps differ from this, the code is regenerated - see syncCodeToConfig.
+  const syncedConfigRef = useRef<PreprocessingConfig | null>(null);
+  // The steps as loaded when the dialog opened
+  const loadedConfigRef = useRef<PreprocessingConfig | null>(null);
+  // Where those steps came from - see keepsOlderNodeCode
+  const loadedSourceRef = useRef<ConfigSource>("empty");
   // Bumped when the dialog opens or closes and on Analyze. An analysis
   // response that started before the latest bump is dropped, so a slow,
   // older request can't overwrite newer results or a reopened dialog.
@@ -142,15 +150,9 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   // code comes from the code before the hand edits, not the edited text.
   const discardHandEditsAndConfigure = () => {
     const beforeEdits = baselineCodeRef.current || BASE_PYTHON_TEMPLATE;
-    const regenerated = generatePythonCodeFromConfig(
-      config,
-      pythonCode || BASE_PYTHON_TEMPLATE,
-      beforeEdits
-    );
-    setConfig((prev) => withoutMissingMovedSteps(prev, beforeEdits));
-    setPythonCode(regenerated);
-    pythonCodeRef.current = regenerated;
-    baselineCodeRef.current = regenerated;
+    const pruned = withoutMissingMovedSteps(config, beforeEdits);
+    setConfig(pruned);
+    syncCodeToConfig(pruned, beforeEdits);
     setHasHandEdits(false);
     setIsDiscardEditsDialogOpen(false);
     setMode("configure");
@@ -161,20 +163,33 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     pythonCodeRef.current = pythonCode;
   }, [pythonCode]);
 
-  // Generate Python code from config when config changes in configure mode
+  // Regenerate the code from the steps. Returns the new code.
+  // movedStepSource: where moved steps' code is copied from, when not from
+  // the current code - see generatePythonCodeFromConfig.
+  const syncCodeToConfig = (
+    stepsConfig: PreprocessingConfig,
+    movedStepSource?: string
+  ): string => {
+    const existingCode = pythonCodeRef.current || BASE_PYTHON_TEMPLATE;
+    const generatedCode = generatePythonCodeFromConfig(stepsConfig, existingCode, movedStepSource);
+    setPythonCode(generatedCode);
+    pythonCodeRef.current = generatedCode;
+    baselineCodeRef.current = generatedCode;
+    syncedConfigRef.current = stepsConfig;
+    return generatedCode;
+  };
+
+  // Regenerate the code every time the steps change in Configure mode. Every
+  // change is applied: an earlier version skipped changes made within 100 ms
+  // of the previous one, so quick edits were stored in the steps but not in
+  // the code, and the node then reopened in Code mode as "edited by hand"
+  // (DP-11). Comparing against the steps the code was last generated from,
+  // instead of a timer, also skips the steps loaded on open.
   useEffect(() => {
-    if (mode === "configure" && !isGeneratingCodeRef.current && !isInitializingRef.current) {
-      isGeneratingCodeRef.current = true;
-      const existingCode = pythonCodeRef.current || BASE_PYTHON_TEMPLATE;
-      const generatedCode = generatePythonCodeFromConfig(config, existingCode);
-      setPythonCode(generatedCode);
-      pythonCodeRef.current = generatedCode;
-      baselineCodeRef.current = generatedCode;
-      setTimeout(() => {
-        isGeneratingCodeRef.current = false;
-      }, 100);
+    if (isOpen && mode === "configure" && config !== syncedConfigRef.current) {
+      syncCodeToConfig(config);
     }
-  }, [config, mode]);
+  }, [config, mode, isOpen]);
 
   useEffect(() => {
     analysisGenerationRef.current += 1;
@@ -225,6 +240,10 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       // Stored steps if the node has them; older nodes are read from their
       // code once and store their steps on the next save.
       const loaded = loadPreprocessingConfig(data);
+      // The loaded code belongs to these steps - don't regenerate on open
+      syncedConfigRef.current = loaded.config;
+      loadedConfigRef.current = loaded.config;
+      loadedSourceRef.current = loaded.source;
       setConfig(loaded.config);
       // Code whose generated function was edited by hand opens in Code mode,
       // so nothing regenerates over those edits without asking.
@@ -325,8 +344,38 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     }
   };
 
+  // The one save path - used by Save Changes and by Save in the panel's
+  // "You have unsaved changes!" prompt (Esc / close), so the steps are never
+  // left out of a save (DP-12).
   const handleSave = () => {
-    if (!pythonCode.trim()) {
+    if (isAnalyzing) {
+      // Saving mid-analysis would store results that are about to change
+      toast({
+        title: "Analysis in progress",
+        description: "Wait for the analysis to finish, then save.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // In Configure mode the steps own the generated function, so the code is
+    // regenerated from them here and always matches the stored steps (DP-11).
+    // This also covers an older node whose code came from an earlier version
+    // of the generator: storing its steps next to that code would otherwise
+    // make it reopen in Code mode as "edited by hand". In Code mode the code
+    // is saved as written; edits to the generated function are detected on
+    // the next open. An older node whose steps weren't changed keeps its code
+    // (and stores no steps), so hand-written lines in it aren't dropped.
+    const keepCode =
+      mode === "configure" &&
+      keepsOlderNodeCode(
+        loadedSourceRef.current,
+        config === loadedConfigRef.current,
+        pythonCode,
+        config
+      );
+    const codeToSave =
+      mode === "configure" && !keepCode ? syncCodeToConfig(config) : pythonCode;
+    if (!codeToSave.trim()) {
       toast({
         title: "Validation Error",
         description: "Please provide Python preprocessing code",
@@ -340,11 +389,13 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     onUpdate({
       ...data,
       name,
-      pythonCode,
+      pythonCode: codeToSave,
       fileUrl,
       // The steps, stored as data (DP-7) - the dialog loads these instead of
       // re-reading them from pythonCode. pythonCode is still what runs.
-      preprocessingConfig: { ...cloneConfig(config), movedStepsKept: true },
+      preprocessingConfig: keepCode
+        ? data.preprocessingConfig
+        : { ...cloneConfig(config), movedStepsKept: true },
       analysisResult: analysisResults.initial || undefined, // For backward compatibility
       stepAnalysisResults:
         Object.keys(analysisResults).length > 0 ? analysisResults : undefined,
@@ -689,11 +740,17 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
           </>
         }
         {...props}
+        onSave={handleSave}
         data={{
           ...data,
           name,
           pythonCode,
           fileUrl,
+          // Included so a change to the steps alone also counts as unsaved.
+          // Unchanged steps keep the stored value, so an older node (steps
+          // read from its code, nothing stored yet) isn't dirty just by opening.
+          preprocessingConfig:
+            config === loadedConfigRef.current ? data.preprocessingConfig : config,
         }}
       >
         <div className="space-y-4 overflow-y-auto max-h-[calc(95vh-200px)]">
