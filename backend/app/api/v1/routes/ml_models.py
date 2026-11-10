@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -425,6 +426,13 @@ async def validate_model_file(
         )
     }
 
+_UNFILLED_PLACEHOLDER = re.compile(r"{{[^}]*}}")
+UNFILLED_FILE_PATH_DETAIL = (
+    "The file path still has an unfilled {{...}} placeholder. Run the node "
+    "that provides the file first, then try again."
+)
+
+
 @router.post("/analyze-csv", dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.READ))
@@ -468,6 +476,12 @@ async def analyze_csv(
             - min: Minimum value (for numeric)
             - max: Maximum value (for numeric)
     """
+    # A {{...}} left in the path means the client couldn't fill it (e.g.
+    # {{source.data_path}} before the source node has run). Say so instead of
+    # failing to find a file by that literal name.
+    if file_id is None and file_url and _UNFILLED_PLACEHOLDER.search(file_url):
+        raise HTTPException(status_code=400, detail=UNFILLED_FILE_PATH_DETAIL)
+
     temporary_path: Optional[Path] = None
     try:
         file_path, temporary_path = await _resolve_csv_input(

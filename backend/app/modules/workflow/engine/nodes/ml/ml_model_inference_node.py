@@ -34,6 +34,7 @@ from app.modules.workflow.engine.nodes.ml.ml_utils import (
     normalize_feature_expression,
     ordinal_key,
 )
+from app.modules.workflow.engine.nodes.ml.training_checks import decode_target_classes
 from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM, TRAINING_FILLS_PARAM
 from app.services.ml_model_manager import get_ml_model_manager, local_model_file
 from app.services.ml_models import MLModelsService
@@ -2235,6 +2236,19 @@ class MLModelInferenceNode(BaseNode):
                 predictions = _prediction_array(raw_predictions)
                 if predictions.ndim == 2 and predictions.shape[1] == 1:
                     predictions = predictions[:, 0]
+
+                # Classifiers trained since text-label support are fit on
+                # class codes 0..n-1; the labels the user trained on are saved
+                # as target_classes. Map predictions and probability columns
+                # back to those labels. Older models predict labels directly.
+                target_classes = metadata.get("target_classes")
+                if target_classes is not None:
+                    predictions = decode_target_classes(predictions, target_classes)
+                    class_labels = (
+                        list(decode_target_classes(np.asarray(class_labels), target_classes))
+                        if class_labels is not None
+                        else list(target_classes)
+                    )
 
                 # Probability outputs are optional and do not determine the predicted class.
                 probabilities: Optional[np.ndarray] = None
