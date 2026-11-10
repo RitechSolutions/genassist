@@ -49,14 +49,28 @@ class TestUploadsKeepLeadingZeros:
             ml_utils.read_csv_with_dtypes(path), pd.read_csv(path)
         )
 
-    @pytest.mark.parametrize("value", ["007", "0123", "-01", "00.5", " 042 "])
-    def test_leading_zero_forms(self, tmp_path, value):
-        df = ml_utils.read_csv_with_dtypes(_write(tmp_path, f'code\n"{value}"\n5\n'))
-        assert df["code"].tolist() == [value, "5"]
+    @pytest.mark.parametrize("codes", [["007", "123"], ["0123", "4567"], ["01", "01"]])
+    def test_zero_padded_codes_stay_text(self, tmp_path, codes):
+        df = ml_utils.read_csv_with_dtypes(_write(tmp_path, "code\n" + "\n".join(codes) + "\n"))
+        assert df["code"].tolist() == codes
 
     @pytest.mark.parametrize("value", ["0", "0.5", "-0.25", "10", "0e5"])
     def test_ordinary_numbers_stay_numbers(self, tmp_path, value):
         df = ml_utils.read_csv_with_dtypes(_write(tmp_path, f"n\n{value}\n5\n"))
+        assert df["n"].dtype.kind in "if"
+
+    @pytest.mark.parametrize(
+        "values",
+        [
+            ["7", "12", "07"],  # one stray zero-padded value among plain numbers
+            ["007", "5"],  # different lengths
+            ["00.5", "10.5"],  # decimals are measurements, not codes
+            ["-01", "-02"],  # signed
+        ],
+    )
+    def test_numeric_columns_with_a_padded_value_keep_their_type(self, tmp_path, values):
+        # Existing workflows and trained models expect these columns as numbers.
+        df = ml_utils.read_csv_with_dtypes(_write(tmp_path, "n\n" + "\n".join(values) + "\n"))
         assert df["n"].dtype.kind in "if"
 
     def test_read_options_apply_to_both_reads(self, tmp_path):
@@ -95,11 +109,17 @@ class TestTrainDataSourcePreview:
         assert df.to_dict("records") == [{"id": "001", "n": 1}]
 
 
+def test_a_different_length_in_a_later_chunk_keeps_the_column_numeric(tmp_path, monkeypatch):
+    monkeypatch.setattr(ml_utils, "_LEADING_ZERO_SCAN_CHUNK_ROWS", 2)
+    path = _write(tmp_path, "n\n001\n002\n3\n4\n")
+    assert ml_utils.read_csv_with_dtypes(path)["n"].dtype.kind in "if"
+
+
 def test_leading_zeros_past_the_first_scan_chunk_are_found(tmp_path, monkeypatch):
     monkeypatch.setattr(ml_utils, "_LEADING_ZERO_SCAN_CHUNK_ROWS", 2)
-    path = _write(tmp_path, "code,n\n1,1\n2,2\n3,3\n004,4\n")
+    path = _write(tmp_path, "code,n\n100,1\n200,2\n300,3\n004,4\n")
     df = ml_utils.read_csv_with_dtypes(path)
-    assert df["code"].tolist() == ["1", "2", "3", "004"]
+    assert df["code"].tolist() == ["100", "200", "300", "004"]
     assert str(df["n"].dtype) == "int64"
 
 

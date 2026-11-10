@@ -54,9 +54,26 @@ from app.modules.workflow.engine.nodes.ml import training_progress
 logger = logging.getLogger(__name__)
 
 # Single-node tests used to run under a throwaway "test-trainModelNode-<time>" id,
-# so models they registered carry a marker no node can match again. Such a model
-# has no real owner: the next run with the same model name takes it over (68072).
+# so models they registered carry a marker no node can match again (68072).
 LEGACY_NODE_TEST_MARKER = re.compile(r"\[train-model-node:test-trainModelNode-\d+\]")
+# The workflow id a single-node test of a Train Model node runs under.
+NODE_TEST_WORKFLOW_ID = re.compile(r"test-trainModelNode-\d+")
+
+
+def adopts_legacy_test_model(model: Any, workflow_id: Optional[str], target_column: str) -> bool:
+    """Whether this run may take over a model registered by an old single-node test.
+
+    Nothing records which node such a test ran for, so the takeover is limited
+    to the likeliest owner: a single-node test again (only those created such
+    models), training the same target. A whole-workflow or pipeline run, or a
+    node training another target under the same model name, gets the usual
+    "name already exists" error instead of overwriting it.
+    """
+    if model is None or not LEGACY_NODE_TEST_MARKER.search(model.description or ""):
+        return False
+    if not (workflow_id and NODE_TEST_WORKFLOW_ID.fullmatch(workflow_id)):
+        return False
+    return getattr(model, "target_variable", None) == target_column
 
 # Feature engineering strategies no longer offered for new features: they
 # duplicate scalingMethod (rescaling numeric columns, fit on the training
@@ -2653,9 +2670,9 @@ class TrainModelNode(BaseNode):
                 # unrelated node instances can otherwise collide and silently overwrite
                 # each other's registered model.
                 by_name = await ml_service.get_by_name(name)
-                by_name_description = (by_name.description or "") if by_name else ""
-                if node_marker in by_name_description or LEGACY_NODE_TEST_MARKER.search(
-                    by_name_description
+                if by_name and (
+                    node_marker in (by_name.description or "")
+                    or adopts_legacy_test_model(by_name, self.state.workflow_id, target_column)
                 ):
                     existing = by_name
 

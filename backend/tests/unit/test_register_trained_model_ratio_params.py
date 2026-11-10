@@ -310,31 +310,73 @@ async def test_another_node_does_not_take_over_a_model_with_the_same_name(monkey
     ml_service.update.assert_not_awaited()
 
 
-@pytest.mark.asyncio
-async def test_a_model_left_by_an_old_node_test_is_taken_over(monkeypatch):
-    """Models registered under the old throwaway test id get updated, not duplicated (68072)."""
-    ml_service = MagicMock()
+def _node_test_node() -> TrainModelNode:
+    """A Train Model node run by Test Node (test_individual_node's workflow id)."""
+    return TrainModelNode(
+        node_id=str(uuid.uuid4()),
+        node_config={},
+        state=WorkflowState(workflow={"config": {"id": "test-trainModelNode-1731000500"}}),
+    )
+
+
+def _legacy_test_model(target_variable: str = "y") -> MagicMock:
     legacy = MagicMock()
     legacy.id = uuid.uuid4()
     legacy.inference_params = None
+    legacy.target_variable = target_variable
     legacy.description = (
         "Trained by workflow Train Model node (thread t) "
         "[train-model-node:test-trainModelNode-1731000000]"
     )
+    return legacy
+
+
+async def _register_over(monkeypatch, legacy: MagicMock, node: TrainModelNode):
+    ml_service = MagicMock()
     ml_service.get_by_name = AsyncMock(return_value=legacy)
-    ml_service.create = AsyncMock()
+    ml_service.create = AsyncMock(side_effect=Exception("A model with this name already exists."))
     ml_service.update = AsyncMock(return_value=legacy)
     _patch_dependencies(monkeypatch, ml_service)
-
-    ml_model_id, _, error, _ = await _make_node()._register_trained_model(
+    result = await node._register_trained_model(
         name="my-model",
         model_type="linear_regression",
         feature_columns=["x"],
         target_column="y",
         local_pkl_path="/tmp/model.pkl",
     )
+    return ml_service, result
+
+
+@pytest.mark.asyncio
+async def test_a_model_left_by_an_old_node_test_is_taken_over(monkeypatch):
+    """A retest updates the model an old test registered under a throwaway id (68072)."""
+    legacy = _legacy_test_model()
+    ml_service, (ml_model_id, _, error, _) = await _register_over(
+        monkeypatch, legacy, _node_test_node()
+    )
 
     assert error is None
     assert ml_model_id == str(legacy.id)
     ml_service.create.assert_not_awaited()
     assert ml_service.update.await_args.args[0] == legacy.id
+
+
+@pytest.mark.asyncio
+async def test_a_workflow_run_does_not_take_over_a_model_left_by_an_old_node_test(monkeypatch):
+    # Only single-node tests registered such models, so only one may take it over.
+    ml_service, (_, _, error, _) = await _register_over(
+        monkeypatch, _legacy_test_model(), _make_node()
+    )
+
+    assert error == "A model with this name already exists."
+    ml_service.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_node_training_another_target_does_not_take_over_an_old_test_model(monkeypatch):
+    ml_service, (_, _, error, _) = await _register_over(
+        monkeypatch, _legacy_test_model(target_variable="churn"), _node_test_node()
+    )
+
+    assert error == "A model with this name already exists."
+    ml_service.update.assert_not_awaited()
