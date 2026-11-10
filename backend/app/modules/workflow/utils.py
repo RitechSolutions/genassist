@@ -38,7 +38,7 @@ _MAX_RESULT_BYTES = 32 * 1024 * 1024
 _MAX_STREAM_CHARS = 1024 * 1024
 _MAX_ERROR_CHARS = 4096
 # Preloaded by the fork server; 3.12 ignores "__main__", so children re-run the entry script as __mp_main__
-_FORKSERVER_PRELOAD = ["__main__", "numpy", "pandas", "app.modules.workflow.utils"]
+_FORKSERVER_PRELOAD = ["__main__", "numpy", "pandas", "requests", "app.modules.workflow.utils"]
 
 
 def add_executable_function(code: str) -> str:
@@ -137,7 +137,8 @@ def _subprocess_worker(
     - All environment variables cleared so user code cannot read secrets
       (JWT_SECRET_KEY, FERNET_KEY, DATABASE_URL, AWS credentials, etc.)
     - OS-level resource limits applied on Linux (256 MB address space, CPU time cap)
-    - Python-level connections to non-public addresses refused, except allowed_networks
+    - Python sockets limited to TCP, UDP and Unix, and their connections to non-public addresses refused, except
+      allowed_networks
     """
     # Strip all env vars — user code must not access container secrets
     os.environ.clear()
