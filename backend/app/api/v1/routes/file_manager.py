@@ -23,6 +23,7 @@ from app.core.utils.training_upload import (
     check_training_upload_size,
     is_training_upload,
     training_upload_max_bytes,
+    training_upload_metadata,
 )
 from app.schemas.app_settings import AppSettingsCreate
 from app.schemas.file import FileBase, FileResponse
@@ -351,6 +352,7 @@ async def upload_files(
             path=sub_folder,
             storage_provider=(storage_provider.name if storage_provider else "local"),
             file_extension=ext,
+            file_metadata=training_upload_metadata(purpose),
         )
         created = await file_manager_service.create_file(
             file=f,

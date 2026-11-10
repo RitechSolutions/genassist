@@ -6,6 +6,7 @@ import { Button } from "@/components/button";
 import { cn } from "@/lib/utils";
 import { downloadFileManagerFile } from "@/services/fileManager";
 import { formatFileSize } from "../helpers/pipelineRuns";
+import { useStoredFileName } from "../helpers/useStoredFileName";
 
 export interface ModelFilePickerProps {
   pendingFile: File | null;
@@ -31,6 +32,7 @@ export const ModelFilePicker: React.FC<ModelFilePickerProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const hasExistingFile = !!existingPath || !!existingFileId;
+  const storedFile = useStoredFileName(existingFileId, modelName);
 
   const accept = (file: File | undefined) => {
     if (!file) return;
@@ -43,7 +45,7 @@ export const ModelFilePicker: React.FC<ModelFilePickerProps> = ({
 
   const handleDownload = async () => {
     try {
-      await downloadFileManagerFile(existingFileId as string, `${modelName || "model"}.pkl`);
+      await downloadFileManagerFile(existingFileId as string, await storedFile.resolveName());
     } catch {
       toast.error("Failed to download model file.");
     }
@@ -124,8 +126,13 @@ export const ModelFilePicker: React.FC<ModelFilePickerProps> = ({
           <div className="flex min-w-0 items-center gap-2">
             <FileCode className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="truncate text-sm">
-              {existingFileId ? `${modelName || "model"}.pkl` : existingPath}
+              {existingFileId ? storedFile.name : existingPath}
             </span>
+            {existingFileId && storedFile.size != null && (
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {formatFileSize(storedFile.size)}
+              </span>
+            )}
             <span className="shrink-0 text-xs text-muted-foreground">Current file</span>
           </div>
           <div className="flex shrink-0 items-center">
