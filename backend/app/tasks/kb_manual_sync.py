@@ -5,7 +5,7 @@ import contextlib
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 import redis
 
@@ -19,7 +19,7 @@ from app.tasks.kb_batch_tasks import batch_process_files_kb_async
 logger = logging.getLogger(__name__)
 
 SYNC_NOT_STARTED_MESSAGE = "Could not start the synchronization. Try again."
-# The reason stays in the server log; the page only learns that the sync failed.
+# A crash's reason stays in the server log; the page only learns that the sync failed.
 SYNC_FAILED_ERROR = "Synchronization failed."
 
 
@@ -89,22 +89,30 @@ async def _save_outcome(store: ManualSyncRunStore, tenant_id: str, kb_id: str, r
         logger.warning(f"Manual sync {run_id} of KB {kb_id} ended after a newer run took the KB; outcome not kept")
 
 
-def _sync_succeeded(outcome: Dict[str, Any]) -> bool:
+def _failure_message(outcome: Dict[str, Any]) -> Optional[str]:
+    """None when the sync succeeded, else the message the page shows."""
     batch_result = outcome.get("result") or {}
-    every_kb_synced = not batch_result.get("kbs_not_synced")
-    return outcome.get("status") == "success" and every_kb_synced
+    sync_crashed = outcome.get("status") != "success"
+    kb_not_synced = bool(batch_result.get("kbs_not_synced"))
+    if sync_crashed or kb_not_synced:
+        return SYNC_FAILED_ERROR
+    if batch_result.get("status") == "error":
+        # A message the sync wrote for the page, such as files left unloaded.
+        return batch_result.get("message") or SYNC_FAILED_ERROR
+    return None
 
 
 async def _record_outcome(
     store: ManualSyncRunStore, tenant_id: str, kb_id: str, run_id: str, outcome: Dict[str, Any]
 ) -> None:
     """Keep what run_task_for_tenant returned as the run's result or failure."""
-    if _sync_succeeded(outcome):
+    failure = _failure_message(outcome)
+    if failure is None:
         result = manual_sync_runs.result_for_page(outcome.get("result"))
         await _save_outcome(store, tenant_id, kb_id, run_id, status=manual_sync_runs.STATUS_SUCCEEDED, result=result)
         return
     logger.error(f"Manual sync {run_id} of KB {kb_id} failed: {outcome.get('error') or outcome.get('result')}")
-    await _save_outcome(store, tenant_id, kb_id, run_id, status=manual_sync_runs.STATUS_FAILED, error=SYNC_FAILED_ERROR)
+    await _save_outcome(store, tenant_id, kb_id, run_id, status=manual_sync_runs.STATUS_FAILED, error=failure)
 
 
 def _being_cancelled() -> bool:

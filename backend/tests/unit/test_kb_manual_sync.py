@@ -466,6 +466,37 @@ async def test_a_sync_that_could_not_sync_its_knowledge_base_is_kept_as_failed(s
     assert status["error"] == kb_manual_sync.SYNC_FAILED_ERROR
 
 
+FILES_NOT_LOADED = "2 file(s) could not be loaded into the knowledge base and were left in the input folder."
+
+
+@pytest.mark.asyncio
+async def test_a_sync_that_reports_files_left_unloaded_is_kept_as_failed_with_its_message(store, runner_env):
+    runner_env.outcome = {
+        "status": "success",
+        "result": {"status": "error", "message": FILES_NOT_LOADED, "kbs_not_synced": [], "failed_kb": 2},
+    }
+    run_id = await store.claim(TENANT, KB_ID)
+
+    await _run(store, run_id)
+
+    status = await store.status(TENANT, KB_ID)
+    assert status["status"] == "failed"
+    assert status["error"] == FILES_NOT_LOADED
+    assert status["result"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_reported_error_without_a_message_is_kept_as_failed_with_the_general_message(store, runner_env):
+    runner_env.outcome = {"status": "success", "result": {"status": "error", "kbs_not_synced": []}}
+    run_id = await store.claim(TENANT, KB_ID)
+
+    await _run(store, run_id)
+
+    status = await store.status(TENANT, KB_ID)
+    assert status["status"] == "failed"
+    assert status["error"] == kb_manual_sync.SYNC_FAILED_ERROR
+
+
 @pytest.mark.asyncio
 async def test_a_run_superseded_by_a_newer_run_stops_and_saves_nothing(store, redis, runner_env):
     runner_env.outcome = "never ends"
@@ -735,3 +766,52 @@ async def test_the_scheduled_batch_without_a_knowledge_base_lists_nothing_as_not
 
     assert result["kbs_not_synced"] == []
     assert json.loads(json.dumps(result))["total_kbs"] == 0
+
+
+class FakeS3DataSourceService:
+    async def get_by_id(self, ds_id, decrypt=False):
+        connection = {"access_key": "k", "secret_key": "s", "bucket_name": "bucket", "prefix": "in/"}
+        return SimpleNamespace(id=ds_id, name="Test bucket", source_type="s3", connection_data=connection)
+
+
+def _s3_kb_with_vector_store():
+    return SimpleNamespace(
+        id=KB_ID, name="Files", type="s3", sync_schedule=None, extra_metadata={},
+        rag_config={"enabled": True, "vector": {"enabled": True}}, sync_source_id="ds-1",
+    )
+
+
+@pytest.mark.asyncio
+async def test_sync_now_reports_files_the_file_sync_could_not_load(batch_env, monkeypatch, store, runner_env):
+    batch_env[KnowledgeBaseService] = FakeBatchKnowledgeService(_s3_kb_with_vector_store())
+    batch_env[DataSourceService] = FakeS3DataSourceService()
+    moved = []
+
+    async def list_two_files(**kwargs):
+        return {"files": [{"key": "in/a.txt", "size": 5}, {"key": "in/b.txt", "size": 5}]}
+
+    async def download(api_key, api_secret, region, bucket_name, item):
+        return SimpleNamespace(name=item, filename=item, length=5, last_modified=None, seek=lambda _: None, read=lambda: b"hello")
+
+    async def refuse_every_document(*args, **kwargs):
+        raise kb_batch_tasks.DocumentNotLoadedError("not loaded")
+
+    async def move(*args, **kwargs):
+        moved.append(kwargs.get("item"))
+
+    async def run_the_real_sync(task_func, task_name, tenant_id, **kwargs):
+        return {"status": "success", "result": await task_func(**kwargs)}
+
+    monkeypatch.setattr(kb_batch_tasks, "s3_list_source", list_two_files)
+    monkeypatch.setattr(kb_batch_tasks, "s3_download_file", download)
+    monkeypatch.setattr(kb_batch_tasks, "_add_s3_document", refuse_every_document)
+    monkeypatch.setattr(kb_batch_tasks, "s3_move_file", move)
+    monkeypatch.setattr(kb_manual_sync, "run_task_for_tenant", run_the_real_sync)
+    run_id = await store.claim(TENANT, KB_ID)
+
+    await _run(store, run_id)
+
+    status = await store.status(TENANT, KB_ID)
+    assert status["status"] == "failed"
+    assert status["error"] == FILES_NOT_LOADED
+    assert moved == []
