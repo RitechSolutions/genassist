@@ -43,6 +43,7 @@ import { LegacyRagConfig, DEFAULT_LEGACY_RAG_CONFIG } from '../utils/ragDefaults
 import DynamicRagConfigSection from '../components/DynamicRagConfigSection';
 import SalesforceSyncOptions from '../components/SalesforceSyncOptions';
 import { resolveSalesforceContentFormat } from '../utils/salesforceOptions';
+import ArticlesToCopy, { ArticleOption } from '../components/ArticlesToCopy';
 import { DataSourceDialog } from '@/views/DataSources/components/DataSourceDialog';
 import { isEqual } from 'lodash';
 import { KnowledgeItem, UrlHeaderRow, UploadResult, FileItem } from '../types/knowledgeBase';
@@ -89,6 +90,19 @@ const toPlainHeaders = (o: unknown): Record<string, string> =>
       )
     : {};
 
+const ZENDESK_ARTICLE_OPTIONS: ArticleOption[] = [
+  {
+    key: 'allow_unpublished_articles',
+    label: 'Include unpublished articles',
+    hint: 'Drafts not yet live on the Help Centre.',
+  },
+  {
+    key: 'include_restricted_articles',
+    label: 'Include restricted articles',
+    hint: 'Visible only to signed-in users, staff or groups.',
+  },
+];
+
 const targetTypes = {
   s3: 'S3',
   sharepoint: 'o365',
@@ -118,6 +132,10 @@ function isSyncErrorStatus(status: string | null | undefined): boolean {
   if (!status) return false;
   const s = status.toLowerCase();
   return s === 'error' || s.includes('fail');
+}
+
+function hasRestrictedArticlesSwitch(type: string): boolean {
+  return type === 'zendesk' || type === 'salesforce';
 }
 
 function comparableContentFormat(type: string, extraMetadata?: Record<string, unknown>): string | undefined {
@@ -260,7 +278,7 @@ const KnowledgeBaseForm: React.FC = () => {
       save_output: Boolean(formData.save_output),
       save_output_path: formData.save_output_path ?? null,
       allow_unpublished_articles: formData.type === 'zendesk' ? Boolean(formData.extra_metadata?.allow_unpublished_articles) : undefined,
-      include_restricted_articles: formData.type === 'salesforce' ? Boolean(formData.extra_metadata?.include_restricted_articles) : undefined,
+      include_restricted_articles: hasRestrictedArticlesSwitch(formData.type) ? Boolean(formData.extra_metadata?.include_restricted_articles) : undefined,
       content_format: comparableContentFormat(formData.type, formData.extra_metadata),
       rag_config: formData.rag_config ?? {},
       filePaths: formData.type === 'file'
@@ -286,7 +304,7 @@ const KnowledgeBaseForm: React.FC = () => {
       save_output: Boolean(em.save_output),
       save_output_path: (em.save_output_path as string) ?? null,
       allow_unpublished_articles: orig.type === 'zendesk' ? Boolean(em.allow_unpublished_articles) : undefined,
-      include_restricted_articles: orig.type === 'salesforce' ? Boolean(em.include_restricted_articles) : undefined,
+      include_restricted_articles: hasRestrictedArticlesSwitch(orig.type) ? Boolean(em.include_restricted_articles) : undefined,
       content_format: comparableContentFormat(orig.type, em),
       rag_config: orig.rag_config ?? {},
       filePaths: (orig.files || []).map((f) => typeof f === 'string' ? f : (f as FileItem).file_path),
@@ -305,6 +323,10 @@ const KnowledgeBaseForm: React.FC = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleExtraMetadataChange = (key: string, value: unknown) => {
+    setFormData((prev) => ({ ...prev, extra_metadata: { ...prev.extra_metadata, [key]: value } }) as KnowledgeItem);
+  };
+
   const handleUrlChange = (index: number, value: string) => {
     setUrls((prev) => { const u = [...prev]; u[index] = value; return u; });
   };
@@ -317,10 +339,6 @@ const KnowledgeBaseForm: React.FC = () => {
     const ragConfig = updatedRagConfig as LegacyRagConfig;
     ragConfig.enabled = Object.keys(updatedRagConfig).some((k) => updatedRagConfig[k].enabled);
     setFormData((prev) => ({ ...prev, rag_config: ragConfig }));
-  };
-
-  const handleExtraMetadataChange = (key: string, value: unknown) => {
-    setFormData((prev) => ({ ...prev, extra_metadata: { ...prev.extra_metadata, [key]: value } }) as KnowledgeItem);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -540,6 +558,7 @@ const KnowledgeBaseForm: React.FC = () => {
         dataToSubmit.extra_metadata = {
           ...(dataToSubmit.extra_metadata || {}),
           allow_unpublished_articles: dataToSubmit.extra_metadata?.allow_unpublished_articles || false,
+          include_restricted_articles: dataToSubmit.extra_metadata?.include_restricted_articles || false,
           content_format: dataToSubmit.extra_metadata?.content_format || 'text',
         };
       }
@@ -1092,35 +1111,11 @@ const KnowledgeBaseForm: React.FC = () => {
                                       </SelectContent>
                                     </Select>
                                   </div>
-                                  <div className="rounded-lg border bg-card dark:bg-zinc-900 p-4">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex-1 pr-4">
-                                        <div className="text-sm font-medium text-foreground">
-                                          Allow Unpublished Articles
-                                        </div>
-                                        <p className="text-sm text-muted-foreground mt-1">
-                                          Allow unpublished articles to be indexed in the knowledge base.
-                                        </p>
-                                      </div>
-                                      <Switch
-                                        checked={
-                                          (formData.extra_metadata?.allow_unpublished_articles as boolean) || false
-                                        }
-                                        onCheckedChange={(checked) =>
-                                          setFormData(
-                                            (prev) =>
-                                              ({
-                                                ...prev,
-                                                extra_metadata: {
-                                                  ...prev.extra_metadata,
-                                                  allow_unpublished_articles: checked,
-                                                },
-                                              }) as KnowledgeItem
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
+                                  <ArticlesToCopy
+                                    options={ZENDESK_ARTICLE_OPTIONS}
+                                    extraMetadata={formData.extra_metadata}
+                                    onChange={handleExtraMetadataChange}
+                                  />
                                 </div>
                               )}
 

@@ -143,6 +143,10 @@ class ErrorKey(Enum):
     ML_EXTRACT_FILE_INVALID = "ML_EXTRACT_FILE_INVALID"
     ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
     ML_TRAINING_UPLOAD_TOO_LARGE = "ML_TRAINING_UPLOAD_TOO_LARGE"
+    ML_TRAINING_SEARCH_TOO_LARGE = "ML_TRAINING_SEARCH_TOO_LARGE"
+    ML_TRAINING_JOB_NOT_FOUND = "ML_TRAINING_JOB_NOT_FOUND"
+    ML_TRAINING_JOB_ALREADY_RUNNING = "ML_TRAINING_JOB_ALREADY_RUNNING"
+    ML_TRAINING_JOB_NEEDS_USER = "ML_TRAINING_JOB_NEEDS_USER"
     ML_EXTRACT_FAILED = "ML_EXTRACT_FAILED"
     ML_TRAINING_DATA_STORAGE_FAILED = "ML_TRAINING_DATA_STORAGE_FAILED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
@@ -363,6 +367,10 @@ ERROR_MESSAGES = {
         ErrorKey.ML_EXTRACT_FILE_INVALID: "The uploaded training file could not be read.",
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
         ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: "The training data file is too large to upload.",
+        ErrorKey.ML_TRAINING_SEARCH_TOO_LARGE: "The hyperparameter search is too large to run.",
+        ErrorKey.ML_TRAINING_JOB_NOT_FOUND: "The training job was not found or has expired.",
+        ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING: "You already have a training job running.",
+        ErrorKey.ML_TRAINING_JOB_NEEDS_USER: "Testing a model training needs a signed-in user.",
         ErrorKey.ML_EXTRACT_FAILED: (
             "Train Data Source could not complete the test. "
             "Check its configuration and try again."
@@ -475,6 +483,18 @@ ERROR_MESSAGES = {
         ),
         ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: (
             "Le fichier de données d'entraînement est trop volumineux pour être téléversé."
+        ),
+        ErrorKey.ML_TRAINING_SEARCH_TOO_LARGE: (
+            "La recherche d'hyperparamètres est trop grande pour être exécutée."
+        ),
+        ErrorKey.ML_TRAINING_JOB_NOT_FOUND: (
+            "La tâche d'entraînement est introuvable ou a expiré."
+        ),
+        ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING: (
+            "Vous avez déjà une tâche d'entraînement en cours."
+        ),
+        ErrorKey.ML_TRAINING_JOB_NEEDS_USER: (
+            "Le test d'un entraînement de modèle nécessite un utilisateur connecté."
         ),
         ErrorKey.ML_EXTRACT_FAILED: (
             "La source de données d'entraînement n'a pas pu terminer le test. "

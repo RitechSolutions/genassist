@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { formatFeedbackDate } from '@/helpers/utils';
 import { cn } from '@/helpers/utils';
 
-import { getEffectiveSentiment } from '../../helpers/formatting';
+import { formatConversationTotalCost, getEffectiveSentiment } from '../../helpers/formatting';
 import type { TranscriptDetailController, TranscriptLeftPanelTab } from '../../hooks/useTranscriptDetail';
 import { MetricCards } from '../MetricCard';
 import { ScoreCards } from '../ScoreCard';
@@ -47,6 +47,8 @@ export function TranscriptStatsPanel({ controller, className }: TranscriptStatsP
   } = controller;
 
   if (!transcript) return null;
+
+  const costIsPartial = costIncomplete && totalCost.priced > 0;
 
   return (
     <div className={cn('space-y-4 flex flex-col', className)}>
@@ -209,9 +211,10 @@ export function TranscriptStatsPanel({ controller, className }: TranscriptStatsP
             </p>
             <p
               className="text-sm text-muted-foreground flex justify-between"
-              title={costIncomplete ? 'Some messages have no cost recorded, so the real total may be higher.' : undefined}
+              title={costIsPartial ? 'Some messages have no cost recorded, so the real total may be higher.' : undefined}
             >
-              <span>Total Cost:</span> <b>{costIncomplete ? '≥ ' : ''}${totalCost.total.toFixed(6)}</b>
+              <span>Total Cost:</span>{' '}
+              <b>{formatConversationTotalCost(totalCost.total, totalCost.priced, costIncomplete)}</b>
             </p>
           </div>
         </>

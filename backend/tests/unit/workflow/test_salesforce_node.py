@@ -221,3 +221,92 @@ async def test_connector_exception_returns_500():
     failure = is_node_failure(result)
     assert failure is not None and failure["code"] == 500
     assert "error" in failure["output"]["data"]
+
+
+def _conversation_repo(custom_attributes=None):
+    repo = MagicMock()
+    repo.fetch_conversation_by_id = AsyncMock(return_value=SimpleNamespace(custom_attributes=custom_attributes))
+    repo.update_custom_attributes = AsyncMock()
+    return repo
+
+
+async def _run_node(config, create_case, thread_id=None, repo=None):
+    from app.dependencies.injector import injector as shared_injector
+
+    connector_patch, _ = _patch_connector(create_case)
+    repo = repo or _conversation_repo()
+    with _patch_injector(_make_app_settings_service()), connector_patch, patch.object(
+        shared_injector, "get", return_value=repo
+    ):
+        result = await _make_node(thread_id=thread_id).process(
+            {"subject": "Help", "description": "Card failed", "app_settings_id": str(uuid.uuid4()), **config}
+        )
+    return result, repo
+
+
+@pytest.mark.asyncio
+async def test_contact_boxes_are_sent_as_case_contact_fields():
+    create_case = AsyncMock(return_value={"status": 200, "data": {"id": "500xx"}})
+
+    await _run_node({"web_email": " Alice@Example.com ", "web_name": "Alice", "web_phone": ""}, create_case)
+
+    assert create_case.await_args.kwargs["contact_fields"] == {
+        "SuppliedEmail": "Alice@Example.com",
+        "SuppliedName": "Alice",
+    }
+
+
+@pytest.mark.asyncio
+async def test_created_case_saves_the_box_email_and_name_on_the_conversation():
+    conversation_id = uuid.uuid4()
+    create_case = AsyncMock(return_value={"status": 200, "data": {"id": "500xx"}})
+
+    _, repo = await _run_node(
+        {"web_email": "Alice@Example.com", "web_name": "Alice", "custom_fields": [{"key": "SuppliedEmail", "value": "old@example.com"}]},
+        create_case,
+        thread_id=str(conversation_id),
+    )
+
+    repo.update_custom_attributes.assert_awaited_once_with(
+        conversation_id, {"pii": {"requester_email": "alice@example.com", "requester_name": "Alice"}}
+    )
+
+
+@pytest.mark.asyncio
+async def test_custom_field_email_is_saved_when_the_box_is_empty():
+    conversation_id = uuid.uuid4()
+    create_case = AsyncMock(return_value={"status": 200, "data": {"id": "500xx"}})
+
+    _, repo = await _run_node(
+        {"custom_fields": [{"key": "SuppliedEmail", "value": "Bob@Example.com"}, {"key": "Origin", "value": "Chatbot"}]},
+        create_case,
+        thread_id=str(conversation_id),
+    )
+
+    repo.update_custom_attributes.assert_awaited_once_with(
+        conversation_id, {"pii": {"requester_email": "bob@example.com"}}
+    )
+
+
+@pytest.mark.asyncio
+async def test_rejected_case_saves_nothing_on_the_conversation():
+    create_case = AsyncMock(return_value={"status": 400, "data": {"error": "INVALID_EMAIL_ADDRESS on SuppliedEmail"}})
+
+    result, repo = await _run_node({"web_email": "guest"}, create_case, thread_id=str(uuid.uuid4()))
+
+    assert is_node_failure(result) is not None
+    repo.update_custom_attributes.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_saved_email_matches_what_was_sent():
+    conversation_id = uuid.uuid4()
+    create_case = AsyncMock(return_value={"status": 200, "data": {"id": "500xx"}})
+
+    _, repo = await _run_node(
+        {"web_name": "Dana", "custom_fields": [{"key": "SuppliedEmail", "value": "a@example.com"}, {"key": "SuppliedEmail", "value": ""}]},
+        create_case,
+        thread_id=str(conversation_id),
+    )
+
+    repo.update_custom_attributes.assert_awaited_once_with(conversation_id, {"pii": {"requester_name": "Dana"}})
