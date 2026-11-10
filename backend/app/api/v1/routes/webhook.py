@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from uuid import UUID, uuid4
-from urllib.parse import urlencode
 from app.schemas.webhook import WebhookCreate, WebhookUpdate, WebhookResponse
 from app.services.webhook import WebhookService
 from app.auth.dependencies import auth
-from app.core.tenant_scope import get_tenant_context
-from app.core.config.settings import settings
+from app.core.utils.webhook_urls import build_public_url
 from fastapi_injector import Injected
 
 router = APIRouter(tags=["Webhooks"], dependencies=[Depends(auth)])
@@ -24,31 +22,8 @@ async def create_webhook(
     # Generate webhook ID
     generated_id = uuid4()
 
-    # Get tenant from request context
-    tenant_id = get_tenant_context()
-
-    # Build the base execution URL
-
-    if data.base_url:
-        url = f"{data.base_url}webhook/execute/{str(generated_id)}"
-    else:
-        url = str(
-            request.url_for(
-                (
-                    "webhook_handler_post"
-                    if data.method == "POST"
-                    else "webhook_handler_get"
-                ),
-                webhook_id=str(generated_id),
-            )
-        )
-
-    # lowercase the tenant header name to make the check case-insensitive
-    looking_tenant_header = settings.TENANT_HEADER_NAME.lower()
-
-    # Add tenant ID as query parameter so middleware can detect it
-    query_params = {f"{looking_tenant_header}": tenant_id}
-    execution_url = f"{url}?{urlencode(query_params)}"
+    # Execution URL with the tenant as a query parameter, so middleware can detect it
+    execution_url = build_public_url(data.base_url, request, generated_id)
 
     # Create webhook with auto-generated URL
     return await service.create_webhook(data, execution_url, webhook_id=generated_id)

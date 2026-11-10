@@ -14,7 +14,9 @@ import logging
 import math
 import os
 import re
+import warnings
 import tokenize
+import uuid
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
@@ -29,6 +31,11 @@ from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.string_utils import truncate_for_log
+from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+    ensure_unique_columns,
+    ensure_unique_query_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -490,11 +497,128 @@ COLUMN_TRANSFORM_STRATEGY_LABELS = {
     "quantile_transform": "Quantile Transformer",
     "power_transform": "Power Transformer",
     "pca": "PCA",
+    "math_transform": "Math Function",
 }
+
+# Math Function (math_transform): element-wise functions of numeric columns,
+# with nothing fitted. Log is Log Transform's job, not offered here.
+MATH_FUNCTIONS = {
+    "sin": ("Sine", np.sin),
+    "cos": ("Cosine", np.cos),
+    "sqrt": ("Square Root", np.sqrt),
+    "abs": ("Absolute Value", np.abs),
+    "square": ("Square", np.square),
+    "cbrt": ("Cube Root", np.cbrt),
+}
+
+# Date-Time Features (datetime_features): calendar parts of one date/time
+# column, each a new numeric column named <newColumnName>_<part>.
+DATETIME_PARTS = ("year", "month", "day", "day_of_week", "quarter", "hour", "is_weekend")
+
+
+# A date written with the day and month as numbers before a year, e.g.
+# 01/02/2024, 13.02.2024 or 1-2-24. Which number is the day can't be told from
+# one such value; dates that start with the year (2024-02-01) aren't affected.
+_DAY_MONTH_YEAR = re.compile(r"^\s*(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4}|\d{2})(?!\d)")
+
+
+def numeric_date_order(values: Any) -> Dict[str, Any]:
+    """Whether a column's numeric dates (01/02/2024) put the day or the month first.
+
+    Read from the whole column, since one value like 01/02/2024 can't say.
+    Returns {"order": ..., "day_first_example": ..., "month_first_example": ...}
+    where order is:
+    - "none": no value is written that way, so the order doesn't matter;
+    - "day_first": some value has a first number over 12 (13/02/2024);
+    - "month_first": some value has a second number over 12 (02/13/2024);
+    - "mixed": both - the column mixes the two orders;
+    - "ambiguous": every such value has both numbers 12 or less, so either
+      order reads them and gives different dates.
+    """
+    day_first_example = month_first_example = None
+    seen = False
+    for value in pd.Series(values).dropna():
+        if isinstance(value, (pd.Timestamp, datetime)):
+            continue
+        match = _DAY_MONTH_YEAR.match(str(value))
+        if not match:
+            continue
+        seen = True
+        first, second = int(match.group(1)), int(match.group(2))
+        if first > 12 and day_first_example is None:
+            day_first_example = value
+        if second > 12 and month_first_example is None:
+            month_first_example = value
+    if not seen:
+        order = "none"
+    elif day_first_example is not None and month_first_example is not None:
+        order = "mixed"
+    elif day_first_example is not None:
+        order = "day_first"
+    elif month_first_example is not None:
+        order = "month_first"
+    else:
+        order = "ambiguous"
+    return {
+        "order": order,
+        "day_first_example": day_first_example,
+        "month_first_example": month_first_example,
+    }
+
+
+def parse_datetime_values(values: Any, day_first: bool = False) -> pd.Series:
+    """Read values as dates/times; anything unreadable becomes NaT.
+
+    Shared by training and inference, so a value reads the same way at
+    prediction time as it did when the model was trained. Values are read as
+    text unless they're already dates, so 20240105 isn't taken for a count of
+    nanoseconds. When any value carries a UTC offset (+02:00, Z), all values
+    are read in UTC - whether they arrive together or one at a time - and
+    values without an offset are taken as UTC.
+
+    `day_first` reads a numeric date like 01/02/2024 as 1 February; training
+    works it out for the column (numeric_date_order) and saves it, so
+    prediction reads every value the same way. Year-first dates (2024-02-01)
+    read the same either way.
+    """
+    series = pd.Series(values)
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series.dt.tz_convert("UTC") if series.dt.tz is not None else series
+    text = series.astype("string")
+    with warnings.catch_warnings():
+        # pandas 2 warns (pandas 3 raises) on mixed offsets; both are handled below.
+        warnings.simplefilter("ignore", FutureWarning)
+        try:
+            parsed = pd.to_datetime(text, errors="coerce", format="mixed", dayfirst=day_first)
+        except (TypeError, ValueError):
+            parsed = None
+    if parsed is None or not pd.api.types.is_datetime64_any_dtype(parsed) or parsed.dt.tz is not None:
+        parsed = pd.to_datetime(text, errors="coerce", format="mixed", dayfirst=day_first, utc=True)
+    return parsed
+
+
+def has_time_of_day(parsed: pd.Series) -> bool:
+    """Whether any value has a time other than midnight (so an hour is meaningful)."""
+    times = parsed.dropna()
+    return bool(((times.dt.hour != 0) | (times.dt.minute != 0) | (times.dt.second != 0)).any())
+
+
+def datetime_part_values(parsed: pd.Series, part: str) -> np.ndarray:
+    """One calendar part of parsed dates: day_of_week is 0 (Monday) to 6, is_weekend 1 or 0."""
+    dates = parsed.dt
+    if part == "day_of_week":
+        return dates.dayofweek.to_numpy(dtype=float)
+    if part == "is_weekend":
+        return (dates.dayofweek >= 5).astype(int).to_numpy(dtype=float)
+    return getattr(dates, part).to_numpy(dtype=float)
 
 
 def column_transform_value_problem(
-    strategy: str, values: np.ndarray, columns: List[str], power_method: Optional[str] = None
+    strategy: str,
+    values: np.ndarray,
+    columns: List[str],
+    power_method: Optional[str] = None,
+    math_function: Optional[str] = None,
 ) -> Optional[str]:
     """Why `values` can't go through this transform, or None if they can.
 
@@ -502,7 +626,7 @@ def column_transform_value_problem(
     training is rejected the same way at prediction time.
     """
     problem_code = column_transform_value_problem_code(
-        strategy, values, power_method
+        strategy, values, power_method, math_function
     )
     if problem_code == "non_finite":
         non_finite = ~np.isfinite(values)
@@ -512,6 +636,10 @@ def column_transform_value_problem(
         negative = values < 0
         counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
         return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
+    if problem_code == "negative_sqrt_input":
+        negative = values < 0
+        counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
+        return f"Square Root needs values of 0 or more; negative values in {counts}"
     if problem_code == "non_positive_box_cox_input":
         not_positive = values <= 0
         counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
@@ -526,12 +654,15 @@ def column_transform_value_problem_code(
     strategy: str,
     values: np.ndarray,
     power_method: Optional[str] = None,
+    math_function: Optional[str] = None,
 ) -> Optional[str]:
     """Stable reason code for an invalid column-transform input matrix."""
     if (~np.isfinite(values)).any():
         return "non_finite"
     if strategy == "log_transform" and (values < 0).any():
         return "negative_log_input"
+    if strategy == "math_transform" and math_function == "sqrt" and (values < 0).any():
+        return "negative_sqrt_input"
     if all((
         strategy == "power_transform",
         power_method == "box-cox",
@@ -541,12 +672,26 @@ def column_transform_value_problem_code(
     return None
 
 
-def apply_column_transform(strategy: str, transformer: Any, values: np.ndarray) -> np.ndarray:
-    """Apply a column-transform feature: log(1 + x) for Log Transform, else
-    the transformer fitted on the training split (QuantileTransformer,
-    PowerTransformer, or a [StandardScaler +] PCA pipeline)."""
+def column_transform_output_problem(values: np.ndarray, columns: List[str]) -> Optional[str]:
+    """Why a transform's output can't be used (infinite or empty results), or None."""
+    non_finite = ~np.isfinite(values)
+    if not non_finite.any():
+        return None
+    counts = {c: int(n) for c, n in zip(columns, non_finite.sum(axis=0)) if n}
+    return f"the result is infinite or empty for {counts} - the values are too large for this function"
+
+
+def apply_column_transform(
+    strategy: str, transformer: Any, values: np.ndarray, math_function: Optional[str] = None
+) -> np.ndarray:
+    """Apply a column-transform feature: log(1 + x) for Log Transform, the
+    chosen function for Math Function, else the transformer fitted on the
+    training split (QuantileTransformer, PowerTransformer, or a
+    [StandardScaler +] PCA pipeline)."""
     if strategy == "log_transform":
         return np.log1p(values)
+    if strategy == "math_transform":
+        return MATH_FUNCTIONS[math_function][1](values)
     return transformer.transform(values)
 
 
@@ -712,6 +857,29 @@ def translate_category_literals(
     return result
 
 
+def new_training_output_path(thread_id: str, suffix: str = "") -> Path:
+    """A new output file under DATA_VOLUME/train/<thread>; the random part keeps names unguessable and unique."""
+    uploads_dir = DATA_VOLUME / "train" / thread_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return uploads_dir / f"{thread_id}_{timestamp}_{uuid.uuid4().hex}{suffix}.csv"
+
+
+def data_volume_reference(file_path: Any, base: str = "train") -> str:
+    """The path a node shows for a file it wrote, relative to DATA_VOLUME/<base>.
+
+    Node outputs are shown to users, so they name files by where they sit in
+    the data volume ("<thread>/<file>.csv"), never by the server's absolute
+    path. resolve_csv_file_path reads these back. A path outside that folder is
+    returned unchanged so it keeps working.
+    """
+    root = os.path.realpath(str(DATA_VOLUME / base))
+    real_path = os.path.realpath(str(file_path))
+    if real_path.startswith(root + os.sep):
+        return Path(os.path.relpath(real_path, root)).as_posix()
+    return str(file_path)
+
+
 async def save_data_to_csv(
     data: List[Dict[str, Any]],
     columns: List[str],
@@ -736,19 +904,7 @@ async def save_data_to_csv(
         Path to the saved CSV file
     """
     try:
-        # Create uploads directory within the project's data volume
-        uploads_dir = DATA_VOLUME / "train" / thread_id
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-
-        # Get timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Generate filename using thread_id and timestamp with optional suffix
-        if suffix:
-            filename = f"{thread_id}_{timestamp}{suffix}.csv"
-        else:
-            filename = f"{thread_id}_{timestamp}.csv"
-        file_path = uploads_dir / filename
+        file_path = new_training_output_path(thread_id, suffix or "")
 
         # Write CSV file
         if data and columns:
@@ -800,11 +956,7 @@ async def stream_rows_to_csv(
     except KeyError as exc:
         raise ValueError(f"Unsupported stream source kind: {source_kind}") from exc
 
-    uploads_dir = DATA_VOLUME / "train" / thread_id
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = uploads_dir / f"{thread_id}_{timestamp}{suffix}.csv"
+    file_path = new_training_output_path(thread_id, suffix)
     columns: List[str] = []
     row_count = 0
     preview_head: List[Tuple[Any, ...]] = []
@@ -816,6 +968,10 @@ async def stream_rows_to_csv(
             async for chunk_columns, rows in row_chunks:
                 current_columns = list(chunk_columns)
                 if writer is None:
+                    if source_kind == "query":
+                        # Both columns would land in the CSV, and the next
+                        # node's read_csv would rename one to "<name>.1".
+                        ensure_unique_query_columns(current_columns)
                     columns = current_columns
                     writer = csv.writer(handle, lineterminator="\n")
                     writer.writerow(columns)
@@ -924,21 +1080,46 @@ async def iter_csv_chunks(
             except Exception:
                 delimiter = ","
 
-            reader = csv.DictReader(handle, delimiter=delimiter)
-            columns = list(dict.fromkeys(reader.fieldnames or []))
+            reader = csv.reader(handle, delimiter=delimiter)
+            header = next(reader, [])
+            # Spreadsheet exports often end the header with empty cells
+            # ("price,size,,"); those columns are dropped, as the Excel
+            # reader drops them, as long as no row puts a value in one.
+            width = len(header)
+            while width and not header[width - 1].strip():
+                width -= 1
+            columns = header[:width]
+            # Rows are matched to columns by position, so a repeated name
+            # would reach the next node as "<name>.1" - refuse it instead.
+            ensure_unique_columns(columns, "CSV file")
             yield columns, []
 
             batch: List[Tuple[Any, ...]] = []
             for row in reader:
-                if None in row:
+                if not row:
+                    continue
+                if len(row) > len(header):
                     raise AppException(
-                        error_key=ErrorKey.INVALID_FILE_FORMAT,
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
                         error_detail=(
                             f"Line {reader.line_num} has more values than the header has columns."
                         ),
                     )
+                unnamed = next((i for i in range(width, len(row)) if row[i].strip()), None)
+                if unnamed is not None:
+                    raise AppException(
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
+                        error_detail=(
+                            f"Line {reader.line_num} has a value in column {unnamed + 1}, which "
+                            "has no name in the header. Name the column or delete it, and "
+                            "upload the file again."
+                        ),
+                    )
                 batch.append(
-                    tuple(None if row[column] == "" else row[column] for column in columns)
+                    tuple(
+                        None if index >= len(row) or row[index] == "" else row[index]
+                        for index in range(width)
+                    )
                 )
                 if len(batch) >= chunk_size:
                     yield columns, batch
@@ -1110,6 +1291,22 @@ def parse_training_file(file_path: str) -> List[Dict[str, Any]]:
     return parser(file_path)
 
 
+def csv_path_candidates(file_url: str, thread_id: Optional[str] = None) -> List[Any]:
+    """The paths resolve_csv_file_path tries for a file path, in order."""
+    if file_url.startswith("/"):
+        return [file_url]
+    if thread_id:
+        # A node's data_path is relative to DATA_VOLUME/train and may come
+        # from an earlier run with another thread (e.g. testing one node).
+        return [
+            DATA_VOLUME / "train" / thread_id / file_url,
+            DATA_VOLUME / "train" / file_url,
+            os.path.abspath(file_url),
+        ]
+    # Relative to DATA_VOLUME/train, then the current folder, then DATA_VOLUME
+    return [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
+
+
 def resolve_csv_file_path(
     file_url: str, thread_id: Optional[str] = None, allowed_directories: Optional[List[Path]] = None
 ) -> Path:
@@ -1142,25 +1339,14 @@ def resolve_csv_file_path(
     file_url = stripped_url
 
     try:
-        # Handle both absolute paths and relative paths
-        if file_url.startswith("/"):
-            # Absolute path
-            candidates = [file_url]
-        elif file_url.startswith("http://") or file_url.startswith("https://"):
+        if file_url.startswith("http://") or file_url.startswith("https://"):
             # For HTTP URLs, we'd need to download first
             # For now, raise an error
             raise AppException(
                 error_key=ErrorKey.FILE_NOT_FOUND,
                 error_detail=f"HTTP/HTTPS URLs are not yet supported: {file_url}",
             )
-        else:
-            # Try relative to DATA_VOLUME/train/thread_id if thread_id provided, then the current folder
-            if thread_id:
-                candidates = [DATA_VOLUME / "train" / thread_id / file_url, os.path.abspath(file_url)]
-            else:
-                # Try relative to DATA_VOLUME/train (common location for CSV files),
-                # then the current folder, then directly in DATA_VOLUME
-                candidates = [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
+        candidates = csv_path_candidates(file_url, thread_id)
 
         # Only files inside the data volume, or the configured storage folder, can be read
         directories = [DATA_VOLUME, *(allowed_directories or [])]
@@ -1188,7 +1374,7 @@ def resolve_csv_file_path(
         if not os.access(file_path, os.R_OK):
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"CSV file is not readable: {file_path}",
+                error_detail=f"CSV file is not readable: {file_url}",
             )
 
         return file_path
@@ -1234,9 +1420,11 @@ def load_csv_file(
         raise
     except Exception as e:
         logger.error(f"Error loading file {file_url}: {str(e)}", exc_info=True)
+        # An OSError's message names the resolved server path; show only the reason.
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to load file: {str(e)}",
+            error_detail=f"Failed to load file: {reason}",
         ) from e
 
 
@@ -1264,24 +1452,97 @@ def _names_data(python_code: str) -> bool:
 # after whatever else was written to stderr (e.g. pandas warnings).
 _USER_EXCEPTION_MARKER = "Global errors: "
 _WRAPPER_ERROR_PREFIX = "Error processing parameters: "
+_TRACEBACK_HEADER = "Traceback (most recent call last):"
+_MAX_LOGGED_ERROR_CHARS = 4000
+_NO_RESULT_MESSAGE = (
+    "The preprocessing code returned nothing - executable_function must return the processed DataFrame"
+)
+# The innermost frame of the user's code (exec'd from a string)
+_USER_CODE_FRAME = re.compile(r'File "<string>", line (\d+)')
+_EXCEPTION_LINE = re.compile(r"^([A-Za-z_][\w.]*)(?::\s?(.*))?$")
+# Exceptions whose message already says what went wrong (e.g. a step's own
+# column check), so the type name would only be noise
+_SELF_DESCRIBING_EXCEPTIONS = {"ValueError", "Exception"}
+# Display names of the Data Preprocessing steps (getStepTypeDisplayName in the frontend)
+# Mirrors getStepTypeDisplayName in the frontend's preprocessingConfig.ts,
+# including the moved step types (MOVED_STEP_NAMES there): older workflows'
+# code still runs those steps, so an error can come from inside one.
+_PREPROCESSING_STEP_NAMES = {
+    "column_filter": "Column Filter",
+    "remove_duplicates": "Remove Duplicate Rows",
+    "drop_column_or_row": "Remove Column/Row",
+    "drop_high_null_columns": "Remove High-Null Columns",
+    "change_dtype": "Change Column Data Type",
+    "missing_value_handling": "Missing Value Handling",
+    "outlier_handling": "Outlier Handling",
+    "categorical_encoding": "Categorical Encoding",
+    "feature_engineering": "Feature Engineering",
+}
+_STEP_MARKER = re.compile(r"#\s*STEP_(START|END):[^:\n]+:(\w+)")
 
 
-def _format_user_code_error(stderr_output: str) -> str:
-    """The error to show for a run that returned no result.
+def _step_at_line(python_code: str, line_number: int) -> Optional[str]:
+    """Display name of the preprocessing step whose markers enclose a line of the code, if any."""
+    step = None
+    for line in python_code.splitlines()[: max(line_number, 0)]:
+        marker = _STEP_MARKER.search(line)
+        if marker:
+            step = marker.group(2) if marker.group(1) == "START" else None
+    return _PREPROCESSING_STEP_NAMES.get(step, step) if step else None
 
-    stderr holds any warnings first and the user's exception last, so the
-    real error would otherwise be buried under e.g. a pandas FutureWarning
-    the user can ignore. Puts the exception (message + traceback) first and
-    any other stderr output after it, under "Warnings:".
+
+def _exception_type(traceback_text: str, message: str) -> str:
+    """The raised exception's class name, from its "Type: <message>" line.
+
+    Matched against the message's first line, since lines after it (the rest
+    of a multi-line message, exception notes) can look like "Name: value" too.
     """
-    if _USER_EXCEPTION_MARKER not in stderr_output:
-        return stderr_output.strip()
-    warnings_text, _, error_text = stderr_output.partition(_USER_EXCEPTION_MARKER)
-    error_text = error_text.strip()
-    if error_text.startswith(_WRAPPER_ERROR_PREFIX):
-        error_text = error_text[len(_WRAPPER_ERROR_PREFIX):]
-    warnings_text = warnings_text.strip()
-    return f"{error_text}\n\nWarnings:\n{warnings_text}" if warnings_text else error_text
+    first_line = message.splitlines()[0].strip() if message else ""
+    for line in reversed(traceback_text.splitlines()):
+        if not line.strip() or line[0].isspace():
+            continue
+        match = _EXCEPTION_LINE.match(line.strip())
+        if match and (match.group(2) or "").strip() == first_line:
+            return match.group(1).rsplit(".", 1)[-1]
+    return ""
+
+
+def _short_user_code_error(raw_error: str, python_code: str = "") -> str:
+    """The message to show for preprocessing code that raised.
+
+    The sandbox hands back the wrapper's "Error processing parameters: <message>"
+    followed by the whole traceback, which names server paths (/opt/venv/...)
+    and library internals. The user gets only the exception, led by the step
+    it was raised in; the full text is logged on the server.
+    """
+    text = raw_error.strip()
+    if _USER_EXCEPTION_MARKER in text:
+        text = text.partition(_USER_EXCEPTION_MARKER)[2].strip()
+    if text.startswith(_WRAPPER_ERROR_PREFIX):
+        text = text[len(_WRAPPER_ERROR_PREFIX):]
+    message, header, traceback_text = text.partition(_TRACEBACK_HEADER)
+    message = message.strip()
+    if not header:
+        return message
+
+    exception_type = _exception_type(traceback_text, message)
+    if exception_type and exception_type not in _SELF_DESCRIBING_EXCEPTIONS:
+        message = f"{exception_type}: {message}" if message else exception_type
+
+    frames = _USER_CODE_FRAME.findall(traceback_text)
+    step = _step_at_line(python_code, int(frames[-1])) if frames and python_code else None
+    if step and not message.startswith(f"{step}:"):
+        message = f"{step}: {message}"
+    return message or "Preprocessing code failed"
+
+
+def _user_code_failure(raw_error: str, python_code: str) -> str:
+    """Log a failed run's full error server-side and return the short message for the user."""
+    # Masked and capped like node errors: the message can hold data values
+    logger.warning(
+        "Preprocessing code failed: %s", truncate_for_log(redact_sensitive_substrings(raw_error), _MAX_LOGGED_ERROR_CHARS)
+    )
+    return _short_user_code_error(raw_error, python_code)
 
 
 async def execute_and_process_preprocessing_code(
@@ -1327,10 +1588,14 @@ async def execute_and_process_preprocessing_code(
     # Library warnings land in stderr, so only a runner error or a raised script counts as failure
     failure = script_error(response)
     if failure:
+        # A script that raised comes back with the wrapper's prefix and the full
+        # traceback; runner errors (syntax, sandbox, timeout) are short already
+        if failure == response.get("script_error"):
+            failure = _user_code_failure(failure, python_code)
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {failure}",
+                error_detail=failure,
             )
         else:
             return None, failure, response
@@ -1338,11 +1603,20 @@ async def execute_and_process_preprocessing_code(
     stderr_output = response.get("errors")
     result = response.get("result")
     if stderr_output and result is None:
-        user_error = _format_user_code_error(stderr_output)
+        if _USER_EXCEPTION_MARKER in stderr_output:
+            user_error = _user_code_failure(stderr_output, python_code)
+        else:
+            # Nothing was raised - stderr only holds warnings, which can name
+            # server paths; the real problem is the missing result
+            logger.warning(
+                "Preprocessing code returned no result; stderr: %s",
+                truncate_for_log(redact_sensitive_substrings(stderr_output), _MAX_LOGGED_ERROR_CHARS),
+            )
+            user_error = _NO_RESULT_MESSAGE
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {user_error}",
+                error_detail=user_error,
             )
         else:
             return None, user_error, response

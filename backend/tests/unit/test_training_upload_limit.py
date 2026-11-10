@@ -359,3 +359,74 @@ async def test_upload_without_purpose_keeps_the_regular_limit():
 
     assert exc_info.value.error_key == ErrorKey.FILE_SIZE_TOO_LARGE
     fm.create_file.assert_not_awaited()
+
+
+# -- Training uploads are marked as such on every path (TDS-22) ------------------------
+# The Train Data Source discard endpoint only deletes files carrying this mark, so a
+# knowledge base file in the same "uploads/" folder can never be removed through it.
+
+PURPOSE_MARK = {"upload_purpose": TRAINING}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("purpose", "filename", "marked"), [(TRAINING, "sales.csv", True), (None, "sales.csv", False)])
+async def test_upload_marks_only_training_files(purpose, filename, marked):
+    fm, settings_svc = _upload_mocks()
+    upload = SimpleNamespace(filename=filename, size=10)
+
+    await file_manager_routes.upload_files(
+        REQUEST, [upload], purpose=purpose, file_manager_service=fm, app_settings_svc=settings_svc
+    )
+
+    metadata = fm.create_file.await_args.kwargs["file_base"].file_metadata
+    assert (metadata.get("upload_purpose") == TRAINING) is marked
+
+
+async def _complete_session(monkeypatch, purpose):
+    repo = AsyncMock()
+    row = _session_row(bytes_received=10, expected_bytes=10, upload_purpose=purpose)
+    repo.get_by_id.return_value = row
+    monkeypatch.setattr("app.services.file_upload_session.os.path.isfile", lambda _: True)
+    monkeypatch.setattr(
+        "app.services.file_upload_session.file_storage_settings.FILE_MANAGER_ENABLED", True
+    )
+    fm = AsyncMock()
+    fm.initialize.return_value = SimpleNamespace(name="local", get_base_path=lambda: "/data")
+    fm.create_file_from_local_path.return_value = SimpleNamespace(
+        id=uuid.uuid4(), path="uploads/x.parquet", storage_provider="s3", storage_path="bucket"
+    )
+    fm.get_file_source_url.return_value = "http://localhost/source"
+    await FileUploadSessionService(repo).complete_session(row.id, REQUEST, fm, AsyncMock())
+    return fm.create_file_from_local_path.await_args.kwargs["file_base"].file_metadata
+
+
+@pytest.mark.asyncio
+async def test_session_complete_marks_a_training_upload(monkeypatch):
+    assert await _complete_session(monkeypatch, TRAINING) == PURPOSE_MARK
+
+
+@pytest.mark.asyncio
+async def test_session_complete_does_not_mark_other_uploads(monkeypatch):
+    assert "upload_purpose" not in await _complete_session(monkeypatch, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("purpose", "filename", "marked"), [(TRAINING, "sales.parquet", True), (None, "kb.csv", False)])
+async def test_presign_marks_only_training_uploads(purpose, filename, marked):
+    from app.core.tenant_scope import clear_tenant_context, set_tenant_context
+
+    fm, _ = _s3_file_manager()
+    set_tenant_context("tenant-a")  # S3 keys are tenant-scoped
+    try:
+        await _direct_service(AsyncMock()).create_direct_upload_session(
+            PresignDirectUploadCreate(original_filename=filename, expected_size=10, purpose=purpose),
+            REQUEST,
+            fm,
+            _settings_svc(),
+        )
+    finally:
+        clear_tenant_context()
+
+    metadata = fm.repository.create_file.await_args.args[0].file_metadata
+    assert metadata["direct_upload"] is True
+    assert (metadata.get("upload_purpose") == TRAINING) is marked

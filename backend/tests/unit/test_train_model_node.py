@@ -1,16 +1,28 @@
 import pickle
 import uuid
+from unittest.mock import AsyncMock
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from app.core.exceptions.exception_classes import AppException
+from app.core.project_path import DATA_VOLUME
+from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml.train_model_node import (
     TREE_BASED_MODEL_TYPES,
     TrainModelNode,
+    _join_reason_counts,
+    _rows_dropped_warning,
 )
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from tests.unit.ml_training_fixtures import training_sandbox
+
+
+@pytest.fixture(autouse=True)
+def _training_sandbox(monkeypatch, tmp_path):
+    # Training only reads files inside the data volume; use pytest's temp folder as it.
+    training_sandbox(monkeypatch, tmp_path)
 
 
 @pytest.fixture
@@ -128,6 +140,57 @@ class TestClassificationOverrideSplitFallback:
         assert "accuracy" in result["metrics"]
 
 
+class TestPipelineRunOutput:
+    @pytest.mark.asyncio
+    async def test_includes_uploaded_model_file_id(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+        monkeypatch.setattr(
+            ml_utils, "extra_csv_directories", AsyncMock(return_value=[])
+        )
+        dataframe = pd.DataFrame(
+            {
+                "feature": np.arange(20, dtype=float),
+                "target": np.arange(20, dtype=float) * 2,
+            }
+        )
+        csv_path = tmp_path / "training.csv"
+        dataframe.to_csv(csv_path, index=False)
+
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        pkl_file_id = str(uuid.uuid4())
+        monkeypatch.setattr(
+            train_node,
+            "_save_model",
+            AsyncMock(
+                return_value={
+                    "model_file_path": str(tmp_path / "model.pkl"),
+                    "model_version": "v2.0",
+                }
+            ),
+        )
+        monkeypatch.setattr(
+            train_node,
+            "_register_trained_model",
+            AsyncMock(return_value=(str(uuid.uuid4()), pkl_file_id, None, [])),
+        )
+
+        result = await train_node.process(
+            {
+                "name": "pipeline-model",
+                "modelType": "linear_regression",
+                "fileUrl": str(csv_path),
+                "targetColumn": "target",
+                "featureColumns": ["feature"],
+                "validationSplit": 0.2,
+                "taskType": "regression",
+            }
+        )
+
+        assert result["pkl_file_id"] == pkl_file_id
+
+
 class TestCategoricalEncodingEndToEnd:
     """
     Exercises categoricalEncoding through the full process() pipeline: mixed
@@ -187,8 +250,11 @@ class TestCategoricalEncodingEndToEnd:
 
         assert result["success"] is True
         assert "accuracy" in result["metrics"]
+        # The output names the model file inside the data volume, not the server path (TDS-24).
+        assert result["model_file_path"].startswith("ml_models/")
+        assert str(DATA_VOLUME) not in result["model_file_path"]
 
-        with open(result["model_file_path"], "rb") as f:
+        with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
             payload = pickle.load(f)
         metadata = payload["metadata"]
 
@@ -286,7 +352,7 @@ class TestTargetTransformEndToEnd:
         assert result["success"] is True
         assert result["metrics"]["r2_score"] > 0.5
 
-        with open(result["model_file_path"], "rb") as f:
+        with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
             payload = pickle.load(f)
         metadata = payload["metadata"]
         assert metadata["target_transform"] == {"type": "ratio", "baselineColumn": "baseline"}
@@ -680,3 +746,477 @@ class TestFitScaler:
     )
     def test_returns_expected_scaler_type(self, node, method, expected_class):
         assert type(node._fit_scaler(method)).__name__ == expected_class
+
+
+class TestTextClassLabels:
+    """
+    TM-10: XGBoost rejected text classes ("Invalid classes inferred") and the
+    Neural Network failed in early stopping ("ufunc 'isnan' not supported").
+    Every classifier now trains on class codes and saves the labels.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model_type", ["xgboost", "neural_network", "random_forest"])
+    @pytest.mark.parametrize("labels", [["A", "B", "C"], ["high", "low"]])
+    async def test_text_classes_train_and_save_their_labels(self, tmp_path, model_type, labels):
+        rng = np.random.default_rng(3)
+        n = 90
+        target = np.array([labels[i % len(labels)] for i in range(n)])
+        df = pd.DataFrame(
+            {
+                "x1": rng.normal(size=n) + np.array([labels.index(t) for t in target]),
+                "x2": rng.normal(size=n),
+                "target": target,
+            }
+        )
+        csv_path = tmp_path / "text_classes.csv"
+        df.to_csv(csv_path, index=False)
+
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        result = await train_node.process(
+            {
+                "name": f"text-classes-{uuid.uuid4().hex[:8]}",
+                "modelType": model_type,
+                "fileUrl": str(csv_path),
+                "targetColumn": "target",
+                "featureColumns": ["x1", "x2"],
+            }
+        )
+
+        assert result["success"] is True
+        assert result["target_classes"] == sorted(labels)
+        with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
+            payload = pickle.load(f)
+        assert payload["metadata"]["target_classes"] == sorted(labels)
+        predictions = payload["model"].predict(
+            pd.DataFrame({"x1": [0.0], "x2": [0.0]})[payload["metadata"]["model_input_columns"]]
+        )
+        assert int(predictions[0]) in range(len(labels))
+
+
+class TestClassCodesFollowTheTrainingSplit:
+    @pytest.mark.asyncio
+    async def test_xgboost_trains_when_a_middle_class_is_only_in_validation(self, tmp_path):
+        # Codes are taken from the training rows: with 'low' (the middle label
+        # alphabetically) only in the latest rows, the training codes must
+        # still be 0..n-1 or XGBoost raises "Invalid classes inferred".
+        n = 50
+        df = pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-01", periods=n, freq="D").astype(str),
+                "x1": np.arange(n, dtype=float),
+                "target": ["high", "medium"] * 20 + ["low"] * 10,
+            }
+        )
+        csv_path = tmp_path / "late_class.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        result = await train_node.process(
+            {
+                "name": f"late-class-{uuid.uuid4().hex[:8]}",
+                "modelType": "xgboost",
+                "fileUrl": str(csv_path),
+                "targetColumn": "target",
+                "featureColumns": ["x1"],
+                "splitMethod": "time_based",
+                "dateColumn": "date",
+                "validationSplit": 0.2,
+            }
+        )
+
+        assert result["success"] is True
+        assert result["target_classes"] == ["high", "medium"]
+
+
+class TestValidationOnlyClass:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model_type", ["xgboost", "lightgbm", "random_forest"])
+    async def test_rows_of_a_class_missing_from_training_are_left_out_of_validation(
+        self, tmp_path, model_type
+    ):
+        pytest.importorskip(model_type) if model_type in ("xgboost", "lightgbm") else None
+        n = 60
+        df = pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-01", periods=n, freq="D").astype(str),
+                "x1": np.arange(n, dtype=float),
+                "target": ["a", "b", "c"] * 16 + ["d"] * 12,
+            }
+        )
+        csv_path = tmp_path / "new_class.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        result = await train_node.process(
+            {
+                "name": f"new-class-{uuid.uuid4().hex[:8]}",
+                "modelType": model_type,
+                "fileUrl": str(csv_path),
+                "targetColumn": "target",
+                "featureColumns": ["x1"],
+                "splitMethod": "time_based",
+                "dateColumn": "date",
+                "validationSplit": 0.3,
+            }
+        )
+
+        assert result["success"] is True
+        assert result["target_classes"] == ["a", "b", "c"]
+        assert any("left out of the validation metrics" in w for w in result["warnings"])
+        assert result["validation_samples"] == 6
+
+
+class TestPlainTrainingErrors:
+    """TM-14: bad data or settings are reported in the node's own terms."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "overrides, expected",
+        [
+            ({"targetColumn": "label", "taskType": "regression"}, "has text values"),
+            ({"featureColumns": ["x1", "num"]}, "also selected as a feature column"),
+            ({"validationSplit": 5}, "Validation Split must be a fraction"),
+            ({"modelParameters": {"foo": 1}}, "'foo' is not a setting of Random Forest"),
+            ({"modelType": "xgboost", "modelParameters": {"max_depth": "abc"}}, "'max_depth' must be a whole number"),
+            (
+                {"hyperparameterOptimization": "random_search", "optimizationConfig": {"scoring": "accuracy", "nIter": 2}},
+                "is a classification metric",
+            ),
+        ],
+    )
+    async def test_message_names_the_setting(self, tmp_path, overrides, expected):
+        rng = np.random.default_rng(5)
+        n = 40
+        df = pd.DataFrame(
+            {
+                "x1": rng.normal(size=n),
+                "num": rng.normal(size=n) * 10,
+                "label": rng.choice(["p", "q"], n),
+            }
+        )
+        csv_path = tmp_path / "data.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        config = {
+            "name": f"plain-{uuid.uuid4().hex[:8]}",
+            "modelType": "random_forest",
+            "fileUrl": str(csv_path),
+            "targetColumn": "num",
+            "featureColumns": ["x1"],
+            **overrides,
+        }
+
+        with pytest.raises(AppException) as exc:
+            await train_node.process(config)
+
+        assert expected in exc.value.error_detail
+        assert "np.float64" not in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_auto_fill_warning_shows_plain_number(self, tmp_path):
+        df = pd.DataFrame({"x1": [1.0, None, 49.0, 49.0, 97.0] * 6, "num": list(range(30))})
+        csv_path = tmp_path / "fill.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        result = await train_node.process(
+            {
+                "name": f"fill-{uuid.uuid4().hex[:8]}",
+                "modelType": "random_forest",
+                "fileUrl": str(csv_path),
+                "targetColumn": "num",
+                "featureColumns": ["x1"],
+                "validationSplit": 0,
+            }
+        )
+
+        fill_warning = next(w for w in result["warnings"] if "filled automatically" in w)
+        assert "median (49)" in fill_warning
+
+
+
+class TestTargetTypeEdgeCases:
+    @staticmethod
+    async def _train(tmp_path, model_type, task_type, y):
+        df = pd.DataFrame({"x1": np.arange(30, dtype=float), "y": y})
+        csv_path = tmp_path / f"{model_type}.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        return await train_node.process(
+            {
+                "name": f"{model_type}-{uuid.uuid4().hex[:8]}",
+                "modelType": model_type,
+                "fileUrl": str(csv_path),
+                "targetColumn": "y",
+                "featureColumns": ["x1"],
+                "taskType": task_type,
+            }
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "model_type", ["linear_regression", "ridge_regression", "lasso_regression", "elastic_net"]
+    )
+    async def test_regression_only_model_rejects_classification(self, tmp_path, model_type):
+        # Numbers stored as text: with Classification they used to stay text and
+        # fail as "has text values (e.g. )" while the model trained as regression.
+        with pytest.raises(AppException) as exc:
+            await self._train(tmp_path, model_type, "classification", ["1", "2", "3"] * 10)
+        assert "incompatible" in exc.value.error_detail
+        assert f"'{model_type}'" in exc.value.error_detail
+        assert "only supports regression" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_logistic_regression_rejects_regression(self, tmp_path):
+        with pytest.raises(AppException) as exc:
+            await self._train(tmp_path, "logistic_regression", "regression", [0, 1] * 15)
+        assert "only supports classification" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_ridge_reads_numbers_stored_as_text(self, tmp_path):
+        result = await self._train(tmp_path, "ridge_regression", "auto", ["1", "2", "3"] * 10)
+        assert "target_classes" not in result
+        assert "r2_score" in result["metrics"]
+
+
+def _dropped_rows_frame(n: int = 200) -> pd.DataFrame:
+    """
+    Hourly rows for a time-based 75/25 split (rows 0-149 train, 150-199
+    validate). x is uniform in [-1, 1], so it has no IQR outliers of its own;
+    tests plant them at known rows. baseline is a clean 50-150 ratio baseline.
+    """
+    rng = np.random.default_rng(11)
+    x = rng.uniform(-1, 1, n)
+    baseline = rng.uniform(50, 150, n)
+    target = baseline * (1.0 + 0.3 * x) + rng.normal(0, 0.5, n)
+    return pd.DataFrame(
+        {
+            "date": pd.date_range("2026-01-01", periods=n, freq="h").astype(str),
+            "x": x,
+            "baseline": baseline,
+            "target": target,
+        }
+    )
+
+
+def _plant_outliers(df: pd.DataFrame) -> pd.DataFrame:
+    df.loc[[10, 40, 90, 120], "x"] = [9.0, -9.0, 12.0, -12.0]  # 4 training rows
+    df.loc[[160, 175, 190], "x"] = [10.0, -11.0, 14.0]  # 3 validation rows
+    return df
+
+
+def _plant_bad_baselines(df: pd.DataFrame) -> pd.DataFrame:
+    baseline = df["baseline"].astype(object)
+    baseline[[1, 2, 3]] = 0.0  # training: zero x3
+    baseline[[4, 5]] = np.nan  # training: missing x2
+    baseline[6] = "abc"  # training: not a number
+    baseline[[7, 8]] = [np.inf, -np.inf]  # training: infinite x2
+    baseline[155] = 0.0  # validation: zero
+    baseline[156] = np.nan  # validation: missing
+    baseline[[157, 158]] = ["abc", "abc"]  # validation: not a number x2
+    baseline[159] = np.inf  # validation: infinite
+    df["baseline"] = baseline
+    return df
+
+
+async def _train_dropped_rows(tmp_path, df: pd.DataFrame, **extra):
+    csv_path = tmp_path / f"dropped_rows_{uuid.uuid4().hex[:8]}.csv"
+    df.to_csv(csv_path, index=False)
+    train_node = TrainModelNode(
+        node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+    )
+    return await train_node.process(
+        {
+            "name": f"dropped-rows-{uuid.uuid4().hex[:8]}",
+            "modelType": "linear_regression",
+            "fileUrl": str(csv_path),
+            "targetColumn": "target",
+            "featureColumns": ["x"],
+            "validationSplit": 0.25,
+            "splitMethod": "time_based",
+            "dateColumn": "date",
+            "taskType": "regression",
+            **extra,
+        }
+    )
+
+
+_REMOVE_X_OUTLIERS = [{"columnName": "x", "strategy": "remove_outliers", "method": "iqr"}]
+_RATIO_ON_BASELINE = {"type": "ratio", "baselineColumn": "baseline"}
+_OUTLIER_WARNING = "Removed 4 training rows with outliers in 'x' (iqr)"
+_BASELINE_WARNING = (
+    "Dropped 8 training and 5 validation rows whose 'baseline' baseline is zero (4), "
+    "missing (3), not a number (3) or infinite (3); a ratio target can't be computed there."
+)
+
+
+class TestRowsDroppedWarning:
+    def test_lists_each_split_with_rows(self):
+        assert (
+            _rows_dropped_warning("Dropped", {"training": 18, "validation": 4}, "for a reason.")
+            == "Dropped 18 training and 4 validation rows for a reason."
+        )
+
+    def test_leaves_out_empty_splits_and_uses_singular_for_one_row(self):
+        assert (
+            _rows_dropped_warning("Removed", {"training": 1, "validation": 0}, "with outliers in 'x' (iqr)")
+            == "Removed 1 training row with outliers in 'x' (iqr)"
+        )
+
+    def test_joins_reason_counts_and_skips_zero_counts(self):
+        assert _join_reason_counts({"zero": 12, "missing": 0, "not a number": 3}) == "zero (12) or not a number (3)"
+        assert _join_reason_counts({"zero": 2}) == "zero (2)"
+        assert _join_reason_counts({"zero": 0}) == ""
+        assert (
+            _join_reason_counts({"zero": 12, "missing": 7, "not a number": 3})
+            == "zero (12), missing (7) or not a number (3)"
+        )
+
+
+class TestRemoveOutliersKeepsValidationRows:
+    """TM-12: Remove drops outlier rows from training only."""
+
+    def test_handle_outliers_leaves_validation_untouched(self, node):
+        X_train = pd.DataFrame({"x": [1.0, 2.0, 3.0, 4.0, 100.0]})
+        y_train = pd.Series([1, 2, 3, 4, 5])
+        X_val = pd.DataFrame({"x": [2.0, 500.0, -500.0]})
+        y_val = pd.Series([6, 7, 8])
+
+        X_train, y_train, X_val_out, y_val_out, _, _, warnings = node._handle_outliers(
+            X_train, y_train, X_val, y_val,
+            [{"columnName": "x", "strategy": "remove_outliers", "method": "iqr"}],
+        )
+
+        assert X_train["x"].tolist() == [1.0, 2.0, 3.0, 4.0]
+        assert y_train.tolist() == [1, 2, 3, 4]
+        assert X_val_out["x"].tolist() == [2.0, 500.0, -500.0]
+        assert y_val_out.tolist() == [6, 7, 8]
+        assert warnings == ["Removed 1 training row with outliers in 'x' (iqr)"]
+
+    def test_empty_values_are_reported_apart_from_outliers(self, node):
+        X_train = pd.DataFrame({"x": [1.0, 2.0, np.nan, 3.0, 4.0, np.nan]})
+        X_val = pd.DataFrame({"x": [np.nan, 2.0]})
+
+        X_train, _, X_val_out, _, _, _, warnings = node._handle_outliers(
+            X_train, pd.Series(range(6)), X_val, pd.Series([6, 7]),
+            [{"columnName": "x", "strategy": "remove_outliers", "method": "iqr"}],
+        )
+
+        assert X_train["x"].tolist() == [1.0, 2.0, 3.0, 4.0]
+        assert len(X_val_out) == 2
+        assert warnings == [
+            "Removed 2 training rows with an empty 'x'; Remove outliers can't check them against the bounds"
+        ]
+
+    def test_cap_outliers_still_clips_validation_without_a_warning(self, node):
+        X_train = pd.DataFrame({"x": [1.0, 2.0, 3.0, 4.0, 100.0]})
+        X_val = pd.DataFrame({"x": [500.0]})
+
+        _, _, X_val_out, _, _, _, warnings = node._handle_outliers(
+            X_train, pd.Series([1, 2, 3, 4, 5]), X_val, pd.Series([6]),
+            [{"columnName": "x", "strategy": "cap_outliers", "method": "iqr"}],
+        )
+
+        assert X_val_out["x"].iloc[0] < 500.0
+        assert warnings == []
+
+    @pytest.mark.asyncio
+    async def test_metrics_are_scored_on_every_validation_row(self, tmp_path):
+        result = await _train_dropped_rows(
+            tmp_path, _plant_outliers(_dropped_rows_frame()), outlierHandling=_REMOVE_X_OUTLIERS
+        )
+
+        assert result["training_samples"] == 146
+        assert result["validation_samples"] == 50
+        assert result["warnings"] == [_OUTLIER_WARNING]
+
+
+class TestRatioTargetBadBaselines:
+    """TM-13: every unusable ratio baseline is dropped and reported."""
+
+    def test_check_ratio_baseline_classifies_each_reason(self, node):
+        baseline = pd.Series(
+            [10.0, 0.0, np.nan, "abc", np.inf, -np.inf, "12.5", "  ", True, False], dtype=object
+        )
+
+        numeric, keep, reasons = node._check_ratio_baseline(baseline)
+
+        assert keep.tolist() == [True, False, False, False, False, False, True, False, False, False]
+        assert numeric[keep].tolist() == [10.0, 12.5]
+        # Blank text counts as missing and true/false as not a number, the
+        # same as the inference node's baseline check.
+        assert reasons == {"zero": 1, "missing": 2, "not a number": 3, "infinite": 2}
+
+    @pytest.mark.asyncio
+    async def test_bad_baselines_are_dropped_from_both_splits_with_counts(self, tmp_path):
+        result = await _train_dropped_rows(
+            tmp_path, _plant_bad_baselines(_dropped_rows_frame()), targetTransform=_RATIO_ON_BASELINE
+        )
+
+        assert result["success"] is True
+        assert result["training_samples"] == 150 - 8
+        assert result["validation_samples"] == 50 - 5
+        assert result["warnings"] == [_BASELINE_WARNING]
+
+    @pytest.mark.asyncio
+    async def test_every_training_baseline_bad_fails_with_a_clear_error(self, tmp_path):
+        df = _dropped_rows_frame()
+        df["baseline"] = 0.0
+
+        with pytest.raises(AppException) as exc_info:
+            await _train_dropped_rows(tmp_path, df, targetTransform=_RATIO_ON_BASELINE)
+
+        assert "Every training row has a zero, missing, non-numeric or infinite 'baseline' baseline" in (
+            exc_info.value.error_detail
+        )
+
+    @pytest.mark.asyncio
+    async def test_every_validation_baseline_bad_fails_with_a_clear_error(self, tmp_path):
+        df = _dropped_rows_frame()
+        df.loc[150:, "baseline"] = 0.0
+
+        with pytest.raises(AppException) as exc_info:
+            await _train_dropped_rows(tmp_path, df, targetTransform=_RATIO_ON_BASELINE)
+
+        assert "Every validation row has a zero, missing, non-numeric or infinite 'baseline' baseline" in (
+            exc_info.value.error_detail
+        )
+
+
+class TestDroppedRowWarningsTogether:
+    @pytest.mark.asyncio
+    async def test_outlier_removal_and_bad_baselines_both_report(self, tmp_path):
+        df = _plant_bad_baselines(_plant_outliers(_dropped_rows_frame()))
+
+        result = await _train_dropped_rows(
+            tmp_path, df, outlierHandling=_REMOVE_X_OUTLIERS, targetTransform=_RATIO_ON_BASELINE
+        )
+
+        # Outliers (rows 10/40/90/120) and bad baselines (rows 1-8) don't
+        # overlap; validation loses only its 5 bad-baseline rows.
+        assert result["training_samples"] == 150 - 4 - 8
+        assert result["validation_samples"] == 50 - 5
+        assert result["warnings"] == [_OUTLIER_WARNING, _BASELINE_WARNING]
+
+    @pytest.mark.asyncio
+    async def test_clean_data_adds_no_warnings(self, tmp_path):
+        result = await _train_dropped_rows(
+            tmp_path,
+            _dropped_rows_frame(),
+            outlierHandling=_REMOVE_X_OUTLIERS,
+            targetTransform=_RATIO_ON_BASELINE,
+        )
+
+        assert result["training_samples"] == 150
+        assert result["validation_samples"] == 50
+        assert "warnings" not in result

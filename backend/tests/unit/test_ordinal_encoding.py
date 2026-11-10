@@ -12,10 +12,19 @@ import pandas as pd
 import pytest
 
 from app.core.exceptions.exception_classes import AppException
+from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import _mapped_transform
 from app.modules.workflow.engine.nodes.ml.ml_utils import ordinal_key
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from tests.unit.ml_training_fixtures import training_sandbox
+
+
+@pytest.fixture(autouse=True)
+def _training_sandbox(monkeypatch, tmp_path):
+    # Training only reads files inside the data volume; use pytest's temp folder as it.
+    training_sandbox(monkeypatch, tmp_path)
+
 
 ORDER = {"Low": 0, "Medium": 1, "High": 2}
 
@@ -141,7 +150,7 @@ class TestOrdinalEndToEnd:
         assert not isinstance(result, AppException)
         assert result["success"] is True
 
-        with open(result["model_file_path"], "rb") as f:
+        with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
             metadata = pickle.load(f)["metadata"]
         assert metadata["ordinal_encodings"]["level"] == ORDER
 

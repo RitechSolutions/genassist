@@ -19,6 +19,7 @@ import {
   LOOP_NODE_TYPE,
   LOOP_RESULT_SAMPLE,
 } from "../utils/loopGraph";
+import { newerOutput } from "../utils/trainingInputFile";
 
 // Types for workflow execution state
 export interface NodeExecutionResult {
@@ -27,6 +28,8 @@ export interface NodeExecutionResult {
   timestamp: number;
   nodeType: string;
   nodeName: string;
+  /** Settings of the Train Data Sources the output came from - see upstreamSourcesKey. */
+  settingsKey?: string;
 }
 
 export interface WorkflowExecutionState {
@@ -59,8 +62,11 @@ export interface WorkflowExecutionContextType {
     nodeId: string,
     output: Record<string, unknown> | string,
     nodeType: string,
-    nodeName: string
+    nodeName: string,
+    settingsKey?: string
   ) => void;
+  /** Record the node outputs of a whole-workflow run, replacing the previous run's. */
+  recordRunOutputs: (outputs: Record<string, NodeExecutionResult>) => void;
   clearNodeOutput: (nodeId: string) => void;
   clearAllOutputs: () => void;
   setWorkflowStructure: (nodes: Node[], edges: Edge[]) => void;
@@ -68,6 +74,8 @@ export interface WorkflowExecutionContextType {
 
   // Getters
   getNodeOutput: (nodeId: string) => NodeExecutionResult | undefined;
+  /** The newest output of a node, from a Test Node or a whole-workflow run. */
+  getLatestNodeOutput: (nodeId: string) => NodeExecutionResult | undefined;
   getAvailableDataForNode: (nodeId: string) => Record<string, unknown>;
   hasNodeBeenExecuted: (nodeId: string) => boolean;
 }
@@ -100,6 +108,11 @@ export const WorkflowExecutionProvider: React.FC<
     statefulState: {},
   });
 
+  // Node outputs from the last whole-workflow run. Kept out of `state`: that is
+  // saved with the workflow (so a run would mark it unsaved and store every
+  // node's output), and its nodeOutputs also mark which nodes ran.
+  const [runOutputs, setRunOutputs] = useState<Record<string, NodeExecutionResult>>({});
+
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
@@ -115,7 +128,8 @@ export const WorkflowExecutionProvider: React.FC<
       nodeId: string,
       output: Record<string, unknown>,
       nodeType: string,
-      nodeName: string
+      nodeName: string,
+      settingsKey?: string
     ) => {
       setState((prevState) => {
         const newState = { ...prevState };
@@ -126,6 +140,7 @@ export const WorkflowExecutionProvider: React.FC<
           timestamp: Date.now(),
           nodeType,
           nodeName,
+          ...(settingsKey !== undefined && { settingsKey }),
         };
 
         // Update session data for entry nodes (Chat Input / Webhook Trigger)
@@ -195,7 +210,19 @@ export const WorkflowExecutionProvider: React.FC<
     [nodes]
   );
 
+  const recordRunOutputs = useCallback(
+    (outputs: Record<string, NodeExecutionResult>) => {
+      setRunOutputs(outputs);
+    },
+    []
+  );
+
   const clearNodeOutput = useCallback((nodeId: string) => {
+    setRunOutputs((prev) => {
+      if (!prev[nodeId]) return prev;
+      const { [nodeId]: _removed, ...rest } = prev;
+      return rest;
+    });
     setState((prevState) => {
       const newState = { ...prevState };
       delete newState.nodeOutputs[nodeId];
@@ -226,6 +253,7 @@ export const WorkflowExecutionProvider: React.FC<
   }, []);
 
   const clearAllOutputs = useCallback(() => {
+    setRunOutputs({});
     setState((prevState) => ({
       session: {},
       source: {},
@@ -244,6 +272,8 @@ export const WorkflowExecutionProvider: React.FC<
   );
 
   const loadExecutionState = useCallback(
+    // Run outputs are kept: a Test Node's state change comes back through
+    // here (GraphFlow -> BottomPanel), and must not drop the last run's outputs.
     (executionState: WorkflowExecutionState) => {
       setState(executionState);
     },
@@ -255,6 +285,12 @@ export const WorkflowExecutionProvider: React.FC<
       return state.nodeOutputs[nodeId];
     },
     [state.nodeOutputs]
+  );
+
+  const getLatestNodeOutput = useCallback(
+    (nodeId: string) =>
+      newerOutput(state.nodeOutputs[nodeId], runOutputs[nodeId]),
+    [state.nodeOutputs, runOutputs]
   );
 
   const hasNodeBeenExecuted = useCallback(
@@ -483,11 +519,13 @@ export const WorkflowExecutionProvider: React.FC<
       nodes,
       edges,
       updateNodeOutput,
+      recordRunOutputs,
       clearNodeOutput,
       clearAllOutputs,
       setWorkflowStructure,
       loadExecutionState,
       getNodeOutput,
+      getLatestNodeOutput,
       hasNodeBeenExecuted,
       getAvailableDataForNode,
     }),
@@ -496,11 +534,13 @@ export const WorkflowExecutionProvider: React.FC<
       nodes,
       edges,
       updateNodeOutput,
+      recordRunOutputs,
       clearNodeOutput,
       clearAllOutputs,
       setWorkflowStructure,
       loadExecutionState,
       getNodeOutput,
+      getLatestNodeOutput,
       hasNodeBeenExecuted,
       getAvailableDataForNode,
     ]
