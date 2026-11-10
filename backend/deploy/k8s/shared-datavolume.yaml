@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# One shared /src/datavolume for every backend pod (API and Celery workers)
+#
+# Each pod otherwise has its own /src/datavolume: a file written by one pod is missing
+# on the others, and a restart loses it. Training data is also kept in File Manager
+# storage now (training_data_storage.py), so this volume is the stopgap for releases
+# without that, and for the other files under /src/datavolume.
+#
+# Uses the AWS EFS CSI driver. Replace <EFS_FILE_SYSTEM_ID> and the namespace. uid/gid
+# 1000 is the image's genassist user, so files on the volume stay writable by it.
+#
+# Mount it in the API Deployment and both worker Deployments (celery-workers.yaml),
+# with an emptyDir over the logs folder: init_logging rotates and prunes
+# /src/datavolume/logs/*.log, and pods must not do that to each other's files.
+#
+# Knowledge-base indexes kept on local disk (LightRAG working dirs, FAISS persist
+# folders) live here too. Two pods writing the same index at the same time overwrite
+# each other's files.
+#
+#   containers:
+#     - name: ...
+#       volumeMounts:
+#         - { name: datavolume, mountPath: /src/datavolume }
+#         - { name: logs, mountPath: /src/datavolume/logs }
+#   volumes:
+#     - name: datavolume
+#       persistentVolumeClaim: { claimName: genassist-datavolume }
+#     - name: logs
+#       emptyDir: {}
+# ---------------------------------------------------------------------------
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: genassist-efs
+provisioner: efs.csi.aws.com
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: <EFS_FILE_SYSTEM_ID>
+  directoryPerms: "750"
+  uid: "1000"
+  gid: "1000"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: genassist-datavolume
+  labels: { app: genassist }
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: genassist-efs
+  resources:
+    requests:
+      storage: 100Gi   # required by Kubernetes; EFS grows as needed
