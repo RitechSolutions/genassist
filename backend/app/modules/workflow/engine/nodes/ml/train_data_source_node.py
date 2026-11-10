@@ -30,7 +30,7 @@ from app.modules.integration.database.read_only_sql import (
     validate_read_only_sql,
 )
 from app.modules.workflow.engine.base_node import BaseNode
-from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml import ml_utils, training_data_storage
 from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     SUPPORTED_TRAINING_FILE_LABEL,
     SUPPORTED_TRAINING_FILE_SUFFIXES,
@@ -116,8 +116,12 @@ class TrainDataSourceNode(BaseNode):
             )
 
             if source_type == "datasource":
-                return await self._process_database_source(config, limits, chunk_rows)
-            return await self._process_csv_source(config, limits, chunk_rows)
+                result = await self._process_database_source(config, limits, chunk_rows)
+            else:
+                result = await self._process_csv_source(config, limits, chunk_rows)
+            # data_path is shown relative to DATA_VOLUME/train
+            await training_data_storage.save_training_data(ml_utils.DATA_VOLUME / "train" / result["data_path"])
+            return result
 
         except AppException:
             raise
@@ -391,7 +395,10 @@ class TrainDataSourceNode(BaseNode):
                 csv_file_path = str(temporary_source_path)
 
             # Only files inside the data volume, or the configured storage folder, can be read
-            allowed_directories = [ml_utils.DATA_VOLUME, *(await ml_utils.extra_csv_directories())]
+            extra_directories = await ml_utils.extra_csv_directories()
+            allowed_directories = [ml_utils.DATA_VOLUME, *extra_directories]
+            # A path to an earlier run's output may only be in File Manager storage on this server
+            await training_data_storage.fetch_training_data(csv_file_path, self.state.thread_id, extra_directories)
             candidates = [csv_file_path]
             if not os.path.isabs(csv_file_path) and self.state.thread_id:
                 candidates.insert(0, ml_utils.DATA_VOLUME / "train" / self.state.thread_id / csv_file_path)

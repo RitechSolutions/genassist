@@ -16,6 +16,7 @@ import os
 import re
 import warnings
 import tokenize
+import uuid
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
@@ -855,6 +856,14 @@ def translate_category_literals(
     return result
 
 
+def new_training_output_path(thread_id: str, suffix: str = "") -> Path:
+    """A new output file under DATA_VOLUME/train/<thread>; the random part keeps names unguessable and unique."""
+    uploads_dir = DATA_VOLUME / "train" / thread_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return uploads_dir / f"{thread_id}_{timestamp}_{uuid.uuid4().hex}{suffix}.csv"
+
+
 def data_volume_reference(file_path: Any, base: str = "train") -> str:
     """The path a node shows for a file it wrote, relative to DATA_VOLUME/<base>.
 
@@ -894,19 +903,7 @@ async def save_data_to_csv(
         Path to the saved CSV file
     """
     try:
-        # Create uploads directory within the project's data volume
-        uploads_dir = DATA_VOLUME / "train" / thread_id
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-
-        # Get timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Generate filename using thread_id and timestamp with optional suffix
-        if suffix:
-            filename = f"{thread_id}_{timestamp}{suffix}.csv"
-        else:
-            filename = f"{thread_id}_{timestamp}.csv"
-        file_path = uploads_dir / filename
+        file_path = new_training_output_path(thread_id, suffix or "")
 
         # Write CSV file
         if data and columns:
@@ -958,11 +955,7 @@ async def stream_rows_to_csv(
     except KeyError as exc:
         raise ValueError(f"Unsupported stream source kind: {source_kind}") from exc
 
-    uploads_dir = DATA_VOLUME / "train" / thread_id
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = uploads_dir / f"{thread_id}_{timestamp}{suffix}.csv"
+    file_path = new_training_output_path(thread_id, suffix)
     columns: List[str] = []
     row_count = 0
     preview_head: List[Tuple[Any, ...]] = []
@@ -1297,6 +1290,22 @@ def parse_training_file(file_path: str) -> List[Dict[str, Any]]:
     return parser(file_path)
 
 
+def csv_path_candidates(file_url: str, thread_id: Optional[str] = None) -> List[Any]:
+    """The paths resolve_csv_file_path tries for a file path, in order."""
+    if file_url.startswith("/"):
+        return [file_url]
+    if thread_id:
+        # A node's data_path is relative to DATA_VOLUME/train and may come
+        # from an earlier run with another thread (e.g. testing one node).
+        return [
+            DATA_VOLUME / "train" / thread_id / file_url,
+            DATA_VOLUME / "train" / file_url,
+            os.path.abspath(file_url),
+        ]
+    # Relative to DATA_VOLUME/train, then the current folder, then DATA_VOLUME
+    return [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
+
+
 def resolve_csv_file_path(
     file_url: str, thread_id: Optional[str] = None, allowed_directories: Optional[List[Path]] = None
 ) -> Path:
@@ -1329,31 +1338,14 @@ def resolve_csv_file_path(
     file_url = stripped_url
 
     try:
-        # Handle both absolute paths and relative paths
-        if file_url.startswith("/"):
-            # Absolute path
-            candidates = [file_url]
-        elif file_url.startswith("http://") or file_url.startswith("https://"):
+        if file_url.startswith("http://") or file_url.startswith("https://"):
             # For HTTP URLs, we'd need to download first
             # For now, raise an error
             raise AppException(
                 error_key=ErrorKey.FILE_NOT_FOUND,
                 error_detail=f"HTTP/HTTPS URLs are not yet supported: {file_url}",
             )
-        else:
-            # Try relative to DATA_VOLUME/train/thread_id if thread_id provided, then the current folder
-            if thread_id:
-                # A node's data_path is relative to DATA_VOLUME/train and may come
-                # from an earlier run with another thread (e.g. testing one node).
-                candidates = [
-                    DATA_VOLUME / "train" / thread_id / file_url,
-                    DATA_VOLUME / "train" / file_url,
-                    os.path.abspath(file_url),
-                ]
-            else:
-                # Try relative to DATA_VOLUME/train (common location for CSV files),
-                # then the current folder, then directly in DATA_VOLUME
-                candidates = [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
+        candidates = csv_path_candidates(file_url, thread_id)
 
         # Only files inside the data volume, or the configured storage folder, can be read
         directories = [DATA_VOLUME, *(allowed_directories or [])]
