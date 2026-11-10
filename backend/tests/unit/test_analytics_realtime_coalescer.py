@@ -1,7 +1,6 @@
 """Unit tests for the per-process coalescing of real-time analytics events"""
 
 import asyncio
-from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -78,20 +77,16 @@ async def test_events_merged_during_a_flush_go_out_in_one_more_write(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_merge_sums_counts_and_keeps_extremes_per_node_type(writes, monkeypatch):
-    async def lookup(conversation_id):
-        return AGENT_ID
-
-    monkeypatch.setattr(ar, "_agent_id_for", lookup)
+async def test_merge_sums_counts_and_keeps_extremes_per_node_type(writes):
     llm_ok = {"type": "llm", "status": "success", "time_taken": 50}
     llm_failed = {"type": "llm", "status": "failed", "time_taken": 20}
     tool_untimed = {"type": "tool", "status": "success"}
     await ar.update_stats_incrementally(_reply(300, [llm_ok, tool_untimed]))
     await ar.update_stats_incrementally(_reply(100, [llm_failed], input_tokens=5))
     await ar.update_conversation_started(AGENT_ID)
-    await ar.update_conversation_finalized(uuid4())
-    await ar.update_feedback_given(uuid4(), True)
-    await ar.update_feedback_given(uuid4(), False)
+    await ar.update_conversation_finalized(AGENT_ID)
+    await ar.update_feedback_given(AGENT_ID, True)
+    await ar.update_feedback_given(AGENT_ID, False)
     await background_tasks.drain(timeout=5.0)
 
     [(_, _, _, delta)] = writes
@@ -161,65 +156,3 @@ async def test_each_tenant_flushes_its_own_bucket(writes):
     await background_tasks.drain(timeout=5.0)
 
     assert sorted((tenant, delta.starts) for tenant, _, _, delta in writes) == [("tenant-a", 1), ("tenant-b", 1)]
-
-
-@pytest.mark.asyncio
-async def test_a_finalize_books_on_the_day_it_happened_even_if_the_lookup_crosses_midnight(writes, monkeypatch):
-    clock = [datetime(2026, 7, 1, 23, 59, 59, tzinfo=timezone.utc)]
-
-    class FrozenDatetime(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return clock[0]
-
-    async def slow_lookup(conversation_id):
-        clock[0] = datetime(2026, 7, 2, 0, 0, 1, tzinfo=timezone.utc)
-        return AGENT_ID
-
-    monkeypatch.setattr(ar, "datetime", FrozenDatetime)
-    monkeypatch.setattr(ar, "_agent_id_for", slow_lookup)
-    await ar.update_conversation_finalized(uuid4())
-    await background_tasks.drain(timeout=5.0)
-
-    assert [(stat_date, delta.finalizes) for _, _, stat_date, delta in writes] == [(date(2026, 7, 1), 1)]
-
-
-@pytest.mark.asyncio
-async def test_a_burst_of_lookups_holds_at_most_eight_sessions_and_counts_every_event(writes, monkeypatch):
-    from contextlib import asynccontextmanager
-
-    from app.core.utils import db_connection_utils
-    from app.dependencies import injector as injector_module
-
-    sessions = {"open": 0, "peak": 0}
-
-    @asynccontextmanager
-    async def scope():
-        sessions["open"] += 1
-        sessions["peak"] = max(sessions["peak"], sessions["open"])
-        try:
-            yield
-        finally:
-            sessions["open"] -= 1
-
-    class FakeSession:
-        async def close(self):
-            pass
-
-    async def slow_lookup(self, conversation_id):
-        await asyncio.sleep(0.01)
-        return AGENT_ID
-
-    monkeypatch.setattr(ar, "_lookup_slots", asyncio.Semaphore(8))
-    monkeypatch.setattr(db_connection_utils, "create_tenant_request_scope", scope)
-    monkeypatch.setattr(injector_module.injector, "get", lambda _cls: FakeSession())
-    monkeypatch.setattr(ar.AnalyticsAggregationRepository, "get_agent_id_for_conversation", slow_lookup)
-    await asyncio.gather(
-        *(ar.update_conversation_finalized(uuid4()) for _ in range(12)),
-        *(ar.update_feedback_given(uuid4(), i % 2 == 0) for i in range(8)),
-    )
-    await background_tasks.drain(timeout=5.0)
-
-    assert sessions["peak"] == 8
-    totals = [sum(getattr(delta, field) for *_, delta in writes) for field in ("finalizes", "thumbs_up", "thumbs_down")]
-    assert totals == [12, 4, 4]

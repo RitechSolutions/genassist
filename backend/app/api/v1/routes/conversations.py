@@ -915,6 +915,12 @@ async def _any_conversation_read(request: Request):
     raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
 
 
+async def _agent_id_of_conversation(service: ConversationService, conversation_id: UUID) -> UUID | None:
+    conversation = await service.get_conversation_by_id_with_operator_agent(conversation_id)
+    agent = conversation.operator.agent if conversation and conversation.operator else None
+    return agent.id if agent else None
+
+
 @router.get(
     "/{conversation_id}/messages/{message_id}/audio",
     dependencies=[
@@ -986,12 +992,16 @@ async def finalize(
 
     # Resolve analyst: explicit override > agent's configured analyst > default seed
     analyst_id = finalize.llm_analyst_id
+    agent_id = None
     if not analyst_id:
         conversation = await service.get_conversation_by_id(conversation_id, raise_not_found=False)
         if conversation:
             agent = await agent_config_service.get_by_operator_id(conversation.operator_id)
+            agent_id = agent.id
             if agent and agent.llm_analyst_id:
                 analyst_id = agent.llm_analyst_id
+    else:
+        agent_id = await _agent_id_of_conversation(service, conversation_id)
 
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
         conversation_id=conversation_id,
@@ -1004,7 +1014,8 @@ async def finalize(
     notify_socket(SocketRoomType.DASHBOARD)
 
     # Increment finalized conversation counters in background
-    spawn(update_conversation_finalized(conversation_id), name=f"analytics:finalize:{conversation_id}")
+    if agent_id:
+        spawn(update_conversation_finalized(agent_id), name=f"analytics:finalize:{conversation_id}")
 
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
     return finalized_conversation_analysis
@@ -1213,7 +1224,8 @@ async def add_message_feedback(
 
         # Fire incremental analytics update for thumbs in background
         is_thumbs_up = transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD)
-        spawn(update_feedback_given(conversation_id, is_thumbs_up), name=f"analytics:thumbs:{conversation_id}")
+        if agent_id := await _agent_id_of_conversation(conversation_service, conversation_id):
+            spawn(update_feedback_given(agent_id, is_thumbs_up), name=f"analytics:thumbs:{conversation_id}")
 
     return {"message": f"Successfully added message feedback, for message id:{message_id} "}
 

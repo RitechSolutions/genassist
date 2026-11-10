@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 _pending: dict[tuple[str, UUID, date], StatsDelta] = {}
 _flushers: dict[tuple[str, UUID, date], asyncio.Task] = {}
-_lookup_slots = asyncio.Semaphore(8)
 
 
 def parse_agent_response_for_stats(agent_response: dict) -> dict | None:
@@ -202,18 +201,6 @@ async def _write(agent_id: UUID, stat_date: date, delta: StatsDelta) -> None:
             await session.close()
 
 
-async def _agent_id_for(conversation_id: UUID) -> UUID | None:
-    from app.core.utils.db_connection_utils import create_tenant_request_scope
-    from app.dependencies.injector import injector
-
-    async with _lookup_slots, create_tenant_request_scope():
-        session = injector.get(AsyncSession)
-        try:
-            return await AnalyticsAggregationRepository(session).get_agent_id_for_conversation(conversation_id)
-        finally:
-            await session.close()
-
-
 # ---------------------------------------------------------------------------
 # Public entry points (called via asyncio.create_task)
 # ---------------------------------------------------------------------------
@@ -249,14 +236,10 @@ async def update_conversation_started(agent_id: UUID) -> None:
         )
 
 
-async def update_conversation_finalized(conversation_id: UUID) -> None:
-    """Fired when a conversation is finalized. Looks up agent_id, then increments."""
+async def update_conversation_finalized(agent_id: UUID) -> None:
+    """Fired when a conversation is finalized. Increments finalized."""
     try:
-        stat_date = datetime.now(timezone.utc).date()
-        agent_id = await _agent_id_for(conversation_id)
-        if agent_id is None:
-            return
-        _merge(agent_id, stat_date, StatsDelta(events=1, finalizes=1))
+        _merge(agent_id, datetime.now(timezone.utc).date(), StatsDelta(events=1, finalizes=1))
 
     except Exception:
         logger.warning(
@@ -265,15 +248,11 @@ async def update_conversation_finalized(conversation_id: UUID) -> None:
         )
 
 
-async def update_feedback_given(conversation_id: UUID, is_thumbs_up: bool) -> None:
+async def update_feedback_given(agent_id: UUID, is_thumbs_up: bool) -> None:
     """Fired when feedback is given on a message. Increments thumbs counters."""
     try:
-        stat_date = datetime.now(timezone.utc).date()
-        agent_id = await _agent_id_for(conversation_id)
-        if agent_id is None:
-            return
         thumbs = StatsDelta(events=1, thumbs_up=int(is_thumbs_up), thumbs_down=int(not is_thumbs_up))
-        _merge(agent_id, stat_date, thumbs)
+        _merge(agent_id, datetime.now(timezone.utc).date(), thumbs)
 
     except Exception:
         logger.warning(

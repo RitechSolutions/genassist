@@ -249,24 +249,6 @@ class AnalyticsAggregationRepository:
         )
         await self.db.execute(stmt)
 
-    async def get_agent_id_for_conversation(self, conversation_id: UUID) -> UUID | None:
-        """Look up the agent_id for a conversation via its operator_id."""
-        result = await self.db.execute(
-            select(ConversationModel.operator_id)
-            .where(ConversationModel.id == conversation_id)
-            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
-        )
-        operator_id = result.scalar_one_or_none()
-        if not operator_id:
-            return None
-
-        result = await self.db.execute(
-            select(AgentModel.id)
-            .where(AgentModel.operator_id == operator_id)
-            .execution_options(**{GROUP_SCOPE_BYPASS_FLAG: True})
-        )
-        return result.scalar_one_or_none()
-
     async def get_conversation_agent_map(self, stat_date: date) -> dict[UUID, UUID]:
         """Conversation → agent mapping for conversations with logs (rebuild fallback)."""
         start_of_day = datetime.combine(stat_date, time.min, tzinfo=timezone.utc)
