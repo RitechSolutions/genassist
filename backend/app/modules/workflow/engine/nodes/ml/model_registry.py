@@ -167,6 +167,51 @@ def check_optional_dependency(model_type: str) -> None:
             )
 
 
+# Constructor argument that sets how many threads a model type trains with.
+# These libraries default to every core when the argument is left out.
+THREAD_PARAM_BY_MODEL_TYPE: Dict[str, str] = {
+    "xgboost": "n_jobs",
+    "lightgbm": "n_jobs",
+    "catboost": "thread_count",
+    "random_forest": "n_jobs",
+    "extra_trees": "n_jobs",
+    "knn": "n_jobs",
+}
+
+
+# Other names a library accepts for its thread count. The library prefers
+# these over the canonical one, so a user value under an alias would get
+# around the cap: they are dropped and the cap goes under the canonical name.
+THREAD_PARAM_ALIASES: Dict[str, tuple] = {
+    "xgboost": ("nthread",),
+    "lightgbm": ("num_threads", "num_thread", "nthread", "nthreads"),
+    "catboost": ("n_jobs",),
+}
+
+
+def cap_estimator_threads(model_type: str, params: Dict[str, Any], max_threads: int) -> Dict[str, Any]:
+    """
+    Return params with the model's thread count limited to max_threads.
+
+    A missing value, -1 (all cores) or anything above max_threads becomes
+    max_threads; a smaller positive value the user chose is kept. A value
+    given under one of the library's aliases is treated the same way.
+    """
+    thread_param = THREAD_PARAM_BY_MODEL_TYPE.get(model_type)
+    if thread_param is None:
+        return params
+    aliases = [name for name in THREAD_PARAM_ALIASES.get(model_type, ()) if name in params]
+    requested = params.get(thread_param)
+    if requested is None and aliases:
+        requested = params[aliases[0]]
+    capped = {name: value for name, value in params.items() if name not in aliases}
+    if isinstance(requested, int) and not isinstance(requested, bool) and 0 < requested <= max_threads:
+        capped[thread_param] = requested
+        return capped if aliases else params
+    capped[thread_param] = max_threads
+    return capped
+
+
 def build_estimator(model_type: str, is_classification: bool, params: Dict[str, Any]):
     """
     Construct an unfitted estimator for the given model type.

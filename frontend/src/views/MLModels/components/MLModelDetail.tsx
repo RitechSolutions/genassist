@@ -73,6 +73,7 @@ import { extractErrorMessage } from "@/helpers/apiError";
 import { formatDateTime } from "@/helpers/utils";
 import { downloadFileManagerFile } from "@/services/fileManager";
 import { modelTypeLabel } from "../helpers/modelTypes";
+import { useStoredFileName } from "../helpers/useStoredFileName";
 import {
   CRON_PRESETS,
   CUSTOM_CRON,
@@ -249,6 +250,7 @@ const MLModelDetail: React.FC = () => {
   });
 
   const model: MLModel | null = modelQuery.data ?? null;
+  const storedModelFile = useStoredFileName(model?.pkl_file_id, model?.name);
   const configs = configsQuery.data ?? [];
   const workflows: Workflow[] = workflowsQuery.data ?? [];
   const artifacts: PipelineArtifact[] = artifactsQuery.data ?? [];
@@ -472,7 +474,7 @@ const MLModelDetail: React.FC = () => {
     if (!model?.pkl_file_id) return;
     try {
       setIsDownloadingModel(true);
-      await downloadFileManagerFile(model.pkl_file_id, `${model.name || "model"}.pkl`);
+      await downloadFileManagerFile(model.pkl_file_id, await storedModelFile.resolveName());
     } catch {
       toast.error("Failed to download the model file.");
     } finally {
@@ -554,6 +556,7 @@ const MLModelDetail: React.FC = () => {
               variant="outline"
               className="rounded-full"
               loading={isDownloadingModel}
+              title={`Download ${storedModelFile.name}`}
               icon={<Download className="h-4 w-4" />}
               onClick={handleDownloadModelFile}
             >

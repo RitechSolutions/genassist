@@ -159,3 +159,9 @@ class AuditLogFilter(BaseModel):
     modified_by: Optional[UUID] = Field(None, alias="user", description="Filter by user UUID who made the change")
     limit: Optional[int] = Field(None, ge=1, le=500, description="Max number of rows to return")
     offset: Optional[int] = Field(None, ge=0, description="Number of rows to skip before returning results")
+    before_modified_at: Optional[datetime] = Field(
+        None, description="Cursor: modified_at of the last row already shown, exactly as the API returned it"
+    )
+    before_id: Optional[int] = Field(
+        None, description="Cursor: id of the last row already shown; used only with before_modified_at"
+    )

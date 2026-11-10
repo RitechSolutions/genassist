@@ -31,6 +31,10 @@ from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+    ensure_unique_columns,
+    ensure_unique_query_columns,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -860,6 +864,21 @@ def new_training_output_path(thread_id: str, suffix: str = "") -> Path:
     return uploads_dir / f"{thread_id}_{timestamp}_{uuid.uuid4().hex}{suffix}.csv"
 
 
+def data_volume_reference(file_path: Any, base: str = "train") -> str:
+    """The path a node shows for a file it wrote, relative to DATA_VOLUME/<base>.
+
+    Node outputs are shown to users, so they name files by where they sit in
+    the data volume ("<thread>/<file>.csv"), never by the server's absolute
+    path. resolve_csv_file_path reads these back. A path outside that folder is
+    returned unchanged so it keeps working.
+    """
+    root = os.path.realpath(str(DATA_VOLUME / base))
+    real_path = os.path.realpath(str(file_path))
+    if real_path.startswith(root + os.sep):
+        return Path(os.path.relpath(real_path, root)).as_posix()
+    return str(file_path)
+
+
 async def save_data_to_csv(
     data: List[Dict[str, Any]],
     columns: List[str],
@@ -948,6 +967,10 @@ async def stream_rows_to_csv(
             async for chunk_columns, rows in row_chunks:
                 current_columns = list(chunk_columns)
                 if writer is None:
+                    if source_kind == "query":
+                        # Both columns would land in the CSV, and the next
+                        # node's read_csv would rename one to "<name>.1".
+                        ensure_unique_query_columns(current_columns)
                     columns = current_columns
                     writer = csv.writer(handle, lineterminator="\n")
                     writer.writerow(columns)
@@ -1056,21 +1079,46 @@ async def iter_csv_chunks(
             except Exception:
                 delimiter = ","
 
-            reader = csv.DictReader(handle, delimiter=delimiter)
-            columns = list(dict.fromkeys(reader.fieldnames or []))
+            reader = csv.reader(handle, delimiter=delimiter)
+            header = next(reader, [])
+            # Spreadsheet exports often end the header with empty cells
+            # ("price,size,,"); those columns are dropped, as the Excel
+            # reader drops them, as long as no row puts a value in one.
+            width = len(header)
+            while width and not header[width - 1].strip():
+                width -= 1
+            columns = header[:width]
+            # Rows are matched to columns by position, so a repeated name
+            # would reach the next node as "<name>.1" - refuse it instead.
+            ensure_unique_columns(columns, "CSV file")
             yield columns, []
 
             batch: List[Tuple[Any, ...]] = []
             for row in reader:
-                if None in row:
+                if not row:
+                    continue
+                if len(row) > len(header):
                     raise AppException(
-                        error_key=ErrorKey.INVALID_FILE_FORMAT,
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
                         error_detail=(
                             f"Line {reader.line_num} has more values than the header has columns."
                         ),
                     )
+                unnamed = next((i for i in range(width, len(row)) if row[i].strip()), None)
+                if unnamed is not None:
+                    raise AppException(
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
+                        error_detail=(
+                            f"Line {reader.line_num} has a value in column {unnamed + 1}, which "
+                            "has no name in the header. Name the column or delete it, and "
+                            "upload the file again."
+                        ),
+                    )
                 batch.append(
-                    tuple(None if row[column] == "" else row[column] for column in columns)
+                    tuple(
+                        None if index >= len(row) or row[index] == "" else row[index]
+                        for index in range(width)
+                    )
                 )
                 if len(batch) >= chunk_size:
                     yield columns, batch
@@ -1247,8 +1295,13 @@ def csv_path_candidates(file_url: str, thread_id: Optional[str] = None) -> List[
     if file_url.startswith("/"):
         return [file_url]
     if thread_id:
-        # Relative to DATA_VOLUME/train/thread_id, then the current folder
-        return [DATA_VOLUME / "train" / thread_id / file_url, os.path.abspath(file_url)]
+        # A node's data_path is relative to DATA_VOLUME/train and may come
+        # from an earlier run with another thread (e.g. testing one node).
+        return [
+            DATA_VOLUME / "train" / thread_id / file_url,
+            DATA_VOLUME / "train" / file_url,
+            os.path.abspath(file_url),
+        ]
     # Relative to DATA_VOLUME/train, then the current folder, then DATA_VOLUME
     return [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
 
@@ -1320,7 +1373,7 @@ def resolve_csv_file_path(
         if not os.access(file_path, os.R_OK):
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"CSV file is not readable: {file_path}",
+                error_detail=f"CSV file is not readable: {file_url}",
             )
 
         return file_path
@@ -1366,9 +1419,11 @@ def load_csv_file(
         raise
     except Exception as e:
         logger.error(f"Error loading file {file_url}: {str(e)}", exc_info=True)
+        # An OSError's message names the resolved server path; show only the reason.
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to load file: {str(e)}",
+            error_detail=f"Failed to load file: {reason}",
         ) from e
 
 

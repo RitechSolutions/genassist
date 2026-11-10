@@ -105,7 +105,7 @@ class TrainPreprocessNode(BaseNode):
                 return {
                     "success": True,
                     "data": sample_data,
-                    "data_path": csv_file_path,
+                    "data_path": ml_utils.data_volume_reference(csv_file_path),
                     "metadata": {
                         "rowCount": row_count,
                         "columns": columns,

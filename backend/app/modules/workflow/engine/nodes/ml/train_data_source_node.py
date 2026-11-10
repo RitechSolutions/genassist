@@ -119,7 +119,8 @@ class TrainDataSourceNode(BaseNode):
                 result = await self._process_database_source(config, limits, chunk_rows)
             else:
                 result = await self._process_csv_source(config, limits, chunk_rows)
-            await training_data_storage.save_training_data(result["data_path"])
+            # data_path is shown relative to DATA_VOLUME/train
+            await training_data_storage.save_training_data(ml_utils.DATA_VOLUME / "train" / result["data_path"])
             return result
 
         except AppException:
@@ -566,7 +567,7 @@ class TrainDataSourceNode(BaseNode):
         return {
             "success": True,
             "data": sample_data,
-            "data_path": data_path,
+            "data_path": ml_utils.data_volume_reference(data_path),
             "metadata": {
                 "rowCount": row_count,
                 "columns": columns,
