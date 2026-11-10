@@ -251,3 +251,38 @@ def test_stdlib_log_lines_name_the_function_that_logged(json_lines):
     for event in json_lines():
         assert event["logger"]["method_name"] == "check_token"
         assert event["logger"]["name"] == __name__
+
+
+def test_stdlib_lines_inside_an_app_emit_name_that_function(json_lines):
+    """The caller walk skips only the intercept handler's emit(), not app code named emit."""
+
+    class Stream:
+        def emit(self):
+            stdlib_logging.getLogger("app.core.turn_stream").info("First delta after 1.20s")
+
+    Stream().emit()
+
+    [event] = json_lines()
+    assert event["logger"]["method_name"] == "emit"
+
+
+def test_a_new_conversation_drops_the_previous_agent(json_lines, datadog_on):
+    """One task handling two conversations must not keep the first one's agent."""
+
+    async def two_conversations():
+        datadog_observability.tag_conversation("c-a")
+        datadog_observability.tag_agent("agent-a", None)
+        logger.info("Conversation A")
+        datadog_observability.tag_conversation("c-b")  # not in progress, so no tag_agent
+        logger.info("Conversation B")
+        datadog_observability.tag_conversation("c-b")  # same conversation again keeps its agent
+        datadog_observability.tag_agent("agent-b", None)
+        datadog_observability.tag_conversation("c-b")
+        logger.info("Conversation B again")
+
+    asyncio.run(two_conversations())
+
+    a, b, b_again = json_lines()
+    assert (a["conversation_id"], a["agent_id"]) == ("c-a", "agent-a")
+    assert b["conversation_id"] == "c-b" and "agent_id" not in b
+    assert (b_again["conversation_id"], b_again["agent_id"]) == ("c-b", "agent-b")
