@@ -22,6 +22,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.dependencies.injector import injector
 from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
+from app.modules.workflow.llm.model_params import deterministic_kwargs
 from app.modules.workflow.llm.provider import LLMProvider
 
 from ..base_node import BaseNode
@@ -116,7 +117,7 @@ class NLPNode(BaseNode):
 
         try:
             llm = await injector.get(LLMProvider).get_model(provider_id)
-            response = await llm.bind(temperature=0).ainvoke(
+            response = await llm.bind(**deterministic_kwargs(llm)).ainvoke(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=input_text),
@@ -179,7 +180,7 @@ class NLPNode(BaseNode):
 
         try:
             llm = await injector.get(LLMProvider).get_model(provider_id)
-            response = await llm.bind(temperature=0).ainvoke(
+            response = await llm.bind(**deterministic_kwargs(llm)).ainvoke(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=input_text),
@@ -229,7 +230,7 @@ class NLPNode(BaseNode):
 
         try:
             llm = await injector.get(LLMProvider).get_model(provider_id)
-            response = await llm.bind(temperature=0).ainvoke(
+            response = await llm.bind(**deterministic_kwargs(llm)).ainvoke(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=input_text),

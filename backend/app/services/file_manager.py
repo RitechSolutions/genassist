@@ -1,35 +1,41 @@
 import asyncio
+import base64
+import logging
+import os
 import re
 import tempfile
-from uuid import UUID
 import uuid
-from fastapi import UploadFile
-import httpx
-from injector import inject
-from typing import Optional
-import logging
-import base64
 from contextlib import suppress
+from pathlib import Path
+from typing import Optional
 from urllib.parse import quote
-import os
-from app.modules.filemanager.providers.base import BaseStorageProvider
-from app.db.models.file import FileModel
-from app.schemas.file import FileBase
-from app.repositories.file_manager import FileManagerRepository
-from app.core.tenant_scope import get_tenant_context
+from uuid import UUID
 
-from app.modules.filemanager.providers import init_by_name
+import httpx
+from fastapi import UploadFile
+from injector import inject
+
 from app.core.config.settings import file_storage_settings, settings
-from app.core.utils.web_scraping_utils import _validate_url
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.schemas.app_settings import AppSettingsRead
+from app.core.tenant_scope import get_tenant_context
 from app.core.utils.cache_headers import no_store_headers
 from app.core.utils.file_manager_url_utils import first_file_manager_uuid_from_url
-from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
 from app.core.utils.file_system_utils import get_safe_file_path
+from app.core.utils.storage_path import tenant_scoped_storage_prefix
+from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
+from app.core.utils.web_scraping_utils import _validate_url
+from app.db.models.file import FileModel
+from app.modules.filemanager.providers import init_by_name
+from app.modules.filemanager.providers.base import BaseStorageProvider
+from app.modules.filemanager.providers.local.provider import LocalFileSystemProvider
+from app.repositories.file_manager import FileManagerRepository
+from app.schemas.app_settings import AppSettingsRead
+from app.schemas.file import FileBase
 
 logger = logging.getLogger(__name__)
+
+_UNSET = object()
 
 
 @inject
@@ -124,6 +130,13 @@ class FileManagerService:
         return re.sub(r"[^a-z0-9]", "", extension.lower()) or "txt"
 
     @staticmethod
+    def _storage_folder(storage_provider: Optional[str], folder: Optional[str]) -> Optional[str]:
+        """S3 keys go under the tenant's root (tenants/<slug>/...); other providers are unchanged."""
+        if storage_provider == "s3":
+            return tenant_scoped_storage_prefix(folder)
+        return folder
+
+    @staticmethod
     def _build_file_path(folder: Optional[str], file_extension: str) -> str:
         """
         Storage path for a new file: the cleaned folder plus a uuid file name.
@@ -170,14 +183,15 @@ class FileManagerService:
                 or "local"
             )
 
-            file_path = self._build_file_path(file_base.path, file_extension)
+            folder = self._storage_folder(file_storage_provider, file_base.path)
+            file_path = self._build_file_path(folder, file_extension)
 
             provider_name = file_storage_provider or "local"
             await self._initialize_storage_provider(provider_name)
             if not self.storage_provider or not self.storage_provider.is_initialized():
                 raise ValueError("Storage provider not initialized")
 
-            storage_path = file_base.storage_path or self.storage_provider.get_base_path()
+            storage_path = self._recorded_storage_path(file_base)
 
             # Stream bytes to storage (avoid loading entire file into memory).
             if self.storage_provider.name == "local":
@@ -281,14 +295,15 @@ class FileManagerService:
                 or "local"
             )
 
-            file_path = self._build_file_path(file_base.path, file_extension)
+            folder = self._storage_folder(file_storage_provider, file_base.path)
+            file_path = self._build_file_path(folder, file_extension)
 
             provider_name = file_storage_provider or "local"
             await self._initialize_storage_provider(provider_name)
             if not self.storage_provider or not self.storage_provider.is_initialized():
                 raise ValueError("Storage provider not initialized")
 
-            storage_path = file_base.storage_path or self.storage_provider.get_base_path()
+            storage_path = self._recorded_storage_path(file_base)
 
             if self.storage_provider.name == "local":
                 dest = get_safe_file_path(
@@ -364,19 +379,15 @@ class FileManagerService:
 
     async def get_file_content(self, file: FileModel) -> bytes:
         """Get file content from storage provider."""
-        # initialize the storage provider
-        await self._initialize_storage_provider(
-            file.storage_provider,
-            file.storage_path,
-        )
+        provider = await self._provider_for_stored_file(file)
 
         # make sure the storage provider is initialized
-        if not self.storage_provider.is_initialized():
+        if not provider or not provider.is_initialized():
             raise ValueError("Storage provider not initialized")
 
         # get the storage path to download the file from
-        download_path = file.path if file.storage_provider == "s3" else f"{self.storage_provider.get_base_path()}/{file.path}"
-        return await self.storage_provider.download_file(download_path)
+        download_path = self._storage_key(file) if file.storage_provider in ("s3", "local") else f"{provider.get_base_path()}/{file.path}"
+        return await provider.download_file(download_path)
 
     async def get_file_base64(self, file_id: UUID) -> str:
         """Get file content as base64 encoded string."""
@@ -406,19 +417,16 @@ class FileManagerService:
                 partial_path = partial_file.name
 
             file = await self.get_file_by_id(file_id)
-            await self._initialize_storage_provider(
-                file.storage_provider,
-                file.storage_path,
-            )
-            if not self.storage_provider or not self.storage_provider.is_initialized():
+            provider = await self._provider_for_stored_file(file)
+            if not provider or not provider.is_initialized():
                 raise ValueError("Storage provider not initialized")
 
             download_path = (
-                file.path
-                if file.storage_provider == "s3"
-                else f"{self.storage_provider.get_base_path()}/{file.path}"
+                self._storage_key(file)
+                if file.storage_provider in ("s3", "local")
+                else f"{provider.get_base_path()}/{file.path}"
             )
-            downloaded = await self.storage_provider.download_file_to_path(
+            downloaded = await provider.download_file_to_path(
                 download_path,
                 partial_path,
             )
@@ -565,17 +573,22 @@ class FileManagerService:
         file = await self.repository.get_file_by_id(file_id)
         # Before uuid names, uploads with the same folder and name shared one stored
         # object; keep it while another live record still points at it.
-        if delete_from_storage and await self.repository.is_path_shared(
-            file_id, file.storage_provider, file.path
-        ):
+        if delete_from_storage and await self._path_is_shared(file_id, file):
             logger.info(f"Keeping stored object for file {file_id}: its path is shared by another file")
             delete_from_storage = False
         if delete_from_storage:
+            # The folder is found before the try below, so a failed File Manager
+            # Settings lookup stops the delete; storage errors are still logged.
+            local_folder = await self._local_folder(file) if file.storage_provider == "local" else None
             try:
-                await self._initialize_storage_provider(file.storage_provider)
-                if self.storage_provider and self.storage_provider.is_initialized():
+                if local_folder is not None:
+                    provider = await self._local_provider_at(local_folder)
+                else:
+                    await self._initialize_storage_provider(file.storage_provider)
+                    provider = self.storage_provider
+                if provider and provider.is_initialized():
                     # storage_path is the provider's base folder; path is the file's key inside it
-                    await self.storage_provider.delete_file(file.path)
+                    await provider.delete_file(self._storage_key(file))
             except Exception as e:
                 logger.warning(f"Failed to delete file from storage: {e}")
 
@@ -629,6 +642,148 @@ class FileManagerService:
 
 
     # ==================== Helper Methods ====================
+    def _recorded_storage_path(self, file_base: FileBase) -> str:
+        """The location to record for a new file: for local storage, the folder the bytes are written to."""
+        if self.storage_provider.name == "local":
+            # The request's storage_path is not where a local file is written,
+            # so it is not recorded.
+            return self.storage_provider.get_base_path()
+        return file_base.storage_path or self.storage_provider.get_base_path()
+
+    async def _path_is_shared(self, file_id: UUID, file: FileModel) -> bool:
+        """True when another live record points at the same stored object.
+
+        Older local records can spell the same object with or without a leading '/'.
+        """
+        paths = [file.path]
+        key = self._storage_key(file)
+        if file.storage_provider == "local" and key:
+            paths += [p for p in (key, f"/{key}") if p != file.path]
+        for path in paths:
+            if path and await self.repository.is_path_shared(file_id, file.storage_provider, path):
+                return True
+        return False
+
+    async def _settings_base_path(self) -> Optional[str]:
+        """The local folder chosen in File Manager Settings, if any (looked up once per service)."""
+        cached = getattr(self, "_cached_settings_base_path", _UNSET)
+        if cached is not _UNSET:
+            return cached
+        self._cached_settings_base_path = await self._read_settings_base_path()
+        return self._cached_settings_base_path
+
+    async def _read_settings_base_path(self) -> Optional[str]:
+        from app.dependencies.injector import injector
+        from app.services.app_settings import AppSettingsService
+
+        try:
+            app_settings_service = injector.get(AppSettingsService)
+        except Exception as e:
+            # No settings service outside a request scope (scripts, some jobs).
+            logger.info(f"File Manager Settings are not available here: {e}")
+            return None
+        # A failed query is not swallowed: it would leave the session unusable.
+        app_settings = await app_settings_service.get_by_type_and_name(
+            "FileManagerSettings", "File Manager Settings"
+        )
+        values = getattr(app_settings, "values", None)
+        base_path = values.get("base_path") if isinstance(values, dict) else None
+        return base_path if isinstance(base_path, str) and base_path else None
+
+    @staticmethod
+    def _storage_key(file: FileModel) -> Optional[str]:
+        """The record's path as the provider expects it.
+
+        Older local records can start with '/' (the File Manager page once sent
+        the folder as typed); those were written relative to the base folder.
+        """
+        if file.storage_provider == "local" and file.path:
+            return file.path.lstrip("/")
+        return file.path
+
+    @staticmethod
+    def _resolved(folder: Optional[str]) -> Optional[Path]:
+        if not folder:
+            return None
+        try:
+            return Path(folder).resolve()
+        except (OSError, RuntimeError, ValueError):
+            return None
+
+    async def _local_folder(self, file: FileModel) -> str:
+        """The folder a local File Manager file is read from or deleted in.
+
+        Only known storage folders are used: the default folder, the folder
+        this request already uses and the File Manager Settings folder. A
+        record may name one of them; records can also carry folders that a
+        browser sent before the folder was recorded server-side, and those are
+        never trusted. The record's folder is used when it is known and holds
+        the file; otherwise the request's folder, then the default folder, the
+        order reads used before.
+        """
+        default = LocalFileSystemProvider.tmp_folder
+        current = (
+            self.storage_provider.get_base_path()
+            if self.storage_provider and getattr(self.storage_provider, "name", None) == "local"
+            else None
+        )
+        record = self._resolved(file.storage_path)
+        known = {folder for folder in (self._resolved(default), self._resolved(current)) if folder}
+        if record is not None and record not in known:
+            # Only looked up when the record names some other folder.
+            if record == self._resolved(await self._settings_base_path()):
+                known.add(record)
+
+        candidates = [file.storage_path] if record is not None and record in known else []
+        candidates += [folder for folder in (current, default) if folder]
+        checked = set()
+        for folder in candidates:
+            resolved = self._resolved(folder)
+            if resolved in checked:
+                continue
+            checked.add(resolved)
+            if await self._holds_file(folder, self._storage_key(file)):
+                return folder
+        return current or default
+
+    @staticmethod
+    async def _holds_file(folder: str, file_path: Optional[str]) -> bool:
+        """True when the file is inside folder; the provider keeps the path inside it."""
+        if not file_path or not os.path.isdir(folder):
+            return False
+        try:
+            return await LocalFileSystemProvider({"base_path": folder}).file_exists(file_path)
+        except Exception:
+            return False
+
+    async def _provider_for_stored_file(self, file: FileModel) -> BaseStorageProvider:
+        """A provider that reads this file where it is stored.
+
+        For local files it is a separate provider, so a read never changes the
+        folder later writes in the same request go to.
+        """
+        if file.storage_provider != "local":
+            await self._initialize_storage_provider(file.storage_provider, file.storage_path)
+            return self.storage_provider
+        return await self._local_provider_at(await self._local_folder(file))
+
+    async def _local_provider_at(self, folder: str) -> BaseStorageProvider:
+        """The request's local provider when it uses folder, else a separate one for folder."""
+        current = self.storage_provider
+        if (
+            current
+            and current.is_initialized()
+            and getattr(current, "name", None) == "local"
+            and self._resolved(current.get_base_path()) is not None
+            and self._resolved(current.get_base_path()) == self._resolved(folder)
+        ):
+            return current
+        config = file_storage_settings.model_dump()
+        config["base_path"] = folder
+        provider = self.get_storage_provider_by_name("local", config=config)
+        await provider.initialize()
+        return provider
+
     async def _initialize_storage_provider(
         self,
         storage_provider_name: str,

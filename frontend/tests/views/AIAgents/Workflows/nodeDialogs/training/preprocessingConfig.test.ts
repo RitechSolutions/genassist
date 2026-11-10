@@ -543,3 +543,99 @@ describe("preprocessingConfig - string conversion keeps missing values missing",
     });
   });
 });
+
+describe("preprocessingConfig - column checks (DP-19)", () => {
+  const steps: PreprocessingConfig["steps"] = [
+    {
+      id: "step_filter",
+      type: "column_filter",
+      enabled: true,
+      config: {
+        columns: [
+          { name: "city", selected: true },
+          { name: "age", selected: true },
+          { name: "id", selected: false },
+        ],
+      },
+    },
+    {
+      id: "step_dupes",
+      type: "remove_duplicates",
+      enabled: true,
+      config: { subsetColumns: ["city"], keep: "first" } as RemoveDuplicatesStepConfig,
+    },
+    {
+      id: "step_drop",
+      type: "drop_column_or_row",
+      enabled: true,
+      config: { target: "column", columns: ["age"], rowIndices: [] } as DropColumnOrRowStepConfig,
+    },
+    {
+      id: "step_dtype",
+      type: "change_dtype",
+      enabled: true,
+      config: {
+        conversions: [
+          { columnName: "city", dtype: "category" },
+          { columnName: 'we"ird', dtype: "string" },
+        ],
+      } as ChangeDtypeStepConfig,
+    },
+  ];
+
+  it("checks every column a step uses before using it, naming the step", () => {
+    const code = generatePythonCodeFromConfig({ steps }, BASE_PYTHON_TEMPLATE);
+    expect(code).toContain('_missing = [c for c in ["city", "age"] if c not in df.columns]');
+    expect(code).toContain('raise ValueError("Column Filter: column(s) not found in the data: " + ", ".join(_missing))');
+    expect(code).toContain('_missing = [c for c in ["city"] if c not in df.columns]');
+    expect(code).toContain('"Remove Duplicate Rows: column(s) not found in the data: "');
+    // Removing a column that's already gone stays a no-op (errors="ignore")
+    expect(code).not.toContain('"Remove Column/Row: column(s) not found in the data: "');
+    expect(code).toContain('df = df.drop(columns=["age"], errors="ignore")');
+    expect(code).toContain('_missing = [c for c in ["city", "we\\"ird"] if c not in df.columns]');
+    expect(code).toContain('"Change Column Data Type: column(s) not found in the data: "');
+    // The check comes before the step's own code
+    expect(code.indexOf('in ["city", "age"] if')).toBeLessThan(code.indexOf('df = df[["city", "age"]]'));
+  });
+
+  it("still parses every step back after adding the checks", () => {
+    const code = generatePythonCodeFromConfig({ steps }, BASE_PYTHON_TEMPLATE);
+    const parsed = parsePythonCodeToConfig(code);
+    expect(parsed.steps.map((s) => s.type)).toEqual(steps.map((s) => s.type));
+    expect(parsed.steps[1].config).toEqual(steps[1].config);
+    expect(parsed.steps[2].config).toEqual(steps[2].config);
+    expect(parsed.steps[3].config).toEqual(steps[3].config);
+    // Only the selected columns are written, so only they come back selected
+    const filter = parsed.steps[0].config as { columns: { name: string; selected: boolean }[] };
+    expect(filter.columns.filter((c) => c.selected).map((c) => c.name)).toEqual(["city", "age"]);
+  });
+
+  it("adds no check to steps that name no columns", () => {
+    const code = generatePythonCodeFromConfig(
+      {
+        steps: [
+          {
+            id: "step_rows",
+            type: "drop_column_or_row",
+            enabled: true,
+            config: { target: "row", columns: [], rowIndices: [0, 2] } as DropColumnOrRowStepConfig,
+          },
+          {
+            id: "step_nulls",
+            type: "drop_high_null_columns",
+            enabled: true,
+            config: { thresholdPercent: 50 } as DropHighNullColumnsStepConfig,
+          },
+          {
+            id: "step_dupes_all",
+            type: "remove_duplicates",
+            enabled: true,
+            config: { subsetColumns: [], keep: "first" } as RemoveDuplicatesStepConfig,
+          },
+        ],
+      },
+      BASE_PYTHON_TEMPLATE
+    );
+    expect(code).not.toContain("_missing");
+  });
+});

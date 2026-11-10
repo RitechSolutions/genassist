@@ -116,6 +116,7 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
   const [costsByMessageId, setCostsByMessageId] = useState<Record<string, AgentResponseLogSummary>>({});
   const [totalCost, setTotalCost] = useState<Record<string, number>>({
     total: 0,
+    priced: 0,
     input_tokens: 0,
     output_tokens: 0,
   });
@@ -227,6 +228,7 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
 
     const totals: Record<string, number> = {
       total: 0,
+      priced: 0,
       input_tokens: 0,
       output_tokens: 0,
     };
@@ -237,7 +239,10 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
         map[log.transcript_message_id] = log;
 
         // Add cost to total cost
-        totals.total += log.cost_usd ?? 0;
+        if (log.cost_usd != null) {
+          totals.total += log.cost_usd;
+          totals.priced += 1;
+        }
         totals.input_tokens += log.input_tokens ?? 0;
         totals.output_tokens += log.output_tokens ?? 0;
       });

@@ -46,7 +46,7 @@ export const promptDiffSummary = (
   after: string,
   max = MAX_ROUND_DIFF_CHARS,
 ): string => {
-  const lines = diffLines(before, after)
+  const lines = diffLines(before, after, { ignoreNewlineAtEof: true })
     .filter((part) => part.added || part.removed)
     .flatMap((part) =>
       part.value

@@ -10,6 +10,7 @@ import {
   isRunFullyPromoted,
   isRunPromoted,
   isValidCron,
+  runModelFileId,
   runModelFilePath,
   runStatusMeta,
 } from "@/views/MLModels/helpers/pipelineRuns";
@@ -166,27 +167,61 @@ describe("runModelFilePath", () => {
   });
 });
 
-describe("isRunPromoted", () => {
-  const producing = (path: string): PipelineRun =>
-    ({ ...run("completed"), execution_output: { output: { model_file_path: path } } }) as PipelineRun;
+describe("runModelFileId", () => {
+  const withOutput = (output: unknown): PipelineRun =>
+    ({ ...run("completed"), execution_output: { output } }) as PipelineRun;
 
-  it("is true when the model points at the file this run produced", () => {
-    expect(isRunPromoted(producing("/train/a.pkl"), "/train/a.pkl")).toBe(true);
+  it("reads the uploaded file id the run recorded", () => {
+    expect(runModelFileId(withOutput({ pkl_file_id: "f-a" }))).toBe("f-a");
+  });
+
+  it("returns null for runs that recorded no id", () => {
+    expect(runModelFileId(withOutput({ model_file_path: "/train/a.pkl" }))).toBeNull();
+    expect(runModelFileId(withOutput({ pkl_file_id: null }))).toBeNull();
+    expect(runModelFileId(run("completed"))).toBeNull();
+  });
+});
+
+describe("isRunPromoted", () => {
+  const producing = (path: string, fileId?: string | null): PipelineRun =>
+    ({
+      ...run("completed"),
+      execution_output: { output: { model_file_path: path, pkl_file_id: fileId } },
+    }) as PipelineRun;
+
+  it("is true when the model serves the file id this run uploaded", () => {
+    // Promote clears the model's local path, so only the id can match.
+    expect(isRunPromoted(producing("/train/a.pkl", "f-a"), { pkl_file: null, pkl_file_id: "f-a" })).toBe(true);
+  });
+
+  it("is false when the model serves another upload, even at the same path", () => {
+    expect(
+      isRunPromoted(producing("/train/a.pkl", "f-a"), { pkl_file: "/train/a.pkl", pkl_file_id: "f-b" })
+    ).toBe(false);
+    expect(isRunPromoted(producing("/train/a.pkl", "f-a"), { pkl_file: "/train/a.pkl", pkl_file_id: null })).toBe(false);
+  });
+
+  it("matches by path for runs that recorded no file id", () => {
+    expect(isRunPromoted(producing("/train/a.pkl"), { pkl_file: "/train/a.pkl" })).toBe(true);
+    expect(isRunPromoted(producing("/train/a.pkl", null), { pkl_file: "/train/a.pkl", pkl_file_id: "f-b" })).toBe(true);
   });
 
   it("is false for a different or missing file on either side", () => {
-    expect(isRunPromoted(producing("/train/a.pkl"), "/train/b.pkl")).toBe(false);
+    expect(isRunPromoted(producing("/train/a.pkl"), { pkl_file: "/train/b.pkl" })).toBe(false);
+    expect(isRunPromoted(producing("/train/a.pkl"), { pkl_file: null })).toBe(false);
     expect(isRunPromoted(producing("/train/a.pkl"), null)).toBe(false);
-    expect(isRunPromoted(run("completed"), "/train/a.pkl")).toBe(false);
+    expect(isRunPromoted(run("completed"), { pkl_file: "/train/a.pkl", pkl_file_id: "f-a" })).toBe(false);
   });
 });
 
 describe("promotion state", () => {
-  const makeRun = (configId: string, producedFile?: string): PipelineRun =>
+  const makeRun = (configId: string, producedFile?: string, fileId?: string): PipelineRun =>
     ({
       ...run("completed"),
       pipeline_config_id: configId,
-      execution_output: producedFile ? { output: { model_file_path: producedFile } } : undefined,
+      execution_output: producedFile
+        ? { output: { model_file_path: producedFile, pkl_file_id: fileId } }
+        : undefined,
     }) as PipelineRun;
 
   it("flags runs that used the default pipeline config", () => {
@@ -197,11 +232,17 @@ describe("promotion state", () => {
 
   it("treats a file-producing run as fully promoted only when both changes landed", () => {
     const withFile = makeRun("c1", "/train/a.pkl");
-    expect(isRunFullyPromoted(withFile, "/train/a.pkl", "c1")).toBe(true);
+    expect(isRunFullyPromoted(withFile, { pkl_file: "/train/a.pkl" }, "c1")).toBe(true);
     // Default pipeline, but the model still points at an older file.
-    expect(isRunFullyPromoted(withFile, "/train/old.pkl", "c1")).toBe(false);
+    expect(isRunFullyPromoted(withFile, { pkl_file: "/train/old.pkl" }, "c1")).toBe(false);
     // Active file, but the default has since moved to another pipeline.
-    expect(isRunFullyPromoted(withFile, "/train/a.pkl", "c2")).toBe(false);
+    expect(isRunFullyPromoted(withFile, { pkl_file: "/train/a.pkl" }, "c2")).toBe(false);
+  });
+
+  it("uses the uploaded file id for runs that recorded one", () => {
+    const withId = makeRun("c1", "/train/a.pkl", "f-a");
+    expect(isRunFullyPromoted(withId, { pkl_file: null, pkl_file_id: "f-a" }, "c1")).toBe(true);
+    expect(isRunFullyPromoted(withId, { pkl_file: null, pkl_file_id: "f-b" }, "c1")).toBe(false);
   });
 
   it("treats a run with no model file as fully promoted once its pipeline is default", () => {

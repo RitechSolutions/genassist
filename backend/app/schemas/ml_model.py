@@ -8,6 +8,9 @@ from math import isfinite
 
 
 FEATURE_DEFAULTS_PARAM = "featureDefaults"
+# When true, inference fills missing inputs with the values saved at training
+# time (e.g. the median). Off by default: a missing input is an error.
+TRAINING_FILLS_PARAM = "useTrainingFills"
 
 from app.core.project_path import DATA_VOLUME
 
@@ -53,7 +56,9 @@ class MLModelBase(BaseModel):
         description=(
             "Per-model inference configuration. `ratioBaselineColumn` identifies an extra "
             "caller input needed to reconstruct ratio-target predictions. `featureDefaults` "
-            "maps model feature names to deliberate fallback values for omitted or null inputs."
+            "maps model feature names to deliberate fallback values for omitted or null inputs. "
+            "`useTrainingFills` (default false) lets the values saved at training time "
+            "(e.g. the median) fill the remaining missing inputs."
         ),
     )
 
@@ -83,6 +88,10 @@ class MLModelWriteBase(MLModelBase):
                     f"{FEATURE_DEFAULTS_PARAM} values must be non-null JSON scalars for: "
                     + ", ".join(str(name) for name in invalid_defaults)
                 )
+
+        use_training_fills = value.get(TRAINING_FILLS_PARAM)
+        if use_training_fills is not None and not isinstance(use_training_fills, bool):
+            raise ValueError(f"{TRAINING_FILLS_PARAM} must be true or false")
 
         ratio_baseline = value.get("ratioBaselineColumn")
         if ratio_baseline is not None and (
@@ -123,6 +132,14 @@ class MLModelUpdate(MLModelWriteBase):
 
 class MLModelRead(MLModelBase):
     id: UUID
+    training_metrics: Optional[dict] = Field(
+        None,
+        description=(
+            "Validation metrics of the model's current file. Set only by Train Model "
+            "registration and pipeline-run promotion, never by clients. An empty object "
+            "means the current file has no recorded metrics; null means none were stored."
+        ),
+    )
     created_at: datetime
     updated_at: datetime
 

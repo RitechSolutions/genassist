@@ -5,6 +5,8 @@ from app.core.observability.otel import (
     is_otel_runtime_enabled,
     record_web_search_event,
     record_workflow_node_duration,
+    set_agent_span_attributes,
+    set_conversation_span_attribute,
     shutdown_opentelemetry,
 )
 
@@ -14,4 +16,6 @@ __all__ = [
     "record_workflow_node_duration",
     "record_web_search_event",
     "is_otel_runtime_enabled",
+    "set_agent_span_attributes",
+    "set_conversation_span_attribute",
 ]
