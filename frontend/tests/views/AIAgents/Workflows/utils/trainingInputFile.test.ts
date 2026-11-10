@@ -3,11 +3,13 @@ import type { Edge, Node } from "reactflow";
 import type { NodeExecutionResult } from "@/views/AIAgents/Workflows/context/WorkflowExecutionContext";
 import {
   SOURCE_DATA_PATH,
+  STALE_INPUT_KEY,
   newerOutput,
   resolveTrainingInputFile,
+  testNodeSettingsKey,
   upstreamSourcesKey,
 } from "@/views/AIAgents/Workflows/utils/trainingInputFile";
-import { collectRunOutputs } from "@/views/AIAgents/Workflows/utils/executionView";
+import { collectRunOutputs, resumedRunWorkflow } from "@/views/AIAgents/Workflows/utils/executionView";
 import type { Workflow } from "@/interfaces/workflow.interface";
 
 const sourceNode = (data: Record<string, unknown>): Node => ({
@@ -188,7 +190,7 @@ describe("resolveTrainingInputFile - DP-16: never an old source file", () => {
     expect(run(after)).toEqual({
       ok: false,
       message:
-        "The training data changed since the Data Preprocessing node last ran. Run it again, then try again.",
+        "The training data changed since the Data Preprocessing node last ran. Run the whole workflow again, or test each node from the Train Data Source down to the Data Preprocessing node again, then try again.",
     });
   });
 
@@ -234,5 +236,97 @@ describe("collectRunOutputs", () => {
   it("never throws on a malformed response", () => {
     expect(collectRunOutputs(null)).toEqual({});
     expect(collectRunOutputs({ state: "nope" })).toEqual({});
+  });
+});
+
+describe("testNodeSettingsKey - a Test Node result is only as current as its inputs", () => {
+  const v1 = sourceNode({ sourceType: "csv", csvFilePath: "/data/v1.csv", csvFileName: "v1.csv" });
+  const v2 = sourceNode({ sourceType: "csv", csvFilePath: "/data/v2.csv", csvFileName: "v2.csv" });
+  const testOutputs = (outputs: Record<string, NodeExecutionResult>) => (id: string) => outputs[id];
+
+  it("gets the current settings when its input was made from them", () => {
+    const tested = output({ data_path: "/tmp/v2.csv" }, { settingsKey: keyFor(v2) });
+    expect(testNodeSettingsKey("prep", [v2, prepNode], [edge], testOutputs({ src: tested }))).toBe(
+      upstreamSourcesKey("prep", [v2, prepNode], [edge])
+    );
+  });
+
+  it("is stale when its input was tested with the old file, whatever ran since", () => {
+    // Tested with v1, then the source was switched to v2 (a whole run's output
+    // is never read by a Test Node, so it doesn't count here).
+    const tested = output({ data_path: "/tmp/v1.csv" }, { settingsKey: keyFor(v1) });
+    const key = testNodeSettingsKey("prep", [v2, prepNode], [edge], testOutputs({ src: tested }));
+    expect(key).toBe(STALE_INPUT_KEY);
+    // ...so Analyze downstream refuses it.
+    const train: Node = { id: "train", type: "trainModelNode", position: { x: 0, y: 0 }, data: {} };
+    const toTrain: Edge = { id: "e2", source: "prep", target: "train" };
+    const result = resolveTrainingInputFile({
+      fileUrl: SOURCE_DATA_PATH,
+      nodeId: "train",
+      nodes: [v2, prepNode, train],
+      edges: [edge, toTrain],
+      getLatestOutput: (id) =>
+        id === "prep" ? output({ data_path: "/tmp/prep.csv" }, { settingsKey: key }) : undefined,
+      fillVariables: (url) => url,
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("is left untagged when an input has no recorded output", () => {
+    expect(testNodeSettingsKey("prep", [v2, prepNode], [edge], testOutputs({}))).toBeUndefined();
+  });
+
+  it("checks every input of a node with several", () => {
+    const other = { ...sourceNode({ sourceType: "csv", csvFilePath: "/data/b.csv", csvFileName: "b.csv" }), id: "src2" };
+    const nodes = [v2, other, prepNode];
+    const edges = [edge, { id: "e3", source: "src2", target: "prep" }];
+    const current = (id: string) => upstreamSourcesKey(id, nodes, edges);
+    const fresh = output({}, { settingsKey: current("src") });
+    const fresh2 = output({}, { settingsKey: current("src2") });
+    expect(testNodeSettingsKey("prep", nodes, edges, testOutputs({ src: fresh, src2: fresh2 }))).toBe(
+      current("prep")
+    );
+    const old2 = output({}, { settingsKey: keyFor(v1) });
+    expect(testNodeSettingsKey("prep", nodes, edges, testOutputs({ src: fresh, src2: old2 }))).toBe(
+      STALE_INPUT_KEY
+    );
+  });
+
+  it("explains how to refresh an untagged downstream output", () => {
+    const train: Node = { id: "train", type: "trainModelNode", position: { x: 0, y: 0 }, data: {} };
+    const result = resolveTrainingInputFile({
+      fileUrl: SOURCE_DATA_PATH,
+      nodeId: "train",
+      nodes: [v2, prepNode, train],
+      edges: [edge, { id: "e2", source: "prep", target: "train" }],
+      getLatestOutput: (id) => (id === "prep" ? output({ data_path: "/tmp/prep.csv" }) : undefined),
+      fillVariables: (url) => url,
+    });
+    expect(result).toEqual({
+      ok: false,
+      message:
+        "The Data Preprocessing node's output can't be matched to the current training data. Run the whole workflow again, or test each node from the Train Data Source down to the Data Preprocessing node again, then try again.",
+    });
+  });
+});
+
+describe("resumedRunWorkflow", () => {
+  it("tags nodes that ran before the pause with the settings they ran with", () => {
+    const started = { nodes: [dbSource, prepNode], edges: [edge] } as unknown as Workflow;
+    const edited = sourceNode({ ...dbSource.data, query: "select 2" });
+    const current = { nodes: [edited, prepNode], edges: [edge] } as unknown as Workflow;
+    const tagging = resumedRunWorkflow(started, current, ["src"]);
+    const response = {
+      state: {
+        nodeExecutionStatus: {
+          prep: { status: "success", type: "preprocessingNode", output: { data_path: "/tmp/p.csv" } },
+        },
+      },
+    };
+    expect(collectRunOutputs(response, tagging).prep.settingsKey).toBe(
+      upstreamSourcesKey("prep", [dbSource, prepNode], [edge])
+    );
+    // A node that hadn't run yet uses the settings sent with the resume
+    expect(resumedRunWorkflow(started, current, []).nodes[0]).toBe(edited);
   });
 });

@@ -266,3 +266,24 @@ export const collectRunOutputs = (
   }
   return outputs;
 };
+
+/**
+ * The workflow a resumed run's outputs are tagged with (see collectRunOutputs): `current`, the
+ * workflow sent with the resume, except that nodes in `ranBeforePause` keep the settings they had in
+ * `started`, the workflow the run started with. A Train Data Source that ran before the pause
+ * produced its data from those, whatever was edited while the run waited.
+ */
+export const resumedRunWorkflow = (
+  started: Workflow,
+  current: Workflow,
+  ranBeforePause: string[]
+): Workflow => {
+  const ran = new Set(ranBeforePause);
+  const startedNodes = new Map((started.nodes ?? []).map((node) => [node.id, node]));
+  return {
+    ...current,
+    nodes: (current.nodes ?? []).map((node) =>
+      ran.has(node.id) ? startedNodes.get(node.id) ?? node : node
+    ),
+  };
+};
