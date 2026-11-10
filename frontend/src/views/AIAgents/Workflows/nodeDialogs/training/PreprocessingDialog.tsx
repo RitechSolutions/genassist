@@ -61,7 +61,9 @@ import {
   cloneConfig,
   generatedSectionMatchesConfig,
   hasUnsavedHandEdits,
+  keepsOlderNodeCode,
   loadPreprocessingConfig,
+  type ConfigSource,
 } from "./preprocessingConfigState";
 import { ColumnFilter } from "./components/ColumnFilter";
 import { RemoveDuplicatesStep } from "./components/RemoveDuplicatesStep";
@@ -115,6 +117,8 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   const syncedConfigRef = useRef<PreprocessingConfig | null>(null);
   // The steps as loaded when the dialog opened
   const loadedConfigRef = useRef<PreprocessingConfig | null>(null);
+  // Where those steps came from - see keepsOlderNodeCode
+  const loadedSourceRef = useRef<ConfigSource>("empty");
   // Bumped when the dialog opens or closes and on Analyze. An analysis
   // response that started before the latest bump is dropped, so a slow,
   // older request can't overwrite newer results or a reopened dialog.
@@ -239,6 +243,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       // The loaded code belongs to these steps - don't regenerate on open
       syncedConfigRef.current = loaded.config;
       loadedConfigRef.current = loaded.config;
+      loadedSourceRef.current = loaded.source;
       setConfig(loaded.config);
       // Code whose generated function was edited by hand opens in Code mode,
       // so nothing regenerates over those edits without asking.
@@ -358,8 +363,18 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     // of the generator: storing its steps next to that code would otherwise
     // make it reopen in Code mode as "edited by hand". In Code mode the code
     // is saved as written; edits to the generated function are detected on
-    // the next open.
-    const codeToSave = mode === "configure" ? syncCodeToConfig(config) : pythonCode;
+    // the next open. An older node whose steps weren't changed keeps its code
+    // (and stores no steps), so hand-written lines in it aren't dropped.
+    const keepCode =
+      mode === "configure" &&
+      keepsOlderNodeCode(
+        loadedSourceRef.current,
+        config === loadedConfigRef.current,
+        pythonCode,
+        config
+      );
+    const codeToSave =
+      mode === "configure" && !keepCode ? syncCodeToConfig(config) : pythonCode;
     if (!codeToSave.trim()) {
       toast({
         title: "Validation Error",
@@ -378,7 +393,9 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       fileUrl,
       // The steps, stored as data (DP-7) - the dialog loads these instead of
       // re-reading them from pythonCode. pythonCode is still what runs.
-      preprocessingConfig: { ...cloneConfig(config), movedStepsKept: true },
+      preprocessingConfig: keepCode
+        ? data.preprocessingConfig
+        : { ...cloneConfig(config), movedStepsKept: true },
       analysisResult: analysisResults.initial || undefined, // For backward compatibility
       stepAnalysisResults:
         Object.keys(analysisResults).length > 0 ? analysisResults : undefined,
