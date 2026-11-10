@@ -359,3 +359,9 @@ class TestFailedStepsShowAShortMessage:
         assert _short_user_code_error(f"Error processing parameters: 'x'\n{tb5}", code) == "KeyError: 'x'"
         tb3 = tb.replace("line 2", "line 3")
         assert _short_user_code_error(f"Error processing parameters: 'x'\n{tb3}", code) == "Column Filter: KeyError: 'x'"
+        # Moved step types (still run by older workflows' code) are named too
+        moved = "a\n# STEP_START:s:feature_engineering\nb\n# STEP_END:s:feature_engineering\nc\n"
+        assert (
+            _short_user_code_error(f"Error processing parameters: 'x'\n{tb3}", moved)
+            == "Feature Engineering: KeyError: 'x'"
+        )
