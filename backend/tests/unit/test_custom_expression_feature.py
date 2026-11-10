@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from app.core.exceptions.exception_classes import AppException
+from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import _replay_feature_engineering
 from app.modules.workflow.engine.nodes.ml.ml_utils import (
     normalize_feature_expression,
@@ -130,7 +131,7 @@ async def _train(tmp_path, expression):
 
 
 def _feature_steps(result):
-    with open(result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
         return pickle.load(f)["metadata"]["feature_engineering_steps"]
 
 

@@ -13,6 +13,7 @@ from app.auth.utils import get_current_user_id
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.storage_path import path_relative_to_tenant_root
+from app.core.utils.training_upload import is_stored_training_upload
 from app.db.models.file import FileModel
 from app.db.models.ml_model import MLModel
 from app.repositories.ml_models import MLModelsRepository
@@ -31,11 +32,41 @@ ML_MODEL_UPLOAD_FOLDER = "ml_models"
 UNUSED_UPLOAD_MAX_AGE = timedelta(hours=1)
 
 
+# Train Data Source uploads (POST /file-manager/upload and its upload sessions) go here.
+TRAINING_UPLOAD_FOLDER = "uploads"
+# The Train Data Source dialog can stay open a long while between picking a file and
+# closing it, so its unused uploads may be discarded for longer than a rejected .pkl.
+UNUSED_TRAINING_UPLOAD_MAX_AGE = timedelta(hours=24)
+
+
 def _upload_folder_path(file: FileModel) -> str:
     """File path without the S3 tenant root, so 'tenants/<slug>/ml_models/x.pkl' reads as 'ml_models/x.pkl'."""
     if file.storage_provider == "s3":
         return path_relative_to_tenant_root(file.path)
     return str(file.path or "")
+
+
+def _is_own_recent_upload(file: FileModel, file_manager: Any, folder: str, max_age: timedelta) -> bool:
+    """True for a file the caller uploaded into `folder` within `max_age`, on the current storage."""
+    created_at = file.created_at
+    if created_at is not None and created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    # Delete only through the storage the file was saved to: if File Manager Settings
+    # changed since the upload, the delete would miss the file but still drop its record.
+    provider = getattr(file_manager, "storage_provider", None)
+    same_storage = (
+        provider is not None
+        and getattr(provider, "name", None) == file.storage_provider
+        and str(provider.get_base_path()) == str(file.storage_path)
+    )
+    return (
+        same_storage
+        and _upload_folder_path(file).startswith(f"{folder}/")
+        and file.created_by is not None
+        and file.created_by == get_current_user_id()
+        and created_at is not None
+        and datetime.now(timezone.utc) - created_at <= max_age
+    )
 
 _RATIO_BASELINE_PARAM = "ratioBaselineColumn"
 STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX = (
@@ -340,25 +371,9 @@ class MLModelsService:
         if file.storage_provider == "local" and file.storage_path and file.path:
             upload_paths.add(f"{file.storage_path}/{file.path}")
         upload_paths |= {os.path.normpath(p) for p in upload_paths}
-        created_at = file.created_at
-        if created_at is not None and created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
-        # Delete only through the storage the file was saved to: if File Manager Settings
-        # changed since the upload, the delete would miss the file but still drop its record.
-        provider = getattr(file_manager, "storage_provider", None)
-        same_storage = (
-            provider is not None
-            and getattr(provider, "name", None) == file.storage_provider
-            and str(provider.get_base_path()) == str(file.storage_path)
-        )
         discardable = (
-            same_storage
-            and _upload_folder_path(file).startswith(f"{ML_MODEL_UPLOAD_FOLDER}/")
+            _is_own_recent_upload(file, file_manager, ML_MODEL_UPLOAD_FOLDER, UNUSED_UPLOAD_MAX_AGE)
             and (file.file_extension or "").lower() == "pkl"
-            and file.created_by is not None
-            and file.created_by == get_current_user_id()
-            and created_at is not None
-            and datetime.now(timezone.utc) - created_at <= UNUSED_UPLOAD_MAX_AGE
             and not await self.repository.is_file_referenced(file.id, sorted(upload_paths))
         )
         if not discardable:
@@ -372,6 +387,39 @@ class MLModelsService:
                 os.remove(copy_path)
             except OSError as exc:
                 logger.warning("Could not remove the model file copy %s: %s", copy_path, type(exc).__name__)
+
+    async def discard_unused_training_upload(self, file_id: UUID, file_manager: Any) -> None:
+        """Delete a Train Data Source upload that the dialog no longer uses.
+
+        The dialog uploads a training file as soon as it is picked, so a file that is
+        rejected, replaced, removed or cancelled would otherwise stay in File Manager.
+        Only a recent training upload (marked as one when it was uploaded) made by the
+        caller that no live workflow version or ML model points at is deleted; anything else answers "not found", so the
+        endpoint can't be used to remove or probe other files.
+        """
+        from app.modules.workflow.engine.nodes.ml.training_file_readers import SUPPORTED_TRAINING_FILE_SUFFIXES
+
+        not_found = AppException(error_key=ErrorKey.FILE_NOT_FOUND, status_code=404)
+        try:
+            file = await file_manager.get_file_by_id(file_id)
+        except AppException:
+            raise not_found from None
+        # Local uploads are also handed to the dialog as csvFilePath, which a node can keep.
+        upload_paths = set()
+        if file.storage_provider == "local" and file.storage_path and file.path:
+            upload_path = f"{file.storage_path}/{file.path}"
+            upload_paths |= {upload_path, os.path.normpath(upload_path)}
+        discardable = (
+            _is_own_recent_upload(file, file_manager, TRAINING_UPLOAD_FOLDER, UNUSED_TRAINING_UPLOAD_MAX_AGE)
+            # Other features (knowledge bases, for example) upload into the same folder.
+            and is_stored_training_upload(file.file_metadata)
+            and f".{(file.file_extension or '').lower()}" in SUPPORTED_TRAINING_FILE_SUFFIXES
+            and not await self.repository.is_training_file_referenced(file.id, sorted(upload_paths))
+        )
+        if not discardable:
+            raise not_found
+
+        await file_manager.delete_file(file.id)
 
     async def record_local_pkl_file(self, ml_model_id: UUID, pkl_file: str) -> MLModel:
         """Record where a downloaded copy of the model's own pkl_file_id is stored.
