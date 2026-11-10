@@ -182,3 +182,44 @@ async def test_a_finalize_books_on_the_day_it_happened_even_if_the_lookup_crosse
     await background_tasks.drain(timeout=5.0)
 
     assert [(stat_date, delta.finalizes) for _, _, stat_date, delta in writes] == [(date(2026, 7, 1), 1)]
+
+
+@pytest.mark.asyncio
+async def test_a_burst_of_lookups_holds_at_most_eight_sessions_and_counts_every_event(writes, monkeypatch):
+    from contextlib import asynccontextmanager
+
+    from app.core.utils import db_connection_utils
+    from app.dependencies import injector as injector_module
+
+    sessions = {"open": 0, "peak": 0}
+
+    @asynccontextmanager
+    async def scope():
+        sessions["open"] += 1
+        sessions["peak"] = max(sessions["peak"], sessions["open"])
+        try:
+            yield
+        finally:
+            sessions["open"] -= 1
+
+    class FakeSession:
+        async def close(self):
+            pass
+
+    async def slow_lookup(self, conversation_id):
+        await asyncio.sleep(0.01)
+        return AGENT_ID
+
+    monkeypatch.setattr(ar, "_lookup_slots", asyncio.Semaphore(8))
+    monkeypatch.setattr(db_connection_utils, "create_tenant_request_scope", scope)
+    monkeypatch.setattr(injector_module.injector, "get", lambda _cls: FakeSession())
+    monkeypatch.setattr(ar.AnalyticsAggregationRepository, "get_agent_id_for_conversation", slow_lookup)
+    await asyncio.gather(
+        *(ar.update_conversation_finalized(uuid4()) for _ in range(12)),
+        *(ar.update_feedback_given(uuid4(), i % 2 == 0) for i in range(8)),
+    )
+    await background_tasks.drain(timeout=5.0)
+
+    assert sessions["peak"] == 8
+    totals = [sum(getattr(delta, field) for *_, delta in writes) for field in ("finalizes", "thumbs_up", "thumbs_down")]
+    assert totals == [12, 4, 4]

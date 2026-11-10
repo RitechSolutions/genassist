@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 _pending: dict[tuple[str, UUID, date], StatsDelta] = {}
 _flushers: dict[tuple[str, UUID, date], asyncio.Task] = {}
+_lookup_slots = asyncio.Semaphore(8)
 
 
 def parse_agent_response_for_stats(agent_response: dict) -> dict | None:
@@ -205,7 +206,7 @@ async def _agent_id_for(conversation_id: UUID) -> UUID | None:
     from app.core.utils.db_connection_utils import create_tenant_request_scope
     from app.dependencies.injector import injector
 
-    async with create_tenant_request_scope():
+    async with _lookup_slots, create_tenant_request_scope():
         session = injector.get(AsyncSession)
         try:
             return await AnalyticsAggregationRepository(session).get_agent_id_for_conversation(conversation_id)
