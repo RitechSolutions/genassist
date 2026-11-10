@@ -950,24 +950,47 @@ class TestPlainTrainingErrors:
 
 
 class TestTargetTypeEdgeCases:
-    @pytest.mark.asyncio
-    async def test_ridge_with_classification_task_trains_as_regression(self, tmp_path):
-        df = pd.DataFrame({"x1": np.arange(30, dtype=float), "y": [0, 1, 2] * 10})
-        csv_path = tmp_path / "ridge.csv"
+    @staticmethod
+    async def _train(tmp_path, model_type, task_type, y):
+        df = pd.DataFrame({"x1": np.arange(30, dtype=float), "y": y})
+        csv_path = tmp_path / f"{model_type}.csv"
         df.to_csv(csv_path, index=False)
         train_node = TrainModelNode(
             node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
         )
-        result = await train_node.process(
+        return await train_node.process(
             {
-                "name": f"ridge-{uuid.uuid4().hex[:8]}",
-                "modelType": "ridge_regression",
+                "name": f"{model_type}-{uuid.uuid4().hex[:8]}",
+                "modelType": model_type,
                 "fileUrl": str(csv_path),
                 "targetColumn": "y",
                 "featureColumns": ["x1"],
-                "taskType": "classification",
+                "taskType": task_type,
             }
         )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "model_type", ["linear_regression", "ridge_regression", "lasso_regression", "elastic_net"]
+    )
+    async def test_regression_only_model_rejects_classification(self, tmp_path, model_type):
+        # Numbers stored as text: with Classification they used to stay text and
+        # fail as "has text values (e.g. )" while the model trained as regression.
+        with pytest.raises(AppException) as exc:
+            await self._train(tmp_path, model_type, "classification", ["1", "2", "3"] * 10)
+        assert "incompatible" in exc.value.error_detail
+        assert f"'{model_type}'" in exc.value.error_detail
+        assert "only supports regression" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_logistic_regression_rejects_regression(self, tmp_path):
+        with pytest.raises(AppException) as exc:
+            await self._train(tmp_path, "logistic_regression", "regression", [0, 1] * 15)
+        assert "only supports classification" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_ridge_reads_numbers_stored_as_text(self, tmp_path):
+        result = await self._train(tmp_path, "ridge_regression", "auto", ["1", "2", "3"] * 10)
         assert "target_classes" not in result
         assert "r2_score" in result["metrics"]
 

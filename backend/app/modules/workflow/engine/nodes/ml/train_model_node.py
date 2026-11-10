@@ -341,15 +341,18 @@ class TrainModelNode(BaseNode):
                     error_key=ErrorKey.INTERNAL_ERROR,
                     error_detail=f"Invalid taskType: {task_type}. Must be one of: {', '.join(valid_task_types)}",
                 )
-            if model_type == "linear_regression" and task_type == "classification":
+            # Models that train only one task reject the other one here, so a
+            # Ridge/Lasso/Elastic Net set to Classification can't quietly train
+            # as regression (and fail later with a misleading "text values" error).
+            if model_type in ml_utils._REGRESSION_ONLY_MODEL_TYPES and task_type == "classification":
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail="taskType 'classification' is incompatible with modelType 'linear_regression', which only supports regression",
+                    error_detail=f"taskType 'classification' is incompatible with modelType '{model_type}', which only supports regression",
                 )
-            if model_type == "logistic_regression" and task_type == "regression":
+            if model_type in ml_utils._CLASSIFICATION_ONLY_MODEL_TYPES and task_type == "regression":
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail="taskType 'regression' is incompatible with modelType 'logistic_regression', which only supports classification",
+                    error_detail=f"taskType 'regression' is incompatible with modelType '{model_type}', which only supports classification",
                 )
 
             valid_outlier_strategies = ["no_action", "remove_outliers", "cap_outliers"]

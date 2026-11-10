@@ -62,6 +62,13 @@ const REGRESSION_ONLY_MODEL_TYPES = new Set([
 ]);
 const CLASSIFICATION_ONLY_MODEL_TYPES = new Set(["logistic_regression"]);
 
+/** The one task a model type supports, or undefined when it supports both. */
+export function onlyTaskTypeFor(modelType: string | undefined): "regression" | "classification" | undefined {
+  if (modelType && REGRESSION_ONLY_MODEL_TYPES.has(modelType)) return "regression";
+  if (modelType && CLASSIFICATION_ONLY_MODEL_TYPES.has(modelType)) return "classification";
+  return undefined;
+}
+
 /** The task the search will score for, so the dropdown only offers metrics that fit. */
 export function scoringTaskTypeFor(modelType: string | undefined, taskType: string | undefined) {
   if (modelType && REGRESSION_ONLY_MODEL_TYPES.has(modelType)) return "regression";

@@ -44,6 +44,7 @@ import {
   AUTO_SCORING,
   isAutoScoring,
   scoringGroupsFor,
+  onlyTaskTypeFor,
   scoringLabel,
   scoringTaskTypeFor,
 } from "./scoringOptions";
@@ -135,15 +136,15 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     })
   );
 
-  // linear_regression and logistic_regression only support one task each -
-  // keep taskType in sync with those so it never disagrees with modelType.
+  // Linear/Ridge/Lasso/Elastic Net only support regression and Logistic
+  // Regression only classification - keep taskType in sync with those so it
+  // never disagrees with modelType (the backend rejects a conflict).
+  const onlyTaskType = onlyTaskTypeFor(values.modelType);
   useEffect(() => {
-    if (values.modelType === "linear_regression" && values.taskType !== "regression") {
-      setField("taskType", "regression");
-    } else if (values.modelType === "logistic_regression" && values.taskType !== "classification") {
-      setField("taskType", "classification");
+    if (onlyTaskType && values.taskType !== onlyTaskType) {
+      setField("taskType", onlyTaskType);
     }
-  }, [values.modelType, values.taskType, setField]);
+  }, [onlyTaskType, values.taskType, setField]);
 
   // targetTransform (ratio target) is only meaningful for regression - clear
   // it if the task becomes classification so the two never disagree.
@@ -363,8 +364,9 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     setField("taskType", value as TrainModelNodeData["taskType"]);
   };
 
-  const isTaskTypeLocked =
-    values.modelType === "linear_regression" || values.modelType === "logistic_regression";
+  const isTaskTypeLocked = onlyTaskType !== undefined;
+  const modelTypeLabel =
+    ML_MODEL_TYPES.find((option) => option.value === values.modelType)?.label ?? values.modelType;
 
   const handleSplitMethodChange = (value: string) => {
     setField("splitMethod", value as TrainModelNodeData["splitMethod"]);
@@ -711,7 +713,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   {isTaskTypeLocked
-                    ? `${values.modelType === "linear_regression" ? "Linear" : "Logistic"} Regression only supports ${values.modelType === "linear_regression" ? "regression" : "classification"}`
+                    ? `${modelTypeLabel} only supports ${onlyTaskType}`
                     : "Auto-detect infers the task from the target column. Override it if the heuristic picks the wrong type for your dataset."}
                 </p>
               </div>
