@@ -73,6 +73,207 @@ def redact_bound_values(
     return result
 
 
+SQL_LITERAL_REDACTION = "***"
+_SQL_COMMENT_REDACTION = f"/* {SQL_LITERAL_REDACTION} */"
+
+_DOLLAR_QUOTE_OPEN_RE = re.compile(r"\$(?:[A-Za-z_]\w*)?\$")
+
+
+def _sql_dialect(dialect: str | None) -> str:
+    name = (dialect or "").strip().lower()
+    return {"sql": "mysql", "postgres": "postgresql"}.get(name, name)
+
+
+def _quoted_end(sql: str, start: int, close: str, backslash_escapes: bool) -> int:
+    """Index just past the quote that closes the token opened at ``start``."""
+    i = start + 1
+    while i < len(sql):
+        char = sql[i]
+        if backslash_escapes and char == "\\":
+            i += 2
+        elif char == close:
+            if sql[i + 1:i + 2] == close:  # doubled quote: '' or "" or ]]
+                i += 2
+            else:
+                return i + 1
+        else:
+            i += 1
+    return len(sql)  # unterminated: runs to the end
+
+
+def _scan_sql(sql: str, dialect: str, backslash_escapes: bool) -> list[tuple[int, int, str]]:
+    """Find string literals and comments as ``(start, end, kind)``.
+
+    Quoted names ("o'brien", `o'brien`, [o'brien]) are skipped as a whole, so a
+    quote inside a name or a comment never shifts where the strings start.
+    """
+    spans: list[tuple[int, int, str]] = []
+    i, n = 0, len(sql)
+    while i < n:
+        char, pair = sql[i], sql[i:i + 2]
+        line_comment = (
+            (pair == "--" and (dialect != "mysql" or sql[i + 2:i + 3] in ("", " ", "\t", "\n", "\r")))
+            or (char == "#" and dialect == "mysql")
+            or (pair == "//" and dialect == "snowflake")
+        )
+        if line_comment:
+            end = sql.find("\n", i)
+            end = n if end < 0 else end
+            spans.append((i, end, "comment"))
+        elif pair == "/*":
+            end = sql.find("*/", i + 2)
+            end = n if end < 0 else end + 2
+            spans.append((i, end, "comment"))
+        elif char == "'" or (char == '"' and dialect == "mysql"):
+            end = _quoted_end(sql, i, char, backslash_escapes)
+            spans.append((i, end, "string"))
+        elif char in '"`' or (char == "[" and dialect in ("mssql", "sqlite")):
+            end = _quoted_end(sql, i, "]" if char == "[" else char, False)
+        elif (
+            char == "$"
+            and dialect in ("", "postgresql", "snowflake")
+            and not (i and (sql[i - 1].isalnum() or sql[i - 1] in "_$"))
+            and (opening := _DOLLAR_QUOTE_OPEN_RE.match(sql, i))
+        ):
+            tag = opening.group(0)
+            close = sql.find(tag, opening.end())
+            end = n if close < 0 else close + len(tag)
+            spans.append((i, end, "string"))
+        else:
+            end = i + 1
+        i = max(end, i + 1)
+    return spans
+
+
+def _sql_redaction_spans(sql: str, dialect: str | None) -> list[tuple[int, int, str]]:
+    """Strings and comments under both readings of a backslash.
+
+    MySQL and Snowflake treat \\' as an escaped quote; PostgreSQL, SQL Server and
+    SQLite end the string there ('C:\\'). Server settings can flip this, so a span
+    is redacted when either reading says it is a string or a comment.
+    """
+    name = _sql_dialect(dialect)
+    spans = set(_scan_sql(sql, name, True)) | set(_scan_sql(sql, name, False))
+    return sorted(spans)
+
+
+def _literal_contents(token: str) -> set[str]:
+    """The value inside a literal token, both as written and unescaped."""
+    if token.startswith("$"):
+        tag = token[:token.index("$", 1) + 1]
+        closed = len(token) >= 2 * len(tag) and token.endswith(tag)
+        return {token[len(tag):len(token) - len(tag)] if closed else token[len(tag):]}
+    quote = token[0]
+    inner = token[1:-1] if len(token) > 1 and token.endswith(quote) else token[1:]
+    return {inner, inner.replace(quote * 2, quote), inner.replace("\\" + quote, quote)}
+
+
+def _masked_token(token: str, kind: str) -> str:
+    if kind == "comment":
+        return _SQL_COMMENT_REDACTION
+    quote = '"' if token.startswith('"') else "'"
+    return f"{quote}{SQL_LITERAL_REDACTION}{quote}"
+
+
+def _apply_redaction_spans(text: str, spans: list[tuple[int, int, str]]) -> str:
+    parts: list[str] = []
+    position = 0
+    for start, end, kind in spans:
+        if end <= position:
+            continue
+        if start < position:
+            # Overlaps the previous span (the two backslash readings disagree):
+            # mask the rest of it too.
+            if parts[-1] != SQL_LITERAL_REDACTION:
+                parts.append(SQL_LITERAL_REDACTION)
+        else:
+            parts.append(text[position:start])
+            parts.append(_masked_token(text[start:end], kind))
+        position = end
+    parts.append(text[position:])
+    return "".join(parts)
+
+
+def redact_sql_literals(sql: Any, *, dialect: str | None = None) -> str:
+    """Mask every string literal and comment in SQL text, keeping keywords and names.
+
+    ``WHERE password = 'secret'`` becomes ``WHERE password = '***'``.
+    ``dialect`` is the datasource type (postgresql, mysql, mssql, sqlite,
+    snowflake); it decides which quotes and comment markers apply.
+    """
+    text = str(sql)
+    return _apply_redaction_spans(text, _sql_redaction_spans(text, dialect))
+
+
+# How much of a driver message is searched for the query's values. The result
+# is cut to a couple of thousand characters for the log anyway, and searching
+# a long message for thousands of values would block the worker.
+MAX_SCANNED_DB_MESSAGE = 8_000
+
+
+def redact_sql_literal_values(
+    message: Any,
+    sql: Any,
+    *,
+    dialect: str | None = None,
+) -> str:
+    """Remove the string literals and comments of ``sql`` from a driver message about it.
+
+    Drivers repeat the statement (SQLAlchemy's ``[SQL: ...]``) or a literal on
+    its own (``invalid input syntax for type integer: "secret"``,
+    ``Duplicate entry 'secret'``), so each literal's value is masked wherever
+    it appears. A value is only masked as a whole word, so a literal such as
+    'active' does not mangle a table named active_orders.
+
+    Only the first ``MAX_SCANNED_DB_MESSAGE`` characters are kept, so the cost
+    stays proportional to the query size even for thousands of values.
+    """
+    result = str(message)
+    if not sql:
+        return result
+
+    sql = str(sql)
+    spans = _sql_redaction_spans(sql, dialect)
+
+    # The usual case: the whole statement is repeated. Masking that copy in one
+    # pass leaves only the driver's own text to search.
+    if sql in result:
+        result = result.replace(sql, _apply_redaction_spans(sql, spans))
+
+    tokens = {(sql[start:end], kind) for start, end, kind in spans}
+    longest_token = max((len(token) for token, _kind in tokens), default=0)
+    truncated = len(result) > MAX_SCANNED_DB_MESSAGE
+    if truncated:
+        result = result[:MAX_SCANNED_DB_MESSAGE]
+
+    for token, kind in sorted(tokens, key=lambda item: len(item[0]), reverse=True):
+        if token in result:
+            result = result.replace(token, _masked_token(token, kind))
+
+    values = {
+        value
+        for token, kind in tokens
+        if kind == "string"
+        for value in _literal_contents(token)
+    }
+    for value in sorted(values, key=len, reverse=True):
+        # One-character values would match everywhere; their quoted form is
+        # already masked above.
+        if len(value.strip()) < 2 or value not in result:
+            continue
+        result = re.sub(
+            rf"(?<!\w){re.escape(value)}(?!\w)",
+            SQL_LITERAL_REDACTION,
+            result,
+        )
+
+    if truncated:
+        # A value cut in half at the end was not recognized; drop the tail it
+        # could be in.
+        result = result[:max(0, len(result) - longest_token)] + " [truncated]"
+    return result
+
+
 def is_sensitive_field_name(field_name: str) -> bool:
     return bool(_SENSITIVE_FIELD_RE.search(field_name or ""))
 

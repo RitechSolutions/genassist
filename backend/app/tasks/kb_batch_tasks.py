@@ -8,6 +8,7 @@ from celery import shared_task
 from fastapi import HTTPException, UploadFile
 
 from app.dependencies.injector import injector
+from app.modules.data.load_result import DocumentNotLoadedError, has_text, load_document
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.data.utils.file_extractor import FileTextExtractor
 from app.services.agent_knowledge import KnowledgeBaseService
@@ -108,6 +109,7 @@ async def batch_process_files_kb_async(
     count_success = 0
     count_skipped = 0
     count_fail = 0
+    files_not_loaded = 0
     files_processed = []
     count_zendesk_syncs = len(zendesk_sync_results)
 
@@ -190,59 +192,41 @@ async def batch_process_files_kb_async(
                 filter = filter_pattern
             )
 
+            s3_access = {
+                "api_key": keyid_username,
+                "api_secret": secret_password,
+                "region": region,
+                "bucket_name": bucket_server,
+            }
             for s3_file in s3_files.get("files", []):
                 if s3_file.get("size", 0) == 0:
                     logger.debug(f"Skipping empty file: {s3_file['key']}")
                     count_skipped += 1
                     continue
-                file_content = await s3_download_file(
-                    api_key = keyid_username,
-                    api_secret = secret_password,
-                    region = region,
-                    bucket_name = bucket_server,
-                    item = s3_file["key"]
-                )
-                count_success += 1
-
+                file_content = await s3_download_file(**s3_access, item=s3_file["key"])
                 logger.debug(f"Downloaded file {s3_file['key']} with size {s3_file['size']} bytes")
 
                 extracted_content = await get_content_from_file(mode=processing_mode, file=file_content)
+                has_readable_text = has_text(extracted_content.get("content"))
 
-                # # if RAG enabled, chunk and vectorize content, and save to vector database
-                if vector_enabled and extracted_content.get("content", None):
+                if vector_enabled and has_readable_text:
+                    try:
+                        await _add_s3_document(agentRAGServiceManager, kb_item, ds_item, extracted_content)
+                    except DocumentNotLoadedError as e:
+                        logger.error(f"{e}; {s3_file['key']} stays in the input folder")
+                        count_fail += 1
+                        files_not_loaded += 1
+                        continue
 
-                    # Vectorize chunks and save to vector database
-                    rag_service = await agentRAGServiceManager.get_service(kb_item)
-                    rag_doc_id = "KB:" + str(kb_item.id) + "#" + extracted_content.get("file_name", "unknown_file")
-                    rag_doc_metadata = extracted_content.get("metadata", {})
-                    logger.debug(f"Adding document {rag_doc_id} to RAG service for KB {kb_item.id}\nMetadata: {rag_doc_metadata}")
-
-                    rag_doc_metadata["name"]= extracted_content.get("file_name", "unknown_file")
-                    rag_doc_metadata["description"]= f"File in {kb_item.name} from S3 source {ds_item.name}"
-                    rag_doc_metadata["kb_id"] = str(kb_item.id),
-
-                    # Add to knowledge base using simplified manager
-                    res = await rag_service.add_document(
-                        # kb_item,
-                        rag_doc_id,
-                        extracted_content["content"],
-                        rag_doc_metadata,
-                    )
-                    logger.debug(f"Document {extracted_content.get('file_name', 'unknown_file')} processed with result: {res}")
-                # Move file to processed folder or delete file after processing based on KB configuration
                 if save_output_path:
+                    await _move_to_output_folder(s3_access, s3_file["key"], save_output_path)
 
-                    timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
-                    destination_key = save_output_path.rstrip("/") + "/" + timestamp_str + "_" + s3_file["key"].split("/")[-1]
-
-                    await s3_move_file(
-                        api_key = keyid_username,
-                        api_secret = secret_password,
-                        region = region,
-                        bucket_name = bucket_server,
-                        item = s3_file["key"],
-                        destination = destination_key
-                    )
+                had_nothing_to_load = vector_enabled and not has_readable_text
+                if had_nothing_to_load:
+                    logger.warning(f"{s3_file['key']} has no readable text; it was not loaded into the knowledge base")
+                    count_skipped += 1
+                else:
+                    count_success += 1
 
             logger.info(f"Finished processing S3 datasource {ds_item.name} for KB {kb_item.name}\n - {count_success} files processed, \n - {count_skipped} files skipped, and \n - {count_fail} failures.")
 
@@ -308,6 +292,11 @@ async def batch_process_files_kb_async(
         "salesforce_kbs_synced": len(salesforce_sync_results),
         "kbs_not_synced": kbs_not_synced,
     }
+    if files_not_loaded:
+        result["status"] = "error"
+        result["message"] = (
+            f"{files_not_loaded} file(s) could not be loaded into the knowledge base and were left in the input folder."
+        )
 
     return result
 
@@ -320,6 +309,30 @@ async def batch_process_files_kb_async(
 import fnmatch
 
 import boto3
+
+
+async def _add_s3_document(rag_manager: AgentRAGServiceManager, kb_item, ds_item, extracted_content: dict) -> None:
+    """Add the extracted text to the knowledge base; raises when no store took it."""
+    file_name = extracted_content.get("file_name", "unknown_file")
+    rag_doc_id = "KB:" + str(kb_item.id) + "#" + file_name
+    rag_doc_metadata = extracted_content.get("metadata", {})
+    rag_doc_metadata["name"] = file_name
+    rag_doc_metadata["description"] = f"File in {kb_item.name} from S3 source {ds_item.name}"
+    rag_doc_metadata["kb_id"] = str(kb_item.id)
+    logger.debug(f"Adding document {rag_doc_id} to RAG service for KB {kb_item.id}\nMetadata: {rag_doc_metadata}")
+
+    warning = await load_document(
+        rag_manager, kb_item, rag_doc_id, extracted_content["content"], rag_doc_metadata, file_name, legra_finalize=True
+    )
+    if warning:
+        logger.warning(warning)
+
+
+async def _move_to_output_folder(s3_access: dict, file_key: str, output_path: str) -> None:
+    """Move a processed input file to the output folder under a timestamped name."""
+    timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
+    destination_key = output_path.rstrip("/") + "/" + timestamp_str + "_" + file_key.split("/")[-1]
+    await s3_move_file(**s3_access, item=file_key, destination=destination_key)
 
 
 async def s3_list_source(

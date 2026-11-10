@@ -16,6 +16,7 @@ import os
 import re
 import warnings
 import tokenize
+import uuid
 from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
@@ -30,6 +31,7 @@ from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     ensure_unique_columns,
     ensure_unique_query_columns,
@@ -855,6 +857,14 @@ def translate_category_literals(
     return result
 
 
+def new_training_output_path(thread_id: str, suffix: str = "") -> Path:
+    """A new output file under DATA_VOLUME/train/<thread>; the random part keeps names unguessable and unique."""
+    uploads_dir = DATA_VOLUME / "train" / thread_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return uploads_dir / f"{thread_id}_{timestamp}_{uuid.uuid4().hex}{suffix}.csv"
+
+
 def data_volume_reference(file_path: Any, base: str = "train") -> str:
     """The path a node shows for a file it wrote, relative to DATA_VOLUME/<base>.
 
@@ -894,19 +904,7 @@ async def save_data_to_csv(
         Path to the saved CSV file
     """
     try:
-        # Create uploads directory within the project's data volume
-        uploads_dir = DATA_VOLUME / "train" / thread_id
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-
-        # Get timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Generate filename using thread_id and timestamp with optional suffix
-        if suffix:
-            filename = f"{thread_id}_{timestamp}{suffix}.csv"
-        else:
-            filename = f"{thread_id}_{timestamp}.csv"
-        file_path = uploads_dir / filename
+        file_path = new_training_output_path(thread_id, suffix or "")
 
         # Write CSV file
         if data and columns:
@@ -958,11 +956,7 @@ async def stream_rows_to_csv(
     except KeyError as exc:
         raise ValueError(f"Unsupported stream source kind: {source_kind}") from exc
 
-    uploads_dir = DATA_VOLUME / "train" / thread_id
-    uploads_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = uploads_dir / f"{thread_id}_{timestamp}{suffix}.csv"
+    file_path = new_training_output_path(thread_id, suffix)
     columns: List[str] = []
     row_count = 0
     preview_head: List[Tuple[Any, ...]] = []
@@ -1297,6 +1291,22 @@ def parse_training_file(file_path: str) -> List[Dict[str, Any]]:
     return parser(file_path)
 
 
+def csv_path_candidates(file_url: str, thread_id: Optional[str] = None) -> List[Any]:
+    """The paths resolve_csv_file_path tries for a file path, in order."""
+    if file_url.startswith("/"):
+        return [file_url]
+    if thread_id:
+        # A node's data_path is relative to DATA_VOLUME/train and may come
+        # from an earlier run with another thread (e.g. testing one node).
+        return [
+            DATA_VOLUME / "train" / thread_id / file_url,
+            DATA_VOLUME / "train" / file_url,
+            os.path.abspath(file_url),
+        ]
+    # Relative to DATA_VOLUME/train, then the current folder, then DATA_VOLUME
+    return [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
+
+
 def resolve_csv_file_path(
     file_url: str, thread_id: Optional[str] = None, allowed_directories: Optional[List[Path]] = None
 ) -> Path:
@@ -1329,31 +1339,14 @@ def resolve_csv_file_path(
     file_url = stripped_url
 
     try:
-        # Handle both absolute paths and relative paths
-        if file_url.startswith("/"):
-            # Absolute path
-            candidates = [file_url]
-        elif file_url.startswith("http://") or file_url.startswith("https://"):
+        if file_url.startswith("http://") or file_url.startswith("https://"):
             # For HTTP URLs, we'd need to download first
             # For now, raise an error
             raise AppException(
                 error_key=ErrorKey.FILE_NOT_FOUND,
                 error_detail=f"HTTP/HTTPS URLs are not yet supported: {file_url}",
             )
-        else:
-            # Try relative to DATA_VOLUME/train/thread_id if thread_id provided, then the current folder
-            if thread_id:
-                # A node's data_path is relative to DATA_VOLUME/train and may come
-                # from an earlier run with another thread (e.g. testing one node).
-                candidates = [
-                    DATA_VOLUME / "train" / thread_id / file_url,
-                    DATA_VOLUME / "train" / file_url,
-                    os.path.abspath(file_url),
-                ]
-            else:
-                # Try relative to DATA_VOLUME/train (common location for CSV files),
-                # then the current folder, then directly in DATA_VOLUME
-                candidates = [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
+        candidates = csv_path_candidates(file_url, thread_id)
 
         # Only files inside the data volume, or the configured storage folder, can be read
         directories = [DATA_VOLUME, *(allowed_directories or [])]
@@ -1459,24 +1452,97 @@ def _names_data(python_code: str) -> bool:
 # after whatever else was written to stderr (e.g. pandas warnings).
 _USER_EXCEPTION_MARKER = "Global errors: "
 _WRAPPER_ERROR_PREFIX = "Error processing parameters: "
+_TRACEBACK_HEADER = "Traceback (most recent call last):"
+_MAX_LOGGED_ERROR_CHARS = 4000
+_NO_RESULT_MESSAGE = (
+    "The preprocessing code returned nothing - executable_function must return the processed DataFrame"
+)
+# The innermost frame of the user's code (exec'd from a string)
+_USER_CODE_FRAME = re.compile(r'File "<string>", line (\d+)')
+_EXCEPTION_LINE = re.compile(r"^([A-Za-z_][\w.]*)(?::\s?(.*))?$")
+# Exceptions whose message already says what went wrong (e.g. a step's own
+# column check), so the type name would only be noise
+_SELF_DESCRIBING_EXCEPTIONS = {"ValueError", "Exception"}
+# Display names of the Data Preprocessing steps (getStepTypeDisplayName in the frontend)
+# Mirrors getStepTypeDisplayName in the frontend's preprocessingConfig.ts,
+# including the moved step types (MOVED_STEP_NAMES there): older workflows'
+# code still runs those steps, so an error can come from inside one.
+_PREPROCESSING_STEP_NAMES = {
+    "column_filter": "Column Filter",
+    "remove_duplicates": "Remove Duplicate Rows",
+    "drop_column_or_row": "Remove Column/Row",
+    "drop_high_null_columns": "Remove High-Null Columns",
+    "change_dtype": "Change Column Data Type",
+    "missing_value_handling": "Missing Value Handling",
+    "outlier_handling": "Outlier Handling",
+    "categorical_encoding": "Categorical Encoding",
+    "feature_engineering": "Feature Engineering",
+}
+_STEP_MARKER = re.compile(r"#\s*STEP_(START|END):[^:\n]+:(\w+)")
 
 
-def _format_user_code_error(stderr_output: str) -> str:
-    """The error to show for a run that returned no result.
+def _step_at_line(python_code: str, line_number: int) -> Optional[str]:
+    """Display name of the preprocessing step whose markers enclose a line of the code, if any."""
+    step = None
+    for line in python_code.splitlines()[: max(line_number, 0)]:
+        marker = _STEP_MARKER.search(line)
+        if marker:
+            step = marker.group(2) if marker.group(1) == "START" else None
+    return _PREPROCESSING_STEP_NAMES.get(step, step) if step else None
 
-    stderr holds any warnings first and the user's exception last, so the
-    real error would otherwise be buried under e.g. a pandas FutureWarning
-    the user can ignore. Puts the exception (message + traceback) first and
-    any other stderr output after it, under "Warnings:".
+
+def _exception_type(traceback_text: str, message: str) -> str:
+    """The raised exception's class name, from its "Type: <message>" line.
+
+    Matched against the message's first line, since lines after it (the rest
+    of a multi-line message, exception notes) can look like "Name: value" too.
     """
-    if _USER_EXCEPTION_MARKER not in stderr_output:
-        return stderr_output.strip()
-    warnings_text, _, error_text = stderr_output.partition(_USER_EXCEPTION_MARKER)
-    error_text = error_text.strip()
-    if error_text.startswith(_WRAPPER_ERROR_PREFIX):
-        error_text = error_text[len(_WRAPPER_ERROR_PREFIX):]
-    warnings_text = warnings_text.strip()
-    return f"{error_text}\n\nWarnings:\n{warnings_text}" if warnings_text else error_text
+    first_line = message.splitlines()[0].strip() if message else ""
+    for line in reversed(traceback_text.splitlines()):
+        if not line.strip() or line[0].isspace():
+            continue
+        match = _EXCEPTION_LINE.match(line.strip())
+        if match and (match.group(2) or "").strip() == first_line:
+            return match.group(1).rsplit(".", 1)[-1]
+    return ""
+
+
+def _short_user_code_error(raw_error: str, python_code: str = "") -> str:
+    """The message to show for preprocessing code that raised.
+
+    The sandbox hands back the wrapper's "Error processing parameters: <message>"
+    followed by the whole traceback, which names server paths (/opt/venv/...)
+    and library internals. The user gets only the exception, led by the step
+    it was raised in; the full text is logged on the server.
+    """
+    text = raw_error.strip()
+    if _USER_EXCEPTION_MARKER in text:
+        text = text.partition(_USER_EXCEPTION_MARKER)[2].strip()
+    if text.startswith(_WRAPPER_ERROR_PREFIX):
+        text = text[len(_WRAPPER_ERROR_PREFIX):]
+    message, header, traceback_text = text.partition(_TRACEBACK_HEADER)
+    message = message.strip()
+    if not header:
+        return message
+
+    exception_type = _exception_type(traceback_text, message)
+    if exception_type and exception_type not in _SELF_DESCRIBING_EXCEPTIONS:
+        message = f"{exception_type}: {message}" if message else exception_type
+
+    frames = _USER_CODE_FRAME.findall(traceback_text)
+    step = _step_at_line(python_code, int(frames[-1])) if frames and python_code else None
+    if step and not message.startswith(f"{step}:"):
+        message = f"{step}: {message}"
+    return message or "Preprocessing code failed"
+
+
+def _user_code_failure(raw_error: str, python_code: str) -> str:
+    """Log a failed run's full error server-side and return the short message for the user."""
+    # Masked and capped like node errors: the message can hold data values
+    logger.warning(
+        "Preprocessing code failed: %s", truncate_for_log(redact_sensitive_substrings(raw_error), _MAX_LOGGED_ERROR_CHARS)
+    )
+    return _short_user_code_error(raw_error, python_code)
 
 
 async def execute_and_process_preprocessing_code(
@@ -1522,10 +1588,14 @@ async def execute_and_process_preprocessing_code(
     # Library warnings land in stderr, so only a runner error or a raised script counts as failure
     failure = script_error(response)
     if failure:
+        # A script that raised comes back with the wrapper's prefix and the full
+        # traceback; runner errors (syntax, sandbox, timeout) are short already
+        if failure == response.get("script_error"):
+            failure = _user_code_failure(failure, python_code)
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {failure}",
+                error_detail=failure,
             )
         else:
             return None, failure, response
@@ -1533,11 +1603,20 @@ async def execute_and_process_preprocessing_code(
     stderr_output = response.get("errors")
     result = response.get("result")
     if stderr_output and result is None:
-        user_error = _format_user_code_error(stderr_output)
+        if _USER_EXCEPTION_MARKER in stderr_output:
+            user_error = _user_code_failure(stderr_output, python_code)
+        else:
+            # Nothing was raised - stderr only holds warnings, which can name
+            # server paths; the real problem is the missing result
+            logger.warning(
+                "Preprocessing code returned no result; stderr: %s",
+                truncate_for_log(redact_sensitive_substrings(stderr_output), _MAX_LOGGED_ERROR_CHARS),
+            )
+            user_error = _NO_RESULT_MESSAGE
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {user_error}",
+                error_detail=user_error,
             )
         else:
             return None, user_error, response
