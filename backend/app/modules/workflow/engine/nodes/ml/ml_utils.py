@@ -381,40 +381,78 @@ def write_dtypes_mapping_sidecar(csv_path: Any, dtypes: Dict[str, str]) -> str:
     return str(sidecar)
 
 
-# A number written with a leading zero ("001", "0123", "007.5"). The zero only
-# means something as text - an ID, a postcode, a product code - and reading
-# it as a number would turn "001" into 1.
-_LEADING_ZERO_NUMBER = r"^\s*[+-]?0\d+(?:\.\d+)?\s*$"
+# A column is read as text only when it looks like a code - an ID, a postcode,
+# a product code - whose zeros mean something: every value is digits, all the
+# same length ("001".."123", "02134"), and at least one starts with a zero.
+# A numeric column with one stray zero-padded value ("7", "12", "07") keeps
+# its number type, so existing workflows and trained models see the types
+# they always did.
+_CODE_VALUE = r"^\d+$"
 
 
-# Rows per chunk when scanning a file as text for leading-zero columns, so a
-# large upload is never held in memory as one all-text frame.
+# Rows per chunk when scanning a file as text for code columns, so a large
+# upload is never held in memory as one all-text frame.
 _LEADING_ZERO_SCAN_CHUNK_ROWS = 50_000
 
 
+class _CodeColumnScan:
+    """Per-column state while scanning a file as text, chunk by chunk."""
+
+    def __init__(self) -> None:
+        self.width: Dict[str, int] = {}
+        self.has_leading_zero: Dict[str, bool] = {}
+        self.not_code: set = set()
+
+    def add(self, text_df: pd.DataFrame) -> None:
+        for column in text_df.columns:
+            if column in self.not_code:
+                continue
+            values = text_df[column].dropna().str.strip()
+            values = values[values != ""]
+            if values.empty:
+                continue
+            widths = values.str.len().unique()
+            if (
+                not values.str.match(_CODE_VALUE).all()
+                or len(widths) != 1
+                or self.width.setdefault(column, int(widths[0])) != int(widths[0])
+            ):
+                self.not_code.add(column)
+                continue
+            # "0" alone is a number; "07" is zero-padded.
+            if values.str.match(r"^0\d").any():
+                self.has_leading_zero[column] = True
+
+    def columns(self) -> List[str]:
+        return [
+            column
+            for column in self.width
+            if column not in self.not_code and self.has_leading_zero.get(column)
+        ]
+
+
 def leading_zero_columns(text_df: pd.DataFrame) -> List[str]:
-    """Columns of an all-text frame with at least one leading-zero number."""
-    return [
-        column
-        for column in text_df.columns
-        if text_df[column].dropna().str.match(_LEADING_ZERO_NUMBER).any()
-    ]
+    """Columns of an all-text frame that look like zero-padded codes (see _CODE_VALUE)."""
+    scan = _CodeColumnScan()
+    scan.add(text_df)
+    return scan.columns()
 
 
 def read_csv_keeping_leading_zeros(source: Any, **read_csv_kwargs: Any) -> pd.DataFrame:
-    """pd.read_csv with its usual type inference, except that a column with a
-    leading-zero number ("001") is read as text, so its zeros are kept.
+    """pd.read_csv with its usual type inference, except that a column of
+    zero-padded codes ("001", "02134") is read as text, so its zeros are kept.
 
     `source` is a path or a seekable text buffer. The file is read twice: first
     as text, in chunks, to find those columns, then once with types.
     """
     start = source.tell() if hasattr(source, "seek") else None
-    keep_as_text: List[str] = []
+    scan = _CodeColumnScan()
     with pd.read_csv(
         source, dtype=str, chunksize=_LEADING_ZERO_SCAN_CHUNK_ROWS, **read_csv_kwargs
     ) as chunks:
         for chunk in chunks:
-            keep_as_text += [c for c in leading_zero_columns(chunk) if c not in keep_as_text]
+            scan.add(chunk)
+    keep_as_text = scan.columns()
     if start is not None:
         source.seek(start)
     if not keep_as_text:
