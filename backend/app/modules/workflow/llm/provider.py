@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 from typing import TYPE_CHECKING, Any, Dict, Optional
 from urllib.parse import urlparse
 import copy
@@ -40,45 +39,6 @@ def _bedrock_supports_prompt_caching(model_name: Optional[str]) -> bool:
         return True
     logger.debug("Prompt caching skipped: %r is not a cache-capable Bedrock model", model_name)
     return False
-
-
-# Claude 4.6 and later think adaptively and reject the old budget form (4.6 only deprecates it).
-_ADAPTIVE_THINKING_SINCE = (4, 6)
-# Claude 4.7 and later answer a sampling setting with 400 "`temperature` is deprecated for
-# this model"; prompting is the only steering left. Stopgap until the provider form knows
-# which settings a model generation accepts: the stored value is dropped at build time.
-_SAMPLING_REMOVED_SINCE = (4, 7)
-_SAMPLING_KEYS = ("temperature", "top_p", "top_k")
-# claude-sonnet-5-5, claude-opus-4-6, claude-3-7-sonnet-20250219, claude-sonnet-4-20250514 (no minor)
-_CLAUDE_VERSION = re.compile(r"claude-(?:[a-z]+-)?(\d+)(?:-(\d{1,2}))?(?!\d)")
-
-
-def claude_version(model_name: Optional[str]) -> Optional[tuple[int, int]]:
-    """(major, minor) of a Claude model id, or None when the id names no version"""
-    match = _CLAUDE_VERSION.search((model_name or "").lower())
-    if not match:
-        return None
-    return int(match.group(1)), int(match.group(2) or 0)
-
-
-def anthropic_thinking(model_name: Optional[str], budget_tokens: Any) -> Dict[str, Any]:
-    """The `thinking` request option for this model when extended thinking is turned on"""
-    version = claude_version(model_name)
-    if version is not None and version >= _ADAPTIVE_THINKING_SINCE:
-        return {"type": "adaptive"}
-    return {"type": "enabled", "budget_tokens": budget_tokens}
-
-
-def without_rejected_sampling(connection_data: Dict[str, Any], model_name: Optional[str]) -> Dict[str, Any]:
-    """`connection_data` without the sampling settings this Claude model rejects"""
-    version = claude_version(model_name)
-    if version is None or version < _SAMPLING_REMOVED_SINCE:
-        return connection_data
-    dropped = [key for key in _SAMPLING_KEYS if key in connection_data]
-    if not dropped:
-        return connection_data
-    logger.info("%s ignores %s; the stored value is not sent", model_name, ", ".join(dropped))
-    return {k: v for k, v in connection_data.items() if k not in _SAMPLING_KEYS}
 
 
 def apply_max_tokens_floor(connection_data: Dict[str, Any], floor: Optional[int]) -> Dict[str, Any]:
@@ -176,12 +136,8 @@ async def build_chat_model(
                 # Claude 4.6+ decides how much to think; budget_tokens is rejected on the newest ones.
                 cd["thinking"] = {"type": "adaptive"}
             else:
-                cd["thinking"] = anthropic_thinking(model_name, budget_tokens)
-            if cd["thinking"]["type"] == "adaptive":
-                cd.pop("temperature", None)  # newer models reject sampling settings next to thinking
-            else:
-                cd["temperature"] = 1  # Anthropic requires temperature=1 when thinking is enabled
-        cd = without_rejected_sampling(cd, model_name)
+                cd["thinking"] = {"type": "enabled", "budget_tokens": budget_tokens}
+            cd["temperature"] = 1  # Anthropic requires temperature=1 when thinking is enabled
     elif provider == "openai":
         effort = cd.pop("reasoning_effort", None)
         if effort in (None, "", "none"):
