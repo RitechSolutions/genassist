@@ -270,6 +270,9 @@ class ProjectSettings(BaseSettings):
     DEV: bool = False
     FASTAPI_DEBUG: bool = True
     LOG_LEVEL: str = "DEBUG"
+    # Datadog logs (JSON on stdout) and trace tags, see app/core/observability/datadog_observability.py.
+    # Off by default; only deployments that ship to Datadog turn it on.
+    DATADOG_ENABLED: bool = False
     SQLALCHEMY_LOG_LEVEL: str = "ERROR"
     FASTAPI_RUN_PORT: int = 8000
     # Address callers outside the load balancer use, e.g. https://api.example.com/api
