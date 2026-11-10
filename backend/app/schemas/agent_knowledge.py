@@ -103,3 +103,10 @@ class KBListItem(BaseModel):
     last_sync_status: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class KBMinimal(BaseModel):
+    id: UUID
+    name: str
+
+    model_config = ConfigDict(from_attributes=True)

@@ -43,7 +43,7 @@ class SubAgentTurnRouter:
         try:
             stack = await sub_session.read_frame_strict(memory)
         except sub_session.SubAgentSessionError:
-            return self._plain_message(messages.CONVERSATION_UNRESUMABLE)
+            return self._plain_message(messages.CONVERSATION_UNRESUMABLE, status="failed")
 
         if stack is None:
             return None
@@ -85,10 +85,10 @@ class SubAgentTurnRouter:
                 usage_context=usage_context,
             )
         except asyncio.TimeoutError:
-            return self._plain_message(messages.child_timeout(timeout_seconds, retry=True))
+            return self._plain_message(messages.child_timeout(timeout_seconds, retry=True), status="failed")
         except Exception:
             logger.exception("Sub-agent resume turn for %s failed", frame.child_node_id)
-            return self._plain_message(messages.child_failed(retry=True))
+            return self._plain_message(messages.child_failed(retry=True), status="failed")
 
         completion = orchestrator.child_completion(child_state)
         if completion is None:
@@ -159,9 +159,17 @@ class SubAgentTurnRouter:
         return isinstance(output, dict) and output.get("status") == "awaiting_input" and "sub_agent" in output
 
     def _message_only(self, response: dict, text: str) -> dict:
-        """Reduce a child response to a plain success message"""
+        """Reduce a child response to a plain message.
+
+        A turn that replied answered: it is partial if anything failed, else a
+        success. The child's own status can't decide that - the child run uses
+        the parent's graph, whose end nodes (e.g. Chat Output) never run in it.
+        Only a turn with no reply keeps a failed status."""
         message = {"message": text}
-        response["status"] = "success"
+        status = response.get("status")
+        went_wrong = bool(response.get("has_failures")) or status in ("failed", "partial")
+        if text or status not in ("failed", "partial"):
+            response["status"] = "partial" if went_wrong else "success"
         response["output"] = message
         state = response.get("state")
         if isinstance(state, dict) and isinstance(state.get("output"), dict):
@@ -203,5 +211,5 @@ class SubAgentTurnRouter:
             "child_tools_used": tools_used[-SUB_AGENT_TRACE_STEPS_CAP:] if isinstance(tools_used, list) else [],
         }
 
-    def _plain_message(self, message: str) -> dict:
-        return {"status": "success", "output": {"message": message}, "token_usage": {}, "cost_usd": 0.0}
+    def _plain_message(self, message: str, status: str = "success") -> dict:
+        return {"status": status, "output": {"message": message}, "token_usage": {}, "cost_usd": 0.0}

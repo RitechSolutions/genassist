@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/button";
-import { Download, Upload, MoreVertical, Play } from "lucide-react";
+import { Download, Upload, MoreVertical, Play, Loader2 } from "lucide-react";
 import { useBlocker } from "react-router-dom";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -50,6 +50,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const [pendingUpload, setPendingUpload] = useState<
     (ReferenceCheck & { uploaded: UploadedGraph }) | null
   >(null);
+  const [isCheckingUpload, setIsCheckingUpload] = useState(false);
   // Uploads load after network checks, so they read the latest workflow from here.
   const workflowRef = useRef(workflow);
   workflowRef.current = workflow;
@@ -88,6 +89,8 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   // An upload belongs to the workflow it started on.
   useEffect(() => {
+    uploadRun.current++;
+    setIsCheckingUpload(false);
     setPendingUpload(null);
   }, [workflow.id]);
 
@@ -172,6 +175,12 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
     const run = ++uploadRun.current;
     const workflowId = workflowRef.current.id;
+    setIsCheckingUpload(true);
+    const fail = () => {
+      if (run !== uploadRun.current) return;
+      setIsCheckingUpload(false);
+      alert(INVALID_FILE);
+    };
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -191,6 +200,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         const check = await checkReferences(uploaded.nodes ?? [], skipKinds);
         // A newer upload or another workflow took over meanwhile.
         if (run !== uploadRun.current || workflowRef.current.id !== workflowId) return;
+        setIsCheckingUpload(false);
         if (check.missing.length > 0) {
           setPendingUpload({ ...check, uploaded });
           return;
@@ -198,9 +208,10 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         // Load nodes and edges
         loadUploaded(uploaded);
       } catch {
-        if (run === uploadRun.current) alert(INVALID_FILE);
+        fail();
       }
     };
+    reader.onerror = fail;
 
     reader.readAsText(file);
 
@@ -227,7 +238,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   return (
     <>
-      <div className="flex gap-2 bg-background/80 backdrop-blur-sm rounded-full shadow-sm p-1 pr-3">
+      <div className="relative flex gap-2 bg-background/80 backdrop-blur-sm rounded-full shadow-sm p-1 pr-3">
         {onSaveWorkflow && (
           <Button
             onClick={handleSaveToServer}
@@ -282,6 +293,15 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
           accept=".json"
           className="hidden"
         />
+        {/* Screen readers only announce changes to a live region that's already mounted. */}
+        <div role="status" className="absolute right-0 top-full mt-2">
+          {isCheckingUpload && (
+            <span className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-background/80 px-3 py-1.5 text-sm text-muted-foreground shadow-sm backdrop-blur-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Checking referenced items…
+            </span>
+          )}
+        </div>
       </div>
 
       <ConfirmDialog

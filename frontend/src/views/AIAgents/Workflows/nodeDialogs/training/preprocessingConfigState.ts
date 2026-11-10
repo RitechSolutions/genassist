@@ -11,7 +11,9 @@ import {
   BASE_PYTHON_TEMPLATE,
   PreprocessingConfig,
   generatePythonCodeFromConfig,
+  isMovedStepType,
   parsePythonCodeToConfig,
+  withoutMissingMovedSteps,
 } from "./preprocessingConfig";
 
 export type ConfigSource =
@@ -38,7 +40,14 @@ export function loadPreprocessingConfig(
   data: PreprocessingNodeConfigFields
 ): LoadedPreprocessingConfig {
   if (data.preprocessingConfig && Array.isArray(data.preprocessingConfig.steps)) {
-    return { config: cloneConfig(data.preprocessingConfig), source: "stored" };
+    const config = withoutMissingMovedSteps(
+      cloneConfig(data.preprocessingConfig),
+      data.pythonCode
+    );
+    // Saved by this version or later: the stored steps are complete, and a
+    // moved step missing from them was deleted on purpose.
+    if (config.movedStepsKept) return { config, source: "stored" };
+    return { config: withMovedStepsFromCode(config, data.pythonCode), source: "stored" };
   }
   if (data.pythonCode) {
     try {
@@ -48,6 +57,38 @@ export function loadPreprocessingConfig(
     }
   }
   return { config: { steps: [] }, source: "empty" };
+}
+
+/**
+ * A node saved before PR #1076 and re-saved by a dialog that didn't know the
+ * moved step types (Missing Value Handling etc.) can have stored steps that
+ * leave those out, while its code still runs them. Put them back from the
+ * code - each after the step it followed there - so the next save keeps them.
+ * Only for configs saved before `movedStepsKept` existed.
+ */
+function withMovedStepsFromCode(
+  config: PreprocessingConfig,
+  pythonCode?: string
+): PreprocessingConfig {
+  if (!pythonCode) return config;
+  let fromCode: PreprocessingConfig;
+  try {
+    fromCode = parsePythonCodeToConfig(pythonCode);
+  } catch {
+    return config;
+  }
+  const storedIds = new Set(config.steps.map((step) => step.id));
+  const steps = [...config.steps];
+  let insertAt = 0;
+  for (const step of fromCode.steps) {
+    if (storedIds.has(step.id)) {
+      insertAt = steps.findIndex((s) => s.id === step.id) + 1;
+    } else if (isMovedStepType(step.type)) {
+      steps.splice(insertAt, 0, step);
+      insertAt += 1;
+    }
+  }
+  return steps.length === config.steps.length ? config : { ...config, steps };
 }
 
 // The body of the generated function, which the steps own. Everything else in

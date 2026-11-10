@@ -3,6 +3,7 @@ from injector import inject
 import logging
 from typing import List, Optional
 from croniter import croniter, CroniterBadCronError
+from pydantic import ValidationError
 
 from app.repositories.ml_model_pipeline import (
     MLModelPipelineConfigRepository,
@@ -70,8 +71,8 @@ class MLModelPipelineConfigService:
         # Validate model exists
         await self.model_repository.get_by_id(config_data.model_id)
 
-        # Validate workflow exists
-        await self.workflow_repository.get_by_id(config_data.workflow_id)
+        # The workflow must be live; the shared lock holds off a concurrent delete
+        await self._lock_live_workflow(config_data.workflow_id)
 
         # Validate cron schedule if provided
         if config_data.cron_schedule and not validate_cron_expression(
@@ -88,6 +89,17 @@ class MLModelPipelineConfigService:
 
         config = await self.config_repository.create(config_data)
         return MLModelPipelineConfigRead.model_validate(config)
+
+    async def _lock_live_workflow(self, workflow_id: UUID) -> None:
+        """404 unless the workflow exists and is not deleted.
+
+        Takes a shared row lock until commit, so a version or agent delete
+        cannot retire the workflow between this check and the config write.
+        """
+        if not await self.workflow_repository.lock_live_shared(
+            workflow_id, visible_to_caller=True
+        ):
+            raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
 
     async def get_by_id(self, config_id: UUID) -> MLModelPipelineConfigRead:
         """Get pipeline configuration by ID."""
@@ -114,9 +126,10 @@ class MLModelPipelineConfigService:
         if config.model_id != model_id:
             raise AppException(error_key=ErrorKey.NOT_FOUND)
 
-        # Validate workflow if provided
-        if update_data.workflow_id:
-            await self.workflow_repository.get_by_id(update_data.workflow_id)
+        # Validate the workflow only when it changes, so resending the current
+        # one (e.g. to clear the cron of a config on a deleted workflow) works
+        if update_data.workflow_id and update_data.workflow_id != config.workflow_id:
+            await self._lock_live_workflow(update_data.workflow_id)
 
         # Validate cron schedule if provided
         if update_data.cron_schedule is not None and not validate_cron_expression(
@@ -147,6 +160,38 @@ class MLModelPipelineConfigService:
             raise AppException(error_key=ErrorKey.NOT_FOUND)
 
         await self.config_repository.delete(config_id)
+
+
+# Model fields filled from the run's training output, by output key.
+_RUN_OUTPUT_FIELD = {
+    "pkl_file_id": "pkl_file_id",
+    "target_variable": "target_column",
+    "features": "feature_columns",
+}
+
+
+def _valid_target_transform(target_transform) -> bool:
+    """Whether a run's target_transform can be merged into inference_params."""
+    if target_transform is None:
+        return True
+    if not isinstance(target_transform, dict):
+        return False
+    baseline = target_transform.get("baselineColumn")
+    if baseline is None:
+        return True
+    # An empty baseline means "none"; a blank one would be saved and rejected.
+    return isinstance(baseline, str) and (not baseline or bool(baseline.strip()))
+
+
+def _malformed_run_output(fields: list[str]) -> AppException:
+    return AppException(
+        error_key=ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE,
+        error_detail=(
+            f"This run's training output has unexpected values for {', '.join(fields)}, "
+            "so its model file cannot safely replace the current one. Run the "
+            "pipeline again, then promote the new run."
+        ),
+    )
 
 
 @inject
@@ -241,15 +286,19 @@ class MLModelPipelineRunService:
                 error_detail="Only completed pipeline runs can be promoted.",
             )
 
-        # Get execution_output immediately while session is still active
-        # This avoids lazy loading issues when the session expires
-        execution_output = (
-            run.execution_output.get("output", None) if run.execution_output else None
+        # Read execution_output while the session is still active, to avoid
+        # lazy loading after it expires. Only a dict output can describe a
+        # trained model; anything else (e.g. a chat workflow's reply text) is
+        # treated as a run that produced no model file.
+        raw_output = (
+            run.execution_output.get("output")
+            if isinstance(run.execution_output, dict)
+            else None
         )
-        model_file_path = (
-            execution_output.get("model_file_path") if execution_output else None
-        )
-        pkl_file_id = execution_output.get("pkl_file_id") if execution_output else None
+        execution_output = raw_output if isinstance(raw_output, dict) else {}
+        model_file_path = execution_output.get("model_file_path")
+        pkl_file_id = execution_output.get("pkl_file_id")
+        produced_model_file = bool(model_file_path or pkl_file_id)
 
         if promote_data.update_model_file and model_file_path and not pkl_file_id:
             if "pkl_file_id" in execution_output:
@@ -269,6 +318,67 @@ class MLModelPipelineRunService:
                 error_detail=error_detail,
             )
 
+        from app.schemas.ml_model import MLModelUpdate
+
+        # Build and validate the model file switch before anything changes,
+        # so a malformed run is refused cleanly instead of failing halfway.
+        model_updates = {}
+        stale_default_warnings = []
+        if promote_data.update_model_file and pkl_file_id:
+            warnings = execution_output.get("warnings")
+            stale_default_warnings = [
+                warning
+                for warning in (warnings if isinstance(warnings, list) else [])
+                if isinstance(warning, str)
+                and warning.startswith(STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX)
+            ]
+            target_column = execution_output.get("target_column")
+            feature_columns = execution_output.get("feature_columns")
+            target_transform = execution_output.get("target_transform")
+            model_updates["pkl_file_id"] = pkl_file_id
+            if target_column:
+                model_updates["target_variable"] = target_column
+            if feature_columns:
+                if not (
+                    isinstance(feature_columns, list)
+                    and all(isinstance(name, str) for name in feature_columns)
+                ):
+                    raise _malformed_run_output(["feature_columns"])
+                if not _valid_target_transform(target_transform):
+                    raise _malformed_run_output(["target_transform"])
+                model_updates["features"] = feature_columns
+                model_updates["inference_params"] = merge_model_inference_params(
+                    model.inference_params,
+                    feature_columns,
+                    target_transform.get("baselineColumn") if target_transform else None,
+                )
+        try:
+            model_update = MLModelUpdate(**model_updates)
+        except ValidationError as e:
+            fields = {err["loc"][0] for err in e.errors() if err["loc"]}
+            run_fields = sorted(
+                _RUN_OUTPUT_FIELD.get(field, str(field))
+                for field in fields - {"inference_params"}
+            )
+            if "inference_params" in fields:
+                # The run's baseline was checked above, so the bad value comes
+                # from the model's saved settings, not from this run.
+                detail = (
+                    "This model's saved inference settings are not valid, so "
+                    "the run's model file cannot be applied. Fix the model's "
+                    "inference settings, then promote the run again."
+                )
+                if run_fields:
+                    detail += (
+                        " This run's training output also has unexpected values for "
+                        f"{', '.join(run_fields)}."
+                    )
+                raise AppException(
+                    error_key=ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE,
+                    error_detail=detail,
+                ) from e
+            raise _malformed_run_output(run_fields or ["model fields"]) from e
+
         # Get the pipeline config used by this run
         config = await self.config_repository.get_by_id(run.pipeline_config_id)
 
@@ -280,52 +390,49 @@ class MLModelPipelineRunService:
         config = await self.config_repository.update(config.id, update_data)
 
         result = {
-            "message": "Pipeline run promoted successfully",
+            "message": (
+                "Pipeline run promoted successfully"
+                if produced_model_file
+                else "Pipeline run promoted successfully. The run produced no "
+                "model file, so the model's file, features and metrics were not changed."
+            ),
             "model_updated": False,
             "default_config_id": str(config.id),
         }
 
-        # Optionally update model file and metrics
-        if promote_data.update_model_file and execution_output:
-            stale_default_warnings = [
-                warning
-                for warning in execution_output.get("warnings", [])
-                if isinstance(warning, str)
-                and warning.startswith(STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX)
-            ]
-            if stale_default_warnings:
-                result["warnings"] = stale_default_warnings
-            target_column = execution_output.get("target_column")
-            feature_columns = execution_output.get("feature_columns")
-            target_transform = execution_output.get("target_transform")
-            if pkl_file_id:
-                from app.schemas.ml_model import MLModelUpdate
+        if stale_default_warnings:
+            result["warnings"] = stale_default_warnings
 
-                try:
-                    model_updates = {"pkl_file_id": pkl_file_id}
-                    if target_column:
-                        model_updates["target_variable"] = target_column
-                    if feature_columns:
-                        model_updates["features"] = feature_columns
-                        model_updates["inference_params"] = merge_model_inference_params(
-                            model.inference_params,
-                            feature_columns,
-                            target_transform.get("baselineColumn") if target_transform else None,
-                        )
-                    update_data = MLModelUpdate(**model_updates)
-                    await self.model_service.update(model_id, update_data)
+        promotes_run_file = "pkl_file_id" in model_updates
+        # Metrics describe one model file, so they only follow the run when the
+        # model ends up serving that run's file.
+        run_file_is_current = bool(pkl_file_id) and str(model.pkl_file_id or "") == str(pkl_file_id)
+        run_metrics = execution_output.get("metrics")
+        training_metrics = None
+        if (
+            promote_data.update_metrics
+            and isinstance(run_metrics, dict)
+            and (promotes_run_file or run_file_is_current)
+        ):
+            training_metrics = run_metrics
+
+        if model_updates or training_metrics is not None:
+            try:
+                # One update, so the file and its metrics change together. A new
+                # file without metrics leaves the model with empty metrics.
+                await self.model_service.update(
+                    model_id,
+                    model_update,
+                    training_metrics=training_metrics,
+                )
+                if promotes_run_file:
                     self.model_manager.invalidate_model(model_id)
-                    result["model_updated"] = True
-                except Exception as e:
-                    logger.warning(
-                        f"Error updating pkl_file for model {model_id}: {str(e)}. "
-                        "Attempting to update target and features fields."
-                    )
-                    raise e
-
-        if promote_data.update_metrics and execution_output:
-            # Update model metadata with metrics if needed
-            pass
+                result["model_updated"] = True
+            except Exception as e:
+                logger.warning(
+                    f"Error promoting model fields for model {model_id}: {str(e)}"
+                )
+                raise
 
         return result
 

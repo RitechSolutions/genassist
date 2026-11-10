@@ -131,7 +131,10 @@ async def test_empty_stream_reports_columns_and_writes_header(monkeypatch, tmp_p
 
     assert result["data"] == []
     assert result["metadata"] == {"rowCount": 0, "columns": ["id", "name"]}
-    assert Path(result["data_path"]).read_text(encoding="utf-8") == "id,name\n"
+    # The output names the file inside the data volume, not the server path (TDS-24).
+    assert not Path(result["data_path"]).is_absolute()
+    assert result["data_path"].startswith("thread-1/")
+    assert (tmp_path / "train" / result["data_path"]).read_text(encoding="utf-8") == "id,name\n"
 
 
 @pytest.mark.asyncio
@@ -502,7 +505,7 @@ async def test_training_file_formats_use_common_streaming_writer(
         {"id": 1, "name": "Ada"},
         {"id": 2, "name": "Linus"},
     ]
-    assert Path(result["data_path"]).read_text(encoding="utf-8") == (
+    assert (tmp_path / "train" / result["data_path"]).read_text(encoding="utf-8") == (
         "id,name\n1,Ada\n2,Linus\n"
     )
 
@@ -572,3 +575,22 @@ async def test_stale_file_path_download_preserves_extension(monkeypatch, tmp_pat
     assert downloaded_path.suffix == ".json"
     assert not downloaded_path.exists()
     assert result["metadata"] == {"rowCount": 1, "columns": ["id", "name"]}
+
+
+@pytest.mark.asyncio
+async def test_query_with_duplicate_column_names_is_refused(monkeypatch, tmp_path):
+    async def stream_rows(*_args, **_kwargs):
+        yield ["id", "score", "score"], []
+        yield ["id", "score", "score"], [(1, 10, 99)]
+
+    db_manager = _db_manager()
+    db_manager.stream_query = MagicMock(side_effect=stream_rows)
+    monkeypatch.setattr(f"{MODULE}.ml_utils.DATA_VOLUME", tmp_path)
+
+    with _patch_db(db_manager), pytest.raises(AppException) as exc_info:
+        await _node().process(_config("SELECT a.id, a.score, b.score FROM a JOIN b ON a.id = b.id"))
+
+    assert exc_info.value.error_key == ErrorKey.ML_EXTRACT_QUERY_FAILED
+    assert "two columns named 'score'" in exc_info.value.error_detail
+    assert "with AS" in exc_info.value.error_detail
+    assert not list((tmp_path / "train").rglob("*.csv"))

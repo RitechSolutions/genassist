@@ -158,6 +158,21 @@ async def test_blank_search_is_treated_as_no_search(db_session, seeded_knowledge
     assert total_blank == total_unset >= MATCHING_COUNT
 
 
+@pytest.mark.asyncio
+async def test_minimal_list_has_only_ids_and_names_oldest_first_and_stable_on_ties(db_session, seeded_knowledge_bases):
+    repo = KnowledgeBaseRepository(db_session)
+    prefix = seeded_knowledge_bases["prefix"]
+
+    rows = [row for row in await repo.get_all_minimal() if row.name.startswith(prefix)]
+
+    assert {row.id for row in rows} == seeded_knowledge_bases["visible_ids"]
+    assert all(row._fields == ("id", "name") for row in rows)
+    names = [row.name for row in rows]
+    assert names[:2] == [f"{prefix}described", f"{prefix}be%ta"]
+    assert [row.id for row in rows[2:2 + TIE_COUNT]] == sorted(seeded_knowledge_bases["tied_ids"])
+    assert names[-ORDERED_COUNT:] == [f"{prefix}kb{i:02d}" for i in reversed(range(ORDERED_COUNT))]
+
+
 @pytest.mark.parametrize("kb_type", ["bogus", "URL", ""])
 def test_type_filter_rejects_types_that_would_match_nothing(kb_type):
     with pytest.raises(ValidationError):
