@@ -9,6 +9,7 @@ from croniter import croniter
 
 from app.core.utils.html_utils import html2markdown, html2plaintext
 from app.dependencies.injector import injector
+from app.modules.data.load_result import article_sync_outcome, load_document
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.integration.zendesk import ZendeskConnector
 from app.schemas.agent_knowledge import KBCreate
@@ -501,10 +502,9 @@ async def import_zendesk_articles_to_kb_async(
                         "section_id": str(article.get("section_id", "")),
                     }
 
-                    res = await rag_manager.add_document(
-                        kb, article_id, content, metadata
-                    )
-                    logger.debug(f"Article {article_title} processed with result: {res}")
+                    warning = await load_document(rag_manager, kb, article_id, content, metadata, article_title)
+                    if warning:
+                        kb_errors.append(warning)
                     articles_added += 1
                     if article.get("updated_at"):
                         article_updated_at_map[str(article["id"])] = article[
@@ -552,10 +552,9 @@ async def import_zendesk_articles_to_kb_async(
 
                     # Delete and re-add to update
                     await rag_manager.delete_document(kb, article_id)
-                    res = await rag_manager.add_document(
-                        kb, article_id, content, metadata
-                    )
-                    logger.debug(f"Article {article_title} updated with result: {res}")
+                    warning = await load_document(rag_manager, kb, article_id, content, metadata, article_title)
+                    if warning:
+                        kb_errors.append(warning)
                     articles_updated += 1
                     if article.get("updated_at"):
                         article_updated_at_map[str(article["id"])] = article[
@@ -584,12 +583,14 @@ async def import_zendesk_articles_to_kb_async(
             logger.debug(f"Updating knowledge base {kb.id} last synced time...")
             kb_update = _kb_update_dict(kb)
             kb_update["last_synced"] = datetime.now()
-            kb_update["last_sync_status"] = (
-                "success_with_warnings" if kb_errors else "success"
+            sync_status, sync_message = article_sync_outcome(
+                len(new_articles) + len(updated_articles),
+                articles_added + articles_updated,
+                kb_errors,
+                had_articles=bool(existing_articles),
             )
-            kb_update["last_sync_error"] = (
-                "; ".join(kb_errors[:5]) if kb_errors else ""
-            )
+            kb_update["last_sync_status"] = sync_status
+            kb_update["last_sync_error"] = sync_message
             if last_file_date:
                 kb_update["last_file_date"] = last_file_date
             extra = dict(kb_update.get("extra_metadata") or {})

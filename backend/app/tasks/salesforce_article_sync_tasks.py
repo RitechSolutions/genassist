@@ -15,6 +15,7 @@ from app.core.utils.html_utils import html2markdown, html2plaintext
 from app.db.models.knowledge_base import KnowledgeBaseModel
 from app.db.transaction_manager import TransactionManager
 from app.dependencies.injector import injector
+from app.modules.data.load_result import article_sync_outcome, load_document
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.integration.salesforce import SalesforceConnector
 from app.schemas.agent_knowledge import KBRead
@@ -154,9 +155,10 @@ def _sync_fields(status: str, error: str = "") -> dict[str, Any]:
 
 def _with_settings_warning(fields: dict[str, Any]) -> dict[str, Any]:
     error = fields.get("last_sync_error") or ""
+    nothing_copied = fields.get("last_sync_status") == "error"
     return {
         **fields,
-        "last_sync_status": "success_with_warnings",
+        "last_sync_status": "error" if nothing_copied else "success_with_warnings",
         "last_sync_error": f"{SETTINGS_CHANGED_WARNING}; {error}" if error else SETTINGS_CHANGED_WARNING,
     }
 
@@ -688,10 +690,9 @@ async def import_salesforce_articles_to_kb_async(
                     article_id = f"KB:{str(kb.id)}#article_{article['id']}"
                     content, metadata = _build_content_and_metadata(article)
 
-                    res = await rag_manager.add_document(
-                        kb, article_id, content, metadata
-                    )
-                    logger.debug(f"Article {metadata['name']} processed with result: {res}")
+                    warning = await load_document(rag_manager, kb, article_id, content, metadata, metadata["name"])
+                    if warning:
+                        kb_errors.append(warning)
                     articles_added += 1
                     if article.get("updated_at"):
                         article_updated_at_map[str(article["id"])] = article["updated_at"]
@@ -724,10 +725,9 @@ async def import_salesforce_articles_to_kb_async(
 
                     # Delete and re-add to update
                     await rag_manager.delete_document(kb, article_id)
-                    res = await rag_manager.add_document(
-                        kb, article_id, content, metadata
-                    )
-                    logger.debug(f"Article {metadata['name']} updated with result: {res}")
+                    warning = await load_document(rag_manager, kb, article_id, content, metadata, metadata["name"])
+                    if warning:
+                        kb_errors.append(warning)
                     articles_updated += 1
                     if article.get("updated_at"):
                         article_updated_at_map[str(article["id"])] = article["updated_at"]
@@ -753,8 +753,13 @@ async def import_salesforce_articles_to_kb_async(
 
             # Update last synced time and persist article updated_at map (skip unchanged next run)
             logger.debug(f"Updating knowledge base {kb.id} last synced time...")
-            sync_status = "success_with_warnings" if kb_errors else "success"
-            final_fields = _sync_fields(sync_status, "; ".join(kb_errors[:5]))
+            sync_status, sync_message = article_sync_outcome(
+                len(new_articles) + len(updated_articles),
+                articles_added + articles_updated,
+                kb_errors,
+                had_articles=bool(existing_articles),
+            )
+            final_fields = _sync_fields(sync_status, sync_message)
             if last_file_date:
                 final_fields["last_file_date"] = last_file_date
             saved_fields = await _save_sync_result(
