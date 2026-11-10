@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
-import { TagsFieldInput } from "@/components/TagsFieldInput";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { ListErrorState } from "@/components/ListErrorState";
@@ -45,6 +44,9 @@ import {
   isRejectedRequest,
   latestInferenceParams,
   mlModelSaveErrorMessage,
+  featureListError,
+  featuresText,
+  formFeatures,
 } from "./mlModelForm";
 
 const ALL_TYPES = "all";
@@ -56,7 +58,8 @@ interface FormValues {
   description: string;
   model_type: MLModelType;
   target_variable: string;
-  features: string[];
+  /** Raw text of the Features box; formFeatures turns it into the ordered list. */
+  features: string;
   featureDefaultsJson: string;
   useTrainingFills: boolean;
   pkl_file: string | null;
@@ -105,7 +108,7 @@ const emptyForm = (): FormValues => ({
   description: "",
   model_type: "xgboost",
   target_variable: "",
-  features: [],
+  features: "",
   featureDefaultsJson: "",
   useTrainingFills: false,
   pkl_file: null,
@@ -118,7 +121,7 @@ const formFromModel = (model: MLModel): FormValues => ({
   description: model.description ?? "",
   model_type: model.model_type,
   target_variable: model.target_variable ?? "",
-  features: model.features ?? [],
+  features: featuresText(model.features),
   featureDefaultsJson:
     Object.keys(model.inference_params?.featureDefaults ?? {}).length > 0
       ? JSON.stringify(model.inference_params?.featureDefaults, null, 2)
@@ -151,6 +154,10 @@ const MLModelsManager: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<MLModel | null>(null);
   const [values, setValues] = useState<FormValues>(emptyForm);
+  const features = useMemo(
+    () => formFeatures(values.features, editingItem?.features),
+    [values.features, editingItem]
+  );
   // Set when the form was opened from a model's detail page, so leaving the form
   // (via the back arrow or after saving) returns there instead of to the list.
   const [returnTo, setReturnTo] = useState<string | null>(null);
@@ -232,9 +239,11 @@ const MLModelsManager: React.FC = () => {
     if (!values.model_type) next.model_type = "Model type is required.";
     if (!values.target_variable.trim())
       next.target_variable = "Target variable is required.";
-    if (values.features.length === 0) next.features = "Add at least one feature.";
+    const featuresError = featureListError(values.features);
+    if (featuresError) next.features = featuresError;
+    else if (features.length === 0) next.features = "Add at least one feature.";
     try {
-      parseFeatureDefaults(values.featureDefaultsJson, values.features);
+      parseFeatureDefaults(values.featureDefaultsJson, features);
     } catch (error) {
       next.featureDefaultsJson =
         error instanceof Error ? error.message : "Enter a valid JSON object.";
@@ -267,14 +276,14 @@ const MLModelsManager: React.FC = () => {
 
       const featureDefaults = parseFeatureDefaults(
         values.featureDefaultsJson,
-        values.features
+        features
       );
       const payload = {
         name: values.name.trim(),
         description: values.description.trim(),
         model_type: values.model_type,
         target_variable: values.target_variable.trim(),
-        features: values.features,
+        features,
         pkl_file: pklFile,
         pkl_file_id: pklFileId,
       };
@@ -450,18 +459,22 @@ const MLModelsManager: React.FC = () => {
 
               <div className="md:col-span-2">
                 <FormField id="features" label="Features" error={errors.features}>
-                  <TagsFieldInput
+                  <Input
                     id="features"
                     value={values.features}
-                    placeholder="Type a feature and press Enter"
-                    onChange={(next) => setField("features", next)}
+                    onChange={(event) => setField("features", event.target.value)}
+                    // The tag input this replaced added a feature on Enter; don't let a
+                    // habitual Enter submit the form with a half-typed list.
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.preventDefault();
+                    }}
+                    aria-describedby="features-help"
                   />
-                  <p className="mt-1.5 text-xs text-muted-foreground">
-                    {values.features.length > 0
-                      ? `${values.features.length} feature${
-                          values.features.length !== 1 ? "s" : ""
-                        } defined`
-                      : "Press Enter or comma to add each feature. Paste a comma-separated list to add several at once."}
+                  <p id="features-help" className="mt-1.5 text-xs text-muted-foreground">
+                    Enter feature names separated by commas, in training order. For names
+                    that contain a comma or quote, use a JSON list: ["a,b", "c"].
+                    {features.length > 0 &&
+                      ` ${features.length} feature${features.length !== 1 ? "s" : ""} defined.`}
                   </p>
                 </FormField>
 
