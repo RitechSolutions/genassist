@@ -260,7 +260,7 @@ export function AssistantComposer({
       )}
       <div
         className={cn(
-          "border border-border bg-white shadow-sm transition-all focus-within:border-[hsl(var(--brand-600))] focus-within:ring-2 focus-within:ring-[hsl(var(--brand-600))]/20 dark:bg-zinc-900",
+          "border border-border bg-white shadow-sm transition-all dark:bg-zinc-900",
           twoRows
             ? cn("flex flex-col gap-1", hero ? "rounded-[22px] px-4 pb-2.5 pt-3.5" : "rounded-2xl px-3 pb-1.5 pt-2")
             : "flex items-end gap-2 rounded-3xl py-1.5 pl-3.5 pr-1.5",
