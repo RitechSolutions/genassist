@@ -146,18 +146,25 @@ const resolveSourceDataPath = ({
   // still have the settings they had then.
   const currentKey = upstreamSourcesKey(source.id, nodes, edges);
   if (currentKey !== undefined && latest.settingsKey !== currentKey) {
-    // Outputs recorded before settings were tracked can't be checked.
-    if (latest.settingsKey === undefined) {
+    if (isTrainingSource) {
+      // Its own Test Node always tags it, so running it again fixes both.
       return {
         ok: false,
-        message: `Run the ${label} node again to refresh its output, then try again.`,
+        message:
+          latest.settingsKey === undefined
+            ? `Run the ${label} node again to refresh its output, then try again.`
+            : `The ${label} settings changed since it last ran. Run the ${label} node again, then try again.`,
       };
     }
+    // A node further down is only current when what it read was: testing it
+    // alone again repeats the same input, so point at what refreshes that too.
+    const refresh = `Run the whole workflow again, or test each node from the Train Data Source down to the ${label} node again, then try again.`;
     return {
       ok: false,
-      message: isTrainingSource
-        ? `The ${label} settings changed since it last ran. Run the ${label} node again, then try again.`
-        : `The training data changed since the ${label} node last ran. Run it again, then try again.`,
+      message:
+        latest.settingsKey === undefined
+          ? `The ${label} node's output can't be matched to the current training data. ${refresh}`
+          : `The training data changed since the ${label} node last ran. ${refresh}`,
     };
   }
   return { ok: true, fileUrl: dataPath };
@@ -182,6 +189,42 @@ export const resolveTrainingInputFile = (args: ResolveInputFileArgs): ResolvedIn
     };
   }
   return { ok: true, fileUrl: filled };
+};
+
+/** Tag for a Test Node result built from inputs that are no longer current. */
+export const STALE_INPUT_KEY = "stale-input";
+
+/**
+ * The tag for a Test Node result of a node other than a Train Data Source.
+ * Its input was filled from the upstream nodes' Test Node outputs
+ * (getAvailableDataForNode reads only those, never whole-run outputs), so the
+ * result is current only when every input it read was: then it gets the
+ * current settings of the Train Data Sources above it. An input made before
+ * those settings changed makes it STALE_INPUT_KEY. An input with no recorded
+ * output (or one recorded before settings were tracked) can't be checked, so
+ * the result is left untagged.
+ */
+export const testNodeSettingsKey = (
+  nodeId: string,
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  getTestOutput: (nodeId: string) => NodeExecutionResult | undefined
+): string | undefined => {
+  const currentKey = upstreamSourcesKey(nodeId, nodes, edges);
+  if (currentKey === undefined) return undefined;
+  const upstreamIds = [
+    ...new Set(edges.filter((edge) => edge.target === nodeId).map((edge) => edge.source)),
+  ];
+  let stale = false;
+  for (const id of upstreamIds) {
+    const inputKey = upstreamSourcesKey(id, nodes, edges);
+    // No training data comes in through this input
+    if (inputKey === undefined) continue;
+    const settingsKey = getTestOutput(id)?.settingsKey;
+    if (settingsKey === undefined) return undefined;
+    if (settingsKey !== inputKey) stale = true;
+  }
+  return stale ? STALE_INPUT_KEY : currentKey;
 };
 
 /** Pick the newer of two recorded outputs of the same node. */

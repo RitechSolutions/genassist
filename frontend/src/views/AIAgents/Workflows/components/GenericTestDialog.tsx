@@ -17,7 +17,7 @@ import {
   TrainingJob,
 } from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
-import { upstreamSourcesKey } from "../utils/trainingInputFile";
+import { testNodeSettingsKey, upstreamSourcesKey } from "../utils/trainingInputFile";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
 import { SchemaField, SchemaType } from "../types/schemas";
 import { useAudioTest } from "../hooks/useAudioTest";
@@ -89,30 +89,20 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     getAudioKey, handleAudioFileUpload, startRecording, stopRecording,
   } = useAudioTest({ nodeType, nodeData, setFormData, setError });
 
-  const {
-    updateNodeOutput,
-    getAvailableDataForNode,
-    getNodeOutput,
-    getLatestNodeOutput,
-    nodes,
-    edges,
-  } = useWorkflowExecution();
+  const { updateNodeOutput, getAvailableDataForNode, getNodeOutput, nodes, edges } =
+    useWorkflowExecution();
 
   // The Train Data Source settings this test's output comes from - see
   // upstreamSourcesKey. A Train Data Source is tagged with its own (possibly
-  // unsaved) settings. Any other node read its input from the upstream node's
-  // recorded output, so it inherits that output's tag: if the source changed
-  // since that output was made, this result is just as old.
+  // unsaved) settings. Any other node read its input from the upstream nodes'
+  // Test Node outputs (the same ones getAvailableDataForNode filled the form
+  // from), so it is checked against those - see testNodeSettingsKey.
   const testSettingsKey = () => {
     if (!nodeId) return undefined;
     if (nodeType === "trainDataSourceNode") {
       return upstreamSourcesKey(nodeId, nodes, edges, { id: nodeId, type: nodeType, data: nodeData });
     }
-    const upstreamIds = [
-      ...new Set(edges.filter((edge) => edge.target === nodeId).map((edge) => edge.source)),
-    ];
-    if (upstreamIds.length === 1) return getLatestNodeOutput(upstreamIds[0])?.settingsKey;
-    return upstreamSourcesKey(nodeId, nodes, edges);
+    return testNodeSettingsKey(nodeId, nodes, edges, getNodeOutput);
   };
 
   // Extract variables from node config when dialog opens
