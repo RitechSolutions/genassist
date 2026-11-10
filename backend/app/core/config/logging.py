@@ -66,7 +66,8 @@ def _caller_depth() -> int:
     report the logging module itself as the caller. Walk out of logging instead.
     """
     frame, depth = sys._getframe(1), 1  # 1 = emit(), the frame that calls loguru
-    while frame and (frame.f_code.co_filename == logging.__file__ or frame.f_code.co_name == "emit"):
+    # Skip only this handler's own emit(); app code may have an emit() that logs too.
+    while frame and (frame.f_code.co_filename == logging.__file__ or frame.f_code is _InterceptHandler.emit.__code__):
         frame = frame.f_back
         depth += 1
     return depth - 1

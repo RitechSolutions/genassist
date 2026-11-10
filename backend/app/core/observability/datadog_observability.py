@@ -150,6 +150,9 @@ class DatadogObservability:
         if not self.enabled or conversation_id is None:
             return
         otel_trace.get_current_span().set_attribute("genassist.conversation_id", str(conversation_id))
+        if log_config.conversation_id_ctx.get() != str(conversation_id):
+            # A different conversation: the previous one's agent no longer applies.
+            log_config.agent_id_ctx.set(None)
         log_config.conversation_id_ctx.set(str(conversation_id))
 
 
