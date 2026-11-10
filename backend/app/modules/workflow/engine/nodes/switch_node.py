@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.dependencies.injector import injector
+from app.modules.workflow.llm.model_params import deterministic_kwargs
 from app.modules.workflow.llm.provider import LLMProvider
 
 from ..base_node import BaseNode
@@ -146,7 +147,7 @@ class SwitchNode(BaseNode):
         try:
             llm_provider = injector.get(LLMProvider)
             llm_model = await llm_provider.get_model(provider_id)
-            response = await llm_model.bind(temperature=0, max_tokens=20).ainvoke(
+            response = await llm_model.bind(**deterministic_kwargs(llm_model), max_tokens=20).ainvoke(
                 [
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=self._build_smart_prompt(smart_prompt, cases)),

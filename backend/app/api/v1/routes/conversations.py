@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Query, Request, WebSocket
 from fastapi.responses import JSONResponse
 from fastapi_injector import Injected
+from starlette.requests import HTTPConnection
 from starlette.websockets import WebSocketDisconnect
 
 from app.auth.dependencies import auth, permissions, require_admin_user, socket_auth
@@ -27,7 +28,7 @@ from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import send_socket_error
-from app.core.observability import set_agent_span_attributes
+from app.core.observability import set_agent_span_attributes, set_conversation_span_attribute
 from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.core.turn_stream_response import stream_turn
@@ -104,7 +105,28 @@ from app.use_cases.chat_as_client_use_case import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+
+async def tag_trace_with_conversation(connection: HTTPConnection) -> None:
+    """Tag the trace with the conversation id from the URL, for every conversation route.
+
+    Router-level dependencies run before each route's own dependencies and its own
+    rate limit, so requests rejected by auth, the agent lookup or a route's rate limit
+    are tagged too. The global per-IP limit is checked in middleware before any
+    dependency runs, so a request it rejects is not tagged. Only a valid UUID is used,
+    so a malformed path never ends up in a tag.
+
+    Async so FastAPI runs it on the event loop instead of its threadpool.
+    """
+    raw = connection.path_params.get("conversation_id")
+    if raw is None:
+        return
+    try:
+        set_conversation_span_attribute(UUID(str(raw)))
+    except ValueError:
+        pass
+
+
+router = APIRouter(dependencies=[Depends(tag_trace_with_conversation)])
 
 
 async def _voice_provider_has_key(provider_id) -> bool:
@@ -442,6 +464,7 @@ async def start(
     agent_read = AgentRead.model_validate(agent)
     model.operator_id = agent.operator_id
     conversation = await service.start_in_progress_conversation(model)
+    set_conversation_span_attribute(conversation.id)
 
     # Increment conversation counters in background
     spawn(update_conversation_started(agent.id), name=f"analytics:start:{agent.id}")

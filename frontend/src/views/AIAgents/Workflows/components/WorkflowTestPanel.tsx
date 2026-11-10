@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
@@ -37,7 +37,9 @@ import { HumanInTheLoopFormField } from "../types/nodes";
 import {
   getEngineErrors,
   getFailedNodeDisplayMessage,
+  isTrainingWaitAborted,
   testWorkflow,
+  TrainingJob,
   workflowRunOutcome,
   WorkflowTestResponse,
 } from "@/services/workflows";
@@ -51,6 +53,7 @@ import { STTAudioInput } from "./TestInputFields";
 import JsonViewer from "@/components/JsonViewer";
 import NodeExecutionView from "./execution/NodeExecutionView";
 import { FallbackRatesNotice } from "./FallbackRatesNotice";
+import { TrainingJobProgress } from "./TrainingJobProgress";
 import { displayTimeZone } from "@/helpers/timeZone";
 
 type TestViewMode = "response" | "debug" | "execution";
@@ -122,6 +125,19 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
 }) => {
   const [testInput, setTestInputs] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState(false);
+  // Set while a test that trains a model runs on the background worker.
+  const [trainingJob, setTrainingJob] = useState<TrainingJob | null>(null);
+  // Stops waiting for a training job when the panel goes away; the job keeps
+  // running and the next test run follows it (or the user cancels it).
+  const testAbortRef = useRef<AbortController | null>(null);
+  const startTestRun = (): AbortSignal => {
+    testAbortRef.current?.abort();
+    testAbortRef.current = new AbortController();
+    return testAbortRef.current.signal;
+  };
+  useEffect(() => () => testAbortRef.current?.abort(), []);
+  // A run aborted because a new one started must not reset the new run's state.
+  const isCurrentRun = (signal: AbortSignal) => testAbortRef.current?.signal === signal;
   const [response, setResponse] = useState<WorkflowTestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [audioData, setAudioData] = useState<{ data: string; format: string } | null>(null);
@@ -387,6 +403,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       }
     }
 
+    const signal = startTestRun();
     setTesting(true);
     setError(null);
     setResponse(null);
@@ -442,10 +459,13 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
         }
       }
 
-      const res = await testWorkflow({
-        input_data: parsedInputs,
-        workflow: workflow,
-      });
+      const res = await testWorkflow(
+        {
+          input_data: parsedInputs,
+          workflow: workflow,
+        },
+        { onTrainingProgress: setTrainingJob, signal }
+      );
 
       if (!res) {
         setError("No response received from server");
@@ -459,12 +479,16 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
         handleCompletedResponse(res);
       }
     } catch (err) {
+      if (isTrainingWaitAborted(err)) return;
       const msg = err instanceof Error ? err.message : String(err);
       const errorMsg = `Failed to test workflow: ${msg}`;
       setError(errorMsg);
       recordRun(null, errorMsg);
     } finally {
-      setTesting(false);
+      if (isCurrentRun(signal)) {
+        setTesting(false);
+        setTrainingJob(null);
+      }
     }
   };
 
@@ -472,6 +496,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
   const handleResumeWorkflow = async () => {
     if (!workflow || !pausedThreadId || !pausedFormSchema) return;
 
+    const signal = startTestRun();
     setTesting(true);
     setError(null);
 
@@ -489,14 +514,17 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
         }
       });
 
-      const res = await testWorkflow({
-        input_data: {
-          thread_id: pausedThreadId,
-          human_in_the_loop_from_form: parsedValues,
-          ...(pausedNodeId && { human_in_the_loop_node_id: pausedNodeId }),
+      const res = await testWorkflow(
+        {
+          input_data: {
+            thread_id: pausedThreadId,
+            human_in_the_loop_from_form: parsedValues,
+            ...(pausedNodeId && { human_in_the_loop_node_id: pausedNodeId }),
+          },
+          workflow: workflow,
         },
-        workflow: workflow,
-      });
+        { onTrainingProgress: setTrainingJob, signal }
+      );
 
       if (!res) {
         setError("No response received from server");
@@ -510,12 +538,16 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
         handleCompletedResponse(res);
       }
     } catch (err) {
+      if (isTrainingWaitAborted(err)) return;
       const msg = err instanceof Error ? err.message : String(err);
       const errorMsg = `Failed to resume workflow: ${msg}`;
       setError(errorMsg);
       recordRun(null, errorMsg);
     } finally {
-      setTesting(false);
+      if (isCurrentRun(signal)) {
+        setTesting(false);
+        setTrainingJob(null);
+      }
     }
   };
 
@@ -1096,6 +1128,10 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                       error={error}
                       workflow={workflow}
                     />
+                  ) : testing && !response && trainingJob ? (
+                    <div className="flex h-full items-center justify-center px-2">
+                      <TrainingJobProgress job={trainingJob} />
+                    </div>
                   ) : testing && !response ? (
                     <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />

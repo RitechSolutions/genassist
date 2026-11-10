@@ -199,21 +199,221 @@ export const getAllNodeSchemas = async (): Promise<NodeSchemas> => {
   }
 };
 
-export const testNode = (testData: NodeTestPayload) =>
-  apiRequest<WorkflowTestResponse>(
-    "POST",
-    `${BASE}/test-node`,
-    testData as unknown as Record<string, unknown>,
-    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS, headers: KEEPALIVE_HEADERS }
-  ).then(throwIfErrorEnvelope);
+export type TrainingJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
-export const testWorkflow = (testData: WorkflowTestPayload) =>
-  apiRequest<WorkflowTestResponse>(
-    "POST",
-    `${BASE}/test`,
-    testData as unknown as Record<string, unknown>,
-    { timeout: API_WORKFLOW_TEST_TIMEOUT_MS, headers: KEEPALIVE_HEADERS }
-  ).then(throwIfErrorEnvelope);
+export interface TrainingJobProgress {
+  stage: string;
+  message: string;
+  percent: number;
+  elapsed_seconds?: number;
+}
+
+/** A test run that trains a model runs on the background ML worker as a job. */
+export interface TrainingJob {
+  job_id: string;
+  kind: "workflow" | "node";
+  status: TrainingJobStatus;
+  progress: TrainingJobProgress;
+  result: WorkflowTestResponse | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Set by the client: the user already had this job running, so the new test followed it instead. */
+  reattached?: boolean;
+}
+
+export interface TestRunOptions {
+  /** Called with every status update while a training job runs. */
+  onTrainingProgress?: (job: TrainingJob) => void;
+  /** Stops waiting for a training job (e.g. the dialog closed). The job itself keeps running. */
+  signal?: AbortSignal;
+}
+
+export const TRAINING_JOB_POLL_INTERVAL_MS = 2000;
+// Consecutive failed status checks (e.g. a network blip) tolerated before giving up.
+const TRAINING_JOB_MAX_POLL_ERRORS = 3;
+// A job can wait up to 2h10m for a worker and then train for up to 2h before
+// the server reports it failed; stop waiting a little after that in any case.
+export const TRAINING_JOB_MAX_WAIT_MS = (4 * 60 + 30) * 60 * 1000;
+const TRAINING_JOB_ALREADY_RUNNING = "ML_TRAINING_JOB_ALREADY_RUNNING";
+
+/** Thrown when waiting for a training job stops because its AbortSignal fired. */
+export class TrainingWaitAbortedError extends Error {
+  constructor() {
+    super("Stopped waiting for the training job");
+    this.name = "TrainingWaitAbortedError";
+  }
+}
+
+export const isTrainingWaitAborted = (error: unknown): boolean => error instanceof TrainingWaitAbortedError;
+
+export const isTrainingJob = (value: unknown): value is TrainingJob =>
+  !!value &&
+  typeof value === "object" &&
+  typeof (value as TrainingJob).job_id === "string" &&
+  typeof (value as TrainingJob).status === "string" &&
+  !!(value as TrainingJob).progress;
+
+export const getTrainingJob = (jobId: string) =>
+  apiRequest<TrainingJob>("GET", `${BASE}/test-jobs/${encodeURIComponent(jobId)}`);
+
+/** The user's queued or running training test, if any. */
+export const getActiveTrainingJob = () => apiRequest<TrainingJob>("GET", `${BASE}/test-jobs/active`);
+
+/** Cancel a queued or running training test; resolves with the job as it now is. */
+export const cancelTrainingJob = (jobId: string) =>
+  apiRequest<TrainingJob>("POST", `${BASE}/test-jobs/${encodeURIComponent(jobId)}/cancel`);
+
+const delay = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new TrainingWaitAbortedError());
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new TrainingWaitAbortedError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+
+/** Poll a training job until it finishes; resolves with the test result or throws its error. */
+export const waitForTrainingJob = async (
+  job: TrainingJob,
+  onProgress?: (job: TrainingJob) => void,
+  pollIntervalMs: number = TRAINING_JOB_POLL_INTERVAL_MS,
+  maxWaitMs: number = TRAINING_JOB_MAX_WAIT_MS,
+  signal?: AbortSignal
+): Promise<WorkflowTestResponse | null> => {
+  const deadline = Date.now() + maxWaitMs;
+  let current = job;
+  let pollErrors = 0;
+  for (;;) {
+    if (signal?.aborted) throw new TrainingWaitAbortedError();
+    onProgress?.(current);
+    if (current.status === "succeeded") return current.result;
+    if (current.status === "failed") throw new Error(current.error || "Training failed");
+    if (current.status === "cancelled") throw new Error(current.error || "The training test was cancelled.");
+    if (Date.now() >= deadline) {
+      throw new Error("Stopped waiting for the training job. It took longer than the training time limit.");
+    }
+
+    await delay(pollIntervalMs, signal);
+    try {
+      const next = await getTrainingJob(current.job_id);
+      if (!next) throw new Error("The training job could not be read");
+      current = job.reattached ? { ...next, reattached: true } : next;
+      pollErrors = 0;
+    } catch (error) {
+      pollErrors += 1;
+      if (pollErrors >= TRAINING_JOB_MAX_POLL_ERRORS) throw error;
+    }
+  }
+};
+
+type ErrorResponse = { response?: { status?: number; data?: { error_key?: string; error_detail?: unknown; detail?: unknown } } };
+
+const isAlreadyRunningError = (error: unknown): boolean => {
+  const response = (error as ErrorResponse)?.response;
+  return response?.status === 409 && response.data?.error_key === TRAINING_JOB_ALREADY_RUNNING;
+};
+
+/** The server's own explanation of a refused test (AppException error_detail, or FastAPI detail). */
+const serverMessage = (error: unknown): string | null => {
+  const data = (error as ErrorResponse)?.response?.data;
+  const message = data?.error_detail ?? data?.detail;
+  return typeof message === "string" && message.trim() ? message : null;
+};
+
+const startTest = async (
+  endpoint: string,
+  testData: NodeTestPayload | WorkflowTestPayload
+): Promise<WorkflowTestResponse | TrainingJob | null> => {
+  try {
+    // Kept alive while the test runs; an error then arrives as an error
+    // envelope in the body, which throwIfErrorEnvelope throws as the same
+    // { response: { status, data } } error the checks below read.
+    return await apiRequest<WorkflowTestResponse | TrainingJob>(
+      "POST",
+      endpoint,
+      testData as unknown as Record<string, unknown>,
+      { timeout: API_WORKFLOW_TEST_TIMEOUT_MS, headers: KEEPALIVE_HEADERS },
+      // A 403 here explains itself (e.g. a training test needs a signed-in user).
+      { rethrowForbidden: true }
+    ).then(throwIfErrorEnvelope);
+  } catch (error) {
+    if (isAlreadyRunningError(error)) {
+      // The user's earlier training test is still running (e.g. they closed the
+      // dialog): follow it, so they can see it finish or cancel it.
+      const active = await getActiveTrainingJob().catch(() => null);
+      if (active) return { ...active, reattached: true };
+    }
+    // e.g. an oversized hyperparameter search: show why, not "status code 400".
+    const message = serverMessage(error);
+    throw message ? Object.assign(new Error(message), { cause: error }) : error;
+  }
+};
+
+const REATTACHED_OUTCOME: Record<TrainingJobStatus, string> = {
+  queued: "is still queued",
+  running: "is still running",
+  succeeded: "has finished",
+  failed: "has failed",
+  cancelled: "was cancelled",
+};
+
+/**
+ * Follow the user's earlier training test to its end, then tell them to run
+ * this one again. Its result belongs to another node or workflow (or to an
+ * older configuration), so it is never returned as this test's result.
+ */
+const followEarlierJob = async (job: TrainingJob, options?: TestRunOptions): Promise<never> => {
+  let outcome: TrainingJobStatus = job.status;
+  try {
+    await waitForTrainingJob(
+      job,
+      (update) => {
+        outcome = update.status;
+        options?.onTrainingProgress?.(update);
+      },
+      TRAINING_JOB_POLL_INTERVAL_MS,
+      TRAINING_JOB_MAX_WAIT_MS,
+      options?.signal
+    );
+  } catch (error) {
+    if (isTrainingWaitAborted(error)) throw error;
+  }
+  throw new Error(
+    `Your earlier training test ${REATTACHED_OUTCOME[outcome]}. Run the test again to test this configuration.`
+  );
+};
+
+const runTest = async (
+  endpoint: string,
+  testData: NodeTestPayload | WorkflowTestPayload,
+  options?: TestRunOptions
+): Promise<WorkflowTestResponse | null> => {
+  const response = await startTest(endpoint, testData);
+  if (!isTrainingJob(response)) return response;
+  if (response.reattached) return followEarlierJob(response, options);
+  return waitForTrainingJob(
+    response,
+    options?.onTrainingProgress,
+    TRAINING_JOB_POLL_INTERVAL_MS,
+    TRAINING_JOB_MAX_WAIT_MS,
+    options?.signal
+  );
+};
+
+export const testNode = (testData: NodeTestPayload, options?: TestRunOptions) =>
+  runTest(`${BASE}/test-node`, testData, options);
+
+export const testWorkflow = (testData: WorkflowTestPayload, options?: TestRunOptions) =>
+  runTest(`${BASE}/test`, testData, options);
 
 export const generatePythonTemplate = (schema: any, prompt?: string) =>
   apiRequest<{ template: string }>("POST", `${BASE}/generate-python-template`, {
