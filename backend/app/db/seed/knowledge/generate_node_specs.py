@@ -392,7 +392,7 @@ NODE_DESCRIPTIONS = {
     },
     "trainModelNode": {
         "category": "ML",
-        "description": "Trains an ML model on preprocessed data. Configure model type, target column, feature columns, and validation split, plus (fit on the training split only) missing-value handling, outlier handling, categorical encoding, feature engineering (custom_expression, bin_numeric, polynomial, log_transform, quantile_transform, power_transform, pca) and scaling method.",
+        "description": "Trains an ML model on preprocessed data. Configure model type, target column, feature columns, and validation split, plus (fit on the training split only) missing-value handling, outlier handling, categorical encoding, feature engineering (custom_expression, bin_numeric, polynomial, datetime_features, log_transform, math_transform, quantile_transform, power_transform, pca) and scaling method.",
         "when_to_use": "When you need to train a custom ML model within the platform.",
         "example_use_cases": [
             "Training a classification model on labeled data",

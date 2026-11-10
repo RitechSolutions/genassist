@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useEdges, useNodes } from "reactflow";
 import { Textarea } from "@/components/ui/textarea";
-import { PreprocessingNodeData, TrainDataSourceNodeData } from "../../types/nodes";
+import { PreprocessingNodeData } from "../../types/nodes";
 import { Button } from "@/components/button";
 import { RichInput } from "@/components/richInput";
 import { Label } from "@/components/label";
@@ -53,12 +52,17 @@ import {
   DropColumnOrRowStepConfig,
   DropHighNullColumnsStepConfig,
   ChangeDtypeStepConfig,
+  getMovedStepNotice,
+  isMovedStepType,
+  withoutMissingMovedSteps,
 } from "./preprocessingConfig";
 import {
   cloneConfig,
   generatedSectionMatchesConfig,
   hasUnsavedHandEdits,
+  keepsOlderNodeCode,
   loadPreprocessingConfig,
+  type ConfigSource,
 } from "./preprocessingConfigState";
 import { ColumnFilter } from "./components/ColumnFilter";
 import { RemoveDuplicatesStep } from "./components/RemoveDuplicatesStep";
@@ -67,23 +71,24 @@ import { DropHighNullColumnsStep } from "./components/DropHighNullColumnsStep";
 import { ChangeDtypeStep } from "./components/ChangeDtypeStep";
 import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { analyzeCSV, CSVAnalysisResult } from "@/services/mlModels";
-import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
-import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
+import { useTrainingInputFile } from "../../hooks/useTrainingInputFile";
+import type { ResolvedInputFile } from "../../utils/trainingInputFile";
 import { Switch } from "@/components/switch";
+
+type ResolvedFile = Extract<ResolvedInputFile, { ok: true }>;
 
 type PreprocessingDialogProps = BaseNodeDialogProps<
   PreprocessingNodeData,
   PreprocessingNodeData
 >;
 
-const SOURCE_DATA_PATH = "{{source.data_path}}";
-const isUnresolvedVariable = (url: string) => /{{[^}]+}}/.test(url);
-
 export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   props
 ) => {
   const { isOpen, onClose, data, onUpdate, nodeId } = props;
-  const { getAvailableDataForNode } = useWorkflowExecution();
+  // The file Analyze and the step previews read: the source's current
+  // settings or its latest run, never an unfilled {{source.data_path}}.
+  const resolveInputFile = useTrainingInputFile(nodeId);
 
   const [name, setName] = useState(data.name || "Data Preprocessing");
   const [pythonCode, setPythonCode] = useState(data.pythonCode || "");
@@ -100,14 +105,18 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
   const [runningStepId, setRunningStepId] = useState<string | null>(null);
   // The resolved file the current analysis results were made from
   const [analyzedFileUrl, setAnalyzedFileUrl] = useState("");
-  const nodes = useNodes();
-  const edges = useEdges();
   // The generated function in the code was edited by hand, so regenerating it
   // from the steps would overwrite those edits - see generatedSectionMatchesConfig.
   const [hasHandEdits, setHasHandEdits] = useState(false);
   const [isDiscardEditsDialogOpen, setIsDiscardEditsDialogOpen] = useState(false);
-  const isGeneratingCodeRef = useRef(false);
   const isInitializingRef = useRef(true);
+  // The steps the current code was generated from (or loaded with). When the
+  // steps differ from this, the code is regenerated - see syncCodeToConfig.
+  const syncedConfigRef = useRef<PreprocessingConfig | null>(null);
+  // The steps as loaded when the dialog opened
+  const loadedConfigRef = useRef<PreprocessingConfig | null>(null);
+  // Where those steps came from - see keepsOlderNodeCode
+  const loadedSourceRef = useRef<ConfigSource>("empty");
   // Bumped when the dialog opens or closes and on Analyze. An analysis
   // response that started before the latest bump is dropped, so a slow,
   // older request can't overwrite newer results or a reopened dialog.
@@ -130,14 +139,18 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       setIsDiscardEditsDialogOpen(true);
       return;
     }
+    // A moved step's code deleted in Code mode means the step is gone too.
+    if (newMode === "configure") setConfig((prev) => withoutMissingMovedSteps(prev, pythonCode));
     setMode(newMode);
   };
 
+  // Moved steps have no settings to regenerate their code from, so their
+  // code comes from the code before the hand edits, not the edited text.
   const discardHandEditsAndConfigure = () => {
-    const regenerated = generatePythonCodeFromConfig(config, pythonCode || BASE_PYTHON_TEMPLATE);
-    setPythonCode(regenerated);
-    pythonCodeRef.current = regenerated;
-    baselineCodeRef.current = regenerated;
+    const beforeEdits = baselineCodeRef.current || BASE_PYTHON_TEMPLATE;
+    const pruned = withoutMissingMovedSteps(config, beforeEdits);
+    setConfig(pruned);
+    syncCodeToConfig(pruned, beforeEdits);
     setHasHandEdits(false);
     setIsDiscardEditsDialogOpen(false);
     setMode("configure");
@@ -148,20 +161,33 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     pythonCodeRef.current = pythonCode;
   }, [pythonCode]);
 
-  // Generate Python code from config when config changes in configure mode
+  // Regenerate the code from the steps. Returns the new code.
+  // movedStepSource: where moved steps' code is copied from, when not from
+  // the current code - see generatePythonCodeFromConfig.
+  const syncCodeToConfig = (
+    stepsConfig: PreprocessingConfig,
+    movedStepSource?: string
+  ): string => {
+    const existingCode = pythonCodeRef.current || BASE_PYTHON_TEMPLATE;
+    const generatedCode = generatePythonCodeFromConfig(stepsConfig, existingCode, movedStepSource);
+    setPythonCode(generatedCode);
+    pythonCodeRef.current = generatedCode;
+    baselineCodeRef.current = generatedCode;
+    syncedConfigRef.current = stepsConfig;
+    return generatedCode;
+  };
+
+  // Regenerate the code every time the steps change in Configure mode. Every
+  // change is applied: an earlier version skipped changes made within 100 ms
+  // of the previous one, so quick edits were stored in the steps but not in
+  // the code, and the node then reopened in Code mode as "edited by hand"
+  // (DP-11). Comparing against the steps the code was last generated from,
+  // instead of a timer, also skips the steps loaded on open.
   useEffect(() => {
-    if (mode === "configure" && !isGeneratingCodeRef.current && !isInitializingRef.current) {
-      isGeneratingCodeRef.current = true;
-      const existingCode = pythonCodeRef.current || BASE_PYTHON_TEMPLATE;
-      const generatedCode = generatePythonCodeFromConfig(config, existingCode);
-      setPythonCode(generatedCode);
-      pythonCodeRef.current = generatedCode;
-      baselineCodeRef.current = generatedCode;
-      setTimeout(() => {
-        isGeneratingCodeRef.current = false;
-      }, 100);
+    if (isOpen && mode === "configure" && config !== syncedConfigRef.current) {
+      syncCodeToConfig(config);
     }
-  }, [config, mode]);
+  }, [config, mode, isOpen]);
 
   useEffect(() => {
     analysisGenerationRef.current += 1;
@@ -180,12 +206,13 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       // they were made from a different file than the one this node now
       // reads (e.g. the CSV in the upstream Train Data Source was swapped).
       // Then drop them and re-analyze the current file.
-      const currentFileUrl = newFileUrl ? resolveFileUrl(newFileUrl) : "";
+      const currentFile = newFileUrl ? resolveInputFile(newFileUrl) : undefined;
+      const currentFileUrl = currentFile?.ok ? currentFile.fileUrl : "";
       const savedResults =
         data.stepAnalysisResults ??
         (data.analysisResult ? { initial: data.analysisResult } : {});
       const hasSavedResults = Object.keys(savedResults).length > 0;
-      const hasResolvedFile = !!currentFileUrl && !isUnresolvedVariable(currentFileUrl);
+      const hasResolvedFile = !!currentFileUrl;
       // Nodes saved before analyzedFileUrl existed have no record of which
       // file their results came from, so there's nothing to compare against -
       // keep their results rather than treating every open as a dataset change.
@@ -198,7 +225,7 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       if (datasetChanged) {
         setAnalysisResults({});
         setAnalyzedFileUrl("");
-        void analyzeChangedDataset(currentFileUrl);
+        void analyzeChangedDataset(currentFile as ResolvedFile);
       } else if (hasSavedResults && !data.analyzedFileUrl && hasResolvedFile) {
         // Legacy node: assume the results match the current file and record it,
         // so the next save starts tracking dataset swaps.
@@ -212,6 +239,10 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       // Stored steps if the node has them; older nodes are read from their
       // code once and store their steps on the next save.
       const loaded = loadPreprocessingConfig(data);
+      // The loaded code belongs to these steps - don't regenerate on open
+      syncedConfigRef.current = loaded.config;
+      loadedConfigRef.current = loaded.config;
+      loadedSourceRef.current = loaded.source;
       setConfig(loaded.config);
       // Code whose generated function was edited by hand opens in Code mode,
       // so nothing regenerates over those edits without asking.
@@ -242,56 +273,13 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     }
   }, [fileUrl]);
 
-  // Resolve {{...}} variables in a file URL. The default "{{source.data_path}}"
-  // is normally filled from the upstream node's LAST RUN output, which keeps
-  // pointing at the previous file after the CSV in a Train Data Source is
-  // swapped until the workflow is re-run. When the upstream node is a CSV
-  // Train Data Source, use the file currently selected there instead.
-  const resolveFileUrl = (url: string): string => {
-    if (url.trim() === SOURCE_DATA_PATH && nodeId) {
-      const upstream = edges
-        .filter((edge) => edge.target === nodeId)
-        .map((edge) => nodes.find((n) => n.id === edge.source));
-      const source = upstream.length === 1 ? upstream[0] : undefined;
-      if (source?.type === "trainDataSourceNode") {
-        const sourceData = source.data as TrainDataSourceNodeData;
-        const selectedFile = sourceData.csvFilePath || sourceData.csvFileUrl;
-        if (sourceData.sourceType === "csv" && selectedFile) return selectedFile;
-      }
-    }
-
-    let resolvedFileUrl = url;
-    const variables = extractDynamicVariables(url);
-    if (variables.size > 0 && nodeId) {
-      const availableData = getAvailableDataForNode(nodeId);
-      if (availableData) {
-        variables.forEach((variable) => {
-          const value = getValueFromPath(availableData, variable);
-          if (value !== undefined) {
-            const stringValue =
-              typeof value === "string"
-                ? value
-                : typeof value === "object"
-                ? JSON.stringify(value)
-                : String(value);
-            resolvedFileUrl = resolvedFileUrl.replace(
-              new RegExp(`{{${variable}}}`, "g"),
-              stringValue
-            );
-          }
-        });
-      }
-    }
-    return resolvedFileUrl;
-  };
-
   // Analyze the node's input file from scratch (used when the dialog opens
   // and the saved analysis belongs to a different file).
-  const analyzeChangedDataset = async (resolvedFileUrl: string) => {
+  const analyzeChangedDataset = async ({ fileUrl: resolvedFileUrl, file }: ResolvedFile) => {
     const generation = analysisGenerationRef.current;
     try {
       setIsAnalyzing(true);
-      const result = await analyzeCSV(resolvedFileUrl);
+      const result = await analyzeCSV(resolvedFileUrl, undefined, file);
       if (generation !== analysisGenerationRef.current) return;
       setAnalysisResults({ initial: result });
       setAnalyzedFileUrl(resolvedFileUrl);
@@ -312,8 +300,38 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     }
   };
 
+  // The one save path - used by Save Changes and by Save in the panel's
+  // "You have unsaved changes!" prompt (Esc / close), so the steps are never
+  // left out of a save (DP-12).
   const handleSave = () => {
-    if (!pythonCode.trim()) {
+    if (isAnalyzing) {
+      // Saving mid-analysis would store results that are about to change
+      toast({
+        title: "Analysis in progress",
+        description: "Wait for the analysis to finish, then save.",
+        variant: "destructive",
+      });
+      return;
+    }
+    // In Configure mode the steps own the generated function, so the code is
+    // regenerated from them here and always matches the stored steps (DP-11).
+    // This also covers an older node whose code came from an earlier version
+    // of the generator: storing its steps next to that code would otherwise
+    // make it reopen in Code mode as "edited by hand". In Code mode the code
+    // is saved as written; edits to the generated function are detected on
+    // the next open. An older node whose steps weren't changed keeps its code
+    // (and stores no steps), so hand-written lines in it aren't dropped.
+    const keepCode =
+      mode === "configure" &&
+      keepsOlderNodeCode(
+        loadedSourceRef.current,
+        config === loadedConfigRef.current,
+        pythonCode,
+        config
+      );
+    const codeToSave =
+      mode === "configure" && !keepCode ? syncCodeToConfig(config) : pythonCode;
+    if (!codeToSave.trim()) {
       toast({
         title: "Validation Error",
         description: "Please provide Python preprocessing code",
@@ -327,11 +345,13 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
     onUpdate({
       ...data,
       name,
-      pythonCode,
+      pythonCode: codeToSave,
       fileUrl,
       // The steps, stored as data (DP-7) - the dialog loads these instead of
       // re-reading them from pythonCode. pythonCode is still what runs.
-      preprocessingConfig: cloneConfig(config),
+      preprocessingConfig: keepCode
+        ? data.preprocessingConfig
+        : { ...cloneConfig(config), movedStepsKept: true },
       analysisResult: analysisResults.initial || undefined, // For backward compatibility
       stepAnalysisResults:
         Object.keys(analysisResults).length > 0 ? analysisResults : undefined,
@@ -365,14 +385,20 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       return;
     }
 
+    const input = resolveInputFile(fileUrl);
+    if (input.ok === false) {
+      toast({ title: "Can't analyze yet", description: input.message, variant: "destructive" });
+      return;
+    }
+
     // Analyze replaces all results, so anything still in flight is outdated.
     const generation = ++analysisGenerationRef.current;
     setRunningStepId(null);
     try {
       setIsAnalyzing(true);
 
-      const resolvedFileUrl = resolveFileUrl(fileUrl);
-      const result = await analyzeCSV(resolvedFileUrl);
+      const resolvedFileUrl = input.fileUrl;
+      const result = await analyzeCSV(resolvedFileUrl, undefined, input.file);
       if (generation !== analysisGenerationRef.current) return;
       // Store initial analysis result
       setAnalysisResults({ initial: result });
@@ -423,6 +449,12 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       return;
     }
 
+    const input = resolveInputFile(fileUrl);
+    if (input.ok === false) {
+      toast({ title: "Can't run the step yet", description: input.message, variant: "destructive" });
+      return;
+    }
+
     const generation = analysisGenerationRef.current;
     try {
       setRunningStepId(stepId);
@@ -430,8 +462,8 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
       // Generate code up to this step
       const stepCode = generateCodeUpToStep(stepId);
 
-      const resolvedFileUrl = resolveFileUrl(fileUrl);
-      const result = await analyzeCSV(resolvedFileUrl, stepCode);
+      const resolvedFileUrl = input.fileUrl;
+      const result = await analyzeCSV(resolvedFileUrl, stepCode, input.file);
       if (generation !== analysisGenerationRef.current) return;
       // Store result for this specific step. Results from a different file
       // are stale, so they're dropped rather than mixed with this one.
@@ -626,9 +658,28 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
           />
         );
       default:
+        if (isMovedStepType(step.type)) {
+          return (
+            <p className="text-xs text-muted-foreground">
+              {step.enabled
+                ? "Read-only here. Its saved code is kept and still runs - see the Code tab."
+                : "Switched off - its saved code is kept but doesn't run. Switch it on to run it again."}
+            </p>
+          );
+        }
         return null;
     }
   };
+
+  // One notice per moved step type in the node, in step order.
+  const movedStepNotices = Array.from(
+    new Set(
+      config.steps
+        .map((step) => step.type)
+        .filter(isMovedStepType)
+        .map(getMovedStepNotice)
+    )
+  );
 
   const stepTypes: PreprocessingStepType[] = [
     "column_filter",
@@ -657,11 +708,17 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
           </>
         }
         {...props}
+        onSave={handleSave}
         data={{
           ...data,
           name,
           pythonCode,
           fileUrl,
+          // Included so a change to the steps alone also counts as unsaved.
+          // Unchanged steps keep the stored value, so an older node (steps
+          // read from its code, nothing stored yet) isn't dirty just by opening.
+          preprocessingConfig:
+            config === loadedConfigRef.current ? data.preprocessingConfig : config,
         }}
       >
         <div className="space-y-4 overflow-y-auto max-h-[calc(95vh-200px)]">
@@ -705,6 +762,28 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
               <CSVAnalysisDisplay analysisResult={analysisResults.initial} />
             )}
           </div>
+
+          {movedStepNotices.length > 0 && (
+            // Steps from before PR #1076 that now belong in Train Model. Their
+            // code is kept as is and still runs; they just can't be edited here.
+            <div
+              role="status"
+              className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40"
+            >
+              {movedStepNotices.map((notice) => (
+                <p key={notice} className="font-medium">
+                  {notice}
+                </p>
+              ))}
+              <p className="text-xs text-muted-foreground">
+                This node still runs the saved code for{" "}
+                {movedStepNotices.length === 1 ? "this step" : "these steps"}, and saving keeps it
+                unchanged. To change it, delete the step here and set it up in the Train Model node.
+                {movedStepNotices.length > 1 &&
+                  " These steps were set up together, so deleting one can change what the others do - check the Code tab, or move them all."}
+              </p>
+            </div>
+          )}
 
           {/* Mode Toggle */}
           <div className="space-y-2">
@@ -939,7 +1018,8 @@ export const PreprocessingDialog: React.FC<PreprocessingDialogProps> = (
                       </div>
 
                       {/* Step Configuration */}
-                      {step.enabled && (
+                      {/* A moved step's note shows even when it is switched off. */}
+                      {(step.enabled || isMovedStepType(step.type)) && (
                         <div className="pl-6 border-l-2 border-border">
                           {renderStepConfig(step, index)}
                         </div>

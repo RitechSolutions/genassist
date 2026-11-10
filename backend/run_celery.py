@@ -96,6 +96,22 @@ if __name__ == "__main__":
     if "worker" in sys.argv:
         _start_heartbeat_thread()
 
+    # The API runs the migrations; workers wait for them so new code never queries
+    # the old schema during a deploy. Exits non-zero when the main database stays
+    # behind, so the container is restarted. Beat is not gated: it only enqueues,
+    # and the queued tasks wait in Redis until a gated worker runs them.
+    if "worker" in sys.argv and settings.CELERY_WAIT_FOR_SCHEMA:
+        from migrations import SchemaNotReadyError, wait_for_schema_at_head
+
+        try:
+            wait_for_schema_at_head(
+                timeout_seconds=settings.SCHEMA_WAIT_TIMEOUT_SECONDS,
+                interval_seconds=settings.SCHEMA_WAIT_INTERVAL_SECONDS,
+            )
+        except SchemaNotReadyError as error:
+            logger.error("%s", error)
+            sys.exit(1)
+
     # Pass all command line arguments to Celery
     sys.argv[0] = 'celery'  # Replace script name with 'celery'
     celery_main()

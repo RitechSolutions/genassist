@@ -9,6 +9,7 @@ from croniter import croniter
 
 from app.core.utils.html_utils import html2markdown, html2plaintext
 from app.dependencies.injector import injector
+from app.modules.data.load_result import article_sync_outcome, load_document
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.integration.zendesk import ZendeskConnector
 from app.schemas.agent_knowledge import KBCreate
@@ -49,6 +50,23 @@ def _parse_zendesk_category_ids(conn_data: dict[str, Any]) -> Optional[List[int]
                     out.append(int(s))
         return out or None
     return None
+
+
+def _is_visible_to_everyone(article: dict) -> bool:
+    """True when the article has no user segment, so anyone can read it."""
+    return article.get("user_segment_id") is None and not article.get("user_segment_ids")
+
+
+def _is_copied(article: dict, include_unpublished: bool, include_restricted: bool) -> bool:
+    """True when the KB settings let this article be copied."""
+    allowed_by_publish_state = include_unpublished or article.get("draft") is False
+    allowed_by_visibility = include_restricted or _is_visible_to_everyone(article)
+    return allowed_by_publish_state and allowed_by_visibility
+
+
+def _select_articles(articles: List[dict], include_unpublished: bool, include_restricted: bool) -> List[dict]:
+    """Keep the articles the KB copies: published and visible to everyone unless included."""
+    return [article for article in articles if _is_copied(article, include_unpublished, include_restricted)]
 
 
 @shared_task
@@ -332,8 +350,8 @@ async def import_zendesk_articles_to_kb_async(
                 section_id=section_id,
             )
 
-            # Check if allow_unpublished_articles is false KB extra_metadata from UI panel
             allow_unpublished_articles = kb.extra_metadata.get("allow_unpublished_articles") or False
+            include_restricted_articles = kb.extra_metadata.get("include_restricted_articles") or False
             content_format = kb.extra_metadata.get("content_format") or "text"
 
             # Parse article body in the configured content format
@@ -348,13 +366,9 @@ async def import_zendesk_articles_to_kb_async(
                     return html2markdown(body, base_url)
                 return html2plaintext(body)
 
-            articles = []
-            if not allow_unpublished_articles:
-                articles.extend([article for article in fetched_articles if article.get("draft") is False])
-            else:
-                articles.extend(fetched_articles)
+            articles = _select_articles(fetched_articles, allow_unpublished_articles, include_restricted_articles)
 
-            if not articles:
+            if not fetched_articles:
                 logger.debug(
                     f"No articles found in Zendesk for datasource {ds.name}"
                 )
@@ -488,10 +502,9 @@ async def import_zendesk_articles_to_kb_async(
                         "section_id": str(article.get("section_id", "")),
                     }
 
-                    res = await rag_manager.add_document(
-                        kb, article_id, content, metadata
-                    )
-                    logger.debug(f"Article {article_title} processed with result: {res}")
+                    warning = await load_document(rag_manager, kb, article_id, content, metadata, article_title)
+                    if warning:
+                        kb_errors.append(warning)
                     articles_added += 1
                     if article.get("updated_at"):
                         article_updated_at_map[str(article["id"])] = article[
@@ -539,10 +552,9 @@ async def import_zendesk_articles_to_kb_async(
 
                     # Delete and re-add to update
                     await rag_manager.delete_document(kb, article_id)
-                    res = await rag_manager.add_document(
-                        kb, article_id, content, metadata
-                    )
-                    logger.debug(f"Article {article_title} updated with result: {res}")
+                    warning = await load_document(rag_manager, kb, article_id, content, metadata, article_title)
+                    if warning:
+                        kb_errors.append(warning)
                     articles_updated += 1
                     if article.get("updated_at"):
                         article_updated_at_map[str(article["id"])] = article[
@@ -571,12 +583,14 @@ async def import_zendesk_articles_to_kb_async(
             logger.debug(f"Updating knowledge base {kb.id} last synced time...")
             kb_update = _kb_update_dict(kb)
             kb_update["last_synced"] = datetime.now()
-            kb_update["last_sync_status"] = (
-                "success_with_warnings" if kb_errors else "success"
+            sync_status, sync_message = article_sync_outcome(
+                len(new_articles) + len(updated_articles),
+                articles_added + articles_updated,
+                kb_errors,
+                had_articles=bool(existing_articles),
             )
-            kb_update["last_sync_error"] = (
-                "; ".join(kb_errors[:5]) if kb_errors else ""
-            )
+            kb_update["last_sync_status"] = sync_status
+            kb_update["last_sync_error"] = sync_message
             if last_file_date:
                 kb_update["last_file_date"] = last_file_date
             extra = dict(kb_update.get("extra_metadata") or {})

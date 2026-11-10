@@ -5,15 +5,23 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.auth.utils import get_current_user_id
+from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.keepalive_json_response import keepalive_json
 from app.core.permissions.constants import Permissions as P
+from app.core.tenant_scope import get_tenant_context
 from app.core.utils.string_utils import truncate_for_log
 from app.core.utils.uuid_utils import coerce_uuid
+from app.dependencies.dependency_injection import RedisString
 from app.dependencies.injector import injector
-from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
+from app.modules.workflow import training_jobs
+from app.modules.workflow.test_runs import run_workflow_test
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.llm.provider import LLMProvider
@@ -291,10 +299,125 @@ async def execute_workflow(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _training_job_owner() -> str:
+    """The signed-in user a training test job belongs to.
+
+    Jobs are scoped to their owner (status reads, cancelling, one job at a
+    time), so a caller without a user id, e.g. an API key with no user,
+    can't start one: such callers would all share one anonymous owner.
+    """
+    user_id = get_current_user_id()
+    if not user_id:
+        raise AppException(
+            error_key=ErrorKey.ML_TRAINING_JOB_NEEDS_USER,
+            status_code=403,
+            error_detail="Testing a model training needs a signed-in user. Use a user's login or an API key that belongs to a user.",
+        )
+    return str(user_id)
+
+
+def _training_job_store() -> training_jobs.TrainingJobStore:
+    return training_jobs.TrainingJobStore(injector.get(RedisString))
+
+
+async def _queue_training_job(
+    kind: str, training_nodes: List[Dict[str, Any]], payload: Dict[str, Any]
+) -> JSONResponse:
+    """
+    Run a test that trains a model on the "ml" worker instead of in this request.
+
+    An oversized hyperparameter search is refused here, before anything is
+    queued. Returns 202 with the job; the client polls GET /workflows/test-jobs/{job_id}.
+    A user who already has a queued or running job gets 409; GET
+    /workflows/test-jobs/active returns that job, to follow or cancel it.
+    """
+    for node_data in training_nodes:
+        training_jobs.check_training_config(node_data)
+
+    tenant_id = get_tenant_context()
+    owner = _training_job_owner()
+    store = _training_job_store()
+    # One job per user at a time: the "ml" queue is shared by every tenant.
+    job, running = await store.start(tenant_id, owner, kind)
+    if running is not None:
+        raise AppException(
+            error_key=ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING,
+            status_code=409,
+            error_detail="You already have a training test running. Wait for it to finish or cancel it, then run the test again.",
+        )
+    try:
+        from app.tasks.ml_training_job_tasks import run_training_job_task
+
+        run_training_job_task.delay(job["job_id"], tenant_id, jsonable_encoder({**payload, "kind": kind}))
+    except Exception as e:
+        logger.error(f"Could not queue training job {job['job_id']}: {e}")
+        await store.update(
+            tenant_id,
+            job["job_id"],
+            expect=(training_jobs.STATUS_QUEUED,),
+            status=training_jobs.STATUS_FAILED,
+            error="Could not start the training job.",
+        )
+        raise HTTPException(status_code=503, detail="Could not start the training job. Try again.")
+
+    logger.info(f"Queued training job {job['job_id']} ({kind})")
+    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=training_jobs.public_view(job))
+
+
+def _training_job_not_found() -> AppException:
+    return AppException(
+        error_key=ErrorKey.ML_TRAINING_JOB_NOT_FOUND,
+        status_code=404,
+        error_detail="The training job was not found or has expired.",
+    )
+
+
+async def _owned_training_job(store: training_jobs.TrainingJobStore, job_id: str) -> Dict[str, Any]:
+    owner = _training_job_owner()
+    job = await store.get(get_tenant_context(), job_id)
+    if job is None or job.get("user_id") != owner:
+        raise _training_job_not_found()
+    return job
+
+
+@router.get(
+    "/test-jobs/active", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
+)
+async def get_active_training_job():
+    """The user's queued or running training test, to follow or cancel after leaving it."""
+    job = await _training_job_store().active_job(get_tenant_context(), _training_job_owner())
+    if job is None:
+        raise _training_job_not_found()
+    return training_jobs.public_view(job)
+
+
+@router.get(
+    "/test-jobs/{job_id}", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
+)
+async def get_training_job(job_id: str):
+    """Status, progress and (once finished) result of a training test run."""
+    store = _training_job_store()
+    return training_jobs.public_view(await _owned_training_job(store, job_id))
+
+
+@router.post(
+    "/test-jobs/{job_id}/cancel", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
+)
+async def cancel_training_job(job_id: str):
+    """Cancel a queued or running training test. A finished job is returned unchanged."""
+    store = _training_job_store()
+    await _owned_training_job(store, job_id)
+    job = await store.cancel(get_tenant_context(), job_id)
+    if job is None:
+        raise _training_job_not_found()
+    return training_jobs.public_view(job)
+
+
 @router.post(
     "/test", dependencies=[Depends(auth), Depends(permissions(P.Workflow.TEST))]
 )
 async def test_workflow(
+    request: Request,
     test_data: Dict[str, Any],
     workflow_id: Optional[UUID] = None,
     workflow_service: WorkflowService = Injected(WorkflowService),
@@ -354,35 +477,48 @@ async def test_workflow(
                 "edges": workflow.edges,
             }
 
-        # Use the new engine approach
-        workflow_engine = WorkflowEngine(workflow_config)
+        async def run() -> dict:
+            try:
+                thread_id = input_data.get("thread_id", str(uuid.uuid4()))
+                start_node_id = input_data.get("human_in_the_loop_node_id")
 
-        thread_id = input_data.get("thread_id", str(uuid.uuid4()))
-        start_node_id = input_data.get("human_in_the_loop_node_id")
-
-        usage_context = WorkflowUsageContext(
-            source="workflow_test", workflow_id=coerce_uuid(saved_workflow_id), defer_capture=True
-        )
-        turn_router = SubAgentTurnRouter(workflow_engine, owner_id=workflow_config["id"])
-        supplied_thread = bool(input_data.get("thread_id"))
-        if turn_router.has_sub_agents():
-            input_data.setdefault("agent_id", workflow_config["id"])
-            if supplied_thread and not start_node_id:
-                routed = await turn_router.route_turn(
-                    input_data.get("message", ""), thread_id, input_data, persist=True, usage_context=usage_context
+                # Training would hold this request (and the API) for as long as
+                # the fit takes, so it runs as a background job instead. The job
+                # runs the same turn (sub-agent routing, registry-managed
+                # threads) via run_workflow_test.
+                training_nodes = training_jobs.train_model_nodes(
+                    workflow_config["nodes"], workflow_config.get("edges") or [], start_node_id
                 )
-                if routed is not None:
-                    return routed
+                if training_nodes:
+                    return await _queue_training_job(
+                        "workflow",
+                        training_nodes,
+                        {
+                            "workflow_config": workflow_config,
+                            "input_data": input_data,
+                            "start_node_id": start_node_id,
+                            "thread_id": thread_id,
+                            "workflow_id": saved_workflow_id,
+                            "usage_source": "workflow_test",
+                        },
+                    )
 
-        state = await workflow_engine.execute_from_node(
-            start_node_id=start_node_id,
-            input_data=input_data,
-            thread_id=thread_id,
-            registry_managed=supplied_thread,
-            usage_context=usage_context,
-        )
+                # Use the new engine approach
+                workflow_engine = WorkflowEngine(workflow_config)
 
-        return turn_router.finalize(state.format_state_as_response())
+                usage_context = WorkflowUsageContext(
+                    source="workflow_test", workflow_id=coerce_uuid(saved_workflow_id), defer_capture=True
+                )
+                return await run_workflow_test(
+                    workflow_engine, workflow_config["id"], input_data, thread_id, start_node_id, usage_context
+                )
+            except (HTTPException, AppException):
+                raise
+            except Exception as e:
+                logger.error(f"Error testing workflow with new engine: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+
+        return await keepalive_json(request, run, name=f"workflow-test:{workflow_config['id']}")
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
@@ -412,7 +548,7 @@ async def get_node_dialog_schema(node_type: str):
 @router.post(
     "/test-node", dependencies=[Depends(auth), Depends(permissions("test:workflow"))]
 )
-async def test_individual_node(test_data: Dict[str, Any]):
+async def test_individual_node(request: Request, test_data: Dict[str, Any]):
     """
     Test an individual node with the new engine.
 
@@ -443,33 +579,51 @@ async def test_individual_node(test_data: Dict[str, Any]):
             detail=f"Unsupported node type: {node_type}. Supported types: {SUPPORTED_NODE_TYPES}",
         )
 
-    try:
-        # Create a unique test ID
-        test_id = f"test-{node_type}-{int(time.time())}"
+    async def run() -> dict:
+        try:
+            # Create a unique test ID
+            test_id = f"test-{node_type}-{int(time.time())}"
 
-        # Build workflow configuration with single node
-        workflow_config = {
-            "id": test_id,
-            "nodes": [{"id": test_id, "type": node_type, "data": node_config}],
-            "edges": [],
-        }
-        workflow_engine = WorkflowEngine(workflow_config)
+            # Build workflow configuration with single node
+            workflow_config = {
+                "id": test_id,
+                "nodes": [{"id": test_id, "type": node_type, "data": node_config}],
+                "edges": [],
+            }
 
-        state = await workflow_engine.execute_from_node(
-            start_node_id=test_id,
-            input_data=input_data,
-            usage_context=WorkflowUsageContext(
-                source="node_test",
-                workflow_id=coerce_uuid(workflow_engine.workflow_id),
-                defer_capture=True,
-            ),
-        )
+            if node_type == training_jobs.TRAIN_MODEL_NODE_TYPE:
+                return await _queue_training_job(
+                    "node",
+                    [node_config],
+                    {
+                        "workflow_config": workflow_config,
+                        "input_data": input_data,
+                        "start_node_id": test_id,
+                        "usage_source": "node_test",
+                    },
+                )
 
-        return state.format_state_as_response()
+            workflow_engine = WorkflowEngine(workflow_config)
 
-    except Exception as e:
-        logger.error(f"Error testing {node_type} node: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+            state = await workflow_engine.execute_from_node(
+                start_node_id=test_id,
+                input_data=input_data,
+                usage_context=WorkflowUsageContext(
+                    source="node_test",
+                    workflow_id=coerce_uuid(workflow_engine.workflow_id),
+                    defer_capture=True,
+                ),
+            )
+
+            return state.format_state_as_response()
+
+        except (HTTPException, AppException):
+            raise
+        except Exception as e:
+            logger.error(f"Error testing {node_type} node: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return await keepalive_json(request, run, name=f"node-test:{node_type}")
 
 
 @router.post("/generate-python-template", response_model=Dict[str, Any])

@@ -1,9 +1,19 @@
-from typing import List, Optional, Dict, Any
+import logging
+from typing import Any, Dict, List, Optional
+
 import boto3
 from botocore.exceptions import ClientError
-import logging
 
 logger = logging.getLogger(__name__)
+
+
+def is_s3_not_found_error(error: ClientError) -> bool:
+    """Return whether an S3 ``ClientError`` represents a missing object."""
+    response = error.response or {}
+    code = str(response.get("Error", {}).get("Code", ""))
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return code in {"404", "NoSuchKey", "NotFound"} or status == 404
+
 
 class S3Client:
     def __init__(
@@ -38,7 +48,7 @@ class S3Client:
         prefix: str = "",
         max_keys: int = 1000,
         continuation_token: Optional[str] = None,
-        file_extensions: Optional[List[str]] = None
+        file_extensions: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         List files in the S3 bucket with pagination support.
@@ -58,15 +68,12 @@ class S3Client:
         try:
             # Prepare list_objects_v2 parameters
             cleaned_prefix = (prefix or "").lstrip("/").strip()
-            params = {
-                'Bucket': self.bucket_name,
-                'MaxKeys': max_keys
-            }
+            params = {"Bucket": self.bucket_name, "MaxKeys": max_keys}
             if cleaned_prefix:
-                params['Prefix'] = cleaned_prefix
+                params["Prefix"] = cleaned_prefix
 
             if continuation_token:
-                params['ContinuationToken'] = continuation_token
+                params["ContinuationToken"] = continuation_token
 
             logger.info(f"Listing files from S3: {params}")
 
@@ -75,25 +82,27 @@ class S3Client:
 
             # Process the results
             files = []
-            for obj in response.get('Contents', []):
-                file_name = obj['Key']
+            for obj in response.get("Contents", []):
+                file_name = obj["Key"]
 
                 # Apply file extension filter if specified
                 if file_extensions:
                     if not any(file_name.lower().endswith(ext.lower()) for ext in file_extensions):
                         continue
 
-                files.append({
-                    'key': file_name,
-                    'size': obj['Size'],
-                    'last_modified': obj['LastModified'].isoformat(),
-                    'etag': obj['ETag'],
-                })
+                files.append(
+                    {
+                        "key": file_name,
+                        "size": obj["Size"],
+                        "last_modified": obj["LastModified"].isoformat(),
+                        "etag": obj["ETag"],
+                    }
+                )
 
             return {
-                'files': files,
-                'next_token': response.get('NextContinuationToken'),
-                'is_truncated': response.get('IsTruncated', False)
+                "files": files,
+                "next_token": response.get("NextContinuationToken"),
+                "is_truncated": response.get("IsTruncated", False),
             }
 
         except ClientError as e:
@@ -111,18 +120,15 @@ class S3Client:
             Dictionary containing file metadata
         """
         try:
-            response = self.s3_client.head_object(
-                Bucket=self.bucket_name,
-                Key=file_key
-            )
+            response = self.s3_client.head_object(Bucket=self.bucket_name, Key=file_key)
 
             return {
-                'key': file_key,
-                'size': response['ContentLength'],
-                'last_modified': response['LastModified'].isoformat(),
-                'content_type': response.get('ContentType'),
-                'metadata': response.get('Metadata', {}),
-                'etag': response['ETag']
+                "key": file_key,
+                "size": response["ContentLength"],
+                "last_modified": response["LastModified"].isoformat(),
+                "content_type": response.get("ContentType"),
+                "metadata": response.get("Metadata", {}),
+                "etag": response["ETag"],
             }
         except ClientError as e:
             logger.error(f"Error getting file metadata from S3: {str(e)}")
@@ -140,11 +146,7 @@ class S3Client:
             Boolean indicating success
         """
         try:
-            self.s3_client.download_file(
-                self.bucket_name,
-                file_key,
-                local_path
-            )
+            self.s3_client.download_file(self.bucket_name, file_key, local_path)
             return True
         except ClientError as e:
             logger.error(f"Error downloading file from S3: {str(e)}")
@@ -161,11 +163,8 @@ class S3Client:
             File content as bytes
         """
         try:
-            response = self.s3_client.get_object(
-                Bucket=self.bucket_name,
-                Key=file_key
-            )
-            return response['Body'].read()
+            response = self.s3_client.get_object(Bucket=self.bucket_name, Key=file_key)
+            return response["Body"].read()
         except ClientError as e:
             logger.error(f"Error reading file content from S3: {str(e)}")
             raise
@@ -190,7 +189,6 @@ class S3Client:
             logger.error(f"Error uploading content to S3: {str(e)}")
             return False
 
-
     def upload_content(self, content: bytes | str, bucket: str, key: str) -> bool:
         """
         Upload content to S3.
@@ -204,11 +202,7 @@ class S3Client:
             Boolean indicating success
         """
         try:
-            self.s3_client.put_object(
-                Bucket=bucket,
-                Key=key,
-                Body=content
-            )
+            self.s3_client.put_object(Bucket=bucket, Key=key, Body=content)
             return True
         except ClientError as e:
             logger.error(f"Error uploading content to S3: {str(e)}")
@@ -225,13 +219,53 @@ class S3Client:
             Boolean indicating success
         """
         try:
-            self.s3_client.delete_object(
-                Bucket=self.bucket_name,
-                Key=file_key
-            )
+            self.s3_client.delete_object(Bucket=self.bucket_name, Key=file_key)
             return True
         except ClientError as e:
             logger.error(f"Error deleting file from S3: {str(e)}")
+            return False
+
+    _COPIED_HEADERS = (
+        "ContentType",
+        "ContentEncoding",
+        "ContentDisposition",
+        "ContentLanguage",
+        "CacheControl",
+        "ServerSideEncryption",
+        "SSEKMSKeyId",
+        "StorageClass",
+    )
+
+    def copy_file(self, source_key: str, destination_key: str) -> bool:
+        """Copy an object within the configured bucket, keeping its headers and metadata.
+
+        The managed ``copy`` switches to a multipart copy for large objects, which does
+        not carry over the source headers, so they are passed explicitly, including the
+        encryption settings and storage class.
+        """
+        try:
+            source = self.s3_client.head_object(Bucket=self.bucket_name, Key=source_key)
+            extra_args: Dict[str, Any] = {
+                "MetadataDirective": "REPLACE",
+                "Metadata": source.get("Metadata", {}),
+            }
+            for header in self._COPIED_HEADERS:
+                if source.get(header) is not None:
+                    extra_args[header] = source[header]
+            self.s3_client.copy(
+                Bucket=self.bucket_name,
+                CopySource={"Bucket": self.bucket_name, "Key": source_key},
+                Key=destination_key,
+                ExtraArgs=extra_args,
+            )
+            return True
+        except ClientError as e:
+            logger.error(
+                "Error copying S3 object %s to %s: %s",
+                source_key,
+                destination_key,
+                str(e),
+            )
             return False
 
     @staticmethod
@@ -278,9 +312,7 @@ class S3Client:
         }
         if content_type:
             params["ContentType"] = content_type
-        return self.s3_client.generate_presigned_url(
-            "put_object", Params=params, ExpiresIn=expires_in
-        )
+        return self.s3_client.generate_presigned_url("put_object", Params=params, ExpiresIn=expires_in)
 
     def head_object(self, file_key: str) -> Dict[str, Any]:
         """Return basic object metadata or raise ``ClientError`` if missing."""
@@ -291,12 +323,11 @@ class S3Client:
                 "size": int(response.get("ContentLength", 0) or 0),
                 "etag": (response.get("ETag") or "").strip('"'),
                 "content_type": response.get("ContentType"),
-                "last_modified": (
-                    response["LastModified"].isoformat()
-                    if response.get("LastModified")
-                    else None
-                ),
+                "last_modified": (response["LastModified"].isoformat() if response.get("LastModified") else None),
             }
         except ClientError as e:
-            logger.error(f"Error head_object on S3 key {file_key}: {e}")
+            if is_s3_not_found_error(e):
+                logger.debug("S3 key does not exist: %s", file_key)
+            else:
+                logger.error("Error head_object on S3 key %s: %s", file_key, e)
             raise

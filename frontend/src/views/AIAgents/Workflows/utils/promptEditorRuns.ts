@@ -202,7 +202,6 @@ export interface CaseSplitRef {
 export interface OptimizeKeyInputs {
   prompt: string;
   providerId: string;
-  instructions: string;
   caseSplit: CaseSplitRef | null;
   caseRowsKey: string | null;
   techniques: readonly string[];
@@ -217,7 +216,6 @@ export const optimizeKeyOf = (input: OptimizeKeyInputs): string =>
     prompt: input.prompt,
     providerId: input.providerId,
     providerRevision: input.providerRevision,
-    instructions: input.instructions,
     caseSplit: input.caseSplit,
     caseRowsKey: input.caseRowsKey,
     techniques: [...input.techniques].sort(),

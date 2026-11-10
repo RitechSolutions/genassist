@@ -109,6 +109,61 @@ async def test_without_an_active_version_test_data_is_unpinned():
     service.repository.soft_delete.assert_awaited_once_with(workflow)
 
 
+class _Savepoint:
+    def __init__(self, log):
+        self.log = log
+
+    async def __aenter__(self):
+        self.log.append("savepoint")
+
+    async def __aexit__(self, exc_type, *_):
+        self.log.append("rollback" if exc_type else "release")
+        return False
+
+
+def _agent_service(*, ml_models):
+    log = []
+    retired = [uuid4(), uuid4()]
+    service = _service(workflow=None)
+    service.repository.db.begin_nested = MagicMock(side_effect=lambda: _Savepoint(log))
+    service.repository.db.flush = AsyncMock()
+    service.repository.soft_delete_by_agent = AsyncMock(
+        side_effect=lambda *_a, **_k: log.append("retire") or retired
+    )
+    service.repository.live_ml_model_names_for = AsyncMock(
+        side_effect=lambda ids: log.append("check") or list(ml_models)
+    )
+    return service, log, retired
+
+
+@pytest.mark.asyncio
+async def test_agent_whose_workflow_trains_a_live_model_is_refused_and_names_it():
+    """Today every version is retired and the model's pipeline is left on a deleted workflow."""
+    service, log, retired = _agent_service(ml_models=["Churn v2", "Revenue"])
+    agent_id = uuid4()
+
+    with pytest.raises(AppException) as exc:
+        await service.soft_delete_by_agent(agent_id, commit=False)
+
+    assert exc.value.status_code == 409
+    assert exc.value.error_key == ErrorKey.AGENT_IN_USE_BY_ML_MODEL
+    assert exc.value.error_variables == ["Churn v2, Revenue"]
+    # The check runs on exactly the retired versions, and the refusal undoes the retire.
+    service.repository.soft_delete_by_agent.assert_awaited_once_with(agent_id, commit=False)
+    service.repository.live_ml_model_names_for.assert_awaited_once_with(retired)
+    assert log == ["savepoint", "retire", "check", "rollback"]
+
+
+@pytest.mark.asyncio
+async def test_agent_without_ml_pipelines_retires_every_version():
+    service, log, _ = _agent_service(ml_models=[])
+
+    await service.soft_delete_by_agent(uuid4(), commit=False)
+
+    assert log == ["savepoint", "retire", "check", "release"]
+    service.repository.db.flush.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     ("error_key", "expected"),
     [
@@ -121,6 +176,11 @@ async def test_without_an_active_version_test_data_is_unpinned():
             ErrorKey.WORKFLOW_VERSION_IN_USE_BY_ML_MODEL,
             "This version cannot be deleted while an ML model's pipeline configuration uses it (Support tools). "
             "Remove those configurations first.",
+        ),
+        (
+            ErrorKey.AGENT_IN_USE_BY_ML_MODEL,
+            "This agent cannot be deleted while an ML model's pipeline configuration uses one of its "
+            "workflow versions (Support tools). Remove those configurations first.",
         ),
     ],
 )

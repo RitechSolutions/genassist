@@ -19,7 +19,6 @@ from app.services.workflow_trigger import (
     SIGNATURE_HEADER,
     TIMESTAMP_HEADER,
     WorkflowTriggerService,
-    build_public_url,
     compute_signature,
     find_trigger_node,
     parse_body,
@@ -73,12 +72,6 @@ def test_find_trigger_node_matches_id_and_type():
     assert find_trigger_node(nodes, "n2")["id"] == "n2"
     assert find_trigger_node(nodes, "n1") is None
     assert find_trigger_node(None, "n2") is None
-
-
-def test_public_url_uses_frontend_base_and_carries_tenant():
-    with patch("app.services.workflow_trigger.get_tenant_context", return_value="acme"):
-        url = build_public_url("https://host/api", None, "abc", "POST")
-    assert url == "https://host/api/webhook/execute/abc?x-tenant-id=acme"
 
 
 # --------------------------------------------------------------------------- #

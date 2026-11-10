@@ -41,12 +41,20 @@ _ROUTER_ISOLATED = (
     "true/false output contract, and constrained response."
 )
 
+_SWITCH_ISOLATED = (
+    "The isolated check cannot reproduce the switch's routing prompt, "
+    "route list, and route id answer."
+)
+
 _SYSTEM = PromptFieldSpec("systemPrompt", "system", "System Prompt", inline_check=True)
 _USER = PromptFieldSpec("userPrompt", "user", "User Prompt", False, _ISOLATED)
 _ROUTER_INSTR = PromptFieldSpec(
     "systemPrompt", "router_instructions", "System Prompt", False, _ROUTER_ISOLATED
 )
 _ROUTER_QUESTION = PromptFieldSpec("smartPrompt", "router_question", "Routing prompt", False, _ISOLATED)
+_SWITCH_INSTR = PromptFieldSpec(
+    "systemPrompt", "router_instructions", "System Prompt", False, _SWITCH_ISOLATED
+)
 _SQL_SYSTEM = PromptFieldSpec("systemPrompt", "sql_system", "System Prompt", False, _ISOLATED)
 _JUDGE_SUFFIX = PromptFieldSpec(
     "llm_judge_system_prompt_suffix", "judge_suffix", "Additional judge instructions", False, _ISOLATED
@@ -57,6 +65,7 @@ PROMPT_FIELDS: Dict[str, Dict[str, PromptFieldSpec]] = {
     "llmModelNode": {"systemPrompt": _SYSTEM, "userPrompt": _USER},
     "subAgentNode": {"systemPrompt": _SYSTEM},
     "routerNode": {"systemPrompt": _ROUTER_INSTR, "smartPrompt": _ROUTER_QUESTION},
+    "switchNode": {"systemPrompt": _SWITCH_INSTR, "smartPrompt": _ROUTER_QUESTION},
     "sqlNode": {"systemPrompt": _SQL_SYSTEM},
     "guardrailProvenanceNode": {"llm_judge_system_prompt_suffix": _JUDGE_SUFFIX},
 }

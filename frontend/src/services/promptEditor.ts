@@ -1,4 +1,5 @@
 import { apiRequest } from "@/config/api";
+import { KEEPALIVE_HEADERS, throwIfErrorEnvelope } from "@/helpers/apiError";
 import type {
   CreatePromptVersionPayload,
   GoldSuiteLinkPayload,
@@ -78,7 +79,8 @@ export const evaluatePrompt = (
     "POST",
     `${BASE}/evaluate/${contextPath(workflowId, nodeId, promptField)}`,
     payload as unknown as Record<string, unknown>,
-  );
+    { headers: KEEPALIVE_HEADERS },
+  ).then(throwIfErrorEnvelope);
 
 export const optimizePrompt = (
   workflowId: string,
@@ -90,4 +92,5 @@ export const optimizePrompt = (
     "POST",
     `${BASE}/optimize/${contextPath(workflowId, nodeId, promptField)}`,
     payload as unknown as Record<string, unknown>,
-  );
+    { headers: KEEPALIVE_HEADERS },
+  ).then(throwIfErrorEnvelope);

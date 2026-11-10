@@ -69,9 +69,11 @@ import {
   TrainingPipelineConfig,
 } from "@/interfaces/ml-model-pipeline.interface";
 import { Workflow, WorkflowCreatePayload } from "@/interfaces/workflow.interface";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { formatDateTime } from "@/helpers/utils";
 import { downloadFileManagerFile } from "@/services/fileManager";
 import { modelTypeLabel } from "../helpers/modelTypes";
+import { useStoredFileName } from "../helpers/useStoredFileName";
 import {
   CRON_PRESETS,
   CUSTOM_CRON,
@@ -248,6 +250,7 @@ const MLModelDetail: React.FC = () => {
   });
 
   const model: MLModel | null = modelQuery.data ?? null;
+  const storedModelFile = useStoredFileName(model?.pkl_file_id, model?.name);
   const configs = configsQuery.data ?? [];
   const workflows: Workflow[] = workflowsQuery.data ?? [];
   const artifacts: PipelineArtifact[] = artifactsQuery.data ?? [];
@@ -442,8 +445,10 @@ const MLModelDetail: React.FC = () => {
         queryClient.invalidateQueries({ queryKey: ["ml-model", id] }),
         queryClient.invalidateQueries({ queryKey: ["ml-models"] }),
       ]);
-    } catch {
-      toast.error("Failed to promote the pipeline run.");
+    } catch (error) {
+      toast.error(
+        extractErrorMessage(error, "Failed to promote the pipeline run."),
+      );
     } finally {
       setPromotingRunId(null);
     }
@@ -469,7 +474,7 @@ const MLModelDetail: React.FC = () => {
     if (!model?.pkl_file_id) return;
     try {
       setIsDownloadingModel(true);
-      await downloadFileManagerFile(model.pkl_file_id, `${model.name || "model"}.pkl`);
+      await downloadFileManagerFile(model.pkl_file_id, await storedModelFile.resolveName());
     } catch {
       toast.error("Failed to download the model file.");
     } finally {
@@ -551,6 +556,7 @@ const MLModelDetail: React.FC = () => {
               variant="outline"
               className="rounded-full"
               loading={isDownloadingModel}
+              title={`Download ${storedModelFile.name}`}
               icon={<Download className="h-4 w-4" />}
               onClick={handleDownloadModelFile}
             >
@@ -770,11 +776,11 @@ const MLModelDetail: React.FC = () => {
             {runs.map((run) => {
               const duration = formatRunDuration(run.started_at, run.completed_at);
               const isSuccessful = run.status === "completed";
-              const isPromoted = isRunPromoted(run, model.pkl_file);
+              const isPromoted = isRunPromoted(run, model);
               const isDefaultPipeline = isRunDefaultPipeline(run, defaultConfigId);
               const isFullyPromoted = isRunFullyPromoted(
                 run,
-                model.pkl_file,
+                model,
                 defaultConfigId
               );
               return (
@@ -1149,7 +1155,7 @@ const MLModelDetail: React.FC = () => {
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <DialogTitle>Run Details #{selectedRun?.id?.slice(-6)}</DialogTitle>
-                {selectedRun && isRunPromoted(selectedRun, model.pkl_file) && <PromotedBadge />}
+                {selectedRun && isRunPromoted(selectedRun, model) && <PromotedBadge />}
               </div>
               {selectedRun && <RunStatusBadge status={selectedRun.status} />}
             </div>

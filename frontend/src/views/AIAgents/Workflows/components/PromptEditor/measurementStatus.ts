@@ -26,6 +26,8 @@ export const measurementStatus = (
           ? "Suggestion ready"
           : "No change suggested"
       }${measurement.optimizeStale ? " · inputs changed" : ""}${
+        measurement.draftDiverged ? " · draft changed" : ""
+      }${
         measurement.rounds.length > 0
           ? ` · ${measurement.rounds.length} earlier round${
               measurement.rounds.length === 1 ? "" : "s"

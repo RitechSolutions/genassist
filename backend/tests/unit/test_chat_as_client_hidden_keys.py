@@ -31,6 +31,7 @@ class _AgentRan(Exception):
 async def test_hidden_chat_input_values_cannot_leak_through_streamed_reply_text(monkeypatch, hidden, withheld):
     agent = SimpleNamespace(
         id="agent-1",
+        workflow_id="workflow-1",
         workflow={"nodes": [{"type": "chatInputNode", "data": {"inputSchema": {"api_key": {"hidden": hidden}}}}]},
     )
     conversation = SimpleNamespace(status=ConversationStatus.IN_PROGRESS.value)

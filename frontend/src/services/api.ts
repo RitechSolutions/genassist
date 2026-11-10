@@ -20,6 +20,7 @@ import {
 } from "@/interfaces/ai-agent.interface";
 import { PaginatedResponse } from "@/interfaces/common.interface";
 import { KBListItem } from "@/views/KnowledgeBase/types/knowledgeBase";
+import { KnowledgeItemMinimal } from "@/interfaces/knowledge.interface";
 import { getApiKeys, revealApiKey } from "@/services/apiKeys";
 import { hasPermission } from "@/services/auth";
 import { AxiosError } from "axios";
@@ -162,7 +163,13 @@ export async function updateAgentConfig(
 }
 
 export async function deleteAgentConfig(id: string) {
-  return apiRequest("DELETE", `genagent/agents/configs/${id}`);
+  return apiRequest(
+    "DELETE",
+    `genagent/agents/configs/${id}`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
 }
 
 // Agent image operations
@@ -235,6 +242,10 @@ export async function queryAgent(
 // Knowledge base endpoints
 export async function getAllKnowledgeItems() {
   return apiRequest("GET", "genagent/knowledge/items");
+}
+
+export async function getKnowledgeItemsMinimal() {
+  return apiRequest<KnowledgeItemMinimal[]>("GET", "genagent/knowledge/minimal");
 }
 
 export async function getKnowledgeItemsList({
