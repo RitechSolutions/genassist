@@ -20,12 +20,12 @@ The analytics system provides two layers of insights:
   Chat request
        │
        ▼
-  agent_response_log saved ──► asyncio.create_task()
+  agent_response_log saved ──► spawn() per event
        │                              │
        │                              ▼
        │                   analytics_realtime.py
-       │                   INSERT ON CONFLICT += 1
-       │                   (fire-and-forget, try/except)
+       │                   merge into (tenant, agent, day) bucket
+       │                   one flusher per key: INSERT ON CONFLICT += n
        │
        ▼
   Celery (twice daily)
@@ -95,8 +95,13 @@ One row per (agent, node_type, date). Unique constraint: `(agent_id, node_type, 
 
 **File**: `backend/app/services/analytics_realtime.py`
 
-When an agent response log is saved (`chat_as_client_use_case.py`), a background task fires
-via `asyncio.create_task()`. It parses the agent response and runs atomic PostgreSQL upserts:
+Each event (an agent response log saved in `chat_as_client_use_case.py`, a conversation start
+or finalize, a feedback vote) runs as a tracked background task (`background_tasks.spawn()`).
+The task only adds its numbers to an in-memory bucket keyed by `(tenant, agent_id, stat_date)`,
+with `stat_date` taken when the event happens. One flusher per key writes the bucket in one
+transaction: one upsert of the agent row with `+n` increments, then one multi-row upsert of the
+node rows grouped by node type. Events that arrive during a flush go out in the next one, so a
+burst for one agent becomes one or two writes per process instead of one per event.
 
 All fields are updated in near real-time via background tasks. The Celery worker serves only as a
 full-recount fallback to correct any drift.
@@ -117,8 +122,12 @@ full-recount fallback to correct any drift.
 
 The finalize and feedback hooks look up `agent_id` via `conversation → operator → agent` in the background task.
 
-**Error handling**: All background tasks are wrapped in `try/except`. If they fail,
-a warning is logged but nothing propagates to the user. Celery corrects on its next run.
+**Error handling**: Nothing propagates to the user. A failed flush is retried once; if the retry
+also fails, its bucket is dropped with a warning that names the event count. Graceful shutdown
+waits up to 10 s for pending flushes (`drain()`); a hard kill loses the bucket. The next Celery
+run rebuilds every visible column, but not `total_input_tokens`, `total_output_tokens` and
+`total_cost_usd`, which only the real-time path writes. The 2 s `lock_timeout` bounds each lock
+attempt of a flush, not the whole statement.
 
 ### Celery batch aggregation
 
