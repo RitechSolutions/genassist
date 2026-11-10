@@ -32,3 +32,17 @@ describe("workflowBuilder service", () => {
     expect(mockApiRequest).toHaveBeenCalledWith("GET", "workflow-builder/drafts/conv-1");
   });
 });
+
+describe("getBuilderUsage", () => {
+  it("scopes to the conversation when one is given", async () => {
+    const { getBuilderUsage } = await import("@/services/workflowBuilder");
+    await getBuilderUsage("conv-1");
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "workflow-builder/usage?conversation_id=conv-1");
+  });
+
+  it("reads all-time totals only without a conversation", async () => {
+    const { getBuilderUsage } = await import("@/services/workflowBuilder");
+    await getBuilderUsage(null);
+    expect(mockApiRequest).toHaveBeenCalledWith("GET", "workflow-builder/usage");
+  });
+});

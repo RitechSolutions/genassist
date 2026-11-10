@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mentionedIds, removeMention, tokenizeComposerText } from "@/components/assistantComposerTokens";
+import { mentionedIds, removeMention, tokenizeComposerText , hasMention } from "@/components/assistantComposerTokens";
 
 const nodes = [
   { id: "a", name: "Support" },
@@ -43,5 +43,16 @@ describe("mentionedIds / removeMention", () => {
   it("takes a mention out without leaving double spaces", () => {
     expect(removeMention("fix @Support Agent and @Support please", "Support Agent")).toBe("fix and @Support please");
     expect(removeMention("@Support Agent fix it", "Support Agent")).toBe("fix it");
+  });
+});
+
+
+describe("hasMention", () => {
+  it("finds the exact @Name, case-insensitively, and not a longer name it starts", () => {
+    expect(hasMention("Explain @Expense Policy please", "Expense Policy")).toBe(true);
+    expect(hasMention("explain @expense policy", "Expense Policy")).toBe(true);
+    expect(hasMention("Explain @Expense Policy-v2", "Expense Policy")).toBe(false);
+    expect(hasMention("Explain @Expense", "Expense Policy")).toBe(false);
+    expect(hasMention("", "Expense Policy")).toBe(false);
   });
 });

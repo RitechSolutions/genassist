@@ -89,6 +89,33 @@ export interface BuilderTool {
 export const getBuilderTools = () =>
   apiRequest<BuilderTool[]>("GET", `${BASE}/tools`);
 
+/** Spend totals from the usage ledger. */
+export interface BuilderUsageTotals {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  /** Calls the ledger could not price; their tokens count, their cost does not. */
+  unpriced_calls: number;
+  test_run_calls: number;
+  test_run_cost_usd: number;
+}
+
+export interface BuilderUsage {
+  /** This conversation, or null when none was given. */
+  conversation: BuilderUsageTotals | null;
+  /** Every conversation the builder ever had on this tenant. */
+  all_time: BuilderUsageTotals;
+}
+
+/** What the Workflow Builder has spent, in this conversation and over all of them. */
+export const getBuilderUsage = (conversationId?: string | null) =>
+  apiRequest<BuilderUsage>(
+    "GET",
+    conversationId ? `${BASE}/usage?conversation_id=${encodeURIComponent(conversationId)}` : `${BASE}/usage`
+  );
+
 /** Validate a workflow graph without saving anything. */
 export const validateWorkflowGraph = (snapshot: BuilderCanvasSnapshot) =>
   apiRequest<{ valid: boolean; issues: Omit<BuilderIssue, "pre_existing">[] }>(

@@ -17,6 +17,8 @@ export interface ComposerMentionable {
   name: string;
   /** Small secondary text in the picker (a node type, a role). */
   hint?: string;
+  /** Shown in front of the name in the picker (a step's icon tile). */
+  icon?: React.ReactNode;
 }
 
 export interface ComposerCommand {
@@ -49,6 +51,12 @@ type AssistantComposerProps = {
   toolbar?: React.ReactNode;
   /** "hero": the large, centred opening box; "inline": the one-line field that grows. */
   size?: "inline" | "hero";
+  /** Starting height of the text field in pixels; defaults to the size's own (72 for hero, one line inline). */
+  minHeightPx?: number;
+  /** Leave out the sparkle in front of the one-line field. */
+  noIcon?: boolean;
+  /** Shown inside the box above the text (the steps a message is about). */
+  header?: React.ReactNode;
   autoFocus?: boolean;
   /** Fired on Escape with an empty field (closing a dialog). */
   onEscape?: () => void;
@@ -86,6 +94,9 @@ export function AssistantComposer({
   onMentionPick,
   toolbar,
   size = "inline",
+  minHeightPx,
+  noIcon = false,
+  header,
   autoFocus = false,
   onEscape,
   maxLength,
@@ -106,7 +117,7 @@ export function AssistantComposer({
       </span>
     ) : null;
   const hero = size === "hero";
-  const twoRows = hero || Boolean(toolbar);
+  const twoRows = hero || Boolean(toolbar) || Boolean(header);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   const decorated = Boolean(mentionables?.length || commands?.length);
@@ -128,10 +139,11 @@ export function AssistantComposer({
     const field = fieldRef.current;
     if (!field) return;
     field.style.height = "auto";
-    const contentHeight = Math.max(field.scrollHeight, hero ? HERO_MIN_HEIGHT_PX : 0);
+    const minHeight = minHeightPx ?? (hero ? HERO_MIN_HEIGHT_PX : 0);
+    const contentHeight = Math.max(field.scrollHeight, minHeight);
     field.style.height = `${Math.min(contentHeight, MAX_FIELD_HEIGHT_PX)}px`;
     field.style.overflowY = contentHeight > MAX_FIELD_HEIGHT_PX ? "auto" : "hidden";
-  }, [hero]);
+  }, [hero, minHeightPx]);
 
   useLayoutEffect(fitToContent, [value, fitToContent]);
 
@@ -178,12 +190,12 @@ export function AssistantComposer({
     if (picker.kind === "command") {
       return (commands ?? [])
         .filter((c) => c.name.startsWith(query))
-        .map((c) => ({ key: c.name, label: `/${c.name}`, hint: c.description }));
+        .map((c) => ({ key: c.name, label: `/${c.name}`, hint: c.description, icon: undefined as React.ReactNode }));
     }
     return (mentionables ?? [])
       .filter((m) => m.name.toLowerCase().includes(query))
       .slice(0, 8)
-      .map((m) => ({ key: m.id, label: m.name, hint: m.hint }));
+      .map((m) => ({ key: m.id, label: m.name, hint: m.hint, icon: m.icon }));
   }, [picker, commands, mentionables]);
 
   useEffect(() => setActiveIndex(0), [options.length, picker?.query]);
@@ -232,10 +244,11 @@ export function AssistantComposer({
                   choose(option);
                 }}
                 className={cn(
-                  "flex w-full items-baseline gap-2 rounded-md px-2.5 py-1.5 text-left text-sm",
+                  "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm",
                   index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-muted"
                 )}
               >
+                {option.icon}
                 <span className="font-medium">{option.label}</span>
                 {option.hint && (
                   <span className="truncate text-xs text-muted-foreground">{option.hint}</span>
@@ -257,7 +270,8 @@ export function AssistantComposer({
           if (event.target === event.currentTarget) fieldRef.current?.focus();
         }}
       >
-        {!twoRows && (
+        {header && <div className="mb-1 flex flex-wrap items-center gap-1">{header}</div>}
+        {!twoRows && !noIcon && (
           <Sparkles
             className="pointer-events-none mb-2 h-4 w-4 shrink-0 text-[hsl(var(--brand-600))]"
             aria-hidden

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import {
   BookOpen,
   Check,
@@ -29,6 +29,8 @@ import {
   describeWork,
   type AssistantStep,
   type LiveTurn,
+  isThoughtText,
+  stripThoughtMarker,
 } from "@/views/AIAgents/Workflows/utils/assistantDraft";
 
 const CHANGE_BADGE = {
@@ -84,7 +86,10 @@ const StepRow: React.FC<{ step: AssistantStep; live: boolean }> = ({ step, live 
         <span className="mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center text-amber-500">
           <Lightbulb className="h-3.5 w-3.5" />
         </span>
-        <p className="min-w-0 whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">{step.text}</p>
+        <p className="min-w-0 whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
+          {step.text}
+          {running && <span className="ai-caret" aria-hidden />}
+        </p>
       </li>
     );
   }
@@ -132,20 +137,42 @@ export const ThinkingCubes: React.FC<{ className?: string }> = ({ className }) =
   </span>
 );
 
+/** About four rows tall; the rest scrolls (no visible bar) and follows the newest row. */
+const LIVE_TRAIL_MAX_HEIGHT = "6.75rem";
+const NO_STEPS: AssistantStep[] = [];
+
 /**
  * The turn in progress: "Thinking · 3s" with a disclosure that lists what the
- * assistant is doing as it happens, and the reply text as it streams in below.
+ * assistant is doing as it happens. The list is about four rows tall and keeps
+ * every row: it scrolls without a visible bar and follows the newest row unless
+ * the person has scrolled up to read earlier ones. Text streaming in
+ * that carries the thought marker shows as a thought row from its first token
+ * and becomes a committed thought when the call starts, with no visual jump;
+ * any other text is the reply and streams below as a normal message.
  */
 export const ReasoningTrail: React.FC<{ turn: LiveTurn | null }> = ({ turn }) => {
   const startedAt = turn?.startedAt ?? Date.now();
   const elapsed = useElapsed(startedAt, true);
-  const steps = turn?.steps ?? [];
+  const steps = turn?.steps ?? NO_STEPS;
   const text = turn?.text ?? "";
   const [open, setOpen] = useState(true);
   const listRef = useRef<HTMLUListElement>(null);
+  const liveThought = isThoughtText(text) ? stripThoughtMarker(text) : "";
+  const rows = useMemo<AssistantStep[]>(
+    () => (liveThought ? [...steps, { id: "live-thought", kind: "thought", text: liveThought, done: false }] : steps),
+    [steps, liveThought]
+  );
+  const hasRows = rows.length > 0;
+  // Follow the newest row, but not while the person is reading further up.
+  const pinnedToEnd = useRef(true);
+  const onScroll = () => {
+    const el = listRef.current;
+    if (el) pinnedToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+  };
   useEffect(() => {
-    listRef.current?.lastElementChild?.scrollIntoView({ block: "nearest" });
-  }, [steps.length]);
+    const el = listRef.current;
+    if (el && pinnedToEnd.current) el.scrollTop = el.scrollHeight;
+  }, [rows.length, text.length, open]);
 
   return (
     <div className="space-y-2" role="status" aria-live="polite">
@@ -153,22 +180,27 @@ export const ReasoningTrail: React.FC<{ turn: LiveTurn | null }> = ({ turn }) =>
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        disabled={steps.length === 0}
+        disabled={!hasRows}
         className="inline-flex items-center gap-2 text-[13px] text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default"
       >
         <ThinkingCubes />
         <span className="ai-shimmer-text">Thinking</span>
         <span>· {formatSeconds(elapsed)}</span>
-        {steps.length > 0 && (open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+        {hasRows && (open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
       </button>
-      {open && steps.length > 0 && (
-        <ul ref={listRef} className="ml-1 max-h-64 space-y-1.5 overflow-y-auto border-l-2 border-border/70 py-0.5 pl-3 pr-1">
-          {steps.map((step) => (
+      {open && hasRows && (
+        <ul
+          ref={listRef}
+          onScroll={onScroll}
+          style={{ maxHeight: LIVE_TRAIL_MAX_HEIGHT }}
+          className="ai-no-scrollbar ml-1 space-y-1.5 overflow-y-auto border-l-2 border-border/70 py-0.5 pl-3 pr-1"
+        >
+          {rows.map((step) => (
             <StepRow key={step.id} step={step} live />
           ))}
         </ul>
       )}
-      {text.trim() && (
+      {!liveThought && text.trim() && (
         <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
           {text}
           <span className="ai-caret" aria-hidden />

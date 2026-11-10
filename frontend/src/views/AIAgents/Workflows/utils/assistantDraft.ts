@@ -20,6 +20,8 @@ export interface AssistantMessage {
   id: string;
   speaker: "agent" | "customer";
   text: string;
+  /** The steps the person tagged when sending (picked from the "@" list or focused), by id. */
+  nodeIds?: string[];
   /** What the assistant changed on the canvas in this reply. */
   changes?: BuilderChange[];
   /** Problems the assistant's changes left behind (never pre-existing ones). */
@@ -75,11 +77,27 @@ export interface LiveTurn {
 export const newLiveTurn = (now = Date.now()): LiveTurn => ({ startedAt: now, steps: [], text: "", callId: null });
 
 /**
+ * The builder starts each sentence it writes before a tool call with this sign
+ * (its prompt asks for it), so the panel can show the text as a thought from the
+ * first token instead of guessing. A reply never starts with it.
+ */
+export const THOUGHT_MARKER = "»";
+
+/** Whether streamed text is a working note rather than the reply. */
+export const isThoughtText = (text: string): boolean => text.trimStart().startsWith(THOUGHT_MARKER);
+
+/** The text without its thought marker, for display. */
+export const stripThoughtMarker = (text: string): string => {
+  const trimmed = text.trimStart();
+  return trimmed.startsWith(THOUGHT_MARKER) ? trimmed.slice(THOUGHT_MARKER.length).trimStart() : text;
+};
+
+/**
  * Text the model wrote before calling a tool is its reasoning, not the reply:
  * once a step starts, whatever was streamed so far becomes a "thought" step.
  */
 function foldTextIntoThought(turn: LiveTurn): LiveTurn {
-  const thought = turn.text.trim();
+  const thought = stripThoughtMarker(turn.text).trim();
   if (!thought) return { ...turn, text: "", callId: null };
   return {
     ...turn,
@@ -296,10 +314,16 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\
  * quoted "Name" (straight or curly quotes). Longer names win over shorter ones
  * they contain, so "Support Agent" is not read as "Support".
  */
-export function splitNodeMentions(text: string, nodes: MentionableNode[]): MentionSegment[] {
+export function splitNodeMentions(text: string, nodes: MentionableNode[], preferIds: string[] = []): MentionSegment[] {
   const named = nodes.filter((node) => node.name.trim().length > 0);
   if (!text || named.length === 0) return [{ text }];
-  const byLength = [...named].sort((a, b) => b.name.length - a.name.length);
+  // Two steps can share a name; the one the person actually picked wins the match, in the
+  // order they were picked, and any untagged namesake comes after.
+  const rank = (node: MentionableNode) => {
+    const index = preferIds.indexOf(node.id);
+    return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+  };
+  const byLength = [...named].sort((a, b) => b.name.length - a.name.length || rank(a) - rank(b));
   const alternation = byLength.map((node) => escapeRegExp(node.name)).join("|");
   const pattern = new RegExp(`@(${alternation})(?![\\w-])|["\u201c](${alternation})["\u201d]`, "gi");
   const segments: MentionSegment[] = [];

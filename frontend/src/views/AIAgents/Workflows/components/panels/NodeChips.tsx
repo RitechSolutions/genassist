@@ -2,6 +2,8 @@ import React from "react";
 import { X } from "lucide-react";
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { renderIcon } from "@/views/AIAgents/Workflows/utils/iconUtils";
+import { getNodeBgColor, getNodeIconColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
+import { cn } from "@/lib/utils";
 import { splitNodeMentions, type MentionableNode } from "@/views/AIAgents/Workflows/utils/assistantDraft";
 
 export interface NodeChipProps {
@@ -14,26 +16,49 @@ export interface NodeChipProps {
   inverted?: boolean;
 }
 
-/** A step of the workflow, shown as a small badge; clicking it centres the canvas on the step. */
-export const NodeChip: React.FC<NodeChipProps> = ({ node, onClick, onRemove, soft, inverted }) => {
-  const icon = node.type ? nodeRegistry.getNodeType(node.type)?.icon : undefined;
-  const base = inverted
-    ? "border-white/40 bg-white/15 text-white hover:bg-white/25"
-    : soft
-    ? "border-dashed border-border bg-muted/40 text-muted-foreground hover:bg-muted"
-    : "border-[hsl(var(--brand-600))]/40 bg-[hsl(var(--brand-600))]/10 text-foreground hover:bg-[hsl(var(--brand-600))]/20";
+/**
+ * The node's icon on its category-coloured tile, as the canvas draws it, shrunk
+ * to text size. Also what the "@" picker shows next to each step.
+ */
+export const NodeMiniIcon: React.FC<{ type?: string; className?: string }> = ({ type, className }) => {
+  const definition = type ? nodeRegistry.getNodeType(type) : undefined;
+  if (!definition) return null;
+  const category = definition.category || "default";
   return (
     <span
-      className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 align-middle text-[12px] leading-4 ${base}`}
+      aria-hidden
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center rounded-[5px] [&>svg]:h-[62%] [&>svg]:w-[62%]",
+        getNodeBgColor(category),
+        className ?? "h-4 w-4"
+      )}
+    >
+      {renderIcon(definition.icon, cn("h-full w-full", getNodeIconColor(category)))}
+    </span>
+  );
+};
+
+/** A step of the workflow as a miniature of its node: icon tile and name. Clicking it centres the canvas on the step. */
+export const NodeChip: React.FC<NodeChipProps> = ({ node, onClick, onRemove, soft, inverted }) => {
+  // On the person's own blue bubble there is no chip at all: the icon tile and the name in
+  // italics, inline with the text.
+  const base = inverted
+    ? "border-transparent bg-transparent px-0 text-white"
+    : soft
+    ? "border-dashed border-border bg-muted/40 text-muted-foreground hover:bg-muted"
+    : "border-dashed border-border bg-muted/30 text-foreground hover:bg-muted";
+  return (
+    <span
+      className={`inline-flex max-w-full items-center gap-1 rounded-[6px] border py-0.5 pl-1 pr-1.5 align-middle text-[12px] leading-4 ${base}`}
     >
       <button
         type="button"
         onClick={() => onClick?.(node.id)}
         title="Show this step on the canvas"
-        className="inline-flex min-w-0 items-center gap-1"
+        className="inline-flex min-w-0 items-center gap-1.5"
       >
-        {icon && <span className="inline-flex h-3 w-3 shrink-0 items-center [&>svg]:h-3 [&>svg]:w-3">{renderIcon(icon)}</span>}
-        <span className="truncate">{node.name}</span>
+        <NodeMiniIcon type={node.type} />
+        <span className={cn("truncate font-medium", inverted && "italic")}>{node.name}</span>
       </button>
       {onRemove && (
         <button
@@ -53,10 +78,12 @@ export const NodeChip: React.FC<NodeChipProps> = ({ node, onClick, onRemove, sof
 export const MentionText: React.FC<{
   text: string;
   nodes: MentionableNode[];
+  /** Ids of the steps the message was sent about; they win when two steps share a name. */
+  preferIds?: string[];
   onFocusNode?: (nodeId: string) => void;
   inverted?: boolean;
-}> = ({ text, nodes, onFocusNode, inverted }) => {
-  const segments = splitNodeMentions(text, nodes);
+}> = ({ text, nodes, preferIds, onFocusNode, inverted }) => {
+  const segments = splitNodeMentions(text, nodes, preferIds);
   return (
     <span className="whitespace-pre-wrap">
       {segments.map((segment, index) =>
@@ -74,9 +101,10 @@ export const MentionText: React.FC<{
 export const MentionedNodesRow: React.FC<{
   text: string;
   nodes: MentionableNode[];
+  preferIds?: string[];
   onFocusNode?: (nodeId: string) => void;
-}> = ({ text, nodes, onFocusNode }) => {
-  const mentioned = splitNodeMentions(text, nodes)
+}> = ({ text, nodes, preferIds, onFocusNode }) => {
+  const mentioned = splitNodeMentions(text, nodes, preferIds)
     .filter((segment): segment is { node: MentionableNode } => "node" in segment)
     .map((segment) => segment.node)
     .filter((node, index, all) => all.findIndex((n) => n.id === node.id) === index);

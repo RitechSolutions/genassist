@@ -1,4 +1,5 @@
 from collections import defaultdict
+from uuid import UUID
 from datetime import datetime, timezone
 
 from injector import inject
@@ -103,6 +104,19 @@ def _coverage_pct(total_calls: int, total_tokens: int, priced_tokens: int, unpri
     return round((total_calls - unpriced_calls) / total_calls * 100, 4)
 
 
+def _totals_dict(row) -> dict:
+    return {
+        "calls": int(row["calls"]),
+        "input_tokens": int(row["input_tokens"]),
+        "output_tokens": int(row["output_tokens"]),
+        "total_tokens": int(row["total_tokens"]),
+        "cost_usd": float(row["cost_usd"]),
+        "unpriced_calls": int(row["unpriced_calls"]),
+        "test_run_calls": int(row["test_run_calls"]),
+        "test_run_cost_usd": float(row["test_run_cost_usd"]),
+    }
+
+
 @inject
 class LlmUsageReadService:
     """Reads the LLM usage ledger and applies the cost/coverage math"""
@@ -120,6 +134,14 @@ class LlmUsageReadService:
     async def get_summary(self, params: LlmUsageQueryParams) -> LlmUsageSummaryResponse:
         scope = await self.repo.resolve_scope(params)
         return await self._summary(params, scope)
+
+    async def builder_usage(self, conversation_id: UUID | None) -> dict:
+        """What the builder has spent: in this conversation (None without one) and over all its conversations."""
+        conversation = None
+        if conversation_id is not None:
+            conversation = _totals_dict(await self.repo.totals(conversation_id=conversation_id))
+        all_time = _totals_dict(await self.repo.totals(builder_agents=True))
+        return {"conversation": conversation, "all_time": all_time}
 
     async def get_timeseries(self, params: LlmUsageQueryParams) -> LlmUsageTimeseriesResponse:
         scope = await self.repo.resolve_scope(params)

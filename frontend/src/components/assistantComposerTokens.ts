@@ -62,6 +62,11 @@ export function mentionedIds(
   return ids;
 }
 
+/** Whether the text still carries an "@Name" for that mentionable. */
+export function hasMention(value: string, name: string): boolean {
+  return new RegExp(`@${escapeRegExp(name)}(?![\\w-])`, "i").test(value);
+}
+
 /** The text with every "@Name" of that mentionable taken out (and doubled spaces collapsed). */
 export function removeMention(value: string, name: string): string {
   const pattern = new RegExp(`@${escapeRegExp(name)}(?![\\w-])\\s?`, "gi");

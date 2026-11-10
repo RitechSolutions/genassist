@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight, GripVertical, Maximize2, MessageSquarePlus, Minimize2, MoreHorizontal, Sparkles, Undo2, X, FlaskConical } from "lucide-react";
+import { ArrowRight, Coins, GripVertical, Maximize2, MessageSquarePlus, Minimize2, MoreHorizontal, Sparkles, Undo2, X, FlaskConical } from "lucide-react";
+import BuilderUsageDialog from "./BuilderUsageDialog";
 
 import { AssistantComposer, type ComposerMentionable } from "@/components/AssistantComposer";
 import { GenAssistMark } from "@/components/AssistantEmptyState";
 import { HoverGrid } from "@/components/HoverGrid";
-import { mentionedIds, removeMention } from "@/components/assistantComposerTokens";
+import { hasMention, mentionedIds, removeMention } from "@/components/assistantComposerTokens";
 import { Button } from "@/components/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
@@ -23,13 +24,20 @@ import {
   type AssistantMessage,
   type LiveTurn,
 } from "@/views/AIAgents/Workflows/utils/assistantDraft";
-import { BUILDER_EXAMPLES, EXAMPLES_PREVIEW_COUNT } from "@/views/AIAgents/Workflows/utils/builderExamples";
+import {
+  BUILDER_EXAMPLES,
+  BUILDER_INLINE_PLACEHOLDER,
+  BUILDER_PLACEHOLDERS,
+  EXAMPLES_PREVIEW_COUNT,
+  pickBuilderGreeting,
+} from "@/views/AIAgents/Workflows/utils/builderExamples";
+import { useTypedPlaceholder } from "@/views/AIAgents/Workflows/hooks/useTypedPlaceholder";
 import { BUILDER_MESSAGE_MAX_CHARS } from "@/views/AIAgents/Workflows/utils/builderLimits";
 import { AssistantMessageExtras, PendingChangeBar } from "./AssistantMessageExtras";
 import { MessageActions, ReasoningTrail, Typewriter, WorkSummary } from "./AssistantMotion";
 import { MentionedNodesRow, MentionText, NodeChip } from "./NodeChips";
 
-export const ASSISTANT_PANEL_DEFAULT_WIDTH_PX = 400;
+export const ASSISTANT_PANEL_DEFAULT_WIDTH_PX = 530;
 const ASSISTANT_PANEL_MIN_WIDTH_PX = 340;
 
 function maxWidthPx(): number {
@@ -72,6 +80,8 @@ export interface AssistantPanelProps {
   onUndoTurn: (messageId: string) => void;
   /** Forget this chat and start a new conversation with the assistant. */
   onNewChat: () => void;
+  /** The server conversation behind this chat, for the Usage dialog; null before the first message. */
+  getConversationId?: () => string | null;
 }
 
 /**
@@ -105,13 +115,23 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
   selectedNodeId,
   onUndoTurn,
   onNewChat,
+  getConversationId,
 }) => {
   const [inputMessage, setInputMessage] = useState("");
+  // The empty-chat opener: drawn once per panel mount, and again after "New chat".
+  const [greeting, setGreeting] = useState(pickBuilderGreeting);
   // Steps the person attached to the next message (picked with "@"), shown as chips.
   const [focusChips, setFocusChips] = useState<ComposerMentionable[]>([]);
   const [showAllExamples, setShowAllExamples] = useState(false);
   // Full screen: the chat takes the whole viewport; the panel keeps its place beside the canvas.
   const [fullscreen, setFullscreen] = useState(false);
+  // Usage dialog: tokens and cost of this chat and of all chats. The id is read when it opens.
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [usageConversationId, setUsageConversationId] = useState<string | null>(null);
+  const openUsage = () => {
+    setUsageConversationId(getConversationId?.() ?? null);
+    setUsageOpen(true);
+  };
   useEffect(() => {
     if (!isOpen) setFullscreen(false);
   }, [isOpen]);
@@ -182,7 +202,12 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
   const handleSend = useCallback(
     (message: string, focusNodeIds?: string[]) => {
       const chips = focusChips.map((m) => m.id);
-      const tagged = focusNodeIds ?? [...chips, ...mentionedIds(message, mentionables).filter((id) => !chips.includes(id))];
+      // "@Name" typed in the text adds a step only when no picked chip already covers that name:
+      // a tool and the Tool Builder around it often share one, and the pick says which was meant.
+      const chipNames = new Set(focusChips.map((m) => m.name.toLowerCase()));
+      const nameOf = (id: string) => mentionables.find((m) => m.id === id)?.name.toLowerCase() ?? "";
+      const typed = mentionedIds(message, mentionables).filter((id) => !chips.includes(id) && !chipNames.has(nameOf(id)));
+      const tagged = focusNodeIds ?? [...chips, ...typed];
       const command = parseSlashCommand(message);
       setFocusChips([]);
       if (command && onCommand) {
@@ -203,6 +228,14 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
 
   const pickMention = (mention: ComposerMentionable) =>
     setFocusChips((prev) => (prev.some((c) => c.id === mention.id) ? prev : [...prev, mention]));
+
+  // Deleting the "@Name" from the field drops its chip too, the mirror of removeFocusChip.
+  useEffect(() => {
+    setFocusChips((prev) => {
+      const kept = prev.filter((chip) => hasMention(inputMessage, chip.name));
+      return kept.length === prev.length ? prev : kept;
+    });
+  }, [inputMessage]);
 
   // Inside the composer, bottom-left: whether AI test runs really send or create things.
   const composerToolbar = (
@@ -245,19 +278,36 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
     </>
   );
 
+  // Only the empty page types its placeholder, and only while nothing is written.
+  const typedPlaceholder = useTypedPlaceholder(BUILDER_PLACEHOLDERS, isEmptyChat && inputMessage.length === 0);
+
   const composer = (hero: boolean) => (
     <AssistantComposer
       value={inputMessage}
       onChange={setInputMessage}
       onSubmit={handleSend}
       size={hero ? "hero" : "inline"}
+      // A lower box on the empty page, a taller one once the conversation is going.
+      minHeightPx={hero ? 56 : 48}
       autoFocus={hero}
-      placeholder={hero ? "Tell me what to build or ask a question" : "Ask AI to update your workflow... (@ a step, / for commands)"}
+      placeholder={hero ? typedPlaceholder : BUILDER_INLINE_PLACEHOLDER}
       busy={isThinking}
       mentionables={mentionables}
       commands={SLASH_COMMANDS}
       onMentionPick={pickMention}
       toolbar={composerToolbar}
+      header={
+        !hero && focusChips.length > 0
+          ? focusChips.map((chip) => (
+              <NodeChip
+                key={chip.id}
+                node={{ id: chip.id, name: chip.name, type: chip.hint }}
+                onClick={focusCanvasNode}
+                onRemove={removeFocusChip}
+              />
+            ))
+          : undefined
+      }
       maxLength={BUILDER_MESSAGE_MAX_CHARS}
     />
   );
@@ -310,7 +360,15 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" sideOffset={6} className="z-[2100] min-w-[180px]">
-                <DropdownMenuItem disabled={isThinking || messages.length === 0} onSelect={() => setTimeout(onNewChat, 0)}>
+                <DropdownMenuItem
+                  disabled={isThinking || messages.length === 0}
+                  onSelect={() =>
+                    setTimeout(() => {
+                      setGreeting(pickBuilderGreeting());
+                      onNewChat();
+                    }, 0)
+                  }
+                >
                   <MessageSquarePlus className="mr-2 h-4 w-4" />
                   New chat
                 </DropdownMenuItem>
@@ -318,8 +376,13 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
                   {fullscreen ? <Minimize2 className="mr-2 h-4 w-4" /> : <Maximize2 className="mr-2 h-4 w-4" />}
                   {fullscreen ? "Exit full screen" : "Full screen"}
                 </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setTimeout(openUsage, 0)}>
+                  <Coins className="mr-2 h-4 w-4" />
+                  Usage
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <BuilderUsageDialog open={usageOpen} onOpenChange={setUsageOpen} conversationId={usageConversationId} />
             <Button
               size="icon"
               variant="ghost"
@@ -340,7 +403,7 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
               <div className="ai-rise-in relative z-10 w-full max-w-[640px]">
                 <h2 className="mb-5 flex items-center justify-center gap-2 text-center text-[19px] font-semibold tracking-tight text-foreground">
                   <GenAssistMark className="h-8 w-8 text-zinc-700 dark:text-white" />
-                  What do you want to automate?
+                  {greeting}
                 </h2>
                 {composer(true)}
                 {/* The openers step aside as soon as the person starts writing, and return when the field is empty. */}
@@ -401,7 +464,7 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
                           )}
                           title={msg.undone ? "The changes for this message were undone" : undefined}
                         >
-                          <MentionText text={msg.text} nodes={chipNodes} onFocusNode={focusCanvasNode} inverted />
+                          <MentionText text={msg.text} nodes={chipNodes} preferIds={msg.nodeIds} onFocusNode={focusCanvasNode} inverted />
                         </div>
                       </div>
                     ) : (
@@ -443,18 +506,6 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
               </div>
               {pendingChange && <PendingChangeBar change={pendingChange} onKeep={onKeepChanges} onUndo={onUndoChanges} />}
               <div className={cn("p-3 pt-0", fullscreen && "mx-auto w-full max-w-3xl")}>
-                {focusChips.length > 0 && (
-                  <div className="mb-1.5 flex flex-wrap items-center gap-1 px-1">
-                    {focusChips.map((chip) => (
-                      <NodeChip
-                        key={chip.id}
-                        node={{ id: chip.id, name: chip.name, type: chip.hint }}
-                        onClick={focusCanvasNode}
-                        onRemove={removeFocusChip}
-                      />
-                    ))}
-                  </div>
-                )}
                 {composer(false)}
               </div>
             </>

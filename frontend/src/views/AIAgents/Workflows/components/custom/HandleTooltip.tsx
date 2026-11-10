@@ -1,8 +1,8 @@
 import { Badge } from "@/components/badge";
-import { Sparkles } from "lucide-react";
+import { GenAssistMark } from "@/components/AssistantEmptyState";
 import React, { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Handle, HandleProps, Position, useReactFlow } from "reactflow";
+import { Handle, HandleProps, Position, useEdges, useReactFlow } from "reactflow";
 import { NodeCompatibility, NodeData } from "../../types/nodes";
 import { getHandlerPosition } from "../../utils/helpers";
 import { useNodeActions } from "../../context/NodeActionsContext";
@@ -140,8 +140,17 @@ const HandleTooltipComponent: React.FC<HandleTooltipProps> = ({
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nodeActions = useNodeActions();
   const { getNode } = useReactFlow();
+  const edges = useEdges();
+  const handleId = String(handleProps.id ?? "output");
+  // An output that already leads somewhere has its next step; the offer is for empty ones.
+  const alreadyConnected = edges.some(
+    (edge) => edge.source === nodeId && String(edge.sourceHandle ?? "output") === handleId
+  );
   const canAddWithAi =
-    type === "source" && !!nodeActions && AI_ADDABLE_COMPATIBILITY.has(String(compatibility ?? "any"));
+    type === "source" &&
+    !!nodeActions &&
+    !alreadyConnected &&
+    AI_ADDABLE_COMPATIBILITY.has(String(compatibility ?? "any"));
   const handleLabel = label || String(handleProps.id ?? "").replace(/^output_?/, "").replace(/_/g, " ") || "output";
 
   const cancelHide = useCallback(() => {
@@ -213,8 +222,9 @@ const HandleTooltipComponent: React.FC<HandleTooltipProps> = ({
                   setDialogOpen(true);
                 }}
               >
-                <Sparkles className="h-3 w-3" />
-                Add a step with AI
+                {/* The tooltip is always dark, so the mark follows its white text, not the page theme. */}
+                <GenAssistMark className="h-3.5 w-3.5 text-white dark:text-white" />
+                Ask GenAgent
               </button>
             )}
           </div>,
@@ -227,7 +237,7 @@ const HandleTooltipComponent: React.FC<HandleTooltipProps> = ({
           nodeName={nodeName()}
           handleLabel={handleLabel}
           onSubmit={(instruction) =>
-            nodeActions?.addStepWithAi(nodeId, String(handleProps.id ?? "output"), handleLabel, instruction)
+            nodeActions?.addStepWithAi(nodeId, handleId, handleLabel, instruction)
           }
         />
       )}

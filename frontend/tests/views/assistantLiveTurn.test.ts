@@ -5,6 +5,8 @@ import {
   describeWork,
   newLiveTurn,
   settleLiveTurn,
+  isThoughtText,
+  stripThoughtMarker,
 } from "@/views/AIAgents/Workflows/utils/assistantDraft";
 
 describe("applyLiveStreamEvent", () => {
@@ -73,5 +75,28 @@ describe("settleLiveTurn / describeWork", () => {
 
   it("keeps no steps for a turn that had none", () => {
     expect(settleLiveTurn(newLiveTurn(0), 500)).toEqual({ steps: undefined, workedMs: 500 });
+  });
+});
+
+
+describe("thought marker", () => {
+  it("tells a working note from reply text by its leading sign", () => {
+    expect(isThoughtText("» Checking the calendar steps")).toBe(true);
+    expect(isThoughtText("  »Checking")).toBe(true);
+    expect(isThoughtText("I built the agent.")).toBe(false);
+    expect(stripThoughtMarker("» Checking the calendar steps")).toBe("Checking the calendar steps");
+    expect(stripThoughtMarker("I built the agent.")).toBe("I built the agent.");
+  });
+
+  it("folds a marked sentence into a thought without the sign", () => {
+    let turn = newLiveTurn(1000);
+    turn = applyLiveStreamEvent(turn, { type: "delta", call_id: "c1", text: "» Looking at the " });
+    turn = applyLiveStreamEvent(turn, { type: "delta", call_id: "c1", text: "calendar steps." });
+    turn = applyLiveStreamEvent(turn, { type: "step", id: "s1", kind: "lookup", text: "Looking up X", phase: "start" });
+    expect(turn.steps.map((s) => [s.kind, s.text])).toEqual([
+      ["thought", "Looking at the calendar steps."],
+      ["lookup", "Looking up X"],
+    ]);
+    expect(turn.text).toBe("");
   });
 });

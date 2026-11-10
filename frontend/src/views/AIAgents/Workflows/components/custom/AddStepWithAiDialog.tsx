@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+
+import { GenAssistMark } from "@/components/AssistantEmptyState";
 
 import { AssistantComposer } from "@/components/AssistantComposer";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/dialog";
@@ -42,15 +44,18 @@ export const AddStepWithAiDialog: React.FC<Props> = ({ open, onOpenChange, nodeN
       <DialogContent className="z-[2000] w-[min(92vw,560px)] max-w-[560px] gap-0 overflow-hidden rounded-2xl border border-border p-0 shadow-2xl">
         <DialogHeader className="space-y-1 px-6 pb-3 pt-5 text-left">
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-            {/* <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[hsl(var(--brand-50))]">
-              <Sparkles className="h-4 w-4 text-[hsl(var(--brand-600))]" />
-            </span> */}
-            Add a step with AI
+            <GenAssistMark className="h-6 w-6 text-zinc-700 dark:text-white" />
+            Add a step with GenAgent
           </DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground">
-            After <span className="font-medium text-foreground">“{nodeName}”</span>
-            <span className="mx-1.5 text-muted-foreground/60">·</span>
-            output <span className="font-medium text-foreground">{handleLabel}</span>
+          <DialogDescription className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-muted-foreground">
+            <span>After</span>
+            <span className="inline-flex max-w-[260px] items-center truncate rounded-md border border-border bg-muted/50 px-2 py-0.5 font-medium text-foreground">
+              {nodeName}
+            </span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground/70" aria-hidden />
+            <span className="inline-flex items-center rounded-md bg-[hsl(var(--brand-600))]/10 px-2 py-0.5 font-medium text-[hsl(var(--brand-600))]">
+              {handleLabel}
+            </span>
           </DialogDescription>
         </DialogHeader>
         <div className="px-6 pb-5">
@@ -58,12 +63,13 @@ export const AddStepWithAiDialog: React.FC<Props> = ({ open, onOpenChange, nodeN
             value={value}
             onChange={setValue}
             onSubmit={submit}
-            size="hero"
+            // A plain one-line field (nothing else to show in the box); it still grows with long text.
+            size="inline"
+            noIcon
             autoFocus={open}
             placeholder="What should happen next?"
             maxLength={BUILDER_MESSAGE_MAX_CHARS}
             onEscape={() => onOpenChange(false)}
-            toolbar={<span className="text-[11px] text-muted-foreground">One step, connected to this output. Undo from the chat.</span>}
           />
           {/* <div className="mt-3 flex flex-wrap gap-1.5">
             {QUICK_IDEAS.map((idea) => (

@@ -62,6 +62,7 @@ import { useSidebar } from "@/components/sidebar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { History, X, Plus, Workflow as WorkflowIcon, Play, ClipboardCheck } from "lucide-react";
 import { GenAssistMark } from "@/components/AssistantEmptyState";
+import { NodeMiniIcon } from "./components/panels/NodeChips";
 import { NavBadge } from "@/layout/app-sidebar";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
@@ -755,7 +756,12 @@ const GraphFlowContent: React.FC = () => {
     () =>
       nodes
         .filter((n) => !isGroupNode(n) && typeof n.data?.name === "string")
-        .map((n) => ({ id: n.id, name: n.data.name as string, hint: n.type })),
+        .map((n) => ({
+          id: n.id,
+          name: n.data.name as string,
+          hint: n.type,
+          icon: <NodeMiniIcon type={n.type} className="h-5 w-5" />,
+        })),
     [nodes]
   );
 
@@ -2301,6 +2307,7 @@ const GraphFlowContent: React.FC = () => {
             selectedNodeId={selectedNodes.length === 1 ? selectedNodes[0].id : null}
             onUndoTurn={assistant.undoTurn}
             onNewChat={assistant.clearHistory}
+            getConversationId={assistant.getConversationId}
           />
         )}
         </div>

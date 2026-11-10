@@ -74,3 +74,27 @@ export const BUILDER_EXAMPLES: BuilderExample[] = [
 
 /** How many openers show before "See all". */
 export const EXAMPLES_PREVIEW_COUNT = 4;
+
+/** Openers for the empty chat; one is picked at random each time the panel starts fresh. */
+export const BUILDER_GREETINGS: string[] = [
+  "Describe it badly. I’ll figure it out.",
+  "Let's automate our way out of this.",
+  "Have you tried automating it?",
+  "I was built for this. Literally.",
+  "What should run while you’re at lunch?",
+  "Another task? In this economy?",
+];
+
+/** A random opener, stable for the lifetime of the caller's state. */
+export const pickBuilderGreeting = (): string =>
+  BUILDER_GREETINGS[Math.floor(Math.random() * BUILDER_GREETINGS.length)];
+
+/** Typed into the empty chat's field as its placeholder, one at random at a time. */
+export const BUILDER_PLACEHOLDERS: readonly string[] = [
+  "Build an agent that answers support questions from our docs",
+  "Build an agent that summarizes every new ticket in one line",
+  "Build an agent that sends me a daily report at 9 AM",
+];
+
+/** The field's placeholder once a conversation is under way. */
+export const BUILDER_INLINE_PLACEHOLDER = "Ask GenAgent";

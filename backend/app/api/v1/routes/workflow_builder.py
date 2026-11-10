@@ -41,6 +41,7 @@ from app.modules.workflow.builder.validation import blocking, validate_workflow
 from app.schemas.agent import AgentCreate
 from app.services.agent_config import AgentConfigService
 from app.services.llm_providers import LlmProviderService
+from app.services.llm_usage_read import LlmUsageReadService
 from app.services.workflow import WorkflowService
 
 router = APIRouter()
@@ -125,6 +126,22 @@ async def put_draft(
     draft.simulate_actions = snapshot.simulate_actions
     await save_draft(str(conversation_id), draft)
     return {"revision": draft.revision, "node_count": len(draft.aliases)}
+
+
+@router.get(
+    "/usage",
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+)
+async def get_builder_usage(
+    conversation_id: Optional[UUID] = None,
+    usage_service: LlmUsageReadService = Injected(LlmUsageReadService),
+):
+    """
+    Tokens and cost the Workflow Builder spent: in this conversation and over all of
+    them, its test runs included. "The builder" is any agent whose workflow carries a
+    Workflow Builder Tools node, so renaming the agent changes nothing here.
+    """
+    return await usage_service.builder_usage(conversation_id)
 
 
 @router.get(

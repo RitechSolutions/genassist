@@ -445,7 +445,7 @@ export function useCanvasAssistant({
           : trimmed;
 
       const messageId = uuidv4();
-      updateMessages((prev) => [...prev, { id: messageId, speaker: "customer", text: trimmed }]);
+      updateMessages((prev) => [...prev, { id: messageId, speaker: "customer", text: trimmed, nodeIds: focusNodeIds }]);
       beginTurn(messageId);
       setIsThinking(true);
       updateLiveTurn(newLiveTurn());
@@ -704,6 +704,8 @@ export function useCanvasAssistant({
     setSimulateActions,
     clearHistory,
     hasConfig,
+    /** The server conversation behind this chat, once the first message was sent. */
+    getConversationId: () => chatRef.current?.getConversationId?.() ?? null,
   };
 }
 

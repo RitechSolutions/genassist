@@ -177,3 +177,35 @@ describe("splitNodeMentions", () => {
     expect(splitNodeMentions("plain text", nodes)).toEqual([{ text: "plain text" }]);
   });
 });
+
+
+describe("splitNodeMentions with steps that share a name", () => {
+  const nodes = [
+    { id: "tool-1", name: "Exchange Rates", type: "toolBuilderNode" },
+    { id: "api-1", name: "Exchange Rates", type: "apiToolNode" },
+  ];
+
+  it("resolves the mention to the step the person picked", () => {
+    const segments = splitNodeMentions("Explain @Exchange Rates please", nodes, ["api-1"]);
+    const chip = segments.find((s) => "node" in s) as { node: { id: string } };
+    expect(chip.node.id).toBe("api-1");
+  });
+
+  it("keeps the first match when nothing was picked", () => {
+    const segments = splitNodeMentions("Explain @Exchange Rates please", nodes);
+    const chip = segments.find((s) => "node" in s) as { node: { id: string } };
+    expect(chip.node.id).toBe("tool-1");
+  });
+});
+
+describe("splitNodeMentions when both namesakes were tagged", () => {
+  it("takes the one picked first", () => {
+    const nodes = [
+      { id: "tool-1", name: "Expense Policy", type: "toolBuilderNode" },
+      { id: "kb-1", name: "Expense Policy", type: "knowledgeBaseNode" },
+    ];
+    const segments = splitNodeMentions("Check @Expense Policy", nodes, ["kb-1", "tool-1"]);
+    const chip = segments.find((s) => "node" in s) as { node: { id: string } };
+    expect(chip.node.id).toBe("kb-1");
+  });
+});
