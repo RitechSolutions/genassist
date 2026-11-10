@@ -73,7 +73,7 @@ class _FakeRagManager:
     async def get_document_ids(self, kb):
         return list(self.existing)
 
-    async def add_document(self, kb, doc_id, content, metadata):
+    async def add_document(self, kb, doc_id, content, metadata, **_):
         self.added.append((doc_id, content, metadata))
         return {"ok": True}
 
@@ -524,7 +524,7 @@ class _FailingRagManager(_FakeRagManager):
         super().__init__(existing_ids)
         self.failing_ids = set(failing_ids)
 
-    async def add_document(self, kb, doc_id, content, metadata):
+    async def add_document(self, kb, doc_id, content, metadata, **_):
         if doc_id in self.failing_ids:
             raise RuntimeError("embedding failed")
         return await super().add_document(kb, doc_id, content, metadata)
@@ -854,7 +854,7 @@ class _CutOffRagManager(_FakeRagManager):
         super().__init__(existing_ids)
         self.stop_after = stop_after
 
-    async def add_document(self, kb, doc_id, content, metadata):
+    async def add_document(self, kb, doc_id, content, metadata, **_):
         if len(self.added) == self.stop_after:
             raise asyncio.CancelledError()
         return await super().add_document(kb, doc_id, content, metadata)
@@ -938,3 +938,158 @@ async def test_kb_deleted_before_its_turn_is_skipped():
 
     assert result["per_kb"] == [{"kb_id": str(kb.id), "name": kb.name, "status": "skipped", "reason": "not_found"}]
     kb_service.repository.update.assert_not_awaited()
+
+
+class _FailingLoadRagManager(_FakeRagManager):
+    """Reports a failed load for the given article ids, the way an embedding outage does."""
+
+    def __init__(self, failing_ids, existing_ids=None):
+        super().__init__(existing_ids)
+        self.failing_ids = set(failing_ids)
+
+    async def add_document(self, kb, doc_id, content, metadata, **_):
+        await super().add_document(kb, doc_id, content, metadata)
+        article_id = doc_id.rsplit("#article_", 1)[-1]
+        return {"vector": article_id not in self.failing_ids}
+
+
+@pytest.mark.asyncio
+async def test_failed_load_is_an_error_not_an_added_article():
+    kb = _make_kb(uuid.uuid4())
+    rag = _FailingLoadRagManager(failing_ids={"ka-2"})
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=[_article("ka-1"), _article("ka-2")])
+
+    assert result["articles_added"] == 1
+    saved = _written_row(kb_service)
+    assert saved.last_sync_status == "success_with_warnings"
+    assert saved.last_sync_error.startswith("1 of 2 articles could not be copied")
+    assert "ka-2" in saved.last_sync_error
+    assert saved.extra_metadata["salesforce_article_updated_at"] == {"ka-1": "2026-01-01T00:00:00Z"}
+
+
+@pytest.mark.asyncio
+async def test_sync_where_every_load_fails_ends_in_error():
+    kb = _make_kb(uuid.uuid4())
+    rag = _FailingLoadRagManager(failing_ids={"ka-1", "ka-2"})
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=[_article("ka-1"), _article("ka-2")])
+
+    assert result["articles_added"] == 0
+    saved = _written_row(kb_service)
+    assert saved.last_sync_status == "error"
+    assert saved.last_sync_error.startswith("2 of 2 articles could not be copied")
+    assert saved.extra_metadata["salesforce_article_updated_at"] == {}
+
+
+@pytest.mark.asyncio
+async def test_failed_update_is_retried_on_the_next_sync():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={"salesforce_article_updated_at": {"ka-1": "2026-01-01T00:00:00Z"}})
+    rag = _FailingLoadRagManager(failing_ids={"ka-1"}, existing_ids=[f"KB:{kb_id}#article_ka-1"])
+
+    result, kb_service = await _run_sync(
+        kb, _make_datasource(), rag, articles=[_article("ka-1", updated_at="2026-02-01T00:00:00Z")]
+    )
+
+    assert result["articles_updated"] == 0
+    saved = _written_row(kb_service)
+    assert saved.last_sync_status == "success_with_warnings"
+    assert saved.last_sync_error.startswith("1 of 1 articles could not be copied")
+    assert "ka-1" not in saved.extra_metadata["salesforce_article_updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_successful_loads_keep_success_status():
+    kb = _make_kb(uuid.uuid4())
+    rag = _FailingLoadRagManager(failing_ids=set())
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=[_article("ka-1")])
+
+    assert result["articles_added"] == 1
+    assert _written_row(kb_service).last_sync_status == "success"
+    assert _written_row(kb_service).last_sync_error == ""
+
+
+@pytest.mark.asyncio
+async def test_settings_change_during_a_sync_where_nothing_loaded_still_ends_in_error():
+    kb = _make_kb(uuid.uuid4())
+    kb_service = _make_kb_service(kb, current_row=_stored_row(kb, extra_metadata={"content_format": "markdown"}))
+    writes = _record_writes(kb_service)
+
+    result = await _sync_with(kb, kb_service, _FailingLoadRagManager(failing_ids={"ka-1"}), [_article("ka-1")])
+
+    assert writes[-1][1] == "error"
+    assert result["per_kb"][0]["status"] == "error"
+
+
+class _PartlyLoadingRagManager(_FakeRagManager):
+    """One store takes every article and the other refuses it."""
+
+    async def add_document(self, kb, doc_id, content, metadata, **_):
+        await super().add_document(kb, doc_id, content, metadata)
+        return {"vector": True, "legra": False}
+
+
+@pytest.mark.asyncio
+async def test_partly_loaded_article_is_counted_and_reported_as_a_warning():
+    kb = _make_kb(uuid.uuid4())
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), _PartlyLoadingRagManager(), articles=[_article("ka-1")])
+
+    assert result["articles_added"] == 1
+    saved = _written_row(kb_service)
+    assert saved.last_sync_status == "success_with_warnings"
+    assert "was loaded but is missing from: legra" in saved.last_sync_error
+    assert "could not be copied" not in saved.last_sync_error
+    assert saved.extra_metadata["salesforce_article_updated_at"] == {"ka-1": "2026-01-01T00:00:00Z"}
+
+
+@pytest.mark.asyncio
+async def test_partly_loaded_article_is_not_copied_again_on_the_next_sync():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={"salesforce_article_updated_at": {"ka-1": "2026-01-01T00:00:00Z"}})
+    rag = _PartlyLoadingRagManager(existing_ids=[f"KB:{kb_id}#article_ka-1"])
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=[_article("ka-1")])
+
+    assert rag.added == []
+    assert rag.deleted == []
+    assert result["articles_updated"] == 0
+    assert _written_row(kb_service).last_sync_status == "success"
+
+
+class _UnreachableRagManager(_FakeRagManager):
+    """Answers the way the manager does when the stores of the knowledge base cannot be reached."""
+
+    async def add_document(self, kb, doc_id, content, metadata, **_):
+        return {}
+
+
+@pytest.mark.asyncio
+async def test_unreachable_stores_end_in_error_and_nothing_is_counted():
+    kb = _make_kb(uuid.uuid4())
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), _UnreachableRagManager(), articles=[_article("ka-1")])
+
+    assert result["articles_added"] == 0
+    saved = _written_row(kb_service)
+    assert saved.last_sync_status == "error"
+    assert "no store reached" in saved.last_sync_error
+    assert saved.extra_metadata["salesforce_article_updated_at"] == {}
+
+
+@pytest.mark.asyncio
+async def test_failed_new_article_on_a_filled_knowledge_base_is_a_warning_not_an_error():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={"salesforce_article_updated_at": {"ka-0": "2026-01-01T00:00:00Z"}})
+    rag = _FailingLoadRagManager(failing_ids={"ka-1"}, existing_ids=[f"KB:{kb_id}#article_ka-0"])
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), rag, articles=[_article("ka-0"), _article("ka-1")])
+
+    assert result["articles_added"] == 0
+    assert rag.deleted == []
+    saved = _written_row(kb_service)
+    assert saved.last_sync_status == "success_with_warnings"
+    assert saved.last_sync_error.startswith("1 of 1 articles could not be copied")
+    assert saved.extra_metadata["salesforce_article_updated_at"] == {"ka-0": "2026-01-01T00:00:00Z"}
