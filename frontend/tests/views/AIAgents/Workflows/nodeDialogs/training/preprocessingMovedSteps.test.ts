@@ -64,8 +64,14 @@ const MOVED_BLOCKS: Record<MovedStepType, string> = {
     # STEP_END:step_fe:feature_engineering`,
 };
 
+// A step the dialog still configures: re-saving regenerates it, so it is
+// written here as the current generator writes it (with its column check).
 const COLUMN_FILTER_BLOCK = `    # STEP_START:step_cf:column_filter
     # STEP_CONFIG:{"selectedColumns":["age","city","income","x"]}
+    # Check that the step's columns exist
+    _missing = [c for c in ["age", "city", "income", "x"] if c not in df.columns]
+    if _missing:
+        raise ValueError("Column Filter: column(s) not found in the data: " + ", ".join(_missing))
     # Filter columns
     df = df[["age", "city", "income", "x"]]
     # STEP_END:step_cf:column_filter`;

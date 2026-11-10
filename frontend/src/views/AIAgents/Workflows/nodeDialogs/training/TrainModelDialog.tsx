@@ -20,7 +20,9 @@ import { Label } from "@/components/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
@@ -38,9 +40,16 @@ import { CSVAnalysisDisplay } from "./components/CSVAnalysisDisplay";
 import { OutlierHandler } from "./components/OutlierHandler";
 import { CategoricalEncodingHandler } from "./components/CategoricalEncodingHandler";
 import { MissingValueHandler } from "./components/MissingValueHandler";
+import {
+  AUTO_SCORING,
+  isAutoScoring,
+  scoringGroupsFor,
+  onlyTaskTypeFor,
+  scoringLabel,
+  scoringTaskTypeFor,
+} from "./scoringOptions";
 import { FeatureEngineeringHandler } from "./components/FeatureEngineeringHandler";
-import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
-import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
+import { useTrainingInputFile } from "../../hooks/useTrainingInputFile";
 import { useNodeDialogState } from "../useNodeDialogState";
 import { ML_MODEL_TYPES } from "@/constants/mlModelTypes";
 
@@ -74,7 +83,7 @@ type TrainModelDialogProps = BaseNodeDialogProps<
 
 export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
   const { isOpen, onClose, data, onUpdate, nodeId } = props;
-  const { getAvailableDataForNode } = useWorkflowExecution();
+  const resolveInputFile = useTrainingInputFile(nodeId);
 
   const { values, setField, setValues, merged } = useNodeDialogState(
     props,
@@ -126,15 +135,15 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     })
   );
 
-  // linear_regression and logistic_regression only support one task each -
-  // keep taskType in sync with those so it never disagrees with modelType.
+  // Linear/Ridge/Lasso/Elastic Net only support regression and Logistic
+  // Regression only classification - keep taskType in sync with those so it
+  // never disagrees with modelType (the backend rejects a conflict).
+  const onlyTaskType = onlyTaskTypeFor(values.modelType);
   useEffect(() => {
-    if (values.modelType === "linear_regression" && values.taskType !== "regression") {
-      setField("taskType", "regression");
-    } else if (values.modelType === "logistic_regression" && values.taskType !== "classification") {
-      setField("taskType", "classification");
+    if (onlyTaskType && values.taskType !== onlyTaskType) {
+      setField("taskType", onlyTaskType);
     }
-  }, [values.modelType, values.taskType, setField]);
+  }, [onlyTaskType, values.taskType, setField]);
 
   // targetTransform (ratio target) is only meaningful for regression - clear
   // it if the task becomes classification so the two never disagree.
@@ -259,35 +268,18 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       return;
     }
 
+    // The source's current settings or its latest run - never an unfilled
+    // {{source.data_path}}.
+    const input = resolveInputFile(values.fileUrl);
+    if (input.ok === false) {
+      toast({ title: "Can't analyze yet", description: input.message, variant: "destructive" });
+      return;
+    }
+
     try {
       setIsAnalyzing(true);
 
-      let resolvedFileUrl = values.fileUrl;
-      const variables = extractDynamicVariables(values.fileUrl);
-
-      if (variables.size > 0 && nodeId) {
-        const availableData = getAvailableDataForNode(nodeId);
-
-        if (availableData) {
-          variables.forEach((variable) => {
-            const value = getValueFromPath(availableData, variable);
-            if (value !== undefined) {
-              const stringValue = typeof value === "string"
-                ? value
-                : typeof value === "object"
-                  ? JSON.stringify(value)
-                  : String(value);
-
-              resolvedFileUrl = resolvedFileUrl.replace(
-                new RegExp(`{{${variable}}}`, "g"),
-                stringValue
-              );
-            }
-          });
-        }
-      }
-
-      const result = await analyzeCSV(resolvedFileUrl);
+      const result = await analyzeCSV(input.fileUrl, undefined, input.file);
       setField("analysisResult", result);
 
       toast({
@@ -354,8 +346,9 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     setField("taskType", value as TrainModelNodeData["taskType"]);
   };
 
-  const isTaskTypeLocked =
-    values.modelType === "linear_regression" || values.modelType === "logistic_regression";
+  const isTaskTypeLocked = onlyTaskType !== undefined;
+  const modelTypeLabel =
+    ML_MODEL_TYPES.find((option) => option.value === values.modelType)?.label ?? values.modelType;
 
   const handleSplitMethodChange = (value: string) => {
     setField("splitMethod", value as TrainModelNodeData["splitMethod"]);
@@ -364,6 +357,19 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
   const handleHyperparameterOptimizationChange = (value: string) => {
     setField("hyperparameterOptimization", value as HyperparameterOptimizationMethod);
   };
+
+  const scoringTaskType = scoringTaskTypeFor(values.modelType, values.taskType);
+  // "auto" typed into the old free-text field means the same as unset.
+  const savedScoring = isAutoScoring(values.optimizationConfig.scoring)
+    ? undefined
+    : values.optimizationConfig.scoring;
+  // A scoring value saved before the dropdown (free text) or for another task
+  // stays selectable so it isn't silently dropped; training explains the problem.
+  const savedScoringNotOffered =
+    !!savedScoring &&
+    !scoringGroupsFor(scoringTaskType).some((group) =>
+      group.options.some((option) => option.value === savedScoring)
+    );
 
   const updateOptimizationConfig = (patch: Partial<OptimizationConfig>) => {
     setField("optimizationConfig", { ...values.optimizationConfig, ...patch });
@@ -689,7 +695,7 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   {isTaskTypeLocked
-                    ? `${values.modelType === "linear_regression" ? "Linear" : "Logistic"} Regression only supports ${values.modelType === "linear_regression" ? "regression" : "classification"}`
+                    ? `${modelTypeLabel} only supports ${onlyTaskType}`
                     : "Auto-detect infers the task from the target column. Override it if the heuristic picks the wrong type for your dataset."}
                 </p>
               </div>
@@ -745,13 +751,39 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                       <Label htmlFor="scoring" className="text-xs">
                         Scoring Metric
                       </Label>
-                      <RichInput
-                        id="scoring"
-                        value={values.optimizationConfig.scoring ?? ""}
-                        onChange={(e) => updateOptimizationConfig({ scoring: e.target.value })}
-                        placeholder="auto (accuracy / r2)"
-                        className="w-full"
-                      />
+                      <Select
+                        value={savedScoring || AUTO_SCORING}
+                        onValueChange={(value) =>
+                          updateOptimizationConfig({
+                            scoring: value === AUTO_SCORING ? undefined : value,
+                          })
+                        }
+                      >
+                        <SelectTrigger id="scoring" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={AUTO_SCORING}>
+                            Auto (accuracy / R²)
+                          </SelectItem>
+                          {scoringGroupsFor(scoringTaskType).map((group) => (
+                            <SelectGroup key={group.label}>
+                              <SelectLabel>{group.label}</SelectLabel>
+                              {group.options.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          ))}
+                          {savedScoringNotOffered && (
+                            <SelectItem value={savedScoring as string}>
+                              {scoringLabel(savedScoring as string) ?? savedScoring}
+                              {scoringLabel(savedScoring as string) ? " (not for this task)" : ""}
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     {values.hyperparameterOptimization === "random_search" && (
