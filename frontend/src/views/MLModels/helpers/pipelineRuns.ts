@@ -211,7 +211,10 @@ function runOutputString(run: PipelineRun, key: string): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-/** The local path of the model file a run produced, read out of the workflow's final output. */
+/**
+ * The model file a run produced, read out of the workflow's final output. Newer
+ * runs give it relative to the data volume; older runs recorded the server path.
+ */
 export function runModelFilePath(run: PipelineRun): string | null {
   return runOutputString(run, "model_file_path");
 }

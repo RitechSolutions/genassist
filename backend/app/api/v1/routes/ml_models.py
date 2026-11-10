@@ -4,11 +4,13 @@ import os
 import shutil
 import tempfile
 import uuid
+from contextlib import aclosing
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal, Optional
 from uuid import UUID
 
+import anyio
 import pandas as pd
 import sqlglot
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, Response, UploadFile
@@ -29,13 +31,15 @@ from app.modules.integration.database.read_only_sql import (
     read_only_sql_blocked_message,
     validate_read_only_sql,
 )
-from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml import ml_utils, training_data_storage
 from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     CSV_SUFFIXES,
     EXCEL_SUFFIXES,
     SUPPORTED_TRAINING_FILE_LABEL,
     SUPPORTED_TRAINING_FILE_SUFFIXES,
+    duplicate_column_name,
     ensure_supported_training_file,
+    ensure_unique_query_columns,
     list_excel_sheets,
     read_training_file_preview,
     stored_file_suffix,
@@ -92,6 +96,7 @@ class QueryPreviewRequest(BaseModel):
 
 
 QUERY_PREVIEW_ROWS = 6
+PROFILE_QUERY_CHUNK_ROWS = 1000
 
 
 _require_data_source_read = permissions(P.DataSource.READ)
@@ -211,19 +216,31 @@ async def upload_pkl_file(
         # create file in file manager service
         created_file = await file_manager_service.create_file(file, file_base=file_base, allowed_extensions=["pkl"], max_file_size=MAX_PKL_FILE_SIZE)
 
-        # get file info
-        file_url = await file_manager_service.get_file_source_url(created_file.id)
-        file_path = None
+        copy_path = None
+        try:
+            # get file info
+            file_url = await file_manager_service.get_file_source_url(created_file.id)
+            file_path = None
 
-        if created_file.storage_provider == "local":
-            file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
-            # A custom file manager folder puts the file outside the ML models folder, where
-            # pkl_file is not accepted, so the model gets a copy inside it.
-            if not is_in_ml_models_dir(file_path):
-                copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
-                await asyncio.to_thread(shutil.copyfile, file_path, copy_path)
-                file_path = copy_path
-            # file_path = await file_manager_service.get_file_url(created_file)
+            if created_file.storage_provider == "local":
+                file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
+                # A custom file manager folder puts the file outside the ML models folder, where
+                # pkl_file is not accepted, so the model gets a copy inside it.
+                if not is_in_ml_models_dir(file_path):
+                    copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
+                    # Not asyncio.to_thread: on cancel its thread kept copying after the cleanup
+                    # below. anyio finishes the copy first; the checkpoint then raises the cancel.
+                    await anyio.to_thread.run_sync(shutil.copyfile, file_path, copy_path)
+                    await anyio.lowlevel.checkpoint_if_cancelled()
+                    file_path = copy_path
+                # file_path = await file_manager_service.get_file_url(created_file)
+        except BaseException:
+            # The client never gets this file's id, so it can't discard it: remove it here.
+            # BaseException, so a cancelled request (client gone, timeout) cleans up too; the
+            # cleanup is shielded, or the same cancellation would stop it at its first await.
+            with anyio.CancelScope(shield=True):
+                await _remove_failed_pkl_upload(file_manager_service, created_file.id, copy_path)
+            raise
 
         file_id = str(created_file.id)
 
@@ -246,6 +263,32 @@ async def upload_pkl_file(
         ) from e
 
 
+async def _remove_failed_pkl_upload(
+    file_manager_service: FileManagerService, file_id: UUID, copy_path: Optional[str]
+) -> None:
+    """Best effort: delete a .pkl whose upload failed after it was stored. Never raises."""
+    try:
+        await file_manager_service.delete_file(file_id)
+    except Exception as exc:
+        logger.warning("Could not remove the failed model upload %s: %s", file_id, type(exc).__name__)
+    if copy_path and os.path.isfile(copy_path):
+        try:
+            os.remove(copy_path)
+        except OSError as exc:
+            logger.warning("Could not remove the model file copy %s: %s", copy_path, type(exc).__name__)
+
+
+async def _init_upload_storage(
+    request: Request, file_manager_service: FileManagerService, app_settings_svc: AppSettingsService
+) -> None:
+    """Same storage setup as the uploads, so a custom folder or bucket from File Manager
+    Settings is where an unused upload is deleted from."""
+    app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+    await file_manager_service.initialize(
+        base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings=app_settings_config
+    )
+
+
 @router.delete("/upload/{file_id}", status_code=204, dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.CREATE))
@@ -262,13 +305,29 @@ async def discard_unused_upload(
     Only a recent ML model upload made by the caller and used by no model is deleted;
     any other file id answers 404.
     """
-    # Same storage setup as the upload, so a custom folder or bucket from File Manager
-    # Settings is where the file is deleted from.
-    app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
-    await file_manager_service.initialize(
-        base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings=app_settings_config
-    )
+    await _init_upload_storage(request, file_manager_service, app_settings_svc)
     await service.discard_unused_upload(file_id, file_manager_service)
+    return Response(status_code=204)
+
+
+@router.delete("/training-data/upload/{file_id}", status_code=204, dependencies=[
+    Depends(auth),
+    Depends(permissions(P.FileManager.DELETE))
+])
+async def discard_unused_training_upload(
+    request: Request,
+    file_id: UUID,
+    service: MLModelsService = Injected(MLModelsService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Delete a Train Data Source upload that was rejected, replaced, removed or cancelled.
+
+    Only a recent training upload made by the caller that no live workflow version or ML
+    model points at is deleted; any other file id answers 404.
+    """
+    await _init_upload_storage(request, file_manager_service, app_settings_svc)
+    await service.discard_unused_training_upload(file_id, file_manager_service)
     return Response(status_code=204)
 
 
@@ -499,6 +558,23 @@ async def analyze_csv(
                 )
 
 
+async def _ensure_unique_csv_header(path: Path) -> None:
+    """Refuse a repeated header name, which pd.read_csv renames to '<name>.1'.
+
+    The header is read by the run's own CSV reader (BOM, delimiter sniffing,
+    trailing empty cells), so the profile never accepts a file the run then
+    refuses. Only the header is read.
+    """
+    chunks = ml_utils.iter_csv_chunks(str(path), chunk_size=1)
+    try:
+        async with aclosing(chunks):
+            await anext(chunks, None)
+    except AppException as exc:
+        if exc.error_key == ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID:
+            return  # pd.read_csv reports the encoding with its own message.
+        raise HTTPException(status_code=400, detail=exc.error_detail) from exc
+
+
 def _build_profile_report_html(
     file_path: str,
     display_name: Optional[str] = None,
@@ -578,17 +654,20 @@ def _limit_read_query(query: str, db_type: str, row_limit: int) -> str:
 async def _collect_query_preview(
     manager,
     query: str,
+    chunk_size: int = QUERY_PREVIEW_ROWS,
 ) -> tuple[list[str], list[tuple]]:
     """Collect the bounded preview while retaining columns for empty results."""
     columns: list[str] = []
     rows: list[tuple] = []
-    async for chunk_columns, chunk_rows in manager.stream_query(
-        query,
-        chunk_size=QUERY_PREVIEW_ROWS,
-    ):
-        if not columns:
-            columns = chunk_columns
-        rows.extend(chunk_rows)
+    stream = manager.stream_query(query, chunk_size=chunk_size)
+    async with aclosing(stream):
+        async for chunk_columns, chunk_rows in stream:
+            if not columns:
+                columns = chunk_columns
+                if duplicate_column_name(columns) is not None:
+                    # Refused by the caller; no need to read any rows.
+                    break
+            rows.extend(chunk_rows)
     return columns, rows
 
 
@@ -797,6 +876,7 @@ async def _resolve_csv_input(
         # Only files inside the data volume, or the configured storage folder, can be read
         extra_directories = await ml_utils.extra_csv_directories()
         if candidate_suffix in ("", ".csv"):
+            await training_data_storage.fetch_training_data(file_url, allowed_directories=extra_directories)
             local_path = ml_utils.resolve_csv_file_path(
                 file_url, allowed_directories=extra_directories
             )
@@ -946,9 +1026,15 @@ async def _load_query_profile_dataframe(
         settings.ML_PROFILE_MAX_ROWS,
     )
 
+    # Streamed as (columns, tuples) like the preview and the run: rows as
+    # dicts would keep only one of two columns with the same name.
     try:
-        rows, error = await asyncio.wait_for(
-            manager.execute_read_query(profile_query),
+        columns, rows = await asyncio.wait_for(
+            _collect_query_preview(
+                manager,
+                profile_query,
+                chunk_size=max(1, min(settings.ML_PROFILE_MAX_ROWS, PROFILE_QUERY_CHUNK_ROWS)),
+            ),
             timeout=settings.ML_EXTRACT_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError as exc:
@@ -956,21 +1042,25 @@ async def _load_query_profile_dataframe(
             status_code=408,
             detail="The profiling query timed out.",
         ) from exc
-
-    if error:
+    except Exception as exc:
         logger.error(
             "Data profiling query failed: %s",
-            ml_utils.sanitized_database_diagnostic(error),
+            ml_utils.sanitized_database_diagnostic(exc),
         )
         raise HTTPException(
             status_code=400,
             detail=ml_utils.client_safe_database_error(
-                error,
+                exc,
                 has_bound_parameters=False,
             ),
-        )
+        ) from exc
 
-    dataframe = pd.DataFrame(rows)
+    try:
+        ensure_unique_query_columns(columns)
+    except AppException as exc:
+        raise HTTPException(status_code=400, detail=exc.error_detail) from exc
+
+    dataframe = pd.DataFrame.from_records(rows, columns=columns)
     if dataframe.empty:
         raise HTTPException(status_code=400, detail="The query returned no rows.")
     return dataframe
@@ -1028,6 +1118,12 @@ async def preview_query(
                 has_bound_parameters=False,
             ),
         ) from exc
+
+    # Refused like the run refuses it; dict(zip()) would also hide a column.
+    try:
+        ensure_unique_query_columns(columns)
+    except AppException as exc:
+        raise HTTPException(status_code=400, detail=exc.error_detail) from exc
 
     preview_rows = [dict(zip(columns, row)) for row in rows[:QUERY_PREVIEW_ROWS]]
     return ml_utils.sanitize_for_json(
@@ -1088,6 +1184,7 @@ async def profile_data(
             if display_name is None and temporary_path is not None:
                 display_name = "data.csv"
             if training_file_suffix(file_path) in CSV_SUFFIXES:
+                await _ensure_unique_csv_header(Path(file_path))
                 html = await asyncio.to_thread(
                     _build_profile_report_html,
                     str(file_path),
