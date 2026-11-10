@@ -13,6 +13,7 @@ import {
   FileText,
   Brain,
   Wrench,
+  BrainCircuit,
   MailOpen,
   Calendar,
   Split,
@@ -74,6 +75,7 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   FileText: { type: "lucide", source: FileText },
   Brain: { type: "lucide", source: Brain },
   Wrench: { type: "lucide", source: Wrench },
+  BrainCircuit: { type: "lucide", source: BrainCircuit },
   MailOpen: { type: "lucide", source: MailOpen },
   Calendar: { type: "lucide", source: Calendar },
   CalendarClock: { type: "lucide", source: CalendarClock },
@@ -136,6 +138,7 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   "file-text": { type: "lucide", source: FileText },
   brain: { type: "lucide", source: Brain },
   wrench: { type: "lucide", source: Wrench },
+  "folder-git-2": { type: "lucide", source: BrainCircuit },
 };
 
 // Default fallback icon

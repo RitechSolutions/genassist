@@ -79,7 +79,7 @@
             "position": "right"
           }
         ],
-        "providerId": "00000196-19d2-9c28-a2dd-561fff608fa0",
+        "providerId": "00000196-19d2-9c28-a2dd-566fff608fa0",
         "memoryTrimmingMode": "message_count",
         "maxMessages": 20,
         "label": "AI Agent"

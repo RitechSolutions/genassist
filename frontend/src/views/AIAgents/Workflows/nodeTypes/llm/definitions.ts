@@ -444,7 +444,7 @@ export const WORKFLOW_BUILDER_TOOLS_NODE_DEFINITION: NodeTypeDefinition<Workflow
       "Gives an AI agent the tools to build and edit workflows: search node types, read the workflow draft, add, configure, connect and remove nodes, and validate the result.",
     shortDescription: "Tools for building workflows",
     category: "ai",
-    icon: "Wrench",
+    icon: "BrainCircuit",
     defaultData: {
       name: "Workflow Builder Tools",
       enabledTools: [],

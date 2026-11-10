@@ -79,6 +79,16 @@ export const putBuilderDraft = (
 export const getBuilderDraft = (conversationId: string) =>
   apiRequest<BuilderDraft>("GET", `${BASE}/drafts/${conversationId}`);
 
+/** One tool a Workflow Builder Tools node can give an agent. */
+export interface BuilderTool {
+  name: string;
+  description: string;
+}
+
+/** The builder tool set; the canvas uses it to describe the Workflow Builder Tools node. */
+export const getBuilderTools = () =>
+  apiRequest<BuilderTool[]>("GET", `${BASE}/tools`);
+
 /** Validate a workflow graph without saving anything. */
 export const validateWorkflowGraph = (snapshot: BuilderCanvasSnapshot) =>
   apiRequest<{ valid: boolean; issues: Omit<BuilderIssue, "pre_existing">[] }>(

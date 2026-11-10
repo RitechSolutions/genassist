@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
+from app.db.seed.seed_data_config import seed_test_data
 from app.modules.workflow.builder import catalog
 from app.modules.workflow.builder.draft import make_edge
 
@@ -21,9 +22,9 @@ SEED_DIR = Path(__file__).resolve().parent.parent
 PROMPT_PATH = SEED_DIR / "workflow_builder_prompt.md"
 OUTPUT_PATH = SEED_DIR / "workflow_builder_wf_data.json"
 
-# Same placeholder convention as the other seeded workflows; seed.py and the
-# seeding migration replace it.
-DEFAULT_PROVIDER_ID = "00000196-19d2-9c28-a2dd-561fff608fa0"
+# The builder runs on the provider seed.py creates for it (migration 00130 adds it to
+# tenants seeded earlier). Its id is fixed, so the seeded JSON names it directly.
+DEFAULT_PROVIDER_ID = seed_test_data.workflow_builder_llm_provider_id
 
 CHAT_INPUT_ID = "wb-chat-input-001"
 AGENT_ID = "wb-agent-builder"

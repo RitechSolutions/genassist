@@ -36,6 +36,7 @@ from app.modules.workflow.builder.draft import (
     load_draft,
     save_draft,
 )
+from app.modules.workflow.builder.tools import TOOL_DEFINITIONS
 from app.modules.workflow.builder.validation import blocking, validate_workflow
 from app.schemas.agent import AgentCreate
 from app.services.agent_config import AgentConfigService
@@ -124,6 +125,15 @@ async def put_draft(
     draft.simulate_actions = snapshot.simulate_actions
     await save_draft(str(conversation_id), draft)
     return {"revision": draft.revision, "node_count": len(draft.aliases)}
+
+
+@router.get(
+    "/tools",
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+)
+async def list_builder_tools() -> List[Dict[str, str]]:
+    """The tools a Workflow Builder Tools node can give an agent; the canvas uses it to describe the node."""
+    return [{"name": tool["name"], "description": tool["description"]} for tool in TOOL_DEFINITIONS]
 
 
 @router.get(

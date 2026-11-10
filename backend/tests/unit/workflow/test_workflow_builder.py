@@ -2030,3 +2030,28 @@ def test_the_agent_loop_narrates_parallel_tool_calls_into_the_turn_stream(monkey
         ("start", "Looking up “pythonCodeNode”"), ("end", "Looking up “pythonCodeNode”"),
     ])
     assert [t["tool_name"] for t in result["tools_used"]] == ["get_workflow", "lookup_node"]
+
+
+def test_seeded_builder_runs_on_its_own_default_provider():
+    """The builder's agent node points at the provider seed.py creates for it, not the analysts' one"""
+    import json
+    from pathlib import Path
+
+    from app.db.seed.knowledge.generate_workflow_builder_workflow import OUTPUT_PATH
+    from app.db.seed.seed_data_config import seed_test_data
+
+    seeded = json.loads(Path(OUTPUT_PATH).read_text())
+    agents = [n for n in seeded["nodes"] if n["type"] == "agentNode"]
+    assert [n["data"]["providerId"] for n in agents] == [seed_test_data.workflow_builder_llm_provider_id]
+    assert seed_test_data.workflow_builder_llm_provider_id != seed_test_data.llm_provider_id
+
+
+@pytest.mark.asyncio
+async def test_the_tools_route_lists_every_builder_tool_by_name_and_description():
+    from app.api.v1.routes.workflow_builder import list_builder_tools
+    from app.modules.workflow.builder.tools import TOOL_DEFINITIONS
+
+    listed = await list_builder_tools()
+
+    assert [t["name"] for t in listed] == [d["name"] for d in TOOL_DEFINITIONS]
+    assert all(set(t) == {"name", "description"} and t["description"] for t in listed)
