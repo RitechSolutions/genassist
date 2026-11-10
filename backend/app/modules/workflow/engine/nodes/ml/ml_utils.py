@@ -1472,12 +1472,19 @@ _EXCEPTION_LINE = re.compile(r"^([A-Za-z_][\w.]*)(?::\s?(.*))?$")
 # column check), so the type name would only be noise
 _SELF_DESCRIBING_EXCEPTIONS = {"ValueError", "Exception"}
 # Display names of the Data Preprocessing steps (getStepTypeDisplayName in the frontend)
+# Mirrors getStepTypeDisplayName in the frontend's preprocessingConfig.ts,
+# including the moved step types (MOVED_STEP_NAMES there): older workflows'
+# code still runs those steps, so an error can come from inside one.
 _PREPROCESSING_STEP_NAMES = {
     "column_filter": "Column Filter",
     "remove_duplicates": "Remove Duplicate Rows",
     "drop_column_or_row": "Remove Column/Row",
     "drop_high_null_columns": "Remove High-Null Columns",
     "change_dtype": "Change Column Data Type",
+    "missing_value_handling": "Missing Value Handling",
+    "outlier_handling": "Outlier Handling",
+    "categorical_encoding": "Categorical Encoding",
+    "feature_engineering": "Feature Engineering",
 }
 _STEP_MARKER = re.compile(r"#\s*STEP_(START|END):[^:\n]+:(\w+)")
 
