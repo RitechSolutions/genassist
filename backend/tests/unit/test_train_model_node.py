@@ -754,6 +754,247 @@ class TestFitScaler:
         assert type(node._fit_scaler(method)).__name__ == expected_class
 
 
+class TestTextClassLabels:
+    """
+    TM-10: XGBoost rejected text classes ("Invalid classes inferred") and the
+    Neural Network failed in early stopping ("ufunc 'isnan' not supported").
+    Every classifier now trains on class codes and saves the labels.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model_type", ["xgboost", "neural_network", "random_forest"])
+    @pytest.mark.parametrize("labels", [["A", "B", "C"], ["high", "low"]])
+    async def test_text_classes_train_and_save_their_labels(self, tmp_path, model_type, labels):
+        rng = np.random.default_rng(3)
+        n = 90
+        target = np.array([labels[i % len(labels)] for i in range(n)])
+        df = pd.DataFrame(
+            {
+                "x1": rng.normal(size=n) + np.array([labels.index(t) for t in target]),
+                "x2": rng.normal(size=n),
+                "target": target,
+            }
+        )
+        csv_path = tmp_path / "text_classes.csv"
+        df.to_csv(csv_path, index=False)
+
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        result = await train_node.process(
+            {
+                "name": f"text-classes-{uuid.uuid4().hex[:8]}",
+                "modelType": model_type,
+                "fileUrl": str(csv_path),
+                "targetColumn": "target",
+                "featureColumns": ["x1", "x2"],
+            }
+        )
+
+        assert result["success"] is True
+        assert result["target_classes"] == sorted(labels)
+        with open(str(DATA_VOLUME / result["model_file_path"]), "rb") as f:
+            payload = pickle.load(f)
+        assert payload["metadata"]["target_classes"] == sorted(labels)
+        predictions = payload["model"].predict(
+            pd.DataFrame({"x1": [0.0], "x2": [0.0]})[payload["metadata"]["model_input_columns"]]
+        )
+        assert int(predictions[0]) in range(len(labels))
+
+
+class TestClassCodesFollowTheTrainingSplit:
+    @pytest.mark.asyncio
+    async def test_xgboost_trains_when_a_middle_class_is_only_in_validation(self, tmp_path):
+        # Codes are taken from the training rows: with 'low' (the middle label
+        # alphabetically) only in the latest rows, the training codes must
+        # still be 0..n-1 or XGBoost raises "Invalid classes inferred".
+        n = 50
+        df = pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-01", periods=n, freq="D").astype(str),
+                "x1": np.arange(n, dtype=float),
+                "target": ["high", "medium"] * 20 + ["low"] * 10,
+            }
+        )
+        csv_path = tmp_path / "late_class.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        result = await train_node.process(
+            {
+                "name": f"late-class-{uuid.uuid4().hex[:8]}",
+                "modelType": "xgboost",
+                "fileUrl": str(csv_path),
+                "targetColumn": "target",
+                "featureColumns": ["x1"],
+                "splitMethod": "time_based",
+                "dateColumn": "date",
+                "validationSplit": 0.2,
+            }
+        )
+
+        assert result["success"] is True
+        assert result["target_classes"] == ["high", "medium"]
+
+
+class TestValidationOnlyClass:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("model_type", ["xgboost", "lightgbm", "random_forest"])
+    async def test_rows_of_a_class_missing_from_training_are_left_out_of_validation(
+        self, tmp_path, model_type
+    ):
+        pytest.importorskip(model_type) if model_type in ("xgboost", "lightgbm") else None
+        n = 60
+        df = pd.DataFrame(
+            {
+                "date": pd.date_range("2024-01-01", periods=n, freq="D").astype(str),
+                "x1": np.arange(n, dtype=float),
+                "target": ["a", "b", "c"] * 16 + ["d"] * 12,
+            }
+        )
+        csv_path = tmp_path / "new_class.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        result = await train_node.process(
+            {
+                "name": f"new-class-{uuid.uuid4().hex[:8]}",
+                "modelType": model_type,
+                "fileUrl": str(csv_path),
+                "targetColumn": "target",
+                "featureColumns": ["x1"],
+                "splitMethod": "time_based",
+                "dateColumn": "date",
+                "validationSplit": 0.3,
+            }
+        )
+
+        assert result["success"] is True
+        assert result["target_classes"] == ["a", "b", "c"]
+        assert any("left out of the validation metrics" in w for w in result["warnings"])
+        assert result["validation_samples"] == 6
+
+
+class TestPlainTrainingErrors:
+    """TM-14: bad data or settings are reported in the node's own terms."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "overrides, expected",
+        [
+            ({"targetColumn": "label", "taskType": "regression"}, "has text values"),
+            ({"featureColumns": ["x1", "num"]}, "also selected as a feature column"),
+            ({"validationSplit": 5}, "Validation Split must be a fraction"),
+            ({"modelParameters": {"foo": 1}}, "'foo' is not a setting of Random Forest"),
+            ({"modelType": "xgboost", "modelParameters": {"max_depth": "abc"}}, "'max_depth' must be a whole number"),
+            (
+                {"hyperparameterOptimization": "random_search", "optimizationConfig": {"scoring": "accuracy", "nIter": 2}},
+                "is a classification metric",
+            ),
+        ],
+    )
+    async def test_message_names_the_setting(self, tmp_path, overrides, expected):
+        rng = np.random.default_rng(5)
+        n = 40
+        df = pd.DataFrame(
+            {
+                "x1": rng.normal(size=n),
+                "num": rng.normal(size=n) * 10,
+                "label": rng.choice(["p", "q"], n),
+            }
+        )
+        csv_path = tmp_path / "data.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        config = {
+            "name": f"plain-{uuid.uuid4().hex[:8]}",
+            "modelType": "random_forest",
+            "fileUrl": str(csv_path),
+            "targetColumn": "num",
+            "featureColumns": ["x1"],
+            **overrides,
+        }
+
+        with pytest.raises(AppException) as exc:
+            await train_node.process(config)
+
+        assert expected in exc.value.error_detail
+        assert "np.float64" not in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_auto_fill_warning_shows_plain_number(self, tmp_path):
+        df = pd.DataFrame({"x1": [1.0, None, 49.0, 49.0, 97.0] * 6, "num": list(range(30))})
+        csv_path = tmp_path / "fill.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        result = await train_node.process(
+            {
+                "name": f"fill-{uuid.uuid4().hex[:8]}",
+                "modelType": "random_forest",
+                "fileUrl": str(csv_path),
+                "targetColumn": "num",
+                "featureColumns": ["x1"],
+                "validationSplit": 0,
+            }
+        )
+
+        fill_warning = next(w for w in result["warnings"] if "filled automatically" in w)
+        assert "median (49)" in fill_warning
+
+
+
+class TestTargetTypeEdgeCases:
+    @staticmethod
+    async def _train(tmp_path, model_type, task_type, y):
+        df = pd.DataFrame({"x1": np.arange(30, dtype=float), "y": y})
+        csv_path = tmp_path / f"{model_type}.csv"
+        df.to_csv(csv_path, index=False)
+        train_node = TrainModelNode(
+            node_id=str(uuid.uuid4()), node_config={}, state=WorkflowState(workflow={})
+        )
+        return await train_node.process(
+            {
+                "name": f"{model_type}-{uuid.uuid4().hex[:8]}",
+                "modelType": model_type,
+                "fileUrl": str(csv_path),
+                "targetColumn": "y",
+                "featureColumns": ["x1"],
+                "taskType": task_type,
+            }
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "model_type", ["linear_regression", "ridge_regression", "lasso_regression", "elastic_net"]
+    )
+    async def test_regression_only_model_rejects_classification(self, tmp_path, model_type):
+        # Numbers stored as text: with Classification they used to stay text and
+        # fail as "has text values (e.g. )" while the model trained as regression.
+        with pytest.raises(AppException) as exc:
+            await self._train(tmp_path, model_type, "classification", ["1", "2", "3"] * 10)
+        assert "incompatible" in exc.value.error_detail
+        assert f"'{model_type}'" in exc.value.error_detail
+        assert "only supports regression" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_logistic_regression_rejects_regression(self, tmp_path):
+        with pytest.raises(AppException) as exc:
+            await self._train(tmp_path, "logistic_regression", "regression", [0, 1] * 15)
+        assert "only supports classification" in exc.value.error_detail
+
+    @pytest.mark.asyncio
+    async def test_ridge_reads_numbers_stored_as_text(self, tmp_path):
+        result = await self._train(tmp_path, "ridge_regression", "auto", ["1", "2", "3"] * 10)
+        assert "target_classes" not in result
+        assert "r2_score" in result["metrics"]
+
+
 def _dropped_rows_frame(n: int = 200) -> pd.DataFrame:
     """
     Hourly rows for a time-based 75/25 split (rows 0-149 train, 150-199
