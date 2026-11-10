@@ -130,6 +130,7 @@ async def test_registration_persists_training_metrics(monkeypatch):
 async def test_retrain_preserves_valid_feature_defaults(monkeypatch):
     existing = MagicMock()
     existing.id = uuid.uuid4()
+    existing.model_type = "linear_regression"
     existing.inference_params = {
         "featureDefaults": {"x": 1, "removed": 2},
         "ratioBaselineColumn": "old_base",
@@ -172,6 +173,7 @@ async def test_retrain_preserves_valid_feature_defaults(monkeypatch):
 async def test_retrain_removes_obsolete_ratio_baseline(monkeypatch):
     existing = MagicMock()
     existing.id = uuid.uuid4()
+    existing.model_type = "linear_regression"
     existing.inference_params = {
         "featureDefaults": {"x": 1},
         "ratioBaselineColumn": "old_base",
@@ -202,6 +204,7 @@ async def test_retrain_removes_obsolete_ratio_baseline(monkeypatch):
 async def test_retrain_warns_when_retained_default_is_not_a_fitted_category(monkeypatch):
     existing = MagicMock()
     existing.id = uuid.uuid4()
+    existing.model_type = "linear_regression"
     existing.inference_params = {"featureDefaults": {"kind": "removed"}}
 
     ml_service = MagicMock()

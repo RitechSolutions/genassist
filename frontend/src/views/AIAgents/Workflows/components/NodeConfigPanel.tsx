@@ -67,6 +67,12 @@ interface WorkflowNodesPanelProps {
 
   // Save callback (passed via {...props} from dialogs)
   onUpdate?: (data: NodeData) => void;
+  // The dialog's own save (its Save Changes handler). When given, Save in the
+  // "You have unsaved changes!" prompt uses it instead of onUpdate(data), so
+  // dialogs that store more than `data` holds save the same way both times.
+  // It is responsible for closing the panel (or keeping it open on a
+  // validation error).
+  onSave?: () => void;
 }
 
 export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
@@ -85,6 +91,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   showUnwrap = false,
   onUnwrapChange,
   onUpdate,
+  onSave,
 }) => {
   const nodeDefinition = nodeRegistry.getNodeType(nodeType);
 
@@ -152,13 +159,18 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
 
   // Confirmation dialog handlers
   const handleConfirmSave = useCallback(() => {
+    if (onSave) {
+      setShowUnsavedDialog(false);
+      onSave();
+      return;
+    }
     if (onUpdate && data) {
       onUpdate(data as NodeData);
     }
     setShowUnsavedDialog(false);
     setInternalOpen(false);
     onClose();
-  }, [onUpdate, data, onClose]);
+  }, [onSave, onUpdate, data, onClose]);
 
   const handleConfirmDiscard = useCallback(() => {
     setShowUnsavedDialog(false);
@@ -425,8 +437,12 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
       {/* Unsaved changes confirmation dialog */}
       <AlertDialog
         open={showUnsavedDialog}
+        // Discard and Save act from their own buttons. Any other way of
+        // closing the prompt (Escape, clicking outside it) only closes the
+        // prompt and goes back to editing - it no longer discards the edits,
+        // and doesn't close the panel after a save that kept it open.
         onOpenChange={(open) => {
-          if (!open) handleConfirmDiscard();
+          if (!open) setShowUnsavedDialog(false);
         }}
       >
         <AlertDialogPortal>
