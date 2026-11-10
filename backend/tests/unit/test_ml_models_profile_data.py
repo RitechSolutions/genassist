@@ -1226,6 +1226,26 @@ def test_profile_dataframe_normalizes_decimal_and_uuid_values():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("file_url", ["{{source.data_path}}", "/data/{{session.file}}.csv"])
+async def test_analyze_csv_refuses_unfilled_placeholder(file_url):
+    file_manager = _file_manager()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.analyze_csv(
+            request=_request(P.MlModel.READ),
+            file_url=file_url,
+            file_id=None,
+            file_name=None,
+            python_code=None,
+            file_manager_service=file_manager,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == ml_models.UNFILLED_FILE_PATH_DETAIL
+    file_manager.extract_file_id_from_url.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_preview_query_refuses_duplicate_column_names(monkeypatch):
     database_manager = MagicMock()
     database_manager.get_db_type.return_value = "sqlite"

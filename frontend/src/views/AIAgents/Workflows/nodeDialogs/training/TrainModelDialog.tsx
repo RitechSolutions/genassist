@@ -39,8 +39,7 @@ import { OutlierHandler } from "./components/OutlierHandler";
 import { CategoricalEncodingHandler } from "./components/CategoricalEncodingHandler";
 import { MissingValueHandler } from "./components/MissingValueHandler";
 import { FeatureEngineeringHandler } from "./components/FeatureEngineeringHandler";
-import { useWorkflowExecution } from "../../context/WorkflowExecutionContext";
-import { extractDynamicVariables, getValueFromPath } from "../../utils/helpers";
+import { useTrainingInputFile } from "../../hooks/useTrainingInputFile";
 import { useNodeDialogState } from "../useNodeDialogState";
 import { ML_MODEL_TYPES } from "@/constants/mlModelTypes";
 
@@ -74,7 +73,7 @@ type TrainModelDialogProps = BaseNodeDialogProps<
 
 export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
   const { isOpen, onClose, data, onUpdate, nodeId } = props;
-  const { getAvailableDataForNode } = useWorkflowExecution();
+  const resolveInputFile = useTrainingInputFile(nodeId);
 
   const { values, setField, setValues, merged } = useNodeDialogState(
     props,
@@ -259,35 +258,18 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
       return;
     }
 
+    // The source's current settings or its latest run - never an unfilled
+    // {{source.data_path}}.
+    const input = resolveInputFile(values.fileUrl);
+    if (input.ok === false) {
+      toast({ title: "Can't analyze yet", description: input.message, variant: "destructive" });
+      return;
+    }
+
     try {
       setIsAnalyzing(true);
 
-      let resolvedFileUrl = values.fileUrl;
-      const variables = extractDynamicVariables(values.fileUrl);
-
-      if (variables.size > 0 && nodeId) {
-        const availableData = getAvailableDataForNode(nodeId);
-
-        if (availableData) {
-          variables.forEach((variable) => {
-            const value = getValueFromPath(availableData, variable);
-            if (value !== undefined) {
-              const stringValue = typeof value === "string"
-                ? value
-                : typeof value === "object"
-                  ? JSON.stringify(value)
-                  : String(value);
-
-              resolvedFileUrl = resolvedFileUrl.replace(
-                new RegExp(`{{${variable}}}`, "g"),
-                stringValue
-              );
-            }
-          });
-        }
-      }
-
-      const result = await analyzeCSV(resolvedFileUrl);
+      const result = await analyzeCSV(input.fileUrl, undefined, input.file);
       setField("analysisResult", result);
 
       toast({
