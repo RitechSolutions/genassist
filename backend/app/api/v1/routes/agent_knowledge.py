@@ -16,7 +16,10 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import set_url_content_if_no_rag
+from app.dependencies.dependency_injection import RedisString
+from app.dependencies.injector import injector
 from app.modules.data.manager import AgentRAGServiceManager, save_load_action
+from app.modules.data.manual_sync_runs import ManualSyncRunStore
 from app.modules.data.providers.legra import (
     FaissFlatIndexer,
     HuggingFaceGenerator,
@@ -47,7 +50,7 @@ from app.services.app_settings import AppSettingsService
 # File manager service
 from app.services.file_manager import FileManagerService
 from app.services.file_upload_session import FileUploadSessionService
-from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
+from app.tasks.kb_manual_sync import start_manual_sync
 from app.tasks.salesforce_article_sync_tasks import apply_stored_copy_dates_on_save
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 
@@ -681,25 +684,39 @@ async def get_form_schemas():
 
 
 
+def _manual_sync_run_store() -> ManualSyncRunStore:
+    return ManualSyncRunStore(injector.get(RedisString))
+
+
 # Endpoint to trigger KB batch processing (S3, Azure Blob, SharePoint, Zendesk, etc.)
 @router.get(
     "/kb-batch-tasks-execution",
     dependencies=[Depends(auth)],
-    summary="Runs the job that syncs the KB with files or Zendesk articles for this tenant",
+    summary="Starts the job that syncs the KB with files or Zendesk articles for this tenant",
 )
 async def summarize_files_from_azure(
     kb_id: Optional[UUID] = None,
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
 ):
     if not kb_id:
         logger.warning("Attempting to run KB batch processing without specifying a KB ID.")
         return {"status": "error", "message": "kb_id is required"}
 
-    tenant_id = get_tenant_context()
-    # Await inline so the response includes batch results (Zendesk counts, file lists, etc.).
-    # Previously this used BackgroundTasks + Celery for Zendesk only, so the client saw
-    # {"status": "started"} while real metrics appeared only in worker logs.
-    batch_result = await batch_process_files_kb_async_with_scope(
-        kb_id=str(kb_id),
-        tenant_id=tenant_id,
-    )
-    return {"status": "completed", **batch_result}
+    # Answers 404 for an unknown knowledge base.
+    await knowledge_service.get_by_id(kb_id)
+    # The sync runs in the background; the client polls /kb-batch-tasks-status for its result.
+    return await start_manual_sync(_manual_sync_run_store(), get_tenant_context(), str(kb_id))
+
+
+@router.get(
+    "/kb-batch-tasks-status",
+    dependencies=[Depends(auth)],
+    summary="Status of the KB's manual sync: the run in progress, else the last run's result",
+)
+async def get_manual_sync_status(
+    kb_id: UUID,
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
+):
+    # Answers 404 for an unknown or deleted knowledge base.
+    await knowledge_service.get_by_id(kb_id)
+    return await _manual_sync_run_store().status(get_tenant_context(), str(kb_id))
