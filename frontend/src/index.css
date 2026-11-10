@@ -616,8 +616,36 @@ input[type="checkbox"]:hover {
 .hover-grid-tile[data-lit="hot"] { background: #204bff; }
 .hover-grid-tile[data-lit="warm"] { background: rgb(32 75 255 / 0.55); }
 .hover-grid-tile[data-lit="faint"] { background: rgb(32 75 255 / 0.18); transition-duration: 1.4s; }
+/* Thinking mark (AssistantMotion.tsx ThinkingCubes): a 3×3 of tiny tiles lighting up in turn. */
+.ai-cubes {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 4px);
+  gap: 1.5px;
+  vertical-align: -1px;
+}
+.ai-cubes span {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+  background: hsl(var(--foreground) / 0.12);
+  animation: ai-cube 1.8s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * 0.11s);
+}
+/* The centre tile (order 8) breathes on its own beat. */
+.ai-cubes span:nth-child(5) { animation: ai-cube-core 1.8s ease-in-out infinite; }
+@keyframes ai-cube {
+  0%, 60%, 100% { background: hsl(var(--foreground) / 0.12); transform: scale(1); }
+  8% { background: #204bff; transform: scale(1.25); }
+  30% { background: rgb(32 75 255 / 0.45); transform: scale(1); }
+}
+@keyframes ai-cube-core {
+  0%, 100% { background: rgb(32 75 255 / 0.35); }
+  50% { background: #204bff; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .ai-shimmer-text, .ai-typing-dots span, .ai-thinking-ring, .ai-thinking-spark, .ai-caret, .ai-step-in, .ai-rise-in { animation: none; }
+  .ai-shimmer-text, .ai-typing-dots span, .ai-thinking-ring, .ai-thinking-spark, .ai-caret, .ai-step-in, .ai-rise-in, .ai-cubes span { animation: none; }
+  .ai-cubes span:nth-child(5) { background: #204bff; }
   .hover-grid-tile { transition: none; }
   .ai-shimmer-text { color: hsl(var(--muted-foreground)); background: none; }
 }

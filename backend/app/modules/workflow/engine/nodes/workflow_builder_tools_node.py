@@ -13,15 +13,24 @@ import logging
 from typing import Any, Dict, List
 
 from app.modules.workflow.agents.base_tool import BaseTool
-from app.modules.workflow.builder.tools import TOOL_DEFINITIONS, make_executor, run_tool
+from app.modules.workflow.builder.tools import TOOL_DEFINITIONS, make_executor, run_tool, turn_context
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
 
 logger = logging.getLogger(__name__)
 
+# A plan or a prompt is one long tool argument. Claude returns a tool call that
+# outgrew max_tokens with its arguments empty, so the builder needs this much room
+# whatever the provider form says (1,024, the old form default, broke every plan).
+MIN_MAX_TOKENS = 16000
+
 
 class WorkflowBuilderToolsNode(BaseNode):
     """Exposes the Workflow Builder tool set to a connected agent."""
+
+    def model_requirements(self) -> Dict[str, Any]:
+        """What the connected agent's model needs to drive these tools (see AgentNode)."""
+        return {"min_max_tokens": MIN_MAX_TOKENS}
 
     def get_tools(self) -> List[BaseTool]:
         # An empty selection means "all tools"; the node is useless with none.
@@ -45,6 +54,10 @@ class WorkflowBuilderToolsNode(BaseNode):
                 )
             )
         return tools
+
+    async def turn_context(self) -> str:
+        """The workflow outline, handed to the agent with each message (see AgentNode)."""
+        return await turn_context(self.get_state().get_thread_id())
 
     async def process(self, config: Dict[str, Any]) -> Any:
         """Run one tool directly (node test); in a workflow the agent calls the tools."""

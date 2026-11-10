@@ -48,6 +48,32 @@ def _react_system_prompt(
     return build_cacheable_system_message(stable, volatile), (True, None)
 
 
+def _log_run_usage(agent_type: str, node_id: str, result: Any) -> None:
+    """One line per agent run with the numbers a cost question starts from: how many
+    model calls the turn took and what they read and wrote. Best effort, never raises."""
+    try:
+        usage = result.get("llm_usage") if isinstance(result, dict) else None
+        if not usage:
+            return
+        from app.core.utils.llm_usage_utils import extract_cache_tokens
+
+        entries = [u for u in usage if isinstance(u, dict)]
+        input_tokens = sum(int(u.get("input_tokens") or 0) for u in entries)
+        output_tokens = sum(int(u.get("output_tokens") or 0) for u in entries)
+        cached = sum(extract_cache_tokens(u.get("token_details"))[0] for u in entries)
+        logger.info(
+            "Agent run %s node=%s: %d model calls, %d input tokens (%d read from cache), %d output tokens",
+            agent_type,
+            node_id,
+            len(entries),
+            input_tokens,
+            cached,
+            output_tokens,
+        )
+    except Exception:
+        logger.debug("Could not summarise the run's LLM usage", exc_info=True)
+
+
 async def run_agent_once(
     *,
     state: "WorkflowState",
@@ -65,14 +91,18 @@ async def run_agent_once(
     stable_tool_names: Optional[frozenset[str]] = None,
     prompt_caching_enabled: bool = False,
     on_token: Optional["TokenSink"] = None,
+    min_max_tokens: Optional[int] = None,
 ) -> AgentRunResult:
     """Pick the LLM if needed, create the agent for ``agent_type``, run it once,
-    add its token usage to ``state``, and return a normalized result"""
+    add its token usage to ``state``, and return a normalized result.
+    ``min_max_tokens`` raises the provider's output limit for this agent (see LLMProvider)"""
     if llm_model is None:
         from app.dependencies.injector import injector
 
         llm_provider = injector.get(LLMProvider)
-        llm_model = await llm_provider.get_model_for_node(provider_id, fallback_chain_id, prompt_caching_enabled)
+        llm_model = await llm_provider.get_model_for_node(
+            provider_id, fallback_chain_id, prompt_caching_enabled, min_max_tokens=min_max_tokens
+        )
         logger.info("Agent type selected: %s, LLM model: %s", agent_type, llm_model)
 
     # The decision always reads back the branch's own split outcome, so the diagnostic
@@ -131,6 +161,7 @@ async def run_agent_once(
     from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
 
     await merge_llm_usage_from_result(state, result, node_id, provider_id, prompt_caching_enabled)
+    _log_run_usage(agent_type, node_id, result)
 
     if prompt_caching_enabled and applied and not (result.get("status") == "error" and not result.get("llm_usage")):
         from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics

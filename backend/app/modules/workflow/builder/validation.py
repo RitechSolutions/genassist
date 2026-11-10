@@ -53,6 +53,18 @@ FILTER_OPERATORS_WITHOUT_VALUE = {"is_empty", "is_not_empty"}
 # it is clearly being used for instructions.
 USER_PROMPT_LITERAL_LIMIT = 40
 
+# The keys a node's output has, as the node after it sees them in {{source.<key>}}.
+# Only shapes the engine fixes are listed; a type missing here is not checked.
+SOURCE_SHAPES: Dict[str, Set[str]] = {
+    "agentNode": {"message", "steps", "tools_used"},
+    "pythonCodeNode": {"result", "output", "errors", "script_error", "error"},
+}
+# The key a step after that node almost always wants.
+SOURCE_HINTS = {"agentNode": "message", "pythonCodeNode": "result"}
+
+# params.get("source.result") / params.get("node_outputs.n3.result") in Python code.
+_CODE_PARAM_REF = re.compile(r'params?\.get\(\s*["\']([A-Za-z_]\w*)(?:\.([^"\']+))?["\']')
+
 
 @dataclass
 class Issue:
@@ -96,6 +108,23 @@ def _node_name(node: Dict[str, Any]) -> str:
 
 def _is_empty(value: Any) -> bool:
     return value is None or value == "" or value == [] or value == {}
+
+
+def _source_shape(node: Optional[Dict[str, Any]]) -> Optional[Set[str]]:
+    """The output keys of ``node`` when the engine fixes them, else None."""
+    if not node:
+        return None
+    if node.get("type") == "pythonCodeNode" and (node.get("data") or {}).get("unwrap"):
+        return None  # unwrap hands the raw return value on
+    return SOURCE_SHAPES.get(node.get("type", ""))
+
+
+def _data_refs(text: str) -> Iterable[tuple]:
+    """(root, rest) of every variable in ``text``: {{root.rest}} and params.get("root.rest")."""
+    for root, rest in _TEMPLATE_REF.findall(text):
+        yield root, rest
+    for root, rest in _CODE_PARAM_REF.findall(text):
+        yield root, rest
 
 
 def _iter_strings(value: Any, path: str = "") -> Iterable[tuple]:
@@ -454,6 +483,40 @@ def validate_workflow(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) 
                         add("source_without_input", WARNING,
                             f"'{_node_name(node)}'.{path} reads {{{{source.…}}}} but the node has no incoming "
                             f"connection.", node, path)
+
+        # ── Reading a key the previous node never outputs ─────────────────
+        # {{source.result}} after an agent, or params.get("source.data") in code after
+        # one, is empty at run time; the builder then rewrites the step blind.
+        incoming = incoming_main.get(node["id"]) or []
+        previous = by_id.get(incoming[0]["source"]) if len(incoming) == 1 and node["id"] not in subflow_nodes else None
+        for path, text in _iter_strings(data):
+            if path in placeholders:
+                continue
+            for root, rest in _data_refs(text):
+                if not rest:
+                    continue
+                if root == "source":
+                    producer = previous
+                    key, written = rest.split(".")[0], f"source.{rest.split('.')[0]}"
+                elif root == "node_outputs":
+                    parts = rest.split(".")
+                    if len(parts) < 2:
+                        continue
+                    producer, key = by_id.get(parts[0]), parts[1]
+                    written = f"node_outputs.{parts[0]}.{key}"
+                else:
+                    continue
+                shape = _source_shape(producer)
+                if shape is None or key in shape:
+                    continue
+                hint = SOURCE_HINTS.get(producer.get("type", ""), sorted(shape)[0])
+                base = written.rsplit(".", 1)[0]
+                # Ids are shown to the builder as aliases only inside {{node_outputs.…}}.
+                python_hint = f'params.get("{base}.{hint}")' if root == "source" else "the same path in params.get"
+                add("source_shape_mismatch", ERROR,
+                    f"'{_node_name(node)}'.{path} reads {{{{{written}}}}}, but '{_node_name(producer)}' "
+                    f"({producer['type']}) outputs {{{', '.join(sorted(shape))}}}, so that value is always "
+                    f"empty. Read {{{{{base}.{hint}}}}} instead (in Python {python_hint}).", node, path)
 
     return _dedupe(issues)
 

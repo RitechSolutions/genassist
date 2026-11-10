@@ -52,6 +52,9 @@ BUILDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
 # Node types whose providerId is filled with the tenant's default LLM provider.
 PROVIDER_NODE_TYPES = {"agentNode", "subAgentNode", "llmModelNode", "nlpNode"}
 
+# Steps that parse or compare the reply they receive instead of showing it to a person.
+PARSING_NODE_TYPES = {"pythonCodeNode", "dataMapperNode", "switchNode", "routerNode", "filterNode"}
+
 # Tool Builder plumbing the agent never writes by hand (add_tool generates it);
 # the outline shows the tool's parameter names instead.
 TOOL_PLUMBING_KEYS = {"forwardTemplate", "inputSchema"}
@@ -668,6 +671,28 @@ class WorkflowDraft:
                 f"Set each with set_node_field(node_id=\"{alias}\", field=..., value=...)."
             )
         return {"message": message, "node_id": node["id"], "alias": alias}
+
+    def quiet_parsing_agents(self, node_ids: List[str]) -> List[str]:
+        """
+        Turn memory off on these agents when every step their reply goes to parses
+        or compares it. A classifier that remembers earlier messages drifts and
+        costs tokens on every run; memory is for agents that talk to the person.
+        Returns the aliases changed.
+        """
+        changed: List[str] = []
+        for node_id in node_ids:
+            node = next((n for n in self.nodes if n["id"] == node_id), None)
+            if not node or node.get("type") != "agentNode" or not (node.get("data") or {}).get("memory"):
+                continue
+            readers = [
+                next((n for n in self.nodes if n["id"] == edge["target"]), None)
+                for edge in self.edges
+                if edge["source"] == node_id and (edge.get("sourceHandle") or "output") == "output"
+            ]
+            if readers and all(r is not None and r.get("type") in PARSING_NODE_TYPES for r in readers):
+                node["data"]["memory"] = False
+                changed.append(self.alias(node_id))
+        return changed
 
     def set_field(self, ref: str, field: str, value: Any) -> Dict[str, Any]:
         """Set one config field. ``value`` may arrive as text even for non-text fields."""

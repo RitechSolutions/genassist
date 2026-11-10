@@ -349,7 +349,9 @@ PATTERNS: Dict[str, Dict[str, Any]] = {
             "  {{node_outputs.n3.result}} the output of a specific earlier node, by its id from the outline "
             "(or its $temp id inside a plan), with the same shapes as above. Always works, wherever the node is.\n"
             "In pythonCodeNode code, read the same paths with params.get(\"session.message\"), "
-            "params.get(\"source.data\"), params.get(\"node_outputs.n3.result\") instead of braces.\n"
+            "params.get(\"source.message\") after an agent, params.get(\"source\") after a language model or "
+            "template step, params.get(\"source.data\") after an API step, params.get(\"node_outputs.n3.result\") "
+            "instead of braces; the path must be a literal string in the code.\n"
             "A bare name such as {{total}} is not a variable. finalize_workflow reports invalid ones."
         ),
     },

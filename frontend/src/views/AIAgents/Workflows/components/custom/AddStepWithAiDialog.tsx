@@ -3,6 +3,7 @@ import { Sparkles } from "lucide-react";
 
 import { AssistantComposer } from "@/components/AssistantComposer";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/dialog";
+import { BUILDER_MESSAGE_MAX_CHARS } from "@/views/AIAgents/Workflows/utils/builderLimits";
 
 interface Props {
   open: boolean;
@@ -60,6 +61,7 @@ export const AddStepWithAiDialog: React.FC<Props> = ({ open, onOpenChange, nodeN
             size="hero"
             autoFocus={open}
             placeholder="What should happen next?"
+            maxLength={BUILDER_MESSAGE_MAX_CHARS}
             onEscape={() => onOpenChange(false)}
             toolbar={<span className="text-[11px] text-muted-foreground">One step, connected to this output. Undo from the chat.</span>}
           />

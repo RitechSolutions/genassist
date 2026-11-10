@@ -912,3 +912,189 @@ class TestOptInThreading:
             chain=_fallback_chain(["p2"]),
         )
         assert flags == [requested] * 2
+
+
+# ── The second marker: the conversation up to the newest message ─────────────
+
+
+def _conversation(style: str, cache_conversation: bool = True) -> tuple[PromptCachingChatModel, _CapturingModel]:
+    inner = _CapturingModel()
+    return PromptCachingChatModel(inner=inner, cache_style=style, cache_conversation=cache_conversation), inner
+
+
+_POINT = {"cachePoint": {"type": "default"}}
+
+
+@pytest.mark.asyncio
+class TestConversationMarkerAnthropic:
+    async def test_the_newest_message_is_marked_through_the_call_option(self):
+        wrapper, inner = _conversation("anthropic")
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
+        assert inner.seen_kwargs[-1]["cache_control"] == {"type": "ephemeral"}
+        assert inner.last[1].content == "hi"  # the message itself travels unchanged
+
+    async def test_a_tool_result_ending_the_turn_is_marked_too(self):
+        wrapper, inner = _conversation("anthropic")
+        await wrapper.ainvoke(_loop_turn(ToolMessage(content="result", tool_call_id="tc1")))
+        assert inner.seen_kwargs[-1]["cache_control"] == {"type": "ephemeral"}
+
+    async def test_langchain_anthropic_puts_the_option_on_the_last_block_of_the_last_message(self):
+        """Pinned against the installed adapter: the payload the API receives carries both markers."""
+        from langchain_anthropic import ChatAnthropic
+
+        model = ChatAnthropic(model="claude-sonnet-5-5", api_key="x")
+        wrapper = PromptCachingChatModel(inner=model, cache_style="anthropic", cache_conversation=True)
+        marked, kwargs = wrapper._prepare(_loop_turn(ToolMessage(content="result", tool_call_id="tc1")), None, {})
+
+        payload = model._get_request_payload(marked, **kwargs)
+
+        assert payload["system"][0]["cache_control"] == {"type": "ephemeral"}
+        last_block = payload["messages"][-1]["content"][-1]
+        assert last_block["type"] == "tool_result"
+        assert last_block["cache_control"] == {"type": "ephemeral"}
+        assert str(payload).count("cache_control") == 2
+
+    async def test_no_marked_system_prefix_means_no_conversation_marker(self):
+        wrapper, inner = _conversation("anthropic")
+        await wrapper.ainvoke([SystemMessage(content="plain"), HumanMessage(content="hi")])
+        await wrapper.ainvoke([HumanMessage(content="hi")])
+        assert all("cache_control" not in kw for kw in inner.seen_kwargs)
+
+    async def test_the_option_is_off_by_default_and_when_disabled(self):
+        wrapper, inner = _wrap("anthropic")
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
+        disabled, inner2 = _conversation("anthropic", cache_conversation=False)
+        await disabled.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi")])
+        assert "cache_control" not in inner.seen_kwargs[-1]
+        assert "cache_control" not in inner2.seen_kwargs[-1]
+
+    async def test_a_callers_own_option_wins(self):
+        wrapper, inner = _conversation("anthropic")
+        await wrapper.ainvoke(
+            [build_cacheable_system_message("stable"), HumanMessage(content="hi")],
+            cache_control={"type": "ephemeral", "ttl": "1h"},
+        )
+        assert inner.seen_kwargs[-1]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+
+    async def test_a_turn_ending_in_an_assistant_message_is_left_alone(self):
+        wrapper, inner = _conversation("anthropic")
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi"), AIMessage(content="pre")])
+        assert "cache_control" not in inner.seen_kwargs[-1]
+
+    async def test_bind_tools_keeps_the_conversation_marker(self):
+        wrapper, _ = _conversation("anthropic")
+        bound = wrapper.bind_tools([{"name": "search"}])
+        assert bound.cache_conversation is True
+
+
+@pytest.mark.asyncio
+class TestConversationMarkerBedrock:
+    async def test_a_cache_point_is_appended_to_a_copy_of_the_newest_message(self):
+        wrapper, inner = _conversation("bedrock_converse")
+        human = HumanMessage(content="hi")
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), human])
+        assert inner.last[-1].content == [{"type": "text", "text": "hi"}, _POINT]
+        assert human.content == "hi"
+        assert "cache_control" not in inner.seen_kwargs[-1]
+
+    async def test_the_real_formatter_places_it_after_the_tool_result(self):
+        wrapper, inner = _conversation("bedrock_converse")
+        await wrapper.ainvoke(_loop_turn(ToolMessage(content="result", tool_call_id="tc1")))
+
+        messages, system = _messages_to_bedrock(inner.last)
+
+        assert system[-1] == _POINT
+        last = messages[-1]
+        assert last["role"] == "user"
+        assert last["content"][0]["toolResult"]["content"] == [{"text": "result"}]
+        assert last["content"][0]["toolResult"]["toolUseId"] == "tc1"
+        assert last["content"][-1] == _POINT
+        assert str(messages).count("cachePoint") == 1
+
+    async def test_block_content_gets_the_point_appended_once(self):
+        wrapper, inner = _conversation("bedrock_converse")
+        human = HumanMessage(content=[{"type": "text", "text": "hi"}, _POINT])
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), human])
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content=[{"type": "text", "text": "hi"}])])
+        assert inner.seen[0][-1].content == [{"type": "text", "text": "hi"}, _POINT]
+        assert inner.seen[1][-1].content == [{"type": "text", "text": "hi"}, _POINT]
+
+    async def test_blank_or_assistant_last_messages_are_left_alone(self):
+        wrapper, inner = _conversation("bedrock_converse")
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="   ")])
+        await wrapper.ainvoke([build_cacheable_system_message("stable"), HumanMessage(content="hi"), AIMessage(content="pre")])
+        assert inner.seen[0][-1].content == "   "
+        assert inner.seen[1][-1].content == "pre"
+
+    async def test_repeated_invocations_do_not_accumulate_points(self):
+        wrapper, inner = _conversation("bedrock_converse")
+        messages = [build_cacheable_system_message("stable"), HumanMessage(content="hi")]
+        await wrapper.ainvoke(messages)
+        await wrapper.ainvoke(messages)
+        assert inner.seen[0][-1].content == inner.seen[1][-1].content == [{"type": "text", "text": "hi"}, _POINT]
+
+
+@pytest.mark.asyncio
+class TestConversationMarkerOptIn:
+    async def test_anthropic_builds_with_the_conversation_marker_on(self):
+        llm, _ = await _build("anthropic", {"api_key": "k"})
+        assert llm.cache_conversation is True
+
+    async def test_bedrock_claude_builds_with_it_on_and_nova_without(self):
+        claude, _ = await _build("bedrock", {}, "eu.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        nova, _ = await _build("bedrock", {}, "eu.amazon.nova-2-lite-v1:0")
+        assert claude.cache_conversation is True
+        assert nova.cache_conversation is False
+
+
+@pytest.mark.asyncio
+class TestMaxTokensFloorThreading:
+    """``min_max_tokens`` reaches the one place a provider row becomes a model."""
+
+    @staticmethod
+    def _floors(build):
+        return [call.kwargs.get("min_max_tokens") for call in build.await_args_list]
+
+    async def _run(self, coro_factory, chain=None):
+        build = AsyncMock(return_value=MagicMock(name="built-model"))
+        with _patch_provider_lookups(chain), patch.object(LLMProvider, "_build_from_provider", build):
+            await coro_factory(LLMProvider())
+        return self._floors(build)
+
+    async def test_get_model_for_node_without_a_chain(self):
+        assert await self._run(lambda p: p.get_model_for_node("p1", None, True, min_max_tokens=16000)) == [16000]
+
+    async def test_every_child_of_a_chain(self):
+        floors = await self._run(
+            lambda p: p.get_model_for_node("p1", "chain-1", False, min_max_tokens=16000),
+            chain=_fallback_chain(["p2", "p3"]),
+        )
+        assert floors == [16000, 16000, 16000]
+
+    async def test_no_floor_by_default(self):
+        assert await self._run(lambda p: p.get_model_for_node("p1", None, True)) == [None]
+
+    async def test_the_floor_is_applied_to_the_stored_form_values(self):
+        """End to end through _build_from_provider: the stored 1,024 becomes 16,000; a higher value stays."""
+        from types import SimpleNamespace
+
+        built = []
+
+        async def fake_build(**kwargs):
+            built.append(kwargs["connection_data"])
+            return MagicMock(name="model")
+
+        inj = MagicMock(get=MagicMock(return_value=MagicMock()))
+        with patch("app.dependencies.injector.injector", inj), patch(
+            "app.core.data_residency.assert_provider_residency", AsyncMock()
+        ), patch("app.core.data_residency.bedrock_regions_from_connection_data", return_value=[]), patch(
+            "app.core.utils.db_connection_utils.release_idle_connection", AsyncMock()
+        ), patch("app.modules.workflow.llm.provider.build_chat_model", fake_build):
+            provider = LLMProvider()
+            low = SimpleNamespace(id="p1", llm_model_provider="vllm", llm_model="m", connection_data={"max_tokens": 1024})
+            high = SimpleNamespace(id="p2", llm_model_provider="vllm", llm_model="m", connection_data={"max_tokens": 32000})
+            await provider._build_from_provider(low, min_max_tokens=16000)
+            await provider._build_from_provider(high, min_max_tokens=16000)
+            await provider._build_from_provider(low)
+
+        assert [c["max_tokens"] for c in built] == [16000, 32000, 1024]

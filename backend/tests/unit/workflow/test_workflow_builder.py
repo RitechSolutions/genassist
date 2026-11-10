@@ -1279,12 +1279,56 @@ def test_report_quotes_tool_errors_and_states_setup_completeness():
     assert "Setup still missing on the canvas:" in format_test_result(bare, "x", {"output": {}, "state": {}})
 
 
-def test_prompt_describes_the_four_call_turn():
+def test_prompt_describes_the_three_call_turn():
     from app.db.seed.knowledge.generate_workflow_builder_workflow import build_system_prompt
 
     prompt = build_system_prompt()
-    assert "get_workflow, apply_plan, test_workflow with finalize_if_ok, then your reply" in prompt
+    assert "A normal turn is three calls: apply_plan, test_workflow with finalize_if_ok, then your reply" in prompt
+    # The outline arrives with the message; the agent is not told to fetch it first.
+    assert "Start every turn with get_workflow" not in prompt
+    assert "Every message arrives with the current workflow outline" in prompt
     assert "Repeat that error to the person as it is" in prompt
+
+
+def test_turn_context_is_the_outline_framed_for_the_message(monkeypatch):
+    from app.modules.workflow.builder import tools
+
+    draft = chatbot()
+
+    async def fake_load(thread_id):
+        return draft if thread_id == "canvas" else None
+
+    monkeypatch.setattr(tools, "load_draft", fake_load)
+
+    async def scenario():
+        context = await tools.turn_context("canvas")
+        assert context.startswith(tools.TURN_CONTEXT_HEADER + "\n")
+        assert context.endswith("\n\n" + tools.TURN_CONTEXT_FOOTER)
+        # The same outline get_workflow returns, so the two never disagree.
+        assert await tools.workflow_outline("canvas") in context
+        assert await tools.run_tool("canvas", "get_workflow", {}) == await tools.workflow_outline("canvas")
+        # No draft yet: the agent is told the workflow is empty, not handed an error.
+        assert "WORKFLOW (empty)" in await tools.turn_context("nobody")
+
+    asyncio.run(scenario())
+    assert "arrives with it" in next(t for t in tools.TOOL_DEFINITIONS if t["name"] == "get_workflow")["description"]
+
+
+def test_builder_tools_node_hands_the_outline_to_the_agent_each_turn(monkeypatch):
+    from app.modules.workflow.builder import tools
+    from app.modules.workflow.engine.nodes import WorkflowBuilderToolsNode
+
+    seen = []
+
+    async def fake_turn_context(thread_id):
+        seen.append(thread_id)
+        return "OUTLINE"
+
+    monkeypatch.setattr("app.modules.workflow.engine.nodes.workflow_builder_tools_node.turn_context", fake_turn_context)
+    node = WorkflowBuilderToolsNode("tools", {"data": {"name": "Workflow Builder Tools"}}, _State())
+
+    assert asyncio.run(node.turn_context()) == "OUTLINE"
+    assert seen == ["thread-1"]
 
 
 # ── Focused AI actions (assist) ───────────────────────────────────────────
@@ -1712,3 +1756,277 @@ def test_add_step_proposes_one_node_connected_from_the_chosen_output(monkeypatch
         asyncio.run(assist.run_action(draft2, "add_step", [switch_id], "thank them", source_handle="output_nope"))
     with pytest.raises(ValueError):
         asyncio.run(assist.run_action(draft2, "add_step", [switch_id], "   "))
+
+
+# ── Lessons from the Northstar Support triage run (24 model calls, $0.40) ───────
+
+
+def test_reading_a_key_the_previous_node_never_outputs_is_an_error():
+    """Eight calls went into discovering that an agent's output has no `result`."""
+    draft = WorkflowDraft()
+    draft.add_node("chatInputNode", "Start")
+    draft.add_node("agentNode", "Analyst", {"systemPrompt": "Classify."}, connect_from="n1")
+    draft.add_node("pythonCodeNode", "Parse", {"code": (
+        "import json\n\ndef executable_function(params):\n"
+        "    raw = params.get(\"source.result\") or params.get(\"source.data\") or \"\"\n"
+        "    return json.loads(raw)\n"
+    )}, connect_from="n2")
+    draft.add_node("templateNode", "Reply", {"template": "{{source.result.category}} / {{node_outputs.n2.result}}"},
+                   connect_from="n3")
+    draft.add_node("chatOutputNode", "Out", connect_from="n4")
+
+    mismatches = [i for i in draft.issues() if i.code == "source_shape_mismatch"]
+    assert {(i.node_id, i.field) for i in mismatches} == {(draft.find("n3")["id"], "code"), (draft.find("n4")["id"], "template")}
+    code_issue = next(i for i in mismatches if i.field == "code")
+    assert "source.result" in code_issue.message and "outputs {message, steps, tools_used}" in code_issue.message
+    assert 'params.get("source.message")' in code_issue.message
+    # The template after the Python step reads source.result correctly; only node_outputs.n2.result is wrong.
+    template_issue = draft.describe_issue(next(i for i in mismatches if i.field == "template"))
+    assert "node_outputs.n2.result" in template_issue and "source.result" not in template_issue
+    assert "source_shape_mismatch" in draft.open_problems()
+
+    # The right paths are quiet.
+    draft.set_field("n3", "code", (
+        "import json\n\ndef executable_function(params):\n"
+        "    try:\n        return json.loads(params.get(\"source.message\") or \"\")\n"
+        "    except Exception:\n        return {\"category\": \"general\"}\n"
+    ))
+    draft.set_field("n4", "template", "{{source.result.category}} / {{node_outputs.n2.message}}")
+    assert not [i for i in draft.issues() if i.code == "source_shape_mismatch"]
+
+    # An unknown upstream shape (an API step) and an unwrapped Python step are not judged.
+    draft.update_node("n3", {"unwrap": True})
+    draft.set_field("n4", "template", "{{source.anything}}")
+    assert not [i for i in draft.issues() if i.code == "source_shape_mismatch"]
+
+
+def test_the_catalog_tells_the_builder_what_an_agent_outputs():
+    text = catalog.node_schema_text("pythonCodeNode")
+    assert 'params.get("source.message")' in text and '"steps"' in text and "json.loads" in text
+    assert 'params.get("source.data")' not in text.split("after an apiToolNode")[0].split("Which path exists")[0]
+    assert "{{source.message}}" in catalog.node_schema_text("agentNode")
+    from app.modules.workflow.builder import patterns
+
+    assert 'params.get("source.message") after an agent' in patterns.describe("variables")
+
+
+def test_an_agent_whose_reply_feeds_a_parser_is_created_without_memory():
+    from app.modules.workflow.builder.tools import apply_plan
+
+    draft = WorkflowDraft()
+    draft.add_node("chatInputNode", "Start")
+    report = apply_plan(draft, [
+        {"op": "add_node", "id": "$analyst", "node_type": "agentNode", "name": "Analyst",
+         "system_prompt": "Classify the message.", "connect_from": "n1"},
+        {"op": "add_node", "id": "$parse", "node_type": "pythonCodeNode", "name": "Parse",
+         "config": {"code": "def executable_function(params):\n    return {\"c\": params.get(\"source.message\")}\n"},
+         "connect_from": "$analyst"},
+        {"op": "add_node", "id": "$helper", "node_type": "agentNode", "name": "Helper",
+         "system_prompt": "Help the customer.", "connect_from": "$parse"},
+        {"op": "add_node", "id": "$out", "node_type": "chatOutputNode", "name": "Reply", "connect_from": "$helper"},
+        {"op": "add_node", "id": "$chosen", "node_type": "agentNode", "name": "Chosen",
+         "system_prompt": "Classify, but remember.", "config": {"memory": True}},
+        {"op": "add_node", "id": "$sw", "node_type": "switchNode", "name": "Route",
+         "config": {"switchValue": "{{source.message}}", "cases": [{"label": "A", "value": "a"}]},
+         "connect_from": "$chosen"},
+    ])
+
+    assert "FAILED" not in report
+    assert draft.find("Analyst")["data"]["memory"] is False  # its reply is parsed by code
+    assert draft.find("Helper")["data"]["memory"] is True  # it talks to the person
+    assert draft.find("Chosen")["data"]["memory"] is True  # the builder said so explicitly
+    assert "Memory turned off on n2:" in report and "parses or compares" in report
+
+
+def test_a_change_and_a_test_sent_in_the_same_step_test_the_changed_workflow(monkeypatch):
+    """The agent loop runs one step's tool calls concurrently; the test must not read the draft
+    before a change sent with it has landed (two identical tests disagreed in the triage run)."""
+    from app.modules.workflow.builder import tools
+
+    draft = WorkflowDraft()
+    draft.add_node("chatInputNode", "Start")
+    draft.add_node("templateNode", "Echo", {"template": "You said: {{session.message}}"}, connect_from="n1")
+    draft.add_node("chatOutputNode", "Reply", connect_from="n2")
+    store = {"t": json.dumps(draft.to_dict())}
+
+    async def fake_load(thread_id):
+        await asyncio.sleep(0.01)  # a round trip to the store
+        return WorkflowDraft.from_dict(json.loads(store[thread_id])) if thread_id in store else None
+
+    async def fake_save(thread_id, draft):
+        await asyncio.sleep(0.02)  # the write takes longer than the test's read would
+        store[thread_id] = json.dumps(draft.to_dict())
+
+    monkeypatch.setattr(tools, "load_draft", fake_load)
+    monkeypatch.setattr(tools, "save_draft", fake_save)
+
+    async def one_step():
+        return await asyncio.gather(
+            tools.run_tool("t", "set_node_field", {"node_id": "n2", "field": "template", "value": "Echo: {{session.message}}"}),
+            tools.run_tool("t", "test_workflow", {"message": "hi"}),
+        )
+
+    written, tested = asyncio.run(one_step())
+    assert written.startswith("Updated n2: template.")
+    assert "Echo: hi" in tested and "You said" not in tested
+    assert "changed while this test was running" not in tested
+    assert WorkflowDraft.from_dict(json.loads(store["t"])).needs_test is False
+
+
+def test_a_test_report_made_stale_by_a_concurrent_change_says_so(monkeypatch):
+    from app.modules.workflow.builder import tools
+
+    store = {"t": json.dumps(chatbot().to_dict())}
+
+    async def fake_load(thread_id):
+        return WorkflowDraft.from_dict(json.loads(store[thread_id]))
+
+    async def fake_save(thread_id, draft):
+        store[thread_id] = json.dumps(draft.to_dict())
+
+    async def run_while_changing(draft, message, usage_sink=None, simulate_actions=None):
+        # A write lands after the test started (a call the model sent after the test in the same step).
+        await tools.run_tool("t", "set_node_field", {"node_id": "n2", "field": "systemPrompt", "value": "Be brief."})
+        return "TEST RUN — input: hi\nResponse: ok\nExecution (in order):\n- n2 agentNode \"Assistant\": success in 0.1s → ok\nNo node failed."
+
+    monkeypatch.setattr(tools, "load_draft", fake_load)
+    monkeypatch.setattr(tools, "save_draft", fake_save)
+    monkeypatch.setattr(tools, "run_draft_test", run_while_changing)
+
+    result = asyncio.run(tools.run_tool("t", "test_workflow", {"message": "hi", "finalize_if_ok": "true"}))
+
+    assert "NOTE: the workflow changed while this test was running" in result
+    assert "Workflow finalized" not in result
+    latest = WorkflowDraft.from_dict(json.loads(store["t"]))
+    assert latest.needs_test is True  # the changed version is still untested
+
+
+def test_repeated_outputs_are_quoted_once_in_a_test_report():
+    """The same knowledge base passage was quoted three times per report (tool node, wrapper, tool call)."""
+    from app.modules.workflow.builder.testing import format_test_result
+
+    draft = chatbot()
+    agent_id = draft.find("n2")["id"]
+    tool = draft.add_tool("n2", "knowledgeBaseNode", "Search Docs", "Search the docs.", {"selectedBases": ["kb-1"]})
+    kb_id, wrapper_id = draft.find(tool["node"])["id"], draft.find(tool["tool"])["id"]
+    passage = {"results": [{"text": "Precedence: incidents outrank billing; billing outranks sales. " + "More rules. " * 20}]}
+    short = {"ok": True}
+    text = format_test_result(draft, "hi", {
+        "output": {"message": "done"}, "failed_nodes": [],
+        "tool_events": [{"agent_id": agent_id, "tool_name": "Search Docs", "arguments": {"q": "precedence"},
+                         "status": "success", "result": passage}],
+        "state": {"nodeExecutionStatus": {
+            kb_id: {"type": "knowledgeBaseNode", "name": "Search Docs", "status": "success", "output": passage},
+            wrapper_id: {"type": "toolBuilderNode", "name": "Search Docs", "status": "success", "output": passage},
+            agent_id: {"type": "agentNode", "name": "Assistant", "status": "success", "output": short},
+            draft.find("n3")["id"]: {"type": "chatOutputNode", "name": "Reply", "status": "success", "output": short},
+        }},
+    })
+
+    assert text.count("Precedence: incidents outrank billing") == 1
+    assert text.count("(same output as ") == 2
+    assert text.count('{"ok": true}') == 2  # short outputs are always shown in full
+
+
+def test_test_run_usage_is_tagged_so_the_builders_own_cost_stays_apart(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.modules.workflow.builder.testing import run_draft_test
+    from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+    from app.modules.workflow.engine.workflow_state import BUILDER_TEST_RUN_PURPOSE
+
+    async def fake_execute(self, input_data, thread_id, persist, usage_sink):
+        usage_sink.append({"input_tokens": 10, "output_tokens": 2, "provider": "openai", "model": "gpt-4o", "purpose": None})
+        usage_sink.append({"input_tokens": 1, "output_tokens": 1, "provider": "openai", "model": "gpt-4o", "purpose": "compaction"})
+        return SimpleNamespace(format_state_as_response=lambda: {
+            "output": {"message": "hi"}, "failed_nodes": [], "state": {"nodeExecutionStatus": {}},
+        })
+
+    monkeypatch.setattr(WorkflowEngine, "execute_from_node", fake_execute)
+    draft = WorkflowDraft()  # no AI step, so no provider is needed to start the run
+    draft.add_node("chatInputNode", "Start")
+    draft.add_node("templateNode", "Echo", {"template": "{{session.message}}"}, connect_from="n1")
+    draft.add_node("chatOutputNode", "Reply", connect_from="n2")
+    sink: list = []
+    report = asyncio.run(run_draft_test(draft, "hello", usage_sink=sink))
+
+    assert "Response: hi" in report
+    assert [u["purpose"] for u in sink] == [BUILDER_TEST_RUN_PURPOSE, "compaction"]
+
+
+def test_the_agent_loop_narrates_parallel_tool_calls_into_the_turn_stream(monkeypatch):
+    """The thinking trail is fed by the step frames run_tool emits. The real agent loop runs the
+    calls of one step concurrently and through the new middleware; every call must still narrate."""
+    import contextvars
+    from types import SimpleNamespace
+
+    from langchain_core.language_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    from app.core import turn_stream
+    from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
+    from app.modules.workflow.builder import tools
+    from app.modules.workflow.engine.nodes.workflow_builder_tools_node import WorkflowBuilderToolsNode
+
+    store = {"t": json.dumps(chatbot().to_dict())}
+
+    async def fake_load(thread_id):
+        return WorkflowDraft.from_dict(json.loads(store[thread_id])) if thread_id in store else None
+
+    async def fake_save(thread_id, draft):
+        store[thread_id] = json.dumps(draft.to_dict())
+
+    monkeypatch.setattr(tools, "load_draft", fake_load)
+    monkeypatch.setattr(tools, "save_draft", fake_save)
+
+    class Scripted(BaseChatModel):
+        replies: list = []
+        calls: int = 0
+
+        @property
+        def _llm_type(self) -> str:
+            return "scripted"
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+            self.calls += 1
+            return ChatResult(generations=[ChatGeneration(message=self.replies[self.calls - 1])])
+
+        async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+            return self._generate(messages, stop, run_manager, **kwargs)
+
+    model = Scripted(replies=[
+        AIMessage(content="", tool_calls=[
+            {"name": "get_workflow", "args": {}, "id": "c1", "type": "tool_call"},
+            {"name": "lookup_node", "args": {"query": "pythonCodeNode"}, "id": "c2", "type": "tool_call"},
+        ]),
+        AIMessage(content="Done."),
+    ])
+    state = SimpleNamespace(
+        get_thread_id=lambda: "t", llm_usage=[], workflow={"nodes": [], "edges": []}, target_edges={},
+        set_node_input=lambda *a, **k: None, initial_values={},
+    )
+    node = WorkflowBuilderToolsNode("tools", {"type": "workflowBuilderToolsNode", "data": {}}, state)
+
+    async def scenario():
+        stream = turn_stream.TurnStream("conv")
+        turn_stream.current_stream.set(stream)
+        agent = ReActAgentLC(llm_model=model, system_prompt="sys", tools=node.get_tools(), max_iterations=5)
+        result = await agent.invoke("hi")
+        frames = []
+        while not stream.queue.empty():
+            frames.append(stream.queue.get_nowait())
+        return result, frames
+
+    result, frames = contextvars.copy_context().run(lambda: asyncio.run(scenario()))
+
+    assert result["status"] == "success" and result["response"] == "Done."
+    events = [json.loads(f.split("data: ", 1)[1]) for f in frames if f.startswith("event: step")]
+    assert sorted((e["phase"], e["text"]) for e in events) == sorted([
+        ("start", "Reading the workflow"), ("end", "Reading the workflow"),
+        ("start", "Looking up “pythonCodeNode”"), ("end", "Looking up “pythonCodeNode”"),
+    ])
+    assert [t["tool_name"] for t in result["tools_used"]] == ["get_workflow", "lookup_node"]

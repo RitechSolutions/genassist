@@ -52,6 +52,8 @@ type AssistantComposerProps = {
   autoFocus?: boolean;
   /** Fired on Escape with an empty field (closing a dialog). */
   onEscape?: () => void;
+  /** Hard cap on the message length; a counter appears as the text nears it. */
+  maxLength?: number;
 };
 
 interface Picker {
@@ -86,8 +88,23 @@ export function AssistantComposer({
   size = "inline",
   autoFocus = false,
   onEscape,
+  maxLength,
 }: AssistantComposerProps) {
   const canSend = value.trim().length > 0 && !busy;
+  // Shown only near the cap, so a silently truncated paste is never a mystery.
+  const nearLimit = maxLength !== undefined && value.length >= maxLength * 0.9;
+  const counter =
+    maxLength !== undefined && nearLimit ? (
+      <span
+        aria-live="polite"
+        className={cn(
+          "shrink-0 text-[11px] tabular-nums",
+          value.length >= maxLength ? "text-destructive" : "text-muted-foreground"
+        )}
+      >
+        {value.length.toLocaleString()} / {maxLength.toLocaleString()}
+      </span>
+    ) : null;
   const hero = size === "hero";
   const twoRows = hero || Boolean(toolbar);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
@@ -324,6 +341,7 @@ export function AssistantComposer({
           }}
           onBlur={() => setPicker(null)}
           placeholder={placeholder}
+          maxLength={maxLength}
           disabled={busy}
           aria-label={placeholder}
           className={cn(
@@ -336,10 +354,14 @@ export function AssistantComposer({
         {twoRows ? (
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-1.5">{toolbar}</div>
+            {counter}
             <SendButton onClick={submit} disabled={!canSend} />
           </div>
         ) : (
-          <SendButton onClick={submit} disabled={!canSend} />
+          <>
+            {counter && <span className="mb-2 flex shrink-0 items-center">{counter}</span>}
+            <SendButton onClick={submit} disabled={!canSend} />
+          </>
         )}
       </div>
     </div>

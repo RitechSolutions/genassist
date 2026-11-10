@@ -53,7 +53,11 @@ _NODE_ID = "Node id from the workflow outline, e.g. \"n3\"."
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     {
         "name": "get_workflow",
-        "description": "The workflow outline: nodes with ids, settings, connections, open issues, workspace resources. Call first every turn.",
+        "description": (
+            "The workflow outline again: nodes with ids, settings, connections, open issues, workspace "
+            "resources. Every message already arrives with it; call this after your changes when you "
+            "need the whole picture (each change also returns what is still open)."
+        ),
         "parameters": {},
     },
     {
@@ -271,6 +275,8 @@ def apply_plan(draft: WorkflowDraft, operations: Any) -> str:
     known: Dict[str, str] = {}
     lines: List[str] = []
     failures = 0
+    # Agents the plan created without choosing memory itself; decided once the plan's wiring is known.
+    agents_with_default_memory: List[str] = []
     for index, raw in enumerate(plan, 1):
         op = str(raw.get("op") or raw.get("action") or "").strip()
         temp_id = raw.get("id")
@@ -288,6 +294,8 @@ def apply_plan(draft: WorkflowDraft, operations: Any) -> str:
                 )
                 if temp_id:
                     known[temp_id] = result["alias"]
+                if args.get("node_type") == "agentNode" and "memory" not in (args.get("config") or {}):
+                    agents_with_default_memory.append(result["node_id"])
             elif op == "add_tool":
                 result = draft.add_tool(
                     args.get("agent_id"), args.get("node_type"), args.get("name") or "Tool",
@@ -313,6 +321,12 @@ def apply_plan(draft: WorkflowDraft, operations: Any) -> str:
             failures += 1
             label = f" ({temp_id})" if temp_id else ""
             lines.append(f"{index}. {op}{label} FAILED: {exc}")
+    quieted = draft.quiet_parsing_agents(agents_with_default_memory)
+    if quieted:
+        lines.append(
+            f"Memory turned off on {', '.join(quieted)}: the reply goes to a step that parses or compares it, "
+            f"not to the person. Set memory to true only if it must remember the conversation."
+        )
     applied = len(plan) - failures
     header = f"Applied {applied} of {len(plan)} operations." + (
         f" {failures} failed; fix only those (later operations that referenced them failed too)."
@@ -412,8 +426,13 @@ async def _run_tool(
         return await describe_resources(str(args.get("kind", "")))
 
     if name == "test_workflow":
-        # Outside the lock: a run can take a while and must not block other tool calls.
-        draft = await load_draft(thread_id) or WorkflowDraft()
+        # The agent may send a change and this test in the same step, and the agent
+        # loop runs the calls of one step concurrently. Reading under the lock waits
+        # for a write that started first, so the run tests what was just written.
+        # The run itself stays outside the lock: it can take a while and must not
+        # block other tool calls.
+        async with _lock_for(thread_id):
+            draft = await load_draft(thread_id) or WorkflowDraft()
         if draft.failed_tests >= MAX_FAILED_TESTS:
             return (
                 f"STOP: {draft.failed_tests} test runs in a row have failed, so no more runs are allowed "
@@ -440,6 +459,12 @@ async def _run_tool(
                     if latest.revision == draft.revision and not test_found_code_error(result):
                         latest.needs_test = False
                     await save_draft(thread_id, latest)
+                    if latest.revision != draft.revision:
+                        result += (
+                            "\nNOTE: the workflow changed while this test was running, so this report is "
+                            "for the version before that change. Run test_workflow again to check the "
+                            "current version."
+                        )
                     if failure and latest.same_failure_count >= MAX_SAME_FAILURE:
                         result += (
                             f"\nSTOP AND RETHINK: this is the same failure {latest.same_failure_count} times "
@@ -464,14 +489,7 @@ async def _run_tool(
         return result
 
     if name == "get_workflow":
-        draft = await load_draft(thread_id) or WorkflowDraft()
-        outline = draft.render_outline()
-        if draft.authenticated:
-            # Listed here so a build needs no separate lookup call.
-            listing = await resources.summary()
-            if listing:
-                outline = f"{outline}\n{listing}"
-        return outline
+        return await workflow_outline(thread_id)
 
     if name == "ask_user":
         async with _lock_for(thread_id):
@@ -497,6 +515,33 @@ async def _run_tool(
             if name != "finalize_workflow":
                 result = f"{result}\n{draft.open_problems()}"
         return result
+
+
+async def workflow_outline(thread_id: str) -> str:
+    """The outline of the conversation's draft, with the workspace resources a signed-in build can use."""
+    draft = await load_draft(thread_id) or WorkflowDraft()
+    outline = draft.render_outline()
+    if draft.authenticated:
+        # Listed here so a build needs no separate lookup call.
+        listing = await resources.summary()
+        if listing:
+            outline = f"{outline}\n{listing}"
+    return outline
+
+
+TURN_CONTEXT_HEADER = (
+    "Current workflow, read for you before this turn (what get_workflow returns; call it again only "
+    "when you need the whole picture after your changes):"
+)
+TURN_CONTEXT_FOOTER = "The person's message follows."
+
+
+async def turn_context(thread_id: str) -> str:
+    """
+    The outline handed to the agent together with each message, so a turn starts
+    with the work instead of a model call that only asks for it.
+    """
+    return f"{TURN_CONTEXT_HEADER}\n{await workflow_outline(thread_id)}\n\n{TURN_CONTEXT_FOOTER}"
 
 
 def _node_name(draft: WorkflowDraft, ref: Any) -> Optional[str]:

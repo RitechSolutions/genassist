@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
 from app.core.config.llm_pricing import canonical_prompt_tokens
-from app.core.utils.llm_usage_utils import extract_cache_tokens, is_usage_metadata_missing
+from app.core.utils.llm_usage_utils import BUILDER_TEST_RUN_PURPOSE, extract_cache_tokens, is_usage_metadata_missing
 from app.modules.workflow.agents.memory import (
     BaseConversationMemory,
     ConversationMemory,
@@ -415,7 +415,12 @@ class WorkflowState:
             )
 
     def get_total_llm_usage(self) -> dict:
-        """Sum token usage and compute total cost in USD."""
+        """Sum token usage and compute total cost in USD.
+
+        Calls made by workflows the Workflow Builder test-ran (tagged with
+        ``BUILDER_TEST_RUN_PURPOSE``) are included in every total and also summed
+        under ``test_runs``, so a reader can tell the builder's own cost from the
+        cost of exercising what it built."""
         total_input = 0
         total_output = 0
         total_tokens = 0
@@ -425,6 +430,7 @@ class WorkflowState:
         unpriced_calls = 0
         fallback_calls = 0
         fallback_models = set()
+        test_runs = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
         from app.core.config.llm_pricing import resolve_live_pricing
         from app.services.llm_cost_calculator import LlmCostCalculator
         self.llm_cost_calculator = LlmCostCalculator()
@@ -461,6 +467,11 @@ class WorkflowState:
                     fallback_calls += 1
                     provider_key, model_key = ((u.get(k) or "").strip().lower() for k in ("provider", "model"))
                     fallback_models.add(f"{provider_key}/{model_key}")
+            if u.get("purpose") == BUILDER_TEST_RUN_PURPOSE:
+                test_runs["calls"] += 1
+                test_runs["input_tokens"] += prompt_tokens
+                test_runs["output_tokens"] += output_tokens
+                test_runs["cost_usd"] += cost or 0.0
         totals = {
             "input_tokens": total_input,
             "output_tokens": total_output,
@@ -476,6 +487,8 @@ class WorkflowState:
         if not (total_cache_read or total_cache_creation or self._prompt_caching_requested()):
             del totals["cache_read_tokens"]
             del totals["cache_creation_tokens"]
+        if test_runs["calls"]:
+            totals["test_runs"] = {**test_runs, "cost_usd": round(test_runs["cost_usd"], 6)}
         return totals
 
     def _prompt_caching_requested(self) -> bool:

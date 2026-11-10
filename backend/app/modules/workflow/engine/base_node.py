@@ -332,6 +332,38 @@ class BaseNode(ABC):
         logger.info("Node config: %s", truncate_for_log(str(config)))
         return f"Success on node_input: {node_input}"
 
+    def _instantiate_workflow_node(self, node_id: Any) -> Optional["BaseNode"]:
+        """The node object for ``node_id`` in this workflow, or None (logged) when the
+        workflow, the node or its type is unknown"""
+        from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+
+        workflow = self.get_state().workflow
+        if not workflow:
+            logger.warning("No workflow found in state for node %s", self.node_id)
+            return None
+        node_config = next((n for n in workflow.get("nodes", []) if n["id"] == node_id), None)
+        if not node_config:
+            logger.warning("Node config not found for node %s", node_id)
+            return None
+        node_type = node_config.get("type", "")
+        node_class = WorkflowEngine._node_registry.get(node_type)
+        if not node_class:
+            logger.warning("Unknown node type: %s for node %s", node_type, node_id)
+            return None
+        return node_class(node_id, node_config, self.get_state())
+
+    def attached_tool_nodes(self) -> list:
+        """The node objects wired into this node's tools handle, in edge order"""
+        target_edges = getattr(self.get_state(), "target_edges", None) or {}
+        nodes = []
+        for edge in target_edges.get(self.node_id, []):
+            if "tools" not in (edge.get("targetHandle") or ""):
+                continue
+            node = self._instantiate_workflow_node(edge.get("source"))
+            if node is not None:
+                nodes.append(node)
+        return nodes
+
     def get_connected_nodes(self, tag: Literal["tools", "starter", "true", "false", "default"]) -> list:
         """
         Get connected source nodes, optionally filtered by target handle, in BaseTool format.
@@ -372,35 +404,11 @@ class BaseNode(ABC):
             # Check if this is a "tools" type connection (for tools)
             if "tools" in edge_target_handle:
                 from app.modules.workflow.agents.base_tool import BaseTool
-                from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
                 source_node_id = edge.get("source")
-
-                # Get node config directly from the workflow state
-                workflow = self.get_state().workflow
-                if not workflow:
-                    logger.warning("No workflow found in state for node %s", self.node_id)
+                node = self._instantiate_workflow_node(source_node_id)
+                if node is None:
                     continue
-
-                # Find the node configuration in the workflow
-                node_config = None
-                for n in workflow.get("nodes", []):
-                    if n["id"] == source_node_id:
-                        node_config = n
-                        break
-
-                if not node_config:
-                    logger.warning("Node config not found for node %s", source_node_id)
-                    continue
-
-                # Get node type and instantiate using the class-level registry
-                node_type = node_config.get("type", "")
-                node_class = WorkflowEngine._node_registry.get(node_type)
-                if not node_class:
-                    logger.warning("Unknown node type: %s for node %s", node_type, source_node_id)
-                    continue
-
-                node = node_class(source_node_id, node_config, self.get_state())
 
                 if node:
                     # Check if node exposes multiple tools (e.g., MCP node)

@@ -24,6 +24,7 @@ import {
   type LiveTurn,
 } from "@/views/AIAgents/Workflows/utils/assistantDraft";
 import { BUILDER_EXAMPLES, EXAMPLES_PREVIEW_COUNT } from "@/views/AIAgents/Workflows/utils/builderExamples";
+import { BUILDER_MESSAGE_MAX_CHARS } from "@/views/AIAgents/Workflows/utils/builderLimits";
 import { AssistantMessageExtras, PendingChangeBar } from "./AssistantMessageExtras";
 import { MessageActions, ReasoningTrail, Typewriter, WorkSummary } from "./AssistantMotion";
 import { MentionedNodesRow, MentionText, NodeChip } from "./NodeChips";
@@ -257,6 +258,7 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
       commands={SLASH_COMMANDS}
       onMentionPick={pickMention}
       toolbar={composerToolbar}
+      maxLength={BUILDER_MESSAGE_MAX_CHARS}
     />
   );
 

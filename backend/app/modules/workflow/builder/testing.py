@@ -15,6 +15,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from app.core.utils.llm_usage_utils import BUILDER_TEST_RUN_PURPOSE
 from app.modules.workflow.builder.assist import ACTION_NODE_TYPES
 from app.modules.workflow.builder.draft import PROVIDER_NODE_TYPES, WorkflowDraft
 from app.modules.workflow.builder.validation import VISUAL_NODE_TYPES, blocking
@@ -27,7 +28,11 @@ RESPONSE_LIMIT = 2000
 CODE_ERROR_MARKER = "CODE ERROR"
 
 
-def _clip(value: Any, limit: int) -> str:
+# Outputs this long are quoted once; a repeat points at the first quote instead.
+DEDUPE_MIN_CHARS = 120
+
+
+def _text(value: Any) -> str:
     if isinstance(value, str):
         text = value
     else:
@@ -35,8 +40,26 @@ def _clip(value: Any, limit: int) -> str:
             text = json.dumps(value, ensure_ascii=False, default=str)
         except Exception:
             text = str(value)
-    text = text.strip()
+    return text.strip()
+
+
+def _clip(value: Any, limit: int) -> str:
+    text = _text(value)
     return text if len(text) <= limit else f"{text[:limit]}… (+{len(text) - limit} chars)"
+
+
+def _quote_once(value: Any, limit: int, label: str, shown: Dict[str, str]) -> str:
+    """
+    ``value`` clipped, the first time it appears in the report; afterwards a pointer to
+    where it was quoted. A passage a tool returned otherwise shows up three times: under
+    the knowledge base step, under its tool wrapper and again under the agent's tool calls.
+    """
+    text = _text(value)
+    if len(text) >= DEDUPE_MIN_CHARS:
+        if text in shown:
+            return f"(same output as {shown[text]})"
+        shown[text] = label
+    return _clip(text, limit)
 
 
 def _reply_text(output: Any) -> Any:
@@ -135,6 +158,7 @@ def format_test_result(
 
     lines.append("Execution (in order):")
     ran: set = set()
+    shown: Dict[str, str] = {}
     for key, entry in statuses.items():
         if not isinstance(entry, dict):
             continue
@@ -157,7 +181,7 @@ def format_test_result(
         else:
             lines.append(
                 f"- {label}: {entry.get('status', 'unknown')} in {seconds:.1f}s → "
-                f"{_clip(entry.get('output'), OUTPUT_LIMIT) or '(no output)'}"
+                f"{_quote_once(entry.get('output'), OUTPUT_LIMIT, draft.alias(node_id), shown) or '(no output)'}"
             )
     if len(lines) and lines[-1] == "Execution (in order):":
         lines.append("- nothing ran")
@@ -176,7 +200,7 @@ def format_test_result(
             else:
                 lines.append(
                     f"- {event.get('tool_name')}({_clip(event.get('arguments'), 200)}) "
-                    f"{event.get('status')}: {_clip(event.get('result'), 300)}"
+                    f"{event.get('status')}: {_quote_once(event.get('result'), 300, str(event.get('tool_name')), shown)}"
                 )
     if failed_tools:
         lines.append(
@@ -285,6 +309,9 @@ async def run_draft_test(
 
     from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
+    # The run's LLM calls are collected here, tagged as test-run usage, then handed to
+    # the caller's sink, so the builder's own cost and the cost of what it built stay apart.
+    collected: list = []
     try:
         engine = WorkflowEngine({"id": "workflow-builder-test", "nodes": nodes, "edges": edges})
         state = await asyncio.wait_for(
@@ -293,7 +320,7 @@ async def run_draft_test(
                 # A throwaway thread, so test turns never mix with a real conversation's memory.
                 thread_id=f"workflow-builder-test-{uuid4()}",
                 persist=False,
-                usage_sink=usage_sink,
+                usage_sink=collected,
             ),
             timeout=TEST_TIMEOUT_SECONDS,
         )
@@ -303,6 +330,12 @@ async def run_draft_test(
     except Exception as exc:
         logger.warning("Workflow builder test run failed: %s", exc, exc_info=True)
         return f"ERROR: the workflow could not be executed: {exc}"
+    finally:
+        if usage_sink is not None:
+            for entry in collected:
+                if isinstance(entry, dict) and not entry.get("purpose"):
+                    entry["purpose"] = BUILDER_TEST_RUN_PURPOSE
+            usage_sink.extend(collected)
 
     report = format_test_result(draft, message, response)
     if simulated:

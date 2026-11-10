@@ -63,8 +63,10 @@ def build_workflow(provider_id: str = DEFAULT_PROVIDER_ID) -> Dict[str, Any]:
             memory=True,
             memoryTrimmingMode="message_count",
             maxMessages=20,
-            # A new workflow takes one tool call per node plus lookups and validation.
-            maxIterations=40,
+            # Model calls per message. A normal turn is three (plan, test, reply); the
+            # worst case the test-loop guards allow is about a dozen. The last call is
+            # forced to be a reply, so a runaway turn ends with an answer, not an error.
+            maxIterations=16,
             promptCaching=True,
         ),
         _node(TOOLS_ID, "workflowBuilderToolsNode", 300, 520, name="Workflow Builder Tools"),

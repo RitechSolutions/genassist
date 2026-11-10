@@ -384,6 +384,46 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
 
         return _delegate
 
+    async def _attached_turn_context(self, attached: Optional[list] = None) -> str:
+        """
+        Text the tool-provider nodes attached to this agent want in front of this
+        turn's message: the Workflow Builder hands over the current workflow outline
+        so the agent needs no model call to read it. Best effort: a provider that
+        fails contributes nothing and the turn goes on.
+        """
+        parts = []
+        for node in self.attached_tool_nodes() if attached is None else attached:
+            hook = getattr(node, "turn_context", None)
+            if not callable(hook):
+                continue
+            try:
+                text = await hook()
+            except Exception:
+                logger.warning("turn_context of node %s failed", getattr(node, "node_id", "?"), exc_info=True)
+                continue
+            if text and str(text).strip():
+                parts.append(str(text).strip())
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _attached_min_max_tokens(attached: list) -> Optional[int]:
+        """
+        The output limit the attached tool-provider nodes need, or None. A node whose
+        tools take long arguments (the Workflow Builder's plans) asks for it through
+        ``model_requirements()``; the provider form's value is kept when it is higher.
+        """
+        floors = []
+        for node in attached:
+            hook = getattr(node, "model_requirements", None)
+            if not callable(hook):
+                continue
+            try:
+                floors.append(int((hook() or {}).get("min_max_tokens") or 0))
+            except Exception:
+                logger.warning("model_requirements of node %s failed", getattr(node, "node_id", "?"), exc_info=True)
+        floor = max(floors, default=0)
+        return floor or None
+
     def _timestamped_system_prompt(self, system_prompt: str) -> tuple[str, Optional[tuple[str, str]]]:
         """Full prompt with the timestamp appended, plus its (stable, volatile) parts.
         None when the raw template is volatile, so the prompt must not be cached"""
@@ -690,6 +730,15 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         # Get tools from connected nodes using the new generic method
         tools = self.get_connected_nodes("tools")
 
+        # Context a tool-provider node reads for this turn goes in front of the message;
+        # memory keeps the raw message, so it is sent once and never accumulates.
+        attached = self.attached_tool_nodes() if tools else []
+        min_max_tokens = self._attached_min_max_tokens(attached)
+        if tools:
+            turn_context = await self._attached_turn_context(attached)
+            if turn_context:
+                prompt = f"{turn_context}\n\n{prompt}"
+
         # Append a delegation tool per attached sub-agent child
         from app.modules.workflow.agents.sub_agents.graph import SubAgentTopologyError
 
@@ -758,6 +807,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 stable_volatile_parts=stable_volatile_parts,
                 prompt_caching_enabled=prompt_caching_enabled,
                 on_token=self.chat_token_sink(),
+                min_max_tokens=min_max_tokens,
             )
 
             # The agent caught an error internally and returned a standardized error response

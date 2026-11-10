@@ -10,6 +10,7 @@ import { QuestionCard } from "@/views/AIAgents/Workflows/components/panels/Assis
 import { MessageActions, ReasoningTrail, Typewriter, WorkSummary } from "@/views/AIAgents/Workflows/components/panels/AssistantMotion";
 import type { LiveTurn } from "@/views/AIAgents/Workflows/utils/assistantDraft";
 import { BUILDER_EXAMPLES, EXAMPLES_PREVIEW_COUNT } from "@/views/AIAgents/Workflows/utils/builderExamples";
+import { BUILDER_MESSAGE_MAX_CHARS } from "@/views/AIAgents/Workflows/utils/builderLimits";
 import type { OnboardingMessage } from "@/views/Onboarding/hooks/useOnboardingChat";
 
 interface OnboardingChatProps {
@@ -73,6 +74,7 @@ export const OnboardingChat = ({
       autoFocus={hero}
       placeholder={hero ? "Tell me what to build or ask a question" : "Reply to the builder..."}
       busy={disabled}
+      maxLength={BUILDER_MESSAGE_MAX_CHARS}
     />
   );
 

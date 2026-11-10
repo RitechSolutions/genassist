@@ -116,6 +116,22 @@ const StepRow: React.FC<{ step: AssistantStep; live: boolean }> = ({ step, live 
   );
 };
 
+// Order in which the nine tiles light: around the ring, then the centre.
+const CUBE_ORDER = [0, 1, 2, 7, 8, 3, 6, 5, 4];
+
+/**
+ * Nine tiny tiles, the same rounded squares as the hover grid, lighting up in
+ * sequence around a ring with the centre pulsing: the "working" mark in front
+ * of "Thinking". Pure CSS; still under reduced motion.
+ */
+export const ThinkingCubes: React.FC<{ className?: string }> = ({ className }) => (
+  <span className={cn("ai-cubes", className)} aria-hidden>
+    {CUBE_ORDER.map((order, index) => (
+      <span key={index} style={{ "--i": order } as React.CSSProperties} />
+    ))}
+  </span>
+);
+
 /**
  * The turn in progress: "Thinking · 3s" with a disclosure that lists what the
  * assistant is doing as it happens, and the reply text as it streams in below.
@@ -138,8 +154,9 @@ export const ReasoningTrail: React.FC<{ turn: LiveTurn | null }> = ({ turn }) =>
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         disabled={steps.length === 0}
-        className="inline-flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default"
+        className="inline-flex items-center gap-2 text-[13px] text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default"
       >
+        <ThinkingCubes />
         <span className="ai-shimmer-text">Thinking</span>
         <span>· {formatSeconds(elapsed)}</span>
         {steps.length > 0 && (open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
