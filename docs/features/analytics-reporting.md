@@ -120,7 +120,7 @@ full-recount fallback to correct any drift.
 - `thumbs_up_count` — incremented for GOOD/VERY_GOOD feedback
 - `thumbs_down_count` — incremented for BAD/VERY_BAD feedback
 
-The finalize and feedback hooks look up `agent_id` via `conversation → operator → agent` in the background task.
+The finalize and feedback routes pass the `agent_id` they loaded to their hooks.
 
 **Error handling**: Nothing propagates to the user. A failed flush is retried once; if the retry
 also fails, its bucket is dropped with a warning that names the event count. Graceful shutdown
