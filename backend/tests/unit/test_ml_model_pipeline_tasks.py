@@ -71,6 +71,43 @@ class TestTrainingSucceeded:
         }
         assert _training_succeeded(execution_output) is True
 
+    def test_true_when_a_leftover_train_model_failed_and_another_node_ran_last(self):
+        """
+        The real Train Model trains and is followed by another node (here a
+        Chat Output), while a broken leftover Train Model fails. The final
+        output is the Chat Output's, but a model was trained, so the run passes.
+        """
+        trained = {"success": True, "model_file_path": "train/model.pkl", "metrics": {"accuracy": 0.9}}
+        execution_output = {
+            "has_failures": True,
+            "failed_nodes": [
+                {"name": "Train Model (old)", "type": "trainModelNode", "error": "fileUrl is required"}
+            ],
+            "output": {"message": "Training finished"},
+            "state": {
+                "nodeExecutionStatus": {
+                    "train": {"type": "trainModelNode", "status": "success", "output": trained},
+                    "old": {"type": "trainModelNode", "status": "failed", "output": None},
+                    "chat": {"type": "chatOutputNode", "status": "success", "output": {"message": "Training finished"}},
+                }
+            },
+        }
+        assert _training_succeeded(execution_output) is True
+
+    def test_false_when_the_only_train_model_failed_and_another_node_ran_last(self):
+        execution_output = {
+            "has_failures": True,
+            "failed_nodes": [{"name": "Train Model", "type": "trainModelNode", "error": "boom"}],
+            "output": {"success": True, "message": "done"},
+            "state": {
+                "nodeExecutionStatus": {
+                    "train": {"type": "trainModelNode", "status": "failed", "output": None},
+                    "chat": {"type": "chatOutputNode", "status": "success", "output": {"success": True}},
+                }
+            },
+        }
+        assert _training_succeeded(execution_output) is False
+
 
 class TestSummarizeRunFailure:
     def test_prefers_the_final_output_error(self):
