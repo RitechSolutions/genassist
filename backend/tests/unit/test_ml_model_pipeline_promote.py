@@ -459,3 +459,216 @@ async def test_promote_updates_metrics_only_when_run_file_is_already_served():
     assert model_service.update.await_args.kwargs["training_metrics"] == metrics
     model_manager.invalidate_model.assert_not_called()
     assert result["model_updated"] is True
+
+
+# Runs completed before training success was checked (e.g. a pipeline pointed
+# at a chat workflow) can store any output, often not a dict. Promoting such a
+# run must still make its pipeline the default instead of failing.
+NON_MODEL_EXECUTION_OUTPUTS = [
+    pytest.param({"output": "some text"}, id="output-string"),
+    pytest.param({"output": None}, id="output-none"),
+    pytest.param({"output": ["a"]}, id="output-list"),
+    pytest.param({}, id="no-output-key"),
+    pytest.param("text", id="execution-output-string"),
+    pytest.param(["a"], id="execution-output-list"),
+    pytest.param(None, id="execution-output-none"),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_execution_output", NON_MODEL_EXECUTION_OUTPUTS)
+@pytest.mark.parametrize("update_model_file", [True, False])
+async def test_promote_run_without_model_output_only_sets_default_config(
+    raw_execution_output, update_model_file
+):
+    service, model_service, model_manager, model_id, run_id = _make_service({})
+    service.run_repository.get_by_id.return_value.execution_output = raw_execution_output
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=update_model_file),
+    )
+
+    response = PipelineRunPromoteResponse(**result)
+    assert response.model_updated is False
+    assert "no model file" in response.message
+    assert response.warnings == []
+    config_repository = service.config_repository
+    config_repository.unset_default_for_model.assert_awaited_once_with(model_id)
+    assert config_repository.update.await_args.args[1].is_default is True
+    model_service.update.assert_not_awaited()
+    model_manager.invalidate_model.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_promote_trained_run_message_does_not_mention_missing_file():
+    service, _, _, model_id, run_id = _make_service(
+        {"model_file_path": "/tmp/model.pkl", "feature_columns": ["x"]}
+    )
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True),
+    )
+
+    assert result["model_updated"] is True
+    assert "no model file" not in result["message"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "malformed_fields, field_name",
+    [
+        pytest.param({"pkl_file_id": 123}, "pkl_file_id", id="pkl-file-id-int"),
+        pytest.param({"target_column": ["y"]}, "target_column", id="target-column-list"),
+        pytest.param({"feature_columns": "x"}, "feature_columns", id="feature-columns-string"),
+        pytest.param({"feature_columns": [1, 2]}, "feature_columns", id="feature-columns-not-strings"),
+        pytest.param({"target_transform": "ratio"}, "target_transform", id="target-transform-string"),
+        pytest.param(
+            {"target_transform": {"type": "ratio", "baselineColumn": ["base"]}},
+            "target_transform",
+            id="baseline-column-list",
+        ),
+        pytest.param(
+            {"target_transform": {"type": "ratio", "baselineColumn": "  "}},
+            "target_transform",
+            id="baseline-column-blank",
+        ),
+        pytest.param({"target_column": "y" * 256}, "target_column", id="target-column-too-long"),
+        pytest.param({"pkl_file_id": "f" * 501}, "pkl_file_id", id="pkl-file-id-too-long"),
+    ],
+)
+async def test_promote_rejects_malformed_trained_run_before_any_updates(
+    malformed_fields, field_name
+):
+    service, model_service, model_manager, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/tmp/model.pkl",
+            "pkl_file_id": str(uuid.uuid4()),
+            "target_column": "y",
+            "feature_columns": ["x"],
+            **malformed_fields,
+        },
+        inference_params={"ratioBaselineColumn": "base"},
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await service.promote_run(
+            model_id=model_id,
+            run_id=run_id,
+            promote_data=MLModelPipelineRunPromote(update_model_file=True),
+        )
+
+    assert exc_info.value.error_key is ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE
+    assert field_name in exc_info.value.error_detail
+    service.config_repository.unset_default_for_model.assert_not_awaited()
+    service.config_repository.update.assert_not_awaited()
+    model_service.update.assert_not_awaited()
+    model_manager.invalidate_model.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("warnings", [None, "text"])
+async def test_promote_ignores_malformed_warnings_of_a_trained_run(warnings):
+    service, model_service, _, model_id, run_id = _make_service(
+        {"model_file_path": "/tmp/model.pkl", "feature_columns": ["x"], "warnings": warnings}
+    )
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
+    )
+
+    assert PipelineRunPromoteResponse(**result).warnings == []
+    assert result["model_updated"] is True
+    assert _model_update(model_service)["features"] == ["x"]
+
+
+@pytest.mark.asyncio
+async def test_promote_without_model_file_skips_stale_default_warnings():
+    service, model_service, _, model_id, run_id = _make_service(
+        {
+            "success": True,
+            "warnings": [
+                "Feature default(s) no longer match categories fitted by this run: kind."
+            ],
+        }
+    )
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True),
+    )
+
+    assert result["model_updated"] is False
+    assert "warnings" not in result
+    assert "no model file" in result["message"]
+    model_service.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_promote_ignores_target_transform_when_run_keeps_the_feature_contract():
+    service, model_service, _, model_id, run_id = _make_service(
+        {"model_file_path": "/tmp/model.pkl", "feature_columns": [], "target_transform": "ratio"}
+    )
+
+    result = await service.promote_run(
+        model_id=model_id,
+        run_id=run_id,
+        promote_data=MLModelPipelineRunPromote(update_model_file=True, update_metrics=False),
+    )
+
+    assert result["model_updated"] is True
+    assert set(_model_update(model_service)) == {"pkl_file_id"}
+
+
+@pytest.mark.asyncio
+async def test_promote_blames_invalid_saved_inference_settings_on_the_model():
+    service, model_service, _, model_id, run_id = _make_service(
+        {"model_file_path": "/tmp/model.pkl", "feature_columns": ["x"]},
+        inference_params={"useTrainingFills": "true"},
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await service.promote_run(
+            model_id=model_id,
+            run_id=run_id,
+            promote_data=MLModelPipelineRunPromote(update_model_file=True),
+        )
+
+    assert exc_info.value.error_key is ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE
+    assert "saved inference settings" in exc_info.value.error_detail
+    assert "target_transform" not in exc_info.value.error_detail
+    service.config_repository.unset_default_for_model.assert_not_awaited()
+    model_service.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_promote_blames_saved_settings_even_when_run_fields_are_also_malformed():
+    service, model_service, _, model_id, run_id = _make_service(
+        {
+            "model_file_path": "/tmp/model.pkl",
+            "feature_columns": ["x"],
+            "target_column": "y" * 256,
+        },
+        inference_params={"useTrainingFills": "true"},
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        await service.promote_run(
+            model_id=model_id,
+            run_id=run_id,
+            promote_data=MLModelPipelineRunPromote(update_model_file=True),
+        )
+
+    detail = exc_info.value.error_detail
+    assert exc_info.value.error_key is ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE
+    assert "saved inference settings" in detail
+    assert "target_column" in detail
+    assert "inference_params" not in detail
+    service.config_repository.unset_default_for_model.assert_not_awaited()
+    model_service.update.assert_not_awaited()

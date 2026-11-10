@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -8,7 +10,8 @@ from app.api.v1.routes.ml_model_pipeline import promote_pipeline_run
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import _app_exception_body
-from app.schemas.ml_model_pipeline import MLModelPipelineRunPromote
+from app.db.models.ml_model_pipeline import PipelineRunStatus
+from app.schemas.ml_model_pipeline import MLModelPipelineRunPromote, MLModelPipelineRunRead
 
 
 def _request() -> Request:
@@ -93,3 +96,42 @@ async def test_promote_pipeline_run_returns_404_for_missing_resources(error_key)
     assert exc_info.value.status_code == 404
     body = _app_exception_body(_request(), exc_info.value)
     assert body["error_code"] == 404
+
+
+def _stored_run(execution_output):
+    """A run row as the pipeline-runs routes read it from the database."""
+    now = datetime.now(timezone.utc)
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        model_id=uuid.uuid4(),
+        pipeline_config_id=uuid.uuid4(),
+        workflow_id=uuid.uuid4(),
+        status=PipelineRunStatus.COMPLETED,
+        started_at=now,
+        completed_at=now,
+        error_message=None,
+        execution_output=execution_output,
+        execution_id=None,
+        workflow=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+@pytest.mark.parametrize(
+    "stored, expected",
+    [
+        ("plain text", {"output": "plain text"}),
+        (["a"], {"output": ["a"]}),
+        (3, {"output": 3}),
+        (None, None),
+        ({"output": "chat reply"}, {"output": "chat reply"}),
+        ({"output": {"pkl_file_id": "f"}}, {"output": {"pkl_file_id": "f"}}),
+    ],
+)
+def test_run_read_keeps_any_stored_execution_output_as_an_object(stored, expected):
+    # The run list and run detail routes serialize every row through this schema;
+    # a non-object execution_output used to fail validation and return a 500.
+    run = MLModelPipelineRunRead.model_validate(_stored_run(stored))
+
+    assert run.execution_output == expected

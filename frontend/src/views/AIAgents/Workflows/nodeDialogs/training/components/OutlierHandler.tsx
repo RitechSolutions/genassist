@@ -188,7 +188,10 @@ export const OutlierHandler: React.FC<OutlierHandlerProps> = ({
       <div className="space-y-0.5">
         <Label>Handle Outliers</Label>
         <p className="text-xs text-muted-foreground">
-          Configure how to handle outliers in numeric columns
+          Configure how to handle outliers in numeric columns. Bounds come
+          from the training rows. Remove drops outlier rows from training
+          only, so validation is still scored on every row; Cap clips values
+          in both.
         </p>
       </div>
 
