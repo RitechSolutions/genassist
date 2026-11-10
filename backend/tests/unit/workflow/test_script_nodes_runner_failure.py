@@ -133,7 +133,7 @@ async def test_preprocessing_script_exception_is_reported(monkeypatch):
     )
 
     assert processed is None
-    assert errors == "Error processing parameters: KeyError: 'x'"
+    assert errors == "KeyError: 'x'"
     assert response == SCRIPT_ERROR
 
 
@@ -211,7 +211,7 @@ async def test_preprocessing_runner_error_raises_when_raise_on_error(monkeypatch
     with pytest.raises(AppException) as exc:
         await ml_utils.execute_and_process_preprocessing_code("result = df", None, "", raise_on_error=True)
 
-    assert exc.value.error_detail == "Error executing preprocessing code: Execution timed out after 600 seconds"
+    assert exc.value.error_detail == "Execution timed out after 600 seconds"
 
 
 @pytest.mark.asyncio

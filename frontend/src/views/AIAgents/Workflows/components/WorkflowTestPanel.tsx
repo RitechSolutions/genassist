@@ -45,13 +45,17 @@ import {
 } from "@/services/workflows";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { NodeSchema, SchemaField } from "../types/schemas";
-import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
+import {
+  NodeExecutionResult,
+  useWorkflowExecution,
+} from "../context/WorkflowExecutionContext";
 import { getValueFromPath, parseInputValue, truncateNodeOutput, valueToString } from "../utils/helpers";
 import { useAudioCapture } from "../hooks/useAudioCapture";
 import { getAudioUrl, stripAudioDataForDisplay } from "../hooks/useAudioTest";
 import { STTAudioInput } from "./TestInputFields";
 import JsonViewer from "@/components/JsonViewer";
 import NodeExecutionView from "./execution/NodeExecutionView";
+import { collectRunOutputs, resumedRunWorkflow } from "../utils/executionView";
 import { FallbackRatesNotice } from "./FallbackRatesNotice";
 import { TrainingJobProgress } from "./TrainingJobProgress";
 import { displayTimeZone } from "@/helpers/timeZone";
@@ -164,7 +168,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
     }));
   };
 
-  const { state: executionState } = useWorkflowExecution();
+  const { state: executionState, recordRunOutputs } = useWorkflowExecution();
 
   // Show audio capture when the workflow contains a node that consumes audio.
   const hasAudioNode = !!workflow?.nodes.some((n) =>
@@ -295,6 +299,51 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
     ) as string | undefined;
     const threadId = (res.thread_id || res.state?.input?.thread_id) as string | undefined;
     return { formSchema, threadId, nodeId };
+  };
+
+  // A paused run: the workflow its nodes ran with so far and the outputs
+  // recorded until the pause. Resuming adds to these - see handleResumeWorkflow.
+  const pausedRunRef = useRef<{
+    workflow: Workflow;
+    outputs: Record<string, NodeExecutionResult>;
+  } | null>(null);
+
+  // Keep the outputs of the nodes that ran, so dialogs that read an upstream
+  // node's result (e.g. Analyze reading the Train Data Source file) see this
+  // run instead of an older Test Node result. `earlier`: outputs recorded
+  // before the run paused, kept for nodes that didn't run again after it.
+  // Remembers the run if it paused again.
+  const recordRunNodeOutputs = (
+    res: WorkflowTestResponse,
+    ranWorkflow: Workflow,
+    earlier: Record<string, NodeExecutionResult> = {}
+  ) => {
+    const timestamp = Date.now();
+    const recorded = Object.fromEntries(
+      Object.entries(collectRunOutputs(res, ranWorkflow)).map(([nodeId, run]) => [
+        nodeId,
+        {
+          status: "success" as const,
+          output: truncateNodeOutput(run.output) as Record<string, unknown>,
+          timestamp,
+          nodeType: run.nodeType,
+          nodeName: run.nodeName,
+          ...(run.settingsKey !== undefined && { settingsKey: run.settingsKey }),
+        },
+      ])
+    );
+    // Replace the previous run's outputs, not merge: a node that failed or
+    // didn't run this time must not keep an earlier run's output. Only this
+    // run's own outputs from before a pause carry over.
+    const outputs = { ...earlier, ...recorded };
+    recordRunOutputs(outputs);
+    pausedRunRef.current = isPausedResponse(res) ? { workflow: ranWorkflow, outputs } : null;
+  };
+
+  // A failed run leaves no current outputs; don't keep an earlier run's.
+  const clearRunNodeOutputs = () => {
+    recordRunOutputs({});
+    pausedRunRef.current = null;
   };
 
   // Handle paused response from test or resume
@@ -468,11 +517,13 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       );
 
       if (!res) {
+        clearRunNodeOutputs();
         setError("No response received from server");
         recordRun(null, "No response received from server");
         return;
       }
 
+      recordRunNodeOutputs(res, workflow);
       if (isPausedResponse(res)) {
         handlePausedResponse(res);
       } else {
@@ -482,6 +533,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       if (isTrainingWaitAborted(err)) return;
       const msg = err instanceof Error ? err.message : String(err);
       const errorMsg = `Failed to test workflow: ${msg}`;
+      clearRunNodeOutputs();
       setError(errorMsg);
       recordRun(null, errorMsg);
     } finally {
@@ -527,11 +579,20 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       );
 
       if (!res) {
+        clearRunNodeOutputs();
         setError("No response received from server");
         recordRun(null, "No response received from server");
         return;
       }
 
+      // Nodes that ran before the pause keep the settings they ran with, not
+      // ones edited during the pause, and their outputs are kept.
+      const paused = pausedRunRef.current;
+      recordRunNodeOutputs(
+        res,
+        paused ? resumedRunWorkflow(paused.workflow, workflow, Object.keys(paused.outputs)) : workflow,
+        paused?.outputs
+      );
       if (isPausedResponse(res)) {
         handlePausedResponse(res);
       } else {
@@ -541,6 +602,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
       if (isTrainingWaitAborted(err)) return;
       const msg = err instanceof Error ? err.message : String(err);
       const errorMsg = `Failed to resume workflow: ${msg}`;
+      clearRunNodeOutputs();
       setError(errorMsg);
       recordRun(null, errorMsg);
     } finally {
@@ -553,6 +615,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
 
   // Reset test state for a fresh run
   const handleStartOver = () => {
+    pausedRunRef.current = null;
     setPausedFormSchema(null);
     setPausedThreadId(null);
     setPausedNodeId(null);

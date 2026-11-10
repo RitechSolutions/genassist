@@ -29,13 +29,21 @@ export function SchemaFormRenderer({
     return undefined;
   }
 
+  function fieldValue(field: FieldSchema): FieldValue {
+    const raw = connectionData[field.name] as FieldValue | null;
+    // null marks a number the user cleared on purpose: show it empty rather
+    // than the default, which would not be what gets saved.
+    if (raw === null && field.type === 'number') return '';
+    return raw ?? (field.default as FieldValue);
+  }
+
   return (
     <div className="space-y-4">
       {fieldsToRender.map((field) => (
         <FormFieldRenderer
           key={field.name}
           field={field}
-          value={connectionData[field.name] ?? (field.default as FieldValue)}
+          value={fieldValue(field)}
           onChange={onChange}
           extras={getExtras(field)}
         />

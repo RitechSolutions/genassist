@@ -369,7 +369,7 @@ class TestBuildPredictionOutputs:
         np.testing.assert_array_equal(predictions, [0.5, 0.7])
 
 
-async def _run_inference(monkeypatch, model, model_type, inference_inputs=None):
+async def _run_inference(monkeypatch, model, model_type, inference_inputs=None, extra_metadata=None):
     model_record = SimpleNamespace(
         name="test-model",
         model_type=model_type,
@@ -388,6 +388,7 @@ async def _run_inference(monkeypatch, model, model_type, inference_inputs=None):
                 "metadata": {
                     "metadata_schema_version": 2,
                     "feature_columns": ["feature"],
+                    **(extra_metadata or {}),
                 },
             }
         )
@@ -519,6 +520,32 @@ class TestInferenceOutput:
         assert result["probabilities"] == [{"Class_denied": 0.25, "Class_approved": 0.75}]
         assert result["confidences"] == [0.25]
         assert result["batch_size"] == 1
+        json.dumps(result)
+
+    @pytest.mark.asyncio
+    async def test_decodes_class_codes_to_trained_text_labels(self, monkeypatch):
+        # Trained since TM-10: the model is fit on codes 0..n-1 and the text
+        # labels are saved as target_classes in code order.
+        class EncodedClassifier:
+            classes_ = np.array([0, 1, 2])
+
+            def predict(self, _input_data):
+                return np.array([2])
+
+            def predict_proba(self, _input_data):
+                return np.array([[0.1, 0.2, 0.7]])
+
+        result = await _run_inference(
+            monkeypatch,
+            EncodedClassifier(),
+            "xgboost",
+            extra_metadata={"target_classes": ["A", "B", "C"]},
+        )
+
+        assert result["prediction"] == ["C"]
+        assert result["prediction_label"] == ["C"]
+        assert result["probabilities"] == [{"Class_A": 0.1, "Class_B": 0.2, "Class_C": 0.7}]
+        assert result["confidences"] == [0.7]
         json.dumps(result)
 
     @pytest.mark.asyncio
