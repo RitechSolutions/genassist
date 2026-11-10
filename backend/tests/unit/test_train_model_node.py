@@ -16,19 +16,13 @@ from app.modules.workflow.engine.nodes.ml.train_model_node import (
     _rows_dropped_warning,
 )
 from app.modules.workflow.engine.workflow_state import WorkflowState
-from tests.unit.ml_training_fixtures import removing_trained_models, training_tmp_dir
-
-
-@pytest.fixture
-def tmp_path():
-    with training_tmp_dir() as path:
-        yield path
+from tests.unit.ml_training_fixtures import training_sandbox
 
 
 @pytest.fixture(autouse=True)
-def _remove_trained_models(monkeypatch):
-    with removing_trained_models(monkeypatch):
-        yield
+def _training_sandbox(monkeypatch, tmp_path):
+    # Training only reads files inside the data volume; use pytest's temp folder as it.
+    training_sandbox(monkeypatch, tmp_path)
 
 
 @pytest.fixture
