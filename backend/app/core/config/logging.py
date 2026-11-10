@@ -37,6 +37,9 @@ path_ctx:       ContextVar[str] = ContextVar("path",       default="-")
 status_ctx:     ContextVar[int] = ContextVar("status",     default=-1)
 duration_ctx:   ContextVar[int] = ContextVar("duration",   default=-1)
 uid_ctx:        ContextVar[str] = ContextVar("uid",        default="-")
+# Set by datadog_observability once the chat flow knows them (DATADOG_ENABLED only).
+conversation_id_ctx: ContextVar[str | None] = ContextVar("conversation_id", default=None)
+agent_id_ctx:        ContextVar[str | None] = ContextVar("agent_id",        default=None)
 
 # --------------------------------------------------------------------------- #
 # Helper – forward stdlib logging records to Loguru
@@ -51,9 +54,22 @@ class _InterceptHandler(logging.Handler):
         if record.levelno <= logging.DEBUG:
             msg = truncate_for_log(msg)
         logger.bind(**record.__dict__.get("extra", {})).opt(
-            depth=6,  # keep caller info accurate
+            depth=_caller_depth(),  # report the code that logged, not the logging module
             exception=record.exc_info
         ).log(level, msg)
+
+
+def _caller_depth() -> int:
+    """How many frames up the code that called the stdlib logger is.
+
+    A fixed depth is wrong for some call paths (e.g. logging.exception()), which then
+    report the logging module itself as the caller. Walk out of logging instead.
+    """
+    frame, depth = sys._getframe(1), 1  # 1 = emit(), the frame that calls loguru
+    while frame and (frame.f_code.co_filename == logging.__file__ or frame.f_code.co_name == "emit"):
+        frame = frame.f_back
+        depth += 1
+    return depth - 1
 
 def _patch_stdlib(level: str) -> None:
     logging.root.setLevel(level)
@@ -69,6 +85,26 @@ def _patch_stdlib(level: str) -> None:
         "pdfminer.pdfdevice",
         "pdfminer.cmapdb"):
         logging.getLogger(noise).setLevel(logging.WARNING)
+
+def _add_console_sink() -> None:
+    """Human-friendly coloured console (the default when DATADOG_ENABLED is off)."""
+    logger.add(
+        sys.stdout,
+        level=settings.LOG_LEVEL,
+        filter=_pii_filter,
+        colorize=True,
+        format=(
+            "<green>{time:HH:mm:ss.SSS}</green> "
+            "<level>{level: <8}</level> "
+            "[<cyan>{extra[request_id]}</cyan>] "
+            "<cyan>{extra[ip]}</cyan> "
+            "<blue>{extra[method]}</blue> "
+            "<magenta>{extra[path]}</magenta> | "
+            "<level>{message}</level>"
+        ),
+        enqueue=False,  # Disabled to avoid multiprocessing queue issues
+    )
+
 
 # --------------------------------------------------------------------------- #
 # Main entry point
@@ -94,23 +130,11 @@ def init_logging() -> None:
 
     logger.remove()  # drop default stderr sink
 
-    # Human-friendly console
-    logger.add(
-        sys.stdout,
-        level=settings.LOG_LEVEL,
-        filter=_pii_filter,
-        colorize=True,
-        format=(
-            "<green>{time:HH:mm:ss.SSS}</green> "
-            "<level>{level: <8}</level> "
-            "[<cyan>{extra[request_id]}</cyan>] "
-            "<cyan>{extra[ip]}</cyan> "
-            "<blue>{extra[method]}</blue> "
-            "<magenta>{extra[path]}</magenta> | "
-            "<level>{message}</level>"
-        ),
-        enqueue=False,  # Disabled to avoid multiprocessing queue issues
-    )
+    # Imported here: it builds on this module's ContextVars and PII filter.
+    from app.core.observability.datadog_observability import datadog_observability
+
+    if not datadog_observability.configure_logging():  # JSON lines only with DATADOG_ENABLED
+        _add_console_sink()
 
     # Rotating JSON files — PII redaction filter applied to all persistent sinks
     # watch=True: sandbox children inherit these handles and can rotate a file away from this process
