@@ -9,6 +9,7 @@ from croniter import CroniterBadCronError, croniter
 
 from app.core.utils.encryption_utils import decrypt_key
 from app.dependencies.injector import injector
+from app.modules.data.load_result import ensure_has_text, load_document
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.data.utils import FileTextExtractor
 from app.modules.integration.office365_connector import Office365Connector
@@ -211,8 +212,11 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
                         "kb_id": str(kb.id),
                     }
 
-                    # Add to knowledge base using simplified manager
-                    await rag_manager.add_document(kb, doc_id, extracted_text, metadata)
+                    document_name = file_info.get("name", doc_id)
+                    ensure_has_text(extracted_text, document_name)
+                    warning = await load_document(rag_manager, kb, doc_id, extracted_text, metadata, document_name)
+                    if warning:
+                        errors.append(warning)
                     files_added_tot += 1
 
                 except Exception as e:

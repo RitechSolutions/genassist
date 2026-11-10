@@ -420,6 +420,10 @@ class ProjectSettings(BaseSettings):
     # Conversation history max messages for chat input node
     CONVERSATION_HISTORY_NODE_MAX_MESSAGES: int = 100
 
+    # === Python Sandbox ===
+    # Comma-separated IPs or CIDR ranges user Python code may reach besides public addresses, for every tenant
+    SANDBOX_ALLOWED_NETWORKS: Optional[str] = None
+
     # === Web Search Node ===
     # Kill switch: when False every search returns a structured failure envelope
     # immediately and no upstream traffic is sent.

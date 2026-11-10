@@ -9,6 +9,7 @@ from typing import Any, Dict
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.dependencies.injector import injector
+from app.modules.workflow.llm.model_params import deterministic_kwargs
 from app.modules.workflow.llm.provider import LLMProvider
 
 from ..base_node import BaseNode
@@ -149,7 +150,7 @@ class RouterNode(BaseNode):
             llm_provider = injector.get(LLMProvider)
             llm_model = await llm_provider.get_model(provider_id)
             response = await llm_model.bind(
-                temperature=0, max_tokens=10
+                **deterministic_kwargs(llm_model), max_tokens=10
             ).ainvoke(
                 [
                     SystemMessage(content=system_prompt),
