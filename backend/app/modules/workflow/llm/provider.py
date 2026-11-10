@@ -14,6 +14,13 @@ if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls to
     from langchain_core.language_models import BaseChatModel
 from app.core.config.llm_prompt_cache_capabilities import CLAUDE_FAMILY, bedrock_cache_family
 from app.core.utils.encryption_utils import decrypt_key
+from app.modules.workflow.llm.model_params import (
+    SAMPLING_PARAMS,
+    claude_rejects_sampling,
+    claude_uses_adaptive_thinking,
+    openai_accepts_reasoning_none,
+    openai_supports_reasoning_effort,
+)
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
 from app.core.utils.enums.bedrock_fine_tuning_enum import (
     BedrockDeploymentStatus,
@@ -163,18 +170,36 @@ async def build_chat_model(
         # it, and it's AWS's recommended API for Nova/Claude/Llama/custom models alike.
         provider = "bedrock_converse"
     elif provider == "anthropic":
+        budget_tokens = cd.pop("thinking_budget_tokens", 2000)
         if cd.pop("thinking_enabled", False):
-            cd["thinking"] = anthropic_thinking(model_name, cd.pop("thinking_budget_tokens", 2000))
+            if claude_uses_adaptive_thinking(model_name):
+                # Claude 4.6+ decides how much to think; budget_tokens is rejected on the newest ones.
+                cd["thinking"] = {"type": "adaptive"}
+            else:
+                cd["thinking"] = anthropic_thinking(model_name, budget_tokens)
             if cd["thinking"]["type"] == "adaptive":
                 cd.pop("temperature", None)  # newer models reject sampling settings next to thinking
             else:
                 cd["temperature"] = 1  # Anthropic requires temperature=1 when thinking is enabled
-        else:
-            cd.pop("thinking_budget_tokens", None)
         cd = without_rejected_sampling(cd, model_name)
     elif provider == "openai":
-        if not cd.get("reasoning_effort"):
-            cd.pop("reasoning_effort", None)
+        effort = cd.pop("reasoning_effort", None)
+        if effort in (None, "", "none"):
+            # Only GPT-5.1+ take "none". Sending it there also keeps the user's
+            # temperature, which langchain drops for GPT-5 models otherwise.
+            if openai_accepts_reasoning_none(model_name):
+                cd["reasoning_effort"] = "none"
+        elif openai_supports_reasoning_effort(model_name):
+            cd["reasoning_effort"] = effort
+        # Non-reasoning models (gpt-4o, gpt-3.5, ...) reject the parameter, so it is left out.
+
+    # A field the user cleared in the form is stored as null: leave it to the model's default.
+    cd = {k: v for k, v in cd.items() if v is not None}
+
+    # Newer Claude models reject sampling parameters, whichever provider serves them.
+    if claude_rejects_sampling(model_name):
+        for param in SAMPLING_PARAMS:
+            cd.pop(param, None)
 
     if provider == "openai" and original_provider == "openai":
         os.environ["OPENAI_API_KEY"] = cd.get("api_key", "")

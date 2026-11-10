@@ -23,6 +23,7 @@ from app.core.utils.training_upload import (
     check_training_upload_size,
     is_training_upload,
     training_upload_max_bytes,
+    training_upload_metadata,
     training_upload_too_large,
 )
 from app.core.utils.upload_streaming import append_bytes_to_path
@@ -248,6 +249,7 @@ class FileUploadSessionService:
                     path=sub_folder,
                     storage_provider=storage_provider.name,
                     file_extension=file_extension,
+                    file_metadata=training_upload_metadata(purpose),
                 )
 
                 created_file = await file_manager_service.create_file_from_local_path(
@@ -405,7 +407,7 @@ class FileUploadSessionService:
         # with size/mime_type on finalize, or soft-deleted on failure.
         user_meta = getattr(payload, "file_metadata", None)
         file_meta: Dict[str, Any] = dict(user_meta) if isinstance(user_meta, dict) else {}
-        file_meta.update({"direct_upload": True, "status": "pending"})
+        file_meta.update({"direct_upload": True, "status": "pending", **training_upload_metadata(purpose)})
         file_base = FileBase(
             name=unique_filename,
             original_filename=original_name,
