@@ -9,7 +9,7 @@ from uuid import UUID
 from app.api.v1.routes.agents import run_query_agent_logic
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.observability import set_agent_span_attributes
+from app.core.observability import set_agent_span_attributes, set_conversation_span_attribute
 from app.core.utils.background_tasks import spawn
 from app.core.utils.db_connection_utils import release_idle_connection
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
@@ -322,6 +322,7 @@ async def process_conversation_update_with_agent(
 
     Returns the updated conversation as ConversationModel.
     """
+    set_conversation_span_attribute(conversation_id)
     service = injector.get(ConversationService)
     socket_connection_manager = injector.get(SocketConnectionManager)
     agent_config_service = injector.get(AgentConfigService)
