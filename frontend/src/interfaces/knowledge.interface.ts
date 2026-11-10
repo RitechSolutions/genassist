@@ -13,3 +13,8 @@ export interface KnowledgeItem {
   };
   [key: string]: unknown;
 }
+
+export interface KnowledgeItemMinimal {
+  id: string;
+  name: string;
+}

@@ -130,6 +130,7 @@ export const SALESFORCE_CASE_CREATOR_HELP_CONTENT: NodeHelpContent = {
         "Enter the Node Name.",
         "Select the Configuration Vars (Salesforce credential) to use.",
         "Fill in the Case Subject and Description.",
+        "Optionally fill Web Email, Web Name and Web Phone (the Case's contact fields).",
         "Add any Labels (assigned as Salesforce Topics) and Custom Fields (by Case field API name) needed for the Case.",
         "Save the node configuration.",
       ],

@@ -1,6 +1,7 @@
+import json
 from uuid import UUID
 from injector import inject
-from sqlalchemy import func, or_
+from sqlalchemy import Text, cast, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
@@ -8,6 +9,7 @@ from typing import List, Optional, Sequence
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.ml_model import MLModel
+from app.db.models.workflow import WorkflowModel
 from app.repositories.db_repository import DbRepository
 from app.schemas.ml_model import MLModelCreate
 from starlette_context import context
@@ -24,7 +26,9 @@ class MLModelsRepository(DbRepository[MLModel]):
     def __init__(self, db: AsyncSession):
         super().__init__(MLModel, db)
 
-    async def create(self, ml_model_data: MLModelCreate) -> MLModel:
+    async def create(
+        self, ml_model_data: MLModelCreate, training_metrics: Optional[dict] = None
+    ) -> MLModel:
         """Create a new ML model."""
         try:
             new_ml_model = MLModel(
@@ -36,6 +40,7 @@ class MLModelsRepository(DbRepository[MLModel]):
                 features=ml_model_data.features,
                 target_variable=ml_model_data.target_variable,
                 inference_params=ml_model_data.inference_params,
+                training_metrics=training_metrics,
             )
             async with self.db.begin_nested():
                 self.db.add(new_ml_model)
@@ -87,6 +92,28 @@ class MLModelsRepository(DbRepository[MLModel]):
         query = select(MLModel.id).where(
             or_(*matches),
             MLModel.is_deleted == 0,
+        ).limit(1)
+        result = await self.db.execute(query)
+        return result.first() is not None
+
+    async def is_training_file_referenced(self, file_id: UUID, file_paths: Sequence[str] = ()) -> bool:
+        """True when a live workflow version or ML model still points at this training upload.
+
+        A Train Data Source node keeps the upload as csvFileId (and csvFilePath for local
+        storage). Any mention of the id or path anywhere in a workflow's nodes counts, so
+        a file is kept rather than deleted when in doubt.
+        """
+        if await self.is_file_referenced(file_id, file_paths):
+            return True
+        nodes_text = cast(WorkflowModel.nodes, Text)
+        matches = [nodes_text.ilike(f"%{file_id}%"), nodes_text.ilike(f"%{file_id.hex}%")]
+        # The nodes text is JSON, where a backslash or quote in a path is escaped (and,
+        # as in Postgres jsonb::text, non-ASCII characters are not).
+        path_spellings = {spelling for path in file_paths if path for spelling in (path, json.dumps(path, ensure_ascii=False)[1:-1])}
+        matches += [nodes_text.contains(spelling, autoescape=True) for spelling in sorted(path_spellings)]
+        query = select(WorkflowModel.id).where(
+            or_(*matches),
+            WorkflowModel.is_deleted == 0,
         ).limit(1)
         result = await self.db.execute(query)
         return result.first() is not None

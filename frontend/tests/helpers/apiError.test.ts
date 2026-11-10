@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractErrorMessage } from "@/helpers/apiError";
+import { extractErrorMessage, throwIfErrorEnvelope } from "@/helpers/apiError";
 
 describe("extractErrorMessage", () => {
   const FALLBACK = "Something went wrong";
@@ -121,5 +121,57 @@ describe("extractErrorMessage", () => {
     expect(
       extractErrorMessage({ response: { data: {} } }, FALLBACK)
     ).toBe(FALLBACK);
+  });
+});
+
+describe("throwIfErrorEnvelope", () => {
+  const thrownBy = (data: unknown) => {
+    try {
+      throwIfErrorEnvelope(data);
+    } catch (err) {
+      return err as Error & { response: { status: number; data: unknown } };
+    }
+    throw new Error("expected a throw");
+  };
+
+  it("throws the envelope with the server's text, status and body", () => {
+    const envelope = {
+      error: "The prompt check did not finish within the time budget.",
+      error_code: 504,
+      error_key: "PROMPT_EXECUTION_TIMEOUT",
+      error_detail: null,
+    };
+
+    const thrown = thrownBy(envelope);
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown.message).toBe(
+      "The prompt check did not finish within the time budget."
+    );
+    expect(thrown.response.status).toBe(504);
+    expect(thrown.response.data).toBe(envelope);
+    expect(extractErrorMessage(thrown, "x")).toBe(
+      "The prompt check did not finish within the time budget."
+    );
+  });
+
+  it("prefers error_detail and never shows an empty message", () => {
+    expect(
+      thrownBy({ error: "E", error_code: 500, error_detail: "boom" }).message
+    ).toBe("boom");
+    expect(thrownBy({ error: "", error_code: 500 }).message).toBe(
+      "Request failed with status code 500"
+    );
+  });
+
+  it("passes success bodies, per-case errors and null through", () => {
+    const success = { status: "success", output: "4 items" };
+    const evaluation = { results: [{ error: "x" }], summary: {}, provenance: {} };
+    const noCode = { error: "x" };
+
+    expect(throwIfErrorEnvelope(success)).toBe(success);
+    expect(throwIfErrorEnvelope(evaluation)).toBe(evaluation);
+    expect(throwIfErrorEnvelope(null)).toBeNull();
+    expect(throwIfErrorEnvelope(noCode)).toBe(noCode);
   });
 });

@@ -14,10 +14,18 @@ import pandas as pd
 import pytest
 from sklearn.preprocessing import RobustScaler
 
+from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_model_inference_node as inference_module
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import MLModelInferenceNode
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from tests.unit.ml_training_fixtures import training_sandbox
+
+
+@pytest.fixture(autouse=True)
+def _training_sandbox(monkeypatch, tmp_path):
+    # Training only reads files inside the data volume; use pytest's temp folder as it.
+    training_sandbox(monkeypatch, tmp_path)
 
 
 def _make_outlier_heavy_csv(tmp_path) -> str:
@@ -79,7 +87,7 @@ async def test_train_then_infer_reapplies_persisted_scaler(tmp_path, patch_ml_mo
     # Outlier-heavy data + a scale-sensitive model type => Auto picks Robust.
     assert train_result["scaling_method"] == "robust"
 
-    model_file_path = train_result["model_file_path"]
+    model_file_path = str(DATA_VOLUME / train_result["model_file_path"])
     with open(model_file_path, "rb") as f:
         payload = pickle.load(f)
 
@@ -140,7 +148,7 @@ async def test_auto_scaling_skips_tree_based_models(tmp_path, patch_ml_models_se
     assert train_result["success"] is True
     assert train_result["scaling_method"] == "none"
 
-    with open(train_result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / train_result["model_file_path"]), "rb") as f:
         payload = pickle.load(f)
     assert "scaler" not in payload["metadata"]
 
@@ -148,7 +156,7 @@ async def test_auto_scaling_skips_tree_based_models(tmp_path, patch_ml_models_se
     ml_model = SimpleNamespace(
         id=uuid.uuid4(),
         name="e2e-rf",
-        pkl_file=train_result["model_file_path"],
+        pkl_file=str(DATA_VOLUME / train_result["model_file_path"]),
         pkl_file_id=None,
         updated_at=datetime.now(),
         model_type="random_forest",

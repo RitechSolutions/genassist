@@ -21,6 +21,7 @@ TASK_DECORATOR = re.compile(r"@shared_task(\((.*?)\))?\s*\ndef\s+(\w+)\s*\(", re
 TIMEOUT_LITERAL = re.compile(r"timeout\s*=\s*([0-9][0-9 *+]*)")
 ML_TASK_MODULES = (
     "app.tasks.ml_model_pipeline_tasks",
+    "app.tasks.ml_training_job_tasks",
     "app.tasks.test_suite_tasks",
     "app.tasks.workflow_schedule_tasks",
     "app.tasks.workflow_trigger_tasks",

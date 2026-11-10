@@ -6,7 +6,6 @@ import pytest
 
 import app.core.config.llm_pricing as llm_pricing
 from app.core.config.llm_pricing import (
-    DEFAULT_PRICING,
     PricingStatus,
     resolve_pricing,
 )
@@ -56,9 +55,9 @@ class TestCalculateCost:
         assert self.calculator.calculate_cost("openai", "gpt-4o", -1, 0) == 0.0
         assert self.calculator.calculate_cost("openai", "gpt-4o", 0, -5) == 0.0
 
-    def test_unknown_model_uses_default_pricing(self):
-        cost = self.calculator.calculate_cost("openai", "unknown-model-xyz", 1000, 1000)
-        assert cost > 0
+    def test_an_unrated_model_is_unpriced_whatever_the_token_counts(self):
+        assert self.calculator.calculate_cost("openai", "unknown-model-xyz", 1000, 1000) is None
+        assert self.calculator.calculate_cost("openai", "unknown-model-xyz", -1, 0) is None
 
     def test_a_known_bedrock_profile_prices_from_the_bundled_table(self):
         assert resolve_pricing("bedrock", "us.amazon.nova-2-lite-v1:0", {}).status is PricingStatus.FALLBACK
@@ -76,7 +75,7 @@ class TestLivePricingConfigured:
         assert llm_pricing.resolve_live_pricing("openai", "gpt-4o").configured is True
         assert llm_pricing.resolve_live_pricing("openai", "gpt-4o-mini").configured is False
         assert llm_pricing.resolve_live_pricing("openai", "gpt-3.5-turbo").configured is False
-        assert llm_pricing.resolve_live_pricing("openai", "unknown-model-xyz").configured is False
+        assert llm_pricing.resolve_live_pricing("openai", "unknown-model-xyz") is None
 
 
 class TestCalculateCostWithCacheTokens:
@@ -115,11 +114,6 @@ class TestCalculateCostWithCacheTokens:
         model = "arn:aws:bedrock:eu-central-1:123456789012:provisioned-model/nova-tuned"
         assert self.calculator.calculate_cost("bedrock", model, 7, 20, 3697, 0) is None
 
-    def test_an_unrated_bedrock_family_derives_its_buckets_from_the_fabricated_default(self):
-        default_input = DEFAULT_PRICING["input_per_1k"]
-        cost = self.calculator.calculate_cost("bedrock", "eu.anthropic.claude-3-7-sonnet-20250219-v1:0", 0, 0, 1000, 0)
-        assert cost == round(default_input * 0.1, 6)
-
     def test_configured_cache_rates_win_over_the_provider_default(self, monkeypatch):
         monkeypatch.setattr(
             llm_pricing,
@@ -137,10 +131,6 @@ class TestCalculateCostWithCacheTokens:
         )
         cost = self.calculator.calculate_cost("bedrock", "us.amazon.nova-2-lite-v1:0", 0, 0, 4000, 1000)
         assert cost == round(4 * 0.000025, 6)
-
-    def test_unknown_model_prices_cache_buckets_at_the_fabricated_default(self):
-        cost = self.calculator.calculate_cost("openai", "unknown-model-xyz", 0, 0, 1000, 0)
-        assert cost == round(DEFAULT_PRICING["input_per_1k"], 6)
 
     def test_negative_cache_counts_are_clamped(self):
         legacy = self.calculator.calculate_cost("openai", "gpt-4o", 1000, 500)
@@ -474,14 +464,6 @@ class TestDisplayRatesContract:
         assert pricing == {"input_per_1k": 0.0025, "output_per_1k": 0.01}
         assert isinstance(pricing["input_per_1k"], float)
 
-    def test_unmatched_returns_default_pricing_copy(self):
-        pricing = display_rates("openai", "unknown-model-xyz")
-        assert pricing == DEFAULT_PRICING
-        assert pricing is not DEFAULT_PRICING
-
-    def test_bundled_default_row_still_applies_on_the_display_path(self):
-        assert display_rates("openrouter", "some/new-model") == {"input_per_1k": 0.001, "output_per_1k": 0.002}
-
     def test_longest_prefix_wins_like_the_ledger(self):
         assert display_rates("openai", "gpt-4o-mini-2024-07-18")["input_per_1k"] == 0.00015
 
@@ -683,16 +665,6 @@ class TestCacheRateLadder:
         assert res.cache_read_per_1k is None
         assert res.cache_creation_per_1k is None
 
-    def test_a_bundled_default_row_never_supplies_cache_rates(self, no_db_rates, monkeypatch):
-        monkeypatch.setitem(
-            llm_pricing.STATIC_LLM_PRICING_FALLBACK["openrouter"],
-            "_default",
-            {"input_per_1k": 0.001, "output_per_1k": 0.002, "cache_read_per_1k": 0.5},
-        )
-        live = llm_pricing.resolve_live_pricing("openrouter", "some/new-model")
-        assert live.display_rates["input_per_1k"] == 0.001, "the base rates still come off that row"
-        assert live.cache_read_per_1k is None
-
     def test_an_explicit_zero_is_never_mistaken_for_unresolved(self):
         configured = {
             "bedrock": {
@@ -769,6 +741,19 @@ _PARITY_CASES = {
                 }
             }
         },
+    ),
+    "unpriced_unknown_openai_model": (("openai", "gpt-5.5-turbo-ultra", 1000, 1000, 0, 0), {}),
+    "unpriced_openrouter": (("openrouter", "some/new-model", 1000, 1000, 0, 0), {}),
+    "unpriced_ollama": (("ollama", "llama3.1:8b", 1000, 1000, 0, 0), {}),
+    "unpriced_vllm": (("vllm", "meta-llama/llama-3-8b", 1000, 1000, 0, 0), {}),
+    "unpriced_anthropic_with_cache_activity": (("anthropic", "claude-sonnet-4-5", 1000, 100, 600, 200), {}),
+    "unpriced_bedrock_anthropic_family_with_cache_activity": (
+        ("bedrock", "eu.anthropic.claude-3-7-sonnet-20250219-v1:0", 0, 0, 1000, 0),
+        {},
+    ),
+    "tenant_default_row_prices_a_total_miss": (
+        ("ollama", "llama3.1:8b", 1000, 1000, 0, 0),
+        {"ollama": {"_default": {"input_per_1k": "0", "output_per_1k": "0"}}},
     ),
 }
 

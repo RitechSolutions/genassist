@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.utils.llm_usage_utils import USAGE_METADATA_MISSING
 from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -167,10 +168,11 @@ class TestTotalLlmUsageFallbackCalls:
         s.add_llm_usage(10, 5, provider="OpenAI ", model=" GPT-3.5-Turbo")
         s.add_llm_usage(10, 5, provider="ollama", model="llama3")
         usage = s.get_total_llm_usage()
-        assert usage["fallback_calls"] == 3
-        assert usage["fallback_models"] == ["openai/gpt-3.5-turbo", "openai/unknown-model-xyz"]
+        assert usage["fallback_calls"] == 2
+        assert usage["fallback_models"] == ["openai/gpt-3.5-turbo"]
         assert usage["calls"] == 5
         assert usage["cost_usd"] > 0
+        assert usage["cost_is_partial"] is True, "the unrated and the local model are unpriced, like the ledger"
 
 
 class TestTheNodeRequestDrivesTheTotals:
@@ -248,6 +250,25 @@ class TestTheRunCostNeverPassesOffASubtotal:
     def test_an_entirely_unpriced_run_is_not_reported_as_free(self):
         s = _state()
         self._unpriced_call(s)
+
+        response = s.format_state_as_response()
+        assert response["cost_usd"] is None
+        assert response["token_usage"]["cost_is_partial"] is True
+
+    def test_an_unrated_model_leaves_the_reply_without_a_cost(self):
+        s = _state()
+        s.add_llm_usage(1000, 1000, provider="openai", model="gpt-5.5-turbo-ultra")
+
+        response = s.format_state_as_response()
+        assert response["cost_usd"] is None
+        assert response["token_usage"]["cost_is_partial"] is True
+        assert response["token_usage"]["cost_usd"] == 0.0
+
+    def test_a_call_with_no_reported_usage_is_unpriced_like_the_ledger(self):
+        s = _state()
+        s.add_llm_usage(
+            0, 0, provider="anthropic", model="claude-3-5-sonnet", token_details={USAGE_METADATA_MISSING: True}
+        )
 
         response = s.format_state_as_response()
         assert response["cost_usd"] is None

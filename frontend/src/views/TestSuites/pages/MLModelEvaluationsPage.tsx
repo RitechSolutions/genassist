@@ -11,66 +11,20 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/dialog";
 import { PageListSkeleton } from "@/components/skeletons";
 
-import { deleteMLModel, getAllMLModels } from "@/services/mlModels";
-import { getModelPipelineRuns } from "@/services/mlModelPipelines";
+import { deleteMLModel, getAllMLModels, getMLModel } from "@/services/mlModels";
 import { MLModel } from "@/interfaces/ml-model.interface";
 import { modelTypeLabel as getModelTypeLabel } from "@/views/MLModels/helpers/modelTypes";
-
-interface RegressionMetrics {
-  rmse?: number;
-  mae?: number;
-  r2_score?: number;
-  mse?: number;
-}
-
-interface ClassificationMetrics {
-  accuracy?: number;
-  precision?: number;
-  recall?: number;
-  f1_score?: number;
-}
-
-type TaskType = "regression" | "classification";
+import {
+  ClassificationMetrics,
+  getModelEvaluationMetrics,
+  MLTaskType,
+  RegressionMetrics,
+} from "@/views/TestSuites/helpers/mlModelEvaluation";
 
 interface EvaluationResult {
   model: MLModel;
-  taskType: TaskType | null;
+  taskType: MLTaskType | null;
   metrics: RegressionMetrics & ClassificationMetrics;
-}
-
-function extractMetrics(
-  executionOutput: Record<string, unknown> | undefined
-): { taskType: TaskType | null; metrics: RegressionMetrics & ClassificationMetrics } {
-  const output = (executionOutput?.output ?? {}) as Record<string, unknown>;
-  const metrics = (output.metrics ?? {}) as Record<string, unknown>;
-
-  if (typeof metrics.accuracy === "number") {
-    return {
-      taskType: "classification",
-      metrics: {
-        accuracy: metrics.accuracy as number,
-        precision: metrics.precision as number | undefined,
-        recall: metrics.recall as number | undefined,
-        f1_score: metrics.f1_score as number | undefined,
-      },
-    };
-  }
-
-  if (typeof metrics.mse === "number" || typeof metrics.r2_score === "number") {
-    const mse = metrics.mse as number | undefined;
-    const rmse = typeof metrics.rmse === "number" ? (metrics.rmse as number) : mse !== undefined ? Math.sqrt(mse) : undefined;
-    return {
-      taskType: "regression",
-      metrics: {
-        mse,
-        rmse,
-        mae: metrics.mae as number | undefined,
-        r2_score: metrics.r2_score as number | undefined,
-      },
-    };
-  }
-
-  return { taskType: null, metrics: {} };
 }
 
 function formatMetric(value: number | undefined): string {
@@ -83,7 +37,7 @@ type QualityLabel = "Excellent" | "Good" | "Fair" | "Poor";
 // band thresholds give a consistent read across model types — unlike RMSE/MAE,
 // which are in the target variable's own units and can't be compared across models.
 function getQualityRating(
-  taskType: TaskType | null,
+  taskType: MLTaskType | null,
   metrics: RegressionMetrics & ClassificationMetrics
 ): { label: QualityLabel; score: number } | null {
   if (taskType === "regression") {
@@ -117,7 +71,7 @@ function QualityBadge({ label }: { label: QualityLabel }) {
 
 interface RankedModel {
   model: MLModel;
-  taskType: TaskType;
+  taskType: MLTaskType;
   metrics: RegressionMetrics & ClassificationMetrics;
   quality: QualityLabel;
   score: number;
@@ -170,10 +124,7 @@ const MLModelEvaluationsPage: React.FC = () => {
       try {
         const perModel = await Promise.all(
           models.map(async (model) => {
-            const runs = await getModelPipelineRuns(model.id);
-            const latestCompleted = runs.find((run) => run.status === "completed");
-            if (!latestCompleted) return null;
-            const { taskType, metrics } = extractMetrics(latestCompleted.execution_output);
+            const { taskType, metrics } = await getModelEvaluationMetrics(model);
             if (!taskType) return null;
             const rating = getQualityRating(taskType, metrics);
             if (!rating) return null;
@@ -189,7 +140,7 @@ const MLModelEvaluationsPage: React.FC = () => {
             return b.score - a.score;
           });
 
-        const groupCounts: Partial<Record<TaskType, number>> = {};
+        const groupCounts: Partial<Record<MLTaskType, number>> = {};
         const ranked: RankedModel[] = sorted.map((entry) => {
           groupCounts[entry.taskType] = (groupCounts[entry.taskType] ?? 0) + 1;
           return { ...entry, rankInGroup: groupCounts[entry.taskType]! };
@@ -239,20 +190,17 @@ const MLModelEvaluationsPage: React.FC = () => {
   };
 
   const handleEvaluate = async () => {
-    const model = models.find((m) => m.id === selectedIds[0]);
-    if (!model) return;
+    const listed = models.find((m) => m.id === selectedIds[0]);
+    if (!listed) return;
 
     setIsEvaluating(true);
     setEvaluateError(null);
     setResult(null);
     try {
-      const runs = await getModelPipelineRuns(model.id);
-      const latestCompleted = runs.find((run) => run.status === "completed");
-      if (!latestCompleted) {
-        setResult({ model, taskType: null, metrics: {} });
-        return;
-      }
-      const { taskType, metrics } = extractMetrics(latestCompleted.execution_output);
+      // The list is loaded with the page; re-read the model so a retrain or
+      // promotion since then shows its current metrics.
+      const model = (await getMLModel(listed.id)) ?? listed;
+      const { taskType, metrics } = await getModelEvaluationMetrics(model);
       setResult({ model, taskType, metrics });
     } catch (error) {
       setEvaluateError(error instanceof Error ? error.message : "Failed to fetch pipeline runs for this model.");
@@ -458,7 +406,7 @@ const MLModelEvaluationsPage: React.FC = () => {
 
           {result.taskType === null && (
             <div className="px-6 py-4 text-sm text-muted-foreground">
-              No training metrics available for this model. It has no completed training pipeline run yet.
+              No training metrics are available for this model. Train it with validation data to generate metrics.
             </div>
           )}
         </div>

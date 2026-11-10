@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   Coins,
   DollarSign,
-  Info,
   MessageSquare,
   Percent,
   TrendingDown,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/card";
+import { ManageCostsLink } from "@/components/ManageCostsLink";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { ExportButton } from "@/components/ui/ExportButton";
 import { formatUsd } from "@/helpers/formatCurrency";
@@ -59,6 +59,7 @@ import {
   type SourceSubRowParent,
 } from "../helpers/llmUsageSubRows";
 import { pricedCostPerCall } from "../helpers/llmUsageMetrics";
+import { pricingNoticeCopy } from "../helpers/pricingNotice";
 
 // Provider is covered by the always-on Provider share card, so it stays out of this selector
 const DIMENSIONS: Array<{ value: LlmUsageDimension; label: string; heading?: string }> = [
@@ -274,6 +275,15 @@ function LlmUsagePage() {
   const hasPartialCost = items.some((i) => i.cost_is_partial);
   const coverageNotice = useDismissibleNotice(COVERAGE_NOTICE, summary?.last_unpriced_at);
   const fallbackNotice = useDismissibleNotice(FALLBACK_NOTICE, summary?.last_fallback_at);
+  const showCoverage =
+    !!summary && summary.unpriced_calls > 0 && unpricedTokenPct >= MIN_UNPRICED_TOKEN_PCT && coverageNotice.visible;
+  const showFallback = !!summary && summary.fallback_calls > 0 && fallbackNotice.visible;
+  const pricingNotice = pricingNoticeCopy(unpricedTokenPct, summary?.fallback_calls ?? 0, showCoverage, showFallback);
+  const bothNotices = showCoverage && showFallback;
+  const dismissPricingNotice = () => {
+    if (showCoverage) coverageNotice.dismiss();
+    if (showFallback) fallbackNotice.dismiss();
+  };
 
   const subRowParentOf = (i: LlmUsageBreakdownItem): SourceSubRowParent | null =>
     dimension === "source" && isSourceSubRowParent(i.key) ? i.key : null;
@@ -446,39 +456,26 @@ function LlmUsagePage() {
 
         {error && <p className="text-sm text-red-500">{error}</p>}
 
-        {summary && summary.unpriced_calls > 0 && unpricedTokenPct >= MIN_UNPRICED_TOKEN_PCT && coverageNotice.visible && (
-          <div className="flex items-center gap-3 rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span>
-              <span className="font-semibold">{unpricedTokenPct.toFixed(1)}% of tokens have no configured rate.</span>{" "}
-              Totals below are the priced subtotal. Rates added under LLM Settings › LLM Providers apply to new
-              calls only.
+        {pricingNotice && (
+          <div
+            className={cn(
+              "flex flex-wrap gap-3 sm:flex-nowrap rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400",
+              bothNotices ? "items-start" : "items-center"
+            )}
+          >
+            <AlertTriangle className={cn("h-4 w-4 shrink-0", bothNotices && "mt-0.5")} />
+            <span className="grow basis-[calc(100%-3.75rem)] sm:basis-0">
+              <span className="font-semibold">{pricingNotice.lead}</span> {pricingNotice.body}
             </span>
+            <ManageCostsLink className="order-last ml-7 sm:order-none sm:ml-0" />
             <button
               type="button"
-              onClick={coverageNotice.dismiss}
-              aria-label="Dismiss pricing coverage notice"
-              className="ml-auto shrink-0 rounded p-0.5 opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        {summary && summary.fallback_calls > 0 && fallbackNotice.visible && (
-          <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2.5 text-sm text-muted-foreground">
-            <Info className="h-4 w-4 shrink-0" />
-            <span>
-              <span className="font-semibold text-foreground">
-                {summary.fallback_calls.toLocaleString()} calls used bundled fallback rates.
-              </span>{" "}
-              Add matching rates to price new calls from your own configuration.
-            </span>
-            <button
-              type="button"
-              onClick={fallbackNotice.dismiss}
-              aria-label="Dismiss fallback rates notice"
-              className="ml-auto shrink-0 rounded p-0.5 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              onClick={dismissPricingNotice}
+              aria-label={pricingNotice.dismissLabel}
+              className={cn(
+                "shrink-0 rounded p-0.5 opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2",
+                bothNotices && "mt-0.5"
+              )}
             >
               <X className="h-4 w-4" />
             </button>
