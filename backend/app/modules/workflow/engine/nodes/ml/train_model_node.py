@@ -48,6 +48,7 @@ from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as 
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml import model_registry
 from app.modules.workflow.engine.nodes.ml import training_checks
+from app.modules.workflow.engine.nodes.ml import training_data_storage
 from app.modules.workflow.engine.nodes.ml import training_progress
 
 logger = logging.getLogger(__name__)
@@ -510,7 +511,7 @@ class TrainModelNode(BaseNode):
 
             # Load data from CSV file
             training_progress.report("loading_data", "Loading training data", 5)
-            df = ml_utils.load_csv_file(file_url, self.state.thread_id, await ml_utils.extra_csv_directories())
+            df = await training_data_storage.load_training_csv(file_url, self.state.thread_id)
             # Column types saved by an upstream Preprocessing node (nullable
             # Int64/boolean, string, category, datetime) are converted to the
             # plain dtypes the steps below select on - see
