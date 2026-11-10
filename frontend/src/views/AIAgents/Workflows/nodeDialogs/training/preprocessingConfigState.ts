@@ -147,3 +147,22 @@ export function hasUnsavedHandEdits(
   return !sameGeneratedSection(code, baselineCode) && !generatedSectionMatchesConfig(code, config);
 }
 
+
+/**
+ * Whether Save in Configure mode must keep an older node's code as it is
+ * instead of regenerating it from the steps. An older node ("migrated": no
+ * stored steps, read from its code on open) skips the hand-edit check when it
+ * opens, so lines someone added by hand inside its generated function are
+ * only kept by not regenerating it. That's safe while its steps are unchanged
+ * since opening (e.g. only the name changed): they were read from this very
+ * code. Its steps are then not stored either, so the next open reads them
+ * from the code again instead of flagging the code as edited by hand.
+ */
+export function keepsOlderNodeCode(
+  source: ConfigSource,
+  stepsUnchanged: boolean,
+  code: string,
+  config: PreprocessingConfig
+): boolean {
+  return source === "migrated" && stepsUnchanged && !generatedSectionMatchesConfig(code, config);
+}

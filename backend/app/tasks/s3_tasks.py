@@ -11,6 +11,7 @@ from croniter import croniter
 
 from app.core.utils.s3_utils import S3Client
 from app.dependencies.injector import injector
+from app.modules.data.load_result import ensure_has_text, load_document
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.data.utils import FileTextExtractor
 from app.schemas.agent_knowledge import KBCreate
@@ -144,7 +145,6 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
 
         files_added = 0
         files_deleted = 0
-        kb_errors = []
 
         logger.debug("Getting existing files from RAG...")
         # Get existing documents using simplified manager
@@ -197,6 +197,9 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         current_file = 0
         # add new files to RAG
         for file_info in s3_new_files:
+            if file_info.get("size", 0) == 0:
+                logger.debug(f"Skipping empty object {file_info['key']}")
+                continue
             try:
                 current_file += 1
                 logger.debug(f"Processing file {current_file} of {len(s3_new_files)}")
@@ -237,11 +240,10 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                     "kb_id": str(kb.id),
                 }
 
-                # Add to knowledge base using simplified manager
-                res = await rag_manager.add_document(
-                    kb, doc_id, extracted_text, metadata
-                )
-                logger.debug(f"Document {file_name} processed with result: {res}")
+                ensure_has_text(extracted_text, file_name)
+                warning = await load_document(rag_manager, kb, doc_id, extracted_text, metadata, file_name)
+                if warning:
+                    kb_errors.append(warning)
                 files_added += 1
 
             except Exception as e:

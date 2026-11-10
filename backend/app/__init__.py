@@ -280,6 +280,7 @@ LONG_TASK_TIMEOUTS = {
     "execute_workflow_run": 2 * 60 * 60,
     "execute_webhook_trigger_run": 2 * 60 * 60,
     "execute_pipeline_run": 2 * 60 * 60,
+    "run_ml_training_job": 2 * 60 * 60,
     "app.tasks.analytics_aggregation_tasks.aggregate_agent_analytics": 110 * 60,
     "app.tasks.analytics_aggregation_tasks.backfill_agent_analytics": 110 * 60,
     "app.tasks.backfill_llm_usage_tasks.backfill_llm_usage_ledger": 110 * 60,
@@ -321,6 +322,7 @@ def create_celery():
     # The "default" worker excludes them (CELERY_INCLUDE_ML_TASKS=False).
     ML_TASK_MODULES = [
         "app.tasks.ml_model_pipeline_tasks",
+        "app.tasks.ml_training_job_tasks",
         "app.tasks.test_suite_tasks",
         "app.tasks.workflow_schedule_tasks",
         "app.tasks.workflow_trigger_tasks",
@@ -399,6 +401,7 @@ def create_celery():
         task_default_queue="default",
         task_routes={
             "execute_pipeline_run": {"queue": "ml"},
+            "run_ml_training_job": {"queue": "ml"},
             "execute_test_suite_run": {"queue": "ml"},
             "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs": {"queue": "ml"},
             "execute_workflow_run": {"queue": "ml"},

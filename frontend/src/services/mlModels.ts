@@ -62,11 +62,23 @@ export const deleteMLModel = async (id: string): Promise<void> => {
  * Remove a .pkl uploaded for a save that was then rejected, so it doesn't stay in
  * File Manager. Best effort: a failure here must not hide the save error.
  */
-export const discardModelUpload = async (fileId: string): Promise<void> => {
+export const discardModelUpload = (fileId: string): Promise<void> =>
+  discardUnusedUpload(`${BASE}/upload`, fileId, "model file");
+
+/**
+ * Remove a Train Data Source upload the dialog no longer uses (rejected, replaced,
+ * removed or cancelled). The server keeps any file a workflow or model still uses.
+ * Best effort: a failure here is only logged.
+ */
+export const discardTrainingUpload = (fileId: string): Promise<void> =>
+  discardUnusedUpload(`${BASE}/training-data/upload`, fileId, "training file");
+
+/** Best-effort DELETE of an unused upload; a failure is only logged. */
+const discardUnusedUpload = async (path: string, fileId: string, label: string): Promise<void> => {
   try {
-    await apiRequest("DELETE", `${BASE}/upload/${encodeURIComponent(fileId)}`);
+    await apiRequest("DELETE", `${path}/${encodeURIComponent(fileId)}`);
   } catch (error) {
-    console.warn("Could not remove the unused model file upload:", error);
+    console.warn(`Could not remove the unused ${label} upload:`, error);
   }
 };
 
@@ -172,14 +184,23 @@ export const getTrainingDataLimits = async (): Promise<TrainingDataLimits | null
 export const analyzeTrainingFile = async (
   request: AnalyzeTrainingFileRequest,
 ): Promise<CSVAnalysisResult> => {
-  const response = await apiRequest<CSVAnalysisResult>(
-    "POST",
-    `${BASE}/analyze-file`,
-    { ...request },
-    { timeout: API_PREPROCESSING_TIMEOUT_MS },
-  );
-  if (!response) throw new Error("Failed to preview the file");
-  return response;
+  try {
+    const response = await apiRequest<CSVAnalysisResult>(
+      "POST",
+      `${BASE}/analyze-file`,
+      { ...request },
+      { timeout: API_PREPROCESSING_TIMEOUT_MS },
+    );
+    if (!response) throw new Error("Failed to preview the file");
+    return response;
+  } catch (error) {
+    // The server explains what is wrong with the file (e.g. two columns
+    // with the same name); show that instead of the HTTP status.
+    throw await actionableApiError(
+      error,
+      "The file preview could not be generated. Please try again.",
+    );
+  }
 };
 
 export const analyzeCSV = async (
