@@ -2,10 +2,16 @@
 
 import re
 import traceback
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils.sensitive_data_utils import (
+    redact_bound_values,
+    redact_sql_literal_values,
+)
 
 # Errors whose detail is deliberately written for an end user and contains no
 # internal information. Their detail may be returned outside development too.
@@ -32,6 +38,7 @@ CLIENT_SAFE_DETAIL_KEYS = frozenset(
         ErrorKey.ML_EXTRACT_FILE_INVALID,
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
         ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE,
+        ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED,
         ErrorKey.ML_TRAINING_SEARCH_TOO_LARGE,
         ErrorKey.ML_TRAINING_JOB_NOT_FOUND,
         ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING,
@@ -58,12 +65,39 @@ def sanitize_error_detail(text: str, max_len: int = 450) -> str:
     sanitized = " ".join(str(text).split())
     sanitized = re.sub(
         r"(client_secret|client_assertion|password|refresh_token|code_verifier)"
-        r"\s*[:=]\s*[^\s&\"']+",
+        r"\s*[:=]\s*(?:'[^']*'|\"[^\"]*\"|[^\s&\"']+)",
         r"\1=***",
         sanitized,
         flags=re.I,
     )
     return sanitized[:max_len]
+
+
+def sanitize_database_error(
+    error: Any,
+    *,
+    query: Any = None,
+    parameters: Mapping[str, Any] | None = None,
+    dialect: str | None = None,
+    max_len: int = 2_000,
+) -> str:
+    """Return a database or driver error that is safe to log.
+
+    Driver errors repeat the SQL, and with it any value written in the query
+    (``WHERE password = 'secret'``). Bound values and the query's string
+    literals are masked and obvious credentials (``password=...``) are hidden.
+    The error type and the table and column names stay readable, because this
+    message is also returned to the user. The general PII filter is left to the
+    log sinks: it would turn long table names into ``[TOKEN]``. ``dialect`` is
+    the datasource type, which decides how the query's quotes are read.
+    """
+    message = redact_bound_values(error, parameters)
+    message = redact_sql_literal_values(
+        message,
+        query,
+        dialect=dialect,
+    )
+    return sanitize_error_detail(message, max_len=max_len)
 
 
 def exception_location(error: BaseException) -> str:
