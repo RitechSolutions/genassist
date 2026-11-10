@@ -47,6 +47,7 @@ from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as hpo_module
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml import model_registry
+from app.modules.workflow.engine.nodes.ml import training_checks
 from app.modules.workflow.engine.nodes.ml import training_data_storage
 from app.modules.workflow.engine.nodes.ml import training_progress
 
@@ -313,25 +314,14 @@ class TrainModelNode(BaseNode):
                         f"Must be one of: {', '.join(hpo_module.VALID_METHODS)}"
                     ),
                 )
+            validation_split = training_checks.check_validation_split(validation_split)
+            training_checks.check_columns(target_column, feature_columns)
+            optimization_config = training_checks.check_optimization_config(
+                hyperparameter_optimization, optimization_config
+            )
 
             # Validate model type
-            valid_model_types = [
-                "xgboost",
-                "lightgbm",
-                "catboost",
-                "random_forest",
-                "extra_trees",
-                "gradient_boosting",
-                "decision_tree",
-                "linear_regression",
-                "ridge_regression",
-                "lasso_regression",
-                "elastic_net",
-                "logistic_regression",
-                "svm",
-                "knn",
-                "neural_network",
-            ]
+            valid_model_types = list(model_registry.VALID_MODEL_TYPES)
             if model_type not in valid_model_types:
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
@@ -351,15 +341,18 @@ class TrainModelNode(BaseNode):
                     error_key=ErrorKey.INTERNAL_ERROR,
                     error_detail=f"Invalid taskType: {task_type}. Must be one of: {', '.join(valid_task_types)}",
                 )
-            if model_type == "linear_regression" and task_type == "classification":
+            # Models that train only one task reject the other one here, so a
+            # Ridge/Lasso/Elastic Net set to Classification can't quietly train
+            # as regression (and fail later with a misleading "text values" error).
+            if model_type in ml_utils._REGRESSION_ONLY_MODEL_TYPES and task_type == "classification":
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail="taskType 'classification' is incompatible with modelType 'linear_regression', which only supports regression",
+                    error_detail=f"taskType 'classification' is incompatible with modelType '{model_type}', which only supports regression",
                 )
-            if model_type == "logistic_regression" and task_type == "regression":
+            if model_type in ml_utils._CLASSIFICATION_ONLY_MODEL_TYPES and task_type == "regression":
                 raise AppException(
                     error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail="taskType 'regression' is incompatible with modelType 'logistic_regression', which only supports classification",
+                    error_detail=f"taskType 'regression' is incompatible with modelType '{model_type}', which only supports classification",
                 )
 
             valid_outlier_strategies = ["no_action", "remove_outliers", "cap_outliers"]
@@ -594,6 +587,13 @@ class TrainModelNode(BaseNode):
                 if baseline_series is not None:
                     baseline_series = baseline_series[mask]
 
+            # Numbers stored as text ('12.5') are read as numbers - LightGBM
+            # and the ratio transform need them, and Task Type "auto" should
+            # judge them as numbers, not as one class per distinct text value.
+            # An explicit "classification" keeps the values as they are.
+            if task_type != "classification":
+                y = training_checks.numeric_target(y)
+
             # Determine if classification or regression, honoring an explicit
             # user override before falling back to inference from the target.
             is_classification = self._is_classification_task(y, model_type, task_type)
@@ -603,6 +603,15 @@ class TrainModelNode(BaseNode):
                     error_key=ErrorKey.INTERNAL_ERROR,
                     error_detail="targetTransform is only supported for regression tasks",
                 )
+
+            training_checks.check_training_data(
+                X, y, target_column, is_classification, training_checks.model_label(model_type),
+                missing_value_strategies={
+                    item.get("columnName"): item.get("strategy")
+                    for item in missing_value_handling
+                    if isinstance(item, dict)
+                },
+            )
 
             # Split BEFORE fitting any preprocessing (imputation medians/modes,
             # one-hot categories) — fitting those on the full dataset would leak
@@ -729,7 +738,7 @@ class TrainModelNode(BaseNode):
                     missing_value_fills[col] = fill_value
                     auto_fill_warnings.append(
                         f"Column '{col}': {missing_count} empty value(s) filled automatically with the "
-                        f"{fill_kind} ({fill_value!r}) of the training data. Set Missing Value Handling "
+                        f"{fill_kind} ({training_checks.format_value(fill_value)}) of the training data. Set Missing Value Handling "
                         "for this column to choose how instead."
                     )
 
@@ -802,6 +811,34 @@ class TrainModelNode(BaseNode):
                     )
                 y_train = y_train / baseline_train
                 logger.info(f"Training on ratio target: {target_column} / {baseline_column}")
+
+            # Every classifier is fit on class codes 0..n-1, not the raw
+            # labels: XGBoost rejects anything else ("Invalid classes
+            # inferred") and MLPClassifier's early stopping fails on text
+            # ("ufunc 'isnan' not supported"). Codes come from the classes
+            # left in the training split after the split, outlier removal and
+            # drop_rows, so they never skip a number; a class seen only in
+            # validation can't be scored (and XGBoost/LightGBM/CatBoost reject
+            # it in their eval set), so those validation rows are left out
+            # with a warning. The labels are saved with the model so
+            # inference returns them instead of the codes.
+            target_classes: Optional[List[Any]] = None
+            fit_parameters = model_parameters
+            if is_classification:
+                training_checks.check_training_classes(y_train, target_column)
+                y_train, y_val, target_classes = training_checks.encode_target_classes(y_train, y_val)
+                if y_val is not None and (y_val < 0).any():
+                    unseen = y_val < 0
+                    auto_fill_warnings.append(
+                        f"{int(unseen.sum())} validation row(s) have a '{target_column}' class that "
+                        "is not in the training rows, so they were left out of the validation "
+                        "metrics."
+                    )
+                    X_val, y_val = X_val[~unseen], y_val[~unseen]
+                    if len(y_val) == 0:
+                        X_val, y_val = None, None
+                # class_weight keyed by the user's labels must follow the codes.
+                fit_parameters = training_checks.remap_class_weight(model_parameters, target_classes)
 
             # Apply per-column encoding overrides (label/ordinal) and note which
             # columns asked for one-hot without dropping the first category.
@@ -903,6 +940,15 @@ class TrainModelNode(BaseNode):
             # Both run in a worker thread so a long fit never blocks the event
             # loop, and use at most ML_TRAINING_MAX_CORES cores.
             search_metadata = None
+            if hyperparameter_optimization != "none":
+                # Checks that need the task and the training split (e.g. a
+                # scoring metric of the wrong kind), even when there is nothing
+                # left to tune.
+                training_checks.check_search_against_data(
+                    optimization_config, is_classification, len(X_train),
+                    is_time_based=(split_method == "time_based"),
+                    model_type=model_type, model_parameters=model_parameters,
+                )
             if search_plan is not None:
                 training_progress.report(
                     "training",
@@ -919,7 +965,7 @@ class TrainModelNode(BaseNode):
                     X_train=X_train,
                     y_train=y_train,
                     method=hyperparameter_optimization,
-                    user_params=model_parameters,
+                    user_params=fit_parameters,
                     opt_config=optimization_config,
                     is_time_based=(split_method == "time_based"),
                     on_trial=lambda done, total: training_progress.report(
@@ -949,7 +995,7 @@ class TrainModelNode(BaseNode):
                     X_val=X_val,
                     y_val=y_val,
                     is_classification=is_classification,
-                    model_parameters=model_parameters,
+                    model_parameters=fit_parameters,
                 )
 
             # Evaluate model if validation data is available. When a
@@ -1010,6 +1056,9 @@ class TrainModelNode(BaseNode):
                     "encoding_before_feature_engineering": True,
                     **({"missing_value_fills": missing_value_fills} if missing_value_fills else {}),
                     **({"target_transform": target_transform} if target_transform is not None else {}),
+                    # Labels in class-code order: inference maps the model's
+                    # 0..n-1 predictions back to these.
+                    **({"target_classes": target_classes} if target_classes is not None else {}),
                 },
             )
 
@@ -1123,6 +1172,10 @@ class TrainModelNode(BaseNode):
                     else {}
                 ),
                 **({"target_transform": target_transform} if target_transform is not None else {}),
+                **(
+                    {"target_classes": ml_utils.sanitize_for_json(target_classes)}
+                    if target_classes is not None else {}
+                ),
             }
             if search_metadata:
                 result["hyperparameter_optimization"] = search_metadata
@@ -1142,7 +1195,12 @@ class TrainModelNode(BaseNode):
             )
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Train model processing failed: {str(e)}",
+                error_detail=(
+                    "Training failed: "
+                    + training_checks.describe_training_error(
+                        e, training_checks.model_label(str(config.get("modelType") or "").lower())
+                    )
+                ),
             ) from e
 
     def _handle_outliers(
@@ -1950,9 +2008,12 @@ class TrainModelNode(BaseNode):
         """
         # Some models are inherently classification or regression, regardless
         # of task_type (a conflicting override is rejected earlier in process()).
-        if model_type == "logistic_regression":
+        if model_type in ml_utils._CLASSIFICATION_ONLY_MODEL_TYPES:
             return True
-        if model_type == "linear_regression":
+        # Ridge/Lasso/Elastic Net are regressors too: treating them as
+        # classification would fit a regressor on class codes and fail at
+        # inference on its decimal predictions.
+        if model_type in ml_utils._REGRESSION_ONLY_MODEL_TYPES:
             return False
 
         # An explicit user selection takes priority over inference.
