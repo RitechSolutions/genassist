@@ -73,6 +73,51 @@ STALE_CATEGORICAL_DEFAULT_WARNING_PREFIX = (
     "Feature default(s) no longer match categories fitted by this run"
 )
 
+# Same labels the UI shows (frontend/src/constants/mlModelTypes.ts).
+MODEL_TYPE_LABELS = {
+    "xgboost": "XGBoost",
+    "lightgbm": "LightGBM",
+    "catboost": "CatBoost",
+    "random_forest": "Random Forest",
+    "extra_trees": "Extra Trees",
+    "gradient_boosting": "Gradient Boosting",
+    "decision_tree": "Decision Tree",
+    "linear_regression": "Linear Regression",
+    "ridge_regression": "Ridge Regression",
+    "lasso_regression": "Lasso Regression",
+    "elastic_net": "Elastic Net",
+    "logistic_regression": "Logistic Regression",
+    "svm": "Support Vector Machine",
+    "knn": "K-Nearest Neighbors",
+    "neural_network": "Neural Network",
+}
+
+
+def _model_type_value(model_type: Any) -> str:
+    return str(getattr(model_type, "value", model_type) or "").lower()
+
+
+def model_type_mismatch_message(
+    model_name: Optional[str], registered_type: Any, trained_type: Any
+) -> Optional[str]:
+    """Explain why a model of one type can't take a file trained as another.
+
+    A model's type is chosen when it is registered; a training run must not
+    change it, so a run whose Train Model node trains a different type is
+    refused. Returns None when the types match (or the model has none yet).
+    """
+    registered = _model_type_value(registered_type)
+    trained = _model_type_value(trained_type)
+    if not registered or not trained or registered == trained:
+        return None
+    registered_label = MODEL_TYPE_LABELS.get(registered, registered)
+    trained_label = MODEL_TYPE_LABELS.get(trained, trained)
+    return (
+        f"Model '{model_name}' is registered as {registered_label}, but the Train Model "
+        f"node is set to {trained_label}. The model was not changed. Set the Train Model "
+        f"node's Model Type to {registered_label}, or register a new {trained_label} model."
+    )
+
 
 def _category_key(value: Any) -> Any:
     if isinstance(value, np.generic):
