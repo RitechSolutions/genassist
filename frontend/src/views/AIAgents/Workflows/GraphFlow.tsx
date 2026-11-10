@@ -382,6 +382,8 @@ const GraphFlowContent: React.FC = () => {
   // True from the moment an agent's workflow is requested until its nodes have
   // been mounted and framed — drives the canvas loading overlay.
   const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(!!agentId);
+  // Bumped by every agent load, so a slower earlier load can tell it was replaced.
+  const agentLoadRef = useRef(0);
   const edgeReconnectSuccessful = useRef(true);
 
   // Handle double-click on nodes to focus view using helper function
@@ -427,8 +429,8 @@ const GraphFlowContent: React.FC = () => {
         // a freshly opened workflow (whose nodes can sit at large coordinates) renders off-screen.
         // Frame it now that its nodes have loaded.
         if (nodes.length > 0) reactFlowInstance?.fitView({ padding: 0.2 });
-        // `workflow` is only set once the fetch has resolved, so the settle pass
-        // that runs at mount (before any data) leaves the overlay up.
+        // `workflow` is only set by the current load's fetch (loadAgent clears it and drops
+        // stale results), so the settle pass that runs before any data leaves the overlay up.
         if (workflow) setIsLoadingWorkflow(false);
       }, 100);
       return () => clearTimeout(timer);
@@ -572,38 +574,42 @@ const GraphFlowContent: React.FC = () => {
     [resetHistory, restoreNodeFunctions, setNodes, setEdges, setWorkflow]
   );
 
-  const loadWorkflow = useCallback(
-    async (workflowId: string) => {
-      const workflow = await getWorkflowById(workflowId);
-      setWorkflow(workflow);
-      handleWorkflowLoaded(workflow);
-    },
-    [handleWorkflowLoaded, setWorkflow]
-  );
-
   const loadAgent = useCallback(
     async (agentId: string) => {
+      const load = ++agentLoadRef.current;
+      const replaced = () => load !== agentLoadRef.current;
       setIsLoadingWorkflow(true);
+      // Start from a blank editor. Only this load's fetch sets `workflow` again, and the
+      // previous agent's graph can't show, be saved or count as unsaved meanwhile, or if this fails.
+      setWorkflow(undefined);
+      lastSavedWorkflowRef.current = null;
+      setNodes([]);
+      setEdges([]);
+      resetHistory({ nodes: [], edges: [] });
       try {
         const agent = await getAgentConfig(agentId);
+        if (replaced()) return;
+        // apiRequest answers a 403 with null instead of throwing.
+        if (!agent) throw new Error(`Agent ${agentId} could not be loaded`);
         setAgent(agent);
         const asked = askedVersion.current;
         askedVersion.current = null;
         // Only a version of this agent; anything else opens the live one.
         const version = asked && asked !== agent.workflow_id ? await getWorkflowById(asked).catch(() => null) : null;
-        if (version?.agent_id === agentId) {
-          setWorkflow(version);
-          handleWorkflowLoaded(version);
-        } else {
-          await loadWorkflow(agent.workflow_id);
-        }
+        if (replaced()) return;
+        const workflow = version?.agent_id === agentId ? version : await getWorkflowById(agent.workflow_id);
+        if (replaced()) return;
+        if (!workflow) throw new Error(`Workflow ${agent.workflow_id} could not be loaded`);
+        handleWorkflowLoaded(workflow);
       } catch (error) {
+        // A newer load owns the overlay now; only the current one may clear it.
+        if (replaced()) return;
         // Nothing to mount — don't leave the overlay up forever.
         setIsLoadingWorkflow(false);
         throw error;
       }
     },
-    [handleWorkflowLoaded, loadWorkflow, setWorkflow]
+    [handleWorkflowLoaded, resetHistory, setNodes, setEdges]
   );
 
   const handleAgentUpdated = useCallback(async () => {
@@ -784,9 +790,10 @@ const GraphFlowContent: React.FC = () => {
   };
 
   useEffect(() => {
-    if (executionState) {
-      setWorkflow({ ...workflow, executionState });
-    }
+    if (!executionState) return;
+    // BottomPanel reports its run state on mount, before the workflow has loaded.
+    // Spreading the missing workflow would make a stand-in object that looks loaded.
+    setWorkflow((current) => (current ? { ...current, executionState } : current));
   }, [executionState]);
 
   const handleSaveWorkflow = async () => {
@@ -810,7 +817,7 @@ const GraphFlowContent: React.FC = () => {
     }
   };
   const handleUpdateWorkflowTestInputs = (inputs: Record<string, string>) => {
-    setWorkflow({ ...workflow, testInput: inputs });
+    setWorkflow((current) => (current ? { ...current, testInput: inputs } : current));
   };
 
   // Cap the in-memory history so a long session doesn't grow unbounded.

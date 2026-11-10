@@ -22,11 +22,26 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_model_inference_node as inference_module
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import MLModelInferenceNode
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from tests.unit.ml_training_fixtures import removing_trained_models, training_tmp_dir
+
+
+@pytest.fixture
+def tmp_path():
+    with training_tmp_dir() as path:
+        yield path
+
+
+@pytest.fixture(autouse=True)
+def _remove_trained_models(monkeypatch):
+    with removing_trained_models(monkeypatch):
+        yield
 
 
 def _make_node(node_cls, **kwargs):
@@ -54,8 +69,12 @@ def patch_ml_models_service(monkeypatch):
     return _apply
 
 
-def _make_ml_model(model_file_path, features, target_variable="y", model_type="linear_regression"):
+def _make_ml_model(
+    model_file_path, features, target_variable="y", model_type="linear_regression",
+    inference_params=None,
+):
     return SimpleNamespace(
+        inference_params=inference_params,
         id=uuid.uuid4(),
         name="e2e-model",
         pkl_file=model_file_path,
@@ -104,11 +123,11 @@ async def test_label_encoded_column_interleaved_with_numeric_keeps_correct_order
     )
     assert train_result["success"] is True
 
-    with open(train_result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / train_result["model_file_path"]), "rb") as f:
         payload = pickle.load(f)
     assert payload["metadata"]["model_input_columns"] == ["a", "cat", "b"]
 
-    ml_model = _make_ml_model(train_result["model_file_path"], ["a", "cat", "b"])
+    ml_model = _make_ml_model(str(DATA_VOLUME / train_result["model_file_path"]), ["a", "cat", "b"])
     patch_ml_models_service(ml_model)
 
     inference_node = _make_node(MLModelInferenceNode)
@@ -147,11 +166,11 @@ async def test_ratio_target_reconstructs_real_value_at_inference(tmp_path, patch
     )
     assert train_result["success"] is True
 
-    with open(train_result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / train_result["model_file_path"]), "rb") as f:
         payload = pickle.load(f)
     assert payload["metadata"]["target_transform"] == {"type": "ratio", "baselineColumn": "base"}
 
-    ml_model = _make_ml_model(train_result["model_file_path"], ["x"])
+    ml_model = _make_ml_model(str(DATA_VOLUME / train_result["model_file_path"]), ["x"])
     patch_ml_models_service(ml_model)
 
     inference_node = _make_node(MLModelInferenceNode)
@@ -200,12 +219,12 @@ async def test_engineered_polynomial_feature_rebuilt_at_inference(tmp_path, patc
     )
     assert train_result["success"] is True
 
-    with open(train_result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / train_result["model_file_path"]), "rb") as f:
         payload = pickle.load(f)
     assert payload["metadata"]["model_input_columns"] == ["x", "x_poly_x^2"]
     assert len(payload["metadata"]["feature_engineering_steps"]) == 1
 
-    ml_model = _make_ml_model(train_result["model_file_path"], ["x"])
+    ml_model = _make_ml_model(str(DATA_VOLUME / train_result["model_file_path"]), ["x"])
     patch_ml_models_service(ml_model)
 
     inference_node = _make_node(MLModelInferenceNode)
@@ -254,12 +273,12 @@ async def test_drop_column_is_removed_from_saved_feature_columns(tmp_path, patch
     assert train_result["success"] is True
     assert train_result["feature_columns"] == ["a", "b"]
 
-    with open(train_result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / train_result["model_file_path"]), "rb") as f:
         payload = pickle.load(f)
     assert payload["metadata"]["feature_columns"] == ["a", "b"]
     assert payload["metadata"]["model_input_columns"] == ["a", "b"]
 
-    ml_model = _make_ml_model(train_result["model_file_path"], ["a", "b"])
+    ml_model = _make_ml_model(str(DATA_VOLUME / train_result["model_file_path"]), ["a", "b"])
     patch_ml_models_service(ml_model)
 
     inference_node = _make_node(MLModelInferenceNode)
@@ -313,12 +332,12 @@ async def test_feature_engineering_uses_ordinal_codes_at_train_and_inference(
     )
     assert train_result["success"] is True
 
-    with open(train_result["model_file_path"], "rb") as f:
+    with open(str(DATA_VOLUME / train_result["model_file_path"]), "rb") as f:
         metadata = pickle.load(f)["metadata"]
     assert "size_x_price" in metadata["model_input_columns"]
     assert metadata["encoding_before_feature_engineering"] is True
 
-    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "price"])
+    ml_model = _make_ml_model(str(DATA_VOLUME / train_result["model_file_path"]), ["size", "price"])
     patch_ml_models_service(ml_model)
     result = await _make_node(MLModelInferenceNode).process(
         {"modelId": str(ml_model.id),
@@ -369,7 +388,7 @@ async def test_custom_expression_comparing_encoded_column_to_text(
     )
     assert train_result["success"] is True
 
-    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "price"])
+    ml_model = _make_ml_model(str(DATA_VOLUME / train_result["model_file_path"]), ["size", "price"])
     patch_ml_models_service(ml_model)
     result = await _make_node(MLModelInferenceNode).process(
         {"modelId": str(ml_model.id),
@@ -440,15 +459,64 @@ async def test_missing_encoded_value_uses_training_fill_at_inference(
     )
     assert train_result["success"] is True
 
-    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "price"])
+    inference_request = {"inferenceInputs": {"size": [None, "Low"], "price": [6, 6]}}
+
+    # The switch is off by default: the missing size is an error, not a fill.
+    ml_model = _make_ml_model(str(DATA_VOLUME / train_result["model_file_path"]), ["size", "price"])
+    patch_ml_models_service(ml_model)
+    with pytest.raises(AppException) as exc_info:
+        await _make_node(MLModelInferenceNode).process(
+            {"modelId": str(ml_model.id), **inference_request}
+        )
+    assert exc_info.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+    assert "Missing value(s) for feature(s): size." in exc_info.value.error_detail
+
+    ml_model = _make_ml_model(
+        str(DATA_VOLUME / train_result["model_file_path"]), ["size", "price"],
+        inference_params={"useTrainingFills": True},
+    )
     patch_ml_models_service(ml_model)
     result = await _make_node(MLModelInferenceNode).process(
-        {"modelId": str(ml_model.id),
-         "inferenceInputs": {"size": [None, "Low"], "price": [6, 6]}}
+        {"modelId": str(ml_model.id), **inference_request}
     )
     assert result["status"] == "success"
     # The missing size was filled with "Low", so both rows predict the same.
     assert result["prediction"][0] == pytest.approx(result["prediction"][1])
+
+
+@pytest.mark.asyncio
+async def test_unseen_label_encoded_value_is_rejected_at_inference(
+    tmp_path, patch_ml_models_service
+):
+    # MI-14: an unseen value in a label-encoded column used to become -1 and
+    # the model predicted from it with no error or warning.
+    _, rows = _size_rows(lambda size, code, price: 5.0 * code + price)
+    csv_path = tmp_path / "train_data.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    train_result = await _make_node(TrainModelNode).process(
+        {
+            "name": f"e2e-unseen-label-{uuid.uuid4().hex[:8]}",
+            "modelType": "linear_regression",
+            "fileUrl": str(csv_path),
+            "targetColumn": "y",
+            "featureColumns": ["size", "price"],
+            "categoricalEncoding": [{"columnName": "size", "strategy": "label"}],
+            "validationSplit": 0.0,
+            "scalingMethod": "none",
+        }
+    )
+    assert train_result["success"] is True
+
+    ml_model = _make_ml_model(str(DATA_VOLUME / train_result["model_file_path"]), ["size", "price"])
+    patch_ml_models_service(ml_model)
+    with pytest.raises(AppException) as exc_info:
+        await _make_node(MLModelInferenceNode).process(
+            {"modelId": str(ml_model.id),
+             "inferenceInputs": {"size": ["Low", "Huge"], "price": [6, 6]}}
+        )
+    assert exc_info.value.error_key is ErrorKey.ML_INFERENCE_INPUT_INVALID
+    assert "'size'" in exc_info.value.error_detail
+    assert "Huge" in exc_info.value.error_detail
 
 
 @pytest.mark.asyncio
@@ -486,7 +554,10 @@ async def test_ordinal_number_column_encoded_alongside_text_column(tmp_path, pat
     )
     assert train_result["success"] is True
 
-    ml_model = _make_ml_model(train_result["model_file_path"], ["size", "priority"])
+    ml_model = _make_ml_model(
+        str(DATA_VOLUME / train_result["model_file_path"]), ["size", "priority"],
+        inference_params={"useTrainingFills": True},
+    )
     patch_ml_models_service(ml_model)
     result = await _make_node(MLModelInferenceNode).process(
         {"modelId": str(ml_model.id),

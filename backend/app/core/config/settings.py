@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Tuple
 from urllib.parse import quote, unquote, urlparse
 
@@ -192,6 +193,14 @@ class ProjectSettings(BaseSettings):
         ),
     )
     ML_EXTRACT_CHUNK_ROWS: int = Field(default=2_000, gt=0)
+    # CPU cores one Train Model job may use, for cross-validation workers and
+    # estimator threads together.
+    ML_TRAINING_MAX_CORES: int = Field(default=2, gt=0)
+    # Largest hyperparameter search (candidates x cross-validation folds) a
+    # Train Model node may run. A bigger search is refused before it starts.
+    ML_HPO_MAX_FITS: int = Field(default=1_000, gt=0)
+    # How long a background training job's status and result stay readable.
+    ML_TRAINING_JOB_TTL_SECONDS: int = Field(default=24 * 60 * 60, gt=0)
     # A .json array upload is parsed in one piece (JSON Lines and the other
     # formats stream), so it gets its own, lower ceiling.
     ML_EXTRACT_JSON_MAX_BYTES: int = Field(default=512 * 1024 * 1024, gt=0)
@@ -246,6 +255,11 @@ class ProjectSettings(BaseSettings):
     # Lock wait cap for startup migrations (0 waits forever) and the retries after a lock timeout
     MIGRATION_LOCK_TIMEOUT_SECONDS: int = Field(default=5, ge=0, le=2147483)  # Postgres maximum
     MIGRATION_LOCK_RETRIES: int = Field(default=5, ge=0)
+    # Celery workers wait at startup until the databases are at the migration head of
+    # this image, so they never query columns a pending migration adds (see migrations.py)
+    CELERY_WAIT_FOR_SCHEMA: bool = True
+    SCHEMA_WAIT_TIMEOUT_SECONDS: int = Field(default=900, ge=0)
+    SCHEMA_WAIT_INTERVAL_SECONDS: int = Field(default=5, ge=1)
 
     # === Multi-Tenancy ===
     MULTI_TENANT_ENABLED: bool = False
@@ -258,6 +272,8 @@ class ProjectSettings(BaseSettings):
     LOG_LEVEL: str = "DEBUG"
     SQLALCHEMY_LOG_LEVEL: str = "ERROR"
     FASTAPI_RUN_PORT: int = 8000
+    # Address callers outside the load balancer use, e.g. https://api.example.com/api
+    PUBLIC_API_URL: Optional[str] = None
     # for alembic migration on startup (changed type from int to bool)
     AUTO_MIGRATE: bool = True
     API_VERSION: Optional[str] = "1.0"
@@ -479,6 +495,32 @@ class ProjectSettings(BaseSettings):
         # Blank, whitespace, "none" and "null" all mean unset.
         is_unset_spelling = isinstance(value, str) and value.strip().lower() in ("", "none", "null")
         return None if is_unset_spelling else value
+
+    @field_validator("PUBLIC_API_URL", mode="before")
+    @classmethod
+    def _public_api_url_is_the_api_root(cls, value: object) -> Optional[str]:
+        text = str(value or "").strip().rstrip("/")
+        if text.lower() in ("", "none", "null"):
+            return None
+        try:
+            parsed = urlparse(text)
+            is_api_root = (
+                parsed.scheme in ("http", "https")
+                and bool(parsed.hostname)
+                and (parsed.port is None or parsed.port > 0)
+                and parsed.path.endswith("/api")
+                and not (parsed.username or parsed.password or parsed.params or parsed.query or parsed.fragment)
+                and not any(char.isspace() for char in text)
+            )
+        except ValueError:
+            is_api_root = False
+        if is_api_root:
+            return text
+        # Dropped rather than raised so a typo can't stop startup; not echoed as it can hold credentials
+        logging.getLogger(__name__).error(
+            "Ignoring PUBLIC_API_URL: it must be the API's public root, e.g. https://api.example.com/api"
+        )
+        return None
 
     @property
     def read_statement_timeout(self) -> int:

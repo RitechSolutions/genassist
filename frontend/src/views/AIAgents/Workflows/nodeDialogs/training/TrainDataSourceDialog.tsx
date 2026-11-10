@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/button';
 import { FileUploader } from '@/components/FileUploader';
 import { Label } from '@/components/label';
@@ -11,6 +11,7 @@ import { getAllDataSources } from '@/services/dataSources';
 import {
   analyzeTrainingFile,
   CSVAnalysisResult,
+  discardTrainingUpload,
   getTrainingDataLimits,
   previewQuery,
   profileData,
@@ -34,6 +35,11 @@ import { BaseNodeDialogProps } from '../base';
 import { useNodeDialogState } from '../useNodeDialogState';
 import { CSVAnalysisDisplay } from './components/CSVAnalysisDisplay';
 import {
+  createDialogUploads,
+  isCurrentUpload,
+  UNMOUNTED_UPLOADER,
+} from './trainDataSourceUploads';
+import {
   TRAINING_FILE_TYPES,
   buildProfileDataRequest,
   createLatestRequestTracker,
@@ -41,6 +47,15 @@ import {
   isExcelFile,
   isSupportedTrainingFile,
 } from './trainDataSourceProfile';
+
+const EMPTY_TRAINING_FILE = {
+  csvFileName: null,
+  csvFilePath: null,
+  csvFileId: null,
+  csvFileUrl: null,
+  sheetName: null,
+  analysisResult: null,
+} satisfies Partial<TrainDataSourceDialogValues>;
 
 type TrainDataSourceDialogProps = BaseNodeDialogProps<TrainDataSourceNodeData, TrainDataSourceNodeData>;
 
@@ -81,6 +96,27 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
   const [queryPreviewResult, setQueryPreviewResult] = useState<CSVAnalysisResult | null>(null);
   // Switching files or Excel sheets quickly can overlap previews; only the latest may land.
   const [previewRequests] = useState(createLatestRequestTracker);
+  // Files uploaded while the dialog is open, so the ones not kept are removed again.
+  const [dialogUploads] = useState(createDialogUploads);
+  // Identifies the dialog opening an upload was started from. It changes on every
+  // opening, source type switch and unmount, so an upload that finishes after its dialog
+  // closed, reopened, switched type or went away is removed instead of landing in the form.
+  const [uploaderKey, setUploaderKey] = useState(0);
+  const liveUploaderKey = useRef(uploaderKey);
+  liveUploaderKey.current = uploaderKey;
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+  useEffect(() => {
+    if (isOpen) setUploaderKey((key) => key + 1);
+  }, [isOpen]);
+  // Leaving without Save or Cancel (node deleted, page left) keeps none of its uploads.
+  useEffect(
+    () => () => {
+      liveUploaderKey.current = UNMOUNTED_UPLOADER;
+      dialogUploads.discardAllExcept(null, discardTrainingUpload);
+    },
+    [dialogUploads]
+  );
   const [isProfiling, setIsProfiling] = useState(false);
   const [availableDataSources, setAvailableDataSources] = useState<DataSource[]>([]);
   const [trainingLimits, setTrainingLimits] = useState<TrainingDataLimits | null>(null);
@@ -234,8 +270,10 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
   };
 
   const handleSourceTypeChange = (value: string) => {
-    // Switching type drops the other type's values so they are never saved.
+    // Switching type drops the other type's values so they are never saved, and an
+    // upload still running for the file type is removed when it finishes.
     setQueryPreviewResult(null);
+    setUploaderKey((key) => key + 1);
     setValues((v) => applyTrainDataSourceType(v, value as TrainDataSourceType));
   };
 
@@ -250,7 +288,20 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
       return;
     }
 
-    onUpdate(merged);
+    handleUpdate(merged);
+    onClose();
+  };
+
+  // Every save, including "Save" in the panel's unsaved-changes prompt, keeps the saved
+  // file and removes the dialog's other uploads. The panel then calls onClose, which
+  // finds nothing left to remove.
+  const handleUpdate = (saved: TrainDataSourceNodeData) => {
+    onUpdate(saved);
+    dialogUploads.discardAllExcept(saved.csvFileId, discardTrainingUpload);
+  };
+
+  const handleCancel = () => {
+    dialogUploads.discardAllExcept(null, discardTrainingUpload);
     onClose();
   };
 
@@ -263,10 +314,9 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
   return (
     <NodeConfigPanel
       isOpen={isOpen}
-      onClose={onClose}
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={handleCancel}>
             Cancel
           </Button>
           <Button onClick={handleSave} loading={isFileUploading} icon={<Save className="h-4 w-4" />}>
@@ -275,6 +325,9 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
         </>
       }
       {...props}
+      // After the props spread, so every save and close of the panel goes through these.
+      onUpdate={handleUpdate}
+      onClose={handleCancel}
       data={merged}
     >
       <div className="space-y-4">
@@ -357,6 +410,7 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
         {/* Uploaded File Configuration */}
         {visibleFields.trainingFile && (
           <FileUploader
+            key={uploaderKey}
             label="Training File *"
             acceptedFileTypes={TRAINING_FILE_TYPES}
             initialServerFilePath={values.csvFilePath ?? ''}
@@ -367,6 +421,14 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
             maxFileSizeBytes={trainingLimits?.max_upload_bytes}
             maxFileSizeLabel={trainingLimits?.max_upload_label}
             onUploadComplete={(result) => {
+              if (!isCurrentUpload(uploaderKey, liveUploaderKey.current, isOpenRef.current)) {
+                // Its dialog was closed, reopened, cleared or unmounted: nothing will use it.
+                if (result.file_id) void discardTrainingUpload(result.file_id);
+                return;
+              }
+              // Replacing a file picked in this dialog removes that earlier upload.
+              dialogUploads.discard(values.csvFileId, discardTrainingUpload);
+              dialogUploads.add(result.file_id);
               setValues((v) => ({
                 ...v,
                 csvFileName: result.original_filename,
@@ -387,15 +449,8 @@ export const TrainDataSourceDialog: React.FC<TrainDataSourceDialogProps> = (prop
             onRemove={() => {
               previewRequests.start(); // a preview still running is for the removed file
               setIsAnalyzing(false);
-              setValues((v) => ({
-                ...v,
-                csvFileName: null,
-                csvFilePath: null,
-                csvFileId: null,
-                csvFileUrl: null,
-                sheetName: null,
-                analysisResult: null,
-              }));
+              dialogUploads.discard(values.csvFileId, discardTrainingUpload);
+              setValues((v) => ({ ...v, ...EMPTY_TRAINING_FILE }));
             }}
             placeholder="Select a CSV, Parquet, Excel or JSON file to upload"
           />

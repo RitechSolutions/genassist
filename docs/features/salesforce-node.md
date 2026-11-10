@@ -26,8 +26,8 @@ is encrypted at rest. Use the **Test Connection** button in the credential dialo
 | Field | Required | Notes |
 |-------|----------|-------|
 | `salesforce_instance_url` | yes | Your org / My Domain URL, e.g. `https://myorg.my.salesforce.com` (use the `.my.salesforce.com` host, **not** the `.my.salesforce-setup.com` Setup host) |
-| `salesforce_client_id` | yes | Connected App **Consumer Key** |
-| `salesforce_client_secret` | yes (encrypted) | Connected App **Consumer Secret** |
+| `salesforce_client_id` | yes | External Client App **Consumer Key** (older orgs: Connected App) |
+| `salesforce_client_secret` | yes (encrypted) | External Client App **Consumer Secret** |
 
 Authentication uses the **OAuth2 client-credentials grant** (app-level — no user login): the
 connector posts to `{instance_url}/services/oauth2/token` with `grant_type=client_credentials`
@@ -35,9 +35,10 @@ and the client id/secret. The `access_token` and the `instance_url` **returned b
 are then used for the Case create (the org may redirect to a pod-specific host, which the
 connector prefers over the configured URL).
 
-**One-time SalesForce setup:** on the Connected App enable **OAuth Settings → Enable Client
-Credentials Flow**, and under **Manage → Edit Policies → Client Credentials Flow** set a **Run
-As** integration user (the Cases are created as that user). No username/password/security-token
+**One-time SalesForce setup:** create an **External Client App** (Setup → External Client App
+Manager; SalesForce no longer allows new Connected Apps), enable the **Client Credentials Flow**
+in its OAuth settings, and in its policies set a **Run As** integration user (the Cases are
+created as that user). No username/password/security-token
 is stored in GenAssist.
 
 ### 2. Add and configure the node
@@ -51,6 +52,11 @@ is stored in GenAssist.
      "create new" affordance.
    - **Subject** → Case `Subject` (required)
    - **Description** → Case `Description` (required)
+   - **Web Email / Web Name / Web Phone** (optional) → Case `SuppliedEmail` / `SuppliedName` /
+     `SuppliedPhone`. A box with a usable value overrides a custom field with the same API name.
+     The same check applies when these fields are set as custom fields: an empty or invalid email
+     is left out (`Jane <jane@acme.com>` is sent as `jane@acme.com`), and names and phones are cut
+     to 80 and 40 characters, so a bad value never stops the Case from being created.
    - **Labels** (optional) — a comma-separated tags input. Each label is assigned to the
      created Case as a SalesForce **Topic** (the node finds or creates the Topic by name, then
      links it via `TopicAssignment`). Requires **Topics for Objects** enabled on Case; label
@@ -76,6 +82,16 @@ credential within the run's tenant context, authenticates to SalesForce, and cre
 | Auth / API / network failure (connector returns `None`) | `{"status": 500, "data": {"error": ...}}` |
 | Any unhandled exception | `{"status": 500, "data": {"error": ...}}` |
 | Downstream nodes wired after it | Still execute — the node does **not** halt the run |
+
+Subject and Description are cut to SalesForce's lengths (255 and 32,000 characters, counted the
+way SalesForce counts them); a cut Description ends with `[truncated]`. When SalesForce rejects a
+Case, Topic or Topic assignment the node creates, the logged and returned error holds only the
+error code and field names (for example `STRING_TOO_LONG on Description`), because SalesForce's
+message can repeat customer data. Errors from lookups, such as finding a Topic by its label,
+keep SalesForce's full message.
+
+After the Case is created, the Web Email and Web Name (or the `SuppliedEmail` / `SuppliedName`
+custom fields) are saved on the conversation for GDPR lookups, as the Zendesk node does.
 
 After the Case is created, each **Label** is assigned as a Topic: the node finds or creates the
 Topic by name, then inserts a `TopicAssignment` linking it to the Case. This runs per-label and
@@ -136,7 +152,7 @@ Run continues to any downstream nodes (pass-through)
 - **Connection test:** `DataSourceService.test_connection` dispatches `salesforce` to
   `SalesforceConnector.test_connection`.
 - **Tests:** `backend/tests/unit/workflow/test_salesforce_node.py`,
-  `test_salesforce_node_registration.py`,
+  `test_salesforce_node_registration.py`, `test_requester_pii.py`,
   `backend/tests/unit/integration/test_salesforce_connector.py`, and the SalesForce cases in
   `backend/tests/integration/app_settings/test_app_settings.py`.
 

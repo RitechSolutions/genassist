@@ -100,6 +100,7 @@ class ErrorKey(Enum):
     WORKFLOW_VERSION_ACTIVE = "WORKFLOW_VERSION_ACTIVE"
     WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER = "WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER"
     WORKFLOW_VERSION_IN_USE_BY_ML_MODEL = "WORKFLOW_VERSION_IN_USE_BY_ML_MODEL"
+    AGENT_IN_USE_BY_ML_MODEL = "AGENT_IN_USE_BY_ML_MODEL"
     SUB_AGENT_SESSION_STALE = "SUB_AGENT_SESSION_STALE"
     SUB_AGENT_INVALID_TOPOLOGY = "SUB_AGENT_INVALID_TOPOLOGY"
     SUB_AGENT_INVALID_CONFIG = "SUB_AGENT_INVALID_CONFIG"
@@ -142,7 +143,12 @@ class ErrorKey(Enum):
     ML_EXTRACT_FILE_INVALID = "ML_EXTRACT_FILE_INVALID"
     ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
     ML_TRAINING_UPLOAD_TOO_LARGE = "ML_TRAINING_UPLOAD_TOO_LARGE"
+    ML_TRAINING_SEARCH_TOO_LARGE = "ML_TRAINING_SEARCH_TOO_LARGE"
+    ML_TRAINING_JOB_NOT_FOUND = "ML_TRAINING_JOB_NOT_FOUND"
+    ML_TRAINING_JOB_ALREADY_RUNNING = "ML_TRAINING_JOB_ALREADY_RUNNING"
+    ML_TRAINING_JOB_NEEDS_USER = "ML_TRAINING_JOB_NEEDS_USER"
     ML_EXTRACT_FAILED = "ML_EXTRACT_FAILED"
+    ML_TRAINING_DATA_STORAGE_FAILED = "ML_TRAINING_DATA_STORAGE_FAILED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
     ML_INFERENCE_INPUT_INVALID = "ML_INFERENCE_INPUT_INVALID"
@@ -316,6 +322,10 @@ ERROR_MESSAGES = {
             "This version cannot be deleted while an ML model's pipeline configuration uses it ({0}). "
             "Remove those configurations first."
         ),
+        ErrorKey.AGENT_IN_USE_BY_ML_MODEL: (
+            "This agent cannot be deleted while an ML model's pipeline configuration uses one of its "
+            "workflow versions ({0}). Remove those configurations first."
+        ),
         ErrorKey.OPERATOR_ROLE_MISSING: "Operator role missing.",
         ErrorKey.CREATE_USER_TYPE_IN_MENU: "Operators and ai agents should be created in their specific menus.",
         ErrorKey.LOGIN_ERROR_CONSOLE_USER: "Failed to give access for console type user.",
@@ -357,10 +367,15 @@ ERROR_MESSAGES = {
         ErrorKey.ML_EXTRACT_FILE_INVALID: "The uploaded training file could not be read.",
         ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
         ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: "The training data file is too large to upload.",
+        ErrorKey.ML_TRAINING_SEARCH_TOO_LARGE: "The hyperparameter search is too large to run.",
+        ErrorKey.ML_TRAINING_JOB_NOT_FOUND: "The training job was not found or has expired.",
+        ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING: "You already have a training job running.",
+        ErrorKey.ML_TRAINING_JOB_NEEDS_USER: "Testing a model training needs a signed-in user.",
         ErrorKey.ML_EXTRACT_FAILED: (
             "Train Data Source could not complete the test. "
             "Check its configuration and try again."
         ),
+        ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED: "Could not reach file storage for the training data.",
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
         ErrorKey.ML_INFERENCE_INPUT_INVALID: "ML model inference received invalid input values.",
@@ -469,9 +484,24 @@ ERROR_MESSAGES = {
         ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: (
             "Le fichier de données d'entraînement est trop volumineux pour être téléversé."
         ),
+        ErrorKey.ML_TRAINING_SEARCH_TOO_LARGE: (
+            "La recherche d'hyperparamètres est trop grande pour être exécutée."
+        ),
+        ErrorKey.ML_TRAINING_JOB_NOT_FOUND: (
+            "La tâche d'entraînement est introuvable ou a expiré."
+        ),
+        ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING: (
+            "Vous avez déjà une tâche d'entraînement en cours."
+        ),
+        ErrorKey.ML_TRAINING_JOB_NEEDS_USER: (
+            "Le test d'un entraînement de modèle nécessite un utilisateur connecté."
+        ),
         ErrorKey.ML_EXTRACT_FAILED: (
             "La source de données d'entraînement n'a pas pu terminer le test. "
             "Vérifiez sa configuration et réessayez."
+        ),
+        ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED: (
+            "Impossible d'accéder au stockage de fichiers pour les données d'entraînement."
         ),
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",

@@ -7,6 +7,7 @@ This node fetches training data from databases or uploaded files for ML model tr
 import asyncio
 import logging
 import os
+import re
 import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -29,11 +30,13 @@ from app.modules.integration.database.read_only_sql import (
     validate_read_only_sql,
 )
 from app.modules.workflow.engine.base_node import BaseNode
-from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml import ml_utils, training_data_storage
 from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     SUPPORTED_TRAINING_FILE_LABEL,
     SUPPORTED_TRAINING_FILE_SUFFIXES,
     TrainingFileReader,
+    stored_file_suffix,
+    training_file_suffix,
 )
 from app.modules.workflow.engine.utils import (
     PARAM_STYLE_NAMED,
@@ -113,8 +116,12 @@ class TrainDataSourceNode(BaseNode):
             )
 
             if source_type == "datasource":
-                return await self._process_database_source(config, limits, chunk_rows)
-            return await self._process_csv_source(config, limits, chunk_rows)
+                result = await self._process_database_source(config, limits, chunk_rows)
+            else:
+                result = await self._process_csv_source(config, limits, chunk_rows)
+            # data_path is shown relative to DATA_VOLUME/train
+            await training_data_storage.save_training_data(ml_utils.DATA_VOLUME / "train" / result["data_path"])
+            return result
 
         except AppException:
             raise
@@ -335,18 +342,21 @@ class TrainDataSourceNode(BaseNode):
                     )
                     raise self._file_unavailable_error() from None
 
-                source_name = (
-                    csv_file_name
-                    or getattr(stored_file, "name", None)
-                    or getattr(stored_file, "path", None)
-                    or csv_file_path
-                    or ""
+                if stored_file is None:
+                    raise self._file_unavailable_error()
+
+                # The file type comes from the stored record, read the same way
+                # as the preview and profile endpoints. csvFileName comes from
+                # the client, so it only counts when the record has no extension
+                # at all. Those are older uploads that predate extension
+                # tracking; the endpoints reject them, but saved workflows keep
+                # running on them, falling back to the CSV default as before.
+                suffix = (
+                    stored_file_suffix(stored_file)
+                    or training_file_suffix(csv_file_name or "")
+                    or training_file_suffix(csv_file_path or "")
+                    or ".csv"
                 )
-                # Older saved workflows can reference CSV files whose stored
-                # names predate extension tracking. Preserve their historical
-                # CSV behavior while still rejecting explicit unsupported
-                # extensions below.
-                suffix = Path(source_name).suffix.lower() or ".csv"
                 self._validate_training_file_suffix(suffix)
 
                 stored_size = getattr(stored_file, "size", None)
@@ -385,7 +395,10 @@ class TrainDataSourceNode(BaseNode):
                 csv_file_path = str(temporary_source_path)
 
             # Only files inside the data volume, or the configured storage folder, can be read
-            allowed_directories = [ml_utils.DATA_VOLUME, *(await ml_utils.extra_csv_directories())]
+            extra_directories = await ml_utils.extra_csv_directories()
+            allowed_directories = [ml_utils.DATA_VOLUME, *extra_directories]
+            # A path to an earlier run's output may only be in File Manager storage on this server
+            await training_data_storage.fetch_training_data(csv_file_path, self.state.thread_id, extra_directories)
             candidates = [csv_file_path]
             if not os.path.isabs(csv_file_path) and self.state.thread_id:
                 candidates.insert(0, ml_utils.DATA_VOLUME / "train" / self.state.thread_id / csv_file_path)
@@ -554,7 +567,7 @@ class TrainDataSourceNode(BaseNode):
         return {
             "success": True,
             "data": sample_data,
-            "data_path": data_path,
+            "data_path": ml_utils.data_volume_reference(data_path),
             "metadata": {
                 "rowCount": row_count,
                 "columns": columns,
@@ -707,12 +720,15 @@ class TrainDataSourceNode(BaseNode):
         if suffix in SUPPORTED_TRAINING_FILE_SUFFIXES:
             return
 
+        # The suffix can come from a file name, so only echo a plain extension.
+        shown = suffix if re.fullmatch(r"\.[a-z0-9]{1,10}", suffix) else "unknown"
+
         raise AppException(
             error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
             status_code=400,
             error_detail=(
-                "This training file type is not supported. Use one of: "
-                f"{SUPPORTED_TRAINING_FILE_LABEL}."
+                f"This training file type ({shown}) is not "
+                f"supported. Use one of: {SUPPORTED_TRAINING_FILE_LABEL}."
             ),
         )
 

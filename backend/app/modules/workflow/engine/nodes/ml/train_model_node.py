@@ -4,6 +4,7 @@ Train Model node implementation using the BaseNode class.
 This node trains ML models on CSV data and saves them as .pkl files.
 """
 
+import asyncio
 import logging
 import os
 import pickle
@@ -45,6 +46,9 @@ from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as hpo_module
 from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml import model_registry
+from app.modules.workflow.engine.nodes.ml import training_data_storage
+from app.modules.workflow.engine.nodes.ml import training_progress
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +58,27 @@ logger = logging.getLogger(__name__)
 # workflows saved with them, and replayed at inference for models trained
 # with them.
 _RETIRED_FE_STRATEGIES = ("normalize", "standardize")
+
+
+def _rows_dropped_warning(verb: str, split_counts: Dict[str, int], detail: str) -> str:
+    """
+    User-facing warning for rows a training step left out, e.g.
+    "Removed 5 training rows with outliers in 'x' (iqr)". split_counts maps a
+    split name ("training", "validation") to its row count; zero counts are
+    left out of the sentence.
+    """
+    parts = [f"{count} {split}" for split, count in split_counts.items() if count]
+    rows = "row" if sum(split_counts.values()) == 1 else "rows"
+    return f"{verb} {' and '.join(parts)} {rows} {detail}"
+
+
+def _join_reason_counts(reason_counts: Dict[str, int]) -> str:
+    """{"zero": 12, "missing": 7} -> "zero (12) or missing (7)"; zero counts left out."""
+    parts = [f"{reason} ({count})" for reason, count in reason_counts.items() if count]
+    if len(parts) < 2:
+        return "".join(parts)
+    return f"{', '.join(parts[:-1])} or {parts[-1]}"
+
 
 # Try to import xgboost (optional dependency)
 try:
@@ -156,7 +181,10 @@ class TrainModelNode(BaseNode):
                             "cap_outliers"), method ("iqr" (default) or "zscore"),
                             iqrMultiplier (default 1.5), zScoreThreshold (default 3).
                             Bounds are computed from the training split only (never
-                            the validation split) and then applied to both.
+                            the validation split). "cap_outliers" clips both
+                            splits to them; "remove_outliers" drops outlier rows
+                            from the training split only, so validation metrics
+                            are still computed on every validation row.
                 - categoricalEncoding: Optional list of per-column categorical encoding
                             specs, each a dict with: columnName (required), strategy
                             ("no_action" (default), "one_hot", "label", or "ordinal"),
@@ -178,14 +206,19 @@ class TrainModelNode(BaseNode):
                 - featureEngineering: Optional list of derived-feature specs, each a
                             dict with: newColumnName (required), strategy
                             ("custom_expression", "bin_numeric", "polynomial",
-                            "log_transform", "quantile_transform",
-                            "power_transform", or "pca"), plus strategy-specific
+                            "datetime_features", "log_transform",
+                            "quantile_transform", "power_transform",
+                            "math_transform", or "pca"), plus strategy-specific
                             fields (expression / binColumn+numBins+binStrategy
                             ("uniform" equal-width, default, or "quantile"
                             equal-frequency) /
-                            polynomialColumns+polynomialDegree / sourceColumns,
+                            polynomialColumns+polynomialDegree /
+                            datetimeColumn+datetimeParts (year, month, day,
+                            day_of_week, quarter, hour, is_weekend; hour only
+                            when the values have a time of day) / sourceColumns,
                             with quantileOutputDistribution+nQuantiles,
-                            powerMethod, pcaComponents+pcaStandardize, and
+                            powerMethod, mathFunction (sin, cos, sqrt, abs,
+                            square, cbrt), pcaComponents+pcaStandardize, and
                             replaceSourceColumns). Bin edges, polynomial
                             features, quantiles, power-transform lambdas and PCA
                             components are fit on the training split only and
@@ -206,9 +239,11 @@ class TrainModelNode(BaseNode):
                             baselineColumn is read from the source data like
                             targetColumn - it does not need to be one of
                             featureColumns. Only supported for regression tasks.
-                            Rows where baselineColumn is zero or missing are
-                            dropped (an undefined ratio can't be used as a
-                            training target).
+                            Rows where baselineColumn is zero, missing, not a
+                            number or infinite are dropped from both splits (an
+                            undefined ratio can't be used as a training target),
+                            with a warning in the result; if that leaves no
+                            training rows the run fails.
 
         Returns:
             Dictionary with training results and model file path
@@ -403,7 +438,7 @@ class TrainModelNode(BaseNode):
                     )
 
             valid_fe_strategies = [
-                "custom_expression", "bin_numeric", "polynomial",
+                "custom_expression", "bin_numeric", "polynomial", "datetime_features",
                 *ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS,
                 *_RETIRED_FE_STRATEGIES,
             ]
@@ -441,6 +476,8 @@ class TrainModelNode(BaseNode):
                     )
                 if strategy in ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS:
                     self._validate_column_transform_config(item)
+                if strategy == "datetime_features":
+                    self._validate_datetime_features_config(item)
                 if strategy == "polynomial" and (not item.get("polynomialColumns") or not item.get("polynomialDegree")):
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
@@ -464,6 +501,13 @@ class TrainModelNode(BaseNode):
                         error_detail="targetTransform requires a baselineColumn",
                     )
 
+            # Refuse an oversized search before loading any data. The API
+            # checks this too before queueing a job; this covers every other
+            # caller (pipelines, the execute API).
+            search_plan = hpo_module.check_search_size(
+                model_type, model_parameters, hyperparameter_optimization, optimization_config
+            )
+
             # Check if an optional ML library dependency is installed when needed
             if model_type in _OPTIONAL_MODEL_DEPENDENCIES:
                 package_name, is_available = _OPTIONAL_MODEL_DEPENDENCIES[model_type]
@@ -476,13 +520,15 @@ class TrainModelNode(BaseNode):
             logger.info(f"Training {model_type} model: {name}")
 
             # Load data from CSV file
-            df = ml_utils.load_csv_file(file_url, self.state.thread_id, await ml_utils.extra_csv_directories())
+            training_progress.report("loading_data", "Loading training data", 5)
+            df = await training_data_storage.load_training_csv(file_url, self.state.thread_id)
             # Column types saved by an upstream Preprocessing node (nullable
             # Int64/boolean, string, category, datetime) are converted to the
             # plain dtypes the steps below select on - see
             # normalize_dtypes_for_training.
             df = ml_utils.normalize_dtypes_for_training(df)
             logger.info(f"Loaded {len(df)} rows from {file_url}")
+            training_progress.report("preparing", f"Preparing {len(df):,} rows", 15)
 
             # Validate columns exist
             all_columns = list(df.columns)
@@ -613,14 +659,23 @@ class TrainModelNode(BaseNode):
                 baseline_val = None
                 logger.info(f"Using all {len(X_train)} samples for training (no validation split)")
 
+            # Rows a training step leaves out (outlier removal, unusable
+            # ratio-target baselines) - told to the user in the result's
+            # "warnings" rather than only logged.
+            dropped_row_warnings: List[str] = []
+
             # Handle outliers — bounds (IQR quartiles or z-score mean/std) are
-            # computed from the training split only, then applied to both
-            # splits. This must run before imputation/encoding/scaling below
-            # since it can change which rows/values those steps see.
+            # computed from the training split only. Capping applies them to
+            # both splits; removal drops training rows only. This must run
+            # before imputation/encoding/scaling below since it can change
+            # which rows/values those steps see.
             if outlier_handling:
-                X_train, y_train, X_val, y_val, baseline_train, baseline_val = self._handle_outliers(
-                    X_train, y_train, X_val, y_val, outlier_handling, baseline_train, baseline_val
+                X_train, y_train, X_val, y_val, baseline_train, baseline_val, outlier_warnings = (
+                    self._handle_outliers(
+                        X_train, y_train, X_val, y_val, outlier_handling, baseline_train, baseline_val
+                    )
                 )
+                dropped_row_warnings.extend(outlier_warnings)
 
             # Apply per-column missing-value overrides (drop_column/drop_rows/
             # impute_*). Fill values are computed from the training split
@@ -687,40 +742,64 @@ class TrainModelNode(BaseNode):
             # fails on a column-count mismatch.
             feature_columns = [c for c in feature_columns if c in X_train.columns]
 
-            # Apply the ratio target transform, if configured. Rows where the
-            # baseline is zero or missing are dropped first - the ratio would
-            # be undefined (division by zero) or NaN, neither usable as a
-            # training target. y_val_actual keeps the real-unit validation
-            # target so _evaluate_model can reconstruct predictions
-            # (predicted_ratio * baseline) back to real units before scoring,
-            # instead of reporting ratio-scale metrics.
+            # Apply the ratio target transform, if configured. Rows whose
+            # baseline is zero, missing, not a number or infinite are dropped
+            # first from both splits - the ratio would be undefined there, and
+            # none of those is usable as a training target. y_val_actual keeps
+            # the real-unit validation target so _evaluate_model can
+            # reconstruct predictions (predicted_ratio * baseline) back to real
+            # units before scoring, instead of reporting ratio-scale metrics.
             y_val_actual = None
             if target_transform is not None:
-                train_keep = baseline_train.notna() & (baseline_train != 0)
-                if not train_keep.all():
-                    logger.warning(
-                        f"Dropping {(~train_keep).sum()} training rows with a zero or missing "
-                        f"'{baseline_column}' baseline (ratio target is undefined there)"
+                baseline_train, train_keep, train_reasons = self._check_ratio_baseline(baseline_train)
+                if len(train_keep) and not train_keep.any():
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            f"Every training row has a zero, missing, non-numeric or infinite "
+                            f"'{baseline_column}' baseline, so no ratio target can be computed. "
+                            "Choose a different baseline column or fix its values."
+                        ),
                     )
+                if not train_keep.all():
                     X_train, y_train, baseline_train = (
                         X_train[train_keep].reset_index(drop=True),
                         y_train[train_keep].reset_index(drop=True),
                         baseline_train[train_keep].reset_index(drop=True),
                     )
+                dropped_by_split = {"training": int((~train_keep).sum()), "validation": 0}
+                reason_totals = dict(train_reasons)
                 if X_val is not None:
-                    val_keep = baseline_val.notna() & (baseline_val != 0)
-                    if not val_keep.all():
-                        logger.warning(
-                            f"Dropping {(~val_keep).sum()} validation rows with a zero or missing "
-                            f"'{baseline_column}' baseline (ratio target is undefined there)"
+                    baseline_val, val_keep, val_reasons = self._check_ratio_baseline(baseline_val)
+                    if len(val_keep) and not val_keep.any():
+                        raise AppException(
+                            error_key=ErrorKey.INTERNAL_ERROR,
+                            error_detail=(
+                                f"Every validation row has a zero, missing, non-numeric or infinite "
+                                f"'{baseline_column}' baseline, so the model can't be scored. "
+                                "Fix the baseline values, change the validation split, or choose a "
+                                "different baseline column."
+                            ),
                         )
+                    if not val_keep.all():
                         X_val, y_val, baseline_val = (
                             X_val[val_keep].reset_index(drop=True),
                             y_val[val_keep].reset_index(drop=True),
                             baseline_val[val_keep].reset_index(drop=True),
                         )
+                    dropped_by_split["validation"] = int((~val_keep).sum())
+                    reason_totals = {r: reason_totals[r] + val_reasons[r] for r in reason_totals}
                     y_val_actual = y_val.copy()
                     y_val = y_val / baseline_val
+                if any(dropped_by_split.values()):
+                    dropped_row_warnings.append(
+                        _rows_dropped_warning(
+                            "Dropped",
+                            dropped_by_split,
+                            f"whose '{baseline_column}' baseline is "
+                            f"{_join_reason_counts(reason_totals)}; a ratio target can't be computed there.",
+                        )
+                    )
                 y_train = y_train / baseline_train
                 logger.info(f"Training on ratio target: {target_column} / {baseline_column}")
 
@@ -821,9 +900,20 @@ class TrainModelNode(BaseNode):
 
             # Train the model — either a plain single fit with fixed params, or a
             # hyperparameter search over the curated space for this model type.
+            # Both run in a worker thread so a long fit never blocks the event
+            # loop, and use at most ML_TRAINING_MAX_CORES cores.
             search_metadata = None
-            if hyperparameter_optimization != "none":
-                optimization_result = hpo_module.optimize_hyperparameters(
+            if search_plan is not None:
+                training_progress.report(
+                    "training",
+                    f"Training {search_plan['fits']:,} models "
+                    f"({search_plan['candidates']:,} parameter combinations x {search_plan['cv_folds']} folds) "
+                    f"on {hpo_module.training_cores()} cores",
+                    30,
+                )
+                optimization_result = await asyncio.to_thread(
+                    self._run_with_core_limit,
+                    hpo_module.optimize_hyperparameters,
                     model_type=model_type,
                     is_classification=is_classification,
                     X_train=X_train,
@@ -832,6 +922,9 @@ class TrainModelNode(BaseNode):
                     user_params=model_parameters,
                     opt_config=optimization_config,
                     is_time_based=(split_method == "time_based"),
+                    on_trial=lambda done, total: training_progress.report(
+                        "training", f"Bayesian optimization: trial {done} of {total}", 30 + 50 * done // max(total, 1)
+                    ),
                 )
             else:
                 optimization_result = None
@@ -848,6 +941,7 @@ class TrainModelNode(BaseNode):
                         f"No tunable hyperparameters available for '{model_type}' "
                         f"(space empty or fully fixed by modelParameters); training with fixed params instead."
                     )
+                training_progress.report("training", f"Training the {model_type} model", 30)
                 model = await self._train_model(
                     model_type=model_type,
                     X_train=X_train,
@@ -865,6 +959,7 @@ class TrainModelNode(BaseNode):
             # trained directly on the real-unit target.
             metrics = {}
             if X_val is not None and y_val is not None:
+                training_progress.report("evaluating", "Evaluating on the validation split", 85)
                 metrics = self._evaluate_model(
                     model, X_val,
                     y_val_actual if y_val_actual is not None else y_val,
@@ -874,6 +969,7 @@ class TrainModelNode(BaseNode):
                 logger.info(f"Validation metrics: {metrics}")
 
             # Save model to .pkl file (model + metadata payload)
+            training_progress.report("saving", "Saving the model", 92)
             model_artifact = await self._save_model(
                 model=model,
                 name=name,
@@ -971,6 +1067,7 @@ class TrainModelNode(BaseNode):
                     feature_columns=feature_columns,
                     target_column=target_column,
                     local_pkl_path=model_artifact["model_file_path"],
+                    training_metrics=metrics,
                     target_model_id=target_model_id,
                     target_transform=target_transform,
                     categorical_feature_contracts=categorical_feature_contracts,
@@ -978,8 +1075,10 @@ class TrainModelNode(BaseNode):
             )
             if missing_value_fills:
                 auto_fill_warnings.append(
-                    "Training-time missing-value fills were stored in the model artifact and will "
-                    "be applied at inference when those features are omitted or null."
+                    "Training-time missing-value fills were stored in the model artifact. They "
+                    "are applied at inference only when 'Fill missing inputs with training values' "
+                    "is turned on for the model; otherwise a missing input fails the run unless "
+                    "the model has a Feature Default for it."
                 )
 
             # Retired strategies still run (so saved workflows and their models
@@ -995,7 +1094,7 @@ class TrainModelNode(BaseNode):
                 if item.get("strategy") in _RETIRED_FE_STRATEGIES
             ]
             training_warnings = (
-                auto_fill_warnings + training_warnings + registration_warnings
+                dropped_row_warnings + auto_fill_warnings + training_warnings + registration_warnings
             )
             for warning in training_warnings:
                 logger.warning(warning)
@@ -1005,7 +1104,9 @@ class TrainModelNode(BaseNode):
                 "success": True,
                 "model_name": name,
                 "model_type": model_type,
-                "model_file_path": model_artifact["model_file_path"],
+                "model_file_path": ml_utils.data_volume_reference(
+                    model_artifact["model_file_path"], base=""
+                ),
                 "model_version": model_artifact["model_version"],
                 "target_column": target_column,
                 "feature_columns": feature_columns,
@@ -1056,10 +1157,19 @@ class TrainModelNode(BaseNode):
         around — so a validation row can never influence where a bound is
         drawn for the training data it's supposed to evaluate.
 
-        baseline_train/baseline_val (if given) back an optional targetTransform
-        ratio target - kept row-aligned with X_train/X_val through any
-        remove_outliers row drops, same as y_train/y_val.
+        "cap_outliers" clips both splits to the bounds. "remove_outliers" drops
+        outlier rows from the training split only: the validation split keeps
+        every row, so metrics are scored on the data the model will really see
+        rather than on a set made easier by removing its hardest rows.
+
+        baseline_train (if given) backs an optional targetTransform ratio
+        target - kept row-aligned with X_train through any remove_outliers row
+        drops, same as y_train.
+
+        Returns the splits plus a list of user-facing warnings, one per column
+        that had training rows removed.
         """
+        warnings: List[str] = []
         for item in outlier_handling:
             column = item.get("columnName")
             strategy = item.get("strategy", "no_action")
@@ -1089,25 +1199,62 @@ class TrainModelNode(BaseNode):
                 if X_val is not None:
                     X_val[column] = X_val[column].clip(lower_bound, upper_bound)
             elif strategy == "remove_outliers":
+                # Rows with an empty value in the column can't be checked
+                # against the bounds and are removed too, as before - but
+                # reported separately, since they aren't outliers.
                 train_mask = X_train[column].between(lower_bound, upper_bound)
-                removed_train = (~train_mask).sum()
+                empty_train = int(X_train[column].isna().sum())
+                removed_train = int((~train_mask).sum()) - empty_train
                 X_train, y_train = X_train[train_mask].reset_index(drop=True), y_train[train_mask].reset_index(drop=True)
                 if baseline_train is not None:
                     baseline_train = baseline_train[train_mask].reset_index(drop=True)
-                if X_val is not None:
-                    val_mask = X_val[column].between(lower_bound, upper_bound)
-                    removed_val = (~val_mask).sum()
-                    X_val, y_val = X_val[val_mask].reset_index(drop=True), y_val[val_mask].reset_index(drop=True)
-                    if baseline_val is not None:
-                        baseline_val = baseline_val[val_mask].reset_index(drop=True)
-                else:
-                    removed_val = 0
                 logger.info(
-                    f"Removed {removed_train} training and {removed_val} validation outlier rows "
-                    f"from '{column}' using bounds [{lower_bound}, {upper_bound}] ({method})"
+                    f"Removed {removed_train} training outlier rows from '{column}' using bounds "
+                    f"[{lower_bound}, {upper_bound}] ({method}); validation rows are kept"
                 )
+                if removed_train:
+                    warnings.append(
+                        _rows_dropped_warning(
+                            "Removed", {"training": removed_train}, f"with outliers in '{column}' ({method})"
+                        )
+                    )
+                if empty_train:
+                    warnings.append(
+                        _rows_dropped_warning(
+                            "Removed",
+                            {"training": empty_train},
+                            f"with an empty '{column}'; Remove outliers can't check them against the bounds",
+                        )
+                    )
 
-        return X_train, y_train, X_val, y_val, baseline_train, baseline_val
+        return X_train, y_train, X_val, y_val, baseline_train, baseline_val, warnings
+
+    @staticmethod
+    def _check_ratio_baseline(baseline: pd.Series):
+        """
+        Classify a ratio-target baseline split. Returns (numeric baseline,
+        keep mask, counts per reason) - a row is kept only when its baseline
+        is a finite, non-zero number. Reasons, each row counted once:
+        "missing" (empty or blank text), "not a number" (text that doesn't
+        parse, or true/false), "infinite" (+/-inf) and "zero". Same rules as
+        the inference node's _validated_ratio_baseline_values, so a row
+        training accepts is one inference accepts too.
+        """
+        blank = baseline.map(lambda v: isinstance(v, str) and not v.strip()).astype(bool)
+        is_bool = baseline.map(lambda v: isinstance(v, (bool, np.bool_))).astype(bool)
+        numeric = pd.to_numeric(baseline.where(~blank & ~is_bool), errors="coerce").astype(float)
+        missing = baseline.isna() | blank
+        not_a_number = numeric.isna() & ~missing
+        infinite = np.isinf(numeric)
+        zero = numeric == 0
+        keep = np.isfinite(numeric) & (numeric != 0)
+        reasons = {
+            "zero": int(zero.sum()),
+            "missing": int(missing.sum()),
+            "not a number": int(not_a_number.sum()),
+            "infinite": int(infinite.sum()),
+        }
+        return numeric, keep, reasons
 
     def _encode_categoricals(self, X_train, X_val, categorical_encoding):
         """
@@ -1495,11 +1642,127 @@ class TrainModelNode(BaseNode):
                 X_train, X_val, step = self._apply_column_transform(X_train, X_val, item)
                 steps.append(step)
 
+            elif strategy == "datetime_features":
+                X_train, X_val, step = self._apply_datetime_features(X_train, X_val, item, label_encodings, ordinal_encodings)
+                steps.append(step)
+
         return X_train, X_val, steps
 
     @staticmethod
+    def _validate_datetime_features_config(item: Dict[str, Any]) -> None:
+        """Config checks for Date-Time Features, before any data is loaded."""
+        name = item.get("newColumnName")
+
+        def fail(problem: str) -> None:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Feature engineering '{name}' (Date-Time Features): {problem}",
+            )
+
+        if not item.get("datetimeColumn"):
+            fail("choose the date/time column")
+        parts = item.get("datetimeParts")
+        if parts is not None:
+            if not isinstance(parts, list) or not parts:
+                fail("choose at least one part (e.g. year, month)")
+            unknown = [p for p in parts if p not in ml_utils.DATETIME_PARTS]
+            if unknown:
+                fail(f"unknown part(s) {unknown} - choose from {', '.join(ml_utils.DATETIME_PARTS)}")
+
+    def _apply_datetime_features(self, X_train, X_val, item, label_encodings=None, ordinal_encodings=None):
+        """Date-Time Features: calendar parts of one date/time column.
+
+        Nothing is fitted - each part is read from the row's own date - so
+        there's no leakage. The parts chosen (all by default) become numeric
+        columns <newColumnName>_<part>; "hour" is left out when no training
+        value has a time of day. The date/time column itself is removed from
+        what the model trains on (one-hot encoding raw timestamps would make a
+        column per distinct value), but it is still collected as a raw input
+        at inference, where the same parts are recomputed.
+        """
+        column = item.get("datetimeColumn")
+        new_col = item.get("newColumnName")
+
+        def fail(problem: str) -> None:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=f"Feature engineering '{new_col}' (Date-Time Features): {problem}",
+            )
+
+        if column not in X_train.columns:
+            fail(f"column '{column}' not found - it must be one of the feature columns")
+        if column in (label_encodings or {}) or column in (ordinal_encodings or {}):
+            fail(f"column '{column}' has a label or ordinal Categorical Encoding - remove it to use its dates")
+        if pd.api.types.is_numeric_dtype(X_train[column]) or pd.api.types.is_bool_dtype(X_train[column]):
+            fail(f"column '{column}' holds numbers, not dates or times (e.g. 2024-03-15 or 2024-03-15 14:30)")
+
+        splits = {"training": X_train, "validation": X_val}
+        # One day/month order for the whole column (both splits), saved with
+        # the step so prediction reads values like 01/02/2024 the same way.
+        all_values = pd.concat([split[column] for split in splits.values() if split is not None])
+        date_order = ml_utils.numeric_date_order(all_values)
+        if date_order["order"] == "mixed":
+            fail(
+                f"'{column}' mixes day-first and month-first dates, e.g. "
+                f"{date_order['day_first_example']!r} (day first) and "
+                f"{date_order['month_first_example']!r} (month first) - write them all one way, "
+                f"ideally as YYYY-MM-DD"
+            )
+        if date_order["order"] == "ambiguous":
+            fail(
+                f"the dates in '{column}' (e.g. 01/02/2024) could be day-first or month-first, and no value "
+                f"shows which - write them as YYYY-MM-DD, or include a date with a day over 12"
+            )
+        day_first = date_order["order"] == "day_first"
+        parsed = {
+            name: ml_utils.parse_datetime_values(split[column], day_first=day_first).set_axis(split.index)
+            for name, split in splits.items() if split is not None
+        }
+        for name, values in parsed.items():
+            unreadable = values.isna()
+            if unreadable.any():
+                example = splits[name][column][unreadable].iloc[0]
+                fail(
+                    f"{int(unreadable.sum())} value(s) of '{column}' in the {name} data could not be read "
+                    f"as a date/time, e.g. {example!r}"
+                )
+
+        parts = list(dict.fromkeys(item.get("datetimeParts") or ml_utils.DATETIME_PARTS))
+        if "hour" in parts and not ml_utils.has_time_of_day(parsed["training"]):
+            logger.info(f"Date-Time Features '{new_col}': '{column}' has no time of day, so no hour feature")
+            parts.remove("hour")
+        if not parts:
+            fail(f"only the hour was chosen, but the values of '{column}' have no time of day")
+
+        output_columns = [f"{new_col}_{part}" for part in parts]
+        kept_columns = [c for c in X_train.columns if c != column]
+        clashes = [c for c in output_columns if c in kept_columns]
+        if clashes:
+            fail(f"output column(s) {clashes} already exist - choose another New Column Name")
+
+        def with_parts(split, dates):
+            new = pd.DataFrame(
+                {out: ml_utils.datetime_part_values(dates, part) for out, part in zip(output_columns, parts)},
+                index=split.index,
+            )
+            return pd.concat([split[kept_columns], new], axis=1)
+
+        X_train = with_parts(X_train, parsed["training"])
+        if X_val is not None:
+            X_val = with_parts(X_val, parsed["validation"])
+
+        return X_train, X_val, {
+            "strategy": "datetime_features",
+            "new_col": new_col,
+            "column": column,
+            "parts": parts,
+            "output_columns": output_columns,
+            "day_first": day_first,
+        }
+
+    @staticmethod
     def _validate_column_transform_config(item: Dict[str, Any]) -> None:
-        """Config checks for log/quantile/power/PCA features, before any data is loaded."""
+        """Config checks for log/quantile/power/math/PCA features, before any data is loaded."""
         strategy = item.get("strategy")
         label = ml_utils.COLUMN_TRANSFORM_STRATEGY_LABELS[strategy]
         name = item.get("newColumnName")
@@ -1526,6 +1789,10 @@ class TrainModelNode(BaseNode):
                 )
             if is_count and components > len(set(columns)):
                 fail(f"asks for {components} components from only {len(set(columns))} columns")
+        if strategy == "math_transform" and item.get("mathFunction") not in ml_utils.MATH_FUNCTIONS:
+            fail(
+                f"function must be one of {', '.join(ml_utils.MATH_FUNCTIONS)} - got {item.get('mathFunction')!r}"
+            )
         if strategy == "power_transform" and item.get("powerMethod", "yeo-johnson") not in ("yeo-johnson", "box-cox"):
             fail(f"method must be 'yeo-johnson' or 'box-cox' - got {item.get('powerMethod')!r}")
         if strategy == "quantile_transform":
@@ -1539,8 +1806,8 @@ class TrainModelNode(BaseNode):
                 fail(f"number of quantiles must be a whole number of 2 or more - got {n_quantiles!r}")
 
     def _apply_column_transform(self, X_train, X_val, item):
-        """Log Transform, Quantile Transformer, Power Transformer or PCA on
-        numeric source columns.
+        """Log Transform, Quantile Transformer, Power Transformer, Math
+        Function (sin, cos, sqrt, ...) or PCA on numeric source columns.
 
         Anything fitted (quantiles, power lambdas, PCA components and the
         optional pre-PCA scaling) is fit on X_train only and applied to
@@ -1561,6 +1828,7 @@ class TrainModelNode(BaseNode):
         new_col = item.get("newColumnName")
         columns = list(dict.fromkeys(item.get("sourceColumns") or []))
         power_method = item.get("powerMethod", "yeo-johnson")
+        math_function = item.get("mathFunction") if strategy == "math_transform" else None
 
         def fail(problem: str) -> None:
             raise AppException(
@@ -1587,7 +1855,7 @@ class TrainModelNode(BaseNode):
             for name, split in splits.items() if split is not None
         }
         for name, values in matrices.items():
-            problem = ml_utils.column_transform_value_problem(strategy, values, columns, power_method)
+            problem = ml_utils.column_transform_value_problem(strategy, values, columns, power_method, math_function)
             if problem:
                 if problem.startswith("empty or infinite"):
                     problem = (
@@ -1624,9 +1892,14 @@ class TrainModelNode(BaseNode):
             ]
 
         transformed = {
-            name: ml_utils.apply_column_transform(strategy, transformer, values)
+            name: ml_utils.apply_column_transform(strategy, transformer, values, math_function)
             for name, values in matrices.items()
         }
+        if strategy == "math_transform":
+            for name, values in transformed.items():
+                problem = ml_utils.column_transform_output_problem(values, columns)
+                if problem:
+                    fail(f"{problem} (in the {name} data)")
         if strategy == "pca":
             output_columns = [f"{new_col}_{i + 1}" for i in range(transformed["training"].shape[1])]
         elif len(columns) == 1:
@@ -1656,6 +1929,7 @@ class TrainModelNode(BaseNode):
             "output_columns": output_columns,
             "transformer": transformer,
             "power_method": power_method if strategy == "power_transform" else None,
+            "math_function": math_function,
             "replace_source_columns": replace,
             **extra,
         }
@@ -1754,7 +2028,47 @@ class TrainModelNode(BaseNode):
             Trained model
         """
         logger.info(f"Training {model_type} model (classification={is_classification})")
+        model_parameters = model_registry.cap_estimator_threads(
+            model_type, model_parameters, hpo_module.training_cores()
+        )
+        return await asyncio.to_thread(
+            self._run_with_core_limit,
+            self._fit_model,
+            model_type,
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            is_classification,
+            model_parameters,
+        )
 
+    @staticmethod
+    def _run_with_core_limit(fit, *args, **kwargs):
+        """Run fit (in a worker thread) as a tracked fit, under the native thread limit.
+
+        The native (BLAS, OpenMP) limit is process-wide, so it is only set in
+        a background training job, which has its worker process to itself.
+        Elsewhere (the API process) the estimator thread caps and the
+        cross-validation worker caps still apply.
+        """
+        with training_progress.fitting():
+            if not training_progress.in_training_job():
+                return fit(*args, **kwargs)
+            with hpo_module.native_thread_limit():
+                return fit(*args, **kwargs)
+
+    def _fit_model(
+        self,
+        model_type: str,
+        X_train: pd.DataFrame,
+        y_train: pd.Series,
+        X_val: Optional[pd.DataFrame],
+        y_val: Optional[pd.Series],
+        is_classification: bool,
+        model_parameters: Dict[str, Any],
+    ):
+        """Fit one model with fixed parameters (runs in a worker thread)."""
         if model_type == "xgboost":
             return self._train_xgboost(X_train, y_train, X_val, y_val, is_classification, model_parameters)
         elif model_type == "lightgbm":
@@ -2227,6 +2541,7 @@ class TrainModelNode(BaseNode):
         feature_columns: list,
         target_column: str,
         local_pkl_path: str,
+        training_metrics: Optional[Dict[str, Any]] = None,
         target_model_id: Optional[str] = None,
         target_transform: Optional[dict] = None,
         categorical_feature_contracts: Optional[Dict[str, Any]] = None,
@@ -2239,6 +2554,9 @@ class TrainModelNode(BaseNode):
 
         Args:
             local_pkl_path: Local path to the freshly fit model to upload.
+            training_metrics: Validation metrics calculated for this training
+                run. The new file replaces the model's, so ``None`` and an empty
+                dictionary both record that it has no validation metrics.
             target_model_id: When set (an ML Model Pipeline run targets a
                 specific model), that model is updated directly. Otherwise
                 falls back to looking the model up by ``name`` — which is
@@ -2357,15 +2675,25 @@ class TrainModelNode(BaseNode):
             )
             if existing:
                 updated = await ml_service.update(
-                    existing.id, MLModelUpdate(**model_fields), artifact_contract=artifact_contract
+                    existing.id,
+                    MLModelUpdate(**model_fields),
+                    artifact_contract=artifact_contract,
+                    training_metrics=training_metrics,
                 )
                 return str(updated.id), resolved_pkl_file_id, None, registration_warnings
 
             created = await ml_service.create(
-                MLModelCreate(name=name, **model_fields), artifact_contract=artifact_contract
+                MLModelCreate(name=name, **model_fields),
+                artifact_contract=artifact_contract,
+                training_metrics=training_metrics,
             )
             return str(created.id), resolved_pkl_file_id, None, registration_warnings
 
         except Exception as e:
             logger.error(f"Failed to register trained model '{name}': {str(e)}", exc_info=True)
+            # An OSError's message names the file it failed on, which is a
+            # server path; the output only gets the reason (TDS-24).
+            if isinstance(e, OSError):
+                reason = e.strerror or type(e).__name__
+                return None, resolved_pkl_file_id, f"Could not store the model file: {reason}", []
             return None, resolved_pkl_file_id, str(e), []

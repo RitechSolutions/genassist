@@ -10,7 +10,7 @@ import logging
 from app.modules.workflow.engine.base_node import BaseNode
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml import ml_utils, training_data_storage
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class TrainPreprocessNode(BaseNode):
             # Load data from file if fileUrl is provided
             df = None
             if file_url:
-                df = ml_utils.load_csv_file(file_url, self.state.thread_id, await ml_utils.extra_csv_directories())
+                df = await training_data_storage.load_training_csv(file_url, self.state.thread_id)
                 logger.info(
                     f"Loaded data from file: {file_url} ({len(df) if df is not None else 0} rows)"
                 )
@@ -97,6 +97,7 @@ class TrainPreprocessNode(BaseNode):
                     # (e.g. a Change Column Data Type step) for the next node.
                     dtypes={str(c): str(t) for c, t in processed_df.dtypes.items()},
                 )
+                await training_data_storage.save_training_data(csv_file_path)
 
                 # Get first 3 and last 3 records for response
                 sample_data = ml_utils.get_sample_data(processed_data)
@@ -104,7 +105,7 @@ class TrainPreprocessNode(BaseNode):
                 return {
                     "success": True,
                     "data": sample_data,
-                    "data_path": csv_file_path,
+                    "data_path": ml_utils.data_volume_reference(csv_file_path),
                     "metadata": {
                         "rowCount": row_count,
                         "columns": columns,

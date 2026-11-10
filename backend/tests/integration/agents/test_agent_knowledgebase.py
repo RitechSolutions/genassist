@@ -59,6 +59,16 @@ async def test_get_all_knowledge_items(authorized_client):
 
 
 @pytest.mark.asyncio
+async def test_get_knowledge_items_minimal(authorized_client, new_knowledge_item_data):
+    response = authorized_client.get("/api/genagent/knowledge/minimal")
+    assert response.status_code == 200
+    item_id = new_knowledge_item_data["id"]
+    assert [item for item in response.json() if item["id"] == item_id] == [
+        {"id": item_id, "name": new_knowledge_item_data["name"]}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_get_knowledge_item_by_id(authorized_client, new_knowledge_item_data):
     item_id = new_knowledge_item_data["id"]
     response = authorized_client.get(

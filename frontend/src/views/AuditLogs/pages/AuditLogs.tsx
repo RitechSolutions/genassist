@@ -55,7 +55,7 @@ export default function AuditLogs() {
   const dateTo = dateRange?.to ? dayEndIso(dateRange.to) : "";
 
   const fetchPage = useCallback(
-    (offset: number) =>
+    (before?: AuditLog) =>
       fetchAuditLogs(
         dateFrom,
         dateTo,
@@ -63,7 +63,7 @@ export default function AuditLogs() {
         debouncedTableName,
         selectedUser ?? undefined,
         PAGE_SIZE,
-        offset
+        before
       ),
     [dateFrom, dateTo, selectedAction, debouncedTableName, selectedUser]
   );
@@ -74,7 +74,7 @@ export default function AuditLogs() {
     try {
       setIsRefreshing(true);
       setError(null);
-      const logs = await fetchPage(0);
+      const logs = await fetchPage();
       if (requestId !== requestIdRef.current) return;
       setAuditLogs(logs);
       setHasMore(logs.length === PAGE_SIZE);
@@ -90,7 +90,7 @@ export default function AuditLogs() {
     const requestId = requestIdRef.current;
     try {
       setIsLoadingMore(true);
-      const logs = await fetchPage(auditLogs.length);
+      const logs = await fetchPage(auditLogs[auditLogs.length - 1]);
       if (requestId !== requestIdRef.current) return;
       setAuditLogs((prev) => [...prev, ...logs]);
       setHasMore(logs.length === PAGE_SIZE);
@@ -100,7 +100,7 @@ export default function AuditLogs() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [fetchPage, auditLogs.length]);
+  }, [fetchPage, auditLogs]);
 
   useEffect(() => {
     reloadAuditLogs();

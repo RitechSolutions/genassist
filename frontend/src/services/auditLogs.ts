@@ -9,7 +9,7 @@ export const fetchAuditLogs = async (
   table_name: string,
   user: string,
   limit: number,
-  offset: number
+  before?: Pick<AuditLog, "id" | "modified_at">
 ): Promise<AuditLog[]> => {
 
   const queryParams = new URLSearchParams();
@@ -21,7 +21,10 @@ export const fetchAuditLogs = async (
   if (user) queryParams.append("user", user);
 
   queryParams.append("limit",  String(limit));
-  queryParams.append("offset", String(offset));
+  if (before) {
+    queryParams.append("before_modified_at", before.modified_at);
+    queryParams.append("before_id", String(before.id));
+  }
 
   const data = await apiRequest<AuditLog[]>(
     "GET",

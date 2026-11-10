@@ -1,11 +1,13 @@
 from typing import Annotated, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query, status
+from fastapi import APIRouter, Depends, Path, Query, Request, status
 from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
+from app.core.keepalive_json_response import keepalive_json
 from app.core.permissions.constants import Permissions as P
+from app.dependencies.injector import injector
 from app.schemas.prompt_editor import (
     GoldSuiteLinkRequest,
     PromptConfigRead,
@@ -136,13 +138,17 @@ async def link_gold_suite(
     dependencies=[Depends(auth), Depends(permissions(P.Evaluation.RUN))],
 )
 async def evaluate_prompt(
+    request: Request,
     workflow_id: UUID,
     node_id: NodeIdPath,
     prompt_field: PromptFieldPath,
     data: PromptEvalRequest,
-    service: PromptEditorService = Injected(PromptEditorService),
 ):
-    return await service.evaluate_prompt(workflow_id, node_id, prompt_field, data)
+    return await keepalive_json(
+        request,
+        lambda: injector.get(PromptEditorService).evaluate_prompt(workflow_id, node_id, prompt_field, data),
+        name=f"prompt-check:{workflow_id}:{node_id}",
+    )
 
 
 @router.post(
@@ -151,10 +157,14 @@ async def evaluate_prompt(
     dependencies=[Depends(auth), Depends(permissions(P.Evaluation.UPDATE))],
 )
 async def optimize_prompt(
+    request: Request,
     workflow_id: UUID,
     node_id: NodeIdPath,
     prompt_field: PromptFieldPath,
     data: PromptOptimizeRequest,
-    service: PromptEditorService = Injected(PromptEditorService),
 ):
-    return await service.optimize_prompt(workflow_id, node_id, prompt_field, data)
+    return await keepalive_json(
+        request,
+        lambda: injector.get(PromptEditorService).optimize_prompt(workflow_id, node_id, prompt_field, data),
+        name=f"prompt-rewrite:{workflow_id}:{node_id}",
+    )
