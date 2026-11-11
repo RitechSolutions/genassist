@@ -40,6 +40,10 @@ uid_ctx:        ContextVar[str] = ContextVar("uid",        default="-")
 # Set by datadog_observability once the chat flow knows them (DATADOG_ENABLED only).
 conversation_id_ctx: ContextVar[str | None] = ContextVar("conversation_id", default=None)
 agent_id_ctx:        ContextVar[str | None] = ContextVar("agent_id",        default=None)
+# The route runs in a copy of the request middleware's context, so the two ids above
+# never reach the middleware. It puts a dict here instead; the copy shares that dict,
+# and the ids written to it are bound on the "Request handled" line.
+request_log_ids_ctx: ContextVar[dict | None] = ContextVar("request_log_ids", default=None)
 
 # --------------------------------------------------------------------------- #
 # Helper – forward stdlib logging records to Loguru

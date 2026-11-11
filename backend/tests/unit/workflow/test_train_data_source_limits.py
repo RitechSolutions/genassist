@@ -16,6 +16,13 @@ from app.modules.workflow.engine.nodes.ml.train_data_source_node import TrainDat
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
 
+@pytest.fixture(autouse=True)
+def _data_volume_in_tmp_path(monkeypatch, tmp_path):
+    # The node only reads CSVs inside the data volume and writes its output
+    # there; use pytest's temp folder so tests never touch the real one.
+    monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
+
+
 def _node() -> TrainDataSourceNode:
     node_config = {"id": "source-1", "type": "trainDataSourceNode", "data": {}}
     state = WorkflowState(
@@ -136,7 +143,6 @@ async def test_csv_row_cap_is_enforced_while_streaming(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     monkeypatch.setattr(settings, "ML_EXTRACT_MAX_ROWS", 10)
-    monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
 
     with pytest.raises(AppException) as exc_info:
         await node.process({"sourceType": "csv", "csvFilePath": str(csv_path)})
@@ -150,7 +156,6 @@ async def test_csv_header_only_preserves_columns(monkeypatch, tmp_path):
     node = _node()
     csv_path = tmp_path / "header-only.csv"
     csv_path.write_text("id,name\n", encoding="utf-8")
-    monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
 
     result = await node.process(
         {"sourceType": "csv", "csvFilePath": str(csv_path)}
@@ -174,7 +179,6 @@ async def test_configured_chunk_rows_reaches_csv_reader(monkeypatch, tmp_path):
         return original_iter_csv_chunks(file_path, chunk_size)
 
     monkeypatch.setattr(settings, "ML_EXTRACT_CHUNK_ROWS", 37)
-    monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
     monkeypatch.setattr(module.ml_utils, "iter_csv_chunks", iter_csv_chunks)
 
     await node.process({"sourceType": "csv", "csvFilePath": str(csv_path)})
@@ -194,7 +198,6 @@ async def test_csv_preview_preserves_values_as_written(monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
 
     result = await node.process(
         {"sourceType": "csv", "csvFilePath": str(csv_path)}
@@ -247,7 +250,6 @@ async def test_non_csv_parsing_is_included_in_extraction_timeout(monkeypatch, tm
         return real_open_json(reader)
 
     monkeypatch.setattr(module.TrainingFileReader, "_open_json", slow_open_json)
-    monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
 
     with pytest.raises(AppException) as exc_info:
         await node.process(
@@ -300,7 +302,6 @@ async def test_effective_limits_are_logged(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(settings, "ML_EXTRACT_MAX_ROWS", 10)
     monkeypatch.setattr(settings, "ML_EXTRACT_MAX_BYTES", 20)
     monkeypatch.setattr(settings, "ML_EXTRACT_TIMEOUT_SECONDS", 30)
-    monkeypatch.setattr(module.ml_utils, "DATA_VOLUME", tmp_path)
 
     with caplog.at_level(logging.INFO, logger=module.__name__):
         await node.process(

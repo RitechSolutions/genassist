@@ -18,6 +18,7 @@ text format, and no span attributes or log fields are added.
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import traceback
 from typing import Any
@@ -136,8 +137,29 @@ def json_log_record(record: dict) -> dict:
 
 def json_stdout_sink(message) -> None:
     """One JSON object per line; tracebacks stay on the line of their message."""
-    sys.stdout.write(json.dumps(json_log_record(message.record), default=str, ensure_ascii=False) + "\n")
-    sys.stdout.flush()
+    stream = _stdout()
+    stream.write(json.dumps(json_log_record(message.record), default=str, ensure_ascii=False) + "\n")
+    stream.flush()
+
+
+def _stdout():
+    """sys.stdout, or the real one when a Celery worker has replaced it.
+
+    A worker swaps sys.stdout for a proxy that turns every write into a log record.
+    A log line written to it would loop, so Celery drops it and the worker logs nothing.
+    """
+    stream = sys.stdout
+    return sys.__stdout__ if isinstance(getattr(stream, "logger", None), logging.Logger) else stream
+
+
+def _set_log_id(ctx, key: str, value: str | None) -> None:
+    """Set an id for the lines that follow, and for the request's end line."""
+    ctx.set(value)
+    if (request_ids := log_config.request_log_ids_ctx.get()) is not None:
+        if value is None:
+            request_ids.pop(key, None)
+        else:
+            request_ids[key] = value
 
 
 # --------------------------------------------------------------------------- #
@@ -165,7 +187,7 @@ class DatadogObservability:
         span = otel_trace.get_current_span()
         if agent_id is not None:
             span.set_attribute("genassist.agent_id", str(agent_id))
-            log_config.agent_id_ctx.set(str(agent_id))
+            _set_log_id(log_config.agent_id_ctx, "agent_id", str(agent_id))
         if workflow_id is not None:
             span.set_attribute("genassist.workflow_id", str(workflow_id))
 
@@ -174,10 +196,12 @@ class DatadogObservability:
         if not self.enabled or conversation_id is None:
             return
         otel_trace.get_current_span().set_attribute("genassist.conversation_id", str(conversation_id))
-        if log_config.conversation_id_ctx.get() != str(conversation_id):
+        previous = log_config.conversation_id_ctx.get()
+        if previous is not None and previous != str(conversation_id):
             # A different conversation: the previous one's agent no longer applies.
-            log_config.agent_id_ctx.set(None)
-        log_config.conversation_id_ctx.set(str(conversation_id))
+            # (Not on the first one: start tags the agent before the conversation exists.)
+            _set_log_id(log_config.agent_id_ctx, "agent_id", None)
+        _set_log_id(log_config.conversation_id_ctx, "conversation_id", str(conversation_id))
 
 
 datadog_observability = DatadogObservability()
