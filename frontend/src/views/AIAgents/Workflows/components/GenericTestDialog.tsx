@@ -300,6 +300,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           input_data: {},
           node_type: nodeType,
           node_config: nodeData,
+          node_id: nodeId,
         },
         { onTrainingProgress: setTrainingJob, signal }
       );
@@ -426,6 +427,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           input_data: parsedData,
           node_type: nodeType,
           node_config: nodeData,
+          node_id: nodeId,
         },
         { onTrainingProgress: setTrainingJob, signal }
       );
