@@ -93,6 +93,23 @@ def test_parses_tokens_and_cost():
     assert data["cost_usd"] == 0.0031
 
 
+def test_a_node_type_longer_than_its_column_is_cut_to_100_characters():
+    masked = (
+        "chatO[CUSTOMER_PREFERRED_CONTACT_CHANNEL_FOR_FOLLOWUP]p[CUSTOMER_PREFERRED_CONTACT_CHANNEL_FOR_FOLLOWUP]Node"
+    )
+    payload = {
+        "agent_id": _AGENT_ID,
+        "status": "success",
+        "row_agent_response": {"state": {"nodeExecutionStatus": {"n1": {"type": masked, "status": "success"}}}},
+    }
+    data = parse_agent_response_for_stats(payload)
+    assert (
+        data["nodes"][0]["type"]
+        == "chatO[CUSTOMER_PREFERRED_CONTACT_CHANNEL_FOR_FOLLOWUP]p[CUSTOMER_PREFERRED_CONTACT_CHANNEL_FOR_FOLLO"
+    )
+    assert data["total_nodes_executed"] == 1
+
+
 def test_bad_response_time_is_ignored():
     payload = {
         "agent_id": _AGENT_ID,
