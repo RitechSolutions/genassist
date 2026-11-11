@@ -382,21 +382,103 @@ def write_dtypes_mapping_sidecar(csv_path: Any, dtypes: Dict[str, str]) -> str:
     return str(sidecar)
 
 
+# A column is read as text only when it looks like a code - an ID, a postcode,
+# a product code - whose zeros mean something: every value is digits, all the
+# same length ("001".."123", "02134"), and at least one starts with a zero.
+# A numeric column with one stray zero-padded value ("7", "12", "07") keeps
+# its number type, so existing workflows and trained models see the types
+# they always did.
+_CODE_VALUE = r"^\d+$"
+
+
+# Rows per chunk when scanning a file as text for code columns, so a large
+# upload is never held in memory as one all-text frame.
+_LEADING_ZERO_SCAN_CHUNK_ROWS = 50_000
+
+
+class _CodeColumnScan:
+    """Per-column state while scanning a file as text, chunk by chunk."""
+
+    def __init__(self) -> None:
+        self.width: Dict[str, int] = {}
+        self.has_leading_zero: Dict[str, bool] = {}
+        self.not_code: set = set()
+
+    def add(self, text_df: pd.DataFrame) -> None:
+        for column in text_df.columns:
+            if column in self.not_code:
+                continue
+            values = text_df[column].dropna().str.strip()
+            values = values[values != ""]
+            if values.empty:
+                continue
+            widths = values.str.len().unique()
+            if (
+                not values.str.match(_CODE_VALUE).all()
+                or len(widths) != 1
+                or self.width.setdefault(column, int(widths[0])) != int(widths[0])
+            ):
+                self.not_code.add(column)
+                continue
+            # "0" alone is a number; "07" is zero-padded.
+            if values.str.match(r"^0\d").any():
+                self.has_leading_zero[column] = True
+
+    def columns(self) -> List[str]:
+        return [
+            column
+            for column in self.width
+            if column not in self.not_code and self.has_leading_zero.get(column)
+        ]
+
+
+def leading_zero_columns(text_df: pd.DataFrame) -> List[str]:
+    """Columns of an all-text frame that look like zero-padded codes (see _CODE_VALUE)."""
+    scan = _CodeColumnScan()
+    scan.add(text_df)
+    return scan.columns()
+
+
+def read_csv_keeping_leading_zeros(source: Any, **read_csv_kwargs: Any) -> pd.DataFrame:
+    """pd.read_csv with its usual type inference, except that a column of
+    zero-padded codes ("001", "02134") is read as text, so its zeros are kept.
+
+    `source` is a path or a seekable text buffer. The file is read twice: first
+    as text, in chunks, to find those columns, then once with types.
+    """
+    start = source.tell() if hasattr(source, "seek") else None
+    scan = _CodeColumnScan()
+    with pd.read_csv(
+        source, dtype=str, chunksize=_LEADING_ZERO_SCAN_CHUNK_ROWS, **read_csv_kwargs
+    ) as chunks:
+        for chunk in chunks:
+            scan.add(chunk)
+    keep_as_text = scan.columns()
+    if start is not None:
+        source.seek(start)
+    if not keep_as_text:
+        return pd.read_csv(source, **read_csv_kwargs)
+    return pd.read_csv(source, dtype={column: str for column in keep_as_text}, **read_csv_kwargs)
+
+
 def read_csv_with_dtypes(file_path: Any, **read_csv_kwargs: Any) -> pd.DataFrame:
     """pd.read_csv that reapplies the dtypes saved next to the file, if any.
 
-    Files without a saved-dtypes file (e.g. a user upload) are read exactly
-    as before. If the saved dtypes can't be applied (the file was edited, a
-    value no longer fits its type), it falls back to a plain read rather than
-    failing the node.
+    Files without a saved-dtypes file (e.g. a CSV upload) get pandas' own
+    type inference, except that leading-zero columns stay text (see
+    read_csv_keeping_leading_zeros). If the saved dtypes can't be applied (the
+    file was edited, a value no longer fits its type), it falls back to that
+    read rather than failing the node.
     """
     sidecar = dtypes_sidecar_path(file_path)
     if not sidecar.exists():
-        return pd.read_csv(file_path, **read_csv_kwargs)
+        return read_csv_keeping_leading_zeros(file_path, **read_csv_kwargs)
 
     try:
         saved_dtypes: Dict[str, str] = json.loads(sidecar.read_text(encoding="utf-8"))
-        header = set(pd.read_csv(file_path, nrows=0, **read_csv_kwargs).columns)
+        # nrows=0 reads just the header; any nrows the caller passed is for the real read.
+        header_kwargs = {k: v for k, v in read_csv_kwargs.items() if k != "nrows"}
+        header = set(pd.read_csv(file_path, nrows=0, **header_kwargs).columns)
         dtype_arg: Dict[str, Any] = {}
         parse_dates: List[str] = []
         for column, dtype_name in saved_dtypes.items():
@@ -420,7 +502,7 @@ def read_csv_with_dtypes(file_path: Any, **read_csv_kwargs: Any) -> pd.DataFrame
             f"Could not apply saved column types from {sidecar} ({e}); "
             "reading the file with inferred types instead"
         )
-        return pd.read_csv(file_path, **read_csv_kwargs)
+        return read_csv_keeping_leading_zeros(file_path, **read_csv_kwargs)
 
 
 def normalize_dtypes_for_training(df: pd.DataFrame) -> pd.DataFrame:

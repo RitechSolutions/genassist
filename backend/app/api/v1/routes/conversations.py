@@ -28,10 +28,11 @@ from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import send_socket_error
-from app.core.observability import set_agent_span_attributes, set_conversation_span_attribute
+from app.core.observability import datadog_observability
 from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
 from app.core.turn_stream_response import stream_turn
+from app.core.utils.background_tasks import spawn
 from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
@@ -120,7 +121,7 @@ async def tag_trace_with_conversation(connection: HTTPConnection) -> None:
     if raw is None:
         return
     try:
-        set_conversation_span_attribute(UUID(str(raw)))
+        datadog_observability.tag_conversation(UUID(str(raw)))
     except ValueError:
         pass
 
@@ -445,7 +446,7 @@ async def start(
         raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
     logger.debug(f"agent: {agent.name}")
-    set_agent_span_attributes(agent.id, agent.workflow_id)
+    datadog_observability.tag_agent(agent.id, agent.workflow_id)
 
     # Verify reCAPTCHA token if it is present in the request body, using agent-specific settings
     reCaptchaToken = model.recaptcha_token or None
@@ -463,10 +464,10 @@ async def start(
     agent_read = AgentRead.model_validate(agent)
     model.operator_id = agent.operator_id
     conversation = await service.start_in_progress_conversation(model)
-    set_conversation_span_attribute(conversation.id)
+    datadog_observability.tag_conversation(conversation.id)
 
     # Increment conversation counters in background
-    _ = asyncio.create_task(update_conversation_started(agent.id))
+    spawn(update_conversation_started(agent.id), name=f"analytics:start:{agent.id}")
 
     # Notify dashboard that a new conversation was started (e.g. from chatbot)
     tenant_id = get_tenant_context()
@@ -856,7 +857,7 @@ async def update(
     # Tag before any validation so rejected replies can be split by agent too.
     # The agent here is usually the cached AgentMinimalForCache; entries pickled
     # before workflow_id was added to it don't have the attribute at all.
-    set_agent_span_attributes(agent.id, getattr(agent, "workflow_id", None))
+    datadog_observability.tag_agent(agent.id, getattr(agent, "workflow_id", None))
 
     content_type = request.headers.get("content-type", "")
     audio_bytes: bytes | None = None
@@ -937,6 +938,12 @@ async def _any_conversation_read(request: Request):
     raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
 
 
+async def _agent_id_of_conversation(service: ConversationService, conversation_id: UUID) -> UUID | None:
+    conversation = await service.get_conversation_by_id_with_operator_agent(conversation_id)
+    agent = conversation.operator.agent if conversation and conversation.operator else None
+    return agent.id if agent else None
+
+
 @router.get(
     "/{conversation_id}/messages/{message_id}/audio",
     dependencies=[
@@ -1008,12 +1015,16 @@ async def finalize(
 
     # Resolve analyst: explicit override > agent's configured analyst > default seed
     analyst_id = finalize.llm_analyst_id
+    agent_id = None
     if not analyst_id:
         conversation = await service.get_conversation_by_id(conversation_id, raise_not_found=False)
         if conversation:
             agent = await agent_config_service.get_by_operator_id(conversation.operator_id)
+            agent_id = agent.id
             if agent and agent.llm_analyst_id:
                 analyst_id = agent.llm_analyst_id
+    else:
+        agent_id = await _agent_id_of_conversation(service, conversation_id)
 
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
         conversation_id=conversation_id,
@@ -1026,7 +1037,8 @@ async def finalize(
     notify_socket(SocketRoomType.DASHBOARD)
 
     # Increment finalized conversation counters in background
-    _ = asyncio.create_task(update_conversation_finalized(conversation_id))
+    if agent_id:
+        spawn(update_conversation_finalized(agent_id), name=f"analytics:finalize:{conversation_id}")
 
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
     return finalized_conversation_analysis
@@ -1235,7 +1247,8 @@ async def add_message_feedback(
 
         # Fire incremental analytics update for thumbs in background
         is_thumbs_up = transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD)
-        _ = asyncio.create_task(update_feedback_given(conversation_id, is_thumbs_up))
+        if agent_id := await _agent_id_of_conversation(conversation_service, conversation_id):
+            spawn(update_feedback_given(agent_id, is_thumbs_up), name=f"analytics:thumbs:{conversation_id}")
 
     return {"message": f"Successfully added message feedback, for message id:{message_id} "}
 

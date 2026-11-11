@@ -95,6 +95,23 @@ class TestDrain:
         assert finished == [True]
 
     @pytest.mark.asyncio
+    async def test_waits_for_tasks_spawned_while_draining(self):
+        finished = []
+
+        async def child():
+            await asyncio.sleep(0.01)
+            finished.append(True)
+
+        async def parent():
+            await asyncio.sleep(0)
+            spawn(child(), name="child")
+
+        spawn(parent(), name="parent")
+        await drain(timeout=5.0)
+
+        assert finished == [True]
+
+    @pytest.mark.asyncio
     async def test_stragglers_are_cancelled_and_awaited_before_returning(self):
         cleaned = []
 

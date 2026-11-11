@@ -54,7 +54,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             sctx["tenant_slug"] = tenant_slug
             sctx["tenant_id"] = tenant_slug
 
-        logger.info(
+        logger.debug(
             f"Request processed with tenant_slug: {tenant_slug}, tenant_id: {tenant_slug}"
         )
 
