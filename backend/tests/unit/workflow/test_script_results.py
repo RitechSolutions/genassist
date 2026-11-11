@@ -5,6 +5,7 @@ import enum
 import fractions
 import json
 import pickle
+import struct
 import uuid
 import zoneinfo
 
@@ -13,7 +14,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from app.modules.workflow.script_results import _MARKER, decode_result
+from app.modules.workflow.script_results import _MARKER, _flatbuffer_field, _flatbuffer_target, decode_result
 from app.modules.workflow.utils import _encode_result, _execute_python_code_sync
 
 
@@ -30,17 +31,35 @@ def _global_pickle(module, name, then=b""):
     )
 
 
-def _arrow_bytes(array_or_table):
+def _arrow_bytes(array_or_table, options=None):
     sink = pa.BufferOutputStream()
     table = array_or_table if isinstance(array_or_table, pa.Table) else pa.table({"c": array_or_table})
-    with pa.ipc.new_stream(sink, table.schema) as writer:
+    with pa.ipc.new_stream(sink, table.schema, options=options) as writer:
         writer.write_table(table)
     return sink.getvalue().to_pybytes()
 
 
+def _overlapping_buffers(data):
+    """The stream with every buffer of its record batch pointing at the whole body"""
+    data = bytearray(data)
+    position = 0
+    while size := struct.unpack_from("<i", data, position + 4)[0]:
+        metadata = memoryview(data)[position + 8:position + 8 + size]
+        message = _flatbuffer_target(metadata, 0)
+        body_field = _flatbuffer_field(metadata, message, 3)
+        body = struct.unpack_from("<q", metadata, body_field)[0] if body_field else 0
+        if metadata[_flatbuffer_field(metadata, message, 1)] == 3:  # a record batch
+            batch = _flatbuffer_target(metadata, _flatbuffer_field(metadata, message, 2))
+            buffers = _flatbuffer_target(metadata, _flatbuffer_field(metadata, batch, 2))
+            for entry in range(struct.unpack_from("<I", metadata, buffers)[0]):
+                struct.pack_into("<qq", metadata, buffers + 4 + 16 * entry, 0, body)
+        position += 8 + size + body
+    return bytes(data)
+
+
 def _crafted_frame(column, index=None):
     return {
-        _MARKER: "frame", "name": None, "data": [column],
+        _MARKER: "frame", "name": None, "attrs": {}, "data": [column],
         "index": index or {"range": [0, 2, 1], "names": [None]}, "columns": {"values": ["c"], "names": [None]},
     }
 
@@ -58,6 +77,8 @@ class _Level(enum.IntEnum):
         {datetime.date(2024, 1, 1): {datetime.datetime(2024, 1, 1, 9)}, (1, datetime.timedelta(1)): 2},
         {frozenset({datetime.date(2024, 1, 1)}): 1},
         {_MARKER: 1, "x": [2], "y": (_MARKER, "tuple"), "z": (_MARKER,)},
+        [2**70, -(2**70), 2**2100, bytearray(b"ba"), "x" * 300, b"y" * 300, (1,), (1, 2, 3, 4), [b"ab"] * 2],
+        [str(number) for number in range(300)] * 2,
     ],
 )
 def test_plain_values_come_back_unchanged(value):
@@ -120,11 +141,10 @@ def test_dataframes_and_series_keep_dtypes_and_index():
         "dt": pd.to_datetime(["2024-01-01", "2024-01-02"]),
         "utc": pd.to_datetime(["2024-01-01", "2024-01-02"]).tz_localize("UTC"),
         "berlin": pd.to_datetime(["2024-01-01", "2024-01-02"]).tz_localize("Europe/Berlin"),
-        "td": pd.to_timedelta([1, 2], unit="D"), "cat": pd.Categorical(["x", "y"]),
+        "td": pd.to_timedelta([1, 2], unit="D"), "cat": pd.Categorical(["x", "y"]), "ci": pd.Categorical([1, 2]),
         "I64": pd.array([1, None], dtype="Int64"), "U8": pd.array([1, None], dtype="UInt8"),
         "B": pd.array([True, None], dtype="boolean"), "S": pd.array(["a", None], dtype="string"),
         "F64": pd.array([1.5, None], dtype="Float64"), "p": pd.period_range("2024-01-01", periods=2, freq="D"),
-        "iv": pd.arrays.IntervalArray.from_breaks([0, 1, 2]),
     })
     frames = [frame, frame.set_index("dt"), frame.set_index(["i", "s"]), frame.set_index("td"),
               frame.set_index("cat"), frame.groupby("s").agg({"i": "sum", "f": "mean"}), frame[["i", "f"]].describe(),
@@ -133,7 +153,8 @@ def test_dataframes_and_series_keep_dtypes_and_index():
               pd.DataFrame([[1, 2]], columns=pd.MultiIndex.from_tuples([("a", "x"), ("a", "y")], names=["l", "m"])),
               pd.DataFrame([[1, 2]], columns=pd.period_range("2024-01", periods=2, freq="M")),
               pd.DataFrame([[1, 2]], columns=pd.CategoricalIndex(["a", "b"])),
-              pd.DataFrame({"x": [1, 2]}, index=["a", "a"]), pd.DataFrame(),
+              pd.DataFrame({"x": [1, 2]}, index=["a", "a"]), pd.DataFrame(), pd.DataFrame(index=range(30)), frame[[]],
+              pd.DataFrame(index=pd.Index(np.arange(1_200_000) * 2)),
               pd.DataFrame({"x": [1]}, index=pd.Index([1], name=datetime.date(2024, 1, 1)))]
     for value in frames:
         pd.testing.assert_frame_equal(_round_trip(value)["result"], value)
@@ -148,19 +169,20 @@ def test_dataframes_and_series_keep_dtypes_and_index():
 
 
 def test_columns_arrow_cannot_round_trip_come_back_as_plain_values():
-    frame = pd.DataFrame({"age": [10, 25, 40]})
+    frame = pd.DataFrame({"age": [10, 25, 40], "span": pd.arrays.IntervalArray.from_breaks([0, 1, 2, 3])})
     frame["band"] = pd.cut(frame["age"], bins=3)
     frame.attrs = {"note": "dates parsed with dateutil"}
 
     result = _round_trip(frame)["result"]
 
     pd.testing.assert_series_equal(result["age"], frame["age"])
+    assert result["span"].tolist() == ["(0, 1]", "(1, 2]", "(2, 3]"]
     assert result["band"].tolist() == [str(band) for band in frame["band"]]
     assert isinstance(result["band"].dtype, pd.CategoricalDtype)
     assert result.attrs == frame.attrs
     banded = pd.DataFrame({"band": pd.cut(np.arange(100_000), bins=5)})
     assert len(_encode_result({"result": banded, "output": "", "errors": ""})) < 500_000
-    assert _round_trip(frame.dtypes.to_dict())["result"] == {"age": "int64", "band": str(frame["band"].dtype)}
+    assert _round_trip(frame.dtypes.to_dict())["result"] == {name: str(dtype) for name, dtype in frame.dtypes.items()}
     zoned = pd.Series(pd.date_range("2020-01-01", periods=2, tz="Europe/Berlin")).astype("category")
     assert _round_trip(zoned)["result"].tolist() == zoned.tolist()
     vectors = pd.Series([[1.0, 2.0], [3.0, 4.0]], dtype=pd.ArrowDtype(pa.list_(pa.float32(), 2)))
@@ -172,6 +194,7 @@ def test_pyarrow_backed_columns_keep_their_dtype():
         pd.Series([decimal.Decimal("1.50"), None], dtype=pd.ArrowDtype(pa.decimal128(5, 2))),
         pd.Series(["a", "b"], dtype=pd.ArrowDtype(pa.dictionary(pa.int32(), pa.string()))),
         pd.Series(["x", None], dtype=pd.StringDtype("pyarrow")),
+        pd.concat([pd.Series([1], dtype="int64[pyarrow]"), pd.Series([2], dtype="int64[pyarrow]")], ignore_index=True),
     ]
     for column in columns:
         pd.testing.assert_series_equal(_round_trip(column)["result"], column)
@@ -248,6 +271,16 @@ def test_values_the_parent_cannot_take_are_refused_in_the_child(value, reason):
     assert response["output"] == "printed\n"
 
 
+def test_a_refusal_keeps_its_message_short():
+    class Loud(datetime.tzinfo):
+        def utcoffset(self, dt):
+            raise ValueError("x" * 100_000)
+
+    response = decode_result(_encode_result({"result": datetime.datetime(2024, 1, 1, tzinfo=Loud()), "output": ""}))
+
+    assert response["error"].startswith("Result could not be serialized: ") and len(response["error"]) < 5000
+
+
 @pytest.mark.parametrize(
     "module, name",
     [("os", "system"), ("builtins", "eval"), ("numpy", "dtype"), ("pandas.core.frame", "DataFrame"),
@@ -269,7 +302,7 @@ def test_parent_validates_columns_before_pandas_reads_them():
     bad_level = {"levels": [["a"]], "codes": [[0, 5]], "names": [None]}
 
     with pytest.raises(pa.ArrowInvalid):
-        decode_result(pickle.dumps({"result": _crafted_frame(_arrow_bytes(bad_codes))}))
+        decode_result(pickle.dumps({"result": _crafted_frame({"arrow": _arrow_bytes(bad_codes), "mapper": "arrow"})}))
     for crafted in (dateutil_tz, escaped_tz):
         with pytest.raises(ValueError, match="dateutil"):
             decode_result(pickle.dumps({"result": _crafted_frame(_arrow_bytes(crafted))}))
@@ -277,6 +310,156 @@ def test_parent_validates_columns_before_pandas_reads_them():
         decode_result(pickle.dumps({"result": _crafted_frame("/etc/passwd")}))
     with pytest.raises(ValueError):
         decode_result(pickle.dumps({"result": _crafted_frame([1, 2], index=bad_level)}))
+    for codes in ([bytearray(2)], [[" 0", " 1"]], [(0, 1)]):
+        index = {"levels": [["a", "b"]], "codes": codes, "names": [None]}
+        with pytest.raises(ValueError, match="lists of integers"):
+            decode_result(pickle.dumps({"result": _crafted_frame([1, 2], index=index)}, protocol=5))
+
+
+@pytest.mark.parametrize(
+    "opcodes", [b"}r\x01\x00\x00\x00.", b"}p1\n.", b"}2.", b"}\x94\x94.", b"}" + b"(" * 1001 + b".", b"}", b"}.."]
+)
+def test_parent_reads_only_the_opcodes_the_child_writes(opcodes):
+    with pytest.raises(pickle.UnpicklingError):
+        decode_result(b"\x80\x04" + opcodes)
+
+
+def test_parent_unpickles_the_bytes_it_checked():
+    hidden = b"}\x8c\x06result\x8c\x06hiddens"
+    # BININT's argument runs past the 3-byte frame, so a reader that refills there would run `hidden` as opcodes
+    crossing = b"\x80\x05\x95" + (3).to_bytes(8, "little") + b"Jxyab" + b"C" + bytes([len(hidden)]) + hidden + b"."
+
+    with pytest.raises(pickle.UnpicklingError, match="not a dict"):
+        decode_result(crossing)
+
+
+def test_parent_refuses_a_payload_that_repeats_anything_but_text():
+    shared, cycle, doubling = [1], [], ()
+    cycle.append(cycle)
+    for _ in range(30):
+        doubling = (doubling, doubling)
+    repeated_int = b"\x80\x05}\x8c\x06result](\x8a\x01\x05\x94h\x00es."
+
+    for value in ([shared, shared], {"a": shared, "b": shared}, ((shared,), (shared,)), cycle, [doubling]):
+        with pytest.raises(pickle.UnpicklingError, match="only repeat text and bytes"):
+            decode_result(pickle.dumps({"result": value}))
+    with pytest.raises(pickle.UnpicklingError, match="only repeat text and bytes"):
+        decode_result(repeated_int)
+    assert _round_trip(["word"] * 3 + [b"by"] * 3)["result"] == ["word"] * 3 + [b"by"] * 3
+
+
+def test_parent_refuses_tuples_nested_too_deeply_to_hash():
+    nested = ()
+    for _ in range(100):
+        nested = (nested,)
+    one_tuples = b"\x80\x05}\x8c\x06result)" + b"\x85" * 1000 + b"s."
+    pairs = b"\x80\x05}\x8c\x06result)" + b"N\x86" * 1000 + b"s."
+
+    assert _round_trip({nested: 1})["result"] == {nested: 1}
+    for data in (one_tuples, pairs):
+        with pytest.raises(pickle.UnpicklingError, match="nests tuples too deeply"):
+            decode_result(data)
+
+
+def test_parent_refuses_frames_that_decode_to_more_than_they_hold():
+    two_batches = pa.Table.from_batches([pa.record_batch([pa.array([1])], names=["c"])] * 2)
+    many_nulls = {"arrow": _arrow_bytes(pa.nulls(100_000)), "mapper": "arrow"}
+    column = _arrow_bytes(pa.array([1, 2]))
+    read_twice = {**_crafted_frame(column), "data": [column, column], "columns": {"values": [1, 2], "names": [None]}}
+    no_columns = {**_crafted_frame(None, index={"range": [0, 10**18, 1], "names": [None]}), "data": [],
+                  "columns": {"range": [0, 0, 1], "names": [None]}}
+    cases = [
+        (_crafted_frame(_arrow_bytes(pa.array([1, 2]), pa.ipc.IpcWriteOptions(compression="zstd"))), "compressed"),
+        (_crafted_frame(_arrow_bytes(two_batches)), "more than one record batch"),
+        (_crafted_frame(many_nulls, index={"range": [0, 100_000, 1], "names": [None]}), "more values than it holds"),
+        (read_twice, "more decoding than its size"),
+        (no_columns, "more decoding than its size"),
+        (_crafted_frame(_overlapping_buffers(_arrow_bytes(pa.array([1, 2])))), "add up to more than"),
+        (_crafted_frame(_arrow_bytes(pa.array([1, 2, 3]))), "lengths differ"),
+        (_crafted_frame([1, 2, 3]), "lengths differ"),
+    ]
+
+    for frame, reason in cases:
+        with pytest.raises(ValueError, match=reason):
+            decode_result(pickle.dumps({"result": frame}))
+
+
+@pytest.mark.parametrize(
+    "column, mapper",
+    [
+        (pa.nulls(2), None), (pa.array([{"a": 1}, {"a": 2}]), None), (pa.array([[1], [2]]), None),
+        (pa.array(["a", "b"]).dictionary_encode(), None), (pa.array(["a", "b"], pa.string_view()), "arrow"),
+        (pa.StructArray.from_arrays([pa.array(["a", "b"]).dictionary_encode()], names=["a"]), "arrow"),
+    ],
+)
+def test_parent_converts_only_flat_column_types(column, mapper):
+    spec = {"arrow": _arrow_bytes(column), "mapper": mapper}
+
+    with pytest.raises(ValueError, match="type can't be decoded"):
+        decode_result(pickle.dumps({"result": _crafted_frame(spec)}))
+
+
+def test_parent_reads_only_the_column_dtype_from_pandas_metadata():
+    table = pa.Table.from_pandas(pd.DataFrame({"c": [1, 2]}), preserve_index=False)
+    metadata = table.schema.pandas_metadata
+    label_dtype = {"name": None, "field_name": None, "pandas_type": "unicode", "numpy_type": "S20000000"}
+    labels = {**metadata, "column_indexes": [{**label_dtype, "metadata": None}]}
+    long_name = {**metadata, "columns": [{**metadata["columns"][0], "numpy_type": "(" * 2000 + "[pyarrow]"}]}
+    two_columns = {**metadata, "columns": metadata["columns"] * 2}
+    flags = pa.Table.from_pandas(pd.DataFrame({"c": [True, False]}), preserve_index=False)
+    flag_column = flags.schema.pandas_metadata["columns"][0]
+
+    def crafted(pandas_metadata, source=table):
+        column = _arrow_bytes(source.replace_schema_metadata({b"pandas": json.dumps(pandas_metadata).encode()}))
+        return pickle.dumps({"result": _crafted_frame(column)})
+
+    assert decode_result(crafted(labels))["result"]["c"].tolist() == [1, 2]
+    for pandas_metadata in (long_name, two_columns):
+        with pytest.raises(ValueError, match="isn't what the child writes"):
+            decode_result(crafted(pandas_metadata))
+    for numpy_type in ("large_string[pyarrow]", "string", "Int64"):
+        widened = {**metadata, "columns": [{**flag_column, "numpy_type": numpy_type}]}
+        with pytest.raises(ValueError, match="dtype the column can.t take"):
+            decode_result(crafted(widened, flags))
+
+
+def test_parent_ignores_an_extension_type_s_own_metadata():
+    period_type = type(pa.array(pd.period_range("2024-01-01", periods=1, freq="D")).type)
+    column = pa.ExtensionArray.from_storage(period_type("1" * 10_000), pa.array([1, 2], pa.int64()))
+
+    result = decode_result(pickle.dumps({"result": _crafted_frame(_arrow_bytes(column))}))["result"]
+
+    assert result["c"].tolist() == [1, 2]
+
+
+def test_only_frame_columns_and_index_values_stay_in_arrow():
+    arrow = {"arrow": _arrow_bytes(pa.array([1, 2])), "mapper": "arrow"}
+    codes = _arrow_bytes(pa.array([0, 1], pa.int8()))
+    levels = {"levels": [arrow], "codes": [[0, 1]], "names": [None]}
+    categories = {"codes": codes, "categories": arrow, "ordered": False}
+    arrow_level = pd.MultiIndex.from_arrays([pd.array([1, 2], dtype="int64[pyarrow]"), ["a", "b"]])
+
+    for frame in (_crafted_frame([1, 2], index=levels), _crafted_frame(categories)):
+        with pytest.raises(ValueError, match="Only frame columns and index values"):
+            decode_result(pickle.dumps({"result": frame}))
+    assert _round_trip(pd.DataFrame({"x": [1, 2]}, index=arrow_level))["result"].index.tolist() == [(1, "a"), (2, "b")]
+
+
+def test_parent_takes_category_codes_only_as_integers():
+    codes = _arrow_bytes(pa.array([0, 0], pa.int8()))
+    inner = {"codes": codes, "categories": ["x" * 100], "ordered": False}
+    nested = {"codes": inner, "categories": [0], "ordered": False}
+    cases = [
+        (nested, "must be an Arrow column"),
+        ({"codes": [0, 0], "categories": ["a"], "ordered": False}, "must be an Arrow column"),
+        ({"codes": codes, "categories": {"codes": codes, "categories": ["a"], "ordered": False}, "ordered": False},
+         "can't be categorical"),
+        ({"codes": _arrow_bytes(pa.array([0.0, 0.0])), "categories": ["a"], "ordered": False}, "must be integers"),
+    ]
+
+    for column, reason in cases:
+        with pytest.raises(ValueError, match=reason):
+            decode_result(pickle.dumps({"result": _crafted_frame(column)}))
 
 
 def test_parent_rebuilds_marked_values_through_checking_constructors():
@@ -290,6 +473,22 @@ def test_parent_rebuilds_marked_values_through_checking_constructors():
     with pytest.raises(ValueError, match="Unknown marked value"):
         decode_result(pickle.dumps({"result": (_MARKER, "eval", "1")}))
     assert dict(decimal.getcontext().flags) == flags_before
+
+
+def test_parent_parses_each_text_once():
+    digits = "1" * 1000
+    cases = [
+        ([(_MARKER, "decimal", digits), (_MARKER, "decimal", digits)], "more decoding than its size"),
+        ((_MARKER, "decimal", 10**1000), "as its text"),
+        ((_MARKER, "complex", "1e999", 0.0), "two floats"),
+        (_crafted_frame([1, 2], index={"levels": [[digits, digits]], "codes": [[0, 1]], "names": [None]}), "unique"),
+    ]
+
+    for value, reason in cases:
+        with pytest.raises(ValueError, match=reason):
+            decode_result(pickle.dumps({"result": value}))
+    with pytest.raises(pickle.UnpicklingError, match="must be text"):
+        decode_result(pickle.dumps({"result": 1, "output": [digits, digits]}))
 
 
 def test_parent_refuses_a_tampered_child_result():

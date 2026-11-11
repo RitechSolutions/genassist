@@ -86,7 +86,7 @@ def _encode_result(payload: Dict[str, Any], limit: int = _MAX_RESULT_BYTES) -> b
             payload = {**payload, "result": to_plain(payload["result"])}
         data = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
     except Exception as exc:
-        refused = _error_dict(f"Result could not be serialized: {exc}")
+        refused = _error_dict(truncate_for_log(f"Result could not be serialized: {exc}", _MAX_ERROR_CHARS))
         # Keep the script's prints, which show what it was about to return
         refused.update({key: payload[key] for key in ("output", "errors") if isinstance(payload.get(key), str)})
         return pickle.dumps(refused)
