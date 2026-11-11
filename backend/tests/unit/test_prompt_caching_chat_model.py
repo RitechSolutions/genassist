@@ -656,6 +656,7 @@ class TestMixedChainKeepsTheLegacyString:
 
 
 _INIT = "langchain.chat_models.init_chat_model"
+_OPENAI_MODEL = "app.modules.workflow.llm.openai_refused_settings.RefusalAdjustingChatOpenAI"
 _OPIK = "app.modules.workflow.llm.opik_tracing.get_opik_callbacks"
 
 
@@ -795,9 +796,10 @@ class TestUnwrappedCases:
         assert llm is init.return_value
 
     async def test_an_opted_in_openai_provider_stays_plain(self):
-        llm, init = await _build("openai", {"api_key": "k"})
-        assert llm is init.return_value
-        assert "prompt_caching_enabled" not in init.call_args.kwargs
+        with patch(_OPENAI_MODEL) as openai_model:
+            llm = await build_chat_model("openai", {"api_key": "k"}, "a-model", True)
+        assert llm is openai_model.return_value
+        assert "prompt_caching_enabled" not in openai_model.call_args.kwargs
 
     @pytest.mark.parametrize("raw", [True, "true", "false", 1, 0, None, ""], ids=repr)
     async def test_a_stale_stored_key_never_decides_anything(self, raw):
