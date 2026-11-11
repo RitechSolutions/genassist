@@ -18,6 +18,7 @@ import asyncio
 
 from app.core.config.settings import settings
 from app.core.utils.string_utils import truncate_for_log
+from app.modules.workflow.script_results import decode_result, to_plain
 from app.modules.workflow.sandbox import (
     block_internal_connections,
     make_sandboxed_namespace,
@@ -84,9 +85,14 @@ def _encode_result(payload: Dict[str, Any], limit: int = _MAX_RESULT_BYTES) -> b
             half = _MAX_STREAM_CHARS // 2
             payload[stream] = f"{text[:half]}\n... ({len(text) - 2 * half} chars cut) ...\n{text[-half:]}"
     try:
+        if "result" in payload:
+            payload = {**payload, "result": to_plain(payload["result"])}
         data = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
     except Exception as exc:
-        return pickle.dumps(_error_dict(f"Result could not be serialized: {exc}"))
+        refused = _error_dict(truncate_for_log(f"Result could not be serialized: {exc}", _MAX_ERROR_CHARS))
+        # Keep the script's prints, which show what it was about to return
+        refused.update({key: payload[key] for key in ("output", "errors") if isinstance(payload.get(key), str)})
+        return pickle.dumps(refused)
     if len(data) > limit:
         mib = 1024 * 1024
         return pickle.dumps(
@@ -254,12 +260,15 @@ def _execute_python_code_sync(
             return _error_dict(f"Execution timed out after {_EXEC_TIMEOUT_SECONDS} seconds")
 
         try:
-            return pickle.loads(parent_conn.recv_bytes(maxlength=max_result_bytes))
+            data = parent_conn.recv_bytes(maxlength=max_result_bytes)
         except (EOFError, OSError):
-            pass  # exited without sending, killed mid-send, or over the size cap
-        except Exception as exc:
-            logger.warning("Script result could not be decoded: %s", type(exc).__name__)
-            return _error_dict(f"Script result could not be decoded: {type(exc).__name__}")
+            data = None  # exited without sending, killed mid-send, or over the size cap
+        if data is not None:
+            try:
+                return decode_result(data)
+            except Exception as exc:
+                logger.warning("Script result could not be decoded: %s", type(exc).__name__)
+                return _error_dict(f"Script result could not be decoded: {type(exc).__name__}")
         process.join(timeout=_EXIT_GRACE_SECONDS)
         # Exit code 1 is a child that could not load its arguments; the round trip copies them, so skip it after a kill
         keys = _unpicklable_keys(params) if process.exitcode == 1 else []
