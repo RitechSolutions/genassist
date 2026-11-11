@@ -276,9 +276,10 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         tokens[request_log_ids_ctx] = request_log_ids_ctx.set(log_ids)
 
         # ------------------------------------------------------------------ #
-        # 3️⃣  Log “request started”
+        # 3️⃣  Log “request started” at DEBUG only: the "Request handled" line below
+        #     has the same fields plus status and duration, so at INFO it was a duplicate.
         # ------------------------------------------------------------------ #
-        logger.bind(request_id=rid, ip=ip, method=meth, path=pth, uid=uid).info("➡️  Request start")
+        logger.bind(request_id=rid, ip=ip, method=meth, path=pth, uid=uid).debug("➡️  Request start")
 
         try:
             # Do the work
