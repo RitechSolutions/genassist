@@ -596,7 +596,9 @@ def _build_profile_report_html(
     """Run ydata-profiling on a CSV file and return the report as an HTML string."""
     path = Path(file_path)
     try:
-        df = pd.read_csv(
+        # Same column types the workflow nodes see: saved types reapplied,
+        # leading-zero columns ("001") kept as text.
+        df = ml_utils.read_csv_with_dtypes(
             path,
             encoding="utf-8",
             on_bad_lines="skip",
