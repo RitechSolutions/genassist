@@ -288,6 +288,67 @@ def test_a_new_conversation_drops_the_previous_agent(json_lines, datadog_on):
     assert (b_again["conversation_id"], b_again["agent_id"]) == ("c-b", "agent-b")
 
 
+def _fake_ddtrace(monkeypatch, context):
+    """Stand-in for the tracer ddtrace-run loads in Datadog deployments."""
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    trace_module = ModuleType("ddtrace.trace")
+    trace_module.tracer = SimpleNamespace(get_log_correlation_context=lambda: context)
+    monkeypatch.setitem(sys.modules, "ddtrace", ModuleType("ddtrace"))
+    monkeypatch.setitem(sys.modules, "ddtrace.trace", trace_module)
+
+
+def test_lines_inside_a_trace_carry_its_ids(json_lines, monkeypatch):
+    _fake_ddtrace(
+        monkeypatch,
+        {"dd.trace_id": "6911a2b2000000001c1f8f0b3e9e1a2b", "dd.span_id": "1234", "dd.service": "genassist-backend",
+         "dd.version": "", "dd.env": "prod"},
+    )
+    logger.info("Agent replied")
+
+    [event] = json_lines()
+    assert event["dd"] == {
+        "trace_id": "6911a2b2000000001c1f8f0b3e9e1a2b", "span_id": "1234", "service": "genassist-backend", "env": "prod",
+    }
+
+
+def test_lines_outside_a_trace_have_no_trace_ids(json_lines, monkeypatch):
+    _fake_ddtrace(monkeypatch, {"dd.trace_id": "0", "dd.span_id": "0", "dd.service": "", "dd.version": "", "dd.env": ""})
+    logger.info("Worker started")
+
+    [event] = json_lines()
+    assert "dd" not in event
+
+
+def test_without_ddtrace_loaded_lines_have_no_trace_ids(json_lines, monkeypatch):
+    import sys
+
+    monkeypatch.delitem(sys.modules, "ddtrace", raising=False)
+    logger.info("Local run")
+
+    [event] = json_lines()
+    assert "dd" not in event
+    assert "ddtrace" not in sys.modules  # never imported by the log sink
+
+
+def test_a_broken_tracer_does_not_drop_the_line(json_lines, monkeypatch):
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    def boom():
+        raise RuntimeError("tracer not ready")
+
+    trace_module = ModuleType("ddtrace.trace")
+    trace_module.tracer = SimpleNamespace(get_log_correlation_context=boom)
+    monkeypatch.setitem(sys.modules, "ddtrace", ModuleType("ddtrace"))
+    monkeypatch.setitem(sys.modules, "ddtrace.trace", trace_module)
+    logger.error("Still logged")
+
+    [event] = json_lines()
+    assert event["message"] == "Still logged" and "dd" not in event
+
+
 def test_start_keeps_the_agent_once_the_conversation_exists(json_lines, datadog_on):
     """start() knows the agent first; the conversation is created (and tagged) after."""
 
