@@ -7,9 +7,10 @@ from uuid import UUID
 from celery import shared_task
 from croniter import croniter
 
+from app.core.observability.datadog_observability import datadog_observability
 from app.core.utils.html_utils import html2markdown, html2plaintext
 from app.dependencies.injector import injector
-from app.modules.data.load_result import article_sync_outcome, load_document
+from app.modules.data.load_result import article_sync_outcome, load_document, sync_result_fields
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.integration.zendesk import ZendeskConnector
 from app.schemas.agent_knowledge import KBCreate
@@ -81,11 +82,13 @@ def import_zendesk_articles_to_kb(kb_id: Optional[str] = None, sync_now: bool = 
     # bounds any single sync so a hung downstream call (RAG/embeddings/pgvector) cannot
     # wedge the solo-pool worker indefinitely, while still leaving generous headroom
     # for a large but healthy sync.
-    return run_async_in_celery(
+    result = run_async_in_celery(
         import_zendesk_articles_to_kb_async_with_scope(kb_id=kb_id, sync_now=sync_now),
         timeout=15 * 60,
         task_name="import_zendesk_articles_to_kb",
     )
+    datadog_observability.tag_kb_sync("zendesk", result)
+    return result
 
 
 async def import_zendesk_articles_to_kb_async_with_scope(
@@ -110,7 +113,8 @@ async def import_zendesk_articles_to_kb_async(
     """Async implementation of Zendesk article import.
 
     Persists ``last_synced``, ``last_sync_status``, and ``last_sync_error`` on the KB row
-    so the UI can show outcome. Returns aggregate counts plus ``per_kb`` for API responses.
+    so the UI can show outcome, and ``last_successful_sync`` when the sync succeeded.
+    Returns aggregate counts plus ``per_kb`` for API responses.
 
     Note: ``KnowledgeBaseService.update`` uses ``exclude_none=True``; use ``last_sync_error=""``
     to clear a previous error on success.
@@ -181,6 +185,7 @@ async def import_zendesk_articles_to_kb_async(
         }
 
     processed_ds = 0
+    kbs_failed = 0
     articles_added_tot = 0
     articles_deleted_tot = 0
     articles_updated_tot = 0
@@ -222,12 +227,9 @@ async def import_zendesk_articles_to_kb_async(
             )
             if sync_now or kb_id is not None:
                 ku = _kb_update_dict(kb)
-                ku["last_synced"] = datetime.now()
-                ku["last_sync_status"] = "error"
-                ku["last_sync_error"] = (
-                    f"Sync source is not Zendesk (type={ds.source_type})"
-                )
+                ku.update(sync_result_fields("error", f"Sync source is not Zendesk (type={ds.source_type})"))
                 await kb_service.update(kb.id, KBCreate(**ku))
+                kbs_failed += 1
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -285,10 +287,9 @@ async def import_zendesk_articles_to_kb_async(
             )
             if sync_now or kb_id is not None:
                 ku = _kb_update_dict(kb)
-                ku["last_synced"] = datetime.now()
-                ku["last_sync_status"] = "error"
-                ku["last_sync_error"] = "Zendesk datasource has no connection data"
+                ku.update(sync_result_fields("error", "Zendesk datasource has no connection data"))
                 await kb_service.update(kb.id, KBCreate(**ku))
+                kbs_failed += 1
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -329,10 +330,9 @@ async def import_zendesk_articles_to_kb_async(
         if not creds_ok:
             logger.error(f"Knowledge base {kb.id}: {err}")
             ku = _kb_update_dict(kb)
-            ku["last_synced"] = datetime.now()
-            ku["last_sync_status"] = "error"
-            ku["last_sync_error"] = err
+            ku.update(sync_result_fields("error", err))
             await kb_service.update(kb.id, KBCreate(**ku))
+            kbs_failed += 1
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -374,9 +374,7 @@ async def import_zendesk_articles_to_kb_async(
                 )
                 processed_ds += 1
                 ku = _kb_update_dict(kb)
-                ku["last_synced"] = datetime.now()
-                ku["last_sync_status"] = "success"
-                ku["last_sync_error"] = ""
+                ku.update(sync_result_fields("success"))
                 await kb_service.update(kb.id, KBCreate(**ku))
                 per_kb.append(
                     {
@@ -582,21 +580,21 @@ async def import_zendesk_articles_to_kb_async(
             # Update last synced time and persist article updated_at map (skip unchanged next run)
             logger.debug(f"Updating knowledge base {kb.id} last synced time...")
             kb_update = _kb_update_dict(kb)
-            kb_update["last_synced"] = datetime.now()
             sync_status, sync_message = article_sync_outcome(
                 len(new_articles) + len(updated_articles),
                 articles_added + articles_updated,
                 kb_errors,
                 had_articles=bool(existing_articles),
             )
-            kb_update["last_sync_status"] = sync_status
-            kb_update["last_sync_error"] = sync_message
+            kb_update.update(sync_result_fields(sync_status, sync_message))
             if last_file_date:
                 kb_update["last_file_date"] = last_file_date
             extra = dict(kb_update.get("extra_metadata") or {})
             extra[article_updated_at_key] = article_updated_at_map
             kb_update["extra_metadata"] = extra
             await kb_service.update(kb.id, KBCreate(**kb_update))
+            if sync_status == "error":
+                kbs_failed += 1
 
             articles_added_tot += articles_added
             articles_deleted_tot += articles_deleted
@@ -619,10 +617,9 @@ async def import_zendesk_articles_to_kb_async(
             logger.error(error_msg)
             # Update KB with error status
             kb_update = _kb_update_dict(kb)
-            kb_update["last_synced"] = datetime.now()
-            kb_update["last_sync_status"] = "error"
-            kb_update["last_sync_error"] = str(e)
+            kb_update.update(sync_result_fields("error", str(e)))
             await kb_service.update(kb.id, KBCreate(**kb_update))
+            kbs_failed += 1
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -639,6 +636,7 @@ async def import_zendesk_articles_to_kb_async(
         "articles_deleted": articles_deleted_tot,
         "articles_updated": articles_updated_tot,
         "datasources_processed": processed_ds,
+        "kbs_failed": kbs_failed,
         "per_kb": per_kb,
     }
 

@@ -1093,3 +1093,30 @@ async def test_failed_new_article_on_a_filled_knowledge_base_is_a_warning_not_an
     assert saved.last_sync_status == "success_with_warnings"
     assert saved.last_sync_error.startswith("1 of 1 articles could not be copied")
     assert saved.extra_metadata["salesforce_article_updated_at"] == {"ka-0": "2026-01-01T00:00:00Z"}
+
+
+@pytest.mark.asyncio
+async def test_successful_sync_records_its_time_as_the_last_successful_sync():
+    kb = _make_kb(uuid.uuid4())
+    articles = [{"id": "ka-1", "title": "T1", "body": "B1", "updated_at": "2026-01-01T00:00:00Z", "is_public": True}]
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), _FakeRagManager(), articles=articles)
+
+    written = _written_row(kb_service)
+    assert written.last_sync_status == "success"
+    assert written.last_successful_sync is not None
+    assert written.last_successful_sync == written.last_synced
+    assert result["kbs_failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_sync_keeps_the_last_successful_sync():
+    kb = _make_kb(uuid.uuid4())
+
+    result, kb_service = await _run_sync(kb, _make_datasource(), _FakeRagManager(), raise_exc=RuntimeError("invalid_client"))
+
+    written = _written_row(kb_service)
+    assert written.last_sync_status == "error"
+    assert written.last_synced is not None  # still moves: it schedules the next run
+    assert written.last_successful_sync is None
+    assert result["kbs_failed"] == 1
