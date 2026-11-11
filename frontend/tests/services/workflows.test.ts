@@ -119,6 +119,13 @@ describe("workflows service", () => {
     );
   });
 
+  it("testNode sends the canvas node id along with the payload", async () => {
+    const payload = { input_data: {}, node_type: "trainModelNode", node_config: {}, node_id: "node-1" };
+    mockApiRequest.mockResolvedValue({ status: "success" } as never);
+    await testNode(payload as never);
+    expect(mockApiRequest.mock.calls[0][2]).toMatchObject({ node_id: "node-1" });
+  });
+
   it("testWorkflow POSTs the workflow test payload", async () => {
     const payload = { input_data: {}, workflow: { id: "w" } };
     mockApiRequest.mockResolvedValue({ status: "success" } as never);
