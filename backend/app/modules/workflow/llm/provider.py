@@ -53,6 +53,15 @@ def _single_attempt_kwargs(provider: str, seconds: float) -> Dict[str, Any]:
     return {}
 
 
+def _init_openai_chat_model(model_kwargs: Dict[str, Any]) -> BaseChatModel:
+    """The model init_chat_model builds for OpenAI, which also adapts to a refused setting."""
+    # Imported here for the same reason as init_chat_model.
+    from app.modules.workflow.llm.openai_refused_settings import RefusalAdjustingChatOpenAI
+
+    init_kwargs = {key: value for key, value in model_kwargs.items() if key != "model_provider"}
+    return RefusalAdjustingChatOpenAI(**init_kwargs)
+
+
 async def build_chat_model(
     provider_name: Optional[str],
     connection_data: Dict[str, Any],
@@ -169,11 +178,14 @@ async def build_chat_model(
     if callbacks:
         model_kwargs["callbacks"] = callbacks
 
-    # Imported here, not at module top level: langchain.chat_models transitively pulls
-    # torch/transformers, which must not be loaded into a Celery prefork master process.
-    from langchain.chat_models import init_chat_model
+    if original_provider == "openai":
+        llm = _init_openai_chat_model(model_kwargs)
+    else:
+        # Imported here, not at module top level: langchain.chat_models transitively pulls
+        # torch/transformers, which must not be loaded into a Celery prefork master process.
+        from langchain.chat_models import init_chat_model
 
-    llm = init_chat_model(**model_kwargs)
+        llm = init_chat_model(**model_kwargs)
 
     # Wrap outside init_chat_model so the Opik callbacks stay attached to the inner
     # model and every invocation is still traced.
