@@ -18,7 +18,8 @@ from opentelemetry.sdk.trace import TracerProvider
 import app.api.v1.routes  # noqa: F401
 from app.api.v1.routes import conversations as routes
 from app.core.exceptions.exception_classes import AppException
-from app.core.observability import set_agent_span_attributes
+from app.core.config.settings import settings
+from app.core.observability import datadog_observability
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.schemas.conversation import AgentMinimalForCache, ConversationWithOperatorAgentRead
 from app.schemas.conversation_transcript import InProgConvTranscrUpdate
@@ -32,9 +33,15 @@ WORKFLOW_ID = UUID("0199e3a0-0000-7000-8000-0000000000b1")
 _tracer = TracerProvider().get_tracer(__name__)
 
 
+@pytest.fixture(autouse=True)
+def _datadog_on(monkeypatch):
+    """The tags are part of the Datadog integration, which is off unless DATADOG_ENABLED."""
+    monkeypatch.setattr(settings, "DATADOG_ENABLED", True)
+
+
 def test_tags_current_span_with_agent_and_workflow():
     with _tracer.start_as_current_span("fastapi.request") as span:
-        set_agent_span_attributes(AGENT_ID, WORKFLOW_ID)
+        datadog_observability.tag_agent(AGENT_ID, WORKFLOW_ID)
 
     assert span.attributes["genassist.agent_id"] == str(AGENT_ID)
     assert span.attributes["genassist.workflow_id"] == str(WORKFLOW_ID)
@@ -42,7 +49,7 @@ def test_tags_current_span_with_agent_and_workflow():
 
 def test_agent_without_workflow_only_tags_agent():
     with _tracer.start_as_current_span("fastapi.request") as span:
-        set_agent_span_attributes(AGENT_ID, None)
+        datadog_observability.tag_agent(AGENT_ID, None)
 
     assert span.attributes["genassist.agent_id"] == str(AGENT_ID)
     assert "genassist.workflow_id" not in span.attributes
@@ -51,7 +58,7 @@ def test_agent_without_workflow_only_tags_agent():
 def test_no_active_span_is_a_no_op():
     # Outside any span (or with tracing off) the OTel API returns a no-op span.
     assert not otel_trace.get_current_span().is_recording()
-    set_agent_span_attributes(AGENT_ID, WORKFLOW_ID)
+    datadog_observability.tag_agent(AGENT_ID, WORKFLOW_ID)
     assert not otel_trace.get_current_span().is_recording()
 
 
@@ -113,7 +120,7 @@ def _cached_agent():
 async def test_start_route_tags_span_before_validation(monkeypatch):
     """A start rejected by reCAPTCHA is still counted under its agent."""
     tagged = []
-    monkeypatch.setattr(routes, "set_agent_span_attributes", lambda *ids: tagged.append(ids))
+    monkeypatch.setattr(routes.datadog_observability, "tag_agent", lambda *ids: tagged.append(ids))
     monkeypatch.setattr(routes, "verify_recaptcha_token", lambda *a, **k: (False, 0.0, "bad token"))
     start = inspect.unwrap(routes.start)  # skip the rate limiter decorators
 
@@ -127,7 +134,7 @@ async def test_start_route_tags_span_before_validation(monkeypatch):
 async def test_reply_route_tags_span_before_reading_the_body(monkeypatch):
     """A reply that fails validation is still counted under its agent."""
     tagged = []
-    monkeypatch.setattr(routes, "set_agent_span_attributes", lambda *ids: tagged.append(ids))
+    monkeypatch.setattr(routes.datadog_observability, "tag_agent", lambda *ids: tagged.append(ids))
     request = _agent_request(_cached_agent())
 
     async def bad_body():
@@ -146,7 +153,7 @@ async def test_reply_route_tags_span_before_reading_the_body(monkeypatch):
 async def test_reply_route_handles_agent_cached_before_workflow_id_existed(monkeypatch):
     """Entries pickled before the deploy have no workflow_id; the reply must still go through."""
     tagged = []
-    monkeypatch.setattr(routes, "set_agent_span_attributes", lambda *ids: tagged.append(ids))
+    monkeypatch.setattr(routes.datadog_observability, "tag_agent", lambda *ids: tagged.append(ids))
     agent = AgentMinimalForCache(id=AGENT_ID, name="Support")
     del agent.__dict__["workflow_id"]  # what unpickling an old cache entry gives
     request = _agent_request(agent)
