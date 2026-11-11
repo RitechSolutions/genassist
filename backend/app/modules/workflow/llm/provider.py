@@ -415,10 +415,12 @@ class LLMProvider:
 
             validated_data.pop("masked_api_key", None)
 
-            # Decrypt api_key for providers that need it
+            # Decrypt stored secrets for providers that need it
             original_provider = (llm_provider.llm_model_provider or "").lower()
-            if original_provider not in ["vllm", "vllm_fine_tuned", "ollama"] and "api_key" in validated_data:
-                validated_data["api_key"] = decrypt_key(validated_data["api_key"])
+            if original_provider not in ["vllm", "vllm_fine_tuned", "ollama"]:
+                for field in LlmProviderService.encrypted_fields:
+                    if field in validated_data:
+                        validated_data[field] = decrypt_key(validated_data[field])
 
 
             llm = await build_chat_model(
