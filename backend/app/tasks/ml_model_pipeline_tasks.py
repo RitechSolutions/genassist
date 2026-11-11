@@ -52,9 +52,46 @@ def _training_succeeded(execution_output: Dict[str, Any]) -> bool:
     training chain) fail independently while the actual Train Data Source ->
     Train Model chain still completes and produces real metrics - has_failures
     would be true there even though training succeeded.
+
+    When a Train Model node failed, though, the final output says nothing
+    about training: it can be an upstream node's own success (e.g. Data
+    Preprocessing's) with no model trained, or a node after a Train Model
+    that did train (e.g. a Chat Output). The run then passes only if some
+    Train Model node trained a model - so a broken leftover Train Model next
+    to the real one doesn't fail it.
     """
+    failed_nodes = execution_output.get("failed_nodes") or []
+    train_model_failed = any(
+        isinstance(node, dict) and node.get("type") == _TRAIN_MODEL_NODE_TYPE for node in failed_nodes
+    )
+    if train_model_failed:
+        return _a_train_model_trained(execution_output)
     output = execution_output.get("output")
     return isinstance(output, dict) and output.get("success") is True
+
+
+_TRAIN_MODEL_NODE_TYPE = "trainModelNode"
+
+
+def _a_train_model_trained(execution_output: Dict[str, Any]) -> bool:
+    """Whether any Train Model node in the run finished with a trained model."""
+    output = execution_output.get("output")
+    # Every Train Model result carries the path of the model it trained.
+    if isinstance(output, dict) and output.get("success") is True and "model_file_path" in output:
+        return True
+    state = execution_output.get("state")
+    statuses = state.get("nodeExecutionStatus") if isinstance(state, dict) else None
+    if not isinstance(statuses, dict):
+        return False
+    return any(
+        isinstance(entry, dict)
+        and entry.get("type") == _TRAIN_MODEL_NODE_TYPE
+        and entry.get("status") == "success"
+        and isinstance(entry.get("output"), dict)
+        and entry["output"].get("success") is True
+        and "model_file_path" in entry["output"]
+        for entry in statuses.values()
+    )
 
 
 def _summarize_run_failure(execution_output: Dict[str, Any]) -> str:
