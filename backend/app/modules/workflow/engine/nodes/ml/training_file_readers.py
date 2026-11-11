@@ -725,11 +725,14 @@ async def read_training_file_preview(
 
 
 def _csv_rows_frame(columns: List[str], rows: List[Tuple[Any, ...]]) -> pd.DataFrame:
-    """CSV rows (all text) typed the way pd.read_csv types the saved file.
+    """CSV rows (all text) typed the way the next node types the saved file.
 
     Re-parsing them gives the preview the same numeric/boolean columns the
-    next node sees when it reads the extracted CSV.
+    next node sees when it reads the extracted CSV - with leading-zero
+    columns ("001") kept as text (see ml_utils.read_csv_keeping_leading_zeros).
     """
+    from app.modules.workflow.engine.nodes.ml import ml_utils
+
     if not columns:
         return pd.DataFrame(rows, columns=columns)
     buffer = io.StringIO()
@@ -737,7 +740,7 @@ def _csv_rows_frame(columns: List[str], rows: List[Tuple[Any, ...]]) -> pd.DataF
     writer.writerow(columns)
     writer.writerows(rows)
     buffer.seek(0)
-    return pd.read_csv(buffer)
+    return ml_utils.read_csv_keeping_leading_zeros(buffer)
 
 
 def apply_column_dtypes(frame: pd.DataFrame, dtypes: Dict[str, str]) -> pd.DataFrame:

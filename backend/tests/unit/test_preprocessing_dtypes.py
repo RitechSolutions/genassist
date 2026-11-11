@@ -55,12 +55,12 @@ class TestColumnTypesSurviveTheCsvRoundTrip:
         assert isinstance(loaded["level"].dtype, pd.CategoricalDtype)
         assert str(loaded["score"].dtype) == "float64"
 
-    def test_file_without_saved_dtypes_reads_exactly_as_before(self, tmp_path):
+    def test_file_without_saved_dtypes_keeps_leading_zeros(self, tmp_path):
         path = tmp_path / "upload.csv"
         pd.DataFrame({"code": ["001"], "n": [1]}).to_csv(path, index=False)
         loaded = ml_utils.read_csv_with_dtypes(path)
-        assert loaded["code"].tolist() == [1]  # pandas' own inference, unchanged
-        assert str(loaded["n"].dtype) == "int64"
+        assert loaded["code"].tolist() == ["001"]
+        assert str(loaded["n"].dtype) == "int64"  # pandas' own inference, unchanged
 
     def test_unusable_saved_dtypes_fall_back_to_a_plain_read(self, tmp_path):
         path = tmp_path / "edited.csv"
