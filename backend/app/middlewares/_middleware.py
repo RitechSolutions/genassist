@@ -21,6 +21,7 @@ from app.core.config.logging import (
     method_ctx,
     path_ctx,
     request_id_ctx,
+    request_log_ids_ctx,
     status_ctx,
     uid_ctx,
 )
@@ -270,6 +271,9 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
             path_ctx: path_ctx.set(pth),
             uid_ctx: uid_ctx.set(uid),
         }
+        # Filled by datadog_observability with the conversation and agent ids (DATADOG_ENABLED only)
+        log_ids: Dict = {}
+        tokens[request_log_ids_ctx] = request_log_ids_ctx.set(log_ids)
 
         # ------------------------------------------------------------------ #
         # 3️⃣  Log “request started”
@@ -301,6 +305,7 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
                 uid=uid,
                 status=code,
                 duration=f"{dur_ms:.2f}",
+                **log_ids,
             )
 
             if ok:

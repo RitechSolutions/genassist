@@ -21,6 +21,13 @@ from app.modules.workflow.engine.nodes.ml.ml_utils import (
 )
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from tests.unit.ml_training_fixtures import training_sandbox
+
+
+@pytest.fixture(autouse=True)
+def _training_sandbox(monkeypatch, tmp_path):
+    # Training only reads files inside the data volume; use pytest's temp folder as it.
+    training_sandbox(monkeypatch, tmp_path)
 
 
 class TestTranslateCategoryLiterals:

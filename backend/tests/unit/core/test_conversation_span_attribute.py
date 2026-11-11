@@ -17,7 +17,8 @@ from opentelemetry.sdk.trace import TracerProvider
 
 import app.api.v1.routes  # noqa: F401
 from app.api.v1.routes import conversations as routes
-from app.core.observability import set_conversation_span_attribute
+from app.core.config.settings import settings
+from app.core.observability import datadog_observability
 from app.services.conversations import ConversationService
 from app.use_cases import chat_as_client_use_case as use_case
 
@@ -27,20 +28,26 @@ AGENT_ID = UUID("0199e3a0-0000-7000-8000-0000000000a1")
 _tracer = TracerProvider().get_tracer(__name__)
 
 
+@pytest.fixture(autouse=True)
+def _datadog_on(monkeypatch):
+    """The tags are part of the Datadog integration, which is off unless DATADOG_ENABLED."""
+    monkeypatch.setattr(settings, "DATADOG_ENABLED", True)
+
+
 class _Stop(Exception):
     pass
 
 
 def test_tags_current_span_with_conversation_id():
     with _tracer.start_as_current_span("fastapi.request") as span:
-        set_conversation_span_attribute(CONVERSATION_ID)
+        datadog_observability.tag_conversation(CONVERSATION_ID)
 
     assert span.attributes["genassist.conversation_id"] == str(CONVERSATION_ID)
 
 
 def test_missing_conversation_id_is_not_tagged():
     with _tracer.start_as_current_span("fastapi.request") as span:
-        set_conversation_span_attribute(None)
+        datadog_observability.tag_conversation(None)
 
     assert "genassist.conversation_id" not in span.attributes
 

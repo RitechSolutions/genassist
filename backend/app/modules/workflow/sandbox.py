@@ -2,20 +2,22 @@
 Sandboxed execution environment for user-supplied Python code in workflow nodes.
 
 Provides restricted builtins, a safe importer limited to an allowlist,
-AST validation to block attribute-chain escapes, and an SSRF-safe
-requests wrapper that blocks internal/metadata endpoints.
+AST validation to block attribute-chain escapes, and a connection guard
+that keeps user code off internal/metadata addresses.
 """
 
 from __future__ import annotations
 
+import _socket
 import ast
 import builtins
+import functools
 import importlib
 import ipaddress
 import logging
 import socket
-from typing import Any, Dict
-from urllib.parse import urlparse
+import sys
+from typing import Any, Callable, Dict, Optional, Union
 
 from app.core.utils.string_utils import truncate_for_log
 
@@ -148,78 +150,159 @@ def _make_safe_builtins() -> dict:
 _SAFE_BUILTINS: dict = _make_safe_builtins()
 
 # ---------------------------------------------------------------------------
-# SSRF-safe requests wrapper
+# Connection guard
 # ---------------------------------------------------------------------------
 
-_BLOCKED_NETWORKS = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),  # link-local + AWS metadata
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fd00::/8"),
-]
+IPNetwork = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
+
+_IPV4_MAPPED = ipaddress.ip_network("::ffff:0:0/96")
+_NAT64_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+_UNIQUE_LOCAL = ipaddress.ip_network("fc00::/7")
+# IPv6 ranges that carry an IPv4 address, with its bit offset: IPv4-mapped, NAT64, 6to4
+_EMBEDDED_IPV4 = ((_IPV4_MAPPED, 0), (_NAT64_PREFIX, 0), (ipaddress.ip_network("2002::/16"), 80))
+# Not globally reachable per the IANA special-purpose registries, multicast, reserved, and IPv6 outside 2000::/3
+_NON_PUBLIC = tuple(
+    ipaddress.ip_network(network)
+    for network in (
+        "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12",
+        "192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24",
+        "224.0.0.0/3", "::/3", "4000::/2", "8000::/1", "2001::/23", "2001:db8::/32", "3fff::/20",
+    )
+)
+# Globally reachable blocks inside those ranges
+_PUBLIC_EXCEPTIONS = tuple(
+    ipaddress.ip_network(network)
+    for network in (
+        "192.0.0.9/32", "192.0.0.10/32", "2001:1::1/128", "2001:1::2/128", "2001:3::/32", "2001:4:112::/48",
+        "2001:20::/28", "2001:30::/28",
+    )
+)
+# Cloud metadata and host endpoints, blocked even when allowlisted (IMDS, Alibaba, Oracle, Azure WireServer)
+_CLOUD_ENDPOINTS = tuple(
+    ipaddress.ip_network(network)
+    for network in (
+        "169.254.0.0/16", "fd00:ec2::/32", "fd20:ce::254/128", "100.100.100.200/32", "192.0.0.192/32",
+        "168.63.129.16/32",
+    )
+)
+_ADDRESSED_SOCKET_EVENTS = frozenset({"socket.connect", "socket.sendto", "socket.sendmsg"})
+_SOCKET_FAMILY = _socket.socket.family
 
 
-def _is_blocked_url(url: str) -> bool:
-    """Return True if *url* resolves to an internal/metadata IP."""
-    try:
-        parsed = urlparse(url)
-        hostname = parsed.hostname
-        if not hostname:
-            return True
-
-        # Resolve hostname to IP(s)
-        for family, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
-            ip = ipaddress.ip_address(sockaddr[0])
-            for network in _BLOCKED_NETWORKS:
-                if ip in network:
-                    return True
-    except Exception:
-        # If we can't resolve it, block it to be safe
-        return True
-    return False
+def _as_ipv4_network(network: IPNetwork) -> IPNetwork:
+    """The IPv4 range inside an IPv4-mapped or NAT64 range; any other range unchanged."""
+    if network.version == 6 and network.prefixlen >= 96:
+        for prefix in (_IPV4_MAPPED, _NAT64_PREFIX):
+            if network.subnet_of(prefix):
+                return ipaddress.ip_network((int(network.network_address) & 0xFFFFFFFF, network.prefixlen - 96))
+    return network
 
 
-class _SandboxedRequests:
-    """Thin proxy around the ``requests`` library that blocks internal URLs."""
-
-    def __init__(self) -> None:
-        self._requests = importlib.import_module("requests")
-
-    def _checked(self, method: str, url: str, **kwargs: Any) -> Any:
-        if _is_blocked_url(url):
-            raise SandboxViolation(
-                f"HTTP request to '{urlparse(url).hostname}' is blocked — "
-                "requests to internal/private networks are not allowed"
-            )
-        return getattr(self._requests, method)(url, **kwargs)
-
-    def get(self, url: str, **kw: Any) -> Any:
-        return self._checked("get", url, **kw)
-
-    def post(self, url: str, **kw: Any) -> Any:
-        return self._checked("post", url, **kw)
-
-    def put(self, url: str, **kw: Any) -> Any:
-        return self._checked("put", url, **kw)
-
-    def patch(self, url: str, **kw: Any) -> Any:
-        return self._checked("patch", url, **kw)
-
-    def delete(self, url: str, **kw: Any) -> Any:
-        return self._checked("delete", url, **kw)
-
-    def head(self, url: str, **kw: Any) -> Any:
-        return self._checked("head", url, **kw)
-
-    def request(self, method: str, url: str, **kw: Any) -> Any:
-        return self._checked("request", url, method=method, **kw)
+@functools.lru_cache(maxsize=8)
+def parse_allowed_networks(raw: Optional[str]) -> tuple[IPNetwork, ...]:
+    """IPs and CIDR ranges from the comma-separated SANDBOX_ALLOWED_NETWORKS setting."""
+    networks = []
+    for entry in (raw or "").split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            network = _as_ipv4_network(ipaddress.ip_network(entry))
+            # Other IPv6 ranges can carry IPv4 hosts (NAT64, 6to4, translated forms) past the IPv4 checks
+            if network.version == 6 and not network.subnet_of(_UNIQUE_LOCAL):
+                raise ValueError("IPv6 entries must be inside fc00::/7; list IPv4 hosts in IPv4 form")
+            networks.append(network)
+        except ValueError as exc:
+            logger.error("Ignoring SANDBOX_ALLOWED_NETWORKS entry %r: %s", entry, exc)
+    return tuple(networks)
 
 
-# Singleton — reuse across executions.
-_sandboxed_requests = _SandboxedRequests()
+def _ranges(networks: tuple[IPNetwork, ...]) -> dict[int, tuple[tuple[int, int], ...]]:
+    """First and last address of each network as ints, keyed by socket family."""
+    ranges: dict[int, list[tuple[int, int]]] = {int(socket.AF_INET): [], int(socket.AF_INET6): []}
+    for network in networks:
+        family = socket.AF_INET if network.version == 4 else socket.AF_INET6
+        ranges[int(family)].append((int(network.network_address), int(network.broadcast_address)))
+    return {family: tuple(found) for family, found in ranges.items()}
+
+
+def connection_guard(allowed_networks: tuple[IPNetwork, ...] = ()) -> Callable[[str, tuple], None]:
+    """Audit hook allowing only TCP, UDP and Unix sockets, connecting to public addresses or *allowed_networks*.
+
+    User code runs in this process, so the hook keeps its own references to every function and value it uses.
+    """
+    inet_pton, from_bytes, family_of = _socket.inet_pton, int.from_bytes, _SOCKET_FAMILY.__get__
+    type_of, exact_str, exact_tuple = type, str, tuple
+    violation, not_a_literal = SandboxViolation, (OSError, ValueError)
+    inet, inet6 = int(socket.AF_INET), int(socket.AF_INET6)
+    ip_families = frozenset({inet, inet6})
+    # Unix sockets stay allowed for socketpair; connecting them is refused below
+    socket_families = frozenset({inet, inet6, int(socket.AF_UNIX)})
+    socket_types = frozenset({int(socket.SOCK_STREAM), int(socket.SOCK_DGRAM)})
+    protocols = frozenset({0, int(socket.IPPROTO_TCP), int(socket.IPPROTO_UDP)})
+    type_flags = int(getattr(socket, "SOCK_NONBLOCK", 0)) | int(getattr(socket, "SOCK_CLOEXEC", 0))
+    addressed_events = _ADDRESSED_SOCKET_EVENTS
+    embedded = tuple((int(n.network_address), int(n.broadcast_address), shift) for n, shift in _EMBEDDED_IPV4)
+    cloud, non_public, exceptions, allowed = (
+        _ranges(networks) for networks in (_CLOUD_ENDPOINTS, _NON_PUBLIC, _PUBLIC_EXCEPTIONS, allowed_networks)
+    )
+
+    def inside(number: int, ranges: tuple[tuple[int, int], ...]) -> bool:
+        for first, last in ranges:
+            if first <= number <= last:
+                return True
+        return False
+
+    def address_allowed(family: int, host: str) -> bool:
+        try:
+            number = from_bytes(inet_pton(family, host), "big")
+        except not_a_literal:
+            return False  # the event carries the address as written, so only IP literals can be checked
+        if family == inet6:
+            for first, last, shift in embedded:
+                if first <= number <= last:
+                    family, number = inet, (number >> shift) & 0xFFFFFFFF
+                    break
+        if inside(number, cloud[family]):
+            return False
+        public = not inside(number, non_public[family]) or inside(number, exceptions[family])
+        return public or inside(number, allowed[family])
+
+    def guard(event: str, args: tuple) -> None:
+        if event == "socket.__new__":
+            _, family, kind, protocol = args
+            if family not in socket_families or (kind & ~type_flags) not in socket_types or protocol not in protocols:
+                raise violation(
+                    "opening this kind of socket is blocked. Sandboxed code can only open TCP, UDP and Unix sockets"
+                )
+            return
+        if event not in addressed_events:
+            return
+        sock, address = args
+        if address is None:  # sendmsg on an already connected socket
+            return
+        # The C field and exact types, since subclasses can override family, indexing and text
+        family = family_of(sock)
+        host = address[0] if type_of(address) is exact_tuple and address else address
+        if type_of(host) is exact_str and family in ip_families and address_allowed(family, host):
+            return
+        shown = host if type_of(host) is exact_str else "this address"
+        raise violation(
+            f"connection to {shown} is blocked. Sandboxed code can only connect to public IP addresses "
+            "and those an administrator allows"
+        )
+
+    return guard
+
+
+def block_internal_connections(allowed_networks: tuple[IPNetwork, ...] = ()) -> None:
+    """Refuse later sockets other than TCP, UDP and Unix, and connections to non-public addresses, in this process.
+
+    Audit hooks fire inside Python's socket module and can't be removed, so libraries and redirects using it are
+    checked too. Native code that opens its own sockets (pyarrow's S3 client, libpq) never reaches the hook.
+    """
+    sys.addaudithook(connection_guard(allowed_networks))
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -227,7 +310,7 @@ _sandboxed_requests = _SandboxedRequests()
 
 _PRESEEDED_MODULES: dict[str, str] = {
     "json": "json",
-    "requests": "__sandboxed__",  # special-cased below
+    "requests": "requests",
     "datetime": "datetime",
     "math": "math",
     "re": "re",
@@ -272,13 +355,10 @@ def make_sandboxed_namespace(params: Dict[str, Any], logger_instance: Any) -> di
     }
 
     for alias, mod_name in _PRESEEDED_MODULES.items():
-        if alias == "requests":
-            namespace[alias] = _sandboxed_requests
-        else:
-            try:
-                namespace[alias] = importlib.import_module(mod_name)
-            except ImportError:
-                # Optional dependency (pandas, numpy) may not be installed
-                pass
+        try:
+            namespace[alias] = importlib.import_module(mod_name)
+        except ImportError:
+            # Optional dependency (pandas, numpy) may not be installed
+            pass
 
     return namespace

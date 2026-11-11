@@ -184,6 +184,9 @@ export interface NodeTestPayload {
   input_data: Record<string, any>;
   node_type: string;
   node_config: NodeData;
+  // The canvas node's id. A Train Model node is tested under it so a retest
+  // updates the model the previous test registered instead of colliding with it.
+  node_id?: string;
 }
 
 export interface NodeSchemas {

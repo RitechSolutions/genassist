@@ -19,13 +19,13 @@ import pytest
 
 from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.engine.nodes.ml import ml_model_inference_node as inference_module
-from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
     MLModelInferenceNode,
     _replay_feature_engineering,
 )
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from tests.unit.ml_training_fixtures import training_sandbox
 
 
 @pytest.fixture
@@ -267,7 +267,7 @@ class _StubMLModelsService:
 
 @pytest.mark.asyncio
 async def test_train_then_predict_with_datetime_and_math_features(tmp_path, monkeypatch):
-    monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+    data_volume = training_sandbox(monkeypatch, tmp_path)
     rng = np.random.default_rng(3)
     n = 120
     timestamps = pd.date_range("2023-01-01 08:00", periods=n, freq="37h")
@@ -294,7 +294,8 @@ async def test_train_then_predict_with_datetime_and_math_features(tmp_path, monk
     })
 
     assert result["success"] is True, result
-    with open(result["model_file_path"], "rb") as f:
+    model_path = str(data_volume / result["model_file_path"])
+    with open(model_path, "rb") as f:
         metadata = pickle.load(f)["metadata"]
     # The timestamp is a raw input, but the model only sees its parts.
     assert metadata["feature_columns"] == ["ts", "a"]
@@ -303,7 +304,7 @@ async def test_train_then_predict_with_datetime_and_math_features(tmp_path, monk
     assert not metadata.get("categorical_columns")
 
     ml_model = SimpleNamespace(
-        id=uuid.uuid4(), name="dt-math", pkl_file=result["model_file_path"], pkl_file_id=None,
+        id=uuid.uuid4(), name="dt-math", pkl_file=model_path, pkl_file_id=None,
         updated_at=datetime.now(), model_type="linear_regression", target_variable="target",
         features=["ts", "a"],
     )

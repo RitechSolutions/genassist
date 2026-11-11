@@ -458,6 +458,27 @@ function restoreConfigFromMinimal(
 }
 
 // Code generation helpers
+
+/**
+ * Fail the step, naming it and the missing columns, when a column it uses is
+ * not in the data (e.g. renamed, or removed by an earlier step) - instead of
+ * a raw pandas error like "['citty'] not in index". Starts with a comment so
+ * the STEP_CONFIG comment before it still parses on its own.
+ */
+function pushColumnCheck(
+  stepType: PreprocessingStepType,
+  columns: string[],
+  lines: string[]
+): void {
+  const names = [...new Set(columns.map((col) => col.trim()).filter((col) => col.length > 0))];
+  if (names.length === 0) return;
+  const message = `${getStepTypeDisplayName(stepType)}: column(s) not found in the data: `;
+  lines.push("    # Check that the step's columns exist");
+  lines.push(`    _missing = [c for c in [${names.map(pyStr).join(", ")}] if c not in df.columns]`);
+  lines.push("    if _missing:");
+  lines.push(`        raise ValueError(${pyStr(message)} + ", ".join(_missing))`);
+}
+
 function generateColumnFilterCode(
   config: ColumnFilterStepConfig,
   lines: string[]
@@ -468,6 +489,11 @@ function generateColumnFilterCode(
       .join(", ");
 
     if (selectedColumns) {
+    pushColumnCheck(
+      "column_filter",
+      config.columns.filter((col) => col.selected).map((col) => col.name),
+      lines
+    );
     lines.push("    # Filter columns");
     lines.push(`    df = df[[${selectedColumns}]]`);
   }
@@ -483,6 +509,7 @@ function generateRemoveDuplicatesCode(
     .join(", ");
   const keep = config.keep === "last" ? "last" : "first";
 
+  pushColumnCheck("remove_duplicates", config.subsetColumns || [], lines);
   lines.push("    # Remove duplicate rows");
   if (subset) {
     lines.push(`    df = df.drop_duplicates(subset=[${subset}], keep="${keep}")`);
@@ -510,6 +537,8 @@ function generateDropColumnOrRowCode(
     .filter((col) => col.trim().length > 0)
     .map((col) => pyStr(col.trim()))
     .join(", ");
+  // No column check: removing a column that's already gone (e.g. dropped by
+  // an earlier Remove High-Null Columns step) is a no-op, not an error.
   if (columns) {
     lines.push("    # Remove column(s)");
     lines.push(`    df = df.drop(columns=[${columns}], errors="ignore")`);
@@ -529,6 +558,11 @@ function generateChangeDtypeCode(
   config: ChangeDtypeStepConfig,
   lines: string[]
 ): void {
+  pushColumnCheck(
+    "change_dtype",
+    (config.conversions || []).map((item) => item.columnName || ""),
+    lines
+  );
   for (const item of config.conversions || []) {
     const column = (item.columnName || "").trim();
     if (!column) continue;
