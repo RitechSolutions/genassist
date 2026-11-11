@@ -9,7 +9,7 @@ from sqlalchemy.dialects import postgresql
 import app.db.models.test_suite  # noqa: F401  # mapper config needs TestSuiteModel registered
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG
 from app.db.events.soft_delete import SOFT_DELETE_FLAG
-from app.repositories.analytics_aggregation import AnalyticsAggregationRepository
+from app.repositories.analytics_aggregation import AnalyticsAggregationRepository, ExecutionDelta, StatsDelta
 
 AGENT_ID = uuid4()
 STAT_DATE = date(2026, 7, 1)
@@ -103,6 +103,66 @@ class TestDailyStatsUpsert:
         sql = _rendered_upsert()
         assert "avg_response_ms = coalesce" not in sql
         assert "total_response_ms = coalesce" not in sql
+
+
+class TestRealtimeDeltaUpserts:
+    def _agent_sql(self, delta):
+        statements = _capture(lambda repo: repo.increment_agent_daily_stats(AGENT_ID, STAT_DATE, delta))
+        compiled = _compiled(statements[0])
+        return str(compiled).lower(), compiled.params
+
+    def _node_statements(self, nodes):
+        return _capture(lambda repo: repo.increment_node_daily_stats(AGENT_ID, STAT_DATE, nodes))
+
+    def test_in_progress_clamps_once_on_the_net_change(self):
+        sql, params = self._agent_sql(StatsDelta(starts=1, finalizes=3))
+        assert params["in_progress_conversations"] == 0
+        assert "in_progress_conversations = greatest(agent_execution_daily_stats.in_progress_conversations + " in sql
+        assert params["in_progress_conversations_1"] == -2
+
+    def test_average_keeps_untimed_runs_in_the_denominator(self):
+        delta = StatsDelta()
+        for ms in (100.0, 200.0, None):
+            delta.add(True, ms)
+        sql, params = self._agent_sql(delta)
+        assert params["avg_response_ms"] == 100.0
+        assert "/ cast((agent_execution_daily_stats.execution_count + %(execution_count_1)s)" in sql
+        assert params["execution_count_1"] == 3
+
+    def test_only_deltas_with_executions_write_tokens_and_move_the_watermark(self):
+        conversation_sql, conversation_params = self._agent_sql(StatsDelta(starts=1))
+        reply = StatsDelta()
+        reply.add(True, None)
+        reply_sql, _ = self._agent_sql(reply)
+
+        for column in ("total_input_tokens", "total_cost_usd", "avg_response_ms", "last_aggregated_at"):
+            assert f"{column} =" not in conversation_sql.split(" do update set ", 1)[1]
+        assert "total_input_tokens" not in conversation_params
+        assert "total_input_tokens = (coalesce(agent_execution_daily_stats.total_input_tokens" in reply_sql
+        assert "last_aggregated_at = excluded.last_aggregated_at" in reply_sql
+
+    def test_node_types_go_out_as_one_statement(self):
+        nodes = {"llmNode": ExecutionDelta(), "toolNode": ExecutionDelta()}
+        nodes["llmNode"].add(True, 50.0)
+        nodes["toolNode"].add(False, None)
+        statements = self._node_statements(nodes)
+        assert len(statements) == 1
+        compiled = _compiled(statements[0])
+        assert [compiled.params["node_type_m0"], compiled.params["node_type_m1"]] == ["llmNode", "toolNode"]
+        assert "on conflict on constraint uq_node_execution_daily_stats_agent_node_date" in str(compiled).lower()
+
+    def test_untimed_node_types_keep_their_stored_timing(self):
+        nodes = {"toolNode": ExecutionDelta()}
+        nodes["toolNode"].add(True, None)
+        sql = str(_compiled(self._node_statements(nodes)[0])).lower()
+        assert (
+            "total_execution_ms = case when (excluded.total_execution_ms is null) "
+            "then node_execution_daily_stats.total_execution_ms" in sql
+        )
+        assert (
+            "avg_execution_ms = case when (excluded.total_execution_ms is null) "
+            "then node_execution_daily_stats.avg_execution_ms" in sql
+        )
 
 
 class TestLogPaginationOrdering:

@@ -33,18 +33,18 @@ def spawn(coro: Coroutine[Any, Any, Any], *, name: str) -> asyncio.Task[Any]:
 
 async def drain(timeout: float = 10.0) -> None:
     """Wait out the tracked tasks. Every one of them is done when this returns"""
-    pending = set(_TASKS)
-    if not pending:
-        return
-
-    logger.info("Draining %d background task(s)", len(pending))
-    _, overdue = await asyncio.wait(pending, timeout=timeout)
-    if overdue:
-        logger.warning(
-            "Cancelling %d background task(s) past the drain timeout: %s",
-            len(overdue),
-            ", ".join(sorted(task.get_name() for task in overdue)),
-        )
-        for task in overdue:
-            task.cancel()
-        await asyncio.gather(*overdue, return_exceptions=True)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while pending := set(_TASKS):
+        logger.info("Draining %d background task(s)", len(pending))
+        _, overdue = await asyncio.wait(pending, timeout=max(deadline - loop.time(), 0))
+        if overdue:
+            logger.warning(
+                "Cancelling %d background task(s) past the drain timeout: %s",
+                len(overdue),
+                ", ".join(sorted(task.get_name() for task in overdue)),
+            )
+            for task in overdue:
+                task.cancel()
+            await asyncio.gather(*overdue, return_exceptions=True)
+            return
