@@ -286,3 +286,97 @@ def test_a_new_conversation_drops_the_previous_agent(json_lines, datadog_on):
     assert (a["conversation_id"], a["agent_id"]) == ("c-a", "agent-a")
     assert b["conversation_id"] == "c-b" and "agent_id" not in b
     assert (b_again["conversation_id"], b_again["agent_id"]) == ("c-b", "agent-b")
+
+
+def test_start_keeps_the_agent_once_the_conversation_exists(json_lines, datadog_on):
+    """start() knows the agent first; the conversation is created (and tagged) after."""
+
+    async def start():
+        datadog_observability.tag_agent("agent-s", "wf-s")
+        datadog_observability.tag_conversation("c-new")
+        logger.info("Conversation started")
+
+    asyncio.run(start())
+
+    [event] = json_lines()
+    assert (event["conversation_id"], event["agent_id"]) == ("c-new", "agent-s")
+
+
+def _request_events(json_lines, tag):
+    """Run one request through the real request middleware; return its log events by message."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from starlette_context.middleware import RawContextMiddleware
+
+    from app.middlewares._middleware import RequestContextMiddleware
+
+    app = FastAPI()
+    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RawContextMiddleware)
+
+    @app.get("/chat")
+    async def chat():
+        tag()
+        logger.info("Agent replied")
+        return {}
+
+    with TestClient(app) as client:
+        client.get("/chat")
+        client.get("/chat-not-found")
+    return [e for e in json_lines() if "Request" in e["message"] or e["message"] == "Agent replied"]
+
+
+def test_request_handled_line_carries_the_conversation_and_agent(json_lines, datadog_on):
+    def tag():
+        datadog_observability.tag_agent("agent-r", None)
+        datadog_observability.tag_conversation("c-r")
+
+    start, inside, handled, next_start, next_handled = _request_events(json_lines, tag)
+
+    assert "conversation_id" not in start  # not known yet
+    assert (inside["conversation_id"], inside["agent_id"]) == ("c-r", "agent-r")
+    assert handled["http"]["status_code"] == 200 and "duration_ms" in handled
+    assert (handled["conversation_id"], handled["agent_id"]) == ("c-r", "agent-r")
+    for event in (next_start, next_handled):  # the next request starts clean
+        assert "conversation_id" not in event and "agent_id" not in event
+
+
+def test_request_handled_line_drops_the_agent_of_a_previous_conversation(json_lines, datadog_on):
+    def tag():
+        datadog_observability.tag_conversation("c-1")
+        datadog_observability.tag_agent("agent-1", None)
+        datadog_observability.tag_conversation("c-2")
+
+    handled = _request_events(json_lines, tag)[2]
+
+    assert handled["conversation_id"] == "c-2" and "agent_id" not in handled
+
+
+def test_request_handled_line_has_no_ids_with_datadog_off(json_lines):
+    def tag():
+        datadog_observability.tag_agent("agent-off", None)
+        datadog_observability.tag_conversation("c-off")
+
+    handled = _request_events(json_lines, tag)[2]
+
+    assert handled["http"]["status_code"] == 200
+    assert "conversation_id" not in handled and "agent_id" not in handled
+
+
+def test_lines_still_print_after_celery_redirects_stdout(json_lines, monkeypatch):
+    """A Celery worker replaces sys.stdout with a proxy that logs every write."""
+    import io
+    import sys
+
+    from celery.utils.log import LoggingProxy
+
+    real_stdout = io.StringIO()
+    monkeypatch.setattr(sys, "__stdout__", real_stdout)
+    monkeypatch.setattr(sys, "stdout", LoggingProxy(stdlib_logging.getLogger("celery.redirected"), stdlib_logging.WARNING))
+
+    logger.info("Task finished")
+    print("printed by a task")  # goes through the proxy, and comes out as a log line too
+
+    task, printed = [json.loads(line) for line in real_stdout.getvalue().splitlines()]
+    assert task["message"] == "Task finished"
+    assert (printed["message"], printed["status"]) == ("printed by a task", "warn")
