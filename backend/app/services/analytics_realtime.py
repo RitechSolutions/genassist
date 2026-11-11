@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.tenant_scope import get_tenant_context, set_tenant_context
 from app.core.utils.background_tasks import spawn
+from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
 from app.repositories.analytics_aggregation import AnalyticsAggregationRepository, ExecutionDelta, StatsDelta
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ def parse_agent_response_for_stats(agent_response: dict) -> dict | None:
     for node in node_list:
         if not isinstance(node, dict):
             continue
-        ntype = node.get("type") or node.get("node_type") or ""
+        ntype = (node.get("type") or node.get("node_type") or "")[: NodeExecutionDailyStatsModel.node_type.type.length]
         nstatus = (node.get("status") or "").lower()
         n_ms_raw = node.get("time_taken") or node.get("execution_time_ms")
         n_ms = None
