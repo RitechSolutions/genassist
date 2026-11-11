@@ -23,19 +23,23 @@ logger = logging.getLogger(__name__)
 
 REASONING_EFFORT = "reasoning_effort"
 TEMPERATURE = "temperature"
-NO_REASONING = "none"
-FALLBACK_REASONING_EFFORT = "low"
 DEFAULT_TEMPERATURE = 1
+
+# A refused reasoning effort and the nearest one sent instead; any other refused effort is left to fail.
+_EFFORT_REPLACEMENTS = {"none": "low", "xhigh": "high"}
+_REPLACEABLE_SETTINGS = (REASONING_EFFORT, TEMPERATURE)
 
 _UNSUPPORTED_VALUE = "unsupported_value"
 _MAX_REMEMBERED = 1000
 # A call can be refused once for each replaceable setting before it goes through.
 _MAX_REPEATS = 2
 
-_ADJUSTMENT_NOTES = {
-    REASONING_EFFORT: "Reasoning Effort None is not supported by this model, so Low is used.",
-    TEMPERATURE: "This model only accepts its default temperature, so Temperature is left empty.",
+# The note for each reasoning effort sent in place of a refused one.
+_EFFORT_NOTES = {
+    "low": "Reasoning Effort None is not supported by this model, so Low is used.",
+    "high": "Reasoning Effort Extra High is not supported by this model, so High is used.",
 }
+_TEMPERATURE_NOTE = "This model only accepts its default temperature, so Temperature is left empty."
 
 # (endpoint, model)
 Scope = Tuple[Optional[str], str]
@@ -54,14 +58,20 @@ def refused_setting(error: openai.BadRequestError) -> Optional[str]:
     """The setting OpenAI refused, when it is one this module can replace."""
     is_unsupported_value = getattr(error, "code", None) == _UNSUPPORTED_VALUE
     setting = getattr(error, "param", None)
-    if is_unsupported_value and setting in _ADJUSTMENT_NOTES:
+    if is_unsupported_value and setting in _REPLACEABLE_SETTINGS:
         return setting
     return None
 
 
 def adjustment_notes(adjusted_settings: Dict[str, Any]) -> List[str]:
     """One sentence per replaced setting, for the connection test result."""
-    return [_ADJUSTMENT_NOTES[setting] for setting in adjusted_settings if setting in _ADJUSTMENT_NOTES]
+    notes = []
+    effort_note = _EFFORT_NOTES.get(adjusted_settings.get(REASONING_EFFORT))
+    if effort_note:
+        notes.append(effort_note)
+    if TEMPERATURE in adjusted_settings:
+        notes.append(_TEMPERATURE_NOTE)
+    return notes
 
 
 def _is_refused(scope: Scope, setting: str, effort: Optional[str]) -> bool:
@@ -71,10 +81,11 @@ def _is_refused(scope: Scope, setting: str, effort: Optional[str]) -> bool:
 def _replace_refused(scope: Scope, settings: Dict[str, Any]) -> None:
     """Replace, in place, the settings this model is known to refuse."""
     asked_effort = settings.get(REASONING_EFFORT)
-    if asked_effort == NO_REASONING and _is_refused(scope, REASONING_EFFORT, NO_REASONING):
-        settings[REASONING_EFFORT] = FALLBACK_REASONING_EFFORT
+    replacement_effort = _EFFORT_REPLACEMENTS.get(asked_effort)
+    if replacement_effort and _is_refused(scope, REASONING_EFFORT, asked_effort):
+        settings[REASONING_EFFORT] = replacement_effort
 
-    # A temperature refused without reasoning is refused with it too.
+    # A temperature refused with the asked effort is refused with its replacement too.
     efforts_to_check = {asked_effort, settings.get(REASONING_EFFORT)}
     temperature_refused = any(_is_refused(scope, TEMPERATURE, effort) for effort in efforts_to_check)
     has_custom_temperature = settings.get(TEMPERATURE) not in (None, DEFAULT_TEMPERATURE)
@@ -85,7 +96,7 @@ def _replace_refused(scope: Scope, settings: Dict[str, Any]) -> None:
 def _remember(scope: Scope, setting: str, sent: Dict[str, Any]) -> None:
     """Keep a refusal that a later request can avoid."""
     effort = sent.get(REASONING_EFFORT)
-    is_replaceable = setting == TEMPERATURE or effort == NO_REASONING
+    is_replaceable = setting == TEMPERATURE or effort in _EFFORT_REPLACEMENTS
     if not is_replaceable:
         return
     key = (*scope, setting, effort)
@@ -127,7 +138,7 @@ class RefusalAdjustingChatOpenAI(ChatOpenAI):
     ) -> dict:
         payload = super()._get_request_payload(input_, stop=stop, **kwargs)
         _replace_refused(self._refusal_scope, payload)
-        _sent_settings.set({setting: payload.get(setting) for setting in _ADJUSTMENT_NOTES})
+        _sent_settings.set({setting: payload.get(setting) for setting in _REPLACEABLE_SETTINGS})
         return payload
 
     def _learned_from(self, refusal: openai.BadRequestError) -> bool:

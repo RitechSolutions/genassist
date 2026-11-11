@@ -36,6 +36,19 @@ _REFUSED_TEMPERATURE = {
     "param": "temperature",
     "code": "unsupported_value",
 }
+_REFUSED_EXTRA_HIGH = {
+    "message": (
+        "Unsupported value: 'reasoning_effort' does not support 'xhigh' with this model. "
+        "Supported values are: 'minimal', 'low', 'medium', and 'high'."
+    ),
+    "type": "invalid_request_error",
+    "param": "reasoning_effort",
+    "code": "unsupported_value",
+}
+_REFUSED_HIGH = {
+    **_REFUSED_EXTRA_HIGH,
+    "message": "Unsupported value: 'reasoning_effort' does not support 'high' with this model.",
+}
 _TOO_LONG = {
     "message": "This model's maximum context length is 8192 tokens.",
     "type": "invalid_request_error",
@@ -74,9 +87,21 @@ def _model_with_optional_reasoning(body):
 
 
 def _model_without_extra_high(body):
+    """Takes every effort up to High."""
     if body.get("reasoning_effort") == "xhigh":
-        return {**_REFUSED_EFFORT, "message": "Unsupported value: 'reasoning_effort' does not support 'xhigh'."}
+        return _REFUSED_EXTRA_HIGH
     return None
+
+
+def _model_without_extra_high_or_temperature(body):
+    return _model_without_extra_high(body) or (_REFUSED_TEMPERATURE if _has_custom_temperature(body) else None)
+
+
+def _model_without_high_efforts(body):
+    """Refuses both High and Extra High."""
+    if body.get("reasoning_effort") == "high":
+        return _REFUSED_HIGH
+    return _model_without_extra_high(body)
 
 
 def _answer(body):
@@ -218,7 +243,51 @@ class TestDefaultFormValuesOnAReasoningOnlyModel:
 
 
 @pytest.mark.asyncio
+class TestExtraHighOnAModelThatRefusesIt:
+    @pytest.mark.parametrize("call", [_ainvoke, _invoke, _astream, _stream])
+    async def test_every_way_of_calling_gets_an_answer_with_high(self, call):
+        openai_api = _FakeOpenAI(_model_without_extra_high)
+        llm = await openai_api.model(reasoning_effort="xhigh")
+
+        assert await call(llm) == "pong"
+        assert openai_api.sent_settings == [("xhigh", None), ("high", None)]
+        assert llm.adjusted_settings == {"reasoning_effort": "high"}
+
+    async def test_the_next_model_starts_with_high(self):
+        openai_api = _FakeOpenAI(_model_without_extra_high)
+        await _ainvoke(await openai_api.model(reasoning_effort="xhigh"))
+
+        await _ainvoke(await openai_api.model(reasoning_effort="xhigh"))
+
+        assert openai_api.sent_settings == [("xhigh", None), ("high", None), ("high", None)]
+
+    async def test_a_refused_temperature_is_left_out_as_well(self):
+        openai_api = _FakeOpenAI(_model_without_extra_high_or_temperature)
+        llm = await openai_api.model(reasoning_effort="xhigh", temperature=0.7)
+
+        assert await _ainvoke(llm) == "pong"
+        assert openai_api.sent_settings == [("xhigh", 0.7), ("high", 0.7), ("high", None)]
+        assert llm.adjusted_settings == {"reasoning_effort": "high", "temperature": None}
+
+    async def test_a_model_that_also_refuses_high_fails_with_its_own_message(self):
+        openai_api = _FakeOpenAI(_model_without_high_efforts)
+        llm = await openai_api.model(reasoning_effort="xhigh")
+
+        with pytest.raises(openai.BadRequestError, match="does not support 'high'"):
+            await _ainvoke(llm)
+        assert openai_api.sent_settings == [("xhigh", None), ("high", None)]
+
+
+@pytest.mark.asyncio
 class TestSettingsTheModelAccepts:
+    async def test_an_accepted_extra_high_is_sent_as_configured(self):
+        openai_api = _FakeOpenAI()
+        llm = await openai_api.model(reasoning_effort="xhigh")
+        await _ainvoke(llm)
+
+        assert openai_api.sent_settings == [("xhigh", None)]
+        assert llm.adjusted_settings == {}
+
     async def test_accepted_settings_are_sent_as_configured(self):
         openai_api = _FakeOpenAI()
         llm = await openai_api.model(**_DEFAULT_FORM_VALUES)
@@ -265,13 +334,13 @@ class TestRefusalsThatAreNotReplaced:
             await _ainvoke(llm)
         assert len(openai_api.bodies) == 1
 
-    async def test_a_chosen_effort_is_never_swapped_for_another(self):
-        openai_api = _FakeOpenAI(_model_without_extra_high)
-        llm = await openai_api.model(reasoning_effort="xhigh")
+    async def test_a_refused_high_is_raised_as_it_is(self):
+        openai_api = _FakeOpenAI(_model_without_high_efforts)
+        llm = await openai_api.model(reasoning_effort="high")
 
-        with pytest.raises(openai.BadRequestError, match="xhigh"):
+        with pytest.raises(openai.BadRequestError, match="does not support 'high'"):
             await _ainvoke(llm)
-        assert openai_api.sent_settings == [("xhigh", None)]
+        assert openai_api.sent_settings == [("high", None)]
         assert not openai_refused_settings._refusals
 
     async def test_a_full_memory_drops_only_its_oldest_refusal(self):
@@ -297,9 +366,9 @@ class TestConnectionTest:
             app_settings_service=AsyncMock(spec=AppSettingsService),
         )
 
-    async def _test(self, service, refusal_for):
-        form_values = _FakeOpenAI(refusal_for).connection(model=_MODEL, **_DEFAULT_FORM_VALUES)
-        return await service.test_connection("openai", form_values)
+    async def _test(self, service, refusal_for, form_values=_DEFAULT_FORM_VALUES):
+        connection = _FakeOpenAI(refusal_for).connection(model=_MODEL, **form_values)
+        return await service.test_connection("openai", connection)
 
     async def test_replaced_settings_come_back_with_a_note(self, service):
         result = await self._test(service, _reasoning_only_model)
@@ -312,6 +381,18 @@ class TestConnectionTest:
                 "This model only accepts its default temperature, so Temperature is left empty."
             ),
             "adjusted_settings": {"reasoning_effort": "low", "temperature": None},
+        }
+
+    async def test_a_replaced_extra_high_comes_back_with_its_note(self, service):
+        result = await self._test(service, _model_without_extra_high, {"reasoning_effort": "xhigh"})
+
+        assert result == {
+            "success": True,
+            "message": (
+                "Connection successful. "
+                "Reasoning Effort Extra High is not supported by this model, so High is used."
+            ),
+            "adjusted_settings": {"reasoning_effort": "high"},
         }
 
     async def test_accepted_settings_give_the_plain_result(self, service):
