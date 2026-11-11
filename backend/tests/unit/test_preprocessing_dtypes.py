@@ -15,6 +15,7 @@ from app.core.project_path import DATA_VOLUME
 from app.modules.workflow.engine.nodes.ml import ml_utils
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from tests.unit.ml_training_fixtures import training_sandbox
 
 
 def _typed_frame() -> pd.DataFrame:
@@ -54,12 +55,12 @@ class TestColumnTypesSurviveTheCsvRoundTrip:
         assert isinstance(loaded["level"].dtype, pd.CategoricalDtype)
         assert str(loaded["score"].dtype) == "float64"
 
-    def test_file_without_saved_dtypes_reads_exactly_as_before(self, tmp_path):
+    def test_file_without_saved_dtypes_keeps_leading_zeros(self, tmp_path):
         path = tmp_path / "upload.csv"
         pd.DataFrame({"code": ["001"], "n": [1]}).to_csv(path, index=False)
         loaded = ml_utils.read_csv_with_dtypes(path)
-        assert loaded["code"].tolist() == [1]  # pandas' own inference, unchanged
-        assert str(loaded["n"].dtype) == "int64"
+        assert loaded["code"].tolist() == ["001"]
+        assert str(loaded["n"].dtype) == "int64"  # pandas' own inference, unchanged
 
     def test_unusable_saved_dtypes_fall_back_to_a_plain_read(self, tmp_path):
         path = tmp_path / "edited.csv"
@@ -143,7 +144,8 @@ class TestMissingValueFill:
 
 class TestPreprocessedTypesTrainEndToEnd:
     @pytest.mark.asyncio
-    async def test_train_model_trains_on_preprocessed_nullable_columns(self, tmp_path):
+    async def test_train_model_trains_on_preprocessed_nullable_columns(self, tmp_path, monkeypatch):
+        training_sandbox(monkeypatch, tmp_path)
         # A preprocessing output with nullable Int64/boolean and category
         # columns (as saved by the Data Preprocessing node) trains, with the
         # Int64 column scaled as numeric and the category one-hot encoded.

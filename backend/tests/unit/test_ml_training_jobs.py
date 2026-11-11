@@ -300,6 +300,40 @@ async def test_test_node_queues_train_model_and_returns_a_job_id(route_env):
 
 
 @pytest.mark.asyncio
+async def test_test_node_runs_train_model_under_the_canvas_node_id(route_env):
+    # The node marks the model it registers with its id; a retest must reuse it
+    # to update that model instead of failing with ML_MODEL_NAME_EXISTS (68072).
+    await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
+        {
+            "node_type": "trainModelNode",
+            "node_config": TRAIN_NODE_CONFIG,
+            "input_data": {},
+            "node_id": "node-abc",
+        },
+    )
+
+    payload = route_env.delay.call_args.args[2]
+    assert payload["workflow_config"]["nodes"][0]["id"] == "node-abc"
+    assert payload["start_node_id"] == "node-abc"
+    assert payload["workflow_config"]["id"].startswith("test-trainModelNode-")
+
+
+@pytest.mark.parametrize("node_id", [None, "", "   ", 123, "x" * 201, "a\nb", "<b>x</b>"])
+def test_unusable_test_node_ids_fall_back_to_the_test_id(node_id):
+    assert workflow_routes._test_node_id("trainModelNode", node_id, "test-id") == "test-id"
+
+
+def test_a_canvas_uuid_is_kept():
+    node_id = "3f2b6c1e-8a4d-4f1b-9c2e-7d5a6b4c3e21"
+    assert workflow_routes._test_node_id("trainModelNode", f" {node_id} ", "test-id") == node_id
+
+
+def test_other_node_types_keep_a_throwaway_test_id():
+    assert workflow_routes._test_node_id("agentNode", "node-abc", "test-id") == "test-id"
+
+
+@pytest.mark.asyncio
 async def test_test_workflow_with_a_train_model_node_is_queued(route_env):
     workflow = {
         "id": "wf-1",

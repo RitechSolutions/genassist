@@ -270,6 +270,9 @@ class ProjectSettings(BaseSettings):
     DEV: bool = False
     FASTAPI_DEBUG: bool = True
     LOG_LEVEL: str = "DEBUG"
+    # Datadog logs (JSON on stdout) and trace tags, see app/core/observability/datadog_observability.py.
+    # Off by default; only deployments that ship to Datadog turn it on.
+    DATADOG_ENABLED: bool = False
     SQLALCHEMY_LOG_LEVEL: str = "ERROR"
     FASTAPI_RUN_PORT: int = 8000
     # Address callers outside the load balancer use, e.g. https://api.example.com/api
@@ -416,6 +419,10 @@ class ProjectSettings(BaseSettings):
 
     # Conversation history max messages for chat input node
     CONVERSATION_HISTORY_NODE_MAX_MESSAGES: int = 100
+
+    # === Python Sandbox ===
+    # Comma-separated IPs or CIDR ranges user Python code may reach besides public addresses, for every tenant
+    SANDBOX_ALLOWED_NETWORKS: Optional[str] = None
 
     # === Web Search Node ===
     # Kill switch: when False every search returns a structured failure envelope
