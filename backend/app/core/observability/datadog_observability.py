@@ -7,7 +7,9 @@ DATADOG_ENABLED=true (set only by deployments that ship to Datadog, e.g. PayByPh
 - traces: genassist.agent_id / workflow_id / conversation_id on the current span, read
   by ddtrace when DD_TRACE_OTEL_ENABLED=true;
 - the same agent and conversation ids on every log line that follows in the request
-  or task, so logs and traces filter the same way.
+  or task, so logs and traces filter the same way;
+- dd.trace_id / dd.span_id on every log line written inside a trace, so Datadog links
+  a trace to its logs and back. Only when the Datadog tracer (ddtrace) is loaded.
 
 DATADOG_ENABLED unset or false (the default): nothing here runs. Logs keep the coloured
 text format, and no span attributes or log fields are added.
@@ -59,6 +61,25 @@ def _datadog_status(level_name: str, level_no: int) -> str:
     return "critical" if level_no >= 50 else "error" if level_no >= 40 else "warn" if level_no >= 30 else "info" if level_no >= 20 else "debug"
 
 
+def _trace_correlation() -> dict | None:
+    """The active Datadog trace for this log line, or None.
+
+    ddtrace is not a dependency: it is added by ddtrace-run in deployments that ship to
+    Datadog. Read it only when that already loaded it, never import it here.
+    """
+    if "ddtrace" not in sys.modules:
+        return None
+    try:
+        from ddtrace.trace import tracer
+
+        context = tracer.get_log_correlation_context()
+    except Exception:  # never drop a log line over tracing
+        return None
+    if context.get("dd.trace_id", "0") == "0":
+        return None  # no active span (startup, a log outside any request or task)
+    return {key.removeprefix("dd."): value for key, value in context.items() if value}
+
+
 def json_log_record(record: dict) -> dict:
     """Build one log event from a loguru record."""
     extra = record["extra"]
@@ -97,6 +118,9 @@ def json_log_record(record: dict) -> dict:
     for key, ctx in (("conversation_id", log_config.conversation_id_ctx), ("agent_id", log_config.agent_id_ctx)):
         if value := pick(key, ctx):
             event[key] = str(value)
+
+    if dd := _trace_correlation():
+        event["dd"] = dd
 
     # logging.exception() outside an except block gives an empty (None, None, None)
     # exception; there is nothing to report then, so leave "error" out.
