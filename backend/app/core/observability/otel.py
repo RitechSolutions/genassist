@@ -25,8 +25,6 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any, Optional
 
-from opentelemetry import trace as otel_trace
-
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
@@ -318,28 +316,3 @@ def record_web_search_event(
     if _web_search_results_histogram is not None:
         _web_search_results_histogram.record(max(0, int(result_count)), attributes)
 
-
-def set_agent_span_attributes(agent_id: Any, workflow_id: Any) -> None:
-    """Tag the current trace span with the agent and workflow handling the conversation.
-
-    The chat endpoints find the agent from the API key, not the URL, so without these
-    tags every agent's traffic looks the same in tracing. Goes through the OTel API:
-    Datadog picks the attributes up when DD_TRACE_OTEL_ENABLED=true; otherwise the
-    current span is a no-op and nothing happens.
-    """
-    span = otel_trace.get_current_span()
-    if agent_id is not None:
-        span.set_attribute("genassist.agent_id", str(agent_id))
-    if workflow_id is not None:
-        span.set_attribute("genassist.workflow_id", str(workflow_id))
-
-
-def set_conversation_span_attribute(conversation_id: Any) -> None:
-    """Tag the current trace span with the conversation it serves.
-
-    Lets every request of one chat be found in tracing by its conversation id, and
-    a log line be matched to its trace. Same OTel route as set_agent_span_attributes:
-    a no-op unless DD_TRACE_OTEL_ENABLED=true.
-    """
-    if conversation_id is not None:
-        otel_trace.get_current_span().set_attribute("genassist.conversation_id", str(conversation_id))
