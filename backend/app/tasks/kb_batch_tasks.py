@@ -39,25 +39,14 @@ def batch_process_files_kb(kb_id: Optional[str] = None):
 
 async def batch_process_files_kb_async_with_scope(
     kb_id: Optional[str] = None,
-    tenant_id: Optional[str] = None
 ):
     """
     Wrapper to run KB batch processing.
 
     Args:
         kb_id: Specific KB ID to process.
-        tenant_id: Tenant context for manual sync. If provided with kb_id,
-            processing runs only for that tenant.
     """
-    from app.core.tenant_scope import clear_tenant_context, set_tenant_context
     from app.tasks.base import run_task_with_tenant_support
-
-    if kb_id and tenant_id:
-        try:
-            set_tenant_context(tenant_id)
-            return await batch_process_files_kb_async(kb_id=kb_id)
-        finally:
-            clear_tenant_context()
 
     return await run_task_with_tenant_support(
         batch_process_files_kb_async,
@@ -83,6 +72,8 @@ async def batch_process_files_kb_async(
     # run_task_with_tenant_support in the worker (master + all tenants) for one KB.
     zendesk_sync_results: list = []
     salesforce_sync_results: list = []
+    # KBs that could not be synced at all; the manual sync reports them as a failure.
+    kbs_not_synced: list = []
     kb_items = []
     for kid in ids_to_process:
         try:
@@ -110,6 +101,7 @@ async def batch_process_files_kb_async(
                 kb_items.append(kb_item)
         except Exception as e:
             logger.warning(f"Could not fetch KB {kid}: {e}")
+            kbs_not_synced.append(str(kid))
             continue
 
     # Inline processing for non-zendesk types (s3, azure_blob, etc.)
@@ -165,6 +157,7 @@ async def batch_process_files_kb_async(
         if not ds_item:
             logger.error(f"KB {kb_item.id} has no valid datasource with id {kb_item.sync_source_id}. Failling.")
             count_fail += 1
+            kbs_not_synced.append(str(kb_item.id))
             continue
 
 
@@ -297,6 +290,7 @@ async def batch_process_files_kb_async(
         "zendesk_kbs_synced": count_zendesk_syncs,
         "salesforce_sync_results": salesforce_sync_results,
         "salesforce_kbs_synced": len(salesforce_sync_results),
+        "kbs_not_synced": kbs_not_synced,
     }
     if files_not_loaded:
         result["status"] = "error"
