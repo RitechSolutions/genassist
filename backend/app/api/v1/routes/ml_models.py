@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import uuid
 from contextlib import aclosing
 from decimal import Decimal
@@ -188,6 +189,17 @@ async def upload_pkl_file(
     - Saves file with unique filename
     - Returns file path and original filename
     """
+    # FastAPI has already received and parsed the whole body when this runs. The request's
+    # "Request handled" duration minus the route total logged below is the time before the
+    # route: mostly the file transfer, plus multipart parsing and the auth checks.
+    route_start = time.perf_counter()
+    stage_ms: dict[str, float] = {}
+
+    def _mark(stage: str, since: float) -> float:
+        now = time.perf_counter()
+        stage_ms[stage] = (now - since) * 1000
+        return now
+
     try:
         logger.info(f"Received file upload: {file.filename}, content_type: {file.content_type}")
 
@@ -203,6 +215,7 @@ async def upload_pkl_file(
         # initialize the file manager service
         app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
         storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings = app_settings_config)
+        stage_start = _mark("settings", route_start)
 
         # create file base
         file_base = FileBase(
@@ -216,11 +229,13 @@ async def upload_pkl_file(
 
         # create file in file manager service
         created_file = await file_manager_service.create_file(file, file_base=file_base, allowed_extensions=["pkl"], max_file_size=MAX_PKL_FILE_SIZE)
+        stage_start = _mark("storage write", stage_start)
 
         copy_path = None
         try:
             # get file info
             file_url = await file_manager_service.get_file_source_url(created_file.id)
+            stage_start = _mark("source URL", stage_start)
             file_path = None
 
             if created_file.storage_provider == "local":
@@ -234,6 +249,7 @@ async def upload_pkl_file(
                     await anyio.to_thread.run_sync(shutil.copyfile, file_path, copy_path)
                     await anyio.lowlevel.checkpoint_if_cancelled()
                     file_path = copy_path
+                    stage_start = _mark("copy into ml_models", stage_start)
                 # file_path = await file_manager_service.get_file_url(created_file)
         except BaseException:
             # The client never gets this file's id, so it can't discard it: remove it here.
@@ -244,6 +260,14 @@ async def upload_pkl_file(
             raise
 
         file_id = str(created_file.id)
+        logger.info(
+            "Model file upload %s: %s bytes on %s storage, %s, route total %.0f ms",
+            file_id,
+            getattr(created_file, "size", None),
+            getattr(created_file, "storage_provider", None),
+            ", ".join(f"{stage} {ms:.0f} ms" for stage, ms in stage_ms.items()),
+            (time.perf_counter() - route_start) * 1000,
+        )
 
         return FileUploadResponse(
             filename=file.filename,
