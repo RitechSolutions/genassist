@@ -6,7 +6,6 @@ import {
   createKnowledgeItem,
   updateKnowledgeItem,
   uploadFiles as apiUploadFiles,
-  executeKnowledgeBaseSyncronizationManually,
 } from '@/services/api';
 import { getApiUrlString } from '@/config/api';
 import { getAllDataSources } from '@/services/dataSources';
@@ -43,6 +42,7 @@ import { LegacyRagConfig, DEFAULT_LEGACY_RAG_CONFIG } from '../utils/ragDefaults
 import DynamicRagConfigSection from '../components/DynamicRagConfigSection';
 import SalesforceSyncOptions from '../components/SalesforceSyncOptions';
 import { resolveSalesforceContentFormat } from '../utils/salesforceOptions';
+import { useManualSync } from '../hooks/useManualSync';
 import ArticlesToCopy, { ArticleOption } from '../components/ArticlesToCopy';
 import { DataSourceDialog } from '@/views/DataSources/components/DataSourceDialog';
 import { isEqual } from 'lodash';
@@ -161,7 +161,6 @@ const KnowledgeBaseForm: React.FC = () => {
   const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
   const [availableSources, setAvailableSources] = useState([]);
   const [llmAnalysts, setLlmAnalysts] = useState([]);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncSaveDialogOpen, setIsSyncSaveDialogOpen] = useState(false);
   const [isDataSourceDialogOpen, setIsDataSourceDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -404,71 +403,20 @@ const KnowledgeBaseForm: React.FC = () => {
     return addTenantId(fileItem.url ?? (fileItem as { urls?: string }).urls ?? null);
   };
 
+  const refreshEditingItem = async () => {
+    if (!id) return;
+    try {
+      setEditingItem((await getKnowledgeItem(id)) as KnowledgeItem);
+    } catch {
+      /* ignore refresh failure */
+    }
+  };
+
+  const { isSyncing, startSync } = useManualSync(id, editingItem, refreshEditingItem);
+
   const performSync = async () => {
     if (!editingItem?.id) return;
-    let syncApiReturned = false;
-    try {
-      setIsSyncing(true);
-      type SyncResult = {
-        status?: string;
-        error?: string;
-        message?: string;
-        articles_added?: number;
-        articles_updated?: number;
-        articles_deleted?: number;
-        per_kb?: Array<{ status?: string; reason?: string; error?: string; note?: string }>;
-      };
-      const data = (await executeKnowledgeBaseSyncronizationManually(editingItem.id)) as {
-        status?: string;
-        message?: string;
-        zendesk_sync_results?: Array<{ result?: SyncResult }>;
-        salesforce_sync_results?: Array<{ result?: SyncResult }>;
-      };
-      syncApiReturned = true;
-      if (data.status === 'error') {
-        toast.error(data.message ?? 'Synchronization failed.');
-        return;
-      }
-      const isSalesforce = formData.type === 'salesforce';
-      const providerLabel = isSalesforce ? 'SalesForce' : 'Zendesk';
-      const z = isSalesforce
-        ? data.salesforce_sync_results?.[0]?.result
-        : data.zendesk_sync_results?.[0]?.result;
-      if (z?.status === 'failed') {
-        toast.error(z.error ?? z.message ?? `${providerLabel} sync failed.`);
-        return;
-      }
-      const firstKb = z?.per_kb?.[0];
-      if (firstKb?.status === 'skipped') {
-        toast.error(
-          `Sync skipped: ${firstKb.reason ?? 'unknown'}. Check schedule, datasource, or ${providerLabel} connection.`
-        );
-        return;
-      }
-      if (firstKb?.status === 'error') {
-        console.error(firstKb?.error ?? 'Unknown error');
-        toast.error(`${providerLabel} sync error. See knowledge base sync status.`);
-        return;
-      }
-      if (z != null && (z.articles_added != null || z.articles_updated != null || z.articles_deleted != null)) {
-        toast.success(
-          `Sync completed: ${z.articles_added ?? 0} added, ${z.articles_updated ?? 0} updated, ${z.articles_deleted ?? 0} removed.`
-        );
-      } else {
-        toast.success('Synchronization completed successfully.');
-      }
-    } catch {
-      toast.error('Failed to trigger synchronization.');
-    } finally {
-      setIsSyncing(false);
-      if (syncApiReturned && id) {
-        try {
-          setEditingItem((await getKnowledgeItem(id)) as KnowledgeItem);
-        } catch {
-          /* ignore refresh failure */
-        }
-      }
-    }
+    await startSync(editingItem.id, formData.type);
   };
 
   const handleSyncNow = async () => {
@@ -640,7 +588,8 @@ const KnowledgeBaseForm: React.FC = () => {
         if (syncAfterSaveRef.current) {
           syncAfterSaveRef.current = false;
           setEditingItem((prev) => (prev ? { ...prev, ...dataToSubmit } : null) as KnowledgeItem);
-          await performSync();
+          // Not awaited: the save is done, and the sync can run for a long time.
+          void performSync();
           return;
         }
       } else {
