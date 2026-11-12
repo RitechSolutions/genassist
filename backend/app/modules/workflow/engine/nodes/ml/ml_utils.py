@@ -21,7 +21,7 @@ from collections import deque
 from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -1389,6 +1389,46 @@ def csv_path_candidates(file_url: str, thread_id: Optional[str] = None) -> List[
     return [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
 
 
+INLINE_DATA_DETAIL = (
+    "File URL contains data, not a file path - it is probably set to the upstream "
+    "node's data output. Use its file path instead, e.g. {{source.data_path}}."
+)
+
+
+_PLACEHOLDER_PART = re.compile(r"\{\{.*?\}\}")
+
+
+def looks_like_inline_data(value: Optional[str]) -> bool:
+    """Whether a File URL that names no file looks like data (rows or CSV text).
+
+    Only used to choose the message once no file was found, so a real file is
+    never refused. JSON rows look like [ ... ] or { ... }. CSV text has a line
+    break or, since the single-line File URL field drops pasted line breaks, a
+    comma, semicolon or tab outside any {{placeholder}}. A value ending in a
+    training file type (customers, 2024.csv) is a path, and a web address is
+    not data.
+    """
+    from app.modules.workflow.engine.nodes.ml import training_file_readers
+
+    text = (value or "").strip()
+    if not text or text.lower().startswith(("http://", "https://")):
+        return False
+    if starts_like_json_rows(text) or "\n" in text or "\r" in text:
+        return True
+    if text.lower().endswith(tuple(training_file_readers.SUPPORTED_TRAINING_FILE_SUFFIXES)):
+        return False
+    outside_placeholders = _PLACEHOLDER_PART.sub("", text)
+    return any(separator in outside_placeholders for separator in (",", ";", "\t"))
+
+
+def starts_like_json_rows(text: str) -> bool:
+    """JSON rows or an object, [ ... ] or { ... } - never a {{placeholder}} or "[Q1] sales.csv"."""
+    text = (text or "").strip()
+    return (text.startswith("[") and text.endswith("]")) or (
+        text.startswith("{") and text.endswith("}") and not text.startswith("{{")
+    )
+
+
 def resolve_csv_file_path(
     file_url: str, thread_id: Optional[str] = None, allowed_directories: Optional[List[Path]] = None
 ) -> Path:
@@ -1406,17 +1446,17 @@ def resolve_csv_file_path(
     Raises:
         AppException: If file is not found or is not a CSV file
     """
-    # A File URL wired to the upstream node's "data" (its sample rows)
-    # instead of "data_path" resolves to a JSON list here; without this check
-    # it surfaces as a baffling OSError "File name too long".
+    # A File URL wired to the upstream node's "data" (its sample rows), or
+    # CSV text pasted into it, is not a path. Say so without repeating the
+    # data, instead of "File not found: <the data>" or "File name too long".
+    # JSON rows can never be a file name: say so at once. CSV text is only
+    # named as data once no file was found under that name, so a real path
+    # with a comma in it is never refused.
     stripped_url = (file_url or "").strip()
-    if stripped_url.startswith(("[", "{")):
+    if starts_like_json_rows(stripped_url):
         raise AppException(
             error_key=ErrorKey.FILE_NOT_FOUND,
-            error_detail=(
-                "File URL contains data, not a file path - it is probably set to the upstream "
-                "node's data output. Use its file path instead, e.g. {{source.data_path}}."
-            ),
+            error_detail=INLINE_DATA_DETAIL,
         )
     file_url = stripped_url
 
@@ -1442,7 +1482,8 @@ def resolve_csv_file_path(
         if file_path is None:
             raise AppException(
                 error_key=ErrorKey.FILE_NOT_FOUND,
-                error_detail=f"File not found: {file_url}",
+                # Never repeat pasted data back in the message
+                error_detail=INLINE_DATA_DETAIL if looks_like_inline_data(file_url) else f"File not found: {file_url}",
             )
 
         # Check if it's a CSV file
@@ -1465,9 +1506,14 @@ def resolve_csv_file_path(
         raise
     except Exception as e:
         logger.error(f"Error resolving file path {file_url}: {str(e)}", exc_info=True)
+        if looks_like_inline_data(file_url):
+            # e.g. "File name too long" for pasted data: never repeat the data
+            raise AppException(error_key=ErrorKey.FILE_NOT_FOUND, error_detail=INLINE_DATA_DETAIL) from e
+        # An OSError's message names the server path it tried; show only the reason.
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to resolve file path: {str(e)}",
+            error_detail=f"Failed to resolve file path: {reason}",
         ) from e
 
 
@@ -1488,20 +1534,26 @@ def load_csv_file(
     Raises:
         AppException: If file cannot be loaded
     """
-    try:
-        file_path = resolve_csv_file_path(file_url, thread_id, allowed_directories)
+    file_path = resolve_csv_file_path(file_url, thread_id, allowed_directories)
+    return load_resolved_csv(file_path, shown_as=file_url)
 
+
+def load_resolved_csv(file_path: Union[str, Path], shown_as: Optional[str] = None) -> pd.DataFrame:
+    """Load a CSV whose path was already resolved and checked by the caller.
+
+    Used for a File Manager / S3 file downloaded to a temp file, which
+    resolve_csv_file_path would refuse because it is outside the data volume.
+    Errors never name the server path; shown_as is only used in the log.
+    """
+    try:
         # Load CSV file using pandas (with any saved column types reapplied)
         df = read_csv_with_dtypes(file_path, encoding="utf-8")
-
         logger.info(f"Loaded {len(df)} rows from {file_path}")
-
         return df
-
     except AppException:
         raise
     except Exception as e:
-        logger.error(f"Error loading file {file_url}: {str(e)}", exc_info=True)
+        logger.error(f"Error loading file {shown_as or file_path}: {str(e)}", exc_info=True)
         # An OSError's message names the resolved server path; show only the reason.
         reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
         raise AppException(
@@ -1752,9 +1804,11 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
         raise
     except Exception as e:
         logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
+        # An OSError's message names the server path; show only the reason.
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to analyze CSV file: {str(e)}",
+            error_detail=f"Failed to analyze CSV file: {reason}",
         ) from e
 
 
