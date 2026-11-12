@@ -162,32 +162,41 @@ async def test_s3_files_after_a_failed_one_are_still_processed():
     assert result["status"] == "error"
 
 
-@pytest.mark.asyncio
-async def test_sync_now_answers_with_the_error_when_a_file_was_not_loaded():
-    from app.api.v1.routes import agent_knowledge as routes
+class _RecordedRun:
+    """Keeps the outcome Sync Now saves for the page."""
 
+    def __init__(self):
+        self.outcome = None
+
+    async def finish(self, tenant_id, kb_id, run_id, **outcome):
+        self.outcome = outcome
+        return True
+
+
+async def _sync_now_outcome(batch_result):
+    from app.tasks import kb_manual_sync
+
+    run = _RecordedRun()
+    await kb_manual_sync._record_outcome(run, "master", "kb-1", "run-1", {"status": "success", "result": batch_result})
+    return run.outcome
+
+
+@pytest.mark.asyncio
+async def test_sync_now_reports_the_error_when_a_file_was_not_loaded():
     batch_result = {"status": "error", "message": "1 file(s) could not be loaded", "failed_kb": 1}
-    with (
-        patch.object(routes, "batch_process_files_kb_async_with_scope", AsyncMock(return_value=batch_result)),
-        patch.object(routes, "get_tenant_context", return_value="master"),
-    ):
-        response = await routes.summarize_files_from_azure(kb_id=uuid.uuid4())
 
-    assert response["status"] == "error"
-    assert response["message"] == "1 file(s) could not be loaded"
+    outcome = await _sync_now_outcome(batch_result)
+
+    assert outcome["status"] == "failed"
+    assert outcome["error"] == "1 file(s) could not be loaded"
 
 
 @pytest.mark.asyncio
-async def test_sync_now_answers_completed_when_every_file_loaded():
-    from app.api.v1.routes import agent_knowledge as routes
+async def test_sync_now_reports_completed_when_every_file_loaded():
+    outcome = await _sync_now_outcome({"failed_kb": 0})
 
-    with (
-        patch.object(routes, "batch_process_files_kb_async_with_scope", AsyncMock(return_value={"failed_kb": 0})),
-        patch.object(routes, "get_tenant_context", return_value="master"),
-    ):
-        response = await routes.summarize_files_from_azure(kb_id=uuid.uuid4())
-
-    assert response["status"] == "completed"
+    assert outcome["status"] == "succeeded"
+    assert outcome["result"]["status"] == "completed"
 
 
 @pytest.mark.asyncio
