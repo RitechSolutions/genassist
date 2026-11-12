@@ -234,7 +234,7 @@ async def test_retrain_warns_when_retained_default_is_not_a_fitted_category(monk
 
 
 @pytest.mark.asyncio
-async def test_uploaded_file_id_is_retained_when_registry_update_fails(monkeypatch):
+async def test_uploaded_file_is_not_reported_when_registry_update_fails(monkeypatch):
     ml_service = MagicMock()
     ml_service.get_by_name = AsyncMock(return_value=None)
     ml_service.create = AsyncMock(side_effect=RuntimeError("registry unavailable"))
@@ -250,7 +250,9 @@ async def test_uploaded_file_id_is_retained_when_registry_update_fails(monkeypat
     )
 
     assert ml_model_id is None
-    assert pkl_file_id == uploaded_file_id
+    # The file was deleted again: no model points at it (TM-19).
+    assert pkl_file_id is None
+    assert uploaded_file_id
     assert error == "registry unavailable"
     assert warnings == []
 
@@ -309,7 +311,7 @@ async def test_another_node_does_not_take_over_a_model_with_the_same_name(monkey
         local_pkl_path="/tmp/model.pkl",
     )
 
-    assert error == "A model with this name already exists."
+    assert "already exists and was not registered by this Train Model node" in error
     ml_service.update.assert_not_awaited()
 
 
@@ -371,7 +373,7 @@ async def test_a_workflow_run_does_not_take_over_a_model_left_by_an_old_node_tes
         monkeypatch, _legacy_test_model(), _make_node()
     )
 
-    assert error == "A model with this name already exists."
+    assert "already exists and was not registered by this Train Model node" in error
     ml_service.update.assert_not_awaited()
 
 
@@ -381,5 +383,5 @@ async def test_a_node_training_another_target_does_not_take_over_an_old_test_mod
         monkeypatch, _legacy_test_model(target_variable="churn"), _node_test_node()
     )
 
-    assert error == "A model with this name already exists."
+    assert "already exists and was not registered by this Train Model node" in error
     ml_service.update.assert_not_awaited()
