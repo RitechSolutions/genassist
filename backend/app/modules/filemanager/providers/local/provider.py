@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 
 from ..base import BaseStorageProvider
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.storage_path import configured_base_path
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,8 @@ class LocalFileSystemProvider(BaseStorageProvider):
             config: Configuration dictionary containing 'base_path' key
         """
         super().__init__(config)
-        self.base_path = Path(config.get("base_path", self.tmp_folder))
+        # A blank base_path would be the working folder, so it falls back too.
+        self.base_path = Path(configured_base_path(config) or self.tmp_folder)
         self.base_path.mkdir(parents=True, exist_ok=True)
 
     async def initialize(self) -> bool:
