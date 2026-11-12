@@ -259,6 +259,7 @@ export default function ChangePassword() {
               onChange={(e) => {
                 setCurrentPassword(e.target.value);
                 clearError("currentPassword");
+                clearError("newPassword");
               }}
               placeholder="Enter your current password"
               autoComplete="current-password"
@@ -280,6 +281,7 @@ export default function ChangePassword() {
               onChange={(e) => {
                 setNewPassword(e.target.value);
                 clearError("newPassword");
+                clearError("confirmPassword");
               }}
               placeholder="Enter your new password"
               autoComplete="new-password"
