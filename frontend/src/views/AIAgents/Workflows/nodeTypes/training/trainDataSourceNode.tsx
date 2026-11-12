@@ -28,7 +28,7 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
   const [availableDataSources, setAvailableDataSources] = useState<
     DataSource[]
   >([]);
-  const { clearNodeOutput, getNodeOutput } = useWorkflowExecution();
+  const { clearNodeOutput, getLatestNodeOutput, getNodeOutput } = useWorkflowExecution();
   const outputTimestampWhenDialogOpened = useRef<number | undefined>();
   const dialogWasSaved = useRef(false);
 
@@ -94,7 +94,8 @@ const TrainDataSourceNode: React.FC<NodeProps<TrainDataSourceNodeData>> = ({
   );
 
   const summary = getTrainDataSourceSummary(data, selectedDataSource);
-  const shape = getTrainDataSourceShape(data, getNodeOutput(id)?.output);
+  // The newest result, whether it came from Test Node or a whole-workflow run.
+  const shape = getTrainDataSourceShape(data, getLatestNodeOutput(id)?.output);
   const hasSourceType = summary.sourceTypeLabel !== "Not configured";
 
   const nodeContent: NodeContentRow[] = [
