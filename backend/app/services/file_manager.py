@@ -22,7 +22,7 @@ from app.core.tenant_scope import get_tenant_context
 from app.core.utils.cache_headers import no_store_headers
 from app.core.utils.file_manager_url_utils import first_file_manager_uuid_from_url
 from app.core.utils.file_system_utils import get_safe_file_path
-from app.core.utils.storage_path import tenant_scoped_storage_prefix
+from app.core.utils.storage_path import configured_base_path, tenant_scoped_storage_prefix
 from app.core.utils.upload_streaming import async_stream_uploadfile_to_path
 from app.core.utils.web_scraping_utils import _validate_url
 from app.db.models.file import FileModel
@@ -59,7 +59,7 @@ class FileManagerService:
             # get the file manager settings
             if app_settings:
                 provider_name = app_settings.values.get("file_manager_provider", default_provider_name)
-                config["base_path"] = app_settings.values.get("base_path", base_path)
+                config["base_path"] = configured_base_path(app_settings.values) or base_path
                 config["AWS_BUCKET_NAME"] = app_settings.values.get("aws_bucket_name", file_storage_settings.AWS_BUCKET_NAME)
             else:
                 # fallback to the default provider name
@@ -686,9 +686,7 @@ class FileManagerService:
         app_settings = await app_settings_service.get_by_type_and_name(
             "FileManagerSettings", "File Manager Settings"
         )
-        values = getattr(app_settings, "values", None)
-        base_path = values.get("base_path") if isinstance(values, dict) else None
-        return base_path if isinstance(base_path, str) and base_path else None
+        return configured_base_path(getattr(app_settings, "values", None))
 
     @staticmethod
     def _storage_key(file: FileModel) -> Optional[str]:
