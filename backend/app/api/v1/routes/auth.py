@@ -83,6 +83,7 @@ async def me(
     user: Optional[dict] = Depends(get_current_user),
     user_service: UserService = Injected(UserService),
 ):
+    from app.core.tenant_scope import get_tenant_context
 
     if user:
         user_details = await user_service.get_by_id_for_auth(
@@ -96,6 +97,7 @@ async def me(
             "permissions": permissions,
             "force_upd_pass_date": user.force_upd_pass_date,
             "roles": user_details.roles,
+            "is_master_tenant": get_tenant_context() == "master",
         }  # Return user details
     else:
         raise AppException(status_code=401, error_key=ErrorKey.NOT_AUTHENTICATED)

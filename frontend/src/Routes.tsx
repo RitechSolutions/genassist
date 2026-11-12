@@ -239,7 +239,7 @@ export const RoutesProvider = () => {
             {
               path: "settings/translations",
               element: (
-                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                <ProtectedRoute requiredPermissions={["read:app_settings"]}>
                   <Translations />
                 </ProtectedRoute>
               ),
@@ -247,7 +247,7 @@ export const RoutesProvider = () => {
             {
               path: "settings/languages",
               element: (
-                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                <ProtectedRoute requiredPermissions={["read:app_settings"]}>
                   <Languages />
                 </ProtectedRoute>
               ),
@@ -587,7 +587,7 @@ export const RoutesProvider = () => {
             {
               path: "app-settings",
               element: (
-                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                <ProtectedRoute requiredPermissions={["read:app_settings"]}>
                   <AppSettings />
                 </ProtectedRoute>
               ),
