@@ -6,7 +6,7 @@ and replaces key_val in past api_keys Update audit entries with "[REDACTED]".
 Safe to run again: a second run finds nothing to change.
 
 Revision ID: 242b618b4766
-Revises: 9c4e1f7a2b6d
+Revises: 3f8d2a6c1e94
 Create Date: 2026-11-12 13:17:02.382745
 """
 
@@ -23,7 +23,7 @@ logger = logging.getLogger("alembic.runtime.migration")
 
 # revision identifiers, used by Alembic.
 revision: str = "242b618b4766"
-down_revision: Union[str, None] = "9c4e1f7a2b6d"
+down_revision: Union[str, None] = "3f8d2a6c1e94"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
