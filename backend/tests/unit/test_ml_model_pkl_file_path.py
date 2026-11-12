@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from datetime import datetime
 from types import SimpleNamespace
@@ -334,6 +335,41 @@ class TestUploadRemovesFileWhenItFailsAfterStoring:
         await self._upload(file_manager_service)
 
         file_manager_service.delete_file.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_successful_upload_logs_how_long_each_stage_took(self, ml_models_dir, caplog):
+        """One upload's log line tells the server's time from the transfer time (MLP-13)."""
+        import logging
+
+        file_id = uuid4()
+        file_manager_service = self._file_manager(ml_models_dir.parent, file_id)
+        file_manager_service.create_file.return_value.size = 4_400_000
+
+        with caplog.at_level(logging.INFO, logger="app.api.v1.routes.ml_models"):
+            await self._upload(file_manager_service)
+
+        line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("Model file upload "))
+        assert f"Model file upload {file_id}: 4400000 bytes on local storage" in line
+        for stage in ("settings", "storage write", "source URL", "route total"):
+            assert re.search(rf"{stage} \d+ ms", line), f"{stage} has no duration in: {line}"
+
+    @pytest.mark.asyncio
+    async def test_upload_outside_ml_models_logs_the_copy_stage(self, ml_models_dir, tmp_path, monkeypatch, caplog):
+        """A custom File Manager folder adds a copy into ml_models, which gets its own timing."""
+        import logging
+        from app.api.v1.routes import ml_models as ml_models_routes
+
+        monkeypatch.setattr(ml_models_routes, "ML_MODELS_UPLOAD_DIR", str(ml_models_dir))
+        custom = tmp_path / "custom"
+        (custom / "ml_models").mkdir(parents=True)
+        (custom / "ml_models" / "abc.pkl").write_bytes(b"model")
+        file_manager_service = self._file_manager(custom, uuid4())
+
+        with caplog.at_level(logging.INFO, logger="app.api.v1.routes.ml_models"):
+            await self._upload(file_manager_service)
+
+        line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("Model file upload "))
+        assert re.search(r"copy into ml_models \d+ ms", line), line
 
 
 def test_training_upload_discard_requires_the_file_delete_permission():
