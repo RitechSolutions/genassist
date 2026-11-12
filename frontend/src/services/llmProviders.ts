@@ -73,7 +73,11 @@ export const testLLMProviderConnection = async (
   llm_model_provider: string,
   connection_data: Record<string, unknown>,
   provider_id?: string,
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{
+  success: boolean;
+  message: string;
+  adjusted_settings?: Record<string, string | number | null>;
+}> => {
   const params = provider_id ? `?provider_id=${provider_id}` : "";
   return apiRequest("POST", `llm-providers/test-connection${params}`, {
     llm_model_provider,
