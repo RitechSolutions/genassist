@@ -283,7 +283,15 @@ export function MCPServerDialog({
         edit: "MCP server updated successfully.",
       }}
       errorMessage={(err, m) => {
-        const detail = extractErrorMessage(err, "");
+        const data = (
+          err as {
+            response?: { data?: { error_key?: unknown; error_detail?: unknown } };
+          } | null
+        )?.response?.data;
+        const detail =
+          data?.error_key === "API_KEY_NAME_EXISTS" && !data.error_detail
+            ? "A server with this name already exists."
+            : extractErrorMessage(err, "");
         return `Failed to ${m} MCP server${detail ? `: ${detail}` : "."}`;
       }}
       validate={(values) => {
