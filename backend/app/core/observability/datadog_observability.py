@@ -9,7 +9,9 @@ DATADOG_ENABLED=true (set only by deployments that ship to Datadog, e.g. PayByPh
 - the same agent and conversation ids on every log line that follows in the request
   or task, so logs and traces filter the same way;
 - dd.trace_id / dd.span_id on every log line written inside a trace, so Datadog links
-  a trace to its logs and back. Only when the Datadog tracer (ddtrace) is loaded.
+  a trace to its logs and back. Only when the Datadog tracer (ddtrace) is loaded;
+- kb.source / kb.result / kb.error_count on each knowledge base sync job's trace, which
+  is marked failed when a knowledge base did not sync. Also only with ddtrace loaded.
 
 DATADOG_ENABLED unset or false (the default): nothing here runs. Logs keep the coloured
 text format, and no span attributes or log fields are added.
@@ -135,6 +137,42 @@ def json_log_record(record: dict) -> dict:
     return event
 
 
+def _ddtrace_root_span():
+    """The root span of the active Datadog trace (a Celery task's own span), or None.
+
+    The workers have no DD_TRACE_OTEL_ENABLED, so the OTel API cannot reach their spans.
+    Like _trace_correlation, use ddtrace only when it is already loaded.
+    """
+    if "ddtrace" not in sys.modules:
+        return None
+    try:
+        from ddtrace.trace import tracer
+
+        return tracer.current_root_span()
+    except Exception:
+        return None
+
+
+def kb_sync_error_count(job_result: Any) -> int:
+    """The knowledge bases that failed to sync, plus the tenants whose run failed, in a sync job's result."""
+    if not isinstance(job_result, dict):
+        return 0
+    if job_result.get("status") == "failed":
+        return 1
+    count = 0
+    for tenant in job_result.get("results") or []:
+        if not isinstance(tenant, dict):
+            continue
+        if tenant.get("error"):
+            count += 1
+            continue
+        result = tenant.get("result")
+        if not isinstance(result, dict):
+            continue
+        count += 1 if result.get("status") == "failed" else int(result.get("kbs_failed") or 0)
+    return count
+
+
 def json_stdout_sink(message) -> None:
     """One JSON object per line; tracebacks stay on the line of their message."""
     stream = _stdout()
@@ -190,6 +228,26 @@ class DatadogObservability:
             _set_log_id(log_config.agent_id_ctx, "agent_id", str(agent_id))
         if workflow_id is not None:
             span.set_attribute("genassist.workflow_id", str(workflow_id))
+
+    def tag_kb_sync(self, source: str, job_result: Any) -> None:
+        """A sync job always ends as a success in Datadog; a knowledge base that failed
+        was only written inside the job's result. Tag the job's trace with the outcome
+        and mark it failed, so failed syncs can be counted and alerted on."""
+        if not self.enabled:
+            return
+        span = _ddtrace_root_span()
+        if span is None:
+            return
+        try:
+            errors = kb_sync_error_count(job_result)
+            span.set_tag("kb.source", source)
+            span.set_tag("kb.result", "failed" if errors else "success")
+            span.set_metric("kb.error_count", errors)
+            if errors:
+                span.error = 1
+                span.set_tag("error.message", f"{errors} knowledge base sync(s) failed")
+        except Exception:  # tagging must never fail the sync job
+            logger.opt(exception=True).debug("Could not tag the knowledge base sync trace")
 
     def tag_conversation(self, conversation_id: Any) -> None:
         """Lets every request and log line of one chat be found by its conversation id."""
