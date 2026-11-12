@@ -94,13 +94,15 @@ const Chat: React.FC = () => {
 
     try {
       const response = await queryAgent(agentId, threadId, userMessage);
+      const reply =
+        response.response || "Sorry, I couldn't process your request.";
 
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content:
-            response.response || "Sorry, I couldn't process your request.",
+            typeof reply === "string" ? reply : JSON.stringify(reply, null, 2),
         },
       ]);
     } catch (error) {
