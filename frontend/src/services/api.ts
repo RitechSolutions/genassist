@@ -690,6 +690,14 @@ export const executeKnowledgeBaseSyncronizationManually = async (kbId: string) =
   );
 };
 
+// Status of a KB's manual synchronization: the run in progress, else the last run's result
+export const getKnowledgeBaseSyncStatus = async (kbId: string) => {
+  return apiRequest(
+    "GET",
+    `genagent/knowledge/kb-batch-tasks-status?kb_id=${kbId}`
+  );
+};
+
 // Tools endpoints
 export async function getAllTools() {
   return apiRequest("GET", "genagent/tools");
