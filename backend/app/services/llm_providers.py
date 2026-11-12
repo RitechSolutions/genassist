@@ -21,6 +21,21 @@ logger = logging.getLogger(__name__)
 llm_provider_id_key_builder = make_key_builder("llm_provider_id")
 llm_provider_all_key_builder = make_key_builder("-")
 
+_CONNECTION_SUCCESSFUL = "Connection successful."
+
+
+def _successful_test_result(llm: Any) -> Dict[str, Any]:
+    """A passed connection test, with any setting the model made the platform replace."""
+    adjusted_settings = getattr(llm, "adjusted_settings", None)
+    has_adjustments = isinstance(adjusted_settings, dict) and bool(adjusted_settings)
+    if not has_adjustments:
+        return {"success": True, "message": _CONNECTION_SUCCESSFUL}
+
+    from app.modules.workflow.llm.openai_refused_settings import adjustment_notes
+
+    message = " ".join([_CONNECTION_SUCCESSFUL, *adjustment_notes(adjusted_settings)])
+    return {"success": True, "message": message, "adjusted_settings": adjusted_settings}
+
 
 @inject
 class LlmProviderService:
@@ -226,7 +241,7 @@ class LlmProviderService:
                 model_name=cd.get("model"),
             )
             await llm.ainvoke([HumanMessage(content="ping")])
-            return {"success": True, "message": "Connection successful."}
+            return _successful_test_result(llm)
 
         except Exception as e:
             logger.error(f"LLM provider test connection failed: {e}")
