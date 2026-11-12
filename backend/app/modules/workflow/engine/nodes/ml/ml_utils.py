@@ -31,6 +31,7 @@ from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.storage_path import configured_base_path
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     ensure_unique_columns,
@@ -1289,8 +1290,8 @@ async def extra_csv_directories(settings_service=None) -> List[Path]:
 
     values = file_manager_settings.values if file_manager_settings and isinstance(file_manager_settings.values, dict) else {}
     provider = values.get("file_manager_provider") or file_storage_settings.default_provider_name
-    base_path = values.get("base_path")
-    if provider == "local" and isinstance(base_path, str) and base_path:
+    base_path = configured_base_path(values)
+    if provider == "local" and base_path:
         return [Path(base_path)]
     return []
 
