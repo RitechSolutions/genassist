@@ -224,7 +224,7 @@ const navGroups: NavGroup[] = [
           {
             title: "Configuration Vars",
             url: "/app-settings",
-            permissionsRequired: ["read:app_setting"],
+            permissionsRequired: ["read:app_settings"],
           },
         ],
       },
