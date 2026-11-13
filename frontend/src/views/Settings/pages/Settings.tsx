@@ -101,8 +101,8 @@ const SettingsPage = () => {
           { key: 'profile', label: 'Profile', show: true },
           { key: 'notifications', label: 'Notifications', show: true },
           { key: 'feature-flags', label: 'Feature Flags', show: hasPermission('read:feature_flag') },
-          { key: 'translations', label: 'Translations', show: hasPermission('read:app_setting') },
-          { key: 'languages', label: 'Languages', show: hasPermission('read:app_setting') },
+          { key: 'translations', label: 'Translations', show: hasPermission('read:app_settings') },
+          { key: 'languages', label: 'Languages', show: hasPermission('read:app_settings') },
           { key: 'feedback-statuses', label: 'Feedback Status', show: hasPermission('write:app_settings') },
           { key: 'file-manager', label: 'File Manager', show: hasPermission('write:app_settings') },
           { key: 'security', label: 'Security', show: hasPermission('write:app_settings') },
@@ -176,13 +176,13 @@ const SettingsPage = () => {
               </TabsContent>
             )}
 
-            {hasPermission('read:app_setting') && (
+            {hasPermission('read:app_settings') && (
               <TabsContent value="translations" className="mt-0">
                 <TranslationsPanel variant="tab" />
               </TabsContent>
             )}
 
-            {hasPermission('read:app_setting') && (
+            {hasPermission('read:app_settings') && (
               <TabsContent value="languages" className="mt-0">
                 <LanguagesPanel variant="tab" />
               </TabsContent>

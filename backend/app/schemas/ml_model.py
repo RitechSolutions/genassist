@@ -142,6 +142,14 @@ class MLModelRead(MLModelBase):
     )
     created_at: datetime
     updated_at: datetime
+    registration_notices: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Notes from checking the model file on this create or update, such as features "
+            "saved in the file's order or a target the file does not record. Not stored: "
+            "always empty when reading a model."
+        ),
+    )
 
     model_config = ConfigDict(
         from_attributes=True,

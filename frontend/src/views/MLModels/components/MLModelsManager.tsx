@@ -335,15 +335,21 @@ const MLModelsManager: React.FC = () => {
       }
 
       saveSent = true;
+      let savedModel: MLModel;
       if (editingItem) {
-        await updateMLModel(editingItem.id, payloadWithInferenceParams);
+        savedModel = await updateMLModel(editingItem.id, payloadWithInferenceParams);
         saved = true;
         void queryClient.invalidateQueries({ queryKey: ["ml-model", editingItem.id] });
         toast.success(`ML model "${payload.name}" updated.`);
       } else {
-        await createMLModel({ ...payloadWithInferenceParams, id: uuidv4() });
+        savedModel = await createMLModel({ ...payloadWithInferenceParams, id: uuidv4() });
         saved = true;
         toast.success(`ML model "${payload.name}" created.`);
+      }
+      // What the model-file check changed or could not check, such as the feature
+      // order or a target the file does not record.
+      for (const notice of savedModel?.registration_notices ?? []) {
+        toast(notice, { icon: "ℹ️", duration: 8000 });
       }
 
       closeForm();
