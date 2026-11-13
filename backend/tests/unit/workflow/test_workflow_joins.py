@@ -1,5 +1,8 @@
+import asyncio
+
 import pytest
 
+from app.modules.workflow.engine.nodes.prompt_node import TemplateNode
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
 
@@ -56,6 +59,21 @@ async def test_a_merger_waits_for_the_longer_branch_and_runs_once():
 async def test_a_merger_that_does_not_wait_for_every_branch_runs_once():
     state = await _run(_fan_in(("b",), ("c",), merge=_merger(requireAllInputs=False)))
     assert (state.execution_path.count("merge"), state.execution_path.count("after")) == (1, 1)
+
+
+@pytest.mark.asyncio
+async def test_a_branch_left_out_of_the_merger_does_not_become_the_reply(monkeypatch):
+    process = TemplateNode.process
+
+    async def slow_c(self, config):
+        if self.node_id == "c":
+            await asyncio.sleep(0.05)
+        return await process(self, config)
+
+    monkeypatch.setattr(TemplateNode, "process", slow_c)
+    state = await _run(_fan_in(("b",), ("c",), merge=_merger(requireAllInputs=False)))
+    assert state.execution_path[-1] == "c"
+    assert state.output == "after"
 
 
 @pytest.mark.asyncio
