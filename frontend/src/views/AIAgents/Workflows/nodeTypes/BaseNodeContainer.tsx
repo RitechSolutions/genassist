@@ -123,6 +123,20 @@ const BaseNodeContainer = <T extends NodeData>({
 
   // Canvas-level per-node actions (duplicate/copy/replace) provided by GraphFlow.
   const nodeActions = useNodeActions();
+  const hasPrompt = ["agentNode", "subAgentNode", "llmModelNode", "voiceAgentNode"].includes(nodeType);
+  const hasCode = ["pythonCodeNode", "dataMapperNode", "templateNode"].includes(nodeType);
+  const aiMenuHandlers = nodeActions
+    ? {
+        onAiExplain: () => nodeActions.assistNode(id, "explain_node"),
+        onAiImprovePrompt: hasPrompt ? () => nodeActions.assistNode(id, "improve_prompt") : undefined,
+        onAiGenerate: hasCode ? () => nodeActions.assistNode(id, "generate_code") : undefined,
+        onAiSuggestTests: () => nodeActions.assistNode(id, "suggest_tests"),
+      }
+    : {};
+  const aiFix =
+    nodeActions && missingFields.length > 0
+      ? () => nodeActions.fixNodeWithAi(id, `it is missing ${missingFields.join(", ")}`)
+      : undefined;
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
   const handleRename = (newName: string) =>
     data.updateNodeData?.(id, { name: newName });
@@ -139,10 +153,15 @@ const BaseNodeContainer = <T extends NodeData>({
     onDuplicate: () => nodeActions?.duplicateNode(id),
     onHelp: () => setIsHelpDialogOpen(true),
     onDelete: () => setIsDeleteDialogOpen(true),
+    ...aiMenuHandlers,
+    onAiFix: aiFix,
   };
 
   // Determine border color based on execution status
   const getBorderColor = () => {
+    // The assistant's latest change stays highlighted until the person keeps or undoes it.
+    if (data.aiChange === "added") return "border-emerald-500";
+    if (data.aiChange === "changed") return "border-amber-400";
     if (selected) return "border-blue-500";
     return "border-transparent";
   };
@@ -334,6 +353,8 @@ const BaseNodeContainer = <T extends NodeData>({
         onReplace={() => nodeActions?.requestReplaceNode(id)}
         onCopy={() => nodeActions?.copyNode(id)}
         onDuplicate={() => nodeActions?.duplicateNode(id)}
+        onAiFix={aiFix}
+        {...aiMenuHandlers}
       />
 
       {/* Node content */}
@@ -348,6 +369,7 @@ const BaseNodeContainer = <T extends NodeData>({
           missingFields={missingFields}
           onFix={onSettings}
           onTest={handleTest}
+          onAiFix={aiFix}
         />
       )}
     </div>

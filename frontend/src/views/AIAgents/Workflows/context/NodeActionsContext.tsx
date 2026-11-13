@@ -29,6 +29,17 @@ export interface NodeActionsContextValue {
   fitGroup: (groupId: string) => void;
   /** Ask how to delete a group (container only, or with its nodes). */
   requestDeleteGroup: (groupId: string) => void;
+  /** A focused AI action on one node (explain, improve prompt, generate, suggest tests). */
+  assistNode: (id: string, action: "explain_node" | "improve_prompt" | "generate_code" | "suggest_tests" | "explain_step") => void;
+  /** Ask the assistant to fix a problem on one node. */
+  fixNodeWithAi: (id: string, problem: string) => void;
+  /** A focused AI action on a group's nodes (explain, optimize). */
+  assistGroup: (groupId: string, action: "explain_group" | "optimize") => void;
+  /**
+   * "Add with AI" on an output handle: one new step after that output, designed
+   * from a sentence. `handleLabel` is the output's name as the tooltip shows it.
+   */
+  addStepWithAi: (nodeId: string, handleId: string, handleLabel: string, instruction: string) => void;
 }
 
 export const NodeActionsContext = createContext<NodeActionsContextValue | null>(

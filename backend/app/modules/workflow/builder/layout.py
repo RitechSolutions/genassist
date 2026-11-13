@@ -18,6 +18,33 @@ X_OFFSET = 50    # left margin
 Y_OFFSET = 150   # top margin
 
 
+def _find_back_edges(order: List[str], children: Dict[str, List[str]]) -> List[Tuple[str, str]]:
+    """Edges (source, target) that close a cycle, found by iterative DFS."""
+    WHITE, GREY, BLACK = 0, 1, 2
+    color: Dict[str, int] = defaultdict(int)
+    back_edges: List[Tuple[str, str]] = []
+    for root in order:
+        if color[root] != WHITE:
+            continue
+        color[root] = GREY
+        stack = [(root, iter(children.get(root, [])))]
+        while stack:
+            current, pending = stack[-1]
+            advanced = False
+            for child in pending:
+                if color[child] == WHITE:
+                    color[child] = GREY
+                    stack.append((child, iter(children.get(child, []))))
+                    advanced = True
+                    break
+                if color[child] == GREY:
+                    back_edges.append((current, child))
+            if not advanced:
+                color[current] = BLACK
+                stack.pop()
+    return back_edges
+
+
 def auto_layout(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Apply left-to-right DAG layout to workflow nodes.
@@ -92,17 +119,18 @@ def auto_layout(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> Lis
     if not roots:
         roots = [nodes[0]["id"]]
 
-    # BFS to assign layers
-    layers: Dict[str, int] = {}
+    # Longest-path layering over the main flow. Edges that close a cycle (a loop
+    # node's back-edge, or a mistake in a generated spec) are left out, otherwise
+    # the relaxation below would never settle.
+    back_edges = set(_find_back_edges(roots + list(node_ids), main_children))
+    layers: Dict[str, int] = {root: 0 for root in roots}
     queue = deque(roots)
-    for root in roots:
-        if root not in layers:
-            layers[root] = 0
-
     while queue:
         node_id = queue.popleft()
         current_layer = layers[node_id]
         for child in main_children.get(node_id, []):
+            if (node_id, child) in back_edges:
+                continue
             if child in tool_builder_ids or child in tool_subflow_ids:
                 continue
             new_layer = current_layer + 1
@@ -177,4 +205,83 @@ def auto_layout(nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]) -> Lis
             node["position"] = {"x": x, "y": y}
             node["positionAbsolute"] = {"x": x, "y": y}
 
+    return nodes
+
+
+# Spacing used when adding nodes to a canvas the user already arranged; matches
+# the gaps the canvas itself uses when it drops a node next to another.
+PLACE_X_GAP = 350
+PLACE_Y_GAP = 200
+
+
+def place_new_nodes(
+    nodes: List[Dict[str, Any]],
+    edges: List[Dict[str, Any]],
+    new_ids: Set[str],
+) -> List[Dict[str, Any]]:
+    """
+    Position only the nodes in ``new_ids``, next to what they are connected to.
+
+    Existing nodes keep the positions the user gave them. New nodes are placed at
+    the canvas root, so positions of grouped neighbours are resolved to absolute
+    coordinates first.
+    """
+    by_id = {n["id"]: n for n in nodes}
+
+    def absolute(node: Dict[str, Any]) -> Tuple[float, float]:
+        x = (node.get("position") or {}).get("x", 0)
+        y = (node.get("position") or {}).get("y", 0)
+        parent = by_id.get(node.get("parentId") or node.get("parentNode") or "")
+        if parent:
+            px, py = absolute(parent)
+            return x + px, y + py
+        return x, y
+
+    placed: Dict[str, Tuple[float, float]] = {
+        n["id"]: absolute(n) for n in nodes if n["id"] not in new_ids and n.get("type") != "groupNode"
+    }
+
+    def free_spot(x: float, y: float) -> Tuple[float, float]:
+        while any(abs(px - x) < 200 and abs(py - y) < 150 for px, py in placed.values()):
+            y += PLACE_Y_GAP
+        return x, y
+
+    def anchor_for(node_id: str):
+        for edge in edges:
+            source, target = edge.get("source"), edge.get("target")
+            source_handle = edge.get("sourceHandle") or "output"
+            if target == node_id and source in placed:
+                sx, sy = placed[source]
+                if source_handle == "starter_processor":
+                    return sx + PLACE_X_GAP, sy
+                return sx + PLACE_X_GAP, sy
+            if source == node_id and target in placed:
+                tx, ty = placed[target]
+                if source_handle in ("output_tool", "output_sub_agent"):
+                    return tx - 100, ty + 300
+                return tx - PLACE_X_GAP, ty
+        return None
+
+    pending = [n["id"] for n in nodes if n["id"] in new_ids]
+    progress = True
+    while pending and progress:
+        progress = False
+        for node_id in list(pending):
+            spot = anchor_for(node_id)
+            if spot is None:
+                continue
+            placed[node_id] = free_spot(*spot)
+            pending.remove(node_id)
+            progress = True
+
+    for node_id in pending:
+        right = max((x for x, _ in placed.values()), default=X_OFFSET - PLACE_X_GAP)
+        top = min((y for _, y in placed.values()), default=Y_OFFSET)
+        placed[node_id] = free_spot(right + PLACE_X_GAP, top)
+
+    for node in nodes:
+        if node["id"] in new_ids:
+            x, y = placed[node["id"]]
+            node["position"] = {"x": x, "y": y}
+            node["positionAbsolute"] = {"x": x, "y": y}
     return nodes

@@ -184,6 +184,8 @@ async def test_a_real_graph_run_returns_the_model_reply():
 
 
 class _AlwaysCallsToolModel(BaseChatModel):
+    seen: list = []
+
     @property
     def _llm_type(self) -> str:
         return "always-calls-tool"
@@ -192,6 +194,7 @@ class _AlwaysCallsToolModel(BaseChatModel):
         return self
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        self.seen.append(list(messages))
         message = AIMessage(
             content="",
             tool_calls=[{"name": "search", "args": {}, "id": f"call_{len(messages)}", "type": "tool_call"}],
@@ -204,18 +207,65 @@ class _AlwaysCallsToolModel(BaseChatModel):
 
 
 @pytest.mark.asyncio
-async def test_a_real_graph_run_that_hits_the_recursion_limit_reports_every_call():
+async def test_a_real_graph_run_that_exhausts_its_budget_ends_with_a_reply_and_reports_every_call():
+    from app.modules.workflow.agents.react_agent_lc import LAST_CALL_NOTICE, OUT_OF_CALLS_REPLY
+
     async def search(_inp):
         return "still pending"
 
     tool = BaseTool(node_id="tool-1", name="search", description="d", parameters={}, function=search)
-    agent = ReActAgentLC(llm_model=_AlwaysCallsToolModel(), system_prompt="sys", tools=[tool], max_iterations=2)
+    model = _AlwaysCallsToolModel(seen=[])
+    agent = ReActAgentLC(llm_model=model, system_prompt="sys", tools=[tool], max_iterations=2)
 
     result = await agent.invoke("hi")
 
-    assert result["status"] == "error"
-    assert result["error"].startswith("Recursion limit of 5 reached")
-    assert result["llm_usage"] == [{"input_tokens": 10, "output_tokens": 1, "total_tokens": 11}] * 3
+    # Two model calls, not a recursion error: the second was told to answer, called a tool
+    # anyway, and that call was dropped in favour of a reply the person can read.
+    assert result["status"] == "success"
+    assert result["response"] == OUT_OF_CALLS_REPLY
+    assert result["llm_usage"] == [{"input_tokens": 10, "output_tokens": 1, "total_tokens": 11}] * 2
+    assert len(model.seen) == 2
+    assert model.seen[1][-1].content == LAST_CALL_NOTICE
+    assert all(m.content != LAST_CALL_NOTICE for m in model.seen[0])
+
+
+@pytest.mark.asyncio
+async def test_a_real_graph_run_whose_tool_calls_are_cut_off_by_max_tokens_ends_with_the_setting_to_change():
+    from app.modules.workflow.agents.react_agent_lc import OUTPUT_LIMIT_REPLY, TRUNCATED_CALL_HINT
+
+    def cut_off(call_id):
+        # Claude's shape when max_tokens hits mid tool call: the call arrives without arguments.
+        return AIMessage(
+            content=[{"type": "tool_use", "id": call_id, "name": "apply_plan", "input": {}, "partial_json": ""}],
+            tool_calls=[{"name": "apply_plan", "args": {}, "id": call_id, "type": "tool_call"}],
+            response_metadata={"stop_reason": "max_tokens"},
+            usage_metadata={"input_tokens": 7000, "output_tokens": 1024, "total_tokens": 8024},
+        )
+
+    ran = []
+
+    async def apply_plan(inp):
+        ran.append(inp)
+        return "Applied."
+
+    tool = BaseTool(
+        node_id="t", name="apply_plan", description="d",
+        parameters={"operations": {"type": "string", "description": "ops", "required": True}},
+        function=apply_plan,
+    )
+    model = _RecordingScriptedModel(replies=[cut_off("call_1"), cut_off("call_2")], seen=[])
+    agent = ReActAgentLC(llm_model=model, system_prompt="sys", tools=[tool], max_iterations=10)
+
+    result = await agent.invoke("build the classifier")
+
+    assert ran == []  # a cut-off call is never executed
+    assert result["status"] == "success"
+    assert result["response"] == OUTPUT_LIMIT_REPLY
+    assert model.calls == 2
+    # The retry saw why the first call failed, in words it can act on.
+    retry_input = model.seen[1]
+    assert any(isinstance(m, ToolMessage) and m.content == TRUNCATED_CALL_HINT for m in retry_input)
+    assert result["llm_usage"] == [{"input_tokens": 7000, "output_tokens": 1024, "total_tokens": 8024}] * 2
 
 
 class _ScriptedModel(BaseChatModel):
@@ -340,3 +390,39 @@ class TestBlockSystemPromptReachesTheModel:
         await agent.invoke("hi")
 
         assert inner.seen[-1][0].content == _STABLE + _SUFFIX
+
+
+def test_tool_schema_accepts_json_values_where_a_string_is_declared():
+    """gpt-4o sends a real array for a parameter described as "a JSON array"; the tool gets it as text."""
+    agent = _build_agent()
+    tool = BaseTool(
+        node_id="t",
+        name="apply_plan",
+        description="d",
+        parameters={
+            "operations": {"type": "string", "description": "JSON array", "required": True},
+            "note": {"type": "string", "description": "optional", "required": False},
+            "count": {"type": "integer", "description": "n", "required": False},
+        },
+        function=lambda _input: "ok",
+    )
+    schema = agent._create_tool_schema(tool)
+
+    parsed = schema(operations=[{"op": "add_node", "config": {"a": 1}}])
+    assert json.loads(parsed.operations) == [{"op": "add_node", "config": {"a": 1}}]
+    assert schema(operations={"op": "x"}).operations == '{"op": "x"}'
+    assert schema(operations="[]").operations == "[]"
+    assert schema(operations=5).operations == "5"
+    assert schema(operations="[]", note=None).note is None
+    assert schema(operations="[]", count=3).count == 3
+    with pytest.raises(Exception):
+        schema(note="x")  # required parameter still required
+
+
+class _RecordingScriptedModel(_ScriptedModel):
+    seen: list = []
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        self.seen.append(list(messages))
+        return super()._generate(messages, stop, run_manager, **kwargs)
+

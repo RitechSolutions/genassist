@@ -18,8 +18,7 @@ import {
   Replace as ReplaceIcon,
   Settings,
   Space,
-  Trash2,
-} from "lucide-react";
+  Trash2, Sparkles } from "lucide-react";
 
 export interface NodeActionsMenuProps {
   /** The 3-dots trigger button (rendered `asChild`). */
@@ -39,6 +38,12 @@ export interface NodeActionsMenuProps {
   onDuplicate: () => void;
   onHelp?: () => void;
   onDelete: () => void;
+  /** AI actions; each item is shown only when its handler is given. */
+  onAiExplain?: () => void;
+  onAiImprovePrompt?: () => void;
+  onAiGenerate?: () => void;
+  onAiSuggestTests?: () => void;
+  onAiFix?: () => void;
 }
 
 /**
@@ -61,7 +66,19 @@ const NodeActionsMenu: React.FC<NodeActionsMenuProps> = ({
   onDuplicate,
   onHelp,
   onDelete,
+  onAiExplain,
+  onAiImprovePrompt,
+  onAiGenerate,
+  onAiSuggestTests,
+  onAiFix,
 }) => {
+  const aiItems = [
+    onAiFix && { label: "Fix with AI", run: onAiFix },
+    onAiExplain && { label: "Explain with AI", run: onAiExplain },
+    onAiImprovePrompt && { label: "Improve prompt with AI", run: onAiImprovePrompt },
+    onAiGenerate && { label: "Generate with AI", run: onAiGenerate },
+    onAiSuggestTests && { label: "Suggest test messages", run: onAiSuggestTests },
+  ].filter((item): item is { label: string; run: () => void } => Boolean(item));
   // Radix closes the menu on select; opening a dialog in the SAME tick gets
   // dismissed by the menu's own closing focus/pointer handling (the dialog
   // flashes open then shut). Defer each action until after the menu has closed.
@@ -143,6 +160,18 @@ const NodeActionsMenu: React.FC<NodeActionsMenuProps> = ({
           Duplicate
           <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
         </DropdownMenuItem>
+
+        {aiItems.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            {aiItems.map((item) => (
+              <DropdownMenuItem key={item.label} onSelect={() => run(item.run)}>
+                <Sparkles className="mr-2 h-4 w-4 text-[hsl(var(--brand-600))]" />
+                {item.label}
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
 
         <DropdownMenuSeparator />
 

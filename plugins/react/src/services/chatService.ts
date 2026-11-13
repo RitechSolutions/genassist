@@ -918,7 +918,9 @@ export class ChatService {
       if (done) break;
       for (const frame of parse(value)) {
         const data = JSON.parse(frame.data);
-        if (frame.event === "activity" || frame.event === "delta") this.streamHandler?.({ type: frame.event, ...data });
+        if (frame.event === "activity" || frame.event === "delta" || frame.event === "step") {
+          this.streamHandler?.({ type: frame.event, ...data });
+        }
         else if (frame.event === "error") throw httpError(typeof data.error_code === "number" ? data.error_code : 500, data);
         else if (frame.event === "done") return data.conversation;
       }

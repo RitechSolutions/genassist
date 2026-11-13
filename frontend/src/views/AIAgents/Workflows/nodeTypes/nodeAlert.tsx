@@ -11,12 +11,15 @@ interface NodeAlertProps {
   missingFields: string[];
   onFix?: () => void;
   onTest?: () => void;
+  /** Ask the assistant to fill in what is missing. */
+  onAiFix?: () => void;
 }
 
 export const NodeAlert: React.FC<NodeAlertProps> = ({
   missingFields,
   onFix,
   onTest,
+  onAiFix,
 }) => {
   const hasMissingFields = missingFields && missingFields.length > 0;
   const message = hasMissingFields
@@ -31,7 +34,12 @@ export const NodeAlert: React.FC<NodeAlertProps> = ({
         {renderIcon("CircleAlert")}
       </div>
       <div className="flex-1 flex items-center">{message}</div>
-      <div className="flex items-center justify-center">
+      <div className="flex items-center justify-center gap-3">
+        {hasMissingFields && onAiFix && (
+          <span className="underline cursor-pointer whitespace-nowrap" onClick={onAiFix}>
+            Fix with AI
+          </span>
+        )}
         <span className="underline cursor-pointer" onClick={handleClick}>
           {actionText}
         </span>

@@ -1,0 +1,1526 @@
+[
+  {
+    "type": "agentNode",
+    "label": "AI Agent",
+    "description": "Runs an AI-powered agent capable of reasoning, taking actions, and calling tools.",
+    "category": "ai",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "AI Agent",
+      "type": "ToolSelector",
+      "memory": false,
+      "piiMasking": false,
+      "promptCaching": false,
+      "systemPrompt": "",
+      "userPrompt": "{{source.message}}",
+      "maxIterations": 7,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "input_tools",
+          "type": "target",
+          "compatibility": "tools",
+          "position": "bottom"
+        },
+        {
+          "id": "input_sub_agents",
+          "type": "target",
+          "compatibility": "sub_agents",
+          "position": "bottom"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "aggregatorNode",
+    "label": "Result Merger",
+    "description": "Merges results from multiple branches and returns once conditions are met.",
+    "category": "routing",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Result Merger",
+      "aggregationStrategy": "list",
+      "forwardTemplate": "",
+      "timeoutSeconds": 15,
+      "requireAllInputs": true,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "apiToolNode",
+    "label": "API Connector",
+    "description": "Makes HTTP requests to external APIs using configurable methods, headers, and bodies.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "API Connector",
+      "endpoint": "https://",
+      "method": "GET",
+      "headers": {},
+      "parameters": {},
+      "requestBody": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "calendarEventNode",
+    "label": "Calendar Scheduler",
+    "description": "Creates calendar events using extracted or user-provided scheduling details.",
+    "category": "integrations",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Calendar Scheduler",
+      "summary": "",
+      "operation": "",
+      "start": "",
+      "end": "",
+      "dataSourceId": "",
+      "subjectContains": "",
+      "timezone": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "chatInputNode",
+    "label": "Start",
+    "description": "Defines the entry point of the workflow where inputs are received.",
+    "category": "io",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Start",
+      "inputSchema": {
+        "message": {
+          "type": "string",
+          "description": "The message received from the user",
+          "required": true
+        }
+      },
+      "handlers": [
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "chatOutputNode",
+    "label": "Finish",
+    "description": "Defines the endpoint of the workflow where final outputs are delivered.",
+    "category": "io",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Finish",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        }
+      ]
+    }
+  },
+  {
+    "type": "createWorkflowScheduleNode",
+    "label": "Create Workflow Schedule",
+    "description": "Creates a recurring schedule that runs an agent's latest workflow on a cron expression.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Create Workflow Schedule",
+      "agentId": "",
+      "scheduleName": "",
+      "cronSchedule": "0 0 * * *",
+      "isActive": true,
+      "threadIdMode": "per_run",
+      "fixedThreadId": "",
+      "message": "",
+      "inputData": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "dataMapperNode",
+    "label": "Data Transformer",
+    "description": "Transforms data using mapping rules or custom Python scripts.",
+    "category": "formatting",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Data Transformer",
+      "pythonScript": "# Generated Python function template\nfrom typing import Optional\n\n# Store your result in the 'result' variable\n# Import any additional libraries you need\n# import json\n# import requests\n# import datetime\n\ndef executable_function(params):\n    \n    # Your transformation logic here - example using the parameters:\n    result = 'Successfully executed {{parameter1}} function with no parameters'\n\n    return result",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "externalAgentNode",
+    "label": "External Agent",
+    "description": "Calls an external agent API and returns a response in the standard agent format (message + steps).",
+    "category": "ai",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "External Agent",
+      "endpoint": "https://",
+      "method": "POST",
+      "headers": {},
+      "requestBody": "",
+      "authType": "none",
+      "authToken": "",
+      "authHeader": "Authorization",
+      "authUsername": "",
+      "authPassword": "",
+      "timeout": 30,
+      "messageField": "message",
+      "stepsField": "steps",
+      "mappingScript": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "fileReaderNode",
+    "label": "File Reader",
+    "description": "Reads the content of an uploaded file and outputs it as text.",
+    "category": "utils",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "File Reader",
+      "fileSource": "chatAttachment",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "filterNode",
+    "label": "Filter",
+    "description": "Lets the branch continue only when a condition is true; otherwise the branch stops.",
+    "category": "routing",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Filter",
+      "field": "",
+      "operator": "equal",
+      "value": "",
+      "caseSensitive": false,
+      "stopMessage": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Passed"
+        }
+      ]
+    }
+  },
+  {
+    "type": "finalizeConversationNode",
+    "label": "End Conversation",
+    "description": "Finalizes the active conversation when the workflow reaches this node, producing the same outcome as the platform's finalize action. Pass-through: downstream nodes still run.",
+    "category": "io",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "End Conversation",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "gmailNode",
+    "label": "Email Sender",
+    "description": "Sends an email using a connected Gmail account.",
+    "category": "integrations",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Email Sender",
+      "dataSourceId": null,
+      "subject": "",
+      "body": "",
+      "to": "",
+      "cc": "",
+      "bcc": "",
+      "operation": "send_email",
+      "attachments": [],
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "guardrailNliNode",
+    "label": "Guardrail: NLI Fact-check",
+    "description": "Runs a simple NLI-style fact-check between the answer and evidence.",
+    "category": "utils",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Guardrail NLI",
+      "answer_field": "",
+      "evidence_field": "",
+      "min_entail_score": 0.5,
+      "fail_on_contradiction": false,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "guardrailProvenanceNode",
+    "label": "Guardrail: Provenance",
+    "description": "Checks whether the model answer is grounded in the provided context.",
+    "category": "utils",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Guardrail Provenance",
+      "answer_field": "",
+      "context_field": "",
+      "min_score": 0.5,
+      "fail_on_violation": false,
+      "provenance_mode": "embeddings",
+      "embedding_type": "huggingface",
+      "embedding_model_name": "all-MiniLM-L6-v2",
+      "use_llm_judge": false,
+      "llm_provider_id": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "htmlToImageNode",
+    "label": "HTML to Image",
+    "description": "Renders an HTML string in a headless browser and returns a hosted PNG image, with configurable capture mode and viewport size.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "HTML to Image",
+      "html": "",
+      "captureMode": "fullPage",
+      "viewportWidth": 1280,
+      "viewportHeight": 720,
+      "waitFor": 0,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "humanInTheLoopNode",
+    "label": "Human In The Loop",
+    "description": "Pauses the workflow to collect human input via a dynamic form.",
+    "category": "io",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Human In The Loop",
+      "message": "Please provide the following information:",
+      "form_fields": [],
+      "ask_once": true,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "jiraNode",
+    "label": "Jira Task Creator",
+    "description": "Creates a new task in a Jira project space with configurable fields and metadata.",
+    "category": "integrations",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Jira Task Creator",
+      "url": "",
+      "email": "",
+      "apiToken": "",
+      "spaceKey": "",
+      "taskName": "",
+      "taskDescription": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "knowledgeBaseNode",
+    "label": "Knowledge Query",
+    "description": "Queries connected knowledge bases to retrieve relevant information.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Knowledge Query",
+      "selectedBases": [],
+      "query": "",
+      "limit": 5,
+      "force": false,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "llmModelNode",
+    "label": "Language Model",
+    "description": "Runs a large language model using a prompt and adjustable model settings.",
+    "category": "ai",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Language Model",
+      "memory": false,
+      "piiMasking": false,
+      "promptCaching": false,
+      "type": "Base",
+      "systemPrompt": "",
+      "userPrompt": "{{source.message}}",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "loopNode",
+    "label": "Loop",
+    "description": "Repeats a set of nodes for every item of a list, or until a condition is met.",
+    "category": "routing",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Loop",
+      "mode": "forEach",
+      "items": "",
+      "batchSize": 1,
+      "maxIterations": 100,
+      "stopField": "",
+      "stopOperator": "equal",
+      "stopValue": "",
+      "stopCaseSensitive": false,
+      "onError": "stop",
+      "delaySeconds": 0,
+      "delayBackoff": false,
+      "timeLimitSeconds": 0,
+      "collect": "all",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "input_loop",
+          "type": "target",
+          "compatibility": "any",
+          "position": "bottom",
+          "label": "Loop back"
+        },
+        {
+          "id": "output_loop",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Loop body"
+        },
+        {
+          "id": "output_done",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Done"
+        }
+      ]
+    }
+  },
+  {
+    "type": "mcpNode",
+    "label": "MCP Server",
+    "description": "Connects to an MCP (Model Context Protocol) server and exposes selected tools to agents.",
+    "category": "ai",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "MCP Server",
+      "description": "MCP server tool connector",
+      "connectionType": "http",
+      "connectionConfig": {
+        "url": ""
+      },
+      "availableTools": [],
+      "whitelistedTools": [],
+      "inputSchema": {},
+      "handlers": [
+        {
+          "id": "output_tool",
+          "type": "source",
+          "compatibility": "tools",
+          "position": "top"
+        }
+      ]
+    }
+  },
+  {
+    "type": "mlModelInferenceNode",
+    "label": "ML Model Inference",
+    "description": "Run inference using a trained ML model",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "ML Model",
+      "modelId": "",
+      "modelName": "",
+      "inferenceInputs": {},
+      "features": {},
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "nlpNode",
+    "label": "Text Analysis",
+    "description": "Uses an LLM to analyze text: classify into categories, score sentiment and urgency, extract entities, or summarize.",
+    "category": "ai",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Text Analysis",
+      "providerId": "",
+      "inputField": "{{source.message}}",
+      "task": "classify",
+      "categories": [],
+      "multiLabel": false,
+      "scale": "1-5",
+      "schema": "",
+      "maxLength": 200,
+      "style": "concise",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "openApiNode",
+    "label": "OpenAPI Explorer",
+    "description": "Uses an OpenAPI specification and an LLM to answer questions about an API.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "OpenAPI Explorer",
+      "providerId": "",
+      "originalFileName": "",
+      "query": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "preprocessingNode",
+    "label": "Data Preprocessing",
+    "description": "Transform and clean training data using Python",
+    "category": "training",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Data Preprocessing",
+      "fileUrl": "{{source.data_path}}",
+      "pythonCode": "# Generated Python function template\nfrom typing import Optional\n\n# Store your result in the 'result' variable\n# Import any additional libraries you need\n# import json\n# import requests\n# import datetime\nimport pandas as pd\n\n# DO NOT EDIT THIS FUNCTION\ndef autogenerated_preprocessing_function(df):\n\n    return df\n\ndef executable_function(params):\n    \n    # This is loaded dataframe from file path:\n    df = params[\"df\"]\n    # Apply the autogenerated preprocessing code\n    df = autogenerated_preprocessing_function(df)\n\n    #Write your code here\n    \n    return df",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "pythonCodeNode",
+    "label": "Python Executor",
+    "description": "Executes Python code to transform data or perform custom logic.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Python Executor",
+      "code": "# Generated Python function template\nfrom typing import Optional\n\n# Store your result in the 'result' variable\n# Import any additional libraries you need\n# import json\n# import requests\n# import datetime\n\ndef executable_function(params):\n    \n    # Your code logic here - example using the parameters:\n    result = 'Successfully executed {{parameter1}} function with no parameters'\n\n    return result",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "readMailsNode",
+    "label": "Email Reader",
+    "description": "Retrieves emails using customizable search filters from a connected email account.",
+    "category": "integrations",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Email Reader",
+      "searchCriteria": {
+        "from": "",
+        "to": "",
+        "subject": "",
+        "has_attachment": false,
+        "is_unread": false,
+        "label": "",
+        "newer_than": "",
+        "older_than": "",
+        "custom_query": "",
+        "max_results": 10
+      },
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "routerNode",
+    "label": "Conditional Router",
+    "description": "Routes data along different branches based on evaluation of a condition.",
+    "category": "routing",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Conditional Router",
+      "smartModeEnabled": false,
+      "providerId": "",
+      "smartPrompt": "",
+      "systemPrompt": "",
+      "fallbackRoute": "false",
+      "first_value": "",
+      "compare_condition": "contains",
+      "second_value": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output_true",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        },
+        {
+          "id": "output_false",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "salesforceCaseNode",
+    "label": "Salesforce Case Creator",
+    "description": "Creates a new Case in Salesforce with the given subject, description, labels, and custom fields.",
+    "category": "integrations",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Salesforce Case Creator",
+      "subject": "",
+      "description": "",
+      "labels": [],
+      "custom_fields": [],
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "text",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "setStateNode",
+    "label": "Set State",
+    "description": "Sets the value of a stateful parameter that persists across workflow executions.",
+    "category": "io",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Set State",
+      "states": [],
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "slackMessageNode",
+    "label": "Slack Messenger",
+    "description": "Sends a message to a Slack user or channel.",
+    "category": "integrations",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Slack Messenger",
+      "message": "",
+      "channel": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "sqlNode",
+    "label": "SQL Executor",
+    "description": "Executes SQL queries on a configured database. Write SQL manually or generate it from text.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "SQL Executor",
+      "dataSourceId": "",
+      "sqlQuery": "",
+      "providerId": "",
+      "systemPrompt": "",
+      "humanQuery": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "sttNode",
+    "label": "Speech to Text",
+    "description": "Transcribes audio input to text using an STT provider.",
+    "category": "audio",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Speech to Text",
+      "audio_source": "{{source.output}}",
+      "provider": "openai",
+      "audioProviderId": "",
+      "model": "whisper-1",
+      "response_format": "text",
+      "temperature": 0,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "audio",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "text",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "subAgentNode",
+    "label": "Sub-Agent",
+    "description": "Defines a focused AI agent that a parent AI agent can call for delegated tasks.",
+    "category": "ai",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Sub-Agent",
+      "type": "ToolSelector",
+      "mode": "single_turn",
+      "description": "",
+      "memory": true,
+      "piiMasking": false,
+      "promptCaching": false,
+      "systemPrompt": "",
+      "userPrompt": "{{session.message}}",
+      "maxIterations": 7,
+      "timeoutSeconds": 120,
+      "memoryTrimmingMode": "message_count",
+      "maxMessages": 20,
+      "handlers": [
+        {
+          "id": "output_sub_agent",
+          "type": "source",
+          "compatibility": "sub_agents",
+          "position": "top"
+        },
+        {
+          "id": "input_tools",
+          "type": "target",
+          "compatibility": "tools",
+          "position": "bottom"
+        },
+        {
+          "id": "input_sub_agents",
+          "type": "target",
+          "compatibility": "sub_agents",
+          "position": "bottom"
+        }
+      ]
+    }
+  },
+  {
+    "type": "switchNode",
+    "label": "Switch",
+    "description": "Routes execution into one of several branches based on the value of a single input.",
+    "category": "routing",
+    "dynamicHandles": true,
+    "defaultData": {
+      "name": "Switch",
+      "smartModeEnabled": false,
+      "providerId": "",
+      "smartPrompt": "",
+      "systemPrompt": "",
+      "switchValue": "",
+      "matchMode": "equal",
+      "caseSensitive": false,
+      "cases": [
+        {
+          "id": "case_1",
+          "label": "Case 1",
+          "value": ""
+        },
+        {
+          "id": "case_2",
+          "label": "Case 2",
+          "value": ""
+        },
+        {
+          "id": "case_3",
+          "label": "Case 3",
+          "value": ""
+        }
+      ],
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output_case_1",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Case 1"
+        },
+        {
+          "id": "output_case_2",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Case 2"
+        },
+        {
+          "id": "output_case_3",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Case 3"
+        },
+        {
+          "id": "output_default",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Default"
+        }
+      ]
+    }
+  },
+  {
+    "type": "templateNode",
+    "label": "Text Template",
+    "description": "Generates formatted text using a configurable template with dynamic variables.",
+    "category": "formatting",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Text Template",
+      "template": "You are my AI assistant!",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "threadRAGNode",
+    "label": "Thread RAG",
+    "description": "Retrieve context from or add messages to thread RAG",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Thread RAG",
+      "action": "retrieve",
+      "query": "{{query}}",
+      "top_k": 5,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "toolBuilderNode",
+    "label": "Tool Builder",
+    "description": "Defines a custom tool that an AI agent can call, including parameters and output templates.",
+    "category": "ai",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Tool Builder",
+      "description": "Custom tool for parameter forwarding",
+      "forwardTemplate": "{}",
+      "handlers": [
+        {
+          "id": "output_tool",
+          "type": "source",
+          "compatibility": "tools",
+          "position": "top"
+        },
+        {
+          "id": "starter_processor",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "trainDataSourceNode",
+    "label": "Train Data Source",
+    "description": "Fetch training data from datasources or upload CSV, Excel, JSON, or Parquet files",
+    "category": "training",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Train Data Source",
+      "sourceType": "datasource",
+      "dataSourceId": "",
+      "dataSourceType": "",
+      "query": "",
+      "csvFile": null,
+      "csvFileName": "",
+      "csvFilePath": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "trainModelNode",
+    "label": "Train Model",
+    "description": "Train machine learning models on preprocessed data",
+    "category": "training",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Train Model",
+      "modelType": "xgboost",
+      "fileUrl": "{{source.data_path}}",
+      "targetColumn": "",
+      "featureColumns": [],
+      "modelParameters": {},
+      "validationSplit": 0.2,
+      "splitMethod": "random",
+      "dateColumn": "",
+      "hyperparameterOptimization": "none",
+      "optimizationConfig": {},
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "ttsNode",
+    "label": "Text to Speech",
+    "description": "Converts text input to audio using a TTS provider.",
+    "category": "audio",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Text to Speech",
+      "text": "{{source.message}}",
+      "provider": "openai",
+      "audioProviderId": "",
+      "voice": "nova",
+      "model": "tts-1",
+      "output_format": "mp3",
+      "speed": 1,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "text",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "audio",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "voiceAgentNode",
+    "label": "Voice Agent",
+    "description": "Native speech-to-speech AI agent: one Gemini Live model hears the user, calls tools, and answers with voice.",
+    "category": "ai",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Voice Agent",
+      "model": "gemini-3.1-flash-live-preview",
+      "voice": "Kore",
+      "systemPrompt": "You are a helpful voice assistant. Keep your spoken answers concise.",
+      "userPrompt": "{{session.message}}",
+      "maxToolCalls": 10,
+      "memory": false,
+      "piiMasking": false,
+      "memoryTrimmingMode": "message_count",
+      "maxMessages": 10,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "input_tools",
+          "type": "target",
+          "compatibility": "tools",
+          "position": "bottom"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "webhookTriggerNode",
+    "label": "Webhook Trigger",
+    "description": "Starts the workflow from an inbound HTTP request. Each node gets its own authenticated endpoint; the delivery becomes the workflow input.",
+    "category": "io",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Webhook Trigger",
+      "fieldMappings": [],
+      "messagePath": "",
+      "threadIdPath": "",
+      "idempotencyPath": "",
+      "samplePayload": "{\n  \"event\": \"order.created\",\n  \"order\": {\n    \"id\": \"ord_123\",\n    \"total\": 49.9,\n    \"customer_email\": \"jane@example.com\"\n  },\n  \"message\": \"New order ord_123 placed\"\n}",
+      "handlers": [
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "webScraperNode",
+    "label": "Web Scraper",
+    "description": "Fetches a web page and returns clean scraped content as Markdown or HTML, plus its links, metadata and an optional screenshot.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Web Scraper",
+      "url": "https://",
+      "format": "markdown",
+      "onlyMainContent": true,
+      "screenshot": "off",
+      "headers": {},
+      "waitFor": 0,
+      "scrollToBottom": false,
+      "maxAge": 0,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "webSearchNode",
+    "label": "Web Search",
+    "description": "Searches the web and returns ranked results with titles, URLs, and snippets, plus a short summary for the LLM. Optionally fetches full page text for the top results.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Web Search",
+      "query": "",
+      "maxResults": 5,
+      "searchDepth": "basic",
+      "includeDomains": "",
+      "excludeDomains": "",
+      "maxContentChars": 2000,
+      "maxTotalContentChars": 8000,
+      "maxAge": 600,
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "whatsappToolNode",
+    "label": "WhatsApp Messenger",
+    "description": "Sends a WhatsApp message to a specified phone number.",
+    "category": "integrations",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "WhatsApp Messenger",
+      "message": "",
+      "recipient_number": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "workflowBuilderToolsNode",
+    "label": "Workflow Builder Tools",
+    "description": "Gives an AI agent the tools to build and edit workflows: search node types, read the workflow draft, add, configure, connect and remove nodes, and validate the result.",
+    "category": "ai",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Workflow Builder Tools",
+      "enabledTools": [],
+      "handlers": [
+        {
+          "id": "output_tool",
+          "type": "source",
+          "compatibility": "tools",
+          "position": "top"
+        }
+      ]
+    }
+  },
+  {
+    "type": "workflowExecutorNode",
+    "label": "Workflow Executor",
+    "description": "Executes another workflow as a sub-workflow, allowing you to compose workflows together.",
+    "category": "tools",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Workflow Executor",
+      "inputParameters": {},
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  },
+  {
+    "type": "zendeskTicketNode",
+    "label": "Zendesk Ticket Creator",
+    "description": "Creates a new ticket in Zendesk with specified requester and ticket details.",
+    "category": "integrations",
+    "dynamicHandles": false,
+    "defaultData": {
+      "name": "Zendesk Ticket Creator",
+      "subject": "",
+      "description": "",
+      "requester_name": "",
+      "requester_email": "",
+      "tags": [],
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "text",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right"
+        }
+      ]
+    }
+  }
+]

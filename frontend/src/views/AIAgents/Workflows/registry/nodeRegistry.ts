@@ -52,6 +52,7 @@ class NodeRegistry {
     const toolTypes = [
       "toolBuilderNode",
       "mcpNode",
+      "workflowBuilderToolsNode",
     ];
     return Array.from(this.nodeTypes.keys()).filter(type => toolTypes.includes(type));
   }

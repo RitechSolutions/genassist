@@ -34,10 +34,22 @@ export interface ChatMessage {
 /** What the assistant is working on during a streamed turn */
 export type ActivityKind = "knowledge" | "tool";
 
+/** One narrated step of the assistant's work ("Adding 3 steps"); `detail` on the end frame is its outcome */
+export interface StreamStep {
+  type: "step";
+  id: string;
+  /** Groups steps for an icon: read, lookup, search, edit, test, finalize, question... */
+  kind: string;
+  text: string;
+  phase: "start" | "end";
+  detail?: string;
+}
+
 /** A progress frame from a streamed chat turn (`Accept: text/event-stream`) */
 export type StreamEvent =
   | { type: "activity"; kind: ActivityKind; phase: "start" | "end" }
-  | { type: "delta"; call_id: string; text: string };
+  | { type: "delta"; call_id: string; text: string }
+  | StreamStep;
 
 /** The in-flight reply of a streamed turn, kept apart from `messages` until the saved reply arrives */
 export interface StreamingReply {

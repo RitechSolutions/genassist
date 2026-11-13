@@ -374,7 +374,7 @@ function filterBySearch(items: MenuItem[], query: string): MenuItem[] {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function NavBadge({
+export function NavBadge({
   label,
   tone = "beta",
   className,

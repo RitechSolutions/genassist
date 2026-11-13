@@ -85,6 +85,14 @@ export interface WorkflowTokenUsage {
   fallback_calls?: number;
   fallback_models?: string[];
   calls?: number;
+  /** Calls made by workflows the Workflow Builder test-ran inside this run; included in
+   *  the totals above and summed here so the builder's own cost can be told apart. */
+  test_runs?: {
+    calls: number;
+    input_tokens: number;
+    output_tokens: number;
+    cost_usd: number;
+  };
 }
 
 export interface WorkflowTestResponse {
@@ -457,7 +465,10 @@ export const createWorkflowFromWizard = (payload: WorkflowWizardPayload) =>
 
 export interface WorkflowBuilderPayload {
   workflow_name: string;
-  workflow_json: string;
+  /** Simplified workflow specification. Either this or conversation_id is required. */
+  workflow_json?: string;
+  /** Create from the draft the builder agent finalized in this conversation. */
+  conversation_id?: string;
   workflow_description?: string;
 }
 

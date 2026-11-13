@@ -35,6 +35,9 @@ export interface BaseNodeData {
   // upstream node's output straight to the downstream node(s), as if this node
   // were not present. Persisted inside the node's `data` (workflows.nodes JSONB).
   deactivated?: boolean;
+  // Set on the canvas only, never persisted: the assistant's latest change is
+  // highlighted until the person keeps or undoes it (see utils/assistantDraft).
+  aiChange?: "added" | "changed";
   updateNodeData?: <T extends BaseNodeData>(
     nodeId: string,
     data: Partial<T>,
@@ -815,6 +818,12 @@ export interface MCPNodeData extends ToolBaseNodeData {
   whitelistedTools: string[]; // Array of tool names to expose
 }
 
+// Workflow Builder Tools node data: exposes the builder tool set to an agent.
+export interface WorkflowBuilderToolsNodeData extends BaseNodeData {
+  /** Tool names to expose; empty means all of them. */
+  enabledTools: string[];
+}
+
 export interface NodeHelpSection {
   title: string;
   body?: string;
@@ -924,6 +933,7 @@ export type NodeData =
   | TrainModelNodeData
   | ThreadRAGNodeData
   | MCPNodeData
+  | WorkflowBuilderToolsNodeData
   | WorkflowExecutorNodeData
   | HumanInTheLoopNodeData
   | SetStateNodeData

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ErrorBanner } from "@/views/Onboarding/components/ErrorBanner";
+import { OnboardingChat } from "@/views/Onboarding/components/OnboardingChat";
 import { OnboardingFooter } from "@/views/Onboarding/components/OnboardingFooter";
 import { OnboardingHeader } from "@/views/Onboarding/components/OnboardingHeader";
-import { OnboardingHero } from "@/views/Onboarding/components/OnboardingHero";
-import { OnboardingInput } from "@/views/Onboarding/components/Onboardinginput";
 import { OnboardingNameAgent } from "@/views/Onboarding/components/OnboardingNameAgent";
 import { useOnboardingChat } from "@/views/Onboarding/hooks/useOnboardingChat";
 import { isWorkflowDraft } from "@/views/Onboarding/utils/extractWorkflowDraft";
@@ -25,21 +24,19 @@ export default function Onboarding() {
     agentReply,
     messages,
     isThinking,
-    subtitleText,
+    liveTurn,
     titleText,
     welcomeFaqs,
-    hasUserStartedChat,
     isSending,
     error,
     hasConfig,
-    handleSubmit,
-    sendQuickAction,
+    sendMessage,
+    answerQuestion,
+    reactToMessage,
     workflowDraft,
     isWorkflowReady,
   } = useOnboardingChat({ registrationStatus });
 
-  const [showCongrats, setShowCongrats] = useState(true);
-  const [showQuickActions, setShowQuickActions] = useState(false);
   const [screen, setScreen] = useState<OnboardingScreen>(() => {
     try {
       const savedDraftRaw = localStorage.getItem(WORKFLOW_DRAFT_STORAGE_KEY);
@@ -58,13 +55,9 @@ export default function Onboarding() {
     }
   });
 
-  const quickActions = useMemo(() => {
-    if (!agentReply) {
-      if (!hasUserStartedChat && welcomeFaqs.length) {
-        return welcomeFaqs;
-      }
-      return [];
-    }
+  // Answers the builder offered inside its latest reply (interactive content blocks).
+  const replyOptions = useMemo(() => {
+    if (!agentReply) return [];
     const blocks = parseInteractiveContentBlocks(agentReply);
     const options: string[] = [];
     blocks.forEach((block) => {
@@ -75,16 +68,7 @@ export default function Onboarding() {
       }
     });
     return options;
-  }, [agentReply, hasUserStartedChat, welcomeFaqs]);
-
-  useEffect(() => {
-    const congratsTimer = setTimeout(() => setShowCongrats(false), 1200);
-    const quickActionsTimer = setTimeout(() => setShowQuickActions(true), 1400);
-    return () => {
-      clearTimeout(congratsTimer);
-      clearTimeout(quickActionsTimer);
-    };
-  }, []);
+  }, [agentReply]);
 
   const effectiveScreen: OnboardingScreen = isWorkflowReady ? "name-agent" : screen;
 
@@ -127,43 +111,59 @@ export default function Onboarding() {
     navigate("/login", { state: { from: { pathname: "/onboarding" } } });
   };
 
+  // Drop the saved draft and go back to the chat, so an abandoned draft never traps the user here.
+  const handleStartOver = () => {
+    try {
+      localStorage.removeItem(WORKFLOW_DRAFT_STORAGE_KEY);
+      localStorage.removeItem(AGENT_NAME_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    window.location.reload();
+  };
+
   return (
-    <div className="min-h-screen flex flex-col bg-muted">
+    <div className="relative flex h-screen flex-col overflow-hidden bg-background">
       <OnboardingHeader />
 
-      <main className="flex-1 flex flex-col items-center justify-center px-4 gap-8">
+      <main className="relative flex min-h-0 flex-1 flex-col items-center justify-center">
         {effectiveScreen === "chat" ? (
-          <div className="w-full flex flex-col items-center gap-8">
-            <OnboardingHero
-              showCongrats={showCongrats && !agentReply}
-              showQuickActions={showQuickActions && quickActions.length > 0}
-              subtitle={subtitleText}
-              title={titleText}
-              quickActions={quickActions}
-              onQuickAction={sendQuickAction}
-              disableQuickActions={isInputDisabled}
-              messages={messages}
-              isThinking={isThinking}
-            />
-
-            <OnboardingInput
-              value={prompt}
-              disabled={isInputDisabled}
-              onChange={setPrompt}
-              onSubmit={handleSubmit}
-            />
-          </div>
-        ) : (
-          <OnboardingNameAgent
-            value={agentName}
-            disabled={isSending}
-            onChange={handleAgentNameChange}
-            onContinue={handleContinue}
-            workflowDraft={workflowDraft}
+          <OnboardingChat
+            title={titleText}
+            messages={messages}
+            isThinking={isThinking}
+            liveTurn={liveTurn}
+            welcomeFaqs={welcomeFaqs}
+            replyOptions={replyOptions}
+            prompt={prompt}
+            onPromptChange={setPrompt}
+            onSend={(message) => void sendMessage(message)}
+            onAnswer={answerQuestion}
+            onReact={reactToMessage}
+            disabled={isInputDisabled}
           />
+        ) : (
+          <div className="flex w-full flex-col items-center gap-4 overflow-y-auto px-4 py-6">
+            <OnboardingNameAgent
+              value={agentName}
+              disabled={isSending}
+              onChange={handleAgentNameChange}
+              onContinue={handleContinue}
+              workflowDraft={workflowDraft}
+            />
+            <button
+              type="button"
+              onClick={handleStartOver}
+              className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+            >
+              Start over
+            </button>
+          </div>
         )}
 
-        <ErrorBanner message={error} />
+        <div className="absolute inset-x-0 bottom-12 flex justify-center px-4">
+          <ErrorBanner message={error} />
+        </div>
       </main>
 
       <OnboardingFooter />

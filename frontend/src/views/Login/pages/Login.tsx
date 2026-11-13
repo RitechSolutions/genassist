@@ -6,6 +6,7 @@ import { useAuth } from "../hooks/useAuth";
 import { postLoginPath } from "../helpers/postLoginPath";
 import { ForcePasswordUpdateDialog } from "../components/ForcePasswordUpdateDialog";
 import { fetchUserPermissions } from "@/services/auth";
+import { builderErrorMessage } from "@/services/workflowBuilder";
 import { TermsAndPolicyNotice } from "@/components/TermsAndPolicyNotice";
 import { AuthMockupPanel } from "@/components/AuthMockupPanel";
 import { useFeatureFlag } from "@/context/FeatureFlagContext";
@@ -136,16 +137,38 @@ const LoginPage = () => {
         if (pendingDraft && pendingName) {
           try {
             let hasEdges = false;
+            let draftConversationId: string | undefined;
             try {
               const parsed = JSON.parse(pendingDraft);
               hasEdges = Array.isArray(parsed?.edges) && parsed.edges.length > 0;
+              if (typeof parsed?.conversation_id === "string") {
+                draftConversationId = parsed.conversation_id;
+              }
             } catch {
               // not valid JSON, fall through to wizard
             }
 
-            const wizardResponse = hasEdges
-              ? await createWorkflowFromBuilder({ workflow_name: pendingName, workflow_json: pendingDraft })
-              : await createWorkflowFromWizard({ workflow_name: pendingName, workflow_json: pendingDraft });
+            // Prefer the draft the builder agent stored on the server; the copy in
+            // localStorage is the fallback if that draft is no longer available.
+            let wizardResponse = null;
+            if (draftConversationId) {
+              try {
+                wizardResponse = await createWorkflowFromBuilder({
+                  workflow_name: pendingName,
+                  conversation_id: draftConversationId,
+                });
+              } catch {
+                wizardResponse = null;
+              }
+            }
+            if (!wizardResponse) {
+              wizardResponse = hasEdges
+                ? await createWorkflowFromBuilder({ workflow_name: pendingName, workflow_json: pendingDraft })
+                : await createWorkflowFromWizard({ workflow_name: pendingName, workflow_json: pendingDraft });
+            }
+            if (!wizardResponse) {
+              throw new Error("The workflow could not be created.");
+            }
 
             // Clean up onboarding data
             localStorage.removeItem(WORKFLOW_DRAFT_STORAGE_KEY);
@@ -167,9 +190,13 @@ const LoginPage = () => {
             }
             return;
           } catch (error) {
-            toast.error("Failed to create workflow. Redirecting to dashboard.");
-            localStorage.removeItem(WORKFLOW_DRAFT_STORAGE_KEY);
-            localStorage.removeItem(AGENT_NAME_STORAGE_KEY);
+            // Keep the draft: the user can retry from onboarding instead of redoing the conversation.
+            const reason = builderErrorMessage(error);
+            toast.error(
+              reason
+                ? `Your agent could not be created: ${reason}`
+                : "Your agent could not be created. Your draft is saved; you can retry from onboarding."
+            );
           }
         }
 

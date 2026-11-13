@@ -127,6 +127,8 @@ export function applyStreamEvent(
     const sameCall = base.callId === event.call_id;
     return { ...base, callId: event.call_id, text: (sameCall ? base.text : "") + event.text };
   }
+  // Narrated steps are for hosts that render them (the workflow builder); the widget keeps its activity view.
+  if (event.type !== "activity") return base;
   if (event.phase === "start") return { ...base, text: "", callId: null, running: [...base.running, event.kind] };
   const index = base.running.lastIndexOf(event.kind);
   return index < 0 ? base : { ...base, running: base.running.filter((_, i) => i !== index) };

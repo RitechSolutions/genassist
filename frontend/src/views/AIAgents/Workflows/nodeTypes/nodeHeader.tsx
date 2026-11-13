@@ -28,6 +28,11 @@ interface NodeHeaderProps {
   onReplace: () => void;
   onCopy: () => void;
   onDuplicate: () => void;
+  onAiExplain?: () => void;
+  onAiImprovePrompt?: () => void;
+  onAiGenerate?: () => void;
+  onAiSuggestTests?: () => void;
+  onAiFix?: () => void;
 }
 
 const NodeHeader: React.FC<NodeHeaderProps> = ({
@@ -47,6 +52,11 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
   onReplace,
   onCopy,
   onDuplicate,
+  onAiExplain,
+  onAiImprovePrompt,
+  onAiGenerate,
+  onAiSuggestTests,
+  onAiFix,
 }) => {
   const isSpecialNoError = isSpecialNode && !hasError;
   // Header text color. Special I/O nodes have a dark-blue header → white text.
@@ -152,6 +162,11 @@ const NodeHeader: React.FC<NodeHeaderProps> = ({
             onToggleActive={() => onToggleActive?.()}
             onCopy={onCopy}
             onDuplicate={onDuplicate}
+            onAiExplain={onAiExplain}
+            onAiImprovePrompt={onAiImprovePrompt}
+            onAiGenerate={onAiGenerate}
+            onAiSuggestTests={onAiSuggestTests}
+            onAiFix={onAiFix}
             onHelp={onHelpClick}
             onDelete={onDeleteClick}
             trigger={

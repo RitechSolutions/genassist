@@ -51,6 +51,8 @@ import { displayTimeZone } from "@/helpers/timeZone";
 interface WorkflowsSavedPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Space kept free on the right (the assistant panel), in px. */
+  rightOffset?: number;
   agentId: string;
   activeWorkflowId: string;
   currentWorkflow: Workflow;
@@ -78,6 +80,7 @@ const formatEditedAt = (iso: string): string => {
 const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   isOpen,
   onClose,
+  rightOffset = 0,
   agentId,
   activeWorkflowId,
   currentWorkflow,
@@ -412,7 +415,8 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
 
   return (
     <div
-      className="fixed top-2 right-2 h-[calc(100vh-1rem)] w-80 bg-card border shadow-lg rounded-lg transform transition-transform duration-200 ease-in-out translate-x-0 animate-in slide-in-from-right"
+      className="fixed top-2 h-[calc(100vh-1rem)] w-80 bg-card border shadow-lg rounded-lg transform transition-transform duration-200 ease-in-out translate-x-0 animate-in slide-in-from-right"
+      style={{ right: `calc(0.5rem + ${rightOffset}px)` }}
     >
       <div className="h-full flex flex-col">
         <div className="p-4 border-b">

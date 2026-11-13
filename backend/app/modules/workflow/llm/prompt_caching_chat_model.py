@@ -2,7 +2,12 @@
 
 The marker is provider-specific: Anthropic sets `cache_control: {"type": "ephemeral"}`
 on the system block itself, Bedrock Converse adds a `{"cachePoint": {"type": "default"}}`
-block after it."""
+block after it.
+
+With `cache_conversation` on, the newest message gets a second marker, so everything
+up to it (tools, system prompt, the whole history) is cached for the next call. An
+agent loop re-sends the growing history on every step; without this marker only the
+system prompt was ever read from the cache."""
 
 from __future__ import annotations
 
@@ -16,7 +21,7 @@ from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 
 from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel, as_chunk, child_callback_config
@@ -55,6 +60,9 @@ class PromptCachingChatModel(BaseChatModel):
 
     inner: Any
     cache_style: CacheStyle
+    # Also mark the newest message (see the module docstring). Off for models that
+    # reject a marker inside messages, such as Nova on Bedrock.
+    cache_conversation: bool = False
 
     @property
     def _llm_type(self) -> str:
@@ -62,7 +70,11 @@ class PromptCachingChatModel(BaseChatModel):
 
     def bind_tools(self, tools: Sequence[Any], **kwargs: Any) -> "PromptCachingChatModel":
         """Re-wrap the bound child so a tool loop keeps caching its system prefix"""
-        return PromptCachingChatModel(inner=self.inner.bind_tools(tools, **kwargs), cache_style=self.cache_style)
+        return PromptCachingChatModel(
+            inner=self.inner.bind_tools(tools, **kwargs),
+            cache_style=self.cache_style,
+            cache_conversation=self.cache_conversation,
+        )
 
     def _mark_messages(self, messages: List[BaseMessage]) -> List[BaseMessage]:
         """`messages` with the first SystemMessage marked, or unchanged if none is eligible"""
@@ -105,6 +117,36 @@ class PromptCachingChatModel(BaseChatModel):
             new_content = [first, {"cachePoint": {"type": "default"}}, *content[1:]]
         return message.model_copy(update={"content": new_content})
 
+    def _mark_latest(self, messages: List[BaseMessage], invoke_kwargs: dict) -> List[BaseMessage]:
+        """
+        Put the second marker on the newest message. For Anthropic it travels as the
+        `cache_control` call option, which langchain-anthropic places on the last block
+        of the last message (a tool result included); for Bedrock a cachePoint block is
+        appended to a copy of the message. Returns the messages to send.
+        """
+        last = messages[-1] if messages else None
+        if not isinstance(last, (HumanMessage, ToolMessage)):
+            return messages
+        if self.cache_style == "anthropic":
+            invoke_kwargs.setdefault("cache_control", {"type": "ephemeral"})
+            return messages
+
+        point = {"cachePoint": {"type": "default"}}
+        content = last.content
+        if isinstance(content, str):
+            if not content.strip():
+                return messages
+            new_content: List[Any] = [{"type": "text", "text": content}, point]
+        elif isinstance(content, list) and content:
+            if isinstance(content[-1], dict) and "cachePoint" in content[-1]:
+                return messages
+            new_content = [*content, point]
+        else:
+            return messages
+        new_messages = list(messages)
+        new_messages[-1] = last.model_copy(update={"content": new_content})
+        return new_messages
+
     def _prepare(
         self, messages: List[BaseMessage], stop: Optional[List[str]], kwargs: dict
     ) -> tuple[List[BaseMessage], dict]:
@@ -112,7 +154,11 @@ class PromptCachingChatModel(BaseChatModel):
         invoke_kwargs = dict(kwargs)
         if stop is not None:
             invoke_kwargs["stop"] = stop
-        return self._mark_messages(messages), invoke_kwargs
+        marked = self._mark_messages(messages)
+        # Only a call whose system prefix was marked opted in; the conversation marker rides on that.
+        if self.cache_conversation and marked is not messages:
+            marked = self._mark_latest(marked, invoke_kwargs)
+        return marked, invoke_kwargs
 
     def _log_cache_call(self, marked: List[BaseMessage], ai: Any) -> None:
         """Logs for diagnosing unstable cache reads: the hashes tie a call to the

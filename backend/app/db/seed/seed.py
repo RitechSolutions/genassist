@@ -343,6 +343,18 @@ async def seed_data(session: AsyncSession, injector: Injector):
             "api_key": encrypt_key(settings.OPENAI_API_KEY),
         }
     )
+    # The Workflow Builder agent runs on this one (see workflow_builder_wf_data.json). Not the
+    # default: the workflows the builder creates keep `llm_provider` (LlmProviderService.get_default).
+    workflow_builder_llm_provider = LlmProvidersModel(
+        id=UUID(seed_test_data.workflow_builder_llm_provider_id),
+        name=seed_test_data.workflow_builder_llm_provider_name,
+        llm_model_provider="openai",
+        is_active=1,
+        llm_model=seed_test_data.workflow_builder_llm_model,
+        connection_data={
+            "api_key": encrypt_key(settings.OPENAI_API_KEY),
+        }
+    )
     local_llm_provider_gpt_oss = LlmProvidersModel(
         id=UUID(seed_test_data.local_llm_provider_gpt_oss_id),
         name='gpt-oss',
@@ -374,7 +386,7 @@ async def seed_data(session: AsyncSession, injector: Injector):
             "base_url": "http://192.168.10.231:11434/",
         }
     )
-    session.add_all([llm_provider, local_llm_provider_gpt_oss,
+    session.add_all([llm_provider, workflow_builder_llm_provider, local_llm_provider_gpt_oss,
                     local_llm_provider_llama, local_llm_provider_vllm_llama])
     await session.commit()
 

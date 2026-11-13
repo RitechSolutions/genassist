@@ -26,10 +26,12 @@ import { NodeData } from "./types/nodes";
 import { Workflow } from "@/interfaces/workflow.interface";
 import WorkflowTestPanel, { TestRunRecord } from "./components/WorkflowTestPanel";
 import WorkflowEvaluationsTab from "./components/WorkflowEvaluationsTab";
-import NodePanel from "./components/panels/NodePanel";
+import NodePanel, { NODE_PANEL_DEFAULT_WIDTH_PX } from "./components/panels/NodePanel";
+import { AssistantPanel, ASSISTANT_PANEL_DEFAULT_WIDTH_PX } from "./components/panels/AssistantPanel";
 import BottomPanel from "./components/panels/BottomPanel";
 import WorkflowsSavedPanel from "./components/panels/WorkflowsSavedPanel";
 import { useCanvasAssistant } from "./hooks/useCanvasAssistant";
+import { FIX_ISSUES_MESSAGE } from "./utils/assistantDraft";
 import { useSchemaValidation } from "./hooks/useSchemaValidation";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
@@ -59,6 +61,9 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useSidebar } from "@/components/sidebar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
 import { History, X, Plus, Workflow as WorkflowIcon, Play, ClipboardCheck } from "lucide-react";
+import { GenAssistMark } from "@/components/AssistantEmptyState";
+import { NodeMiniIcon } from "./components/panels/NodeChips";
+import { NavBadge } from "@/layout/app-sidebar";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
@@ -283,6 +288,29 @@ const GraphFlowContent: React.FC = () => {
     requestAnimationFrame(() => reactFlowInstance?.fitView({ padding: 0.2, duration: 400 }));
   }, [nodes, edges, setNodes, reactFlowInstance]);
 
+  // Auto-arrange requested by the assistant after it changed the graph. The layout
+  // needs each node's rendered size, and nodes the assistant just added have none
+  // until React Flow has measured them, so the arrange waits for that (arranging
+  // straight away stacks them on top of each other).
+  const [autoArrangePending, setAutoArrangePending] = useState(false);
+  const requestAutoArrange = useCallback(() => setAutoArrangePending(true), []);
+  const handleAutoArrangeRef = useRef(handleAutoArrange);
+  handleAutoArrangeRef.current = handleAutoArrange;
+  useEffect(() => {
+    if (!autoArrangePending) return;
+    const allMeasured = nodes.every((n) => isGroupNode(n) || (n.width && n.height));
+    // Once everything is measured, give a node that is resizing (its content just
+    // changed) a moment to settle; if a node never reports a size, arrange anyway.
+    const timer = setTimeout(
+      () => {
+        setAutoArrangePending(false);
+        handleAutoArrangeRef.current();
+      },
+      allMeasured ? 150 : 2000
+    );
+    return () => clearTimeout(timer);
+  }, [autoArrangePending, nodes]);
+
   // Smart defaults — dynamically auto-fill integration nodes using schemas + existing connections
   const smartDefaultsApplied = useRef(false);
   useEffect(() => {
@@ -500,17 +528,47 @@ const GraphFlowContent: React.FC = () => {
   );
 
   // Canvas AI assistant
-  const [conversationalTabActive, setConversationalTabActive] = useState(false);
-  const [hasStartedConversation, setHasStartedConversation] = useState(false);
-  const assistant = useCanvasAssistant({
-    nodes,
-    edges,
-    setNodes,
-    setEdges,
-    updateNodeData,
-    workflowScopeId: agentId,
-  });
-
+  // The AI assistant has its own panel beside the canvas; the canvas makes room for it.
+  const assistantEnabled = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CONVERSATIONAL_TAB);
+  const [showAssistant, setShowAssistant] = useState(false);
+  const [assistantWidth, setAssistantWidth] = useState(ASSISTANT_PANEL_DEFAULT_WIDTH_PX);
+  const [isResizingAssistant, setIsResizingAssistant] = useState(false);
+  const assistantOffset = showAssistant && assistantEnabled ? assistantWidth : 0;
+  // Opening, closing or resizing the panel changes the canvas column's width. The
+  // canvas itself is pushed aside by moving the viewport by exactly the width the
+  // column lost or gained, measured on the element as it changes, so nodes follow
+  // the panel frame by frame whatever animates it. Culling is paused meanwhile:
+  // React Flow measures a frame late, and culled nodes would blink out.
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [assistantTransitioning, setAssistantTransitioning] = useState(false);
+  const assistantTransitioningRef = useRef(false);
+  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    assistantTransitioningRef.current = true;
+    setAssistantTransitioning(true);
+    if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
+    if (isResizingAssistant) return;
+    transitionTimerRef.current = setTimeout(() => {
+      assistantTransitioningRef.current = false;
+      setAssistantTransitioning(false);
+    }, 400);
+  }, [assistantOffset, isResizingAssistant]);
+  useEffect(() => {
+    const element = canvasRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    let lastWidth: number | null = null;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (typeof width !== "number") return;
+      const previous = lastWidth;
+      lastWidth = width;
+      if (previous === null || width === previous || !assistantTransitioningRef.current || !reactFlowInstance) return;
+      const viewport = reactFlowInstance.getViewport();
+      reactFlowInstance.setViewport({ ...viewport, x: viewport.x + (width - previous) }, { duration: 0 });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [reactFlowInstance]);
   // Restore functions to nodes after loading
   const restoreNodeFunctions = useCallback(
     (loadedNodes: Node[]): Node[] => {
@@ -526,6 +584,185 @@ const GraphFlowContent: React.FC = () => {
       });
     },
     [updateNodeData]
+  );
+
+  // The assistant reads the person's most recent test run itself, so a failing
+  // run never has to be copied out of the debug view and pasted into the chat.
+  const testHistoryRef = useRef(testHistory);
+  testHistoryRef.current = testHistory;
+  // "Fix with AI" on an older run pins that run as what the assistant reads.
+  const pinnedRunIdRef = useRef<string | null>(null);
+  const getLastTestRun = useCallback(() => {
+    const pinned = pinnedRunIdRef.current
+      ? testHistoryRef.current.find((run) => run.id === pinnedRunIdRef.current)
+      : undefined;
+    const latest = pinned ?? testHistoryRef.current[0];
+    if (!latest) return null;
+    return { inputs: latest.inputs, response: latest.response, error: latest.error };
+  }, []);
+
+  const assistant = useCanvasAssistant({
+    nodes,
+    edges,
+    setNodes,
+    setEdges,
+    hydrateNodes: restoreNodeFunctions,
+    onStructureChanged: requestAutoArrange,
+    getLastTestRun,
+    selectedNodeId: selectedNodes.length === 1 ? selectedNodes[0].id : null,
+    workflowScopeId: agentId,
+  });
+
+  const openAssistantPanel = useCallback(() => {
+    setShowAssistant(true);
+  }, []);
+
+  // Centre the canvas on a node and, when asked, open its settings dialog (the
+  // node's own settings button, so the right dialog opens for every node type).
+  const focusNodeOnCanvas = useCallback(
+    (nodeId: string, openSettings: boolean) => {
+      reactFlowInstance?.fitView({ nodes: [{ id: nodeId }], duration: 400, padding: 0.5, maxZoom: 1.4 });
+      if (!openSettings) return;
+      setTimeout(() => {
+        const nodeEl = document.querySelector(`[data-id="${nodeId}"]`);
+        nodeEl?.querySelector<HTMLButtonElement>("[data-node-settings]")?.click();
+      }, 450);
+    },
+    [reactFlowInstance]
+  );
+
+  const nodeName = useCallback(
+    (id: string) => (nodes.find((n) => n.id === id)?.data?.name as string | undefined) ?? "this step",
+    [nodes]
+  );
+
+  const assistNode = useCallback(
+    (id: string, action: "explain_node" | "improve_prompt" | "generate_code" | "suggest_tests" | "explain_step") => {
+      openAssistantPanel();
+      if (action === "generate_code") {
+        const instruction = window.prompt(`What should "${nodeName(id)}" do?`);
+        if (!instruction?.trim()) return;
+        assistant.runAssist(action, [id], instruction.trim(), `Generate "${nodeName(id)}": ${instruction.trim()}`);
+        return;
+      }
+      assistant.runAssist(action, [id]);
+    },
+    [assistant, nodeName, openAssistantPanel]
+  );
+
+  const fixNodeWithAi = useCallback(
+    (id: string, problem: string) => {
+      openAssistantPanel();
+      assistant.sendMessage(`Fix the step "${nodeName(id)}": ${problem}. Fill it in sensibly, test, and finish.`, [id]);
+    },
+    [assistant, nodeName, openAssistantPanel]
+  );
+
+  // "Add a step with AI" on an output handle: one sentence, one connected step.
+  const addStepWithAi = useCallback(
+    (nodeId: string, handleId: string, handleLabel: string, instruction: string) => {
+      openAssistantPanel();
+      void assistant.addStepWithAi(nodeId, handleId, handleLabel, instruction);
+    },
+    [assistant, openAssistantPanel]
+  );
+
+  const assistGroup = useCallback(
+    (groupId: string, action: "explain_group" | "optimize") => {
+      const members = nodes.filter((n) => (n.parentId ?? n.parentNode) === groupId).map((n) => n.id);
+      if (members.length === 0) return;
+      openAssistantPanel();
+      assistant.runAssist(action, members);
+    },
+    [assistant, nodes, openAssistantPanel]
+  );
+
+  const selectedExecutableIds = useMemo(
+    () => selectedNodes.filter((n) => !isGroupNode(n)).map((n) => n.id),
+    [selectedNodes]
+  );
+
+  const assistSelection = useCallback(
+    (action: "explain_group" | "optimize") => {
+      if (selectedExecutableIds.length === 0) return;
+      openAssistantPanel();
+      assistant.runAssist(action, selectedExecutableIds);
+    },
+    [assistant, openAssistantPanel, selectedExecutableIds]
+  );
+
+  // "Fix with AI" on a test run: that run is what the assistant reads for this message.
+  const fixTestRun = useCallback(
+    (run: TestRunRecord) => {
+      pinnedRunIdRef.current = run.id;
+      setActiveTab("workflow");
+      openAssistantPanel();
+      assistant.sendMessage(
+        `The test run "${run.label}" did not go well. Look at what happened, find the cause, fix it, and test again.`
+      );
+      pinnedRunIdRef.current = null;
+    },
+    [assistant, openAssistantPanel]
+  );
+
+  // A suggested test message is placed in the Executions tab, ready to run.
+  const runSuggestedTest = useCallback(
+    (message: string) => {
+      setWorkflow((current) => (current ? { ...current, testInput: { ...(current.testInput ?? {}), message } } : current));
+      setActiveTab("executions");
+    },
+    []
+  );
+
+  // "/explain", "/review", ... from the composer.
+  const handleAssistantCommand = useCallback(
+    (command: string, rest: string, taggedIds?: string[]) => {
+      // Steps tagged in the message win over the canvas selection; the words after
+      // the command are the instruction ("/optimize by merging the two routers").
+      const focus = taggedIds?.length ? taggedIds : selectedExecutableIds;
+      const instruction = rest.trim() || undefined;
+      switch (command) {
+        case "explain":
+          if (focus.length === 1) assistant.runAssist("explain_node", focus, instruction);
+          else if (focus.length > 1) assistant.runAssist("explain_group", focus, instruction);
+          else assistant.runAssist("describe_workflow", [], instruction);
+          return;
+        case "describe":
+          assistant.runAssist("describe_workflow", [], instruction);
+          return;
+        case "optimize":
+          assistant.runAssist("optimize", focus, instruction);
+          return;
+        case "review":
+          assistant.runAssist("review", [], instruction);
+          return;
+        case "tests":
+          assistant.runAssist("suggest_tests", focus.slice(0, 1), instruction);
+          return;
+        case "fix":
+          assistant.sendMessage(rest || FIX_ISSUES_MESSAGE, focus);
+          return;
+        case "undo":
+          if (!assistant.undoChanges()) toast("Nothing to undo.");
+          return;
+        default:
+          assistant.sendMessage(`${command} ${rest}`.trim(), focus);
+      }
+    },
+    [assistant, selectedExecutableIds]
+  );
+
+  const mentionables = useMemo(
+    () =>
+      nodes
+        .filter((n) => !isGroupNode(n) && typeof n.data?.name === "string")
+        .map((n) => ({
+          id: n.id,
+          name: n.data.name as string,
+          hint: n.type,
+          icon: <NodeMiniIcon type={n.type} className="h-5 w-5" />,
+        })),
+    [nodes]
   );
 
   // Undo/Redo functionality
@@ -1228,6 +1465,10 @@ const GraphFlowContent: React.FC = () => {
       setGroupColor,
       fitGroup,
       requestDeleteGroup,
+      assistNode,
+      fixNodeWithAi,
+      assistGroup,
+      addStepWithAi,
     }),
     [
       duplicateNode,
@@ -1239,6 +1480,10 @@ const GraphFlowContent: React.FC = () => {
       setGroupColor,
       fitGroup,
       requestDeleteGroup,
+      assistNode,
+      fixNodeWithAi,
+      assistGroup,
+      addStepWithAi,
     ]
   );
 
@@ -1584,9 +1829,7 @@ const GraphFlowContent: React.FC = () => {
       const text = message.trim();
       if (!text) return;
       assistant.sendMessage(text);
-      setHasStartedConversation(true);
-      setShowNodePanel(true);
-      setConversationalTabActive(true);
+      setShowAssistant(true);
       closeNodeSearch();
     },
     [assistant, closeNodeSearch]
@@ -1622,12 +1865,8 @@ const GraphFlowContent: React.FC = () => {
         e.preventDefault();
         const willOpen = !showNodePanel;
         setShowNodePanel(willOpen);
-        if (willOpen) {
-          // Opening the Available Nodes panel closes the workflows panel and
-          // lands on the nodes tab (not the conversational tab).
-          setShowWorkflowPanel(false);
-          setConversationalTabActive(false);
-        }
+        // Opening the Available Nodes panel closes the workflows panel.
+        if (willOpen) setShowWorkflowPanel(false);
       } else if (e.key === "/" && !isTyping && !nodeSearchOpen) {
         e.preventDefault();
         setNodeSearchAgentMode(false);
@@ -1681,7 +1920,8 @@ const GraphFlowContent: React.FC = () => {
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>
       <WorkflowExecutionProvider>
         <NodeActionsContext.Provider value={nodeActionsValue}>
-        <div className="h-full w-full flex flex-col">
+        <div className="flex h-full w-full">
+        <div className="flex h-full min-w-0 flex-1 flex-col">
           <div className="flex-1 relative">
             <CanvasContextMenu
               onAddNode={handleAddNodeFromContextMenu}
@@ -1692,12 +1932,15 @@ const GraphFlowContent: React.FC = () => {
               clickPosition={contextMenuPosition}
               onGroupSelection={groupSelection}
               canGroupSelection={selectedNodes.some((n) => !isGroupNode(n))}
+              onExplainSelection={() => assistSelection("explain_group")}
+              onOptimizeSelection={() => assistSelection("optimize")}
               onUngroupSelection={ungroupSelection}
               canUngroupSelection={selectedNodes.some(
                 (n) => isGroupNode(n) || !!getParentId(n)
               )}
             >
               <div
+                ref={canvasRef}
                 onContextMenu={handleCanvasContextMenu}
                 className="h-full w-full"
               >
@@ -1732,7 +1975,7 @@ const GraphFlowContent: React.FC = () => {
                   nodesConnectable={nodesConnectable}
                   elementsSelectable={elementsSelectable}
                   proOptions={PRO_OPTIONS}
-                  onlyRenderVisibleElements
+                  onlyRenderVisibleElements={!assistantTransitioning}
                 >
                   <LowDetailWatcher onChange={setLowDetail} />
                   <Background />
@@ -1818,22 +2061,44 @@ const GraphFlowContent: React.FC = () => {
                 Kept mounted (hidden on the Executions tab) so BottomPanel's unsaved-changes
                 navigation guard and live execution mirroring stay active. */}
             <div
-              className={`fixed top-2 z-20 flex flex-row flex-wrap items-start justify-end gap-2 max-w-[calc(100vw-1rem)] transition-[right] duration-300 ${
-                activeTab !== "workflow" ? "hidden" : ""
-              } ${
-                (() => {
+              className={`fixed top-2 z-20 flex flex-row flex-wrap items-start justify-end gap-2 max-w-[calc(100vw-1rem)] ${
+                isResizingAssistant ? "" : "transition-[right] duration-300"
+              } ${activeTab !== "workflow" ? "hidden" : ""}`}
+              style={{
+                right: (() => {
+                  const base = `${assistantOffset}px`;
                   if (showNodePanel && showWorkflowPanel) {
-                    return "right-[calc(360px+20rem+1rem)]";
+                    return `calc(${base} + ${NODE_PANEL_DEFAULT_WIDTH_PX}px + 20rem + 1rem)`;
                   } else if (showNodePanel) {
-                    return "right-[calc(360px+1rem)]";
+                    return `calc(${base} + ${NODE_PANEL_DEFAULT_WIDTH_PX}px + 1rem)`;
                   } else if (showWorkflowPanel) {
-                    return "right-[calc(20rem+1rem)]";
+                    return `calc(${base} + 20rem + 1rem)`;
                   } else {
-                    return "right-2";
+                    return `calc(${base} + 0.5rem)`;
                   }
-                })()
-              }`}
+                })(),
+              }}
             >
+              {assistantEnabled && (
+                <Button
+                  onClick={() => setShowAssistant((open) => !open)}
+                  variant="ghost"
+                  title={showAssistant ? "Close GenAgent" : "Open GenAgent"}
+                  aria-pressed={showAssistant}
+                  // Same glassy pill as Save / Test beside it, with a hairline border; while the
+                  // panel is open the pill takes a quiet brand tint instead of a ring.
+                  className={`h-11 gap-2 rounded-full border px-3.5 shadow-sm backdrop-blur-sm transition-colors ${
+                    showAssistant
+                      ? "border-[hsl(var(--brand-600))]/30 bg-[hsl(var(--brand-600))]/10 hover:bg-[hsl(var(--brand-600))]/15"
+                      : "border-border/70 bg-background/80 hover:bg-background"
+                  }`}
+                >
+                  <GenAssistMark className="h-5 w-5 text-zinc-700 dark:text-white" />
+                  <span className="text-sm font-semibold tracking-tight text-foreground">GenAgent</span>
+                  <NavBadge label="BETA" tone="beta" />
+                </Button>
+              )}
+
               <BottomPanel
                 workflow={currentWorkflow}
                 hasUnsavedChanges={hasUnsavedChanges}
@@ -1873,6 +2138,7 @@ const GraphFlowContent: React.FC = () => {
                       : "Open Saved Versions"}
                   </span>
                 </Button>
+
               </div>
             </div>
 
@@ -1889,18 +2155,13 @@ const GraphFlowContent: React.FC = () => {
                   : undefined
               }
               onCancelReplace={() => setReplaceTargetId(null)}
-              messages={assistant.messages}
-              isThinking={assistant.isThinking}
-              activeConversationalTab={conversationalTabActive}
-              onSendMessage={(message) => {
-                assistant.sendMessage(message);
-                setHasStartedConversation(true);
-              }}
+              rightOffset={assistantOffset}
             />
 
             <WorkflowsSavedPanel
               isOpen={showWorkflowPanel}
               onClose={toggleWorkflowPanel}
+              rightOffset={assistantOffset}
               agentId={agentId}
               activeWorkflowId={agent?.workflow_id}
               currentWorkflow={currentWorkflow}
@@ -1930,6 +2191,7 @@ const GraphFlowContent: React.FC = () => {
                     onAddTestRun={handleAddTestRun}
                     onClearHistory={handleClearTestHistory}
                     onUpdateWorkflowTestInputs={handleUpdateWorkflowTestInputs}
+                    onFixRun={fixTestRun}
                   />
                 </div>
               </div>
@@ -2018,6 +2280,36 @@ const GraphFlowContent: React.FC = () => {
               description={deletionCopy.description}
             />
           </div>
+        </div>
+        {assistantEnabled && (
+          <AssistantPanel
+            isOpen={showAssistant}
+            width={assistantWidth}
+            onWidthChange={setAssistantWidth}
+            onResizingChange={setIsResizingAssistant}
+            onClose={() => setShowAssistant(false)}
+            messages={assistant.messages}
+            isThinking={assistant.isThinking}
+            liveTurn={assistant.liveTurn}
+            onSendMessage={assistant.sendMessage}
+            onCommand={handleAssistantCommand}
+            mentionables={mentionables}
+            pendingChange={assistant.pendingChange}
+            onKeepChanges={assistant.keepChanges}
+            onUndoChanges={assistant.undoChanges}
+            onApplyProposal={assistant.applyProposal}
+            onRunSuggestedTest={runSuggestedTest}
+            onFocusNode={focusNodeOnCanvas}
+            onAnswerQuestion={assistant.answerQuestion}
+            onReactToMessage={assistant.reactToMessage}
+            simulateActions={assistant.simulateActions}
+            onSimulateActionsChange={assistant.setSimulateActions}
+            selectedNodeId={selectedNodes.length === 1 ? selectedNodes[0].id : null}
+            onUndoTurn={assistant.undoTurn}
+            onNewChat={assistant.clearHistory}
+            getConversationId={assistant.getConversationId}
+          />
+        )}
         </div>
         </NodeActionsContext.Provider>
       </WorkflowExecutionProvider>

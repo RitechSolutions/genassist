@@ -6,10 +6,11 @@ from langchain_core.messages.base import BaseMessage
 from langchain_core.tools import StructuredTool
 from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, SystemMessage, ToolMessage
 from langchain.agents import create_agent
-from langchain.agents.middleware.types import AgentMiddleware
+from langchain.agents.middleware.types import AgentMiddleware, ModelResponse
 from langgraph.types import Command
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
+from app.modules.workflow.agents.memory import history_text
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.agent_utils import (
     create_error_response,
@@ -32,6 +33,170 @@ class RetryOnToolErrorMiddleware(AgentMiddleware):
         if isinstance(result, ToolMessage) and result.status == "error":
             return Command(goto="model", update={"messages": [result]})
         return result
+
+
+# Shown to the model on its last allowed call, so the run ends with an answer.
+LAST_CALL_NOTICE = (
+    "This is your last model call for this message: do not call any tool. Reply to the person "
+    "now, in plain words, with what is done, what is not, and what you need from them."
+)
+# The reply when the model calls tools anyway on that last call.
+OUT_OF_CALLS_REPLY = (
+    "I have used all the steps I can take for this message. What I changed so far is in place; "
+    "tell me how you would like to continue."
+)
+
+
+def _message_text(content: Any) -> str:
+    """The text of a message's content, whether a string or content blocks"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "\n".join(parts)
+    return str(content or "")
+
+
+def _ai_message(response: Any) -> Optional[AIMessage]:
+    messages = response.result if isinstance(response, ModelResponse) else [response]
+    return next((m for m in messages if isinstance(m, AIMessage)), None)
+
+
+def _reply_instead(ai: AIMessage, text: str) -> AIMessage:
+    """``ai`` turned into a plain reply, keeping its id and usage so the call is still billed"""
+    return AIMessage(
+        content=text,
+        id=ai.id,
+        usage_metadata=ai.usage_metadata,
+        response_metadata=dict(ai.response_metadata or {}),
+    )
+
+
+def without_tool_calls(response: Any) -> Any:
+    """``response`` with its tool calls dropped so the agent loop ends on it.
+
+    The model's own text becomes the reply, or ``OUT_OF_CALLS_REPLY`` when it wrote
+    none. Usage metadata survives so the call is still billed and counted."""
+    ai = _ai_message(response)
+    if ai is None or not ai.tool_calls:
+        return response
+    return _reply_instead(ai, _message_text(ai.content).strip() or OUT_OF_CALLS_REPLY)
+
+
+def was_truncated(message: Any) -> bool:
+    """Whether the provider cut this reply off at its output limit (max_tokens)"""
+    metadata = getattr(message, "response_metadata", None) or {}
+    stop = str(metadata.get("stop_reason") or metadata.get("finish_reason") or "").lower()
+    return stop in ("max_tokens", "length")
+
+
+def _configured_max_tokens(model: Any) -> Optional[int]:
+    """The max_tokens of the chat model behind our wrappers, for the log line only"""
+    for _ in range(4):
+        if model is None:
+            return None
+        value = getattr(model, "max_tokens", None)
+        if isinstance(value, int):
+            return value
+        model = getattr(model, "inner", None) or getattr(model, "bound", None)
+    return None
+
+
+# A tool call cut off by max_tokens cannot be run as the model meant it. Claude's API
+# buffers each tool argument until it is complete, so the call arrives with empty
+# arguments; OpenAI delivers the cut-off JSON, which parses as a partial object.
+MAX_TRUNCATED_TOOL_CALLS = 2
+TRUNCATED_CALL_HINT = (
+    "This call was cut off by the model's output limit (max_tokens) before its arguments "
+    "were complete, so it was not run. Make the call smaller: fewer operations per call and "
+    "shorter texts, in several calls if needed."
+)
+OUTPUT_LIMIT_REPLY = (
+    "I could not finish this request: the AI provider's output limit (Max Tokens) is lower "
+    "than what my instructions need, so they were cut off before they could be applied. "
+    "Nothing was changed. Raise Max Tokens on the LLM provider (16,000 is a safe value) and "
+    "send the message again."
+)
+
+
+class TruncatedToolCallMiddleware(AgentMiddleware):
+    """
+    Stop a tool call the provider cut off at max_tokens from running or looping.
+
+    The first time, the call is answered with a hint instead of being executed, so the
+    model can make it smaller. The second time, the run ends with a reply that names the
+    provider setting to change: a cap too low for the task is nothing the model can fix,
+    and without this a 1,024-token cap cost a dozen identical retries per message.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.truncated = 0
+
+    async def awrap_model_call(self, request, handler):
+        response = await handler(request)
+        ai = _ai_message(response)
+        if ai is None or not ai.tool_calls or not was_truncated(ai):
+            return response
+        self.truncated += 1
+        logger.warning(
+            "Model output hit max_tokens (%s) in the middle of a tool call (%s), %d of %d allowed",
+            _configured_max_tokens(request.model),
+            ", ".join(str(call.get("name")) for call in ai.tool_calls),
+            self.truncated,
+            MAX_TRUNCATED_TOOL_CALLS,
+        )
+        if self.truncated < MAX_TRUNCATED_TOOL_CALLS:
+            return response
+        return _reply_instead(ai, OUTPUT_LIMIT_REPLY)
+
+    async def awrap_tool_call(self, request, handler):
+        if self._was_cut_off(request):
+            return ToolMessage(
+                content=TRUNCATED_CALL_HINT,
+                tool_call_id=request.tool_call["id"],
+                name=request.tool_call.get("name"),
+                status="error",
+            )
+        return await handler(request)
+
+    @staticmethod
+    def _was_cut_off(request) -> bool:
+        messages = (getattr(request, "state", None) or {}).get("messages") or []
+        asked = next((m for m in reversed(messages) if isinstance(m, AIMessage)), None)
+        if asked is None or not was_truncated(asked):
+            return False
+        return any(call.get("id") == request.tool_call.get("id") for call in asked.tool_calls)
+
+
+class ModelCallBudgetMiddleware(AgentMiddleware):
+    """
+    Cap the model calls of one run and end it with a reply, not a recursion error.
+
+    ``max_calls`` is the agent's maxIterations. The last allowed call carries a notice
+    to answer without tools; if the model calls tools anyway, they are dropped and its
+    text (or a fixed reply) ends the run. The graph's recursion limit stays the
+    backstop behind this.
+    """
+
+    def __init__(self, max_calls: int) -> None:
+        super().__init__()
+        self.max_calls = max(1, int(max_calls or 1))
+        self.calls = 0
+
+    async def awrap_model_call(self, request, handler):
+        self.calls += 1
+        if self.calls < self.max_calls:
+            return await handler(request)
+        if self.calls == self.max_calls:
+            logger.info("Agent reached its model-call budget (%d); asking for a final reply", self.max_calls)
+        request = request.override(messages=[*request.messages, HumanMessage(content=LAST_CALL_NOTICE)])
+        return without_tool_calls(await handler(request))
 
 
 def _collect_llm_usage(messages: List[BaseMessage]) -> List[Dict[str, Any]]:
@@ -130,9 +295,26 @@ class ReActAgentLC(BaseToolAgent):
 
         return lc_tools
 
+    @staticmethod
+    def _as_text(value: Any) -> Any:
+        """
+        Accept a JSON object or array where the schema says string.
+
+        Models regularly send a real array or object for a parameter described as
+        "a JSON array" or "JSON text"; rejecting the call for that teaches them
+        nothing and wastes a turn. The tool gets the same JSON it would have parsed.
+        """
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return str(value)
+        return value
+
     def _create_tool_schema(self, tool: BaseTool):
         """Create a Pydantic schema for the tool parameters"""
-        from pydantic import Field, create_model
+        from typing import Annotated
+
+        from pydantic import BeforeValidator, Field, create_model
 
         # If the tool has parameters, create a dynamic Pydantic model
         if hasattr(tool, "parameters") and tool.parameters:
@@ -148,7 +330,7 @@ class ReActAgentLC(BaseToolAgent):
 
                 # Map parameter types to Python types
                 if param_type == "string":
-                    field_type = str
+                    field_type = Annotated[str, BeforeValidator(self._as_text)]
                 elif param_type == "integer":
                     field_type = int
                 elif param_type == "number":
@@ -188,7 +370,11 @@ class ReActAgentLC(BaseToolAgent):
             model=self.llm_model,
             tools=self.lc_tools,
             system_prompt=self.system_prompt,
-            middleware=[RetryOnToolErrorMiddleware()],
+            middleware=[
+                RetryOnToolErrorMiddleware(),
+                TruncatedToolCallMiddleware(),
+                ModelCallBudgetMiddleware(self.max_iterations),
+            ],
         )
 
         return agent_executor
@@ -225,7 +411,8 @@ class ReActAgentLC(BaseToolAgent):
         messages: List[BaseMessage] = []
         for message in chat_history:
             role = message.get("role", "user")
-            content = message.get("content", "")
+            # An older turn stored as the agent's whole output is reduced to its reply.
+            content = history_text(message.get("content", ""))
             if not isinstance(content, str):
                 content = json.dumps(content)
 
