@@ -10,6 +10,7 @@ import json
 
 import pytest
 
+from app.modules.workflow.engine.nodes.tool_builder_node import ToolBuilderNode
 from app.modules.workflow.engine.utils import replace_config_vars
 from app.modules.workflow.engine.workflow_state import WorkflowState
 
@@ -93,3 +94,25 @@ class TestToolBuilderForwardTemplateEscaping:
         )
 
         assert resolved["systemPrompt"] == 'Customer said: line one\nsaid "hi"'
+
+
+class TestEmptyForwardTemplate:
+    @staticmethod
+    async def _run(template):
+        node = {"id": "tb", "type": "toolBuilderNode", "data": {"name": "TB"}}
+        state = WorkflowState(
+            workflow={"nodes": [node], "edges": []},
+            thread_id="11111111-1111-1111-1111-111111111111",
+            initial_values={"message": "hi"},
+        )
+        state.start_node_execution("tb")
+        return await ToolBuilderNode("tb", node, state).process({"forwardTemplate": template})
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stored", [None, ""], ids=repr)
+    async def test_an_empty_stored_template_runs_as_an_empty_one(self, stored):
+        assert await self._run(stored) == {"session.message": "hi"}
+
+    @pytest.mark.asyncio
+    async def test_a_set_template_is_kept(self):
+        assert await self._run('{"source.a":"x"}') == {"a": "x", "session.message": "hi"}
