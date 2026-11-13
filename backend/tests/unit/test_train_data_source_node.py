@@ -332,7 +332,11 @@ async def test_saved_workflow_legacy_fields_do_not_change_file_execution(
 
     assert result["success"] is True
     assert result["data"] == [{"id": "1", "name": "Ada"}]
-    assert result["metadata"] == {"rowCount": 1, "columns": ["id", "name"]}
+    assert result["metadata"] == {
+        "rowCount": 1,
+        "columnCount": 2,
+        "columns": ["id", "name"],
+    }
 
 
 def test_dialog_schema_lists_source_fields():

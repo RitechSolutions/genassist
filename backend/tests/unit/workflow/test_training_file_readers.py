@@ -33,6 +33,11 @@ def _node() -> TrainDataSourceNode:
     return TrainDataSourceNode(node_id="node-1", node_config={"data": {}}, state=state)
 
 
+def _output_path(result) -> Path:
+    # data_path is shown relative to DATA_VOLUME/train; read it back the way the next node does
+    return ml_utils.resolve_csv_file_path(result["data_path"])
+
+
 async def _read_all(reader: TrainingFileReader):
     columns, rows, chunk_sizes = [], [], []
     async for chunk_columns, chunk_rows in reader.chunks():
@@ -317,7 +322,7 @@ async def test_excel_sheet_name_from_node_config(monkeypatch, tmp_path):
 
     result = await _node().process({"sourceType": "csv", "csvFilePath": str(source), "sheetName": "B"})
 
-    assert result["metadata"] == {"rowCount": 2, "columns": ["y"]}
+    assert result["metadata"] == {"rowCount": 2, "columnCount": 1, "columns": ["y"]}
 
 
 @pytest.mark.asyncio
@@ -497,7 +502,7 @@ async def test_unique_headers_come_out_unchanged(monkeypatch, tmp_path, name, co
     frame, _, _ = await read_training_file_preview(path, 100)
 
     assert result["metadata"]["columns"] == columns == list(frame.columns)
-    assert pd.read_csv(result["data_path"]).iloc[0].tolist() == [1, 10]
+    assert pd.read_csv(_output_path(result)).iloc[0].tolist() == [1, 10]
 
 
 @pytest.mark.asyncio
@@ -520,7 +525,7 @@ async def test_csv_trailing_unnamed_empty_columns_are_dropped_like_excel(monkeyp
     frame, _, _ = await read_training_file_preview(path, 100)
 
     assert result["metadata"]["columns"] == ["price", "size"] == list(frame.columns)
-    assert Path(result["data_path"]).read_text(encoding="utf-8") == "price,size\n10,M\n12,L\n"
+    assert _output_path(result).read_text(encoding="utf-8") == "price,size\n10,M\n12,L\n"
 
 
 @pytest.mark.asyncio
@@ -558,7 +563,7 @@ async def test_csv_whitespace_under_a_trailing_unnamed_column_is_dropped(monkeyp
     result = await _node().process({"sourceType": "csv", "csvFilePath": str(path)})
 
     assert result["metadata"]["columns"] == ["price", "size"]
-    assert Path(result["data_path"]).read_text(encoding="utf-8") == "price,size\n10,M\n12,L\n"
+    assert _output_path(result).read_text(encoding="utf-8") == "price,size\n10,M\n12,L\n"
 
 
 @pytest.mark.asyncio
