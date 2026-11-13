@@ -35,7 +35,7 @@ class ToolBuilderNode(BaseNode):
         """
         from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
-        template_str = config.get("forwardTemplate", "{}")
+        template_str = config.get("forwardTemplate") or "{}"
         logger.debug(f"Template string: {template_str}")
         try:
             template = json.loads(template_str)
@@ -52,14 +52,14 @@ class ToolBuilderNode(BaseNode):
         next_node = self.get_connected_nodes("starter")
 
         if len(next_node) == 0:
-            no_source_template = config.get("forwardTemplate", "{}").replace(
+            no_source_template = (config.get("forwardTemplate") or "{}").replace(
                 "source.", ""
             )
             return {**json.loads(no_source_template), **source_input}
         start_node_id = next_node[0]
         temp_data: Dict[str, Any] = {"node_outputs": {}}
 
-        no_source_template = config.get("forwardTemplate", "{}").replace("source.", "")
+        no_source_template = (config.get("forwardTemplate") or "{}").replace("source.", "")
         temp_data["node_outputs"][self.node_id] = json.loads(no_source_template)
 
         # Create a new workflow engine with the current workflow configuration
