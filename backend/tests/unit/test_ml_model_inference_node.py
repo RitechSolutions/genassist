@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -12,6 +13,7 @@ import pytest
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.utils import model_validator
 from app.core.utils.string_utils import truncate_for_log
 from app.modules.workflow.engine.nodes.ml import ml_model_inference_node as inference_module
 from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
@@ -27,6 +29,7 @@ from app.modules.workflow.engine.nodes.ml.ml_model_inference_node import (
     convert_value,
 )
 from app.modules.workflow.engine.utils import describe_exception
+from tests.unit.ml_training_fixtures import training_sandbox
 
 
 class TestNormalizeInferenceInputs:
@@ -371,11 +374,13 @@ class TestBuildPredictionOutputs:
 
 async def _run_inference(monkeypatch, model, model_type, inference_inputs=None, extra_metadata=None):
     model_record = SimpleNamespace(
+        id="12345678-1234-5678-1234-567812345678",
         name="test-model",
         model_type=model_type,
         target_variable="target",
         features=["feature"],
-        pkl_file=__file__,
+        # Inference reads model files only from inside the ML models folder
+        pkl_file=os.path.join(model_validator.ML_MODELS_DIR, "test-model.pkl"),
         pkl_file_id=None,
         updated_at=None,
     )
@@ -406,6 +411,14 @@ async def _run_inference(monkeypatch, model, model_type, inference_inputs=None, 
 
 
 class TestInferenceOutput:
+    @pytest.fixture(autouse=True)
+    def _model_file(self, monkeypatch, tmp_path):
+        # The model itself is mocked; the record only needs a file where inference looks
+        training_sandbox(monkeypatch, tmp_path)
+        models_dir = model_validator.ML_MODELS_DIR
+        os.makedirs(models_dir, exist_ok=True)
+        open(os.path.join(models_dir, "test-model.pkl"), "wb").close()
+
     @pytest.mark.asyncio
     async def test_preserves_float_regression_output_without_labels(self, monkeypatch):
         class RegressionModel:

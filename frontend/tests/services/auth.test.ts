@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/config/api", () => ({
   apiRequest: vi.fn(),
@@ -16,6 +16,8 @@ import {
   completeMicrosoftSso,
   getAuthMe,
   userHasPermission,
+  currentTenantIsMaster,
+  persistAuthMe,
 } from "@/services/auth";
 
 const mockApiRequest = vi.mocked(apiRequest);
@@ -119,5 +121,39 @@ describe("getAuthMe", () => {
     mockApiRequest.mockRejectedValue(new Error("boom"));
 
     await expect(getAuthMe()).rejects.toThrow("boom");
+  });
+});
+
+describe("currentTenantIsMaster", () => {
+  let stored: Map<string, string>;
+
+  beforeEach(() => {
+    stored = new Map();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is true once /auth/me reports the master tenant", () => {
+    persistAuthMe({ permissions: [], roles: [], is_master_tenant: true });
+    expect(currentTenantIsMaster()).toBe(true);
+  });
+
+  it("is false once /auth/me reports another tenant", () => {
+    persistAuthMe({ permissions: [], roles: [], is_master_tenant: false });
+    expect(currentTenantIsMaster()).toBe(false);
+  });
+
+  it("is false when a later /auth/me answer does not report it", () => {
+    persistAuthMe({ permissions: [], roles: [], is_master_tenant: true });
+    persistAuthMe({ permissions: [], roles: [] });
+    expect(currentTenantIsMaster()).toBe(false);
+  });
+
+  it("is false before /auth/me has answered", () => {
+    expect(currentTenantIsMaster()).toBe(false);
   });
 });

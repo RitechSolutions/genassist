@@ -111,6 +111,30 @@ def _join_reason_counts(reason_counts: Dict[str, int]) -> str:
     return f"{', '.join(parts[:-1])} or {parts[-1]}"
 
 
+_NAMED_ROWS_LIMIT = 10
+
+
+def _name_rows_by_reason(rows_by_reason: Dict[str, List[int]], reason_counts: Dict[str, int]) -> str:
+    """
+    ({"zero": [5, 2], "missing": [9]}, {"zero": 2, "missing": 12}) ->
+    "zero 2, 5; missing 9 …and 11 more". At most _NAMED_ROWS_LIMIT rows are
+    named per reason, smallest first; reason_counts holds each reason's
+    full count, so the rest are summed up as "…and N more". Reasons with
+    no rows are left out.
+    """
+    parts = []
+    for reason, rows in rows_by_reason.items():
+        if not rows:
+            continue
+        named_rows = sorted(rows)[:_NAMED_ROWS_LIMIT]
+        named = ", ".join(str(row) for row in named_rows)
+        rest = reason_counts[reason] - len(named_rows)
+        if rest > 0:
+            named += f" …and {rest} more"
+        parts.append(f"{reason} {named}")
+    return "; ".join(parts)
+
+
 # Try to import xgboost (optional dependency)
 try:
     import xgboost as xgb
@@ -273,7 +297,8 @@ class TrainModelNode(BaseNode):
                             Rows where baselineColumn is zero, missing, not a
                             number or infinite are dropped from both splits (an
                             undefined ratio can't be used as a training target),
-                            with a warning in the result; if that leaves no
+                            with a warning in the result that names them by
+                            row number (up to 10 per reason); if that leaves no
                             training rows the run fails.
 
         Returns:
@@ -590,6 +615,12 @@ class TrainModelNode(BaseNode):
                 #     error_detail=f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
                 # )
 
+            # Each row's number in the data this node received (first data
+            # row = 1), so the ratio-target check below can name the rows it
+            # drops. Not the uploaded file's line numbers when an upstream
+            # Preprocessing node dropped or reordered rows.
+            source_rows = pd.Series(np.arange(1, len(df) + 1), index=df.index)
+
             # For a time-based split, sort chronologically first so a positional
             # split later puts the earliest rows in train and latest in validation.
             if split_method == "time_based":
@@ -599,12 +630,14 @@ class TrainModelNode(BaseNode):
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"Could not parse any values in dateColumn '{date_column}' as dates.",
                     )
-                df = (
-                    df.assign(_sort_date_=parsed_dates)
-                    .sort_values("_sort_date_", na_position="last")
-                    .drop(columns=["_sort_date_"])
-                    .reset_index(drop=True)
+                positions = (
+                    parsed_dates.reset_index(drop=True)
+                    .to_frame("date")
+                    .sort_values("date", na_position="last")
+                    .index.to_numpy()
                 )
+                df = df.iloc[positions].reset_index(drop=True)
+                source_rows = source_rows.iloc[positions].reset_index(drop=True)
                 logger.info(f"Sorted {len(df)} rows chronologically by '{date_column}' for time-based split")
 
             # Prepare features and target
@@ -615,7 +648,14 @@ class TrainModelNode(BaseNode):
             # read from the source data like the target itself, kept in lockstep
             # with X/y through null-filtering and the split below, but never
             # added to X unless the caller also lists it in featureColumns.
-            baseline_series = df[baseline_column].copy() if baseline_column else None
+            # It is a frame of the baseline "value" and the row's source "row"
+            # number until the ratio check below, which reduces it to the
+            # numeric baseline.
+            baseline_series = (
+                pd.DataFrame({"value": df[baseline_column], "row": source_rows})
+                if baseline_column
+                else None
+            )
 
             if y.isnull().any():
                 logger.warning("Found missing values in target. Dropping rows with missing target values.")
@@ -798,7 +838,9 @@ class TrainModelNode(BaseNode):
             # units before scoring, instead of reporting ratio-scale metrics.
             y_val_actual = None
             if target_transform is not None:
-                baseline_train, train_keep, train_reasons = self._check_ratio_baseline(baseline_train)
+                baseline_train, train_keep, train_reasons, train_rows = self._check_ratio_baseline(
+                    baseline_train
+                )
                 if len(train_keep) and not train_keep.any():
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
@@ -816,8 +858,9 @@ class TrainModelNode(BaseNode):
                     )
                 dropped_by_split = {"training": int((~train_keep).sum()), "validation": 0}
                 reason_totals = dict(train_reasons)
+                rows_by_reason = train_rows
                 if X_val is not None:
-                    baseline_val, val_keep, val_reasons = self._check_ratio_baseline(baseline_val)
+                    baseline_val, val_keep, val_reasons, val_rows = self._check_ratio_baseline(baseline_val)
                     if len(val_keep) and not val_keep.any():
                         raise AppException(
                             error_key=ErrorKey.INTERNAL_ERROR,
@@ -836,6 +879,8 @@ class TrainModelNode(BaseNode):
                         )
                     dropped_by_split["validation"] = int((~val_keep).sum())
                     reason_totals = {r: reason_totals[r] + val_reasons[r] for r in reason_totals}
+                    for r, rows in val_rows.items():
+                        rows_by_reason[r] = sorted(rows_by_reason[r] + rows)[:_NAMED_ROWS_LIMIT]
                     y_val_actual = y_val.copy()
                     y_val = y_val / baseline_val
                 if any(dropped_by_split.values()):
@@ -844,7 +889,9 @@ class TrainModelNode(BaseNode):
                             "Dropped",
                             dropped_by_split,
                             f"whose '{baseline_column}' baseline is "
-                            f"{_join_reason_counts(reason_totals)}; a ratio target can't be computed there.",
+                            f"{_join_reason_counts(reason_totals)}; a ratio target can't be computed there. "
+                            "Rows, numbered from 1 in the data Train Model received: "
+                            f"{_name_rows_by_reason(rows_by_reason, reason_totals)}.",
                         )
                     )
                 y_train = y_train / baseline_train
@@ -1325,16 +1372,20 @@ class TrainModelNode(BaseNode):
         return X_train, y_train, X_val, y_val, baseline_train, baseline_val, warnings
 
     @staticmethod
-    def _check_ratio_baseline(baseline: pd.Series):
+    def _check_ratio_baseline(baseline: pd.DataFrame):
         """
-        Classify a ratio-target baseline split. Returns (numeric baseline,
-        keep mask, counts per reason) - a row is kept only when its baseline
-        is a finite, non-zero number. Reasons, each row counted once:
-        "missing" (empty or blank text), "not a number" (text that doesn't
-        parse, or true/false), "infinite" (+/-inf) and "zero". Same rules as
-        the inference node's _validated_ratio_baseline_values, so a row
-        training accepts is one inference accepts too.
+        Classify a ratio-target baseline split: a frame of the baseline
+        "value" and each row's source "row" number. Returns (numeric
+        baseline, keep mask, counts per reason, the smallest
+        _NAMED_ROWS_LIMIT source row numbers per reason) - a row is kept only when its baseline is a finite, non-zero
+        number. Reasons, each row counted once: "missing" (empty or blank
+        text), "not a number" (text that doesn't parse, or true/false),
+        "infinite" (+/-inf) and "zero". Same rules as the inference node's
+        _validated_ratio_baseline_values, so a row training accepts is one
+        inference accepts too.
         """
+        source_rows = baseline["row"]
+        baseline = baseline["value"]
         blank = baseline.map(lambda v: isinstance(v, str) and not v.strip()).astype(bool)
         is_bool = baseline.map(lambda v: isinstance(v, (bool, np.bool_))).astype(bool)
         numeric = pd.to_numeric(baseline.where(~blank & ~is_bool), errors="coerce").astype(float)
@@ -1343,13 +1394,13 @@ class TrainModelNode(BaseNode):
         infinite = np.isinf(numeric)
         zero = numeric == 0
         keep = np.isfinite(numeric) & (numeric != 0)
-        reasons = {
-            "zero": int(zero.sum()),
-            "missing": int(missing.sum()),
-            "not a number": int(not_a_number.sum()),
-            "infinite": int(infinite.sum()),
+        masks = {"zero": zero, "missing": missing, "not a number": not_a_number, "infinite": infinite}
+        reasons = {reason: int(mask.sum()) for reason, mask in masks.items()}
+        rows = {
+            reason: [int(r) for r in source_rows[mask].nsmallest(_NAMED_ROWS_LIMIT)]
+            for reason, mask in masks.items()
         }
-        return numeric, keep, reasons
+        return numeric, keep, reasons, rows
 
     def _encode_categoricals(self, X_train, X_val, categorical_encoding):
         """

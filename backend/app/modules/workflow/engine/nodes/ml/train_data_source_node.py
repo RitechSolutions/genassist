@@ -570,6 +570,8 @@ class TrainDataSourceNode(BaseNode):
             "data_path": ml_utils.data_volume_reference(data_path),
             "metadata": {
                 "rowCount": row_count,
+                # The UI shortens lists for display, so the count travels on its own.
+                "columnCount": len(columns),
                 "columns": columns,
             },
         }

@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/select";
 import { extractInboundOAuthHintsFromJwt } from "@/helpers/mcpOauthInboundJwt";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { CRUDDialog, CRUDForm } from "@/components/ui/crud-dialog";
 
 interface Props {
@@ -141,7 +142,12 @@ export function MCPServerDialog({
       ...selectedWorkflows,
       {
         workflow_id: workflowId,
-        tool_name: workflow.name.toLowerCase().replace(/\s+/g, "_"),
+        tool_name: workflow.name
+          .normalize("NFKD")
+          .replace(/\p{M}+/gu, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9_]+/g, "_")
+          .replace(/^_+|_+$/g, ""),
         tool_description: workflow.description || `Execute ${workflow.name} workflow`,
       },
     ]);
@@ -277,14 +283,16 @@ export function MCPServerDialog({
         edit: "MCP server updated successfully.",
       }}
       errorMessage={(err, m) => {
-        const suffix =
-          err &&
-          typeof err === "object" &&
-          "status" in err &&
-          (err as { status?: unknown }).status === 400
-            ? ": A server with this name already exists"
-            : "";
-        return `Failed to ${m} MCP server${suffix}.`;
+        const data = (
+          err as {
+            response?: { data?: { error_key?: unknown; error_detail?: unknown } };
+          } | null
+        )?.response?.data;
+        const detail =
+          data?.error_key === "API_KEY_NAME_EXISTS" && !data.error_detail
+            ? "A server with this name already exists."
+            : extractErrorMessage(err, "");
+        return `Failed to ${m} MCP server${detail ? `: ${detail}` : "."}`;
       }}
       validate={(values) => {
         const missingFields: string[] = [];

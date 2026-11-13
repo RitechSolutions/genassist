@@ -25,6 +25,7 @@ export interface AuthMeResponse {
   email?: string;
   permissions: string[];
   roles: Role[]
+  is_master_tenant?: boolean;
 }
 
 interface LoginCredentials extends Record<string, unknown> {
@@ -83,6 +84,10 @@ export const persistAuthMe = (
     JSON.stringify(response.permissions ?? [])
   );
   localStorage.setItem("user_roles", JSON.stringify(response.roles ?? []));
+  localStorage.setItem(
+    "is_master_tenant",
+    String(response.is_master_tenant === true)
+  );
 
   if (hasSentry()) {
     applySentryUserFromMeResponse(response ?? undefined);
@@ -102,6 +107,9 @@ export const getUserRoleNames = (): string[] => {
 
 export const currentUserIsAdmin = (): boolean =>
   getUserRoleNames().includes("admin");
+
+export const currentTenantIsMaster = (): boolean =>
+  localStorage.getItem("is_master_tenant") === "true";
 
 export const fetchUserPermissions = async (): Promise<void> => {
   const permissionsResponse = await apiRequest<AuthMeResponse>(
@@ -160,6 +168,7 @@ export const logout = (): void => {
   localStorage.removeItem("isAuthenticated");
   localStorage.removeItem("permissions");
   localStorage.removeItem("user_roles");
+  localStorage.removeItem("is_master_tenant");
   localStorage.removeItem("force_upd_pass_date");
   localStorage.removeItem("tenant_id");
   localStorage.removeItem("auth_username");
