@@ -48,14 +48,15 @@ AGENT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         name="maxIterations",
         type="number",
         label="Max Iterations",
-        required=True,
-        default=3
+        required=False,
+        default=7
     ),
     FieldSchema(
         name="memory",
         type="boolean",
         label="Enable Memory",
-        required=True
+        required=False,
+        default=False
     ),
     FieldSchema(
         name="piiMasking",

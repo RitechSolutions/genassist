@@ -18,13 +18,15 @@ KNOWLEDGE_BASE_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         name="limit",
         type="number",
         label="Limit",
-        required=True
+        required=False,
+        default=5
     ),
     FieldSchema(
         name="force",
         type="boolean",
         label="Force Limit",
-        required=True
+        required=False,
+        default=False
     ),
     FieldSchema(
         name="selectedBases",
