@@ -25,7 +25,7 @@ class SubAgentNode(AgentNode):
         provider_id = config.get("providerId")
         fallback_chain_id = config.get("fallbackChainId")
         agent_type = config.get("type", "ToolSelector")
-        max_iterations = config.get("maxIterations", 7)
+        max_iterations = config.get("maxIterations") or 7
         memory_enabled = config.get("memory", True)
         mode = config.get("mode", "single_turn")
         prompt_caching_enabled = config.get("promptCaching") is True

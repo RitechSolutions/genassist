@@ -677,7 +677,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         fallback_chain_id: str | None = config.get("fallbackChainId", None)
         # ToolSelector, ReActAgent
         agent_type: str = config.get("type", "ToolSelector")
-        max_iterations = config.get("maxIterations", 7)
+        max_iterations = config.get("maxIterations") or 7
         memory_enabled = config.get("memory", False)
         prompt_caching_enabled = config.get("promptCaching") is True
 
