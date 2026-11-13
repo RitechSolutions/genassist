@@ -37,6 +37,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_CHUNK_OVERLAP = 100
 EMBEDDING_MODEL = "text-embedding-ada-002"
+DEFAULT_TOP_K = 5
+
+
+class ThreadRAGSearchError(Exception):
+    """Raised when the search within a chat cannot run."""
+
+
+def _positive_top_k(top_k: Any) -> int:
+    """Return top_k as a positive whole number, or the default when it is not one."""
+    try:
+        whole_number = int(float(top_k))
+    except (TypeError, ValueError, OverflowError):
+        return DEFAULT_TOP_K
+    return whole_number if whole_number > 0 else DEFAULT_TOP_K
 
 
 def _create_config(
@@ -281,6 +295,7 @@ class ThreadScopedRAG:
         file_content: str,
         file_name: str,
         file_id: Optional[str] = None,
+        config_overrides: Optional[Dict[str, Any]] = None,
     ):
         """
         Convenience method to add file content with appropriate chunking.
@@ -290,6 +305,8 @@ class ThreadScopedRAG:
             file_content: File content text
             file_name: Name of the file
             file_id: Optional file identifier (generated if not provided)
+            config_overrides: Optional embedding/vectordb/chunking overrides (applied
+                only on first service creation for this chat_id)
         """
         if file_id is None:
             file_id = str(uuid.uuid4())
@@ -303,13 +320,14 @@ class ThreadScopedRAG:
             message_id=f"file_{file_id}",
             chunk_long_messages=True,
             filename=file_name,
+            config_overrides=config_overrides,
         )
 
     async def retrieve(
         self,
         chat_id: str,
         query: str,
-        top_k: int = 5,
+        top_k: int = DEFAULT_TOP_K,
         config_overrides: Optional[Dict[str, Any]] = None,
     ) -> List[Dict]:
         """
@@ -319,17 +337,48 @@ class ThreadScopedRAG:
         Args:
             chat_id: Chat identifier
             query: Search query
-            top_k: Number of results to return
+            top_k: Number of results to return (the default is used when it is
+                not a positive number)
             config_overrides: Optional embedding/vectordb/chunking overrides (applied
                 only on first service creation for this chat_id)
 
         Returns:
             List of dicts with 'content' and 'metadata' keys
+
+        Raises:
+            ThreadRAGSearchError: If the search cannot run
         """
         service = await self._get_service(chat_id, config_overrides)
         if not service:
-            logger.error(f"Could not get service for chat {chat_id}")
+            raise ThreadRAGSearchError(f"Search service is not available for chat {chat_id}")
+
+        try:
+            # Search using AgentRAGService
+            search_results: List[SearchResult] = await service.search(
+                query, limit=_positive_top_k(top_k)
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving from chat {chat_id}: {e}")
+            raise ThreadRAGSearchError(f"Search failed for chat {chat_id}") from e
+
+        if not search_results:
             return []
+
+        # Convert SearchResult to backward-compatible format
+        retrieved_docs = []
+        for result in search_results:
+            # Extract metadata from SearchResult
+            metadata = result.metadata.copy() if result.metadata else {}
+
+            # Ensure backward compatibility with original format
+            retrieved_docs.append(
+                {
+                    "content": result.content,
+                    "metadata": metadata,
+                }
+            )
+
+        return retrieved_docs
 
     async def purge_chat(self, chat_id: str) -> Dict[str, bool]:
         """
@@ -345,30 +394,3 @@ class ThreadScopedRAG:
         except Exception as e:
             logger.error(f"Error purging chat {chat_id}: {e}")
             return {}
-
-        try:
-            # Search using AgentRAGService
-            search_results: List[SearchResult] = await service.search(query, limit=top_k)
-
-            if not search_results:
-                return []
-
-            # Convert SearchResult to backward-compatible format
-            retrieved_docs = []
-            for result in search_results:
-                # Extract metadata from SearchResult
-                metadata = result.metadata.copy() if result.metadata else {}
-
-                # Ensure backward compatibility with original format
-                retrieved_docs.append(
-                    {
-                        "content": result.content,
-                        "metadata": metadata,
-                    }
-                )
-
-            return retrieved_docs
-
-        except Exception as e:
-            logger.error(f"Error retrieving from chat {chat_id}: {e}")
-            return []

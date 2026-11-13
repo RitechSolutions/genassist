@@ -61,7 +61,7 @@ class PgVectorDB(BaseVectorDB):
                 check_sql = text("""
                     SELECT EXISTS (
                         SELECT FROM pg_class 
-                        WHERE relname = :table_name
+                        WHERE relname = left(lower(:table_name), 63)
                         AND relkind = 'r'
                     )
                 """)
