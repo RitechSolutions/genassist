@@ -19,6 +19,19 @@ RESERVED_FILE_METADATA_KEYS = frozenset({LEGACY_S3_KEY_METADATA})
 _TENANT_STORAGE_SEGMENT = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
 
+def configured_base_path(values: Any) -> Optional[str]:
+    """The local Base Path chosen in File Manager Settings, or None when it is not set.
+
+    An empty or blank value counts as not set: Path("") is the backend's
+    working folder, not a storage folder. A real value is returned exactly as
+    stored, so the folder existing files were written to does not change.
+    """
+    base_path = values.get("base_path") if isinstance(values, dict) else None
+    if isinstance(base_path, str) and base_path.strip():
+        return base_path
+    return None
+
+
 def _validated_tenant(tenant_id: Optional[str]) -> str:
     tenant = str(tenant_id if tenant_id is not None else require_tenant_context()).strip()
     if not _TENANT_STORAGE_SEGMENT.fullmatch(tenant):
