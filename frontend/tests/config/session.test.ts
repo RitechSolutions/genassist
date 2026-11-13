@@ -155,6 +155,7 @@ describe("renewSession", () => {
     storeLogin(staleToken, tokenExpiringIn(ONE_HOUR));
     storage.setItem("permissions", '["*"]');
     storage.setItem("user_roles", "[]");
+    storage.setItem("is_master_tenant", "true");
     mockedPost.mockRejectedValueOnce(rejectedWith(401));
 
     await expect(session.renewSession(REFRESH_URL, staleToken)).resolves.toEqual({ status: "ended" });
@@ -162,6 +163,7 @@ describe("renewSession", () => {
     expect(storage.getItem("refresh_token")).toBeNull();
     expect(storage.getItem("permissions")).toBeNull();
     expect(storage.getItem("user_roles")).toBeNull();
+    expect(storage.getItem("is_master_tenant")).toBeNull();
     expect(assignPage).toHaveBeenCalledWith("/login");
   });
 

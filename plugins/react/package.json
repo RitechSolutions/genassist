@@ -62,7 +62,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "esbuild": "^0.25.8",
     "typescript": "^5.0.0",
-    "vite": "^7.3.5",
+    "vite": "^7.3.7",
     "vitest": "^4.1.11"
   },
   "overrides": {

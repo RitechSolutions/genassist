@@ -100,6 +100,23 @@ class TestVolatilityGate:
         assert kwargs["system_prompt"].startswith(expected)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("node_cls,module,config", _NODES)
+class TestMaxIterations:
+    @pytest.mark.parametrize("stored", [None, 0], ids=repr)
+    async def test_an_empty_stored_value_runs_with_seven(self, node_cls, module, config, stored):
+        kwargs = await _run(
+            node_cls, module, {**config, "maxIterations": stored}, node_data={}, tools=[MagicMock(name="tool")]
+        )
+
+        assert kwargs["max_iterations"] == 7
+
+    async def test_a_set_value_is_kept(self, node_cls, module, config):
+        kwargs = await _run(node_cls, module, {**config, "maxIterations": 3}, node_data={})
+
+        assert kwargs["max_iterations"] == 3
+
+
 class TestTimestampedSystemPromptHelper:
 
     @staticmethod

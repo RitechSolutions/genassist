@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/label";
 import { cn } from "@/helpers/utils";
 import { usePermissions } from "@/context/PermissionContext";
+import { currentTenantIsMaster, userHasPermission } from "@/services/auth";
 import { TemplateCard } from "../components/TemplateCard";
 import { FeaturedTemplate } from "../components/FeaturedTemplate";
 import { categoryColor } from "../templateMeta";
@@ -43,7 +44,8 @@ export default function TemplatesPage() {
   const navigate = useNavigate();
   const permissions = usePermissions();
   const canApprove =
-    permissions.includes("*") || permissions.includes("approve:template");
+    currentTenantIsMaster() &&
+    userHasPermission(permissions, "approve:template");
 
   const [templates, setTemplates] = useState<TemplateListItem[]>([]);
   const [loading, setLoading] = useState(true);

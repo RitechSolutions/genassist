@@ -152,6 +152,17 @@ def test_a_failed_side_branch_with_an_answered_chat_output_is_partial():
     assert _response(state)["status"] == "partial"
 
 
+def test_a_side_branch_finishing_after_chat_output_is_not_the_reply():
+    edges = [("input", "agent"), ("agent", "output"), ("input", "slack")]
+    state = _state(["input", "agent", "output", "slack"], edges, types={"output": "chatOutputNode"})
+    _succeeds(state, "input", "hi")
+    _succeeds(state, "agent", "hello")
+    _succeeds(state, "output", "hello")
+    _succeeds(state, "slack", {"ok": True})
+
+    assert _response(state)["output"] == "hello"
+
+
 @pytest.mark.parametrize("branch_a_last", [True, False])
 def test_parallel_branches_give_the_same_status_whichever_finishes_last(branch_a_last):
     edges = [("input", "a"), ("input", "b")]

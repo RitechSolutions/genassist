@@ -43,7 +43,13 @@ export const createTemplateFromAgent = async (
 };
 
 export const deleteTemplate = async (id: string): Promise<void> => {
-  await apiRequest("DELETE", `${BASE}/${id}`);
+  await apiRequest(
+    "DELETE",
+    `${BASE}/${id}`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
 };
 
 export const publishTemplate = async (id: string): Promise<Template> => {
@@ -53,29 +59,57 @@ export const publishTemplate = async (id: string): Promise<Template> => {
 };
 
 export const getReviewQueue = async (): Promise<TemplateListItem[]> => {
-  const data = await apiRequest<TemplateListItem[]>("GET", `${BASE}/review`);
+  const data = await apiRequest<TemplateListItem[]>(
+    "GET",
+    `${BASE}/review`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
   return Array.isArray(data) ? data : [];
 };
 
 export const approveTemplate = async (id: string): Promise<void> => {
-  await apiRequest("POST", `${BASE}/review/${id}/approve`);
+  await apiRequest(
+    "POST",
+    `${BASE}/review/${id}/approve`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
 };
 
 export const rejectTemplate = async (
   id: string,
   reason?: string
 ): Promise<void> => {
-  await apiRequest("POST", `${BASE}/review/${id}/reject`, {
-    reason: reason ?? null,
-  });
+  await apiRequest(
+    "POST",
+    `${BASE}/review/${id}/reject`,
+    { reason: reason ?? null },
+    {},
+    { rethrowForbidden: true }
+  );
 };
 
 /** Withdraw the caller's published copy of their own template (by private id). */
 export const unpublishTemplate = async (id: string): Promise<void> => {
-  await apiRequest("POST", `${BASE}/${id}/unpublish`);
+  await apiRequest(
+    "POST",
+    `${BASE}/${id}/unpublish`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
 };
 
 /** Master-admin removal of a published/community template (by master id). */
 export const removeGlobalTemplate = async (id: string): Promise<void> => {
-  await apiRequest("DELETE", `${BASE}/review/${id}`);
+  await apiRequest(
+    "DELETE",
+    `${BASE}/review/${id}`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
 };

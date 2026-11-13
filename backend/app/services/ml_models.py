@@ -20,6 +20,7 @@ from app.repositories.ml_models import MLModelsRepository
 from app.schemas.ml_model import FEATURE_DEFAULTS_PARAM, MLModelCreate, MLModelUpdate, is_in_ml_models_dir
 from app.services.ml_model_artifacts import (
     ModelArtifactContract,
+    RegistryContractCheck,
     validate_model_artifact_registration,
 )
 from app.services.ml_model_manager import ML_MODELS_UPLOAD_DIR, is_outdated_download
@@ -226,6 +227,11 @@ def normalize_training_metrics(metrics: Optional[dict]) -> Optional[dict]:
     return clean
 
 
+def _collect_notices(notices: Optional[list[str]], check: Optional[RegistryContractCheck]) -> None:
+    if notices is not None and check is not None:
+        notices.extend(check.notices)
+
+
 @inject
 class MLModelsService:
     """Service for ML models business logic."""
@@ -238,11 +244,13 @@ class MLModelsService:
         ml_model: MLModelCreate,
         artifact_contract: Optional[ModelArtifactContract] = None,
         training_metrics: Optional[dict] = None,
+        notices: Optional[list[str]] = None,
     ) -> MLModel:
         """Create a new ML model.
 
         ``training_metrics`` is for server-side callers (Train Model registration);
-        the client schemas do not carry it.
+        the client schemas do not carry it. Pass a list as ``notices`` to receive
+        what the model-file check changed or could not check (not stored).
         """
         validate_model_inference_params(ml_model.features, ml_model.inference_params)
 
@@ -255,7 +263,7 @@ class MLModelsService:
 
         # With an uploaded file, validate that file: a caller-supplied pkl_file
         # path must not decide what is read (see _artifact_source).
-        await validate_model_artifact_registration(
+        check = await validate_model_artifact_registration(
             None if ml_model.pkl_file_id else ml_model.pkl_file,
             ml_model.pkl_file_id,
             ml_model.features,
@@ -263,10 +271,14 @@ class MLModelsService:
             artifact_contract=artifact_contract,
         )
 
-        model_to_create = ml_model.model_copy(update={"pkl_file": None}) if ml_model.pkl_file_id else ml_model
+        changes = {"pkl_file": None} if ml_model.pkl_file_id else {}
+        if check is not None:
+            changes["features"] = list(check.features)
+        model_to_create = ml_model.model_copy(update=changes) if changes else ml_model
         db_ml_model = await self.repository.create(
             model_to_create, training_metrics=normalize_training_metrics(training_metrics)
         )
+        _collect_notices(notices, check)
         return db_ml_model
 
     async def get_by_id(self, ml_model_id: UUID) -> MLModel:
@@ -289,8 +301,11 @@ class MLModelsService:
         ml_model_update: MLModelUpdate,
         artifact_contract: Optional[ModelArtifactContract] = None,
         training_metrics: Optional[dict] = None,
+        notices: Optional[list[str]] = None,
     ) -> MLModel:
         """Update an existing ML model.
+
+        ``notices``: as in ``create``.
 
         ``training_metrics`` is for server-side callers (Train Model registration and
         promotion): a dict replaces the stored metrics. ``None`` keeps them, unless
@@ -365,15 +380,19 @@ class MLModelsService:
         if file_changed and "training_metrics" not in update_data:
             # The stored metrics belong to the previous file.
             update_data["training_metrics"] = {}
+        check = None
         if contract_changed:
-            await validate_model_artifact_registration(
+            check = await validate_model_artifact_registration(
                 *self._artifact_source(existing_model, update_data, file_id, file_id_changed),
                 update_data.get("features", existing_model.features),
                 update_data.get("target_variable", existing_model.target_variable),
                 artifact_contract=artifact_contract,
             )
+            if check is not None:
+                update_data["features"] = list(check.features)
 
         db_ml_model = await self.repository.update(ml_model_id, update_data)
+        _collect_notices(notices, check)
         return db_ml_model
 
     @staticmethod

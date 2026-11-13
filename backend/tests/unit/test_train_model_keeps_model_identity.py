@@ -193,7 +193,7 @@ async def test_pipeline_target_lookup_failure_falls_back_and_keeps_the_file(monk
 
 
 @pytest.mark.asyncio
-async def test_registry_lookup_failure_keeps_the_uploaded_file(monkeypatch):
+async def test_registry_lookup_failure_uploads_nothing(monkeypatch):
     ml_service = _ml_service()
     ml_service.get_by_name = AsyncMock(side_effect=RuntimeError("db unavailable"))
     file_manager = _patch_dependencies(monkeypatch, ml_service)
@@ -201,7 +201,89 @@ async def test_registry_lookup_failure_keeps_the_uploaded_file(monkeypatch):
     _, pkl_file_id, error, _ = await _register(_make_node(), "xgboost")
 
     assert error == "db unavailable"
+    assert pkl_file_id is None
+    file_manager.create_file_from_local_path.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_name_another_node_holds_is_refused_before_the_upload(monkeypatch):
+    """TM-19: the model is left alone and no file is uploaded."""
+    other = _existing_model("xgboost", description=f"Trained by [train-model-node:{uuid.uuid4()}]")
+    ml_service = _ml_service(by_name=other)
+    file_manager = _patch_dependencies(monkeypatch, ml_service)
+
+    ml_model_id, pkl_file_id, error, _ = await _register(_make_node(), "xgboost", name="Train Model")
+
+    assert ml_model_id is None and pkl_file_id is None
+    assert "already exists and was not registered by this Train Model node" in error
+    file_manager.create_file_from_local_path.assert_not_awaited()
+    ml_service.update.assert_not_awaited()
+    ml_service.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_create_deletes_the_uploaded_file(monkeypatch):
+    from app.core.exceptions.error_messages import ErrorKey
+    from app.core.exceptions.exception_classes import AppException
+
+    ml_service = _ml_service()
+    # Another request registered the name between the lookup and the create.
+    ml_service.create = AsyncMock(side_effect=AppException(error_key=ErrorKey.ML_MODEL_NAME_EXISTS))
+    file_manager = _patch_dependencies(monkeypatch, ml_service)
+    file_manager.delete_file = AsyncMock()
+
+    ml_model_id, pkl_file_id, error, _ = await _register(_make_node(), "xgboost")
+
+    assert ml_model_id is None and pkl_file_id is None and error
+    file_manager.delete_file.assert_awaited_once_with(file_manager.create_file_from_local_path.return_value.id)
+
+
+@pytest.mark.asyncio
+async def test_a_pipeline_run_keeps_its_file_when_registering_fails(monkeypatch):
+    # Promoting the run later attaches this file to the model.
+    existing = _existing_model("xgboost")
+    ml_service = _ml_service(existing=existing)
+    ml_service.update = AsyncMock(side_effect=RuntimeError("db hiccup"))
+    file_manager = _patch_dependencies(monkeypatch, ml_service)
+    file_manager.delete_file = AsyncMock()
+
+    _, pkl_file_id, error, _ = await _register(_make_node(), "xgboost", target_model_id=str(existing.id))
+
+    assert error == "db hiccup"
     assert pkl_file_id == str(file_manager.create_file_from_local_path.return_value.id)
+    file_manager.delete_file.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_pipeline_run_whose_model_is_gone_still_uploads_its_file(monkeypatch):
+    # The target model wasn't found and its name is another node's: the file
+    # is still uploaded and kept, so the run can be promoted.
+    other = _existing_model("xgboost", description=f"[train-model-node:{uuid.uuid4()}]")
+    ml_service = _ml_service(by_name=other)
+    ml_service.get_by_id = AsyncMock(side_effect=RuntimeError("not found"))
+    ml_service.create = AsyncMock(side_effect=RuntimeError("A model with this name already exists."))
+    file_manager = _patch_dependencies(monkeypatch, ml_service)
+    file_manager.delete_file = AsyncMock()
+
+    _, pkl_file_id, error, _ = await _register(_make_node(), "xgboost", target_model_id=str(uuid.uuid4()))
+
+    assert error
+    assert pkl_file_id == str(file_manager.create_file_from_local_path.return_value.id)
+    file_manager.delete_file.assert_not_awaited()
+    ml_service.update.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_cleanup_still_reports_the_registration_error(monkeypatch):
+    ml_service = _ml_service()
+    ml_service.create = AsyncMock(side_effect=RuntimeError("registry unavailable"))
+    file_manager = _patch_dependencies(monkeypatch, ml_service)
+    file_manager.delete_file = AsyncMock(side_effect=RuntimeError("storage down"))
+
+    _, pkl_file_id, error, _ = await _register(_make_node(), "xgboost")
+
+    assert error == "registry unavailable"
+    assert pkl_file_id is None
 
 
 @pytest.mark.asyncio

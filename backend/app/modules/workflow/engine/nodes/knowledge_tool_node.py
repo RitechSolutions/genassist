@@ -44,7 +44,7 @@ class KnowledgeToolNode(BaseNode):
         """
         selected_bases = config.get("selectedBases", [])
         query = config.get("query", "What information do you have?")
-        limit = config.get("limit", 5)
+        limit = config.get("limit") or 5
         force_limit = config.get("force", False)
 
         if not selected_bases:
