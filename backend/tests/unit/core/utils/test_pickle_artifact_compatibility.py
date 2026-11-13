@@ -389,6 +389,41 @@ class TestReviewedArtifactCompatibility:
         assert type(loaded) is type(model)
         np.testing.assert_array_equal(loaded.predict(_X), model.predict(_X))
 
+    @pytest.mark.parametrize("remainder", ["drop", "passthrough"])
+    def test_text_and_number_column_transformer_pipeline_registers_and_predicts(self, tmp_path, remainder):
+        # sklearn 1.6 pickles the remainder columns as _RemainderColsList whatever
+        # the remainder setting; registration used to refuse these files.
+        from app.services.ml_model_artifacts import extract_model_artifact_contract
+
+        frame = pd.DataFrame(
+            {
+                "city": ["tirana", "durres", "tirana", "vlore"] * 20,
+                "hour": _X[:, 0],
+                "lag_24": _X[:, 1],
+            }
+        )
+        model = Pipeline(
+            [
+                (
+                    "features",
+                    ColumnTransformer(
+                        [
+                            ("city", OneHotEncoder(handle_unknown="ignore"), ["city"]),
+                            ("hour", StandardScaler(), ["hour"]),
+                        ],
+                        remainder=remainder,
+                    ),
+                ),
+                ("model", LinearRegression()),
+            ]
+        ).fit(frame, _Y_REGRESSION)
+
+        loaded = _validate_and_load(tmp_path, model)
+
+        np.testing.assert_array_equal(loaded.predict(frame), model.predict(frame))
+        contract = extract_model_artifact_contract(loaded)
+        assert contract.features == ("city", "hour", "lag_24")
+
     def test_imputer_column_transformer_pipeline_preserves_predictions(self, tmp_path):
         input_data = _X.copy()
         input_data[0, 0] = np.nan

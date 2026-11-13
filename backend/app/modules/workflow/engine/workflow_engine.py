@@ -531,8 +531,6 @@ class WorkflowEngine:
         if node_id in visited:
             return  # Avoid cycles
 
-        visited.add(node_id)
-
         node_output: Optional[dict] = None
 
         # Check if aggregator requirements are satisfied
@@ -554,15 +552,15 @@ class WorkflowEngine:
                     "skipping for now"
                 )
                 return
+            visited.add(node_id)
             logger.info(
                 f"Node {node_id} is deactivated — forwarding input to next nodes"
             )
             node.start_execution()
             node.set_node_output(node.get_input_from_source())
             node.complete_execution()
-        elif skip_requirement_check:
-            node_output = await self._execute_single_node(node_id, state)
-        elif node.check_if_requirement_satisfied():
+        elif skip_requirement_check or node.check_if_requirement_satisfied():
+            visited.add(node_id)
             node_output = await self._execute_single_node(node_id, state)
         else:
             # Requirements not satisfied, skip execution and continue flow
@@ -650,13 +648,10 @@ class WorkflowEngine:
             # Create tasks for all next nodes
             next_tasks = []
             for next_node_id in next_nodes:
-                # Create a copy of visited set for each task to avoid conflicts
-                task_visited = visited.copy()
-
                 task = asyncio.create_task(
                     execute_node_isolated(
                         next_node_id=next_node_id,
-                        visited_set=task_visited,
+                        visited_set=visited,
                         tenant=tenant_id,
                         # Only isolate when we are actually running parallel branches.
                         run_in_new_scope=(len(next_nodes) > 1),

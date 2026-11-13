@@ -476,12 +476,12 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
               </Label>
               <RichInput
                 id={`max-iterations-input-${id}`}
-                value={config.maxIterations}
+                value={config.maxIterations || 7}
                 type="number"
                 onChange={(e) =>
                   onConfigChange({
                     ...config,
-                    maxIterations: parseInt(e.target.value),
+                    maxIterations: Number.parseInt(e.target.value) || 7,
                   })
                 }
                 placeholder="Enter max iterations"
