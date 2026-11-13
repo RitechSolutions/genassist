@@ -50,6 +50,7 @@ from app.services.app_settings import AppSettingsService
 # File manager service
 from app.services.file_manager import FileManagerService
 from app.services.file_upload_session import FileUploadSessionService
+from app.tasks.kb_batch_tasks import keep_loaded_files_on_save
 from app.tasks.kb_manual_sync import start_manual_sync
 from app.tasks.salesforce_article_sync_tasks import apply_stored_copy_dates_on_save
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
@@ -184,6 +185,7 @@ async def update_knowledge_item(
         await set_url_content_if_no_rag(item)
 
     await apply_stored_copy_dates_on_save(knowledge_service, item_id, item)
+    await keep_loaded_files_on_save(knowledge_service, item_id, item)
     load_action = save_load_action(current_item, item)
     result = await knowledge_service.update(item_id, item)
 

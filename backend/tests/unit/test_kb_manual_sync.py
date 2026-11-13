@@ -796,6 +796,11 @@ async def test_sync_now_reports_files_the_file_sync_could_not_load(batch_env, mo
     async def refuse_every_document(*args, **kwargs):
         raise kb_batch_tasks.DocumentNotLoadedError("not loaded")
 
+    async def remove_document(kb, doc_id):
+        return {"vector": True}
+
+    batch_env[kb_batch_tasks.AgentRAGServiceManager] = SimpleNamespace(delete_document=remove_document)
+
     async def move(*args, **kwargs):
         moved.append(kwargs.get("item"))
 

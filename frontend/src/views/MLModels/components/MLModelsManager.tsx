@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
+import { isCancel } from "axios";
 import { v4 as uuidv4 } from "uuid";
 import { Brain, ChevronLeft, FileCode, Pencil, Trash2 } from "lucide-react";
 
@@ -13,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/label";
 import { Switch } from "@/components/switch";
+import { Progress } from "@/components/progress";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { ListErrorState } from "@/components/ListErrorState";
@@ -163,6 +165,10 @@ const MLModelsManager: React.FC = () => {
   const [returnTo, setReturnTo] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSaving, setIsSaving] = useState(false);
+  // Percent of the model file sent while Save uploads it; null when no upload is running.
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  // Why the last Save failed; stays in the form until the user changes something.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [modelToDelete, setModelToDelete] = useState<MLModel | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -193,6 +199,7 @@ const MLModelsManager: React.FC = () => {
   const setField = <K extends keyof FormValues>(key: K, value: FormValues[K]) => {
     setValues((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+    setSaveError(null);
   };
 
   const openCreateForm = () => {
@@ -200,6 +207,8 @@ const MLModelsManager: React.FC = () => {
     setEditingItem(null);
     setValues(emptyForm());
     setErrors({});
+    setSaveError(null);
+    setUploadProgress(null);
     setShowForm(true);
   };
 
@@ -208,6 +217,8 @@ const MLModelsManager: React.FC = () => {
     setEditingItem(model);
     setValues(formFromModel(model));
     setErrors({});
+    setSaveError(null);
+    setUploadProgress(null);
     setShowForm(true);
   };
 
@@ -228,6 +239,8 @@ const MLModelsManager: React.FC = () => {
     setEditingItem(null);
     setValues(emptyForm());
     setErrors({});
+    setSaveError(null);
+    setUploadProgress(null);
     setReturnTo(null);
     if (origin) navigate(origin);
   };
@@ -261,13 +274,16 @@ const MLModelsManager: React.FC = () => {
     let uploadedFileId: string | null = null;
     let saveSent = false;
     let saved = false;
+    setSaveError(null);
     try {
       setIsSaving(true);
 
       let pklFile = values.pkl_file;
       let pklFileId = values.pkl_file_id;
       if (values.pendingFile) {
-        const uploaded = await uploadModelFile(values.pendingFile);
+        setUploadProgress(0);
+        const uploaded = await uploadModelFile(values.pendingFile, setUploadProgress);
+        setUploadProgress(null);
         if (!uploaded?.file_id && !uploaded?.file_path) throw new Error("File upload failed.");
         uploadedFileId = uploaded.file_id ?? null;
         pklFile = uploaded.file_path ?? null;
@@ -338,8 +354,14 @@ const MLModelsManager: React.FC = () => {
       if (uploadedFileId && !saved && (!saveSent || isRejectedRequest(err))) {
         void discardModelUpload(uploadedFileId);
       }
-      toast.error(mlModelSaveErrorMessage(err, editingItem ? "update" : "create"));
+      // A cancelled request (the session ended and the app is leaving for the login
+      // page) needs no message.
+      if (isCancel(err)) return;
+      const message = mlModelSaveErrorMessage(err, editingItem ? "update" : "create");
+      setSaveError(message);
+      toast.error(message);
     } finally {
+      setUploadProgress(null);
       setIsSaving(false);
     }
   };
@@ -442,10 +464,33 @@ const MLModelsManager: React.FC = () => {
                       existingFileId={values.pkl_file_id}
                       modelName={values.name}
                       onSelect={(file) => setField("pendingFile", file)}
-                      onRemoveExisting={() =>
-                        setValues((prev) => ({ ...prev, pkl_file: null, pkl_file_id: null }))
-                      }
+                      onRemoveExisting={() => {
+                        setValues((prev) => ({ ...prev, pkl_file: null, pkl_file_id: null }));
+                        setSaveError(null);
+                      }}
                     />
+                    {uploadProgress !== null && (
+                      <div className="mt-2 space-y-1">
+                        <Progress
+                          value={uploadProgress}
+                          className="h-2"
+                          aria-label="Model file upload"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {uploadProgress < 100
+                            ? `Uploading model file… ${uploadProgress}%`
+                            : "Upload sent. Storing the model file…"}
+                        </p>
+                      </div>
+                    )}
+                    {/* Always mounted, so screen readers hear each change; once per state, not per percent */}
+                    <span className="sr-only" aria-live="polite">
+                      {uploadProgress === null
+                        ? ""
+                        : uploadProgress < 100
+                          ? "Uploading model file"
+                          : "Upload sent. Storing the model file"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -524,6 +569,15 @@ const MLModelsManager: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {saveError && (
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            >
+              {saveError}
+            </p>
+          )}
 
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={closeForm}>

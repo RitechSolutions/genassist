@@ -41,7 +41,7 @@ export interface FileManagerSettings {
   values: {
     file_manager_enabled: boolean;
     file_manager_provider: string;
-    base_path: string;
+    base_path: string | null;
     aws_bucket_name: string;
     azure_container_name: string;
     /**

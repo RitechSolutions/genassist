@@ -323,12 +323,15 @@ def _training_job_store() -> training_jobs.TrainingJobStore:
 
 async def _queue_training_job(
     kind: str, training_nodes: List[Dict[str, Any]], payload: Dict[str, Any]
-) -> JSONResponse:
+) -> Dict[str, Any]:
     """
     Run a test that trains a model on the "ml" worker instead of in this request.
 
     An oversized hyperparameter search is refused here, before anything is
-    queued. Returns 202 with the job; the client polls GET /workflows/test-jobs/{job_id}.
+    queued. Returns the job; the client polls GET /workflows/test-jobs/{job_id}.
+    It is a plain dict, not a Response, so keepalive_json sends it as JSON like
+    any other test result: the Studio (X-Keepalive) gets it as the body of the
+    200 stream, and a direct call gets it with 202 (see _answer_test) (WB-3).
     A user who already has a queued or running job gets 409; GET
     /workflows/test-jobs/active returns that job, to follow or cancel it.
     """
@@ -362,7 +365,19 @@ async def _queue_training_job(
         raise HTTPException(status_code=503, detail="Could not start the training job. Try again.")
 
     logger.info(f"Queued training job {job['job_id']} ({kind})")
-    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=training_jobs.public_view(job))
+    return training_jobs.public_view(job)
+
+
+def _answer_test(result: Any, queued: bool) -> Any:
+    """A test route's answer: 202 with the job when a training job was queued and
+    the run returned directly (no keep-alive); otherwise the result as it is. With
+    keep-alive the 200 stream has already started, so the job goes out as its JSON
+    body and the client recognizes it by its shape (WB-3)."""
+    # With keep-alive, keepalive_json returns its stream before run() starts, so
+    # queued is only ever True here for a run that returned directly.
+    if queued:
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=jsonable_encoder(result))
+    return result
 
 
 # Canvas node ids are UUIDs; saved templates may use other simple ids.
@@ -499,7 +514,10 @@ async def test_workflow(
                 "edges": workflow.edges,
             }
 
+        queued = False
+
         async def run() -> dict:
+            nonlocal queued
             try:
                 thread_id = input_data.get("thread_id", str(uuid.uuid4()))
                 start_node_id = input_data.get("human_in_the_loop_node_id")
@@ -512,7 +530,7 @@ async def test_workflow(
                     workflow_config["nodes"], workflow_config.get("edges") or [], start_node_id
                 )
                 if training_nodes:
-                    return await _queue_training_job(
+                    job = await _queue_training_job(
                         "workflow",
                         training_nodes,
                         {
@@ -524,6 +542,8 @@ async def test_workflow(
                             "usage_source": "workflow_test",
                         },
                     )
+                    queued = True
+                    return job
 
                 # Use the new engine approach
                 workflow_engine = WorkflowEngine(workflow_config)
@@ -540,7 +560,8 @@ async def test_workflow(
                 logger.error(f"Error testing workflow with new engine: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
 
-        return await keepalive_json(request, run, name=f"workflow-test:{workflow_config['id']}")
+        result = await keepalive_json(request, run, name=f"workflow-test:{workflow_config['id']}")
+        return _answer_test(result, queued)
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
@@ -601,7 +622,10 @@ async def test_individual_node(request: Request, test_data: Dict[str, Any]):
             detail=f"Unsupported node type: {node_type}. Supported types: {SUPPORTED_NODE_TYPES}",
         )
 
+    queued = False
+
     async def run() -> dict:
+        nonlocal queued
         try:
             # Create a unique test ID
             test_id = f"test-{node_type}-{int(time.time())}"
@@ -615,7 +639,7 @@ async def test_individual_node(request: Request, test_data: Dict[str, Any]):
             }
 
             if node_type == training_jobs.TRAIN_MODEL_NODE_TYPE:
-                return await _queue_training_job(
+                job = await _queue_training_job(
                     "node",
                     [node_config],
                     {
@@ -625,6 +649,8 @@ async def test_individual_node(request: Request, test_data: Dict[str, Any]):
                         "usage_source": "node_test",
                     },
                 )
+                queued = True
+                return job
 
             workflow_engine = WorkflowEngine(workflow_config)
 
@@ -646,7 +672,8 @@ async def test_individual_node(request: Request, test_data: Dict[str, Any]):
             logger.error(f"Error testing {node_type} node: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    return await keepalive_json(request, run, name=f"node-test:{node_type}")
+    result = await keepalive_json(request, run, name=f"node-test:{node_type}")
+    return _answer_test(result, queued)
 
 
 @router.post("/generate-python-template", response_model=Dict[str, Any])

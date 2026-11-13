@@ -187,7 +187,16 @@ class TestPreprocessedTypesTrainEndToEnd:
 
 
 class TestFileUrlPointingAtData:
-    @pytest.mark.parametrize("file_url", [' [{"a": "1"}]', '{"a": 1}'])
+    @pytest.mark.parametrize(
+        "file_url",
+        [
+            ' [{"a": "1"}]',
+            '{"a": 1}',
+            "id,name\n1,Ada\n2,Bo",  # CSV text with line breaks
+            "id,name,city1,Ada,Tirana",  # CSV text after the single-line field drops line breaks
+            "1.5,2.3,4.1",
+        ],
+    )
     def test_data_instead_of_a_path_gives_a_clear_message(self, file_url):
         from app.core.exceptions.exception_classes import AppException
 
@@ -195,6 +204,81 @@ class TestFileUrlPointingAtData:
             ml_utils.resolve_csv_file_path(file_url)
         assert "contains data, not a file path" in exc_info.value.error_detail
         assert "data_path" in exc_info.value.error_detail
+        # DP-22: the message never repeats the pasted data
+        assert file_url.strip() not in exc_info.value.error_detail
+        assert exc_info.value.error_detail == ml_utils.INLINE_DATA_DETAIL
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "customers.csv",
+            "train/thread-1/customers.csv",
+            "{{source.data_path}}",  # an unfilled placeholder has its own message
+            "source.data_path",
+            "https://files.example/a,b?x=1,2",
+            "HTTPS://files.example/reports/a,b",
+            "exports/Q1, 2024.csv",  # ends in a training file type: a (missing) path
+            "sales, 2024.jsonl",
+            "[Q1] sales.csv",
+            "",
+            None,
+        ],
+    )
+    def test_paths_placeholders_and_web_addresses_are_not_data(self, value):
+        assert ml_utils.looks_like_inline_data(value) is False
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "id,name\n1,Ada",
+            "id,name\r\n1,Ada",
+            "a,b,c",
+            "1.5,2.3",
+            "date,amount2024/01/05,3.2",  # single-line CSV with dates
+            "name,emailAda,ada@example.com",  # ends in a dotted word
+            "id;name;city1;Ada;Tirana",  # semicolon-separated
+            "a\tb\tc",  # tab-separated
+            "prompt,label\nHello {{name}},1",  # pasted rows holding a {{...}}
+            "prompt,labelHello {{name}},1",  # the same, after the single-line field
+            '[{"prompt": "Hello {{name}}"}]',
+            '[{"a": 1}]',
+            '{"a": 1}',
+        ],
+    )
+    def test_rows_and_csv_text_are_data(self, value):
+        assert ml_utils.looks_like_inline_data(value) is True
+
+    @pytest.mark.parametrize("name", ["sales, 2024.csv", "q1;q2.csv", "report,final.csv", "[Q1] sales.csv"])
+    def test_a_real_file_with_a_comma_in_its_name_is_still_read(self, tmp_path, monkeypatch, name):
+        monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+        (tmp_path / "train").mkdir()
+        path = tmp_path / "train" / name
+        path.write_text("a\n1\n")
+        assert ml_utils.resolve_csv_file_path(name) == path.resolve()
+
+    def test_pasted_csv_is_named_only_when_no_file_has_that_name(self, tmp_path, monkeypatch):
+        from app.core.exceptions.exception_classes import AppException
+
+        monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+        with pytest.raises(AppException) as exc_info:
+            ml_utils.resolve_csv_file_path("id,name,city1,Ada,Tirana")
+        assert exc_info.value.error_detail == ml_utils.INLINE_DATA_DETAIL
+
+    def test_a_missing_file_with_a_comma_still_names_the_path(self, tmp_path, monkeypatch):
+        from app.core.exceptions.exception_classes import AppException
+
+        monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+        with pytest.raises(AppException) as exc_info:
+            ml_utils.resolve_csv_file_path("exports/Q1, 2024.csv")
+        assert exc_info.value.error_detail == "File not found: exports/Q1, 2024.csv"
+
+    def test_a_missing_file_still_names_the_path(self, tmp_path, monkeypatch):
+        from app.core.exceptions.exception_classes import AppException
+
+        monkeypatch.setattr(ml_utils, "DATA_VOLUME", tmp_path)
+        with pytest.raises(AppException) as exc_info:
+            ml_utils.resolve_csv_file_path("missing/nope.csv")
+        assert exc_info.value.error_detail == "File not found: missing/nope.csv"
 
     def test_surrounding_spaces_in_a_real_path_are_ignored(self, tmp_path):
         path = tmp_path / "x.csv"
