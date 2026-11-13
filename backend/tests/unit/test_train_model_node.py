@@ -13,6 +13,7 @@ from app.modules.workflow.engine.nodes.ml.train_model_node import (
     TREE_BASED_MODEL_TYPES,
     TrainModelNode,
     _join_reason_counts,
+    _name_rows_by_reason,
     _rows_dropped_warning,
 )
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -1056,7 +1057,9 @@ _RATIO_ON_BASELINE = {"type": "ratio", "baselineColumn": "baseline"}
 _OUTLIER_WARNING = "Removed 4 training rows with outliers in 'x' (iqr)"
 _BASELINE_WARNING = (
     "Dropped 8 training and 5 validation rows whose 'baseline' baseline is zero (4), "
-    "missing (3), not a number (3) or infinite (3); a ratio target can't be computed there."
+    "missing (3), not a number (3) or infinite (3); a ratio target can't be computed there. "
+    "Rows, numbered from 1 in the data Train Model received: zero 2, 3, 4, 156; missing 5, 6, 157; "
+    "not a number 7, 158, 159; infinite 8, 9, 160."
 )
 
 
@@ -1081,6 +1084,19 @@ class TestRowsDroppedWarning:
             _join_reason_counts({"zero": 12, "missing": 7, "not a number": 3})
             == "zero (12), missing (7) or not a number (3)"
         )
+
+    def test_names_rows_smallest_first_and_skips_reasons_without_rows(self):
+        assert (
+            _name_rows_by_reason(
+                {"zero": [9, 2], "missing": [], "infinite": [4]}, {"zero": 2, "missing": 0, "infinite": 1}
+            )
+            == "zero 2, 9; infinite 4"
+        )
+
+    def test_names_at_most_ten_rows_per_reason_and_counts_the_rest(self):
+        assert _name_rows_by_reason(
+            {"zero": list(range(25, 0, -1)), "missing": [30]}, {"zero": 25, "missing": 1}
+        ) == ("zero 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 …and 15 more; missing 30")
 
 
 class TestRemoveOutliersKeepsValidationRows:
@@ -1145,17 +1161,19 @@ class TestRatioTargetBadBaselines:
     """TM-13: every unusable ratio baseline is dropped and reported."""
 
     def test_check_ratio_baseline_classifies_each_reason(self, node):
-        baseline = pd.Series(
+        values = pd.Series(
             [10.0, 0.0, np.nan, "abc", np.inf, -np.inf, "12.5", "  ", True, False], dtype=object
         )
+        baseline = pd.DataFrame({"value": values, "row": range(101, 111)})
 
-        numeric, keep, reasons = node._check_ratio_baseline(baseline)
+        numeric, keep, reasons, rows = node._check_ratio_baseline(baseline)
 
         assert keep.tolist() == [True, False, False, False, False, False, True, False, False, False]
         assert numeric[keep].tolist() == [10.0, 12.5]
         # Blank text counts as missing and true/false as not a number, the
         # same as the inference node's baseline check.
         assert reasons == {"zero": 1, "missing": 2, "not a number": 3, "infinite": 2}
+        assert rows == {"zero": [102], "missing": [103, 108], "not a number": [104, 109, 110], "infinite": [105, 106]}
 
     @pytest.mark.asyncio
     async def test_bad_baselines_are_dropped_from_both_splits_with_counts(self, tmp_path):
@@ -1167,6 +1185,93 @@ class TestRatioTargetBadBaselines:
         assert result["training_samples"] == 150 - 8
         assert result["validation_samples"] == 50 - 5
         assert result["warnings"] == [_BASELINE_WARNING]
+
+    @pytest.mark.asyncio
+    async def test_named_rows_are_the_file_rows_when_the_time_split_reorders_them(self, tmp_path):
+        # Newest first in the file: the time-based sort reverses it, but the
+        # warning still names rows as they are numbered in the file.
+        df = _plant_bad_baselines(_dropped_rows_frame()).iloc[::-1].reset_index(drop=True)
+
+        result = await _train_dropped_rows(tmp_path, df, targetTransform=_RATIO_ON_BASELINE)
+
+        assert result["training_samples"] == 150 - 8
+        assert result["validation_samples"] == 50 - 5
+        assert result["warnings"][0].endswith(
+            "Rows, numbered from 1 in the data Train Model received: zero 45, 197, 198, 199; missing 44, 195, 196; "
+            "not a number 42, 43, 194; infinite 41, 192, 193."
+        )
+
+    @pytest.mark.asyncio
+    async def test_random_split_names_rows_from_both_splits(self, tmp_path):
+        df = _dropped_rows_frame()
+        df["baseline"] = df["baseline"].astype(object)
+        df.loc[[3, 50, 120, 180], "baseline"] = 0.0
+
+        result = await _train_dropped_rows(
+            tmp_path, df, splitMethod="random", targetTransform=_RATIO_ON_BASELINE
+        )
+
+        assert result["success"] is True
+        assert result["training_samples"] + result["validation_samples"] == 200 - 4
+        assert result["warnings"][0].endswith(
+            "Rows, numbered from 1 in the data Train Model received: zero 4, 51, 121, 181."
+        )
+
+    @pytest.mark.asyncio
+    async def test_more_than_ten_bad_rows_per_reason_are_cut_short(self, tmp_path):
+        df = _dropped_rows_frame()
+        df.loc[0:13, "baseline"] = 0.0
+
+        result = await _train_dropped_rows(tmp_path, df, targetTransform=_RATIO_ON_BASELINE)
+
+        assert result["training_samples"] == 150 - 14
+        assert result["warnings"] == [
+            "Dropped 14 training rows whose 'baseline' baseline is zero (14); a ratio target can't be "
+            "computed there. Rows, numbered from 1 in the data Train Model received: "
+            "zero 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 …and 4 more."
+        ]
+
+    @pytest.mark.asyncio
+    async def test_cut_off_counts_rows_from_both_splits(self, tmp_path):
+        df = _dropped_rows_frame()
+        df.loc[list(range(0, 8)) + list(range(150, 155)), "baseline"] = 0.0
+
+        result = await _train_dropped_rows(tmp_path, df, targetTransform=_RATIO_ON_BASELINE)
+
+        assert result["warnings"][0].endswith(
+            "Rows, numbered from 1 in the data Train Model received: zero 1, 2, 3, 4, 5, 6, 7, 8, 151, 152 "
+            "…and 3 more."
+        )
+
+    @pytest.mark.asyncio
+    async def test_named_rows_survive_outlier_removal_renumbering(self, tmp_path):
+        # Removing the outlier at row 11 renumbers the training rows after
+        # it; the bad baseline at row 21 must still be named as row 21.
+        df = _dropped_rows_frame()
+        df.loc[10, "x"] = 9.0
+        df["baseline"] = df["baseline"].astype(object)
+        df.loc[20, "baseline"] = 0.0
+
+        result = await _train_dropped_rows(
+            tmp_path, df, outlierHandling=_REMOVE_X_OUTLIERS, targetTransform=_RATIO_ON_BASELINE
+        )
+
+        assert result["training_samples"] == 150 - 1 - 1
+        assert result["warnings"][-1].endswith("Rows, numbered from 1 in the data Train Model received: zero 21.")
+
+    @pytest.mark.asyncio
+    async def test_named_rows_without_a_validation_split(self, tmp_path):
+        df = _dropped_rows_frame()
+        df["baseline"] = df["baseline"].astype(object)
+        df.loc[[5, 180], "baseline"] = 0.0
+
+        result = await _train_dropped_rows(tmp_path, df, validationSplit=0, targetTransform=_RATIO_ON_BASELINE)
+
+        assert result["training_samples"] == 200 - 2
+        assert result["warnings"] == [
+            "Dropped 2 training rows whose 'baseline' baseline is zero (2); a ratio target can't be "
+            "computed there. Rows, numbered from 1 in the data Train Model received: zero 6, 181."
+        ]
 
     @pytest.mark.asyncio
     async def test_every_training_baseline_bad_fails_with_a_clear_error(self, tmp_path):
