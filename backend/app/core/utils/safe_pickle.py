@@ -139,7 +139,8 @@ _ALLOWED_GLOBALS: dict[str, set[str]] = {
         "PinballLoss",
     },
     "sklearn.cluster._kmeans": {"KMeans"},
-    "sklearn.compose._column_transformer": {"ColumnTransformer"},
+    # sklearn 1.6 stores the remainder columns of every ColumnTransformer in this list type.
+    "sklearn.compose._column_transformer": {"ColumnTransformer", "_RemainderColsList"},
     "sklearn.compose._target": {"TransformedTargetRegressor"},
     "sklearn.decomposition._pca": {"PCA"},
     "sklearn.dummy": {"DummyClassifier", "DummyRegressor"},
