@@ -14,6 +14,7 @@ export const AUTH_STORAGE_KEYS = [
   "tenant_id",
   "permissions",
   "user_roles",
+  "is_master_tenant",
   "auth_username",
 ] as const;
 

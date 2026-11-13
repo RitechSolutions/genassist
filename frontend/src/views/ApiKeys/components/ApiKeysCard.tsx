@@ -221,7 +221,6 @@ export function ApiKeysCard({
         onRotated={(saved) => {
           setApiKeys((rows) => rows.map((x) => (x.id === saved.id ? saved : x)));
           onApiKeyRotated?.(saved);
-          setRotateTarget(null);
         }}
       />
     </>
