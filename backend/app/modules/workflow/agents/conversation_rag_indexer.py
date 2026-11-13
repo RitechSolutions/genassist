@@ -13,8 +13,10 @@ Sliding-window formula:
     group g     covers messages [g*step, g*step + group_size)
     new groups  are detected via rag_indexed_count high-water mark in memory
 """
+import asyncio
 import hashlib
 import logging
+import math
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -208,66 +210,37 @@ class ConversationRAGIndexer:
         recent_start = max(0, total - self.recent_messages)
         recent_msgs = await memory.get_messages_by_range(recent_start, total)
 
-        # Step 4: build contextual query
-        query = self.build_retrieval_query(recent_msgs, current_user_message)
+        # Step 4: build the search texts: the current message alone first, then with recent context
+        queries = self.build_retrieval_queries(recent_msgs, current_user_message)
 
-        # Step 5: retrieve
+        # Step 5: retrieve, with room for the groups that step 6 drops as already recent
+        fetch_limit = self.top_k + self._groups_in_window(len(recent_msgs))
         try:
-            retrieved = await self.thread_rag.retrieve(
-                chat_id=thread_id,
-                query=query,
-                top_k=self.top_k,
-                config_overrides=self.rag_config_overrides,
-            )
+            result_lists = await self._search_each(thread_id, queries, fetch_limit)
         except Exception as e:
             logger.error(
                 f"[ConversationRAGIndexer] retrieve failed for thread {thread_id}: {e}"
             )
-            retrieved = []
+            result_lists = []
 
-        if not retrieved:
+        if not any(result_lists):
             return recent_msgs
 
-        # Step 6: deduplicate and age-filter retrieved groups.
-        # - Age filter: skip groups whose latest_timestamp is older than max_history_hours
-        #   (when max_history_hours > 0).
-        # - Dedup: skip groups that overlap the verbatim recent window, using
-        #   group_end index comparison when available; text check as fallback.
+        # Step 6: drop groups that are too old or already in the recent window,
+        # then take the searches' results in turns so each search counts.
         recent_text = self._format_messages_as_text(recent_msgs)
         cutoff: Optional[datetime] = (
             datetime.now() - timedelta(hours=self.max_history_hours)
             if self.max_history_hours > 0
             else None
         )
-        relevant_parts = []
-        for result in retrieved:
-            content = result.get("content", "").strip()
-            if not content:
-                continue
-            meta = result.get("metadata", {})
-            if cutoff is not None:
-                latest_ts = meta.get("latest_timestamp")
-                if latest_ts:
-                    try:
-                        if datetime.fromisoformat(latest_ts) < cutoff:
-                            continue
-                    except ValueError:
-                        pass
-            group_end_meta = meta.get("group_end")
-            # A group "overlaps recent" if any of its messages fall inside the
-            # verbatim window (recent_start, total). When group_end metadata is
-            # present (docs indexed after the metadata enrichment change) we use
-            # an exact index comparison: group_end > recent_start means at least
-            # one message in the group is already shown verbatim. For older docs
-            # without that metadata we fall back to a text substring check.
-            overlaps_recent = (
-                group_end_meta > recent_start
-                if group_end_meta is not None
-                else content in recent_text
-            )
-            if not overlaps_recent:
-                relevant_parts.append(content)
-
+        older_lists = [
+            [result for result in results if self._is_older_history(result, recent_start, recent_text, cutoff)]
+            for results in result_lists
+        ]
+        relevant_parts = [
+            result.get("content", "").strip() for result in self._take_in_turns(older_lists)
+        ][: self.top_k]
         if not relevant_parts:
             return recent_msgs
 
@@ -282,6 +255,93 @@ class ConversationRAGIndexer:
         ]
         context.extend(recent_msgs)
         return context
+
+    def build_retrieval_queries(
+        self,
+        recent_messages: List[Dict[str, Any]],
+        current_user_message: str,
+    ) -> List[str]:
+        """Search texts in priority order: the current message alone, then with recent context."""
+        message_alone = (current_user_message or "").strip()
+        with_context = self.build_retrieval_query(recent_messages, current_user_message)
+        has_context = self.query_context_messages > 0 and bool(recent_messages)
+        if not message_alone:
+            return [with_context]
+        if not has_context:
+            return [message_alone]
+        return [message_alone, with_context]
+
+    def _groups_in_window(self, message_count: int) -> int:
+        """Most groups that can overlap a window of this many messages."""
+        return math.ceil(message_count / self._step)
+
+    async def _search_each(
+        self, thread_id: str, queries: List[str], limit: int
+    ) -> List[List[Dict[str, Any]]]:
+        """One result list per search text. A failed search is logged and skipped unless all fail."""
+        outcomes = await asyncio.gather(
+            *(
+                self.thread_rag.retrieve(
+                    chat_id=thread_id, query=query, top_k=limit, config_overrides=self.rag_config_overrides
+                )
+                for query in queries
+            ),
+            return_exceptions=True,
+        )
+        failures = [outcome for outcome in outcomes if isinstance(outcome, BaseException)]
+        if len(failures) == len(outcomes):
+            raise failures[0]
+        for failure in failures:
+            logger.error(f"[ConversationRAGIndexer] one search failed for thread {thread_id}: {failure}")
+        return [list(outcome or []) for outcome in outcomes if not isinstance(outcome, BaseException)]
+
+    @staticmethod
+    def _is_older_history(
+        result: Dict[str, Any], recent_start: int, recent_text: str, cutoff: Optional[datetime]
+    ) -> bool:
+        """True for a non-empty group that is recent enough and not already in the recent window."""
+        content = result.get("content", "").strip()
+        if not content:
+            return False
+        meta = result.get("metadata", {})
+        latest_ts = meta.get("latest_timestamp")
+        if cutoff is not None and latest_ts:
+            try:
+                if datetime.fromisoformat(latest_ts) < cutoff:
+                    return False
+            except ValueError:
+                pass
+        group_end_meta = meta.get("group_end")
+        # group_end > recent_start means a message of the group is already shown verbatim;
+        # older documents without that metadata fall back to a text check.
+        overlaps_recent = (
+            group_end_meta > recent_start
+            if group_end_meta is not None
+            else content in recent_text
+        )
+        return not overlaps_recent
+
+    def _take_in_turns(self, result_lists: List[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        """One result from each list in turn, skipping a group already taken."""
+        taken: List[Dict[str, Any]] = []
+        seen: set = set()
+        for position in range(max((len(results) for results in result_lists), default=0)):
+            for results in result_lists:
+                if position >= len(results):
+                    continue
+                key = self._result_key(results[position])
+                if key in seen:
+                    continue
+                seen.add(key)
+                taken.append(results[position])
+        return taken
+
+    @staticmethod
+    def _result_key(result: Dict[str, Any]) -> str:
+        meta = result.get("metadata") or {}
+        if meta.get("doc_id"):
+            return f"doc:{meta['doc_id']}"
+        return f"content:{result.get('content', '').strip()}"
 
     def build_retrieval_query(
         self,
