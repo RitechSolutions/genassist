@@ -111,7 +111,7 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
             id="limit"
             type="number"
             value={values.limit}
-            onChange={(e) => setField("limit", parseInt(e.target.value))}
+            onChange={(e) => setField("limit", parseInt(e.target.value) || 5)}
             placeholder="5"
             min="1"
             className="w-full"

@@ -93,7 +93,13 @@ describe("templates service", () => {
 
   it("deleteTemplate DELETEs by id", async () => {
     await deleteTemplate("tpl5");
-    expect(mockApiRequest).toHaveBeenCalledWith("DELETE", "genagent/templates/tpl5");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "DELETE",
+      "genagent/templates/tpl5",
+      undefined,
+      {},
+      { rethrowForbidden: true }
+    );
   });
 
   describe("publishTemplate", () => {
@@ -116,7 +122,13 @@ describe("templates service", () => {
       const rows = [{ id: "tpl7" }];
       mockApiRequest.mockResolvedValue(rows as never);
       const result = await getReviewQueue();
-      expect(mockApiRequest).toHaveBeenCalledWith("GET", "genagent/templates/review");
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "GET",
+        "genagent/templates/review",
+        undefined,
+        {},
+        { rethrowForbidden: true }
+      );
       expect(result).toEqual(rows);
     });
 
@@ -128,32 +140,58 @@ describe("templates service", () => {
 
   it("approveTemplate POSTs to the approve endpoint", async () => {
     await approveTemplate("tpl8");
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/templates/review/tpl8/approve");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/templates/review/tpl8/approve",
+      undefined,
+      {},
+      { rethrowForbidden: true }
+    );
   });
 
   describe("rejectTemplate", () => {
     it("POSTs the provided reason", async () => {
       await rejectTemplate("tpl9", "spam");
-      expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/templates/review/tpl9/reject", {
-        reason: "spam",
-      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "genagent/templates/review/tpl9/reject",
+        { reason: "spam" },
+        {},
+        { rethrowForbidden: true }
+      );
     });
 
     it("defaults the reason to null when omitted", async () => {
       await rejectTemplate("tpl9");
-      expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/templates/review/tpl9/reject", {
-        reason: null,
-      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "genagent/templates/review/tpl9/reject",
+        { reason: null },
+        {},
+        { rethrowForbidden: true }
+      );
     });
   });
 
   it("unpublishTemplate POSTs to the unpublish endpoint", async () => {
     await unpublishTemplate("tpl10");
-    expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/templates/tpl10/unpublish");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/templates/tpl10/unpublish",
+      undefined,
+      {},
+      { rethrowForbidden: true }
+    );
   });
 
   it("removeGlobalTemplate DELETEs from the review endpoint", async () => {
     await removeGlobalTemplate("tpl11");
-    expect(mockApiRequest).toHaveBeenCalledWith("DELETE", "genagent/templates/review/tpl11");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "DELETE",
+      "genagent/templates/review/tpl11",
+      undefined,
+      {},
+      { rethrowForbidden: true }
+    );
   });
 });

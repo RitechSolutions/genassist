@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DataSource } from '@/interfaces/dataSource.interface';
+import { truncateNodeOutput } from '@/views/AIAgents/Workflows/utils/helpers';
 import {
   applyTrainDataSourceType,
   getTrainDataSourceSelection,
@@ -342,5 +343,19 @@ describe('Train Data Source UI', () => {
         { metadata: { rowCount: 1, columns: ['sample_value'] } },
       ),
     ).toBe('1 row × 1 column');
+  });
+
+  it('counts every column after the test output is shortened for display', () => {
+    const columns = Array.from({ length: 14 }, (_, i) => `col_${i + 1}`);
+    const output = truncateNodeOutput({
+      success: true,
+      data: [],
+      metadata: { rowCount: 3_120, columnCount: 14, columns },
+    }) as Record<string, unknown>;
+
+    expect((output.metadata as { columns: string[] }).columns).toHaveLength(4);
+    expect(getTrainDataSourceShape({ sourceType: 'csv' }, output)).toBe(
+      '3,120 rows × 14 columns',
+    );
   });
 });

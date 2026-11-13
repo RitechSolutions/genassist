@@ -234,9 +234,11 @@ export async function queryAgent(
   threadId: string,
   query: string
 ) {
-  return apiRequest("POST", `genagent/agents/${agentId}/query/${threadId}`, {
-    query,
-  });
+  return apiRequest<{ response?: unknown }>(
+    "POST",
+    `genagent/agents/${agentId}/query/${threadId}`,
+    { query }
+  );
 }
 
 // Knowledge base endpoints
