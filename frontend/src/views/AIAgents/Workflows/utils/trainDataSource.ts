@@ -203,6 +203,11 @@ export function getTrainDataSourceShape(
   if (rowCount === undefined && typeof metadata?.rowCount === 'number') {
     rowCount = metadata.rowCount;
   }
+  // Test output is shortened to a few list items for display, so
+  // metadata.columns can be cut; columnCount is the full count.
+  if (columnCount === undefined && typeof metadata?.columnCount === 'number') {
+    columnCount = metadata.columnCount;
+  }
   if (columnCount === undefined && Array.isArray(metadata?.columns)) {
     columnCount = metadata.columns.length;
   }

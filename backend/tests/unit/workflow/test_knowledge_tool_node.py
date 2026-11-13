@@ -64,6 +64,23 @@ async def test_llm_text_is_the_formatted_results_and_sources_are_recorded():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stored", [None, 0], ids=repr)
+async def test_an_empty_stored_limit_searches_with_five(stored):
+    with _search_returning(RESULTS) as rag_manager:
+        await _node().process({"selectedBases": ["kb-1"], "query": "refund", "limit": stored})
+
+    assert rag_manager.search.await_args.kwargs["limit"] == 5
+
+
+@pytest.mark.asyncio
+async def test_a_set_limit_is_kept():
+    with _search_returning(RESULTS) as rag_manager:
+        await _node().process({"selectedBases": ["kb-1"], "query": "refund", "limit": 3})
+
+    assert rag_manager.search.await_args.kwargs["limit"] == 3
+
+
+@pytest.mark.asyncio
 async def test_no_results_keeps_the_existing_text():
     node = _node()
     with _search_returning([]):

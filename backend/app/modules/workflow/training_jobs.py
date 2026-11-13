@@ -124,15 +124,35 @@ def train_model_nodes(
     return found
 
 
+def _is_templated(value: Any) -> bool:
+    return isinstance(value, str) and "{{" in value
+
+
 def check_training_config(node_data: Dict[str, Any]) -> None:
-    """Refuse a Train Model node whose hyperparameter search is too large."""
+    """Refuse a Train Model node whose search settings are out of range or too large.
+
+    Raised as a 400 before a job is queued, rather than failing in the worker
+    (TM-17). The node runs the same checks again when it trains.
+    """
     from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as hpo_module
+    from app.modules.workflow.engine.nodes.ml import training_checks
 
     model_type = node_data.get("modelType")
     model_parameters = node_data.get("modelParameters") or {}
     optimization_config = node_data.get("optimizationConfig") or {}
+    method = node_data.get("hyperparameterOptimization") or "none"
     # Templated values ({{...}}) are only known at run time; the node checks
-    # again once they are resolved.
+    # them once they are resolved.
+    if isinstance(optimization_config, dict) and method in hpo_module.VALID_METHODS:
+        resolved = {key: value for key, value in optimization_config.items() if not _is_templated(value)}
+        # The node's own checks, so a value it would refuse is a 400 here
+        # rather than a failed job; then the ranges the dialog allows.
+        try:
+            training_checks.check_optimization_config(method, resolved)
+        except (TypeError, ValueError):
+            # A malformed value (e.g. a list as Scoring) is reported by the node itself.
+            pass
+        training_checks.check_search_limits(method, resolved)
     if not isinstance(model_type, str) or not isinstance(model_parameters, dict) or not isinstance(
         optimization_config, dict
     ):
@@ -141,12 +161,57 @@ def check_training_config(node_data: Dict[str, Any]) -> None:
         hpo_module.check_search_size(
             model_type.lower(),
             model_parameters,
-            node_data.get("hyperparameterOptimization") or "none",
+            method,
             optimization_config,
         )
     except (TypeError, ValueError):
         # A malformed option (e.g. "cvFolds": "three") is reported by the node itself.
         return
+
+
+def a_train_model_trained(execution_output: Dict[str, Any]) -> bool:
+    """Whether any Train Model node in the run finished with a trained model."""
+    output = execution_output.get("output")
+    # Every Train Model result carries the path of the model it trained.
+    if isinstance(output, dict) and output.get("success") is True and "model_file_path" in output:
+        return True
+    state = execution_output.get("state")
+    statuses = state.get("nodeExecutionStatus") if isinstance(state, dict) else None
+    if not isinstance(statuses, dict):
+        return False
+    return any(
+        isinstance(entry, dict)
+        and entry.get("type") == TRAIN_MODEL_NODE_TYPE
+        and entry.get("status") == "success"
+        and isinstance(entry.get("output"), dict)
+        and entry["output"].get("success") is True
+        and "model_file_path" in entry["output"]
+        for entry in statuses.values()
+    )
+
+
+def run_failure(result: Any) -> Optional[str]:
+    """Why a finished test run failed, or None when it didn't.
+
+    The run returns normally even when a node failed, so the job takes its
+    status from the run's response (TM-17). A failed Train Model node fails
+    the job with its message unless another Train Model node trained a model
+    (the rule ML pipeline runs use), and so does a run whose status is failed.
+    """
+    if not isinstance(result, dict):
+        return None
+    failed_nodes = [node for node in result.get("failed_nodes") or [] if isinstance(node, dict)]
+    training_failures = [node for node in failed_nodes if node.get("type") == TRAIN_MODEL_NODE_TYPE]
+    if training_failures:
+        if a_train_model_trained(result):
+            return None
+        return str(training_failures[0].get("error") or "The Train Model node failed.")
+    if result.get("status") == "failed":
+        for node in failed_nodes:
+            if node.get("error"):
+                return str(node["error"])
+        return "The test run failed."
+    return None
 
 
 def _now() -> str:

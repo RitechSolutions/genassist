@@ -130,7 +130,7 @@ async def test_empty_stream_reports_columns_and_writes_header(monkeypatch, tmp_p
         result = await _node().process(_config("SELECT id, name FROM demo_lots"))
 
     assert result["data"] == []
-    assert result["metadata"] == {"rowCount": 0, "columns": ["id", "name"]}
+    assert result["metadata"] == {"rowCount": 0, "columnCount": 2, "columns": ["id", "name"]}
     # The output names the file inside the data volume, not the server path (TDS-24).
     assert not Path(result["data_path"]).is_absolute()
     assert result["data_path"].startswith("thread-1/")
@@ -499,6 +499,7 @@ async def test_training_file_formats_use_common_streaming_writer(
 
     assert result["metadata"] == {
         "rowCount": 2,
+        "columnCount": 2,
         "columns": ["id", "name"],
     }
     assert result["data"] == [
@@ -574,7 +575,7 @@ async def test_stale_file_path_download_preserves_extension(monkeypatch, tmp_pat
     downloaded_path = Path(download_file.await_args.args[1])
     assert downloaded_path.suffix == ".json"
     assert not downloaded_path.exists()
-    assert result["metadata"] == {"rowCount": 1, "columns": ["id", "name"]}
+    assert result["metadata"] == {"rowCount": 1, "columnCount": 2, "columns": ["id", "name"]}
 
 
 @pytest.mark.asyncio

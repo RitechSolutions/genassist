@@ -522,7 +522,7 @@ class WorkflowState:
         self.status = "completed"
         self.is_executing = False
         self.execution_end_time = int(time.time() * 1000)
-        self.output = self.get_last_node_output()
+        self.output = self.get_answer_output()
         if self.execution_start_time:
             self.time_taken = self.execution_end_time - self.execution_start_time
         self._update_performance_metrics()
@@ -778,6 +778,14 @@ class WorkflowState:
             if self.execution_path and self.execution_path[-1]
             else None
         )
+
+    def get_answer_output(self) -> Any:
+        """The output of the answer node that ran last, or of the last node when none ran."""
+        answer_nodes = set(self._answer_nodes())
+        for node_id in reversed(self.execution_path):
+            if node_id in answer_nodes:
+                return self.node_outputs.get(node_id)
+        return self.get_last_node_output()
 
     def set_node_output(self, node_id: str, output: Any) -> None:
         """Set the output of a specific node"""

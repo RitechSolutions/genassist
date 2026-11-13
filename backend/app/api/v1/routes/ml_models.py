@@ -9,7 +9,7 @@ import uuid
 from contextlib import aclosing
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
 import anyio
@@ -105,6 +105,11 @@ _require_data_source_read = permissions(P.DataSource.READ)
 _require_file_manager_read = permissions(P.FileManager.READ)
 
 
+def _with_notices(ml_model: Any, notices: list[str]) -> MLModelRead:
+    """The saved model plus this save's model-file notices, which are not stored."""
+    return MLModelRead.model_validate(ml_model).model_copy(update={"registration_notices": notices})
+
+
 @router.post("", response_model=MLModelRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.CREATE))
@@ -114,7 +119,9 @@ async def create_ml_model(
     service: MLModelsService = Injected(MLModelsService),
 ):
     """Create a new ML model."""
-    return await service.create(ml_model)
+    notices: list[str] = []
+    created = await service.create(ml_model, notices=notices)
+    return _with_notices(created, notices)
 
 
 @router.get("/{ml_model_id}", response_model=MLModelRead, dependencies=[
@@ -150,7 +157,9 @@ async def update_ml_model(
     service: MLModelsService = Injected(MLModelsService)
 ):
     """Update an existing ML model."""
-    return await service.update(ml_model_id, ml_model_update)
+    notices: list[str] = []
+    updated = await service.update(ml_model_id, ml_model_update, notices=notices)
+    return _with_notices(updated, notices)
 
 
 @router.delete("/{ml_model_id}", status_code=204, dependencies=[

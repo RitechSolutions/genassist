@@ -162,7 +162,7 @@ async def test_csv_header_only_preserves_columns(monkeypatch, tmp_path):
     )
 
     assert result["data"] == []
-    assert result["metadata"] == {"rowCount": 0, "columns": ["id", "name"]}
+    assert result["metadata"] == {"rowCount": 0, "columnCount": 2, "columns": ["id", "name"]}
     assert (tmp_path / "train" / result["data_path"]).read_text(encoding="utf-8") == "id,name\n"
 
 
