@@ -283,7 +283,6 @@ export default function ManageApiKeysModal({
           if (saved.key_val) {
             setSecrets((s) => ({ ...s, [saved.id]: saved.key_val! }));
           }
-          setRotateTarget(null);
         }}
       />
     </>
