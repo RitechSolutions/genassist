@@ -244,61 +244,56 @@ class FaissVectorDB(BaseVectorDB):
         filter_dict: Dict[str, Any] = None
     ) -> List[SearchResult]:
         """Search for similar vectors"""
-        try:
-            if not self.index or self.index.ntotal == 0:
-                return []
-            
-            # Convert query to numpy array
-            query_np = np.array([query_vector], dtype=np.float32)
-            
-            # Normalize if using cosine similarity
-            if self.config.distance_metric == "cosine":
-                norm = np.linalg.norm(query_np)
-                if norm > 0:
-                    query_np = query_np / norm
-            
-            # Search the index
-            distances, indices = self.index.search(query_np, min(limit * 2, self.index.ntotal))
-            
-            # Convert results
-            search_results = []
-            for i, (distance, internal_id) in enumerate(zip(distances[0], indices[0])):
-                if internal_id == -1:  # Invalid result
-                    continue
-                
-                doc_id = self.id_map.get(internal_id)
-                if not doc_id:
-                    continue
-                
-                # Apply filters if provided
-                if filter_dict:
-                    metadata = self.metadata_map.get(doc_id, {})
-                    if not self._matches_filter(metadata, filter_dict):
-                        continue
-                
-                # Convert distance to score
-                if self.config.distance_metric == "cosine":
-                    score = distance  # Inner product for cosine (higher is better)
-                else:
-                    score = 1.0 / (1.0 + distance)  # Convert L2 distance to similarity
-                
-                result = SearchResult(
-                    id=doc_id,
-                    content=self.content_map.get(doc_id, ""),
-                    metadata=self.metadata_map.get(doc_id, {}),
-                    score=score,
-                    distance=distance
-                )
-                search_results.append(result)
-                
-                if len(search_results) >= limit:
-                    break
-            
-            return search_results
-            
-        except Exception as e:
-            logger.error(f"Failed to search FAISS index: {e}")
+        if not self.index or self.index.ntotal == 0:
             return []
+            
+        # Convert query to numpy array
+        query_np = np.array([query_vector], dtype=np.float32)
+            
+        # Normalize if using cosine similarity
+        if self.config.distance_metric == "cosine":
+            norm = np.linalg.norm(query_np)
+            if norm > 0:
+                query_np = query_np / norm
+            
+        # Search the index
+        distances, indices = self.index.search(query_np, min(limit * 2, self.index.ntotal))
+            
+        # Convert results
+        search_results = []
+        for i, (distance, internal_id) in enumerate(zip(distances[0], indices[0])):
+            if internal_id == -1:  # Invalid result
+                continue
+                
+            doc_id = self.id_map.get(internal_id)
+            if not doc_id:
+                continue
+                
+            # Apply filters if provided
+            if filter_dict:
+                metadata = self.metadata_map.get(doc_id, {})
+                if not self._matches_filter(metadata, filter_dict):
+                    continue
+                
+            # Convert distance to score
+            if self.config.distance_metric == "cosine":
+                score = distance  # Inner product for cosine (higher is better)
+            else:
+                score = 1.0 / (1.0 + distance)  # Convert L2 distance to similarity
+                
+            result = SearchResult(
+                id=doc_id,
+                content=self.content_map.get(doc_id, ""),
+                metadata=self.metadata_map.get(doc_id, {}),
+                score=score,
+                distance=distance
+            )
+            search_results.append(result)
+                
+            if len(search_results) >= limit:
+                break
+            
+        return search_results
     
     async def get_by_ids(self, ids: List[str]) -> List[SearchResult]:
         """Get vectors by their IDs"""

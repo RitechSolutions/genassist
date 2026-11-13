@@ -8,7 +8,7 @@ Each provider implements the BaseDataProvider interface.
 import importlib as _importlib
 from typing import TYPE_CHECKING
 
-from .models import SearchResult
+from .models import KnowledgeSearchError, SearchResult
 from .base import BaseDataProvider, FinalizableProvider
 from .plain import PlainProvider
 # Config types are lightweight — the vector/legra/lightrag packages expose them eagerly
@@ -46,6 +46,7 @@ __all__ = [
     "BaseDataProvider",
     "FinalizableProvider",
     "SearchResult",
+    "KnowledgeSearchError",
     "LegraProvider",
     "VectorProvider",
     "LightRAGProvider",

@@ -8,7 +8,7 @@ without chunking, embedding, or vector operations. Returns content as-is.
 import logging
 from typing import List, Dict, Any, Union
 from ..base import BaseDataProvider
-from ..models import SearchResult
+from ..models import KnowledgeSearchError, SearchResult
 
 
 logger = logging.getLogger(__name__)
@@ -128,38 +128,33 @@ class PlainProvider(BaseDataProvider):
         Returns:
             List of search results with content as-is
         """
-        try:
-            if not self._initialized:
-                if not await self.initialize():
-                    return []
+        if not self._initialized:
+            if not await self.initialize():
+                raise KnowledgeSearchError("the plain document store could not be started")
 
-            # Filter documents by knowledge base if specified
-            filtered_docs = {}
-            for doc_id, doc_data in self.documents.items():
-                if filter_dict and self.knowledge_base_id:
-                    if doc_data["metadata"].get("kb_id") != self.knowledge_base_id:
-                        continue
-                filtered_docs[doc_id] = doc_data
+        # Filter documents by knowledge base if specified
+        filtered_docs = {}
+        for doc_id, doc_data in self.documents.items():
+            if filter_dict and self.knowledge_base_id:
+                if doc_data["metadata"].get("kb_id") != self.knowledge_base_id:
+                    continue
+            filtered_docs[doc_id] = doc_data
 
-            # Convert to SearchResult format - return content as-is
-            results = []
-            for doc_id, doc_data in list(filtered_docs.items())[:limit]:
-                search_result = SearchResult(
-                    id=doc_id,
-                    content=doc_data["content"],  # Return content as-is
-                    metadata=doc_data["metadata"],
-                    score=1.0,  # Plain provider doesn't do scoring
-                    source="plain",
-                    chunk_count=1  # Plain provider stores whole documents
-                )
-                results.append(search_result)
+        # Convert to SearchResult format - return content as-is
+        results = []
+        for doc_id, doc_data in list(filtered_docs.items())[:limit]:
+            search_result = SearchResult(
+                id=doc_id,
+                content=doc_data["content"],  # Return content as-is
+                metadata=doc_data["metadata"],
+                score=1.0,  # Plain provider doesn't do scoring
+                source="plain",
+                chunk_count=1  # Plain provider stores whole documents
+            )
+            results.append(search_result)
 
-            logger.debug(f"Plain search returned {len(results)} documents")
-            return results
-
-        except Exception as e:
-            logger.error(f"Failed to search plain store: {e}")
-            return []
+        logger.debug(f"Plain search returned {len(results)} documents")
+        return results
 
     async def get_document_ids(self, kb_id: Union[str, None] = None) -> List[str]:
         """
