@@ -317,7 +317,7 @@ async def test_excel_sheet_name_from_node_config(monkeypatch, tmp_path):
 
     result = await _node().process({"sourceType": "csv", "csvFilePath": str(source), "sheetName": "B"})
 
-    assert result["metadata"] == {"rowCount": 2, "columns": ["y"]}
+    assert result["metadata"] == {"rowCount": 2, "columnCount": 1, "columns": ["y"]}
 
 
 @pytest.mark.asyncio
