@@ -1,4 +1,12 @@
-import { apiRequest, getApiUrl, API_PREPROCESSING_TIMEOUT_MS } from "@/config/api";
+import { isCancel } from "axios";
+import {
+  api,
+  apiRequest,
+  formatUploadOrNetworkError,
+  getApiUrl,
+  API_PREPROCESSING_TIMEOUT_MS,
+  API_UPLOAD_TIMEOUT_MS,
+} from "@/config/api";
 import { extractErrorMessage } from "@/helpers/apiError";
 import { MLModel, MLModelFormData } from "@/interfaces/ml-model.interface";
 
@@ -82,47 +90,48 @@ const discardUnusedUpload = async (path: string, fileId: string, label: string):
   }
 };
 
+export interface ModelFileUpload {
+  file_path: string | null;
+  original_filename: string;
+  file_id?: string;
+  file_url?: string;
+}
+
+/**
+ * Upload a .pkl for a model and report progress from 0 to 100.
+ *
+ * Uses the shared API client, so the login is renewed before the upload is sent and
+ * once more if the server refuses an expired token (a long upload can outlive it).
+ * Not through apiRequest: a proxy timeout on this one long request must not mark the
+ * whole server as down. A failure is rethrown with a plain message (never a proxy's
+ * HTML error page); a cancelled request, such as an ended session, is rethrown as is.
+ */
 export const uploadModelFile = async (
   file: File,
-): Promise<{ file_path: string | null; original_filename: string; file_id?: string; file_url?: string }> => {
-  try {
+  onProgress?: (percent: number) => void,
+): Promise<ModelFileUpload> => {
   const formData = new FormData();
   formData.append("file", file);
-
-  const baseURL = await getApiUrl();
-  const token = localStorage.getItem("access_token");
-  const tokenType = localStorage.getItem("token_type");
-  const tenantId = localStorage.getItem("tenant_id");
-
-  const headers: Record<string, string> = {};
-
-  if (token && tokenType) {
-    headers["Authorization"] = `${tokenType} ${token}`;
-  }
-
-  if (tenantId) {
-    headers["x-tenant-id"] = tenantId;
-  }
-
-  const response = await fetch(`${baseURL}${BASE}/upload`, {
-    method: "POST",
-    body: formData,
-    headers,
-  });
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `API error: ${response.status}`);
-  }
-
-  return await response.json() as Promise<{
-    file_path: string;
-    original_filename: string;
-    file_id?: string;
-    file_url?: string;
-  }>;
+  try {
+    const { data } = await api.post<ModelFileUpload>(`${await getApiUrl()}${BASE}/upload`, formData, {
+      timeout: API_UPLOAD_TIMEOUT_MS,
+      onUploadProgress: (event) => {
+        if (!onProgress) return;
+        const total = event.total || file.size;
+        if (total > 0) onProgress(Math.min(100, Math.round((event.loaded * 100) / total)));
+      },
+    });
+    if (!data) throw new Error("The model file could not be uploaded.");
+    return data;
   } catch (error) {
-    console.error("Error uploading model file:", error);
-    throw error;
+    if (isCancel(error)) throw error;
+    const status = (error as { response?: { status?: number } }).response?.status;
+    if (status === 502 || status === 503 || status === 504) {
+      throw new Error(
+        "The server took too long to accept the model file. Try again; if it keeps happening, ask an admin to check the upload time limit.",
+      );
+    }
+    throw new Error(formatUploadOrNetworkError(error));
   }
 };
 
