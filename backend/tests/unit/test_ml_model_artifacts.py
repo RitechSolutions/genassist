@@ -182,7 +182,10 @@ class TestExtractContract:
 
 class TestValidateRegistryContract:
     def test_accepts_exact_match(self):
-        validate_registry_contract(_contract(), ["hour", "lag_24"], "revenue")
+        check = validate_registry_contract(_contract(), ["hour", "lag_24"], "revenue")
+
+        assert check.features == ("hour", "lag_24")
+        assert check.notices == ()
 
     @pytest.mark.parametrize(
         "registered,fragment",
@@ -200,13 +203,77 @@ class TestValidateRegistryContract:
         assert exc.value.error_key is ErrorKey.ML_MODEL_ARTIFACT_INVALID
         assert fragment.lower() in exc.value.error_detail.lower()
 
-    def test_accepts_the_same_unique_features_in_a_different_order(self):
-        validate_registry_contract(_contract(), ["lag_24", "hour"], "revenue")
+    def test_reordered_features_are_returned_in_the_file_order_with_a_notice(self):
+        check = validate_registry_contract(_contract(), ["lag_24", "hour"], "revenue")
 
-    def test_accepts_reordered_sklearn_estimator_features(self):
+        assert check.features == ("hour", "lag_24")
+        assert check.notices == (
+            "Features were saved in the order the model was trained on: 'hour', 'lag_24'.",
+        )
+
+    def test_reordered_sklearn_estimator_features_are_returned_in_the_file_order(self):
         contract = extract_model_artifact_contract(_named_raw_model())
 
-        validate_registry_contract(contract, ["lag_24", "hour"], "anything")
+        check = validate_registry_contract(contract, ["lag_24", "hour"], "revenue")
+
+        assert check.features == ("hour", "lag_24")
+        assert check.notices[0].startswith("Features were saved in the order the model was trained on")
+
+    def test_reordered_lightgbm_features_keep_their_registered_spelling(self):
+        class LightGBMModel:
+            n_features_in_ = 2
+            feature_name_ = ["monthly_charges", "tenure"]
+
+        LightGBMModel.__module__ = "lightgbm.sklearn"
+        contract = extract_model_artifact_contract(LightGBMModel())
+
+        check = validate_registry_contract(contract, ["tenure", "monthly charges"], "churn")
+
+        assert check.features == ("monthly charges", "tenure")
+
+    def test_file_without_a_target_says_the_target_was_not_checked(self):
+        contract = extract_model_artifact_contract(_named_raw_model())
+
+        check = validate_registry_contract(contract, ["hour", "lag_24"], "revenue")
+
+        assert check.notices == (
+            "The model file does not record its target, so the target 'revenue' could not be checked against it.",
+        )
+
+    def test_target_notice_without_a_target_names_none(self):
+        contract = extract_model_artifact_contract(_named_raw_model())
+
+        check = validate_registry_contract(contract, ["hour", "lag_24"], None)
+
+        assert check.notices == (
+            "The model file does not record its target, so the target could not be checked against it.",
+        )
+
+    def test_order_notice_lists_every_feature(self):
+        features = tuple(f"f{index}" for index in range(8))
+
+        check = validate_registry_contract(_contract(features), list(reversed(features)), "revenue")
+
+        assert check.features == features
+        assert check.notices[0].endswith(", ".join(repr(name) for name in features) + ".")
+
+    def test_order_notice_is_capped_for_very_long_lists(self):
+        features = tuple(f"feature_with_a_long_descriptive_name_{index:02d}" for index in range(30))
+
+        check = validate_registry_contract(_contract(features), list(reversed(features)), "revenue")
+
+        assert len(check.notices[0]) <= 440
+
+    def test_file_with_a_target_adds_no_target_notice(self):
+        check = validate_registry_contract(_contract(), ["hour", "lag_24"], "revenue")
+
+        assert not any("target" in notice for notice in check.notices)
+
+    def test_reordered_features_do_not_hide_a_typo(self):
+        with pytest.raises(AppException) as exc:
+            validate_registry_contract(_contract(), ["lag24", "hour"], "revenue")
+
+        assert "Missing features: 'lag_24'. Features not in the model: 'lag24'." in exc.value.error_detail
 
     def test_target_mismatch_is_reported_first(self):
         with pytest.raises(AppException) as exc:
