@@ -441,3 +441,123 @@ def test_lines_still_print_after_celery_redirects_stdout(json_lines, monkeypatch
     task, printed = [json.loads(line) for line in real_stdout.getvalue().splitlines()]
     assert task["message"] == "Task finished"
     assert (printed["message"], printed["status"]) == ("printed by a task", "warn")
+
+
+# --------------------------------------------------------------------------- #
+# Knowledge base sync jobs
+# --------------------------------------------------------------------------- #
+class _FakeSpan:
+    def __init__(self):
+        self.tags, self.metrics, self.error = {}, {}, 0
+
+    def set_tag(self, key, value):
+        self.tags[key] = value
+
+    def set_metric(self, key, value):
+        self.metrics[key] = value
+
+
+def _fake_ddtrace_root_span(monkeypatch, span):
+    """Stand-in for the tracer the Datadog admission controller loads in the workers."""
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    trace_module = ModuleType("ddtrace.trace")
+    trace_module.tracer = SimpleNamespace(current_root_span=lambda: span)
+    monkeypatch.setitem(sys.modules, "ddtrace", ModuleType("ddtrace"))
+    monkeypatch.setitem(sys.modules, "ddtrace.trace", trace_module)
+
+
+def _job(*tenant_results):
+    return {"status": "success", "results": list(tenant_results)}
+
+
+@pytest.mark.parametrize(
+    "job_result, expected",
+    [
+        (_job({"tenant_id": "master", "result": {"status": "completed", "kbs_failed": 0}}), 0),
+        (_job({"tenant_id": "master", "result": {"status": "completed", "kbs_failed": 2}},
+              {"tenant_id": "acme", "result": {"status": "completed", "kbs_failed": 1}}), 3),
+        (_job({"tenant_id": "acme", "error": "database unavailable"}), 1),
+        (_job({"tenant_id": "master", "result": {"status": "failed", "error": "Knowledge base not found"}}), 1),
+        ({"status": "failed", "error": "no tenants could be read"}, 1),
+        (_job(), 0),
+        (None, 0),
+    ],
+)
+def test_kb_sync_error_count(job_result, expected):
+    from app.core.observability.datadog_observability import kb_sync_error_count
+
+    assert kb_sync_error_count(job_result) == expected
+
+
+def test_a_sync_job_with_a_failed_knowledge_base_is_tagged_and_marked_failed(datadog_on, monkeypatch):
+    span = _FakeSpan()
+    _fake_ddtrace_root_span(monkeypatch, span)
+
+    datadog_observability.tag_kb_sync("zendesk", _job({"tenant_id": "master", "result": {"kbs_failed": 2}}))
+
+    assert span.tags["kb.source"] == "zendesk"
+    assert span.tags["kb.result"] == "failed"
+    assert span.metrics["kb.error_count"] == 2
+    assert span.error == 1
+
+
+def test_a_successful_sync_job_is_tagged_and_not_marked_failed(datadog_on, monkeypatch):
+    span = _FakeSpan()
+    _fake_ddtrace_root_span(monkeypatch, span)
+
+    datadog_observability.tag_kb_sync("s3", _job({"tenant_id": "master", "result": {"kbs_failed": 0}}))
+
+    assert span.tags == {"kb.source": "s3", "kb.result": "success"}
+    assert span.metrics["kb.error_count"] == 0
+    assert span.error == 0
+
+
+def test_sync_jobs_are_not_tagged_when_datadog_is_off(monkeypatch):
+    monkeypatch.setattr(settings, "DATADOG_ENABLED", False)
+    span = _FakeSpan()
+    _fake_ddtrace_root_span(monkeypatch, span)
+
+    datadog_observability.tag_kb_sync("s3", _job({"tenant_id": "master", "result": {"kbs_failed": 1}}))
+
+    assert span.tags == {} and span.error == 0
+
+
+def test_sync_jobs_without_ddtrace_loaded_are_left_alone(datadog_on, monkeypatch):
+    import sys
+
+    monkeypatch.delitem(sys.modules, "ddtrace", raising=False)
+    datadog_observability.tag_kb_sync("s3", _job({"tenant_id": "master", "result": {"kbs_failed": 1}}))
+
+    assert "ddtrace" not in sys.modules
+
+
+@pytest.mark.parametrize(
+    "module_name, task_name, source",
+    [
+        ("app.tasks.s3_tasks", "import_s3_files_to_kb", "s3"),
+        ("app.tasks.sharepoint_tasks", "import_sharepoint_files_to_kb", "sharepoint"),
+        ("app.tasks.zendesk_article_sync_tasks", "import_zendesk_articles_to_kb", "zendesk"),
+        ("app.tasks.salesforce_article_sync_tasks", "import_salesforce_articles_to_kb", "salesforce"),
+    ],
+)
+def test_each_sync_job_tags_its_trace_with_its_result(module_name, task_name, source, monkeypatch):
+    import importlib
+    from unittest.mock import MagicMock
+
+    module = importlib.import_module(module_name)
+    job_result = _job({"tenant_id": "master", "result": {"kbs_failed": 1}})
+
+    def _run(coro, **_):
+        coro.close()
+        return job_result
+
+    monkeypatch.setattr(module, "run_async_in_celery", _run, raising=False)
+    if module_name.endswith("salesforce_article_sync_tasks"):
+        monkeypatch.setattr("app.tasks.base.run_async_in_celery", _run)
+    tag = MagicMock()
+    monkeypatch.setattr(module.datadog_observability, "tag_kb_sync", tag)
+
+    assert getattr(module, task_name).run() is job_result
+    tag.assert_called_once_with(source, job_result)

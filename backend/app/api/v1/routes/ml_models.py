@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import uuid
 from contextlib import aclosing
 from decimal import Decimal
@@ -188,6 +189,17 @@ async def upload_pkl_file(
     - Saves file with unique filename
     - Returns file path and original filename
     """
+    # FastAPI has already received and parsed the whole body when this runs. The request's
+    # "Request handled" duration minus the route total logged below is the time before the
+    # route: mostly the file transfer, plus multipart parsing and the auth checks.
+    route_start = time.perf_counter()
+    stage_ms: dict[str, float] = {}
+
+    def _mark(stage: str, since: float) -> float:
+        now = time.perf_counter()
+        stage_ms[stage] = (now - since) * 1000
+        return now
+
     try:
         logger.info(f"Received file upload: {file.filename}, content_type: {file.content_type}")
 
@@ -203,6 +215,7 @@ async def upload_pkl_file(
         # initialize the file manager service
         app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
         storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings = app_settings_config)
+        stage_start = _mark("settings", route_start)
 
         # create file base
         file_base = FileBase(
@@ -216,11 +229,13 @@ async def upload_pkl_file(
 
         # create file in file manager service
         created_file = await file_manager_service.create_file(file, file_base=file_base, allowed_extensions=["pkl"], max_file_size=MAX_PKL_FILE_SIZE)
+        stage_start = _mark("storage write", stage_start)
 
         copy_path = None
         try:
             # get file info
             file_url = await file_manager_service.get_file_source_url(created_file.id)
+            stage_start = _mark("source URL", stage_start)
             file_path = None
 
             if created_file.storage_provider == "local":
@@ -234,6 +249,7 @@ async def upload_pkl_file(
                     await anyio.to_thread.run_sync(shutil.copyfile, file_path, copy_path)
                     await anyio.lowlevel.checkpoint_if_cancelled()
                     file_path = copy_path
+                    stage_start = _mark("copy into ml_models", stage_start)
                 # file_path = await file_manager_service.get_file_url(created_file)
         except BaseException:
             # The client never gets this file's id, so it can't discard it: remove it here.
@@ -244,6 +260,14 @@ async def upload_pkl_file(
             raise
 
         file_id = str(created_file.id)
+        logger.info(
+            "Model file upload %s: %s bytes on %s storage, %s, route total %.0f ms",
+            file_id,
+            getattr(created_file, "size", None),
+            getattr(created_file, "storage_provider", None),
+            ", ".join(f"{stage} {ms:.0f} ms" for stage, ms in stage_ms.items()),
+            (time.perf_counter() - route_start) * 1000,
+        )
 
         return FileUploadResponse(
             filename=file.filename,
@@ -499,34 +523,44 @@ async def analyze_csv(
             logger.info("Preprocessing data with Python code before analysis")
 
             try:
-                # Load the CSV file using shared utility
-                df = ml_utils.load_csv_file(str(file_path))
+                # file_path is already resolved and checked: a local file inside
+                # the data volume, or a File Manager / S3 file downloaded to a
+                # temp file. Read it as it is; resolving it again would refuse
+                # the temp file because it is outside the data volume.
+                df = await asyncio.to_thread(
+                    ml_utils.load_resolved_csv, file_path, file_url or file_name
+                )
 
+                # The code's fileUrl: the local path as before, but for a
+                # downloaded copy the name the user knows, never the temp path.
+                code_file_url = (
+                    (file_name or file_url or "") if temporary_path is not None else str(file_path)
+                )
                 # Execute preprocessing code using shared utility
                 # Use raise_on_error=True to raise exceptions for API endpoint
                 processed_df, _, _ = await ml_utils.execute_and_process_preprocessing_code(
-                    python_code, df, str(file_path), raise_on_error=True
+                    python_code, df, code_file_url, raise_on_error=True
                 )
 
-                # Save processed data to a temporary CSV file
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as tmp_file:
-                    processed_df.to_csv(tmp_file.name, index=False, encoding='utf-8')
-                    temp_file_path = tmp_file.name
-                # Keep the column types the preprocessing code produced, so the
-                # analysis reports them the way the next node will see them.
-                dtypes_path = ml_utils.write_dtypes_sidecar(temp_file_path, processed_df)
+                # Save processed data to a temporary CSV file. Keep the column
+                # types the preprocessing code produced, so the analysis reports
+                # them the way the next node will see them. The thread owns its
+                # files and removes them itself, so a cancelled request can't
+                # leave them behind.
+                def _analyze_processed() -> dict:
+                    path = _temporary_csv_path(".csv")
+                    try:
+                        processed_df.to_csv(path, index=False, encoding="utf-8")
+                        ml_utils.write_dtypes_sidecar(str(path), processed_df)
+                        return ml_utils.analyze_csv_data(str(path))
+                    finally:
+                        for leftover in (path, ml_utils.dtypes_sidecar_path(path)):
+                            try:
+                                Path(leftover).unlink(missing_ok=True)
+                            except OSError as e:
+                                logger.warning(f"Failed to delete temporary file {leftover}: {str(e)}")
 
-                try:
-                    # Analyze the processed CSV file
-                    analysis = ml_utils.analyze_csv_data(temp_file_path)
-                    return analysis
-                finally:
-                    # Clean up temporary files
-                    for path in (temp_file_path, dtypes_path):
-                        try:
-                            os.unlink(path)
-                        except Exception as e:
-                            logger.warning(f"Failed to delete temporary file {path}: {str(e)}")
+                return await asyncio.to_thread(_analyze_processed)
 
             except AppException as e:
                 # Convert AppException to HTTPException for API endpoint
@@ -535,15 +569,15 @@ async def analyze_csv(
                     detail=e.error_detail
                 )
             except Exception as e:
+                # The exception text can name a server path; it goes to the log only.
                 logger.error(f"Error executing preprocessing code: {str(e)}", exc_info=True)
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Error executing preprocessing code: {str(e)}"
+                    detail="Error executing preprocessing code. Check the server log for details.",
                 ) from e
 
         # If no python_code, analyze the original CSV file directly
-        analysis = ml_utils.analyze_csv_data(str(file_path))
-        return analysis
+        return await asyncio.to_thread(ml_utils.analyze_csv_data, str(file_path))
 
     except HTTPException:
         raise
@@ -556,10 +590,11 @@ async def analyze_csv(
             detail=exc.error_detail,
         ) from exc
     except Exception as e:
+        # The exception text can name a server path; it goes to the log only.
         logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error analyzing CSV file: {str(e)}"
+            detail="Error analyzing CSV file. Check the server log for details.",
         ) from e
     finally:
         if temporary_path is not None:
@@ -703,6 +738,10 @@ def _build_dataframe_profile_report_html(
     return profile.to_html()
 
 
+# An extension a real file can have (".tsv", ".xls"), unlike ".3" or ".2,4" from pasted numbers.
+_REAL_EXTENSION = re.compile(r"\.[a-z][a-z0-9]{0,9}")
+
+
 def _temporary_csv_path(suffix: str = ".csv") -> Path:
     """Create a closed temporary file path (default .csv) suitable for async downloads."""
     with tempfile.NamedTemporaryFile(suffix=suffix or ".csv", delete=False) as temp_file:
@@ -837,6 +876,7 @@ async def _resolve_csv_input(
     if file_id is None and file_url:
         file_id = await file_manager_service.extract_file_id_from_url(file_url)
 
+
     if file_id is not None:
         await _require_file_manager_read(request)
         try:
@@ -886,6 +926,10 @@ async def _resolve_csv_input(
     if candidate_name:
         candidate_suffix = Path(candidate_name.split("?", maxsplit=1)[0]).suffix.lower()
         if candidate_suffix and candidate_suffix not in allowed_suffixes:
+            if not _REAL_EXTENSION.fullmatch(candidate_suffix) and ml_utils.looks_like_inline_data(file_url):
+                # Pasted data such as "1.5,2.3" reads as a file ending in ".3",
+                # which can't be an extension; say what it is, without repeating it.
+                raise HTTPException(status_code=400, detail=ml_utils.INLINE_DATA_DETAIL)
             raise _unsupported_file_type_error(candidate_suffix, allowed_suffixes)
 
     if file_url and not file_url.startswith(("http://", "https://")):
@@ -893,9 +937,16 @@ async def _resolve_csv_input(
         extra_directories = await ml_utils.extra_csv_directories()
         if candidate_suffix in ("", ".csv"):
             await training_data_storage.fetch_training_data(file_url, allowed_directories=extra_directories)
-            local_path = ml_utils.resolve_csv_file_path(
-                file_url, allowed_directories=extra_directories
-            )
+            try:
+                local_path = ml_utils.resolve_csv_file_path(
+                    file_url, allowed_directories=extra_directories
+                )
+            except AppException as exc:
+                # No file by that name and it looks like pasted data: a bad
+                # request, not a missing file.
+                if exc.error_detail == ml_utils.INLINE_DATA_DETAIL:
+                    raise HTTPException(status_code=400, detail=exc.error_detail) from exc
+                raise
         else:
             local_path = _training_file_path_inside(file_url, extra_directories)
         _enforce_csv_input_byte_limit(local_path)

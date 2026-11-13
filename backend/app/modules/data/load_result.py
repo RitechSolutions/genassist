@@ -1,8 +1,10 @@
 """Reading the result of loading a document into a knowledge base."""
 
+import datetime
 from typing import Any, Mapping, Optional
 
 ERRORS_SHOWN = 5
+SUCCESSFUL_SYNC_STATUSES = ("success", "success_with_warnings")
 
 
 class DocumentNotLoadedError(Exception):
@@ -71,3 +73,12 @@ def article_sync_outcome(attempted: int, copied: int, errors: list[str], had_art
         details = f"{failed} of {attempted} articles could not be copied: {details}"
     nothing_copied_and_none_found = attempted > 0 and copied == 0 and not had_articles
     return ("error" if nothing_copied_and_none_found else "success_with_warnings"), details
+
+
+def sync_result_fields(status: str, error: str = "", now: Optional[datetime.datetime] = None) -> dict[str, Any]:
+    """The KB fields a sync writes: last_synced on every run, last_successful_sync only when it succeeded."""
+    now = now or datetime.datetime.now()
+    fields: dict[str, Any] = {"last_synced": now, "last_sync_status": status, "last_sync_error": error}
+    if status in SUCCESSFUL_SYNC_STATUSES:
+        fields["last_successful_sync"] = now
+    return fields

@@ -10,12 +10,13 @@ from celery import shared_task
 from croniter import croniter
 from sqlalchemy import select
 
+from app.core.observability.datadog_observability import datadog_observability
 from app.core.utils.encryption_utils import decrypt_key
 from app.core.utils.html_utils import html2markdown, html2plaintext
 from app.db.models.knowledge_base import KnowledgeBaseModel
 from app.db.transaction_manager import TransactionManager
 from app.dependencies.injector import injector
-from app.modules.data.load_result import article_sync_outcome, load_document
+from app.modules.data.load_result import article_sync_outcome, load_document, sync_result_fields
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.integration.salesforce import SalesforceConnector
 from app.schemas.agent_knowledge import KBRead
@@ -150,7 +151,7 @@ async def apply_stored_copy_dates_on_save(kb_service: KnowledgeBaseService, kb_i
 
 
 def _sync_fields(status: str, error: str = "") -> dict[str, Any]:
-    return {"last_synced": datetime.now(), "last_sync_status": status, "last_sync_error": error}
+    return sync_result_fields(status, error)
 
 
 def _with_settings_warning(fields: dict[str, Any]) -> dict[str, Any]:
@@ -286,11 +287,13 @@ def import_salesforce_articles_to_kb(kb_id: Optional[str] = None, sync_now: bool
     # single sync so a hung downstream call (RAG/embeddings/pgvector) cannot wedge the worker.
     from app.tasks.base import run_async_in_celery
 
-    return run_async_in_celery(
+    result = run_async_in_celery(
         import_salesforce_articles_to_kb_async_with_scope(kb_id=kb_id, sync_now=sync_now),
         timeout=15 * 60,
         task_name="import_salesforce_articles_to_kb",
     )
+    datadog_observability.tag_kb_sync("salesforce", result)
+    return result
 
 
 async def import_salesforce_articles_to_kb_async_with_scope(
@@ -316,7 +319,8 @@ async def import_salesforce_articles_to_kb_async(
     """Async implementation of SalesForce Knowledge article import.
 
     Persists ``last_synced``, ``last_sync_status``, and ``last_sync_error`` on the KB row so
-    the UI can show outcome. Returns aggregate counts plus ``per_kb`` for API responses.
+    the UI can show outcome, and ``last_successful_sync`` when the sync succeeded.
+    Returns aggregate counts plus ``per_kb`` for API responses.
     Only these sync fields and the copy dates are written, so changes saved during a sync are kept.
     """
     logger.info("Starting SalesForce article import...")
@@ -385,6 +389,7 @@ async def import_salesforce_articles_to_kb_async(
         }
 
     processed_ds = 0
+    kbs_failed = 0
     articles_added_tot = 0
     articles_deleted_tot = 0
     articles_updated_tot = 0
@@ -439,6 +444,7 @@ async def import_salesforce_articles_to_kb_async(
                     kb,
                     _sync_fields("error", f"Sync source is not SalesForce (type={ds.source_type})"),
                 )
+                kbs_failed += 1
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -498,6 +504,7 @@ async def import_salesforce_articles_to_kb_async(
                 await _save_sync_result(
                     kb_service, kb, _sync_fields("error", "SalesForce datasource has no connection data")
                 )
+                kbs_failed += 1
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -519,6 +526,7 @@ async def import_salesforce_articles_to_kb_async(
             err = "Incomplete SalesForce connection (app_settings_id and content_field required)"
             logger.error(f"Knowledge base {kb.id}: {err}")
             await _save_sync_result(kb_service, kb, _sync_fields("error", err))
+            kbs_failed += 1
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -765,6 +773,8 @@ async def import_salesforce_articles_to_kb_async(
             saved_fields = await _save_sync_result(
                 kb_service, kb, final_fields, copy_dates=article_updated_at_map
             )
+            if saved_fields["last_sync_status"] == "error":
+                kbs_failed += 1
 
             articles_added_tot += articles_added
             articles_deleted_tot += articles_deleted
@@ -787,6 +797,7 @@ async def import_salesforce_articles_to_kb_async(
             logger.error(error_msg)
             await injector.get(TransactionManager).rollback()
             await _save_sync_result(kb_service, kb, _sync_fields("error", str(e)))
+            kbs_failed += 1
             per_kb.append(
                 {
                     "kb_id": str(kb.id),
@@ -803,6 +814,7 @@ async def import_salesforce_articles_to_kb_async(
         "articles_deleted": articles_deleted_tot,
         "articles_updated": articles_updated_tot,
         "datasources_processed": processed_ds,
+        "kbs_failed": kbs_failed,
         "per_kb": per_kb,
     }
 

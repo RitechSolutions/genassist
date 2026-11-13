@@ -155,3 +155,171 @@ def test_without_the_keepalive_header_a_run_answers_plain_json(studio):
     assert response.status_code == 200
     assert response.text == '{"status":"completed"}'
     assert state.calls == ["engine"]
+
+
+# WB-3 (68392): a queued training job reaches the Studio through keepalive
+
+QUEUED_JOB = {
+    "job_id": "job-1",
+    "status": "queued",
+    "kind": "node",
+    "progress": {"stage": "queued"},
+    "result": None,
+    "error": None,
+}
+TRAIN_NODE_BODY = {"node_type": "trainModelNode", "node_config": {"name": "Train Model"}, "input_data": {}}
+TRAIN_WORKFLOW_BODY = {
+    "input_data": {"message": "hi"},
+    "workflow": {
+        "name": "g",
+        "version": "1",
+        "nodes": [
+            {"id": "in", "type": "chatInputNode", "data": {}},
+            {"id": "train", "type": "trainModelNode", "data": {"name": "Train Model"}},
+        ],
+        "edges": [{"id": "e", "source": "in", "target": "train"}],
+    },
+}
+
+
+@pytest.fixture
+def queued_training(monkeypatch, studio):
+    client, state = studio
+
+    async def queue(kind, training_nodes, payload):
+        state.calls.append(f"queued-{kind}")
+        return {**QUEUED_JOB, "kind": kind}
+
+    monkeypatch.setattr(route, "_queue_training_job", queue)
+    return client, state
+
+
+@pytest.mark.parametrize(
+    "url, body, kind",
+    [("/test-node", TRAIN_NODE_BODY, "node"), ("/test", TRAIN_WORKFLOW_BODY, "workflow")],
+)
+def test_a_queued_training_job_arrives_as_the_job_through_keepalive(queued_training, url, body, kind):
+    client, state = queued_training
+
+    response = client.post(url, json=body)
+
+    assert response.status_code == 200
+    data = response.json()
+    # The job itself, as the Studio's isTrainingJob expects - never a Response's attributes.
+    assert data == {**QUEUED_JOB, "kind": kind}
+    assert not {"status_code", "body", "raw_headers", "background"} & set(data)
+    assert f"queued-{kind}" in state.calls
+
+
+@pytest.mark.parametrize(
+    "url, body, kind",
+    [("/test-node", TRAIN_NODE_BODY, "node"), ("/test", TRAIN_WORKFLOW_BODY, "workflow")],
+)
+def test_without_the_keepalive_header_a_queued_job_is_still_a_202(queued_training, url, body, kind):
+    client, _ = queued_training
+    client.headers.pop("X-Keepalive")
+
+    response = client.post(url, json=body)
+
+    assert response.status_code == 202
+    assert response.json() == {**QUEUED_JOB, "kind": kind}
+
+
+@pytest.mark.parametrize("keepalive", [True, False])
+def test_a_second_training_test_is_refused_with_409(studio, monkeypatch, keepalive):
+    client, _ = studio
+    if not keepalive:
+        client.headers.pop("X-Keepalive")
+
+    async def queue(kind, training_nodes, payload):
+        raise AppException(ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING, 409, "You already have a training test running.")
+
+    monkeypatch.setattr(route, "_queue_training_job", queue)
+
+    response = client.post("/test-node", json=TRAIN_NODE_BODY)
+
+    if keepalive:
+        # The stream has started, so the refusal is the error envelope the Studio turns into an error.
+        assert response.status_code == 200
+        assert response.json()["error_code"] == 409
+        assert response.json()["error_key"] == "ML_TRAINING_JOB_ALREADY_RUNNING"
+    else:
+        assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_queue_training_job_returns_the_job_not_a_response(monkeypatch):
+    class Store:
+        async def start(self, tenant_id, owner, kind):
+            return {"job_id": "job-9", "status": "queued", "kind": kind, "user_id": owner, "heartbeat": 9e12, "progress": {}}, None
+
+    queued = []
+    monkeypatch.setattr(route, "_training_job_store", lambda: Store())
+    monkeypatch.setattr(route, "_training_job_owner", lambda: "user-1")
+    monkeypatch.setattr(route, "get_tenant_context", lambda: "master")
+    monkeypatch.setattr(route.training_jobs, "check_training_config", lambda node: None)
+    import app.tasks.ml_training_job_tasks as tasks
+
+    monkeypatch.setattr(tasks.run_training_job_task, "delay", lambda *args: queued.append(args))
+
+    job = await route._queue_training_job("node", [{}], {"workflow_config": {}})
+
+    assert isinstance(job, dict)
+    assert job["job_id"] == "job-9" and job["status"] == "queued"
+    assert "user_id" not in job and "heartbeat" not in job  # the public view
+    assert queued and queued[0][0] == "job-9"
+
+
+def _real_queue(monkeypatch, queued):
+    """The real _queue_training_job, with the job store and the Celery task replaced."""
+
+    class Store:
+        async def start(self, tenant_id, owner, kind):
+            job = {"job_id": "job-7", "status": "queued", "kind": kind, "user_id": owner, "heartbeat": 9e12,
+                   "progress": {"stage": "queued"}, "result": None, "error": None,
+                   "created_at": 1.0, "updated_at": 1.0}
+            return job, None
+
+    monkeypatch.setattr(route, "_training_job_store", lambda: Store())
+    monkeypatch.setattr(route, "_training_job_owner", lambda: "user-1")
+    monkeypatch.setattr(route, "get_tenant_context", lambda: "master")
+    monkeypatch.setattr(route.training_jobs, "check_training_config", lambda node: None)
+    import app.tasks.ml_training_job_tasks as tasks
+
+    monkeypatch.setattr(tasks.run_training_job_task, "delay", lambda *args: queued.append(args))
+
+
+@pytest.mark.parametrize("keepalive, status", [(True, 200), (False, 202)])
+def test_the_real_queued_job_reaches_the_client_whole(studio, monkeypatch, keepalive, status):
+    client, _ = studio
+    if not keepalive:
+        client.headers.pop("X-Keepalive")
+    queued = []
+    _real_queue(monkeypatch, queued)
+
+    response = client.post("/test-node", json=TRAIN_NODE_BODY)
+
+    assert response.status_code == status
+    job = response.json()
+    assert job["job_id"] == "job-7" and job["status"] == "queued" and job["progress"]
+    assert "user_id" not in job and "heartbeat" not in job
+    assert not {"status_code", "body", "raw_headers", "background"} & set(job)
+    assert queued and queued[0][0] == "job-7"
+
+
+def test_a_response_returned_through_keepalive_is_a_clear_error_not_its_attributes(studio, monkeypatch):
+    from fastapi.responses import JSONResponse
+
+    client, _ = studio
+
+    async def queue(kind, training_nodes, payload):
+        return JSONResponse(status_code=202, content=QUEUED_JOB)
+
+    monkeypatch.setattr(route, "_queue_training_job", queue)
+
+    response = client.post("/test-node", json=TRAIN_NODE_BODY)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["error_code"] == 500
+    assert "raw_headers" not in response.text
