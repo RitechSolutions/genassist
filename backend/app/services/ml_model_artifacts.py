@@ -322,14 +322,42 @@ def _name_list(names: Sequence[str]) -> str:
     return f"{shown} (+{hidden} more)" if hidden > 0 else shown
 
 
+@dataclass(frozen=True)
+class RegistryContractCheck:
+    """What a passing registry check settled.
+
+    ``features`` is the registered feature list in the order the model file
+    records, which is what gets saved. ``notices`` are for the person saving.
+    """
+
+    features: tuple[str, ...]
+    notices: tuple[str, ...] = ()
+
+
+def _full_order_notice(order: Sequence[str]) -> str:
+    # The whole order, so the person can see where each feature moved; only a very
+    # long list is cut, at the API's detail limit.
+    notice = "Features were saved in the order the model was trained on: " + ", ".join(
+        repr(name) for name in order
+    ) + "."
+    if len(notice) > _MAX_DETAIL_LENGTH:
+        notice = notice[: _MAX_DETAIL_LENGTH - 1] + "…"
+    return notice
+
+
 def validate_registry_contract(
     contract: ModelArtifactContract,
     feature_names: Optional[Sequence[str]],
     target_variable: Optional[str],
-) -> None:
-    """Require registry fields to name the same inputs accepted by inference."""
+) -> RegistryContractCheck:
+    """Require registry fields to name the same inputs accepted by inference.
+
+    Features in another order than the file's are accepted (inference maps
+    them by name) and returned in the file's order, with a notice.
+    """
     registered = list(feature_names or [])
     problems = []
+    file_order: Optional[list[str]] = None
 
     if contract.target_variable is not None and target_variable != contract.target_variable:
         problems.append(
@@ -343,38 +371,44 @@ def validate_registry_contract(
     expected = list(contract.features or [])
     if expected:
         if contract.feature_order_source == "estimator":
-            names_match = (
-                _match_registered_feature_names(
-                    expected,
-                    registered,
-                    contract.module_root,
-                )
-                is not None
+            # The registered names in the file's order (LightGBM names stay as registered).
+            file_order = _match_registered_feature_names(
+                expected,
+                registered,
+                contract.module_root,
             )
         else:
             normalized_registered = _normalize_estimator_feature_names(
                 registered,
                 len(expected),
             )
-            names_match = normalized_registered is not None and set(normalized_registered) == set(expected)
+            if normalized_registered is not None and set(normalized_registered) == set(expected):
+                file_order = expected
 
-        if names_match:
-            missing = []
-            extra = []
-        else:
+        if file_order is None:
             missing = [name for name in expected if name not in registered]
             extra = [name for name in registered if name not in expected]
-        if missing:
-            problems.append(f"Missing features: {_name_list(missing)}.")
-        if extra:
-            problems.append(f"Features not in the model: {_name_list(extra)}.")
-        if not names_match and not missing and not extra:
-            problems.append("Registered feature names are invalid or ambiguous.")
+            if missing:
+                problems.append(f"Missing features: {_name_list(missing)}.")
+            if extra:
+                problems.append(f"Features not in the model: {_name_list(extra)}.")
+            if not missing and not extra:
+                problems.append("Registered feature names are invalid or ambiguous.")
     else:
         problems.append("The model does not record a safe feature-name order and cannot be registered for inference.")
 
     if problems:
         raise _artifact_error("Registry fields do not match the model file. " + " ".join(problems))
+
+    notices = []
+    if file_order != registered:
+        notices.append(_full_order_notice(file_order))
+    if contract.target_variable is None:
+        target = f"{_short(target_variable)} " if target_variable else ""
+        notices.append(
+            f"The model file does not record its target, so the target {target}could not be checked against it."
+        )
+    return RegistryContractCheck(features=tuple(file_order), notices=tuple(notices))
 
 
 async def validate_model_artifact_registration(
@@ -383,12 +417,14 @@ async def validate_model_artifact_registration(
     feature_names: Optional[Sequence[str]],
     target_variable: Optional[str],
     artifact_contract: Optional[ModelArtifactContract] = None,
-) -> None:
+) -> Optional[RegistryContractCheck]:
     """Validate registry fields against the attached artifact.
 
     Pass ``artifact_contract`` when the caller already knows what the artifact
     declares (e.g. the Train Model node that just wrote it) to skip reading it.
+    Returns None when there is no artifact to check.
     """
     contract = artifact_contract or await load_model_artifact_contract(pkl_file, pkl_file_id)
-    if contract is not None:
-        validate_registry_contract(contract, feature_names, target_variable)
+    if contract is None:
+        return None
+    return validate_registry_contract(contract, feature_names, target_variable)
