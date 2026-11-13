@@ -2741,8 +2741,10 @@ class TrainModelNode(BaseNode):
         Returns:
             Tuple of (ml_model_id, pkl_file_id, error message, warnings). A
             registration failure doesn't fail a training run that already
-            produced a valid .pkl on disk. When upload succeeds, pkl_file_id
-            is retained even if updating the registry fails.
+            produced a valid .pkl on disk. A name held by another node's model
+            is refused before anything is uploaded. When registering fails
+            after the upload, the file is deleted and pkl_file_id is None,
+            except on a pipeline run, whose run is promoted from that file.
 
         Raises:
             ModelTypeMismatchError: a pipeline's model is registered as another
@@ -2787,6 +2789,33 @@ class TrainModelNode(BaseNode):
                 if type_mismatch:
                     raise ModelTypeMismatchError(type_mismatch)
 
+            # Marker recorded in the description of any model this node registers, so a
+            # later run can recognize "its own" row by name. Node IDs are unique per node
+            # instance, unlike the (often generic, e.g. "Train Model") display name.
+            node_marker = f"[train-model-node:{self.node_id}]"
+
+            existing = pipeline_target
+            if existing is None:
+                # Only reuse a name match if this exact node registered it previously —
+                # display names default to the generic "Train Model" label, so two
+                # unrelated node instances can otherwise collide and silently overwrite
+                # each other's registered model.
+                by_name = await ml_service.get_by_name(name)
+                if by_name and (
+                    node_marker in (by_name.description or "")
+                    or adopts_legacy_test_model(by_name, self.state.workflow_id, target_column)
+                ):
+                    existing = by_name
+                elif by_name and not target_model_id:
+                    # Decided before the upload, so a name another node's model
+                    # holds leaves no file behind (TM-19). A pipeline run whose
+                    # model wasn't found still uploads, so it can be promoted.
+                    return None, None, (
+                        f"A model named '{name}' already exists and was not registered by this "
+                        "Train Model node, so it was left unchanged. Give this node another name "
+                        "to register its own model."
+                    ), []
+
             fm = injector.get(FileManagerService)
             app_cfg = await injector.get(AppSettingsService).get_by_type_and_name(
                 "FileManagerSettings", "File Manager Settings"
@@ -2822,24 +2851,6 @@ class TrainModelNode(BaseNode):
                 # path from a previous run shouldn't be preferred over it.
                 "pkl_file": None,
             }
-
-            # Marker recorded in the description of any model this node registers, so a
-            # later run can recognize "its own" row by name. Node IDs are unique per node
-            # instance, unlike the (often generic, e.g. "Train Model") display name.
-            node_marker = f"[train-model-node:{self.node_id}]"
-
-            existing = pipeline_target
-            if existing is None:
-                # Only reuse a name match if this exact node registered it previously —
-                # display names default to the generic "Train Model" label, so two
-                # unrelated node instances can otherwise collide and silently overwrite
-                # each other's registered model.
-                by_name = await ml_service.get_by_name(name)
-                if by_name and (
-                    node_marker in (by_name.description or "")
-                    or adopts_legacy_test_model(by_name, self.state.workflow_id, target_column)
-                ):
-                    existing = by_name
 
             if pipeline_target is None and existing is not None:
                 # The node's own ad-hoc model is this node's output, so its type
@@ -2900,9 +2911,28 @@ class TrainModelNode(BaseNode):
             raise
         except Exception as e:
             logger.error(f"Failed to register trained model '{name}': {str(e)}", exc_info=True)
+            if not target_model_id:
+                # No model points at the uploaded file, so nothing could ever
+                # use it (TM-19). A pipeline run keeps it: promoting the run
+                # later attaches it to the model.
+                await self._delete_unregistered_file(resolved_pkl_file_id)
+                resolved_pkl_file_id = None
             # An OSError's message names the file it failed on, which is a
             # server path; the output only gets the reason (TDS-24).
             if isinstance(e, OSError):
                 reason = e.strerror or type(e).__name__
                 return None, resolved_pkl_file_id, f"Could not store the model file: {reason}", []
             return None, resolved_pkl_file_id, str(e), []
+
+    @staticmethod
+    async def _delete_unregistered_file(pkl_file_id: Optional[str]) -> None:
+        """Remove a model file uploaded for a registration that then failed."""
+        if not pkl_file_id:
+            return
+        try:
+            from app.dependencies.injector import injector
+            from app.services.file_manager import FileManagerService
+
+            await injector.get(FileManagerService).delete_file(UUID(pkl_file_id))
+        except Exception as e:
+            logger.warning(f"Could not delete unregistered model file {pkl_file_id}: {e}")

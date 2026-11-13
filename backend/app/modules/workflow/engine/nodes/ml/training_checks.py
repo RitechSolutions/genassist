@@ -115,14 +115,50 @@ def _format_names(names: Sequence[Any], quote: bool = True) -> str:
     return ", ".join(shown) + (f" and {more} more" if more > 0 else "")
 
 
-def _as_positive_int(value: Any, field: str, minimum: int = 1) -> int:
+def _as_positive_int(value: Any, field: str, minimum: int = 1, maximum: Optional[int] = None) -> int:
     try:
         number = float(value)
     except (TypeError, ValueError):
         number = float("nan")
-    if math.isnan(number) or not number.is_integer() or number < minimum:
-        _fail(f"{field} must be a whole number of {minimum} or more - got {format_value(value)}.")
+    if (
+        math.isnan(number)
+        or not number.is_integer()
+        or number < minimum
+        or (maximum is not None and number > maximum)
+    ):
+        allowed = f"from {minimum} to {maximum}" if maximum is not None else f"of {minimum} or more"
+        _fail(f"{field} must be a whole number {allowed} - got {format_value(value)}.")
     return int(number)
+
+
+# The ranges the Train Model dialog allows (TM-17); keep in sync with
+# OPTIMIZATION_LIMITS in the frontend's training/optimizationLimits.ts.
+# key: (field label, method using it or None for every search, minimum, maximum)
+SEARCH_LIMITS = {
+    "cvFolds": ("CV Folds", None, 2, 10),
+    # The search caps Iterations at hpo._MAX_RANDOM_ITER (200) anyway.
+    "nIter": ("Iterations", "random_search", 1, 200),
+    "nTrials": ("Trials", "bayesian_optimization", 1, 200),
+}
+
+
+def check_search_limits(method: str, opt_config: Dict[str, Any]) -> None:
+    """Refuse search settings outside the ranges the dialog allows.
+
+    Run before a test job is queued, so the API answers 400 (TM-17). The node
+    itself only requires sensible values: saved workflows and scheduled
+    pipelines with larger ones keep running as before. A setting only another
+    method uses is ignored, as the search ignores it.
+    """
+    if method == "none":
+        return
+    for key, (field, used_by, minimum, maximum) in SEARCH_LIMITS.items():
+        if used_by is not None and used_by != method:
+            continue
+        value = opt_config.get(key)
+        if value in (None, ""):
+            continue
+        _as_positive_int(value, field, minimum=minimum, maximum=maximum)
 
 
 def check_validation_split(value: Any) -> float:

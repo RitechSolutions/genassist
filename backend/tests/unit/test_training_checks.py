@@ -141,6 +141,39 @@ class TestReviewFollowUps:
     def test_cleared_search_numbers_use_defaults(self):
         assert training_checks.check_optimization_config("random_search", {"cvFolds": None, "nIter": ""}) == {}
 
+    @pytest.mark.parametrize("folds", [1, 11])
+    def test_cv_folds_outside_2_to_10_are_refused(self, folds):
+        # TM-17: the dialog only limited these in HTML.
+        with pytest.raises(AppException) as exc:
+            training_checks.check_search_limits("grid_search", {"cvFolds": folds})
+        assert "CV Folds must be a whole number from 2 to 10" in exc.value.error_detail
+
+    def test_trials_above_200_are_refused(self):
+        with pytest.raises(AppException) as exc:
+            training_checks.check_search_limits("bayesian_optimization", {"nTrials": 201})
+        assert "Trials must be a whole number from 1 to 200" in exc.value.error_detail
+
+    def test_iterations_above_the_search_cap_are_refused(self):
+        with pytest.raises(AppException) as exc:
+            training_checks.check_search_limits("random_search", {"nIter": 500})
+        assert "Iterations must be a whole number from 1 to 200" in exc.value.error_detail
+
+    def test_limits_within_range_pass(self):
+        training_checks.check_search_limits("bayesian_optimization", {"cvFolds": 10, "nTrials": 200})
+        training_checks.check_search_limits("random_search", {"cvFolds": 2, "nIter": 200, "nTrials": None})
+
+    def test_a_count_another_method_uses_is_not_limited(self):
+        # A value left over from switching methods isn't used, so it doesn't block.
+        training_checks.check_search_limits("random_search", {"nTrials": 500})
+        training_checks.check_search_limits("none", {"cvFolds": 1})
+
+    def test_the_node_keeps_running_saved_settings_above_the_dialog_limits(self):
+        # Saved workflows and scheduled pipelines with larger values keep training.
+        config = training_checks.check_optimization_config(
+            "bayesian_optimization", {"cvFolds": 15, "nTrials": 500}
+        )
+        assert config == {"cvFolds": 15, "nTrials": 500}
+
     def test_data_file_paths_are_hidden(self):
         error = FileNotFoundError("[Errno 2] No such file or directory: '/app/datavolume/ml_models/abc/x_v2.0.pkl'")
         message = training_checks.describe_training_error(error, "XGBoost")
