@@ -1,10 +1,14 @@
 """Reading the result of loading a document into a knowledge base."""
 
 import datetime
+import os
 from typing import Any, Mapping, Optional
+from urllib.parse import urlparse
 
 ERRORS_SHOWN = 5
 SUCCESSFUL_SYNC_STATUSES = ("success", "success_with_warnings")
+INDEXING_STATUS = "indexing"
+SYNC_RESULT_FIELDS = ("last_synced", "last_sync_status", "last_sync_error", "last_successful_sync")
 
 
 class DocumentNotLoadedError(Exception):
@@ -82,3 +86,47 @@ def sync_result_fields(status: str, error: str = "", now: Optional[datetime.date
     if status in SUCCESSFUL_SYNC_STATUSES:
         fields["last_successful_sync"] = now
     return fields
+
+
+def indexing_started_fields(now: Optional[datetime.datetime] = None) -> dict[str, Any]:
+    """The KB fields a save writes when it starts indexing; they replace the outcome of the previous indexing."""
+    return {"last_synced": now or datetime.datetime.now(), "last_sync_status": INDEXING_STATUS, "last_sync_error": ""}
+
+
+def document_label(document_id: str) -> str:
+    """A short name for a document of a saved knowledge base: its file name, or the part it stands for."""
+    _, _, part = document_id.partition("#")
+    if not part:
+        return "The knowledge base"
+    if not part.startswith("file_"):
+        return "The content"
+    position, _, location = part.partition(":")
+    file_name = os.path.basename(urlparse(location).path)
+    return file_name or f"File {int(position.removeprefix('file_')) + 1}"
+
+
+def _document_problem(entry: Mapping[str, Any]) -> tuple[Optional[str], bool]:
+    """What went wrong with one loaded document, if anything, and whether a store took it."""
+    name = entry.get("name") or document_label(str(entry.get("id") or ""))
+    if entry.get("error"):
+        return f"{name}: {entry['error']}", False
+    try:
+        ensure_loaded(entry.get("result"), name)
+    except (DocumentNotLoadedError, KnowledgeBaseUnavailableError) as error:
+        return str(error), False
+    return missed_stores_warning(entry.get("result"), name), True
+
+
+def indexing_outcome(results: list[Mapping[str, Any]]) -> tuple[str, str]:
+    """The status and message after indexing a saved knowledge base: error when no document was stored."""
+    if not results:
+        return "error", "Nothing was indexed"
+    outcomes = [_document_problem(entry) for entry in results]
+    problems = [problem for problem, _ in outcomes if problem]
+    indexed = sum(1 for _, was_stored in outcomes if was_stored)
+    status, _ = article_sync_outcome(len(results), indexed, problems, had_articles=False)
+    if not problems:
+        return status, ""
+    details = "; ".join(problems[:ERRORS_SHOWN])
+    failed = len(results) - indexed
+    return status, f"{failed} of {len(results)} documents could not be indexed: {details}" if failed else details
