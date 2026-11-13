@@ -3,19 +3,47 @@ Data Source Service - Main orchestrator for vector and LEGRA providers
 """
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from app.core.exceptions.error_policy import sanitize_error_detail
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.string_utils import truncate_for_log
 
 from .config import AgentRAGConfig, KbRAGConfig
 # VectorProvider / LegraProvider / LightRAGProvider are imported lazily where they are
 # instantiated: importing them pulls torch/sentence_transformers/faiss (vector, legra)
 # and the lightrag library, which must not be loaded in a Celery prefork master process.
-from .providers import SearchResult, BaseDataProvider, PlainProvider
+from .providers import SearchResult, BaseDataProvider, KnowledgeSearchError, PlainProvider
 
 if TYPE_CHECKING:  # for type hints only — never imported at runtime
     from .providers import LegraProvider
 
 
 logger = logging.getLogger(__name__)
+
+FAILURE_REASON_MAX_LENGTH = 300
+FAILURE_TEXT_MAX_LENGTH = 500
+# Up to the last "@" of the line, so a password holding "/", "@" or a space is covered.
+URL_CREDENTIALS = re.compile(r"://.*@")
+
+
+def search_failure_reason(error: Exception) -> str:
+    """The error as one short line that is safe to show: secrets and URL credentials are masked."""
+    without_credentials = URL_CREDENTIALS.sub("://***@", str(error))
+    reason = sanitize_error_detail(str(redact_sensitive_substrings(without_credentials)), FAILURE_REASON_MAX_LENGTH)
+    return reason or type(error).__name__
+
+
+def error_type_names(error: Exception) -> str:
+    """The type names of the errors behind a failure, for the log."""
+    causes = getattr(error, "error_types", None) or [type(error).__name__]
+    return ", ".join(dict.fromkeys(causes))
+
+
+def capped_failure_text(text: str) -> str:
+    """The whole failure text, cut to the length a failed step shows."""
+    return truncate_for_log(text, FAILURE_TEXT_MAX_LENGTH)
 
 
 class AgentRAGService:
@@ -237,12 +265,16 @@ class AgentRAGService:
 
         Returns:
             Merged and sorted search results
+
+        Raises:
+            KnowledgeSearchError: a provider failed; its results hold what the other providers found
         """
         if not self._initialized:
-            logger.error("DataSourceService not initialized")
-            return []
+            raise KnowledgeSearchError("the knowledge base is not ready for search")
 
         all_results = []
+        failures: List[str] = []
+        error_types: List[str] = []
 
         # Default weights
         if provider_weights is None:
@@ -258,13 +290,15 @@ class AgentRAGService:
                     result.score *= weight
                 all_results.extend(vector_results)
             except Exception as e:
-                logger.error(f"Vector provider search failed: {e}")
+                failures.append(f"{provider.name} search failed: {search_failure_reason(e)}")
+                error_types.append(type(e).__name__)
 
         # Merge results, avoiding duplicates and sorting by score
-        merged_results = self._merge_search_results(all_results)
+        top_results = self._merge_search_results(all_results)[:limit]
 
-        # Return top results
-        return merged_results[:limit]
+        if failures:
+            raise KnowledgeSearchError("; ".join(failures), results=top_results, error_types=error_types)
+        return top_results
 
     def _merge_search_results(self, results: List[SearchResult]) -> List[SearchResult]:
         """Merge search results, handling duplicates by keeping highest score"""

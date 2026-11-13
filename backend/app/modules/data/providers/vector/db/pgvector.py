@@ -357,84 +357,76 @@ class PgVectorDB(BaseVectorDB):
         filter_dict: Optional[Dict[str, Any]] = None
     ) -> List[SearchResult]:
         """Search for similar vectors"""
-        try:
-            if not self.engine:
-                logger.error("Engine not initialized")
-                return []
+        if not self.engine:
+            raise RuntimeError("The vector database connection is not initialized")
 
-            if not self.table_name or self.dimension is None:
-                logger.error("Collection not initialized. Call create_collection() first.")
-                return []
+        if not self.table_name or self.dimension is None:
+            raise RuntimeError("The vector collection is not initialized")
 
-            # Validate query vector dimension
-            if len(query_vector) != self.dimension:
-                error_msg = (
-                    f"Query vector dimension mismatch: "
-                    f"expected {self.dimension}, got {len(query_vector)}. "
-                    f"Table {self.table_name} expects dimension {self.dimension}."
-                )
-                logger.error(error_msg)
-                raise ValueError(error_msg)
+        # Validate query vector dimension
+        if len(query_vector) != self.dimension:
+            error_msg = (
+                f"Query vector dimension mismatch: "
+                f"expected {self.dimension}, got {len(query_vector)}. "
+                f"Table {self.table_name} expects dimension {self.dimension}."
+            )
+            raise ValueError(error_msg)
 
-            # Convert query vector to PostgreSQL array format
-            vector_str = "[" + ",".join(map(str, query_vector)) + "]"
+        # Convert query vector to PostgreSQL array format
+        vector_str = "[" + ",".join(map(str, query_vector)) + "]"
 
-            # Build WHERE clause for metadata filtering
-            where_clause = ""
-            params = {"query_vector": vector_str, "limit": limit}
+        # Build WHERE clause for metadata filtering
+        where_clause = ""
+        params = {"query_vector": vector_str, "limit": limit}
 
-            if filter_dict:
-                # Build JSONB filter conditions
-                filter_conditions = []
-                for i, (key, value) in enumerate(filter_dict.items()):
-                    param_key = f"filter_{i}"
-                    filter_conditions.append(f"metadata->>'{key}' = :{param_key}")
-                    params[param_key] = str(value)
+        if filter_dict:
+            # Build JSONB filter conditions
+            filter_conditions = []
+            for i, (key, value) in enumerate(filter_dict.items()):
+                param_key = f"filter_{i}"
+                filter_conditions.append(f"metadata->>'{key}' = :{param_key}")
+                params[param_key] = str(value)
 
-                if filter_conditions:
-                    where_clause = "WHERE " + " AND ".join(filter_conditions)
+            if filter_conditions:
+                where_clause = "WHERE " + " AND ".join(filter_conditions)
 
-            # Build query based on distance metric
-            # Use CAST() instead of :: syntax to avoid asyncpg parameter binding issues
-            if self.config.distance_metric == "cosine":
-                # Cosine distance (<=> operator)
-                distance_expr = "embedding <=> CAST(:query_vector AS vector)"
-            elif self.config.distance_metric == "euclidean":
-                # L2 distance (<-> operator)
-                distance_expr = "embedding <-> CAST(:query_vector AS vector)"
-            else:  # dot_product
-                # Inner product (negative for similarity, since lower is better)
-                distance_expr = "embedding <#> CAST(:query_vector AS vector)"
+        # Build query based on distance metric
+        # Use CAST() instead of :: syntax to avoid asyncpg parameter binding issues
+        if self.config.distance_metric == "cosine":
+            # Cosine distance (<=> operator)
+            distance_expr = "embedding <=> CAST(:query_vector AS vector)"
+        elif self.config.distance_metric == "euclidean":
+            # L2 distance (<-> operator)
+            distance_expr = "embedding <-> CAST(:query_vector AS vector)"
+        else:  # dot_product
+            # Inner product (negative for similarity, since lower is better)
+            distance_expr = "embedding <#> CAST(:query_vector AS vector)"
 
-            search_sql = text(f"""
-                SELECT id, content, metadata, {distance_expr} as distance
-                FROM {self.table_name}
-                {where_clause}
-                ORDER BY {distance_expr}
-                LIMIT :limit
-            """)
+        search_sql = text(f"""
+            SELECT id, content, metadata, {distance_expr} as distance
+            FROM {self.table_name}
+            {where_clause}
+            ORDER BY {distance_expr}
+            LIMIT :limit
+        """)
 
-            async with self.engine.begin() as conn:
-                db_result = await conn.execute(search_sql, params)
-                rows = db_result.fetchall()
+        async with self.engine.begin() as conn:
+            db_result = await conn.execute(search_sql, params)
+            rows = db_result.fetchall()
 
-            # Convert to SearchResult objects
-            search_results = []
-            for row in rows:
-                search_result = SearchResult(
-                    id=row.id,
-                    content=row.content,
-                    metadata=json.loads(row.metadata) if isinstance(row.metadata, str) else row.metadata,
-                    score=None,  # Will be calculated from distance
-                    distance=float(row.distance)
-                )
-                search_results.append(search_result)
+        # Convert to SearchResult objects
+        search_results = []
+        for row in rows:
+            search_result = SearchResult(
+                id=row.id,
+                content=row.content,
+                metadata=json.loads(row.metadata) if isinstance(row.metadata, str) else row.metadata,
+                score=None,  # Will be calculated from distance
+                distance=float(row.distance)
+            )
+            search_results.append(search_result)
 
-            return search_results
-
-        except Exception as e:
-            logger.error(f"Failed to search pgvector: {e}")
-            return []
+        return search_results
 
     async def get_by_ids(self, ids: List[str]) -> List[SearchResult]:
         """Get vectors by their IDs"""

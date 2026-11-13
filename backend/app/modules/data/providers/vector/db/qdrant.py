@@ -333,69 +333,63 @@ class QdrantVectorDB(BaseVectorDB):
         filter_dict: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
         """Search for similar vectors"""
-        try:
-            if not self.client:
-                logger.error("Client not initialized")
-                return []
+        if not self.client:
+            raise RuntimeError("The vector database connection is not initialized")
 
-            # Build Qdrant filter
-            qdrant_filter = self._build_qdrant_filter(filter_dict)
+        # Build Qdrant filter
+        qdrant_filter = self._build_qdrant_filter(filter_dict)
 
-            # Perform search using query_points (async client uses query_points instead of search)
-            query_response = await self.client.query_points(
-                collection_name=self.collection_name,
-                query=query_vector,
-                limit=limit,
-                query_filter=qdrant_filter,
-                with_payload=True,
-                with_vectors=False,
+        # Perform search using query_points (async client uses query_points instead of search)
+        query_response = await self.client.query_points(
+            collection_name=self.collection_name,
+            query=query_vector,
+            limit=limit,
+            query_filter=qdrant_filter,
+            with_payload=True,
+            with_vectors=False,
+        )
+
+        # Extract results from QueryResponse
+        search_results_qdrant = query_response.points
+
+        # Convert to SearchResult objects
+        search_results = []
+        for point in search_results_qdrant:
+            # ScoredPoint has id, score, and payload attributes
+            payload = point.payload if point.payload else {}
+            if not isinstance(payload, dict):
+                payload = {}
+                
+            # Extract original ID from payload (we stored it there)
+            original_id = payload.pop("_original_id", None)
+            # Use original ID if available, otherwise use Qdrant ID
+            result_id = original_id if original_id else str(point.id)
+                
+            # Extract content from payload (we stored it there)
+            content = payload.pop("content", "") if isinstance(payload, dict) else ""
+
+            # Qdrant returns score (similarity), we need to convert to distance
+            # For cosine: score is similarity (higher is better), distance = 1 - score
+            # For euclidean: score is already distance (lower is better)
+            # For dot: score is similarity (higher is better), distance = 1 - score
+            score = point.score
+            if self.config.distance_metric == "cosine":
+                distance = 1.0 - score if score <= 1.0 else 0.0
+            elif self.config.distance_metric == "euclidean":
+                distance = score
+            else:  # dot_product
+                distance = 1.0 - score if score <= 1.0 else 0.0
+
+            search_result = SearchResult(
+                id=result_id,
+                content=content,
+                metadata=payload,
+                score=None,  # Will be calculated from distance
+                distance=distance,
             )
+            search_results.append(search_result)
 
-            # Extract results from QueryResponse
-            search_results_qdrant = query_response.points
-
-            # Convert to SearchResult objects
-            search_results = []
-            for point in search_results_qdrant:
-                # ScoredPoint has id, score, and payload attributes
-                payload = point.payload if point.payload else {}
-                if not isinstance(payload, dict):
-                    payload = {}
-                
-                # Extract original ID from payload (we stored it there)
-                original_id = payload.pop("_original_id", None)
-                # Use original ID if available, otherwise use Qdrant ID
-                result_id = original_id if original_id else str(point.id)
-                
-                # Extract content from payload (we stored it there)
-                content = payload.pop("content", "") if isinstance(payload, dict) else ""
-
-                # Qdrant returns score (similarity), we need to convert to distance
-                # For cosine: score is similarity (higher is better), distance = 1 - score
-                # For euclidean: score is already distance (lower is better)
-                # For dot: score is similarity (higher is better), distance = 1 - score
-                score = point.score
-                if self.config.distance_metric == "cosine":
-                    distance = 1.0 - score if score <= 1.0 else 0.0
-                elif self.config.distance_metric == "euclidean":
-                    distance = score
-                else:  # dot_product
-                    distance = 1.0 - score if score <= 1.0 else 0.0
-
-                search_result = SearchResult(
-                    id=result_id,
-                    content=content,
-                    metadata=payload,
-                    score=None,  # Will be calculated from distance
-                    distance=distance,
-                )
-                search_results.append(search_result)
-
-            return search_results
-
-        except Exception as e:
-            logger.error(f"Failed to search Qdrant: {e}")
-            return []
+        return search_results
 
     async def get_by_ids(self, ids: List[str]) -> List[SearchResult]:
         """Get vectors by their IDs"""

@@ -14,6 +14,7 @@ from lightrag.kg.shared_storage import initialize_pipeline_status
 
 from .config import LightRAGConfig
 from ..base import FinalizableProvider, SearchResult
+from ..models import KnowledgeSearchError
 from app.core.project_path import DATA_VOLUME
 
 logger = logging.getLogger(__name__)
@@ -204,74 +205,68 @@ class LightRAGProvider(FinalizableProvider):
     ) -> List[SearchResult]:
         """Search using LightRAG graph-based retrieval"""
         if not self._initialized or self.rag is None:
-            logger.error("LightRAG provider not initialized")
-            return []
+            raise KnowledgeSearchError("LightRAG is not initialized")
 
-        try:
-            # Use configured search mode if not specified
-            search_mode = mode or self.config.search_mode
+        # Use configured search mode if not specified
+        search_mode = mode or self.config.search_mode
 
-            # Create query parameters
-            param = QueryParam(
-                mode=search_mode,
-                top_k=min(limit, self.config.top_k),
-                response_type=self.config.response_type
-            )
+        # Create query parameters
+        param = QueryParam(
+            mode=search_mode,
+            top_k=min(limit, self.config.top_k),
+            response_type=self.config.response_type
+        )
 
-            logger.info("=============== entered search documents ================")
-            logger.info(f"Searching with query: {query}, mode: {search_mode}, limit: {limit}")
+        logger.info("=============== entered search documents ================")
+        logger.info(f"Searching with query: {query}, mode: {search_mode}, limit: {limit}")
 
-            # Perform search asynchronously
-            raw_results = await self.rag.aquery(query, param=param)
+        # Perform search asynchronously
+        raw_results = await self.rag.aquery(query, param=param)
 
-            logger.debug(f"Raw results from LightRAG: {raw_results}")
+        logger.debug(f"Raw results from LightRAG: {raw_results}")
 
-            # Convert LightRAG results to SearchResult format
-            search_results: List[SearchResult] = []
-            if raw_results:
-                if isinstance(raw_results, str):
-                    # Parse the structured response
-                    search_results = self._parse_lightrag_response(raw_results, limit)
-                elif isinstance(raw_results, list):
-                    # Multiple results
-                    for i, result in enumerate(raw_results[:limit]):
-                        search_result = SearchResult(
-                            id=f"lightrag_result_{i}",
-                            content=str(result),
-                            metadata={
-                                "kb_id": self.knowledge_base_id,
-                                "search_mode": search_mode,
-                                "provider": "lightrag",
-                                "result_index": i
-                            },
-                            score=1.0 - (i * 0.1),  # Decrease score by rank
-                            source="lightrag",
-                            chunk_count=1
-                        )
-                        search_results.append(search_result)
-                elif isinstance(raw_results, dict):
-                    # Structured result
-                    content = raw_results.get("answer", str(raw_results))
+        # Convert LightRAG results to SearchResult format
+        search_results: List[SearchResult] = []
+        if raw_results:
+            if isinstance(raw_results, str):
+                # Parse the structured response
+                search_results = self._parse_lightrag_response(raw_results, limit)
+            elif isinstance(raw_results, list):
+                # Multiple results
+                for i, result in enumerate(raw_results[:limit]):
                     search_result = SearchResult(
-                        id="lightrag_structured_result",
-                        content=content,
+                        id=f"lightrag_result_{i}",
+                        content=str(result),
                         metadata={
                             "kb_id": self.knowledge_base_id,
                             "search_mode": search_mode,
                             "provider": "lightrag",
-                            "raw_result": raw_results
+                            "result_index": i
                         },
-                        score=1.0,
+                        score=1.0 - (i * 0.1),  # Decrease score by rank
                         source="lightrag",
                         chunk_count=1
                     )
                     search_results.append(search_result)
+            elif isinstance(raw_results, dict):
+                # Structured result
+                content = raw_results.get("answer", str(raw_results))
+                search_result = SearchResult(
+                    id="lightrag_structured_result",
+                    content=content,
+                    metadata={
+                        "kb_id": self.knowledge_base_id,
+                        "search_mode": search_mode,
+                        "provider": "lightrag",
+                        "raw_result": raw_results
+                    },
+                    score=1.0,
+                    source="lightrag",
+                    chunk_count=1
+                )
+                search_results.append(search_result)
 
-            return search_results
-
-        except Exception as e:
-            logger.error(f"Failed to search LightRAG: {e}")
-            return []
+        return search_results
 
     def _parse_lightrag_response(self, raw_results: str, limit: int) -> List[SearchResult]:
         """Parse LightRAG structured response into SearchResult objects"""

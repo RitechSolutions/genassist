@@ -9,7 +9,7 @@ import logging
 from typing import List, Dict, Any, Union, cast
 from .db import SearchResult as DBSearchResult
 from ..base import BaseDataProvider
-from ..models import SearchResult
+from ..models import KnowledgeSearchError, SearchResult
 from .config import VectorConfig
 from .embedding.base import BaseEmbedder
 from .db.base import BaseVectorDB
@@ -202,55 +202,49 @@ class VectorProvider(BaseDataProvider):
         Returns:
             List of search results
         """
-        try:
-            if not self._initialized:
-                if not await self.initialize():
-                    return []
+        if not self._initialized:
+            if not await self.initialize():
+                raise KnowledgeSearchError("the embedding model or the vector database could not be started")
 
-            if not query.strip():
-                return []
-
-            # Add knowledge base filter if not provided
-            if filter_dict is None:
-                filter_dict = {}
-            if self.knowledge_base_id and "kb_id" not in filter_dict:
-                filter_dict["kb_id"] = self.knowledge_base_id
-
-            # Generate query embedding
-            query_embedding = await self.embedder.embed_query(query)
-            if not query_embedding:
-                logger.error("Failed to generate query embedding")
-                return []
-
-            # Search vector database
-            search_results = await self.vector_db.search(
-                query_vector=query_embedding,
-                # Get more results to consolidate chunks
-                limit=limit * 3,
-                filter_dict=filter_dict,
-            )
-
-            # Group results by document and consolidate chunks
-            doc_results = self._consolidate_chunks(search_results, limit)
-
-            # Convert to SearchResult format
-            formatted_results = []
-            for doc_result in doc_results:
-                search_result = SearchResult(
-                    id=doc_result["doc_id"],
-                    content=doc_result["content"],
-                    metadata=doc_result["metadata"],
-                    score=doc_result["score"],
-                    source="vector",
-                    chunk_count=doc_result["chunk_count"]
-                )
-                formatted_results.append(search_result)
-
-            return formatted_results
-
-        except Exception as e:
-            logger.error(f"Failed to search vector store: {e}")
+        if not query.strip():
             return []
+
+        # Add knowledge base filter if not provided
+        if filter_dict is None:
+            filter_dict = {}
+        if self.knowledge_base_id and "kb_id" not in filter_dict:
+            filter_dict["kb_id"] = self.knowledge_base_id
+
+        # Generate query embedding
+        query_embedding = await self.embedder.embed_query(query)
+        if not query_embedding:
+            raise KnowledgeSearchError("the embedding model returned no vector for the query")
+
+        # Search vector database
+        search_results = await self.vector_db.search(
+            query_vector=query_embedding,
+            # Get more results to consolidate chunks
+            limit=limit * 3,
+            filter_dict=filter_dict,
+        )
+
+        # Group results by document and consolidate chunks
+        doc_results = self._consolidate_chunks(search_results, limit)
+
+        # Convert to SearchResult format
+        formatted_results = []
+        for doc_result in doc_results:
+            search_result = SearchResult(
+                id=doc_result["doc_id"],
+                content=doc_result["content"],
+                metadata=doc_result["metadata"],
+                score=doc_result["score"],
+                source="vector",
+                chunk_count=doc_result["chunk_count"]
+            )
+            formatted_results.append(search_result)
+
+        return formatted_results
 
     async def get_document_ids(self, kb_id: Union[str, None] = None) -> List[str]:
         """

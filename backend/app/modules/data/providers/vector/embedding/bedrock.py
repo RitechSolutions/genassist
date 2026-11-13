@@ -155,16 +155,10 @@ class BedrockEmbedder(BaseEmbedder):
                     logger.info("Reinitializing Bedrock client after timeout")
                     self.client = None
                     if not await self.initialize():
-                        logger.error("Failed to reinitialize Bedrock client")
-                        return []
+                        raise RuntimeError("The Bedrock client could not be restarted after a timeout")
                 else:
-                    logger.error(
-                        f"Failed to generate query embedding after {max_retries} attempts due to timeout"
+                    raise TimeoutError(
+                        f"The embedding model did not answer within {timeout_seconds}s ({max_retries} attempts)"
                     )
-                    return []
-
-            except Exception as e:
-                logger.error(f"Failed to generate query embedding: {e}")
-                return []
 
         return []

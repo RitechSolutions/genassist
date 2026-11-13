@@ -24,6 +24,8 @@ import { PageListSkeleton } from '@/components/skeletons';
 import { LIST_PAGE_SIZE } from '@/constants/pagination';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { KBListItem, FileItem } from '../types/knowledgeBase';
+import { indexingRefreshInterval, isIndexedOnSave } from '../utils/syncStatus';
+import KnowledgeBaseStatusBadge from './KnowledgeBaseStatusBadge';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -68,8 +70,12 @@ const KnowledgeBaseManager: React.FC = () => {
     staleTime: 0,
     // A failed refetch on tab focus would swap a good list for the error panel
     refetchOnWindowFocus: false,
+    // Follow a knowledge base that is still indexing until it is ready or failed
+    refetchInterval: (query) => indexingRefreshInterval(query.state.data?.items),
   });
   const items = data?.items ?? [];
+  // A failed refresh keeps the list that is already shown
+  const showError = isError && !data;
 
   const lastPage = Math.max(1, data?.total_pages ?? 1);
   const pastLastPage = !!data && data.items.length === 0 && listParams.page > lastPage;
@@ -157,7 +163,7 @@ const KnowledgeBaseManager: React.FC = () => {
       <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
         {loading ? (
           <PageListSkeleton variant="rich" bordered={false} />
-        ) : isError ? (
+        ) : showError ? (
           <ListErrorState message="Failed to load knowledge base items" onRetry={() => void refetch()} />
         ) : items.length === 0 ? (
           <ListEmptyState
@@ -190,6 +196,7 @@ const KnowledgeBaseManager: React.FC = () => {
                       <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-bold text-foreground">
                         {item.type.toUpperCase()}
                       </span>
+                      {isIndexedOnSave(item.type) && <KnowledgeBaseStatusBadge status={item.last_sync_status} />}
                     </div>
                     <p className="text-sm text-muted-foreground">{item.description}</p>
                     {item.type === 'file' && (
@@ -241,7 +248,7 @@ const KnowledgeBaseManager: React.FC = () => {
           </div>
         )}
       </div>
-      {!loading && !isError && (
+      {!loading && !showError && (
         <PaginationBar
           total={data?.total ?? 0}
           currentPage={listParams.page}
