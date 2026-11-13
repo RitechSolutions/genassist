@@ -33,11 +33,13 @@ export interface MLModel {
   } | null;
   // Validation metrics for the training run represented by this registry row.
   training_metrics?: Record<string, number | null> | null;
+  // Notes from the model-file check on a create or update; never stored.
+  registration_notices?: string[];
   created_at?: string;
   updated_at?: string;
   [key: string]: unknown;
 }
 
-export interface MLModelFormData extends Omit<MLModel, 'created_at' | 'updated_at' | 'training_metrics'> {
+export interface MLModelFormData extends Omit<MLModel, 'created_at' | 'updated_at' | 'training_metrics' | 'registration_notices'> {
   pkl_file_id?: string | null;
 }

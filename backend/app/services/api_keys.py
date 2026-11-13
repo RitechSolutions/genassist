@@ -18,7 +18,7 @@ from app.db.models.audit_log import AuditLogModel
 from app.repositories.api_keys import ApiKeysRepository, api_key_key_builder
 from app.repositories.audit_logs import AuditLogRepository
 from app.repositories.roles import RolesRepository
-from app.schemas.api_key import ApiKeyCreate, ApiKeyInternal, ApiKeyRotate, ApiKeySafeRead, ApiKeyUpdate
+from app.schemas.api_key import ApiKeyCreate, ApiKeyCreateRead, ApiKeyInternal, ApiKeyRotate, ApiKeySafeRead, ApiKeyUpdate
 from app.schemas.common import PaginatedResponse
 from app.schemas.filter import ApiKeyListFilter, ApiKeysFilter
 from app.schemas.role import RoleRead
@@ -86,8 +86,7 @@ class ApiKeysService:
         )
 
         # Build the pydantic return object, including the 'key_val'
-        api_key_pyd_model.key_val = generated_api_key
-        return api_key_pyd_model
+        return self._with_secret(api_key_pyd_model, generated_api_key)
 
     async def get(self, api_key_id: UUID):
         api_key = await self.repository.get_by_id(api_key_id)
@@ -108,7 +107,7 @@ class ApiKeysService:
         if not api_key:
             raise AppException(error_key=ErrorKey.API_KEY_NOT_FOUND, status_code=404)
         try:
-            api_key.key_val = decrypt_key(api_key.key_val)
+            secret = decrypt_key(api_key.key_val)
         except InvalidToken:
             raise AppException(error_key=ErrorKey.INVALID_API_KEY_ENCRYPTION, status_code=500)
 
@@ -124,7 +123,7 @@ class ApiKeysService:
         self.audit_log_repository.db.add(audit_entry)
         await self.audit_log_repository.db.commit()
 
-        return api_key
+        return self._with_secret(api_key, secret)
 
 
     async def delete(self, api_key_id: UUID):
@@ -165,8 +164,10 @@ class ApiKeysService:
             hashed_value,
             data.overlap_seconds,
         )
-        model.key_val = generated_api_key
-        return model
+        return self._with_secret(model, generated_api_key)
+
+    def _with_secret(self, api_key: ApiKeyModel, secret: str) -> ApiKeyCreateRead:
+        return ApiKeyCreateRead.model_validate(api_key).model_copy(update={"key_val": secret})
 
     def _validate_role_ids(self, user_roles: list[RoleRead], requested_role_ids: list[UUID]) -> None:
         """
