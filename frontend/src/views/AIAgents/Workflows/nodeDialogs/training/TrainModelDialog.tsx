@@ -52,6 +52,11 @@ import { FeatureEngineeringHandler } from "./components/FeatureEngineeringHandle
 import { useTrainingInputFile } from "../../hooks/useTrainingInputFile";
 import { useNodeDialogState } from "../useNodeDialogState";
 import { ML_MODEL_TYPES } from "@/constants/mlModelTypes";
+import {
+  OPTIMIZATION_LIMITS,
+  optimizationConfigErrors,
+  withoutOtherMethodsSettings,
+} from "./optimizationLimits";
 
 const HYPERPARAMETER_OPTIMIZATION_METHODS: {
   value: HyperparameterOptimizationMethod;
@@ -226,7 +231,15 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
     });
   }, [values.targetColumn, values.analysisResult, setValues]);
 
+  const optimizationErrors = optimizationConfigErrors(
+    values.hyperparameterOptimization,
+    values.optimizationConfig
+  );
+  const hasOptimizationErrors = Object.keys(optimizationErrors).length > 0;
+
   const handleSave = () => {
+    if (hasOptimizationErrors) return;
+
     if (!values.targetColumn.trim()) {
       toast({
         title: "Validation Error",
@@ -355,7 +368,12 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
   };
 
   const handleHyperparameterOptimizationChange = (value: string) => {
-    setField("hyperparameterOptimization", value as HyperparameterOptimizationMethod);
+    const method = value as HyperparameterOptimizationMethod;
+    setValues((v) => ({
+      ...v,
+      hyperparameterOptimization: method,
+      optimizationConfig: withoutOtherMethodsSettings(method, v.optimizationConfig),
+    }));
   };
 
   const scoringTaskType = scoringTaskTypeFor(values.modelType, values.taskType);
@@ -382,10 +400,15 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
         onClose={onClose}
         footer={
           <>
+            {hasOptimizationErrors && (
+              <p role="alert" className="mr-auto text-xs text-destructive">
+                Fix the Hyperparameter Optimization settings under Model Configuration to save.
+              </p>
+            )}
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button onClick={handleSave}>
+            <Button onClick={handleSave} disabled={hasOptimizationErrors}>
               <Save className="h-4 w-4 mr-2" />
               Save Changes
             </Button>
@@ -736,16 +759,21 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                       <RichInput
                         id="cvFolds"
                         type="number"
-                        min="2"
-                        max="10"
+                        min={OPTIMIZATION_LIMITS.cvFolds.min}
+                        max={OPTIMIZATION_LIMITS.cvFolds.max}
                         value={values.optimizationConfig.cvFolds ?? 3}
                         onChange={(e) =>
                           updateOptimizationConfig({
                             cvFolds: e.target.value ? Number(e.target.value) : undefined,
                           })
                         }
+                        aria-invalid={!!optimizationErrors.cvFolds}
+                        aria-describedby={optimizationErrors.cvFolds ? "cvFolds-error" : undefined}
                         className="w-full"
                       />
+                      {optimizationErrors.cvFolds && (
+                        <p id="cvFolds-error" className="text-xs text-destructive">{optimizationErrors.cvFolds}</p>
+                      )}
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="scoring" className="text-xs">
@@ -794,14 +822,19 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                         <RichInput
                           id="nIter"
                           type="number"
-                          min="1"
-                          max="200"
+                          min={OPTIMIZATION_LIMITS.nIter.min}
+                          max={OPTIMIZATION_LIMITS.nIter.max}
                           value={values.optimizationConfig.nIter ?? 20}
                           onChange={(e) =>
                             updateOptimizationConfig({ nIter: Number(e.target.value) })
                           }
+                          aria-invalid={!!optimizationErrors.nIter}
+                          aria-describedby={optimizationErrors.nIter ? "nIter-error" : undefined}
                           className="w-full"
                         />
+                        {optimizationErrors.nIter && (
+                          <p id="nIter-error" className="text-xs text-destructive">{optimizationErrors.nIter}</p>
+                        )}
                       </div>
                     )}
 
@@ -833,14 +866,19 @@ export const TrainModelDialog: React.FC<TrainModelDialogProps> = (props) => {
                           <RichInput
                             id="nTrials"
                             type="number"
-                            min="1"
-                            max="200"
+                            min={OPTIMIZATION_LIMITS.nTrials.min}
+                            max={OPTIMIZATION_LIMITS.nTrials.max}
                             value={values.optimizationConfig.nTrials ?? 30}
                             onChange={(e) =>
                               updateOptimizationConfig({ nTrials: Number(e.target.value) })
                             }
+                            aria-invalid={!!optimizationErrors.nTrials}
+                            aria-describedby={optimizationErrors.nTrials ? "nTrials-error" : undefined}
                             className="w-full"
                           />
+                          {optimizationErrors.nTrials && (
+                            <p id="nTrials-error" className="text-xs text-destructive">{optimizationErrors.nTrials}</p>
+                          )}
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor="timeoutSeconds" className="text-xs">
