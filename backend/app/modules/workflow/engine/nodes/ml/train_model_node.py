@@ -44,6 +44,7 @@ from sklearn.preprocessing import (
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.uuid_utils import coerce_uuid
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as hpo_module
 from app.modules.workflow.engine.nodes.ml import ml_utils
@@ -51,6 +52,7 @@ from app.modules.workflow.engine.nodes.ml import model_registry
 from app.modules.workflow.engine.nodes.ml import training_checks
 from app.modules.workflow.engine.nodes.ml import training_data_storage
 from app.modules.workflow.engine.nodes.ml import training_progress
+from app.modules.workflow.engine.workflow_state import SAVED_WORKFLOW_ID_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,11 @@ class ModelTypeMismatchError(AppException):
 
     def __init__(self, detail: str):
         super().__init__(error_key=ErrorKey.INTERNAL_ERROR, error_detail=detail)
+
+
+class ModelNameTakenError(AppException):
+    def __init__(self, detail: str):
+        super().__init__(error_key=ErrorKey.ML_MODEL_NAME_EXISTS, error_detail=detail)
 
 # Feature engineering strategies no longer offered for new features: they
 # duplicate scalingMethod (rescaling numeric columns, fit on the training
@@ -390,6 +397,10 @@ class TrainModelNode(BaseNode):
             type_mismatch = await self._target_model_type_mismatch(target_model_id, model_type)
             if type_mismatch:
                 raise ModelTypeMismatchError(type_mismatch)
+            if not target_model_id:
+                name_refusal = await self._name_refusal(name, target_column)
+                if name_refusal:
+                    raise ModelNameTakenError(name_refusal)
 
             valid_scaling_methods = ["none", "standard", "minmax", "maxabs", "robust", "auto"]
             if scaling_method not in valid_scaling_methods:
@@ -2683,6 +2694,62 @@ class TrainModelNode(BaseNode):
                 error_detail=f"Failed to save model: {str(e)}",
             ) from e
 
+    def _node_marker(self) -> str:
+        # Old pods and models from before the owner columns still match on this text.
+        return f"[train-model-node:{self.node_id}]"
+
+    def _trained_by(self) -> Optional[tuple[UUID, str]]:
+        config = self.state.workflow.get("config") or {}
+        workflow_id = coerce_uuid(config.get(SAVED_WORKFLOW_ID_KEY) or config.get("id"))
+        if workflow_id is None:
+            return None
+        return workflow_id, self.node_id
+
+    async def _model_for_name(
+        self, ml_service: Any, name: str, target_column: str
+    ) -> tuple[Optional[Any], Optional[str]]:
+        from app.dependencies.injector import injector
+        from app.services.workflow import WorkflowService
+
+        by_name = await ml_service.get_by_name(name)
+        if by_name is None:
+            return None, None
+        taken = (
+            f"A model named '{name}' already exists and was not trained by this node in this "
+            "workflow, so it was left unchanged. Rename this node to train its own model."
+        )
+        trained_by = self._trained_by()
+        if trained_by is None:
+            return None, taken
+        workflow_id, node_id = trained_by
+        if by_name.trained_by_node_id is not None:
+            owned = by_name.trained_by_node_id == node_id and await injector.get(
+                WorkflowService
+            ).same_lineage(workflow_id, by_name.trained_by_workflow_id)
+            return (by_name, None) if owned else (None, taken)
+        if self._node_marker() in (by_name.description or ""):
+            if await injector.get(WorkflowService).node_in_another_lineage(workflow_id, node_id, name):
+                return None, (
+                    "Another workflow has a copy of this node with the same name, so the model "
+                    f"'{name}' was left unchanged. Rename this node, or the node in the copy, to "
+                    "train separate models."
+                )
+            return by_name, None
+        if adopts_legacy_test_model(by_name, self.state.workflow_id, target_column):
+            return by_name, None
+        return None, taken
+
+    async def _name_refusal(self, name: str, target_column: str) -> Optional[str]:
+        try:
+            from app.dependencies.injector import injector
+            from app.services.ml_models import MLModelsService
+
+            _, refusal = await self._model_for_name(injector.get(MLModelsService), name, target_column)
+        except Exception as e:
+            logger.warning(f"Could not check the model name '{name}' before training: {e}")
+            return None
+        return refusal
+
     async def _target_model_type_mismatch(
         self, target_model_id: Optional[str], model_type: str
     ) -> Optional[str]:
@@ -2741,14 +2808,16 @@ class TrainModelNode(BaseNode):
         Returns:
             Tuple of (ml_model_id, pkl_file_id, error message, warnings). A
             registration failure doesn't fail a training run that already
-            produced a valid .pkl on disk. A name held by another node's model
-            is refused before anything is uploaded. When registering fails
+            produced a valid .pkl on disk. When registering fails
             after the upload, the file is deleted and pkl_file_id is None,
             except on a pipeline run, whose run is promoted from that file.
 
         Raises:
             ModelTypeMismatchError: a pipeline's model is registered as another
                 type. Nothing is uploaded and the model is left as it was.
+            ModelNameTakenError: the name belongs to a model this node did not
+                train in this workflow. Nothing is uploaded and the model is left
+                as it was.
         """
         resolved_pkl_file_id = None
         try:
@@ -2789,32 +2858,14 @@ class TrainModelNode(BaseNode):
                 if type_mismatch:
                     raise ModelTypeMismatchError(type_mismatch)
 
-            # Marker recorded in the description of any model this node registers, so a
-            # later run can recognize "its own" row by name. Node IDs are unique per node
-            # instance, unlike the (often generic, e.g. "Train Model") display name.
-            node_marker = f"[train-model-node:{self.node_id}]"
-
+            trained_by = None
             existing = pipeline_target
             if existing is None:
-                # Only reuse a name match if this exact node registered it previously —
-                # display names default to the generic "Train Model" label, so two
-                # unrelated node instances can otherwise collide and silently overwrite
-                # each other's registered model.
-                by_name = await ml_service.get_by_name(name)
-                if by_name and (
-                    node_marker in (by_name.description or "")
-                    or adopts_legacy_test_model(by_name, self.state.workflow_id, target_column)
-                ):
-                    existing = by_name
-                elif by_name and not target_model_id:
-                    # Decided before the upload, so a name another node's model
-                    # holds leaves no file behind (TM-19). A pipeline run whose
-                    # model wasn't found still uploads, so it can be promoted.
-                    return None, None, (
-                        f"A model named '{name}' already exists and was not registered by this "
-                        "Train Model node, so it was left unchanged. Give this node another name "
-                        "to register its own model."
-                    ), []
+                trained_by = self._trained_by()
+                existing, refusal = await self._model_for_name(ml_service, name, target_column)
+                # A pipeline run whose model wasn't found still uploads, so it can be promoted.
+                if refusal and not target_model_id:
+                    raise ModelNameTakenError(refusal)
 
             fm = injector.get(FileManagerService)
             app_cfg = await injector.get(AppSettingsService).get_by_type_and_name(
@@ -2886,6 +2937,7 @@ class TrainModelNode(BaseNode):
                     MLModelUpdate(**model_fields),
                     artifact_contract=artifact_contract,
                     training_metrics=training_metrics,
+                    trained_by=trained_by,
                 )
                 return str(updated.id), resolved_pkl_file_id, None, registration_warnings
 
@@ -2897,17 +2949,18 @@ class TrainModelNode(BaseNode):
                     name=name,
                     description=(
                         f"Trained by workflow Train Model node (thread {self.state.thread_id}) "
-                        f"{node_marker}"
+                        f"{self._node_marker()}"
                     ),
                     model_type=model_type,
                     **model_fields,
                 ),
                 artifact_contract=artifact_contract,
                 training_metrics=training_metrics,
+                trained_by=trained_by,
             )
             return str(created.id), resolved_pkl_file_id, None, registration_warnings
 
-        except ModelTypeMismatchError:
+        except (ModelTypeMismatchError, ModelNameTakenError):
             raise
         except Exception as e:
             logger.error(f"Failed to register trained model '{name}': {str(e)}", exc_info=True)
