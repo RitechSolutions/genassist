@@ -14,6 +14,7 @@ import type { PromptEditorCapabilities } from "../../utils/promptEditorCapabilit
 import {
   acceptGate,
   evaluateGate,
+  FORBIDDEN_RESULT_MESSAGE,
   HOLDOUT_OFF_REASON,
   HOLDOUT_STALE_REASON,
   optimizeGate,
@@ -671,8 +672,7 @@ export const usePromptMeasurement = ({
         ? { case_ids: vars.caseIds }
         : { max_cases: vars.maxCases }),
     });
-    if (!result)
-      throw new Error("Server returned empty response — check permissions.");
+    if (!result) throw new Error(FORBIDDEN_RESULT_MESSAGE);
     return result;
   };
 
@@ -707,8 +707,7 @@ export const usePromptMeasurement = ({
         previous_attempts:
           vars.previousAttempts.length > 0 ? vars.previousAttempts : undefined,
       });
-      if (!result)
-        throw new Error("Server returned empty response — check permissions.");
+      if (!result) throw new Error(FORBIDDEN_RESULT_MESSAGE);
       return result;
     },
     onSuccess: (data, vars) => {

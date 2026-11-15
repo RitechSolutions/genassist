@@ -61,6 +61,7 @@ export const promptLength = (content: string): number =>
 export const HISTORY_ERROR_REASON = "Prompt history could not be loaded.";
 export const HISTORY_FORBIDDEN_REASON =
   "You don't have permission to view prompt history.";
+export const FORBIDDEN_RESULT_MESSAGE = "You don't have permission to do this.";
 
 export const SUGGESTION_STALE_REASON =
   "Inputs changed since this suggestion. Run Optimize again.";
