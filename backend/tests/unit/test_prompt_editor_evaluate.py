@@ -994,6 +994,66 @@ class TestJudgeCheck:
         assert [row.verdict for row in result.results] == ["passed"] * PROMPT_CHECK_CONCURRENCY
 
     @pytest.mark.asyncio
+    async def test_judges_run_beside_grounding_while_grounding_stays_one_at_a_time(self):
+        service = _service([_case("a", {"value": "a"}), _case("b", {"value": "b"})])
+        gate = asyncio.Barrier(2)
+        grounding = {"now": 0, "peak": 0}
+
+        async def _grounding(**_kwargs):
+            grounding["now"] += 1
+            grounding["peak"] = max(grounding["peak"], grounding["now"])
+            await asyncio.sleep(0.01)
+            grounding["now"] -= 1
+            return {"key": "nli_eval", "score": 1.0, "passed": True}
+
+        async def _judge(**_kwargs):
+            await gate.wait()
+            return _judge_metric()
+
+        service.evaluators._evaluators["nli_eval"] = _grounding
+        service.evaluators._evaluators["llm_judge"] = _judge
+        result = await asyncio.wait_for(
+            _run(service, _injector(_llm(["a", "b"])), _judge_request(techniques=["nli_eval", "llm_judge"])),
+            timeout=5,
+        )
+
+        assert [row.verdict for row in result.results] == ["passed", "passed"]
+        assert grounding["peak"] == 1
+
+    @pytest.mark.asyncio
+    async def test_a_judge_whose_budget_ran_out_during_grounding_is_never_sent(self):
+        import app.services.prompt_editor as module
+
+        service = _service([_case("a", {"value": "a"})])
+        calls = []
+        spent = {"score": False}
+
+        async def _grounding(**_kwargs):
+            spent["score"] = True
+            return {"key": "nli_eval", "score": 1.0, "passed": True}
+
+        class GroundingSpendsTheBudget(module.Budget):
+            def __init__(self, seconds):
+                self._scoring = seconds == module.PROMPT_CHECK_SCORE_BUDGET_SECONDS
+                super().__init__(seconds)
+
+            def remaining(self):
+                return 0.0 if self._scoring and spent["score"] else 10.0
+
+        service.evaluators._evaluators["nli_eval"] = _grounding
+        service.evaluators._evaluators["llm_judge"] = _judge_fake(calls)
+
+        with patch.object(module, "Budget", GroundingSpendsTheBudget):
+            result = await _run(
+                service, _injector(_llm(["a"])), _judge_request(techniques=["nli_eval", "llm_judge"])
+            )
+
+        assert calls == []
+        assert result.results[0].metrics["llm_judge"]["comment"] == "Scoring timed out before the judge answered."
+        assert result.provenance.deadline_hit is True
+        assert result.provenance.grader_calls == 0
+
+    @pytest.mark.asyncio
     async def test_every_case_is_graded_on_the_model_the_check_already_built(self):
         service = _service([_case("a", {"value": "a"}), _case("b", {"value": "b"})])
         service.db.in_transaction = MagicMock(return_value=True)

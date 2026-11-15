@@ -1192,6 +1192,7 @@ class PromptEditorService:
         configs: Dict[str, Dict[str, Any]],
         budget: Optional[Budget],
         *,
+        grounding_lock: asyncio.Lock,
         judge_model: Any = None,
         usage_ref: Optional[PromptUsageRef] = None,
     ) -> Tuple[Dict[str, Any], bool]:
@@ -1244,13 +1245,14 @@ class PromptEditorService:
             metrics.update(await _evaluate(plain_ids))
 
         if _GROUNDING_TECHNIQUE in text_ids:
-            exhausted |= await self._score_bounded(
-                _GROUNDING_TECHNIQUE,
-                _evaluate,
-                budget=budget,
-                techniques=request.techniques,
-                metrics=metrics,
-            )
+            async with grounding_lock:
+                exhausted |= await self._score_bounded(
+                    _GROUNDING_TECHNIQUE,
+                    _evaluate,
+                    budget=budget,
+                    techniques=request.techniques,
+                    metrics=metrics,
+                )
             self._rewrite_grounding_comment(metrics, request.techniques)
 
         if _JUDGE_TECHNIQUE in text_ids:
@@ -1288,6 +1290,9 @@ class PromptEditorService:
         metrics: Dict[str, Any],
     ) -> bool:
         """Model technique (true if timeout). Shape-preserving: absent stays absent"""
+        if budget is not None and budget.remaining() <= 0:
+            metrics[technique] = _timed_out(technique, techniques)
+            return True
         call = evaluate([technique])
         if budget is not None:
             call = asyncio.wait_for(call, timeout=max(1.0, budget.remaining()))
@@ -1563,15 +1568,14 @@ class PromptEditorService:
     ) -> Tuple[List[PromptEvalCaseResult], bool]:
         """Cases score together under one budget; the judge grades on the model the check
         built, so scoring touches no session. nli_eval serializes on a process lock, so a
-        grounded run keeps one case in flight instead of queueing threads behind it"""
+        grounded run keeps one grounding call in flight instead of queueing threads behind it"""
         score_budget = (
             Budget(PROMPT_CHECK_SCORE_BUDGET_SECONDS)
             if _uses_score_budget(request.techniques)
             else None
         )
-        semaphore = asyncio.Semaphore(
-            1 if _GROUNDING_TECHNIQUE in request.techniques else PROMPT_CHECK_CONCURRENCY
-        )
+        semaphore = asyncio.Semaphore(PROMPT_CHECK_CONCURRENCY)
+        grounding_lock = asyncio.Lock()
 
         async def _score_one(run: _CaseRun) -> Tuple[PromptEvalCaseResult, bool]:
             if run.status != "scored":
@@ -1579,7 +1583,13 @@ class PromptEditorService:
             async with semaphore:
                 try:
                     metrics, exhausted = await self._score(
-                        run, request, configs, score_budget, judge_model=judge_model, usage_ref=usage_ref
+                        run,
+                        request,
+                        configs,
+                        score_budget,
+                        grounding_lock=grounding_lock,
+                        judge_model=judge_model,
+                        usage_ref=usage_ref,
                     )
                     return self._row(run, status="scored", metrics=metrics), exhausted
                 except Exception:
