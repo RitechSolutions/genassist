@@ -92,7 +92,7 @@ const VersionRow: React.FC<VersionRowProps> = ({
           </div>
         </div>
         <div
-          className="text-xs text-muted-foreground shrink-0"
+          className="max-w-[calc(100%-2.5rem)] shrink-0 truncate text-xs text-muted-foreground"
           title={formatDateTime(version.created_at)}
         >
           {formatDate(version.created_at)}
