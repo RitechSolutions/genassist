@@ -146,6 +146,7 @@ export interface UsePromptMeasurementArgs {
   draft: string;
   /** Accepted suggestion, applied to the draft */
   onAccepted: (newValue: string) => void;
+  draftSaved: boolean;
   historyState: HistoryState;
   caps: PromptEditorCapabilities;
   defaultProviderId?: string;
@@ -154,7 +155,6 @@ export interface UsePromptMeasurementArgs {
 export interface PromptMeasurementState {
   error: string | null;
   successMessage: string | null;
-  clearSuccessMessage: () => void;
 
   providers: LLMProvider[];
   activeEvalProviderId: string;
@@ -249,6 +249,7 @@ export const usePromptMeasurement = ({
   promptField,
   draft,
   onAccepted,
+  draftSaved,
   historyState,
   caps,
   defaultProviderId,
@@ -256,7 +257,9 @@ export const usePromptMeasurement = ({
   const queryClient = useQueryClient();
 
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [appliedSuggestion, setAppliedSuggestion] = useState<string | null>(
+    null,
+  );
   const [selectedTechniques, setSelectedTechniques] = useState<string[]>([
     "llm_judge",
   ]);
@@ -444,7 +447,7 @@ export const usePromptMeasurement = ({
     setError(
       `Failed to ${action}: ${extractErrorMessage(err, "Request failed")}`,
     );
-    setSuccessMessage(null);
+    setAppliedSuggestion(null);
     if (errorKeyOf(err) === "PROMPT_CASE_SELECTION_INVALID") {
       queryClient.invalidateQueries({ queryKey: ["goldCases", goldSuiteId] });
       setHoldoutRun(null);
@@ -783,7 +786,7 @@ export const usePromptMeasurement = ({
       // dropped mid-flight has none, and a skipped half is not worth reporting there
       const chainSkipped = chainStale && !superseded;
       if (chainSkipped && holdoutRunRef.current !== null)
-        setSuccessMessage(null);
+        setAppliedSuggestion(null);
       setHoldoutRun((prev) =>
         prev
           ? {
@@ -825,7 +828,7 @@ export const usePromptMeasurement = ({
         showError(`evaluate the ${noun} prompt`, err);
         return;
       }
-      setSuccessMessage(null);
+      setAppliedSuggestion(null);
       setHoldoutRun((prev) =>
         prev
           ? {
@@ -1039,7 +1042,7 @@ export const usePromptMeasurement = ({
     if (!optimizeResult || !accept.enabled) return;
     onAccepted(suggestion);
     setError(null);
-    setSuccessMessage("Applied to the draft. Save a version to keep it.");
+    setAppliedSuggestion(suggestion);
     acceptTokenRef.current += 1;
     setOptimizeRun(null);
     setSuggestedEvalRun(null);
@@ -1089,8 +1092,10 @@ export const usePromptMeasurement = ({
 
   return {
     error,
-    successMessage,
-    clearSuccessMessage: () => setSuccessMessage(null),
+    successMessage:
+      appliedSuggestion !== null && appliedSuggestion === draft && !draftSaved
+        ? "Applied to the draft. Save a version to keep it."
+        : null,
 
     providers,
     activeEvalProviderId,
