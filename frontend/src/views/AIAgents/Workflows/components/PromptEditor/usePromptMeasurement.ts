@@ -81,6 +81,7 @@ import {
   comparePromptBindings,
 } from "../../utils/templateVariableDiagnostics";
 import { usePromptGoldCases } from "./usePromptGoldCases";
+import { promptHistoryKey } from "./usePromptHistory";
 import { usePromptProviders } from "./usePromptProviders";
 
 type PairedHalf = EvalRunState | null;
@@ -130,6 +131,13 @@ const errorKeyOf = (err: unknown): string | null => {
     ?.response?.data;
   return typeof data?.error_key === "string" ? data.error_key : null;
 };
+
+const DATASET_CHANGED_KEYS = new Set([
+  "PROMPT_CASE_SELECTION_INVALID",
+  "PROMPT_GOLD_DATASET_INVALID",
+]);
+const datasetChanged = (err: unknown): boolean =>
+  DATASET_CHANGED_KEYS.has(errorKeyOf(err) ?? "");
 
 /** A gate and the action it guards, so a button reads one object */
 export interface PromptAction extends Gate {
@@ -206,7 +214,7 @@ export interface PromptMeasurementState {
   rounds: Round[];
   contextKey: string;
   restoreRound: (id: number) => void;
-  restoreBlocked: boolean;
+  runInFlight: boolean;
   suggestion: string;
   /** Original prompt sent to optimizer (suggestion rewrites this)
    * Not live draft; drift flagged by `optimizeStale` */
@@ -448,8 +456,11 @@ export const usePromptMeasurement = ({
       `Failed to ${action}: ${extractErrorMessage(err, "Request failed")}`,
     );
     setAppliedSuggestion(null);
-    if (errorKeyOf(err) === "PROMPT_CASE_SELECTION_INVALID") {
+    if (datasetChanged(err)) {
       queryClient.invalidateQueries({ queryKey: ["goldCases", goldSuiteId] });
+      queryClient.invalidateQueries({
+        queryKey: promptHistoryKey(workflowId, nodeId, promptField),
+      });
       setHoldoutRun(null);
     }
   };
@@ -821,10 +832,7 @@ export const usePromptMeasurement = ({
       // The inline row owns this message, so the banner writes it only when there is
       // no row to write: an invalid case selection drops the run, and Dismiss or
       // Accept can drop it while the half is still in flight
-      if (
-        holdoutRunRef.current === null ||
-        errorKeyOf(err) === "PROMPT_CASE_SELECTION_INVALID"
-      ) {
+      if (holdoutRunRef.current === null || datasetChanged(err)) {
         showError(`evaluate the ${noun} prompt`, err);
         return;
       }
@@ -844,6 +852,11 @@ export const usePromptMeasurement = ({
       );
     },
   });
+
+  const runInFlight =
+    optimizeMutation.isPending ||
+    evalOptimizedMutation.isPending ||
+    holdoutMutation.isPending;
 
   // One base, two providers, every evaluation is gated on the model that scores it,
   // the rewrite on the model that writes it
@@ -971,7 +984,7 @@ export const usePromptMeasurement = ({
   const restoreRound = (id: number) => {
     const onScreen = onScreenRound();
     const round = attachKeptRun(rounds, onScreen).find((r) => r.id === id);
-    if (!round || optimizeMutation.isPending) return;
+    if (!round || runInFlight) return;
     const outgoing = outgoingRound();
     const filed = outgoing ? { ...outgoing, id: nextRoundId() } : null;
     acceptTokenRef.current += 1;
@@ -1082,6 +1095,7 @@ export const usePromptMeasurement = ({
   };
 
   const dismiss = () => {
+    if (runInFlight) return;
     acceptTokenRef.current += 1;
     setOptimizeRun(null);
     setSuggestedEvalRun(null);
@@ -1148,7 +1162,7 @@ export const usePromptMeasurement = ({
     rounds,
     contextKey,
     restoreRound,
-    restoreBlocked: optimizeMutation.isPending,
+    runInFlight,
     suggestion,
     optimizedFrom,
     suggestionEdited: suggestion !== (optimizeResult?.suggested_prompt ?? ""),

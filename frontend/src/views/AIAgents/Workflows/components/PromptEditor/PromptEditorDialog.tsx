@@ -290,6 +290,11 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     else comparisonPanel.collapse();
   }, [comparisonPanel, hasSelectedVersion]);
 
+  const runPending = measurement.evaluate.pending || measurement.runInFlight;
+  const holdOpenWhileRunning = (event: Event) => {
+    if (runPending) event.preventDefault();
+  };
+
   const status = measurementStatus(measurement);
   const runAnnouncement = [
     measurement.error,
@@ -315,7 +320,10 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogPortal>
         <DialogOverlay className="z-[1300] bg-black/50 backdrop-blur-sm" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[1350] flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[1800px] -translate-x-1/2 -translate-y-1/2 flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Content
+          onEscapeKeyDown={holdOpenWhileRunning}
+          onInteractOutside={holdOpenWhileRunning}
+          className="fixed left-1/2 top-1/2 z-[1350] flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[1800px] -translate-x-1/2 -translate-y-1/2 flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
           <div className="shrink-0 border-b px-6 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -326,7 +334,7 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                     {subtitle}
                   </DialogDescription>
                 </div>
-              <DialogPrimitive.Close className="shrink-0 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none">
+              <DialogPrimitive.Close className="shrink-0 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
                 <X className="h-4 w-4" />
                 <span className="sr-only">Close</span>
               </DialogPrimitive.Close>
