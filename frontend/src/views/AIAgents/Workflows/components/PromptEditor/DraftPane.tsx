@@ -61,12 +61,15 @@ export const DraftPane: React.FC<DraftPaneProps> = ({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="min-w-0 truncate text-sm font-medium">
             Draft · {fieldLabel}
           </span>
           {status && (
-            <span className="shrink-0 rounded-md border px-2 py-0.5 text-xs text-muted-foreground">
+            <span
+              className="min-w-0 truncate rounded-md border px-2 py-0.5 text-xs text-muted-foreground"
+              title={status.label}
+            >
               {status.label}
             </span>
           )}
