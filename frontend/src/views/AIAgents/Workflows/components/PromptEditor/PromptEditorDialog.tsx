@@ -613,6 +613,8 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
 
                 <TabsContent
                   value="gold-dataset"
+                  forceMount
+                  hidden={activeTab !== "gold-dataset"}
                   className="mt-0 h-full min-h-0 overflow-y-auto px-6 pb-6 pt-4"
                 >
                       <GoldDatasetTab
