@@ -187,6 +187,7 @@ export interface NodeTestPayload {
   // The canvas node's id. A Train Model node is tested under it so a retest
   // updates the model the previous test registered instead of colliding with it.
   node_id?: string;
+  workflow_id?: string;
 }
 
 export interface NodeSchemas {
