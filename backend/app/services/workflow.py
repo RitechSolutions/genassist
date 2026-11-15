@@ -118,6 +118,21 @@ class WorkflowService:
         )
         return rows.scalar_one_or_none()
 
+    async def same_lineage(self, workflow_id: UUID, other_id: Optional[UUID]) -> bool:
+        if other_id is None:
+            return False
+        if workflow_id == other_id:
+            return True
+        agent_ids = await self.repository.get_agent_ids([workflow_id, other_id])
+        agent_id = agent_ids.get(workflow_id)
+        return agent_id is not None and agent_id == agent_ids.get(other_id)
+
+    async def node_in_another_lineage(self, workflow_id: UUID, node_id: str, node_name: str) -> bool:
+        agent_ids = await self.repository.get_agent_ids([workflow_id])
+        return await self.repository.node_exists_outside(
+            workflow_id, agent_ids.get(workflow_id), node_id, node_name
+        )
+
     async def get_by_id(self, workflow_id: UUID) -> WorkflowInDB:
         orm_obj = await self.repository.get_by_id(workflow_id)
         if not orm_obj:
