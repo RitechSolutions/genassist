@@ -22,7 +22,7 @@ import type {
   LegacyPromptHistory,
   PromptVersion,
 } from "@/interfaces/promptEditor.interface";
-import { formatFeedbackDate } from "@/helpers/utils";
+import { formatDate, formatDateTime } from "@/helpers/utils";
 import type { HistoryState } from "../../utils/promptEditorGates";
 
 interface VersionsSidebarProps {
@@ -91,8 +91,11 @@ const VersionRow: React.FC<VersionRowProps> = ({
             {version.label}
           </div>
         </div>
-        <div className="text-xs text-muted-foreground shrink-0">
-          {formatFeedbackDate(version.created_at)}
+        <div
+          className="text-xs text-muted-foreground shrink-0"
+          title={formatDateTime(version.created_at)}
+        >
+          {formatDate(version.created_at)}
         </div>
       </div>
     </button>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { Loader2, Play, Sparkles } from "lucide-react";
 import { Button } from "@/components/button";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
@@ -144,6 +144,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     dismiss,
   } = measurement;
   const [roundsOpen, setRoundsOpen] = useState(false);
+  const instructionsId = useId();
   const outcomeNote = outcomeNoteOf(suggestionOutcome, suggestionEdited);
 
   const waitReason = (reason: string | null, pending = false) =>
@@ -229,8 +230,11 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
         </div>
 
         <div className="space-y-2">
-          <Label className="text-sm">Additional Instructions (optional)</Label>
+          <Label htmlFor={instructionsId} className="text-sm">
+            Additional Instructions (optional)
+          </Label>
           <RichTextarea
+            id={instructionsId}
             value={optimizeInstructions}
             onChange={(e) => setOptimizeInstructions(e.target.value)}
             placeholder="e.g., Make it more concise, add examples, enforce JSON output..."
