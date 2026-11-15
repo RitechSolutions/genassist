@@ -13,6 +13,7 @@ import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from uuid import UUID
 
 import numpy as np
 import pandas as pd
@@ -25,6 +26,8 @@ from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow import training_jobs
 from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as hpo_module
 from app.modules.workflow.engine.nodes.ml import model_registry, training_progress
+from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+from app.modules.workflow.engine.workflow_state import WorkflowState
 from app.tasks import ml_training_job_tasks
 
 # The test routes take the request first; no X-Keepalive header runs them inline.
@@ -335,6 +338,26 @@ async def test_test_node_names_the_saved_workflow_of_the_canvas_node(route_env):
     config = route_env.delay.call_args.args[2]["workflow_config"]
     assert config["saved_workflow_id"] == "3f2b6c1e-8a4d-4f1b-9c2e-7d5a6b4c3e21"
     assert config["id"].startswith("test-trainModelNode-")
+
+
+@pytest.mark.asyncio
+async def test_the_node_queued_by_test_node_knows_its_saved_workflow(route_env):
+    await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
+        {
+            "node_type": "trainModelNode",
+            "node_config": TRAIN_NODE_CONFIG,
+            "input_data": {},
+            "node_id": "node-abc",
+            "workflow_id": "3f2b6c1e-8a4d-4f1b-9c2e-7d5a6b4c3e21",
+        },
+    )
+    config = json.loads(json.dumps(route_env.delay.call_args.args[2]["workflow_config"]))
+
+    engine = WorkflowEngine(config)
+    node = engine.executable_node("node-abc", WorkflowState(workflow=engine.workflow))
+
+    assert node._trained_by() == (UUID("3f2b6c1e-8a4d-4f1b-9c2e-7d5a6b4c3e21"), "node-abc")
 
 
 @pytest.mark.asyncio
