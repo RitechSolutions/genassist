@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from langchain_core.messages import AIMessage
 
 import app.services.test_suite as eval_mod
 from app.constants import DEFAULT_NLI_MODEL
@@ -1923,6 +1924,41 @@ class TestParseJudgeJson:
         score, reason = _parse_judge_json('```json\n{"score": 0.2, "reason": "off topic"}\n```')
         assert score == 0.2
         assert reason == "off topic"
+
+
+class _FakeJudgeModel:
+    def __init__(self, reply):
+        self.reply = reply
+
+    async def ainvoke(self, messages):
+        return self.reply
+
+
+class TestJudgeReplyText:
+    async def _judge(self, reply):
+        return await SimpleEvaluatorRegistry()._invoke_json_judge(
+            system_prompt="Grade it.", user_content="Hello", model=_FakeJudgeModel(reply)
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "reasoning_block",
+        [
+            {"type": "thinking", "thinking": "Weighing the reply.", "signature": "sig"},
+            {"type": "reasoning_content", "reasoning_content": {"text": "Weighing the reply."}},
+        ],
+    )
+    async def test_a_reasoning_reply_is_scored_from_its_text_block(self, reasoning_block):
+        reply = AIMessage(content=[reasoning_block, {"type": "text", "text": '{"score": 0.7, "reason": "ok"}'}])
+        assert await self._judge(reply) == (0.7, "ok")
+
+    @pytest.mark.asyncio
+    async def test_an_escaped_newline_between_members_is_scored(self):
+        assert await self._judge(AIMessage(content='{"score": 0.6,\\n "reason": "ok"}')) == (0.6, "ok")
+
+    @pytest.mark.asyncio
+    async def test_a_reply_without_text_is_read_from_its_content(self):
+        assert await self._judge(SimpleNamespace(content='{"score": 0.1}')) == (0.1, None)
 
 
 class TestSemanticEvaluators:
