@@ -185,7 +185,22 @@ class TestFieldGate:
         with pytest.raises(AppException) as exc_info:
             await _run(service, MagicMock())
 
-        assert exc_info.value.error_key is ErrorKey.MISSING_PARAMETER
+        assert exc_info.value.error_key is ErrorKey.PROMPT_GOLD_DATASET_INVALID
+
+    @pytest.mark.asyncio
+    async def test_a_deleted_dataset_is_rejected_before_any_case_or_model_is_read(self):
+        service = _service([_case()])
+        service.suite_repo.get_by_id.return_value = None
+        injector = _injector(_llm(["x"]))
+
+        with pytest.raises(AppException) as exc_info:
+            await _run(service, injector)
+
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_key is ErrorKey.PROMPT_GOLD_DATASET_INVALID
+        assert exc_info.value.error_detail == "No gold dataset linked to this prompt. Create one first."
+        service.case_repo.get_case_index_for_suite.assert_not_awaited()
+        injector.get.assert_not_called()
 
 
 class TestCaseSelection:
@@ -250,6 +265,7 @@ class TestProviderFailures:
         assert row.actual == ""
         assert row.verdict is None
         assert "sk-SECRET" not in row.error
+        assert row.error == "The selected provider did not answer. Choose another provider or check its configuration."
         assert result.summary.execution_failed == 1
         assert result.summary.avg_score is None
 
