@@ -18,7 +18,7 @@ TOOL_BUILDER_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         name="forwardTemplate",
         type="boolean",
         label="Return data directly as agent output",
-        required=True,
+        required=False,
         default="{}"
     )
 ]

@@ -195,7 +195,7 @@ const METRIC_OUTCOME_LABELS: Record<MetricOutcome, string> = {
   failed: "Failed",
   error: "Could not run",
   not_evaluated: "Not evaluated",
-  not_applicable: "N/A — no expected output",
+  not_applicable: "N/A: no expected output",
 };
 
 export const metricOutcomeLabel = (metric: PromptEvalMetric): string =>

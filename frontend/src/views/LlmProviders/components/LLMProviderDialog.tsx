@@ -171,12 +171,20 @@ export function LLMProviderDialog({
         connectionData,
         providerId
       );
+      // A setting the model refused comes back with the value used instead.
+      const adjustedSettings = (result.adjusted_settings ?? {}) as Record<
+        string,
+        string | number | string[]
+      >;
+      setConnectionData((prev) => ({ ...prev, ...adjustedSettings }));
       setTestStatus({
         status: result.success ? "Connected" : "Error",
         last_tested_at: new Date().toISOString(),
         message: result.message,
       });
-      setTestedConnectionData(structuredClone(connectionData));
+      setTestedConnectionData(
+        structuredClone({ ...connectionData, ...adjustedSettings })
+      );
     } catch {
       setTestStatus({
         status: "Error",

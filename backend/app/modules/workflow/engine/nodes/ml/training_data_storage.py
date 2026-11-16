@@ -140,8 +140,8 @@ async def fetch_training_data(
 ) -> None:
     """Download an output CSV from storage when this server doesn't have it; other references are left as they are."""
     reference = (file_url or "").strip()
-    if not reference or reference.startswith(("[", "{", "http://", "https://")):
-        return
+    if not reference or reference.startswith(("http://", "https://")) or ml_utils.starts_like_json_rows(reference):
+        return  # data, not a file ("[Q1] sales.csv" is a file and may need fetching)
     candidates = ml_utils.csv_path_candidates(reference, thread_id)
     directories = [ml_utils.DATA_VOLUME, *(allowed_directories or [])]
     if any(ml_utils._csv_path_inside(candidate, directories) for candidate in candidates):

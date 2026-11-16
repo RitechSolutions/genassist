@@ -49,6 +49,7 @@ export const PromptEditorButton: React.FC<PromptEditorButtonProps> = ({
               size="sm"
               className="h-7 w-7 p-0"
               onClick={() => setIsOpen(true)}
+              aria-label="Prompt Editor"
             >
               <Sparkles className="h-4 w-4" />
             </Button>

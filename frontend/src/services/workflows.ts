@@ -299,7 +299,13 @@ export const waitForTrainingJob = async (
     if (signal?.aborted) throw new TrainingWaitAbortedError();
     onProgress?.(current);
     if (current.status === "succeeded") return current.result;
-    if (current.status === "failed") throw new Error(current.error || "Training failed");
+    if (current.status === "failed") {
+      // A run whose node failed comes back with its response, which shows
+      // the failed node like any failed test run (TM-17). The job's status
+      // wins: a run that still answered failed as a training test.
+      if (current.result) return { ...current.result, status: "failed" };
+      throw new Error(current.error || "Training failed");
+    }
     if (current.status === "cancelled") throw new Error(current.error || "The training test was cancelled.");
     if (Date.now() >= deadline) {
       throw new Error("Stopped waiting for the training job. It took longer than the training time limit.");

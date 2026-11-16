@@ -48,7 +48,8 @@ export const FileManagerSettingsCard = ({ settings }: FileManagerSettingsCardPro
         values: {
           ...persistableValues,
           file_manager_provider: selectedProvider,
-          base_path: basePath,
+          // A cleared Base Path means "use the default folder", not "".
+          base_path: basePath.trim() ? basePath : null,
           aws_bucket_name: awsBucketName,
         },
       });

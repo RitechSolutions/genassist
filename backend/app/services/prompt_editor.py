@@ -97,6 +97,7 @@ _SCORE_BUDGET_TECHNIQUES = frozenset({_GROUNDING_TECHNIQUE, _JUDGE_TECHNIQUE})
 PROMPT_JUDGE_CALL_INDEX_BASE = 1_000
 
 _INTERNAL_FAILURE = "Something went wrong on the server. Check the server logs for details."
+_PROVIDER_FAILURE = "The selected provider did not answer. Choose another provider or check its configuration."
 _HANDED_OVER = frozenset({"recorded", "disabled", "empty"})
 
 
@@ -874,7 +875,7 @@ class PromptEditorService:
             legacy_config = await self.config_repo.get_by_context(
                 workflow_id, bucket, prompt_field
             )
-            legacy_suite = legacy_config.gold_suite_id if legacy_config else None
+            legacy_suite = await self._live_suite_id(legacy_config)
             if legacy_rows or legacy_suite:
                 legacy = LegacyHistoryRead(
                     node_id=bucket,
@@ -889,7 +890,7 @@ class PromptEditorService:
             versions=[
                 PromptVersionRead.model_validate(r, from_attributes=True) for r in rows
             ],
-            gold_suite_id=config.gold_suite_id if config else None,
+            gold_suite_id=await self._live_suite_id(config),
             node_type=ctx.node_type,
             node_missing=ctx.node_missing,
             field_label=ctx.spec.label if ctx.spec else None,
@@ -959,7 +960,15 @@ class PromptEditorService:
             return PromptConfigRead(
                 workflow_id=workflow_id, node_id=node_id, prompt_field=prompt_field
             )
-        return PromptConfigRead.model_validate(config, from_attributes=True)
+        return PromptConfigRead.model_validate(config, from_attributes=True).model_copy(
+            update={"gold_suite_id": await self._live_suite_id(config)}
+        )
+
+    async def _live_suite_id(self, config: Any) -> Optional[UUID]:
+        suite_id = config.gold_suite_id if config else None
+        if suite_id is None or await self.suite_repo.get_by_id(suite_id) is None:
+            return None
+        return suite_id
 
     async def link_gold_suite(
         self,
@@ -1009,7 +1018,7 @@ class PromptEditorService:
         if not index:
             raise AppException(
                 status_code=400,
-                error_key=ErrorKey.MISSING_PARAMETER,
+                error_key=ErrorKey.PROMPT_GOLD_DATASET_INVALID,
                 error_detail="Gold dataset has no cases. Add test cases first.",
             )
 
@@ -1108,13 +1117,14 @@ class PromptEditorService:
         )
 
         config = await self.config_repo.get_by_context(workflow_id, node_id, prompt_field)
-        if not config or not config.gold_suite_id:
+        suite_id = await self._live_suite_id(config)
+        if suite_id is None:
             raise AppException(
                 status_code=400,
-                error_key=ErrorKey.MISSING_PARAMETER,
+                error_key=ErrorKey.PROMPT_GOLD_DATASET_INVALID,
                 error_detail="No gold dataset linked to this prompt. Create one first.",
             )
-        cases, total_cases = await self._select_cases(config.gold_suite_id, request)
+        cases, total_cases = await self._select_cases(suite_id, request)
 
         provider = await injector.get(LlmProviderService).get_by_id(request.provider_id)
         self._remember_provider(provider)
@@ -1176,7 +1186,7 @@ class PromptEditorService:
                     str(check_id)[:8], position, exc_info=True,
                 )
                 return _CaseRun(
-                    case=case, position=position, status="execution_failed", error=_INTERNAL_FAILURE,
+                    case=case, position=position, status="execution_failed", error=_PROVIDER_FAILURE,
                 )
         finally:
             if not handed_over:
@@ -1192,6 +1202,7 @@ class PromptEditorService:
         configs: Dict[str, Dict[str, Any]],
         budget: Optional[Budget],
         *,
+        grounding_lock: asyncio.Lock,
         judge_model: Any = None,
         usage_ref: Optional[PromptUsageRef] = None,
     ) -> Tuple[Dict[str, Any], bool]:
@@ -1244,13 +1255,14 @@ class PromptEditorService:
             metrics.update(await _evaluate(plain_ids))
 
         if _GROUNDING_TECHNIQUE in text_ids:
-            exhausted |= await self._score_bounded(
-                _GROUNDING_TECHNIQUE,
-                _evaluate,
-                budget=budget,
-                techniques=request.techniques,
-                metrics=metrics,
-            )
+            async with grounding_lock:
+                exhausted |= await self._score_bounded(
+                    _GROUNDING_TECHNIQUE,
+                    _evaluate,
+                    budget=budget,
+                    techniques=request.techniques,
+                    metrics=metrics,
+                )
             self._rewrite_grounding_comment(metrics, request.techniques)
 
         if _JUDGE_TECHNIQUE in text_ids:
@@ -1288,6 +1300,9 @@ class PromptEditorService:
         metrics: Dict[str, Any],
     ) -> bool:
         """Model technique (true if timeout). Shape-preserving: absent stays absent"""
+        if budget is not None and budget.remaining() <= 0:
+            metrics[technique] = _timed_out(technique, techniques)
+            return True
         call = evaluate([technique])
         if budget is not None:
             call = asyncio.wait_for(call, timeout=max(1.0, budget.remaining()))
@@ -1563,15 +1578,14 @@ class PromptEditorService:
     ) -> Tuple[List[PromptEvalCaseResult], bool]:
         """Cases score together under one budget; the judge grades on the model the check
         built, so scoring touches no session. nli_eval serializes on a process lock, so a
-        grounded run keeps one case in flight instead of queueing threads behind it"""
+        grounded run keeps one grounding call in flight instead of queueing threads behind it"""
         score_budget = (
             Budget(PROMPT_CHECK_SCORE_BUDGET_SECONDS)
             if _uses_score_budget(request.techniques)
             else None
         )
-        semaphore = asyncio.Semaphore(
-            1 if _GROUNDING_TECHNIQUE in request.techniques else PROMPT_CHECK_CONCURRENCY
-        )
+        semaphore = asyncio.Semaphore(PROMPT_CHECK_CONCURRENCY)
+        grounding_lock = asyncio.Lock()
 
         async def _score_one(run: _CaseRun) -> Tuple[PromptEvalCaseResult, bool]:
             if run.status != "scored":
@@ -1579,7 +1593,13 @@ class PromptEditorService:
             async with semaphore:
                 try:
                     metrics, exhausted = await self._score(
-                        run, request, configs, score_budget, judge_model=judge_model, usage_ref=usage_ref
+                        run,
+                        request,
+                        configs,
+                        score_budget,
+                        grounding_lock=grounding_lock,
+                        judge_model=judge_model,
+                        usage_ref=usage_ref,
                     )
                     return self._row(run, status="scored", metrics=metrics), exhausted
                 except Exception:
@@ -1725,7 +1745,7 @@ class PromptEditorService:
         configs = build_technique_configs(request.techniques, request.technique_configs)
 
         config = await self.config_repo.get_by_context(workflow_id, node_id, prompt_field)
-        suite_id = config.gold_suite_id if config else None
+        suite_id = await self._live_suite_id(config)
         index = await self.case_repo.get_case_index_for_suite(suite_id) if suite_id else []
 
         failed = list(request.failed_cases or [])
@@ -1800,10 +1820,7 @@ class PromptEditorService:
                 raise AppException(
                     status_code=502,
                     error_key=ErrorKey.PROMPT_MODEL_CALL_FAILED,
-                    error_detail=(
-                        "The selected provider did not answer. "
-                        "Choose another provider or check its configuration."
-                    ),
+                    error_detail=_PROVIDER_FAILURE,
                 ) from exc
 
             ref.entries.append(_usage_entry(response, 0, "prompt_optimize", request.provider_id))

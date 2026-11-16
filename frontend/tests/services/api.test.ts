@@ -38,6 +38,7 @@ import {
   deleteKnowledgeItem,
   finalizeKnowledgeItem,
   executeKnowledgeBaseSyncronizationManually,
+  getKnowledgeBaseSyncStatus,
   getAllTools,
   getTool,
   createTool,
@@ -390,6 +391,18 @@ describe("knowledge base endpoints", () => {
       "GET",
       "genagent/knowledge/kb-batch-tasks-execution?kb_id=kb-9"
     );
+  });
+
+  it("getKnowledgeBaseSyncStatus GETs the batch task status with kb_id", async () => {
+    mockApiRequest.mockResolvedValue({ status: "running", run_id: "run-1" });
+
+    const status = await getKnowledgeBaseSyncStatus("kb-9");
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/knowledge/kb-batch-tasks-status?kb_id=kb-9"
+    );
+    expect(status).toEqual({ status: "running", run_id: "run-1" });
   });
 });
 
