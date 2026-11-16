@@ -1,4 +1,4 @@
-import React, { useId, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -27,47 +27,61 @@ interface MeasurementPaneProps {
   measurement: PromptMeasurementState;
 }
 
-const OptimizeHelp: React.FC = () => (
-  <HoverCard>
-    <HoverCardTrigger asChild>
-      <button
-        type="button"
-        aria-label="How to use Optimize"
-        className="ml-auto inline-flex cursor-help text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+const OptimizeHelp: React.FC = () => {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [boundary, setBoundary] = useState<Element | null>(null);
+  useEffect(
+    () => setBoundary(trigger.current?.closest('[role="dialog"]') ?? null),
+    [],
+  );
+  return (
+    <HoverCard>
+      <HoverCardTrigger asChild>
+        <button
+          ref={trigger}
+          type="button"
+          aria-label="How to use Optimize"
+          className="ml-auto inline-flex cursor-help text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+        >
+          <HelpCircle className="h-4 w-4" />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent
+        align="end"
+        collisionBoundary={boundary}
+        collisionPadding={8}
+        className="w-80"
       >
-        <HelpCircle className="h-4 w-4" />
-      </button>
-    </HoverCardTrigger>
-    <HoverCardContent align="end" className="w-80">
-      <div className="space-y-2">
-        <p className="text-sm font-medium">How to use</p>
-        <ul className="list-disc pl-4 text-xs space-y-1">
-          <li>
-            <strong>Optimize</strong> asks a model to rewrite this prompt and
-            shows the result as a diff.
-          </li>
-          <li>
-            It is told which gold cases the last evaluation{" "}
-            <strong>failed</strong>, so the rewrite aims at them.
-          </li>
-          <li>
-            Press <strong>Optimize</strong> again to rewrite the suggestion;
-            earlier ones are kept under <strong>Rounds</strong>.
-          </li>
-          <li>
-            Turn on <strong>Hold out cases</strong> in Evaluate to keep some
-            cases back from the optimizer, you can then compare both prompts on
-            cases it never saw.
-          </li>
-          <li>
-            The prompt changes only on <strong>Accept</strong>.{" "}
-            <strong>Dismiss</strong> starts over.
-          </li>
-        </ul>
-      </div>
-    </HoverCardContent>
-  </HoverCard>
-);
+        <div className="space-y-2">
+          <p className="text-sm font-medium">How to use</p>
+          <ul className="list-disc pl-4 text-xs space-y-1">
+            <li>
+              <strong>Optimize</strong> asks a model to rewrite this prompt and
+              shows the result as a diff.
+            </li>
+            <li>
+              It is told which gold cases the last evaluation{" "}
+              <strong>failed</strong>, so the rewrite aims at them.
+            </li>
+            <li>
+              Press <strong>Optimize</strong> again to rewrite the suggestion;
+              earlier ones are kept under <strong>Rounds</strong>.
+            </li>
+            <li>
+              Turn on <strong>Hold out cases</strong> in Evaluate to keep some
+              cases back from the optimizer, you can then compare both prompts on
+              cases it never saw.
+            </li>
+            <li>
+              The prompt changes only on <strong>Accept</strong>.{" "}
+              <strong>Dismiss</strong> starts over.
+            </li>
+          </ul>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  );
+};
 
 export const MeasurementPane: React.FC<MeasurementPaneProps> = ({
   caps,

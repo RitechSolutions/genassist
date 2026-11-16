@@ -126,7 +126,7 @@ def test_a_budget_overrun_arrives_as_the_app_envelope(editor):
         "error": "The prompt check did not finish within the time budget.",
         "error_code": 504,
         "error_key": "PROMPT_EXECUTION_TIMEOUT",
-        "error_detail": None,
+        "error_detail": "The rewrite did not finish within the time budget.",
     }
 
 
