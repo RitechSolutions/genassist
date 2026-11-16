@@ -33,30 +33,15 @@ let hideTimer: ReturnType<typeof setTimeout> | undefined;
 const splash = (): HTMLElement | null =>
   typeof document === "undefined" ? null : document.getElementById("app-splash");
 
-const svgOf = (node: HTMLElement) => node.querySelector("svg");
-
-const prefersReducedMotion = () =>
-  typeof window !== "undefined" &&
-  (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
-
 function clearTimer(timer: ReturnType<typeof setTimeout> | undefined) {
   if (timer !== undefined) clearTimeout(timer);
 }
 
-/** Rewind every CSS and SMIL animation to the start of the intro. */
+/** Rewind every animation to the start of the intro (they're all CSS). */
 function restartAnimation(node: HTMLElement) {
   node.classList.remove("gas-play");
   void node.offsetWidth; // force a reflow so the CSS animations restart
   node.classList.add("gas-play");
-  const svg = svgOf(node);
-  if (!svg) return;
-  if (prefersReducedMotion()) {
-    svg.setCurrentTime(1.6);
-    svg.pauseAnimations();
-  } else {
-    svg.setCurrentTime(0);
-    svg.unpauseAnimations();
-  }
 }
 
 function show() {
@@ -86,7 +71,6 @@ function hide() {
   hideTimer = setTimeout(() => {
     hideTimer = undefined;
     node.hidden = true;
-    svgOf(node)?.pauseAnimations();
     phase = "hidden";
   }, FADE_MS);
 }
@@ -136,11 +120,6 @@ export function markAppMounted() {
   if (!node) {
     phase = "hidden";
     return;
-  }
-  if (prefersReducedMotion()) {
-    // Backup for the inline script in index.html.
-    svgOf(node)?.setCurrentTime(1.6);
-    svgOf(node)?.pauseAnimations();
   }
   scheduleHide();
 }
