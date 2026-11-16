@@ -314,7 +314,7 @@ describe("caseStatusLabel", () => {
 describe("metricOutcomeLabel", () => {
   it("separates a dataset gap from a check that could not run", () => {
     expect(metricOutcomeLabel({ score: null, passed: false, not_applicable: true })).toBe(
-      "N/A — no expected output",
+      "N/A: no expected output",
     );
     expect(metricOutcomeLabel({ score: null, passed: false, not_evaluated: true })).toBe(
       "Not evaluated",
