@@ -82,8 +82,26 @@ export const diffSides = (
 export const isCurrentDraft = (version: PromptVersion, draft: string): boolean =>
   version.content === draft;
 
-/** Checks if the draft changed since async action was submitted */
-export const draftUnchangedSince = (
-  draftAtSubmit: string,
-  currentDraft: string,
-): boolean => draftAtSubmit === currentDraft;
+export interface DraftStatus {
+  saved: boolean;
+  label: string;
+}
+
+const newestOf = (versions: readonly PromptVersion[]): PromptVersion | null =>
+  versions.reduce<PromptVersion | null>(
+    (newest, v) =>
+      newest && newest.version_number >= v.version_number ? newest : v,
+    null,
+  );
+
+export const draftStatusOf = (
+  draft: string,
+  versions: readonly PromptVersion[],
+): DraftStatus => {
+  const match = newestOf(versions.filter((v) => isCurrentDraft(v, draft)));
+  if (match) return { saved: true, label: `Matches v${match.version_number}` };
+  const newest = newestOf(versions);
+  return newest
+    ? { saved: false, label: `Changed since v${newest.version_number}` }
+    : { saved: false, label: "No saved version" };
+};

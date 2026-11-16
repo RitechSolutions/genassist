@@ -220,6 +220,7 @@ class ErrorKey(Enum):
     PROMPT_OPTIMIZE_UNUSABLE = "PROMPT_OPTIMIZE_UNUSABLE"
     PROMPT_EXECUTION_TIMEOUT = "PROMPT_EXECUTION_TIMEOUT"
     PROMPT_MODEL_CALL_FAILED = "PROMPT_MODEL_CALL_FAILED"
+    PROMPT_GOLD_DATASET_INVALID = "PROMPT_GOLD_DATASET_INVALID"
 
 
 ERROR_MESSAGES = {
@@ -456,6 +457,7 @@ ERROR_MESSAGES = {
         ErrorKey.PROMPT_OPTIMIZE_UNUSABLE: "The model did not return a usable prompt suggestion.",
         ErrorKey.PROMPT_EXECUTION_TIMEOUT: "The prompt check did not finish within the time budget.",
         ErrorKey.PROMPT_MODEL_CALL_FAILED: "The LLM provider call failed.",
+        ErrorKey.PROMPT_GOLD_DATASET_INVALID: "The gold dataset is missing or has no cases.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
