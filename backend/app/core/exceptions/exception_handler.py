@@ -45,7 +45,7 @@ def stream_error_body(request: Request, error: Exception) -> dict:
         return _app_exception_body(request, error)
     if isinstance(error, HTTPException):
         return {'error': error.detail, 'error_code': error.status_code}
-    logger.exception("Streamed chat turn failed")
+    logger.exception("Streamed request failed")
     return {'error': get_error_message(request=request, error_key=ErrorKey.INTERNAL_ERROR), 'error_code': 500}
 
 
