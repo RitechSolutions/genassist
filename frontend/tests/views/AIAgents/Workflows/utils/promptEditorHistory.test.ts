@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PromptVersion } from "@/interfaces/promptEditor.interface";
 import {
   diffSides,
-  draftUnchangedSince,
+  draftStatusOf,
   findPromptVersion,
   isCurrentDraft,
   type HistoryEntry,
@@ -123,9 +123,34 @@ describe("isCurrentDraft", () => {
   });
 });
 
-describe("draftUnchangedSince", () => {
-  it("detects a draft that moved while a request was in flight", () => {
-    expect(draftUnchangedSince("before", "before")).toBe(true);
-    expect(draftUnchangedSince("before", "after")).toBe(false);
+describe("draftStatusOf", () => {
+  it("says no version is saved when the history is empty", () => {
+    expect(draftStatusOf("text", [])).toEqual({
+      saved: false,
+      label: "No saved version",
+    });
+  });
+
+  it("names the version the draft matches", () => {
+    const versions = [version("v2", "two", 2), version("v1", "one", 1)];
+    expect(draftStatusOf("one", versions)).toEqual({
+      saved: true,
+      label: "Matches v1",
+    });
+  });
+
+  it("names the newest version whatever the list order", () => {
+    const versions = [version("v1", "one", 1), version("v2", "two", 2)];
+    expect(draftStatusOf("three", versions)).toEqual({
+      saved: false,
+      label: "Changed since v2",
+    });
+  });
+
+  it("counts a trailing space as a change", () => {
+    expect(draftStatusOf("one ", [version("v1", "one", 1)])).toEqual({
+      saved: false,
+      label: "Changed since v1",
+    });
   });
 });

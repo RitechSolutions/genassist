@@ -219,6 +219,17 @@ class TestFieldGate:
         assert result.provenance.total_cases == 0
         assert "Be shorter." in _human_message(llm)
 
+    @pytest.mark.asyncio
+    async def test_a_prompt_whose_dataset_was_deleted_is_optimized_from_instructions_alone(self):
+        service = _service([_case()])
+        service.suite_repo.get_by_id.return_value = None
+
+        result = await _run(service, _injector(_llm()), _request(instructions="Be shorter."))
+
+        assert result.exploratory is True
+        assert result.provenance.total_cases == 0
+        service.case_repo.get_case_index_for_suite.assert_not_awaited()
+
 
 class TestExampleBudget:
     @pytest.mark.asyncio

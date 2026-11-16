@@ -14,6 +14,7 @@ import type { PromptEditorCapabilities } from "../../utils/promptEditorCapabilit
 import {
   acceptGate,
   evaluateGate,
+  FORBIDDEN_RESULT_MESSAGE,
   HOLDOUT_OFF_REASON,
   HOLDOUT_STALE_REASON,
   optimizeGate,
@@ -81,6 +82,7 @@ import {
   comparePromptBindings,
 } from "../../utils/templateVariableDiagnostics";
 import { usePromptGoldCases } from "./usePromptGoldCases";
+import { promptHistoryKey } from "./usePromptHistory";
 import { usePromptProviders } from "./usePromptProviders";
 
 type PairedHalf = EvalRunState | null;
@@ -131,6 +133,13 @@ const errorKeyOf = (err: unknown): string | null => {
   return typeof data?.error_key === "string" ? data.error_key : null;
 };
 
+const DATASET_CHANGED_KEYS = new Set([
+  "PROMPT_CASE_SELECTION_INVALID",
+  "PROMPT_GOLD_DATASET_INVALID",
+]);
+const datasetChanged = (err: unknown): boolean =>
+  DATASET_CHANGED_KEYS.has(errorKeyOf(err) ?? "");
+
 /** A gate and the action it guards, so a button reads one object */
 export interface PromptAction extends Gate {
   run: () => void;
@@ -146,6 +155,7 @@ export interface UsePromptMeasurementArgs {
   draft: string;
   /** Accepted suggestion, applied to the draft */
   onAccepted: (newValue: string) => void;
+  draftSaved: boolean;
   historyState: HistoryState;
   caps: PromptEditorCapabilities;
   defaultProviderId?: string;
@@ -154,7 +164,6 @@ export interface UsePromptMeasurementArgs {
 export interface PromptMeasurementState {
   error: string | null;
   successMessage: string | null;
-  clearSuccessMessage: () => void;
 
   providers: LLMProvider[];
   activeEvalProviderId: string;
@@ -206,7 +215,7 @@ export interface PromptMeasurementState {
   rounds: Round[];
   contextKey: string;
   restoreRound: (id: number) => void;
-  restoreBlocked: boolean;
+  runInFlight: boolean;
   suggestion: string;
   /** Original prompt sent to optimizer (suggestion rewrites this)
    * Not live draft; drift flagged by `optimizeStale` */
@@ -249,6 +258,7 @@ export const usePromptMeasurement = ({
   promptField,
   draft,
   onAccepted,
+  draftSaved,
   historyState,
   caps,
   defaultProviderId,
@@ -256,7 +266,9 @@ export const usePromptMeasurement = ({
   const queryClient = useQueryClient();
 
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [appliedSuggestion, setAppliedSuggestion] = useState<string | null>(
+    null,
+  );
   const [selectedTechniques, setSelectedTechniques] = useState<string[]>([
     "llm_judge",
   ]);
@@ -444,9 +456,12 @@ export const usePromptMeasurement = ({
     setError(
       `Failed to ${action}: ${extractErrorMessage(err, "Request failed")}`,
     );
-    setSuccessMessage(null);
-    if (errorKeyOf(err) === "PROMPT_CASE_SELECTION_INVALID") {
+    setAppliedSuggestion(null);
+    if (datasetChanged(err)) {
       queryClient.invalidateQueries({ queryKey: ["goldCases", goldSuiteId] });
+      queryClient.invalidateQueries({
+        queryKey: promptHistoryKey(workflowId, nodeId, promptField),
+      });
       setHoldoutRun(null);
     }
   };
@@ -657,8 +672,7 @@ export const usePromptMeasurement = ({
         ? { case_ids: vars.caseIds }
         : { max_cases: vars.maxCases }),
     });
-    if (!result)
-      throw new Error("Server returned empty response — check permissions.");
+    if (!result) throw new Error(FORBIDDEN_RESULT_MESSAGE);
     return result;
   };
 
@@ -693,8 +707,7 @@ export const usePromptMeasurement = ({
         previous_attempts:
           vars.previousAttempts.length > 0 ? vars.previousAttempts : undefined,
       });
-      if (!result)
-        throw new Error("Server returned empty response — check permissions.");
+      if (!result) throw new Error(FORBIDDEN_RESULT_MESSAGE);
       return result;
     },
     onSuccess: (data, vars) => {
@@ -783,7 +796,7 @@ export const usePromptMeasurement = ({
       // dropped mid-flight has none, and a skipped half is not worth reporting there
       const chainSkipped = chainStale && !superseded;
       if (chainSkipped && holdoutRunRef.current !== null)
-        setSuccessMessage(null);
+        setAppliedSuggestion(null);
       setHoldoutRun((prev) =>
         prev
           ? {
@@ -818,14 +831,11 @@ export const usePromptMeasurement = ({
       // The inline row owns this message, so the banner writes it only when there is
       // no row to write: an invalid case selection drops the run, and Dismiss or
       // Accept can drop it while the half is still in flight
-      if (
-        holdoutRunRef.current === null ||
-        errorKeyOf(err) === "PROMPT_CASE_SELECTION_INVALID"
-      ) {
+      if (holdoutRunRef.current === null || datasetChanged(err)) {
         showError(`evaluate the ${noun} prompt`, err);
         return;
       }
-      setSuccessMessage(null);
+      setAppliedSuggestion(null);
       setHoldoutRun((prev) =>
         prev
           ? {
@@ -841,6 +851,11 @@ export const usePromptMeasurement = ({
       );
     },
   });
+
+  const runInFlight =
+    optimizeMutation.isPending ||
+    evalOptimizedMutation.isPending ||
+    holdoutMutation.isPending;
 
   // One base, two providers, every evaluation is gated on the model that scores it,
   // the rewrite on the model that writes it
@@ -968,7 +983,7 @@ export const usePromptMeasurement = ({
   const restoreRound = (id: number) => {
     const onScreen = onScreenRound();
     const round = attachKeptRun(rounds, onScreen).find((r) => r.id === id);
-    if (!round || optimizeMutation.isPending) return;
+    if (!round || runInFlight) return;
     const outgoing = outgoingRound();
     const filed = outgoing ? { ...outgoing, id: nextRoundId() } : null;
     acceptTokenRef.current += 1;
@@ -1039,7 +1054,7 @@ export const usePromptMeasurement = ({
     if (!optimizeResult || !accept.enabled) return;
     onAccepted(suggestion);
     setError(null);
-    setSuccessMessage("Applied to the draft. Save a version to keep it.");
+    setAppliedSuggestion(suggestion);
     acceptTokenRef.current += 1;
     setOptimizeRun(null);
     setSuggestedEvalRun(null);
@@ -1079,6 +1094,7 @@ export const usePromptMeasurement = ({
   };
 
   const dismiss = () => {
+    if (runInFlight) return;
     acceptTokenRef.current += 1;
     setOptimizeRun(null);
     setSuggestedEvalRun(null);
@@ -1089,8 +1105,10 @@ export const usePromptMeasurement = ({
 
   return {
     error,
-    successMessage,
-    clearSuccessMessage: () => setSuccessMessage(null),
+    successMessage:
+      appliedSuggestion !== null && appliedSuggestion === draft && !draftSaved
+        ? "Applied to the draft. Save a version to keep it."
+        : null,
 
     providers,
     activeEvalProviderId,
@@ -1143,7 +1161,7 @@ export const usePromptMeasurement = ({
     rounds,
     contextKey,
     restoreRound,
-    restoreBlocked: optimizeMutation.isPending,
+    runInFlight,
     suggestion,
     optimizedFrom,
     suggestionEdited: suggestion !== (optimizeResult?.suggested_prompt ?? ""),
