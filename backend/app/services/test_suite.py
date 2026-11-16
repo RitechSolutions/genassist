@@ -534,7 +534,7 @@ def _is_retrieval_tool(event: Dict[str, Any], nodes: Dict[str, Any]) -> bool:
 def _parse_judge_json(raw_content: Any) -> tuple[float | None, str | None]:
     """Parse a judge's ``{score, reason}`` reply; a missing/invalid score yields no score."""
     try:
-        parsed = parse_json_object_reply(raw_content)
+        parsed = parse_json_object_reply(raw_content, strict=False)
         # A missing score is a malformed judgment, not a real 0.0 — surface it as
         # an error rather than silently failing the answer.
         if parsed.get("score") is None:
@@ -1904,9 +1904,11 @@ class SimpleEvaluatorRegistry:
                 )
             except Exception:
                 logger.warning("Collecting judge usage failed", exc_info=True)
-        raw_content = getattr(response, "content", "")
-        if isinstance(raw_content, list):
-            raw_content = " ".join(str(part) for part in raw_content)
+        raw_content = getattr(response, "text", None)
+        if not isinstance(raw_content, str):
+            raw_content = getattr(response, "content", "")
+            if isinstance(raw_content, list):
+                raw_content = " ".join(str(part) for part in raw_content)
         return _parse_judge_json(raw_content)
 
     async def _llm_judge(

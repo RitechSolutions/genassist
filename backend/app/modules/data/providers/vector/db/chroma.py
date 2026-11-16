@@ -175,38 +175,32 @@ class ChromaVectorDB(BaseVectorDB):
         filter_dict: Dict[str, Any] = None
     ) -> List[SearchResult]:
         """Search for similar vectors"""
-        try:
-            if not self.collection:
-                logger.error("Collection not initialized")
-                return []
+        if not self.collection:
+            raise RuntimeError("The vector collection is not initialized")
 
-            # Use ChromaDB query with async for all clients
-            results = await self.collection.query(
-                query_embeddings=[query_vector],
-                n_results=limit,
-                where=filter_dict,
-                include=["documents", "metadatas", "distances"]
-            )
+        # Use ChromaDB query with async for all clients
+        results = await self.collection.query(
+            query_embeddings=[query_vector],
+            n_results=limit,
+            where=filter_dict,
+            include=["documents", "metadatas", "distances"]
+        )
 
-            # Convert to SearchResult objects
-            search_results = []
-            if results["ids"] and results["ids"][0]:
-                for i in range(len(results["ids"][0])):
-                    result = SearchResult(
-                        id=results["ids"][0][i],
-                        content=results["documents"][0][i] if results["documents"] else "",
-                        metadata=results["metadatas"][0][i] if results["metadatas"] else {
-                        },
-                        score=None,  # Will be calculated from distance
-                        distance=results["distances"][0][i] if results["distances"] else 0.0
-                    )
-                    search_results.append(result)
+        # Convert to SearchResult objects
+        search_results = []
+        if results["ids"] and results["ids"][0]:
+            for i in range(len(results["ids"][0])):
+                result = SearchResult(
+                    id=results["ids"][0][i],
+                    content=results["documents"][0][i] if results["documents"] else "",
+                    metadata=results["metadatas"][0][i] if results["metadatas"] else {
+                    },
+                    score=None,  # Will be calculated from distance
+                    distance=results["distances"][0][i] if results["distances"] else 0.0
+                )
+                search_results.append(result)
 
-            return search_results
-
-        except Exception as e:
-            logger.error(f"Failed to search ChromaDB: {e}")
-            return []
+        return search_results
 
     async def get_by_ids(self, ids: List[str]) -> List[SearchResult]:
         """Get vectors by their IDs"""

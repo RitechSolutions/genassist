@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useId, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, Database, Plus, Trash2, Edit2, Check, X } from "lucide-react";
 import { Button } from "@/components/button";
 import { RichTextarea } from "@/components/richTextarea";
 import { Label } from "@/components/label";
+import { DeleteConfirmationDialog } from "@/components/ui/delete-confirmation-dialog";
 import { linkGoldSuite } from "@/services/promptEditor";
 import {
   addTestCase,
@@ -14,7 +15,10 @@ import {
 import { extractErrorMessage } from "@/helpers/apiError";
 import type { TestCase } from "@/interfaces/testSuite.interface";
 import type { PromptEditorCapabilities } from "../../utils/promptEditorCapabilities";
-import type { HistoryState } from "../../utils/promptEditorGates";
+import {
+  FORBIDDEN_RESULT_MESSAGE,
+  type HistoryState,
+} from "../../utils/promptEditorGates";
 import { promptHistoryKey } from "./usePromptHistory";
 import { GateTooltip } from "./GateTooltip";
 
@@ -49,6 +53,10 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
   const [editInput, setEditInput] = useState("");
   const [editExpected, setEditExpected] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TestCase | null>(null);
+  // Radix closes on Action click before the mutation reports pending
+  const isDeletingRef = useRef(false);
+  const fieldId = useId();
 
   const suiteId = goldSuiteId;
 
@@ -70,7 +78,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
       const result = await linkGoldSuite(workflowId, nodeId, promptField, {
         name: `Gold Dataset - ${nodeLabel} / ${fieldLabel}`.slice(0, 200),
       });
-      if (!result) throw new Error("Server returned empty response — you may lack Evaluation permissions.");
+      if (!result) throw new Error(FORBIDDEN_RESULT_MESSAGE);
       return result;
     },
     onSuccess: () => {
@@ -89,7 +97,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
         expected_output: { value: newExpected },
         tags: ["gold"],
       });
-      if (!result) throw new Error("Server returned empty response.");
+      if (!result) throw new Error(FORBIDDEN_RESULT_MESSAGE);
       return result;
     },
     onSuccess: () => {
@@ -107,7 +115,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
         input_data: { message: editInput },
         expected_output: { value: editExpected },
       });
-      if (!result) throw new Error("Server returned empty response.");
+      if (!result) throw new Error(FORBIDDEN_RESULT_MESSAGE);
       return result;
     },
     onSuccess: () => {
@@ -118,7 +126,10 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
   });
 
   const deleteCaseMutation = useMutation({
-    mutationFn: (caseId: string) => deleteTestCase(caseId),
+    mutationFn: (caseId: string) => {
+      setError(null);
+      return deleteTestCase(caseId);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["goldCases", suiteId] });
     },
@@ -126,6 +137,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
   });
 
   const startEditing = (tc: TestCase) => {
+    setError(null);
     setEditingCaseId(tc.id);
     setEditInput(tc.input_data?.message ?? JSON.stringify(tc.input_data));
     setEditExpected(tc.expected_output?.value ?? JSON.stringify(tc.expected_output));
@@ -205,8 +217,11 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
           <p className="text-sm font-medium">Add Gold Case</p>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">Input Message</Label>
+              <Label htmlFor={`${fieldId}-new-input`} className="text-xs">
+                Input Message
+              </Label>
               <RichTextarea
+                id={`${fieldId}-new-input`}
                 value={newInput}
                 onChange={(e) => setNewInput(e.target.value)}
                 placeholder="User input message..."
@@ -215,8 +230,11 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Expected Output</Label>
+              <Label htmlFor={`${fieldId}-new-expected`} className="text-xs">
+                Expected Output
+              </Label>
               <RichTextarea
+                id={`${fieldId}-new-expected`}
                 value={newExpected}
                 onChange={(e) => setNewExpected(e.target.value)}
                 placeholder="Expected assistant response..."
@@ -263,8 +281,14 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs">Input</Label>
+                      <Label
+                        htmlFor={`${fieldId}-edit-input`}
+                        className="text-xs"
+                      >
+                        Input
+                      </Label>
                       <RichTextarea
+                        id={`${fieldId}-edit-input`}
                         value={editInput}
                         onChange={(e) => setEditInput(e.target.value)}
                         size="body"
@@ -272,8 +296,14 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Expected</Label>
+                      <Label
+                        htmlFor={`${fieldId}-edit-expected`}
+                        className="text-xs"
+                      >
+                        Expected
+                      </Label>
                       <RichTextarea
+                        id={`${fieldId}-edit-expected`}
                         value={editExpected}
                         onChange={(e) => setEditExpected(e.target.value)}
                         size="body"
@@ -287,6 +317,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                       variant="ghost"
                       onClick={() => updateCaseMutation.mutate(tc.id)}
                       disabled={updateCaseMutation.isPending}
+                      aria-label="Save case"
                     >
                       <Check className="h-4 w-4" />
                     </Button>
@@ -294,6 +325,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                       size="sm"
                       variant="ghost"
                       onClick={() => setEditingCaseId(null)}
+                      aria-label="Cancel editing"
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -322,6 +354,7 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                         size="sm"
                         className="h-7 w-7 p-0"
                         onClick={() => startEditing(tc)}
+                        aria-label="Edit case"
                       >
                         <Edit2 className="h-3.5 w-3.5" />
                       </Button>
@@ -329,8 +362,9 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
                         variant="ghost"
                         size="sm"
                         className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                        onClick={() => deleteCaseMutation.mutate(tc.id)}
+                        onClick={() => setDeleteTarget(tc)}
                         disabled={deleteCaseMutation.isPending}
+                        aria-label="Delete case"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
@@ -342,6 +376,26 @@ export const GoldDatasetTab: React.FC<GoldDatasetTabProps> = ({
           ))}
         </div>
       )}
+
+      <DeleteConfirmationDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !isDeletingRef.current) setDeleteTarget(null);
+        }}
+        title="Delete this case?"
+        description="The case is removed from the gold dataset. This can't be undone."
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          isDeletingRef.current = true;
+          try {
+            await deleteCaseMutation.mutateAsync(deleteTarget.id);
+          } finally {
+            isDeletingRef.current = false;
+            setDeleteTarget(null);
+          }
+        }}
+        isDeleting={deleteCaseMutation.isPending}
+      />
     </div>
   );
 };

@@ -395,6 +395,45 @@ class TestGetHistory:
         )
 
 
+class TestDeletedDataset:
+    @pytest.mark.asyncio
+    async def test_a_history_whose_datasets_were_deleted_reads_as_unlinked_and_writes_nothing(self):
+        service = _service()
+        own_suite, legacy_suite = uuid4(), uuid4()
+        own = SimpleNamespace(gold_suite_id=own_suite)
+        legacy = SimpleNamespace(gold_suite_id=legacy_suite)
+        service.version_repo.get_versions_for_context.side_effect = [[_version(1)], []]
+        service.config_repo.get_by_context.side_effect = [own, legacy]
+        service.suite_repo.get_by_id.return_value = None
+
+        history = await service.get_history(WORKFLOW_ID, NODE_ID, FIELD)
+
+        assert history.gold_suite_id is None
+        assert history.legacy_shared is None
+        assert own.gold_suite_id == own_suite
+        assert legacy.gold_suite_id == legacy_suite
+
+    @pytest.mark.asyncio
+    async def test_a_config_whose_dataset_was_deleted_reads_as_unlinked_and_writes_nothing(self):
+        service = _service()
+        suite_id = uuid4()
+        config = SimpleNamespace(
+            id=uuid4(),
+            workflow_id=WORKFLOW_ID,
+            node_id=NODE_ID,
+            prompt_field=FIELD,
+            gold_suite_id=suite_id,
+            created_at=datetime.now(timezone.utc),
+        )
+        service.config_repo.get_by_context.return_value = config
+        service.suite_repo.get_by_id.return_value = None
+
+        result = await service.get_config(WORKFLOW_ID, NODE_ID, FIELD)
+
+        assert result.gold_suite_id is None
+        assert config.gold_suite_id == suite_id
+
+
 class TestDeleteVersion:
     @pytest.mark.asyncio
     async def test_an_unknown_version_is_a_404(self):
@@ -459,3 +498,23 @@ class TestLinkGoldSuite:
             await service.link_gold_suite(WORKFLOW_ID, NODE_ID, FIELD, suite_id=uuid4())
 
         assert exc_info.value.status_code == 404
+
+
+class TestClientSafeErrors:
+    @pytest.mark.parametrize(
+        ("status_code", "error_key", "detail"),
+        [
+            (504, ErrorKey.PROMPT_EXECUTION_TIMEOUT, "The rewrite did not finish within the time budget."),
+            (
+                502,
+                ErrorKey.PROMPT_MODEL_CALL_FAILED,
+                "The selected provider did not answer. Choose another provider or check its configuration.",
+            ),
+            (400, ErrorKey.PROMPT_GOLD_DATASET_INVALID, "No gold dataset linked to this prompt. Create one first."),
+        ],
+    )
+    def test_a_run_error_detail_reaches_the_user_outside_dev(self, monkeypatch, status_code, error_key, detail):
+        monkeypatch.delenv("ENV", raising=False)
+        error = AppException(status_code=status_code, error_key=error_key, error_detail=detail)
+
+        assert _response_error_detail(error) == detail

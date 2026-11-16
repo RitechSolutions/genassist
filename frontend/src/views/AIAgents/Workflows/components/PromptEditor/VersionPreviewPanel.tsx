@@ -1,5 +1,5 @@
 import React, { useId, useState } from "react";
-import { AlertCircle, ArrowRight, ChevronDown, Copy, Undo2 } from "lucide-react";
+import { AlertCircle, ArrowRight, ChevronDown, Copy } from "lucide-react";
 import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
 import {
@@ -53,11 +53,9 @@ interface VersionPreviewPanelProps {
   draft: string;
   isCurrentDraft: boolean;
   canEdit: boolean;
-  canUndo: boolean;
   nodeMissing: boolean;
   historyReady: boolean;
   onApply: () => void;
-  onUndo: () => void;
   onCopy: () => void;
   isCopying: boolean;
   copyError: string | null;
@@ -72,11 +70,9 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
   draft,
   isCurrentDraft,
   canEdit,
-  canUndo,
   nodeMissing,
   historyReady,
   onApply,
-  onUndo,
   onCopy,
   isCopying,
   copyError,
@@ -186,12 +182,6 @@ export const VersionPreviewPanel: React.FC<VersionPreviewPanelProps> = ({
           >
             Apply to draft
           </Button>
-          {canUndo && (
-            <Button type="button" size="sm" variant="ghost" onClick={onUndo}>
-              <Undo2 className="h-3.5 w-3.5 mr-2" />
-              Undo
-            </Button>
-          )}
           {canCopyToHistory && (
             <Button
               type="button"
