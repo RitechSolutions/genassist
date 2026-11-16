@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useId, useState } from "react";
 import { Loader2, Play, Sparkles } from "lucide-react";
 import { Button } from "@/components/button";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
@@ -31,7 +31,6 @@ const roundStatus = (round: Round): string => {
   return countsLine(round.counts);
 };
 
-const RESTORE_BLOCKED_REASON = "Wait for the running rewrite to finish";
 const RUN_IN_FLIGHT_REASON = "Wait for the current run to finish";
 
 const outcomeNoteOf = (
@@ -76,7 +75,7 @@ const RoundRow: React.FC<{
         </div>
       )}
     </div>
-    <GateTooltip reason={blocked ? RESTORE_BLOCKED_REASON : null}>
+    <GateTooltip reason={blocked ? RUN_IN_FLIGHT_REASON : null}>
       <Button
         size="sm"
         variant="outline"
@@ -121,7 +120,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     rounds,
     contextKey,
     restoreRound,
-    restoreBlocked,
+    runInFlight,
     optimizeResult,
     optimizeProviderFallback,
     optimizeStale,
@@ -145,11 +144,9 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
     dismiss,
   } = measurement;
   const [roundsOpen, setRoundsOpen] = useState(false);
+  const instructionsId = useId();
   const outcomeNote = outcomeNoteOf(suggestionOutcome, suggestionEdited);
 
-  // A run that lands after a newer one started is dropped, so its spend is wasted
-  const runInFlight =
-    optimize.pending || evaluateSuggested.pending || validateHoldout.pending;
   const waitReason = (reason: string | null, pending = false) =>
     reason ?? (runInFlight && !pending ? RUN_IN_FLIGHT_REASON : null);
 
@@ -233,8 +230,11 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
         </div>
 
         <div className="space-y-2">
-          <Label className="text-sm">Additional Instructions (optional)</Label>
+          <Label htmlFor={instructionsId} className="text-sm">
+            Additional Instructions (optional)
+          </Label>
           <RichTextarea
+            id={instructionsId}
             value={optimizeInstructions}
             onChange={(e) => setOptimizeInstructions(e.target.value)}
             placeholder="e.g., Make it more concise, add examples, enforce JSON output..."
@@ -393,9 +393,16 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
                 </Button>
               </GateTooltip>
             )}
-            <Button size="sm" variant="ghost" onClick={dismiss}>
-              Dismiss
-            </Button>
+            <GateTooltip reason={waitReason(null)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={dismiss}
+                disabled={runInFlight}
+              >
+                Dismiss
+              </Button>
+            </GateTooltip>
           </div>
 
           {draftDiverged && (
@@ -470,7 +477,7 @@ export const OptimizeSection: React.FC<OptimizeSectionProps> = ({
                     key={round.id}
                     round={round}
                     contextKey={contextKey}
-                    blocked={restoreBlocked}
+                    blocked={runInFlight}
                     onRestore={restoreRound}
                   />
                 ))}

@@ -111,6 +111,30 @@ def _join_reason_counts(reason_counts: Dict[str, int]) -> str:
     return f"{', '.join(parts[:-1])} or {parts[-1]}"
 
 
+_NAMED_ROWS_LIMIT = 10
+
+
+def _name_rows_by_reason(rows_by_reason: Dict[str, List[int]], reason_counts: Dict[str, int]) -> str:
+    """
+    ({"zero": [5, 2], "missing": [9]}, {"zero": 2, "missing": 12}) ->
+    "zero 2, 5; missing 9 …and 11 more". At most _NAMED_ROWS_LIMIT rows are
+    named per reason, smallest first; reason_counts holds each reason's
+    full count, so the rest are summed up as "…and N more". Reasons with
+    no rows are left out.
+    """
+    parts = []
+    for reason, rows in rows_by_reason.items():
+        if not rows:
+            continue
+        named_rows = sorted(rows)[:_NAMED_ROWS_LIMIT]
+        named = ", ".join(str(row) for row in named_rows)
+        rest = reason_counts[reason] - len(named_rows)
+        if rest > 0:
+            named += f" …and {rest} more"
+        parts.append(f"{reason} {named}")
+    return "; ".join(parts)
+
+
 # Try to import xgboost (optional dependency)
 try:
     import xgboost as xgb
@@ -273,7 +297,8 @@ class TrainModelNode(BaseNode):
                             Rows where baselineColumn is zero, missing, not a
                             number or infinite are dropped from both splits (an
                             undefined ratio can't be used as a training target),
-                            with a warning in the result; if that leaves no
+                            with a warning in the result that names them by
+                            row number (up to 10 per reason); if that leaves no
                             training rows the run fails.
 
         Returns:
@@ -590,6 +615,12 @@ class TrainModelNode(BaseNode):
                 #     error_detail=f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
                 # )
 
+            # Each row's number in the data this node received (first data
+            # row = 1), so the ratio-target check below can name the rows it
+            # drops. Not the uploaded file's line numbers when an upstream
+            # Preprocessing node dropped or reordered rows.
+            source_rows = pd.Series(np.arange(1, len(df) + 1), index=df.index)
+
             # For a time-based split, sort chronologically first so a positional
             # split later puts the earliest rows in train and latest in validation.
             if split_method == "time_based":
@@ -599,12 +630,14 @@ class TrainModelNode(BaseNode):
                         error_key=ErrorKey.INTERNAL_ERROR,
                         error_detail=f"Could not parse any values in dateColumn '{date_column}' as dates.",
                     )
-                df = (
-                    df.assign(_sort_date_=parsed_dates)
-                    .sort_values("_sort_date_", na_position="last")
-                    .drop(columns=["_sort_date_"])
-                    .reset_index(drop=True)
+                positions = (
+                    parsed_dates.reset_index(drop=True)
+                    .to_frame("date")
+                    .sort_values("date", na_position="last")
+                    .index.to_numpy()
                 )
+                df = df.iloc[positions].reset_index(drop=True)
+                source_rows = source_rows.iloc[positions].reset_index(drop=True)
                 logger.info(f"Sorted {len(df)} rows chronologically by '{date_column}' for time-based split")
 
             # Prepare features and target
@@ -615,7 +648,14 @@ class TrainModelNode(BaseNode):
             # read from the source data like the target itself, kept in lockstep
             # with X/y through null-filtering and the split below, but never
             # added to X unless the caller also lists it in featureColumns.
-            baseline_series = df[baseline_column].copy() if baseline_column else None
+            # It is a frame of the baseline "value" and the row's source "row"
+            # number until the ratio check below, which reduces it to the
+            # numeric baseline.
+            baseline_series = (
+                pd.DataFrame({"value": df[baseline_column], "row": source_rows})
+                if baseline_column
+                else None
+            )
 
             if y.isnull().any():
                 logger.warning("Found missing values in target. Dropping rows with missing target values.")
@@ -798,7 +838,9 @@ class TrainModelNode(BaseNode):
             # units before scoring, instead of reporting ratio-scale metrics.
             y_val_actual = None
             if target_transform is not None:
-                baseline_train, train_keep, train_reasons = self._check_ratio_baseline(baseline_train)
+                baseline_train, train_keep, train_reasons, train_rows = self._check_ratio_baseline(
+                    baseline_train
+                )
                 if len(train_keep) and not train_keep.any():
                     raise AppException(
                         error_key=ErrorKey.INTERNAL_ERROR,
@@ -816,8 +858,9 @@ class TrainModelNode(BaseNode):
                     )
                 dropped_by_split = {"training": int((~train_keep).sum()), "validation": 0}
                 reason_totals = dict(train_reasons)
+                rows_by_reason = train_rows
                 if X_val is not None:
-                    baseline_val, val_keep, val_reasons = self._check_ratio_baseline(baseline_val)
+                    baseline_val, val_keep, val_reasons, val_rows = self._check_ratio_baseline(baseline_val)
                     if len(val_keep) and not val_keep.any():
                         raise AppException(
                             error_key=ErrorKey.INTERNAL_ERROR,
@@ -836,6 +879,8 @@ class TrainModelNode(BaseNode):
                         )
                     dropped_by_split["validation"] = int((~val_keep).sum())
                     reason_totals = {r: reason_totals[r] + val_reasons[r] for r in reason_totals}
+                    for r, rows in val_rows.items():
+                        rows_by_reason[r] = sorted(rows_by_reason[r] + rows)[:_NAMED_ROWS_LIMIT]
                     y_val_actual = y_val.copy()
                     y_val = y_val / baseline_val
                 if any(dropped_by_split.values()):
@@ -844,7 +889,9 @@ class TrainModelNode(BaseNode):
                             "Dropped",
                             dropped_by_split,
                             f"whose '{baseline_column}' baseline is "
-                            f"{_join_reason_counts(reason_totals)}; a ratio target can't be computed there.",
+                            f"{_join_reason_counts(reason_totals)}; a ratio target can't be computed there. "
+                            "Rows, numbered from 1 in the data Train Model received: "
+                            f"{_name_rows_by_reason(rows_by_reason, reason_totals)}.",
                         )
                     )
                 y_train = y_train / baseline_train
@@ -1325,16 +1372,20 @@ class TrainModelNode(BaseNode):
         return X_train, y_train, X_val, y_val, baseline_train, baseline_val, warnings
 
     @staticmethod
-    def _check_ratio_baseline(baseline: pd.Series):
+    def _check_ratio_baseline(baseline: pd.DataFrame):
         """
-        Classify a ratio-target baseline split. Returns (numeric baseline,
-        keep mask, counts per reason) - a row is kept only when its baseline
-        is a finite, non-zero number. Reasons, each row counted once:
-        "missing" (empty or blank text), "not a number" (text that doesn't
-        parse, or true/false), "infinite" (+/-inf) and "zero". Same rules as
-        the inference node's _validated_ratio_baseline_values, so a row
-        training accepts is one inference accepts too.
+        Classify a ratio-target baseline split: a frame of the baseline
+        "value" and each row's source "row" number. Returns (numeric
+        baseline, keep mask, counts per reason, the smallest
+        _NAMED_ROWS_LIMIT source row numbers per reason) - a row is kept only when its baseline is a finite, non-zero
+        number. Reasons, each row counted once: "missing" (empty or blank
+        text), "not a number" (text that doesn't parse, or true/false),
+        "infinite" (+/-inf) and "zero". Same rules as the inference node's
+        _validated_ratio_baseline_values, so a row training accepts is one
+        inference accepts too.
         """
+        source_rows = baseline["row"]
+        baseline = baseline["value"]
         blank = baseline.map(lambda v: isinstance(v, str) and not v.strip()).astype(bool)
         is_bool = baseline.map(lambda v: isinstance(v, (bool, np.bool_))).astype(bool)
         numeric = pd.to_numeric(baseline.where(~blank & ~is_bool), errors="coerce").astype(float)
@@ -1343,13 +1394,13 @@ class TrainModelNode(BaseNode):
         infinite = np.isinf(numeric)
         zero = numeric == 0
         keep = np.isfinite(numeric) & (numeric != 0)
-        reasons = {
-            "zero": int(zero.sum()),
-            "missing": int(missing.sum()),
-            "not a number": int(not_a_number.sum()),
-            "infinite": int(infinite.sum()),
+        masks = {"zero": zero, "missing": missing, "not a number": not_a_number, "infinite": infinite}
+        reasons = {reason: int(mask.sum()) for reason, mask in masks.items()}
+        rows = {
+            reason: [int(r) for r in source_rows[mask].nsmallest(_NAMED_ROWS_LIMIT)]
+            for reason, mask in masks.items()
         }
-        return numeric, keep, reasons
+        return numeric, keep, reasons, rows
 
     def _encode_categoricals(self, X_train, X_val, categorical_encoding):
         """
@@ -2690,8 +2741,10 @@ class TrainModelNode(BaseNode):
         Returns:
             Tuple of (ml_model_id, pkl_file_id, error message, warnings). A
             registration failure doesn't fail a training run that already
-            produced a valid .pkl on disk. When upload succeeds, pkl_file_id
-            is retained even if updating the registry fails.
+            produced a valid .pkl on disk. A name held by another node's model
+            is refused before anything is uploaded. When registering fails
+            after the upload, the file is deleted and pkl_file_id is None,
+            except on a pipeline run, whose run is promoted from that file.
 
         Raises:
             ModelTypeMismatchError: a pipeline's model is registered as another
@@ -2736,6 +2789,33 @@ class TrainModelNode(BaseNode):
                 if type_mismatch:
                     raise ModelTypeMismatchError(type_mismatch)
 
+            # Marker recorded in the description of any model this node registers, so a
+            # later run can recognize "its own" row by name. Node IDs are unique per node
+            # instance, unlike the (often generic, e.g. "Train Model") display name.
+            node_marker = f"[train-model-node:{self.node_id}]"
+
+            existing = pipeline_target
+            if existing is None:
+                # Only reuse a name match if this exact node registered it previously —
+                # display names default to the generic "Train Model" label, so two
+                # unrelated node instances can otherwise collide and silently overwrite
+                # each other's registered model.
+                by_name = await ml_service.get_by_name(name)
+                if by_name and (
+                    node_marker in (by_name.description or "")
+                    or adopts_legacy_test_model(by_name, self.state.workflow_id, target_column)
+                ):
+                    existing = by_name
+                elif by_name and not target_model_id:
+                    # Decided before the upload, so a name another node's model
+                    # holds leaves no file behind (TM-19). A pipeline run whose
+                    # model wasn't found still uploads, so it can be promoted.
+                    return None, None, (
+                        f"A model named '{name}' already exists and was not registered by this "
+                        "Train Model node, so it was left unchanged. Give this node another name "
+                        "to register its own model."
+                    ), []
+
             fm = injector.get(FileManagerService)
             app_cfg = await injector.get(AppSettingsService).get_by_type_and_name(
                 "FileManagerSettings", "File Manager Settings"
@@ -2771,24 +2851,6 @@ class TrainModelNode(BaseNode):
                 # path from a previous run shouldn't be preferred over it.
                 "pkl_file": None,
             }
-
-            # Marker recorded in the description of any model this node registers, so a
-            # later run can recognize "its own" row by name. Node IDs are unique per node
-            # instance, unlike the (often generic, e.g. "Train Model") display name.
-            node_marker = f"[train-model-node:{self.node_id}]"
-
-            existing = pipeline_target
-            if existing is None:
-                # Only reuse a name match if this exact node registered it previously —
-                # display names default to the generic "Train Model" label, so two
-                # unrelated node instances can otherwise collide and silently overwrite
-                # each other's registered model.
-                by_name = await ml_service.get_by_name(name)
-                if by_name and (
-                    node_marker in (by_name.description or "")
-                    or adopts_legacy_test_model(by_name, self.state.workflow_id, target_column)
-                ):
-                    existing = by_name
 
             if pipeline_target is None and existing is not None:
                 # The node's own ad-hoc model is this node's output, so its type
@@ -2849,9 +2911,28 @@ class TrainModelNode(BaseNode):
             raise
         except Exception as e:
             logger.error(f"Failed to register trained model '{name}': {str(e)}", exc_info=True)
+            if not target_model_id:
+                # No model points at the uploaded file, so nothing could ever
+                # use it (TM-19). A pipeline run keeps it: promoting the run
+                # later attaches it to the model.
+                await self._delete_unregistered_file(resolved_pkl_file_id)
+                resolved_pkl_file_id = None
             # An OSError's message names the file it failed on, which is a
             # server path; the output only gets the reason (TDS-24).
             if isinstance(e, OSError):
                 reason = e.strerror or type(e).__name__
                 return None, resolved_pkl_file_id, f"Could not store the model file: {reason}", []
             return None, resolved_pkl_file_id, str(e), []
+
+    @staticmethod
+    async def _delete_unregistered_file(pkl_file_id: Optional[str]) -> None:
+        """Remove a model file uploaded for a registration that then failed."""
+        if not pkl_file_id:
+            return
+        try:
+            from app.dependencies.injector import injector
+            from app.services.file_manager import FileManagerService
+
+            await injector.get(FileManagerService).delete_file(UUID(pkl_file_id))
+        except Exception as e:
+            logger.warning(f"Could not delete unregistered model file {pkl_file_id}: {e}")

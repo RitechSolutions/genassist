@@ -7,13 +7,15 @@ import pytest
 from app.modules.workflow.llm.provider import build_chat_model
 
 _INIT = "langchain.chat_models.init_chat_model"
+_OPENAI_MODEL = "app.modules.workflow.llm.openai_refused_settings.RefusalAdjustingChatOpenAI"
 
 
 async def _kwargs(provider, connection_data, call_timeout_seconds=None, model_name="a-model"):
-    with patch(_INIT) as init, patch.dict("os.environ"):
+    with patch(_INIT) as init, patch(_OPENAI_MODEL) as openai_model, patch.dict("os.environ"):
         init.return_value = MagicMock(name="inner-model")
         await build_chat_model(provider, connection_data, model_name, call_timeout_seconds=call_timeout_seconds)
-    return init.call_args.kwargs
+    built_with = openai_model if provider == "openai" else init
+    return built_with.call_args.kwargs
 
 
 @pytest.mark.asyncio

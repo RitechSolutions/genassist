@@ -26,7 +26,7 @@ from app.modules.workflow.engine.nodes.ml.train_data_source_node import TrainDat
 from app.modules.workflow.engine.nodes.ml.train_model_node import TrainModelNode
 from app.modules.workflow.engine.nodes.ml.train_preprocess_node import TrainPreprocessNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
-from tests.unit.ml_training_fixtures import removing_trained_models
+from tests.unit.ml_training_fixtures import training_sandbox
 
 
 def _s3_error(status: int, operation: str) -> ClientError:
@@ -66,9 +66,10 @@ class ObjectStorage:
 
 @pytest.fixture
 def volume(tmp_path, monkeypatch):
-    data_volume = tmp_path / "datavolume"
+    # Also keeps trained models in the temp folder and out of the database.
+    data_volume = training_sandbox(monkeypatch, tmp_path / "datavolume")
+    assert ml_utils.DATA_VOLUME == data_volume
     (data_volume / "train").mkdir(parents=True)
-    monkeypatch.setattr(ml_utils, "DATA_VOLUME", data_volume)
     monkeypatch.setattr(ml_utils, "extra_csv_directories", AsyncMock(return_value=[]))
     return data_volume
 
@@ -423,7 +424,7 @@ async def test_each_step_works_on_a_server_that_did_not_run_the_one_before(volum
 
     monkeypatch.setattr(ml_utils, "execute_and_process_preprocessing_code", preprocess)
 
-    with tenant("acme"), removing_trained_models(monkeypatch):
+    with tenant("acme"):
         source_node = TrainDataSourceNode("source", {"id": "source", "data": {}}, _running("source", "run-a"))
         extracted = await source_node.process(
             {"name": "Training Data", "sourceType": "csv", "csvFilePath": str(source), "csvFileName": "source.csv"}

@@ -74,6 +74,7 @@ class KBBase(BaseModel):
     last_synced: Optional[datetime] = None
     last_sync_status: Optional[str] = None
     last_sync_error: Optional[str] = None
+    last_successful_sync: Optional[datetime] = None
     last_file_date: Optional[datetime] = None
     sync_schedule: Optional[str] = None
     sync_active: Optional[bool] = None

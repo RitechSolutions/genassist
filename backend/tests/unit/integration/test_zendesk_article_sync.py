@@ -303,3 +303,25 @@ async def test_failed_new_article_on_a_filled_knowledge_base_is_a_warning_not_an
     assert saved.last_sync_status == "success_with_warnings"
     assert saved.last_sync_error.startswith("1 of 1 articles could not be copied")
     assert set(saved.extra_metadata["zendesk_article_updated_at"]) == {"7"}
+
+
+@pytest.mark.asyncio
+async def test_successful_sync_records_its_time_as_the_last_successful_sync():
+    result, kb_service = await _run_sync(_make_kb(uuid.uuid4()), _FakeRagManager(), [PUBLIC])
+
+    saved = kb_service.update.await_args.args[1]
+    assert saved.last_sync_status == "success"
+    assert saved.last_successful_sync is not None
+    assert saved.last_successful_sync == saved.last_synced
+    assert result["kbs_failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_failed_sync_keeps_the_last_successful_sync():
+    result, kb_service = await _run_sync(_make_kb(uuid.uuid4()), _FakeRagManager(), RuntimeError("Zendesk is down"))
+
+    saved = kb_service.update.await_args.args[1]
+    assert saved.last_sync_status == "error"
+    assert saved.last_synced is not None  # still moves: it schedules the next run
+    assert saved.last_successful_sync is None
+    assert result["kbs_failed"] == 1

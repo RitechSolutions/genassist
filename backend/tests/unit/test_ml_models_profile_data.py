@@ -1337,3 +1337,320 @@ async def test_profile_csv_header_check_ignores_trailing_empty_cells(tmp_path):
     source.write_text("a,b,,\n1,2,,\n", encoding="utf-8")
 
     await ml_models._ensure_unique_csv_header(source)
+
+
+# DP-21 (68395): a step's Run on a File Manager / S3 source
+
+
+def _downloading_file_manager(content: str, downloaded_paths: list[Path]) -> MagicMock:
+    async def download_file(_file_id, destination):
+        path = Path(destination)
+        path.write_text(content, encoding="utf-8")
+        downloaded_paths.append(path)
+
+    file_manager = _file_manager()
+    file_manager.download_file_to_path.side_effect = download_file
+    return file_manager
+
+
+@pytest.mark.asyncio
+async def test_step_run_on_a_file_manager_source_reads_the_downloaded_copy(monkeypatch):
+    downloaded: list[Path] = []
+    file_manager = _downloading_file_manager("id,name,city\n1,Ada,Tirana\n2,Bo,Durres\n", downloaded)
+    seen = {}
+
+    async def run_step(python_code, df, file_url, raise_on_error=True):
+        seen["rows"] = len(df)
+        seen["file_url"] = file_url
+        return df.drop(columns=["city"]), None, None
+
+    analyzed_paths: list[str] = []
+
+    def analyze(path):
+        analyzed_paths.append(path)
+        return {"column_names": list(pd.read_csv(path).columns)}
+
+    monkeypatch.setattr(ml_models.ml_utils, "execute_and_process_preprocessing_code", run_step)
+    monkeypatch.setattr(ml_models.ml_utils, "analyze_csv_data", analyze)
+
+    result = await ml_models.analyze_csv(
+        request=_request(P.MlModel.READ, P.FileManager.READ),
+        file_url=None,
+        file_id=uuid4(),
+        file_name="customers.csv",
+        python_code="def process(params): return params['df']",
+        file_manager_service=file_manager,
+    )
+
+    assert result == {"column_names": ["id", "name"]}
+    assert seen["rows"] == 2
+    # The code gets the name the user knows, never the server's temp path.
+    assert seen["file_url"] == "customers.csv"
+    # The downloaded copy, the step's preview file and its dtypes file are all removed.
+    assert downloaded and not downloaded[0].exists()
+    assert analyzed_paths and not Path(analyzed_paths[0]).exists()
+    assert not ml_models.ml_utils.dtypes_sidecar_path(analyzed_paths[0]).exists()
+
+
+@pytest.mark.asyncio
+async def test_failing_step_on_a_file_manager_source_removes_the_temp_file_and_hides_paths(monkeypatch):
+    downloaded: list[Path] = []
+    file_manager = _downloading_file_manager("id,name\n1,Ada\n", downloaded)
+
+    async def failing_step(python_code, df, file_url, raise_on_error=True):
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail="Column Filter: column(s) not found in the data: citty",
+        )
+
+    monkeypatch.setattr(ml_models.ml_utils, "execute_and_process_preprocessing_code", failing_step)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.analyze_csv(
+            request=_request(P.MlModel.READ, P.FileManager.READ),
+            file_url=None,
+            file_id=uuid4(),
+            file_name="customers.csv",
+            python_code="code",
+            file_manager_service=file_manager,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Column Filter: column(s) not found in the data: citty"
+    assert downloaded and not downloaded[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_unexpected_step_error_names_no_server_path(monkeypatch):
+    downloaded: list[Path] = []
+    file_manager = _downloading_file_manager("id,name\n1,Ada\n", downloaded)
+
+    async def run_step(python_code, df, file_url, raise_on_error=True):
+        return df, None, None
+
+    real_read = ml_models.ml_utils.read_csv_with_dtypes
+    calls = []
+
+    def read_csv(path, *args, **kwargs):
+        calls.append(path)
+        if len(calls) == 1:  # loading the downloaded file works
+            return real_read(path, *args, **kwargs)
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(ml_models.ml_utils, "execute_and_process_preprocessing_code", run_step)
+    # The real analyze_csv_data, failing on its read: its message must not name the temp path.
+    monkeypatch.setattr(ml_models.ml_utils, "read_csv_with_dtypes", read_csv)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.analyze_csv(
+            request=_request(P.MlModel.READ, P.FileManager.READ),
+            file_url=None,
+            file_id=uuid4(),
+            file_name="customers.csv",
+            python_code="code",
+            file_manager_service=file_manager,
+        )
+
+    assert len(calls) == 2, "the failure must come from analyzing the step's preview"
+    assert exc_info.value.status_code in (400, 500)
+    assert "/" not in exc_info.value.detail
+    assert "tmp" not in exc_info.value.detail
+    assert downloaded and not downloaded[0].exists()
+
+
+@pytest.mark.asyncio
+async def test_step_run_on_a_local_csv_still_works(monkeypatch, tmp_path):
+    source = tmp_path / "local.csv"
+    source.write_text("id,name\n1,Ada\n", encoding="utf-8")
+    monkeypatch.setattr(ml_models.ml_utils, "DATA_VOLUME", tmp_path)
+
+    seen = {}
+
+    async def run_step(python_code, df, file_url, raise_on_error=True):
+        seen["file_url"] = file_url
+        return df, None, None
+
+    monkeypatch.setattr(ml_models.ml_utils, "execute_and_process_preprocessing_code", run_step)
+    monkeypatch.setattr(ml_models.ml_utils, "analyze_csv_data", lambda path: {"row_count": len(pd.read_csv(path))})
+    monkeypatch.setattr(ml_models.ml_utils, "extra_csv_directories", AsyncMock(return_value=[]))
+    monkeypatch.setattr(ml_models.training_data_storage, "fetch_training_data", AsyncMock())
+
+    result = await ml_models.analyze_csv(
+        request=_request(P.MlModel.READ),
+        file_url=str(source),
+        file_id=None,
+        file_name=None,
+        python_code="code",
+        file_manager_service=_file_manager(),
+    )
+
+    assert result == {"row_count": 1}
+    assert source.exists()
+    # A local file's code still gets its readable path, as before.
+    assert seen["file_url"] == str(source)
+
+
+# DP-22 (68397): data pasted into File URL
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pasted",
+    [
+        "id,name,city1,Ada,Tirana2,Bo,Durres",  # CSV text after the single-line field drops line breaks
+        "id,name\n1,Ada\n",
+        "1.5,2.3,4.1",
+        "date,amount2024/01/05,3.2",
+        "id;name;city1;Ada",
+        '[{"id": 1}]',
+    ],
+)
+async def test_analyze_csv_names_pasted_data_without_repeating_it(pasted, monkeypatch, tmp_path):
+    monkeypatch.setattr(ml_models.ml_utils, "DATA_VOLUME", tmp_path)
+    monkeypatch.setattr(ml_models.ml_utils, "extra_csv_directories", AsyncMock(return_value=[]))
+    monkeypatch.setattr(ml_models.training_data_storage, "fetch_training_data", AsyncMock())
+    file_manager = _file_manager()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models.analyze_csv(
+            request=_request(P.MlModel.READ),
+            file_url=pasted,
+            file_id=None,
+            file_name=None,
+            python_code="code",
+            file_manager_service=file_manager,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == ml_models.ml_utils.INLINE_DATA_DETAIL
+    assert "{{source.data_path}}" in exc_info.value.detail
+    assert pasted.strip() not in exc_info.value.detail
+    file_manager.download_file_to_path.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_real_local_file_with_a_comma_in_its_name_is_analyzed(monkeypatch, tmp_path):
+    monkeypatch.setattr(ml_models.ml_utils, "DATA_VOLUME", tmp_path)
+    monkeypatch.setattr(ml_models.ml_utils, "extra_csv_directories", AsyncMock(return_value=[]))
+    monkeypatch.setattr(ml_models.training_data_storage, "fetch_training_data", AsyncMock())
+    (tmp_path / "train").mkdir()
+    source = tmp_path / "train" / "sales, 2024.csv"
+    source.write_text("id,name\n1,Ada\n", encoding="utf-8")
+    analyze = MagicMock(return_value={"row_count": 1})
+    monkeypatch.setattr(ml_models.ml_utils, "analyze_csv_data", analyze)
+
+    result = await ml_models.analyze_csv(
+        request=_request(P.MlModel.READ),
+        file_url="sales, 2024.csv",
+        file_id=None,
+        file_name=None,
+        python_code=None,
+        file_manager_service=_file_manager(),
+    )
+
+    assert result == {"row_count": 1}
+    analyze.assert_called_once_with(str(source.resolve()))
+
+
+@pytest.mark.asyncio
+async def test_an_unfilled_placeholder_is_not_called_pasted_data(monkeypatch, tmp_path):
+    monkeypatch.setattr(ml_models.ml_utils, "DATA_VOLUME", tmp_path)
+    monkeypatch.setattr(ml_models.ml_utils, "extra_csv_directories", AsyncMock(return_value=[]))
+    monkeypatch.setattr(ml_models.training_data_storage, "fetch_training_data", AsyncMock())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models._resolve_csv_input(
+            request=_request(P.MlModel.READ),
+            file_url="{{source.data_path}}",
+            file_id=None,
+            file_name=None,
+            file_manager_service=_file_manager(),
+        )
+
+    # Unchanged from before: the extension check answers first, not the pasted-data message.
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Only CSV files can be previewed or profiled."
+
+
+@pytest.mark.asyncio
+async def test_a_comma_named_output_only_in_storage_is_fetched_before_anything_is_refused(monkeypatch, tmp_path):
+    monkeypatch.setattr(ml_models.ml_utils, "DATA_VOLUME", tmp_path)
+    monkeypatch.setattr(ml_models.ml_utils, "extra_csv_directories", AsyncMock(return_value=[]))
+    (tmp_path / "train" / "thread-1").mkdir(parents=True)
+    target = tmp_path / "train" / "thread-1" / "sales, 2024.csv"
+
+    async def fetch(file_url, thread_id=None, allowed_directories=None):
+        # Another server wrote it; this one downloads it from storage first.
+        target.write_text("id,name\n1,Ada\n", encoding="utf-8")
+
+    monkeypatch.setattr(ml_models.training_data_storage, "fetch_training_data", fetch)
+    analyze = MagicMock(return_value={"row_count": 1})
+    monkeypatch.setattr(ml_models.ml_utils, "analyze_csv_data", analyze)
+
+    result = await ml_models.analyze_csv(
+        request=_request(P.MlModel.READ),
+        file_url="thread-1/sales, 2024.csv",
+        file_id=None,
+        file_name=None,
+        python_code=None,
+        file_manager_service=_file_manager(),
+    )
+
+    assert result == {"row_count": 1}
+    analyze.assert_called_once_with(str(target.resolve()))
+
+
+@pytest.mark.asyncio
+async def test_a_downloaded_file_gives_the_code_its_name_not_its_url(monkeypatch):
+    downloaded: list[Path] = []
+    file_manager = _downloading_file_manager("id,name\n1,Ada\n", downloaded)
+    seen = {}
+
+    async def run_step(python_code, df, file_url, raise_on_error=True):
+        seen["file_url"] = file_url
+        return df, None, None
+
+    monkeypatch.setattr(ml_models.ml_utils, "execute_and_process_preprocessing_code", run_step)
+    monkeypatch.setattr(ml_models.ml_utils, "analyze_csv_data", lambda path: {"row_count": 1})
+
+    await ml_models.analyze_csv(
+        request=_request(P.MlModel.READ, P.FileManager.READ),
+        file_url="https://bucket.example/uploads/x.csv?X-Amz-Signature=secret",
+        file_id=uuid4(),
+        file_name="customers.csv",
+        python_code="code",
+        file_manager_service=file_manager,
+    )
+
+    assert seen["file_url"] == "customers.csv"
+
+
+@pytest.mark.asyncio
+async def test_a_real_unsupported_extension_with_a_comma_still_says_unsupported():
+    with pytest.raises(HTTPException) as exc_info:
+        await ml_models._resolve_csv_input(
+            request=_request(P.MlModel.READ),
+            file_url="exports/Q1, 2024.tsv",
+            file_id=None,
+            file_name=None,
+            file_manager_service=_file_manager(),
+        )
+
+    # The existing unsupported-type message, not the pasted-data one.
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "Only CSV files can be previewed or profiled."
+
+
+@pytest.mark.asyncio
+async def test_a_bracketed_output_name_is_still_fetched_from_storage(monkeypatch, tmp_path):
+    storage = ml_models.training_data_storage
+    monkeypatch.setattr(storage.ml_utils, "DATA_VOLUME", tmp_path)
+    find = AsyncMock(return_value=None)
+    monkeypatch.setattr(storage, "_find_in_storage", find)
+
+    await storage.fetch_training_data("[Q1] sales.csv", "thread-1")
+    find.assert_awaited_once()
+
+    find.reset_mock()
+    await storage.fetch_training_data('[{"id": 1}]', "thread-1")  # JSON rows: nothing to fetch
+    find.assert_not_awaited()

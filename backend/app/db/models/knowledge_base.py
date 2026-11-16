@@ -44,6 +44,9 @@ class KnowledgeBaseModel(Base):
     last_sync_status: Mapped[str | None] = mapped_column(
         String(100), nullable=True)
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # last_synced moves on every run (it schedules the next one); this only on a successful run.
+    last_successful_sync: Mapped[Optional[datetime.datetime]
+                                 ] = mapped_column(DateTime(True), nullable=True)
     last_file_date: Mapped[Optional[datetime.datetime]
                            ] = mapped_column(DateTime(True))
     sync_schedule: Mapped[str | None] = mapped_column(

@@ -106,7 +106,7 @@ async def _run_s3_output_sync(
     )
     rag_manager = MagicMock()
     if store_available:
-        rag_manager.add_document = AsyncMock(side_effect=lambda _kb, doc_id, *_, **__: load_results[doc_id.rsplit("#", 1)[-1]])
+        rag_manager.add_document = AsyncMock(side_effect=lambda _kb, doc_id, *_, **__: load_results[doc_id.rsplit("/", 1)[-1]])
     else:
         rag_manager.add_document = AsyncMock(return_value={})
     rag_manager.delete_document = AsyncMock(return_value={"vector": True})
@@ -162,32 +162,41 @@ async def test_s3_files_after_a_failed_one_are_still_processed():
     assert result["status"] == "error"
 
 
-@pytest.mark.asyncio
-async def test_sync_now_answers_with_the_error_when_a_file_was_not_loaded():
-    from app.api.v1.routes import agent_knowledge as routes
+class _RecordedRun:
+    """Keeps the outcome Sync Now saves for the page."""
 
+    def __init__(self):
+        self.outcome = None
+
+    async def finish(self, tenant_id, kb_id, run_id, **outcome):
+        self.outcome = outcome
+        return True
+
+
+async def _sync_now_outcome(batch_result):
+    from app.tasks import kb_manual_sync
+
+    run = _RecordedRun()
+    await kb_manual_sync._record_outcome(run, "master", "kb-1", "run-1", {"status": "success", "result": batch_result})
+    return run.outcome
+
+
+@pytest.mark.asyncio
+async def test_sync_now_reports_the_error_when_a_file_was_not_loaded():
     batch_result = {"status": "error", "message": "1 file(s) could not be loaded", "failed_kb": 1}
-    with (
-        patch.object(routes, "batch_process_files_kb_async_with_scope", AsyncMock(return_value=batch_result)),
-        patch.object(routes, "get_tenant_context", return_value="master"),
-    ):
-        response = await routes.summarize_files_from_azure(kb_id=uuid.uuid4())
 
-    assert response["status"] == "error"
-    assert response["message"] == "1 file(s) could not be loaded"
+    outcome = await _sync_now_outcome(batch_result)
+
+    assert outcome["status"] == "failed"
+    assert outcome["error"] == "1 file(s) could not be loaded"
 
 
 @pytest.mark.asyncio
-async def test_sync_now_answers_completed_when_every_file_loaded():
-    from app.api.v1.routes import agent_knowledge as routes
+async def test_sync_now_reports_completed_when_every_file_loaded():
+    outcome = await _sync_now_outcome({"failed_kb": 0})
 
-    with (
-        patch.object(routes, "batch_process_files_kb_async_with_scope", AsyncMock(return_value={"failed_kb": 0})),
-        patch.object(routes, "get_tenant_context", return_value="master"),
-    ):
-        response = await routes.summarize_files_from_azure(kb_id=uuid.uuid4())
-
-    assert response["status"] == "completed"
+    assert outcome["status"] == "succeeded"
+    assert outcome["result"]["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -271,11 +280,11 @@ def _file_sync_rag_manager(load_results):
     return rag_manager
 
 
-async def _run_s3_scheduled_sync(files, load_results, knowledge_bases=None, rag_manager=None):
+async def _run_s3_scheduled_sync(files, load_results, knowledge_bases=None, rag_manager=None, kb_service=None):
     from app.tasks import s3_tasks
 
     kb = _scheduled_kb("s3")
-    kb_service = MagicMock()
+    kb_service = kb_service or MagicMock()
     kb_service.get_by_id = AsyncMock(return_value=kb)
     kb_service.get_all = AsyncMock(return_value=knowledge_bases)
     kb_service.update = AsyncMock()
@@ -357,11 +366,11 @@ async def test_s3_scheduled_sync_skips_empty_objects_such_as_folders():
     assert result["errors"] is None
 
 
-async def _run_sharepoint_sync(files, load_results):
+async def _run_sharepoint_sync(files, load_results, kb_service=None):
     from app.tasks import sharepoint_tasks
 
     kb = _scheduled_kb("sharepoint", urls=["https://acme.sharepoint.com/sites/help"])
-    kb_service = MagicMock()
+    kb_service = kb_service or MagicMock()
     kb_service.get_by_id = AsyncMock(return_value=kb)
     kb_service.update = AsyncMock()
     ds_service = MagicMock()
@@ -425,3 +434,69 @@ async def test_sharepoint_sync_counts_a_partly_loaded_file_and_warns_about_it():
     assert result["files_added"] == 1
     assert "a.txt was loaded but is missing from: legra" in result["errors"]
     rag_manager.delete_document.assert_not_awaited()
+
+
+def _saved_kb(kb_service):
+    return kb_service.update.await_args.args[1]
+
+
+@pytest.mark.asyncio
+async def test_s3_sync_that_copies_its_files_records_a_successful_sync():
+    kb_service = MagicMock()
+    result = await _run_s3_scheduled_sync({"in/a.txt": "refund policy"}, {"a.txt": {"vector": True}}, kb_service=kb_service)
+
+    saved = _saved_kb(kb_service)
+    assert saved.last_successful_sync is not None
+    assert saved.last_successful_sync == saved.last_synced
+    assert result["kbs_failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_s3_sync_that_copies_nothing_is_not_a_successful_sync():
+    kb_service = MagicMock()
+    result = await _run_s3_scheduled_sync({"in/a.txt": "refund policy"}, {"a.txt": {"vector": False}}, kb_service=kb_service)
+
+    saved = _saved_kb(kb_service)
+    assert saved.last_synced is not None  # still moves: it schedules the next run
+    assert saved.last_successful_sync is None
+    assert result["kbs_failed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_s3_sync_counts_only_the_knowledge_base_that_failed():
+    failing_kb, healthy_kb = _scheduled_kb("s3"), _scheduled_kb("s3")
+    rag_manager = _file_sync_rag_manager({})
+    rag_manager.add_document = AsyncMock(side_effect=lambda kb, *_, **__: {"vector": kb.id != failing_kb.id})
+    kb_service = MagicMock()
+
+    result = await _run_s3_scheduled_sync(
+        {"in/a.txt": "refund policy"}, {}, knowledge_bases=[failing_kb, healthy_kb], rag_manager=rag_manager,
+        kb_service=kb_service,
+    )
+
+    saved = {call.args[0]: call.args[1] for call in kb_service.update.await_args_list}
+    assert saved[failing_kb.id].last_successful_sync is None
+    assert saved[healthy_kb.id].last_successful_sync is not None
+    assert result["kbs_failed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_sharepoint_sync_that_copies_its_files_records_a_successful_sync():
+    kb_service = MagicMock()
+    result, _ = await _run_sharepoint_sync({"a.txt": "refund policy"}, {"a.txt": {"vector": True}}, kb_service=kb_service)
+
+    saved = _saved_kb(kb_service)
+    assert saved.last_successful_sync is not None
+    assert saved.last_successful_sync == saved.last_synced
+    assert result["kbs_failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_sharepoint_sync_that_copies_nothing_is_not_a_successful_sync():
+    kb_service = MagicMock()
+    result, _ = await _run_sharepoint_sync({"a.txt": "refund policy"}, {"a.txt": {"vector": False}}, kb_service=kb_service)
+
+    saved = _saved_kb(kb_service)
+    assert saved.last_synced is not None
+    assert saved.last_successful_sync is None
+    assert result["kbs_failed"] == 1

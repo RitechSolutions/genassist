@@ -234,9 +234,11 @@ export async function queryAgent(
   threadId: string,
   query: string
 ) {
-  return apiRequest("POST", `genagent/agents/${agentId}/query/${threadId}`, {
-    query,
-  });
+  return apiRequest<{ response?: unknown }>(
+    "POST",
+    `genagent/agents/${agentId}/query/${threadId}`,
+    { query }
+  );
 }
 
 // Knowledge base endpoints
@@ -687,6 +689,14 @@ export const executeKnowledgeBaseSyncronizationManually = async (kbId: string) =
   return apiRequest(
     "GET",
     `genagent/knowledge/kb-batch-tasks-execution?kb_id=${kbId}`
+  );
+};
+
+// Status of a KB's manual synchronization: the run in progress, else the last run's result
+export const getKnowledgeBaseSyncStatus = async (kbId: string) => {
+  return apiRequest(
+    "GET",
+    `genagent/knowledge/kb-batch-tasks-status?kb_id=${kbId}`
   );
 };
 

@@ -374,6 +374,69 @@ async def test_oversized_search_is_refused_before_queueing(route_env, monkeypatc
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method, optimization_config",
+    [
+        ("grid_search", {"cvFolds": 1}),
+        ("grid_search", {"cvFolds": 11}),
+        ("bayesian_optimization", {"nTrials": 201}),
+    ],
+)
+async def test_out_of_range_search_settings_are_refused_before_queueing(route_env, method, optimization_config):
+    """TM-17: refused with 400 by API, before a job is queued."""
+    node_config = {**TRAIN_NODE_CONFIG, "hyperparameterOptimization": method, "optimizationConfig": optimization_config}
+
+    with pytest.raises(AppException) as exc_info:
+        await workflow_routes.test_individual_node(
+            NO_KEEPALIVE, {"node_type": "trainModelNode", "node_config": node_config}
+        )
+
+    assert exc_info.value.status_code == 400
+    route_env.delay.assert_not_called()
+    assert route_env.redis.values == {}
+
+
+@pytest.mark.asyncio
+async def test_out_of_range_folds_in_a_workflow_test_are_refused_before_queueing(route_env):
+    node_config = {**TRAIN_NODE_CONFIG, "optimizationConfig": {"cvFolds": 1}}
+    workflow = {"name": "wf", "nodes": [{"id": "n1", "type": "trainModelNode", "data": node_config}], "edges": []}
+
+    with pytest.raises(AppException) as exc_info:
+        await workflow_routes.test_workflow(
+            NO_KEEPALIVE, {"workflow": workflow, "input_data": {"message": "go"}}, workflow_service=MagicMock()
+        )
+
+    assert exc_info.value.status_code == 400
+    route_env.delay.assert_not_called()
+
+
+def test_templated_search_settings_are_left_to_the_node():
+    training_jobs.check_training_config(
+        {**TRAIN_NODE_CONFIG, "optimizationConfig": {"cvFolds": "{{inputs.folds}}"}}
+    )
+
+
+@pytest.mark.parametrize(
+    "optimization_config",
+    [
+        {"nTrials": 0},  # left over from Bayesian; the node still refuses it
+        {"gridPoints": 1},
+        {"timeoutSeconds": 0},
+    ],
+)
+def test_values_the_node_would_refuse_are_refused_before_queueing(optimization_config):
+    node_config = {**TRAIN_NODE_CONFIG, "hyperparameterOptimization": "random_search", "optimizationConfig": optimization_config}
+    with pytest.raises(AppException) as exc_info:
+        training_jobs.check_training_config(node_config)
+    assert exc_info.value.status_code == 400
+
+
+def test_a_malformed_scoring_value_is_left_to_the_node():
+    # Only the counts are checked before queueing; the node reports the rest.
+    training_jobs.check_training_config({**TRAIN_NODE_CONFIG, "optimizationConfig": {"scoring": ["accuracy"]}})
+
+
+@pytest.mark.asyncio
 async def test_a_job_is_only_visible_to_the_user_who_started_it(route_env, monkeypatch):
     await workflow_routes.test_individual_node(
         NO_KEEPALIVE,
@@ -613,6 +676,89 @@ async def test_runner_records_a_failure(runner_env, monkeypatch):
     assert stored["status"] == training_jobs.STATUS_FAILED
     assert stored["error"] == "Search too large"
     assert stored["progress"]["stage"] == "training"
+
+
+class _ResponseState:
+    def __init__(self, response):
+        self.response = response
+
+    def format_state_as_response(self):
+        return self.response
+
+
+@pytest.mark.asyncio
+async def test_a_run_whose_train_model_node_failed_fails_the_job(runner_env, monkeypatch):
+    """TM-17: the run returns normally, but its Train Model node failed."""
+    from app.modules.workflow.engine import workflow_engine
+
+    response = {
+        "status": "failed",
+        "has_failures": True,
+        "failed_nodes": [
+            {"node_id": "n1", "name": "Train", "type": "trainModelNode", "error": "CV Folds must be 2 or more."}
+        ],
+        "output": None,
+    }
+
+    async def behaviour(_kwargs):
+        return _ResponseState(response)
+
+    monkeypatch.setattr(workflow_engine, "WorkflowEngine", _fake_engine(behaviour))
+    job, _ = await runner_env.start("tenant-a", "user-1", "node")
+
+    await ml_training_job_tasks.run_training_job_async(job["job_id"], {"workflow_config": {}})
+
+    stored = await runner_env.get("tenant-a", job["job_id"])
+    assert stored["status"] == training_jobs.STATUS_FAILED
+    assert stored["error"] == "CV Folds must be 2 or more."
+    # The run's response is kept, so its failed nodes can still be shown.
+    assert stored["result"] == response
+
+
+def test_run_failure_reads_the_runs_status():
+    assert training_jobs.run_failure({"status": "success", "failed_nodes": []}) is None
+    assert training_jobs.run_failure({"output": {"success": True}}) is None
+    assert training_jobs.run_failure(None) is None
+    # A partial run whose Train Model node failed still fails the training job.
+    assert training_jobs.run_failure(
+        {"status": "partial", "failed_nodes": [{"type": "trainModelNode", "error": "boom"}]}
+    ) == "boom"
+    # A failed run without a failing Train Model node reports the first node's error.
+    assert training_jobs.run_failure(
+        {"status": "failed", "failed_nodes": [{"type": "agentNode", "error": "no key"}]}
+    ) == "no key"
+    assert training_jobs.run_failure({"status": "failed", "failed_nodes": []}) == "The test run failed."
+    # A broken leftover Train Model next to one that trained doesn't fail the job,
+    # as it doesn't fail an ML pipeline run.
+    assert training_jobs.run_failure(
+        {
+            "status": "partial",
+            "failed_nodes": [{"type": "trainModelNode", "error": "leftover"}],
+            "output": {"success": True, "model_file_path": "ml_models/m.pkl"},
+        }
+    ) is None
+    # Even when the run's status is failed (e.g. the Chat Output after the
+    # broken node never ran), another Train Model's model makes it a success.
+    assert training_jobs.run_failure(
+        {
+            "status": "failed",
+            "failed_nodes": [{"type": "trainModelNode", "error": "leftover"}],
+            "output": None,
+            "state": {
+                "nodeExecutionStatus": {
+                    "b": {
+                        "type": "trainModelNode",
+                        "status": "success",
+                        "output": {"success": True, "model_file_path": "ml_models/b.pkl"},
+                    }
+                }
+            },
+        }
+    ) is None
+    # Another node failing in a run that still answered leaves the job succeeded.
+    assert training_jobs.run_failure(
+        {"status": "partial", "failed_nodes": [{"type": "slackNode", "error": "x"}]}
+    ) is None
 
 
 @pytest.mark.asyncio

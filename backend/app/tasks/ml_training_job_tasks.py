@@ -209,14 +209,22 @@ async def _run_job(store: training_jobs.TrainingJobStore, job_id: str, payload: 
     try:
         result = await run
         stop_heartbeat.set()
-        # Only over "running": a cancel that came in meanwhile stands.
+        # The run returns even when a node failed; its own status decides (TM-17).
+        failure = training_jobs.run_failure(result)
+        if failure:
+            logger.info(f"Training job {job_id} finished with a failed run: {failure}")
+            outcome = {"status": training_jobs.STATUS_FAILED, "error": sanitize_error_detail(failure) or "Training failed."}
+        else:
+            outcome = {"status": training_jobs.STATUS_SUCCEEDED}
+        # Only over "running": a cancel that came in meanwhile stands. The
+        # result is kept either way, so the run's details stay visible.
         await store.update(
             tenant_id,
             job_id,
             expect=(training_jobs.STATUS_RUNNING,),
-            status=training_jobs.STATUS_SUCCEEDED,
             result=result,
             progress={**progress_snapshot(), "stage": "done", "message": "Finished", "percent": 100},
+            **outcome,
         )
     except asyncio.CancelledError:
         stop_heartbeat.set()

@@ -7,9 +7,15 @@ from uuid import UUID
 from celery import shared_task
 from croniter import CroniterBadCronError, croniter
 
+from app.core.observability.datadog_observability import datadog_observability
 from app.core.utils.encryption_utils import decrypt_key
 from app.dependencies.injector import injector
-from app.modules.data.load_result import ensure_has_text, load_document
+from app.modules.data.load_result import (
+    SUCCESSFUL_SYNC_STATUSES,
+    article_sync_outcome,
+    ensure_has_text,
+    load_document,
+)
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.data.utils import FileTextExtractor
 from app.modules.integration.office365_connector import Office365Connector
@@ -51,11 +57,13 @@ def _compute_next_run(cron_expr: Optional[str], last_synced: Optional[datetime])
 
 @shared_task
 def import_sharepoint_files_to_kb():
-    return run_async_in_celery(
+    result = run_async_in_celery(
         import_sharepoint_files_to_kb_async_with_scope(),
         timeout=45 * 60,
         task_name="import_sharepoint_files_to_kb",
     )
+    datadog_observability.tag_kb_sync("sharepoint", result)
+    return result
 
 
 async def import_sharepoint_files_to_kb_async_with_scope():
@@ -81,6 +89,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
         kb_list = [kb for kb in await kb_service.get_all(sync_active=True) if kb.sync_source_id]
 
     processed_ds = 0
+    kbs_failed = 0
     files_added_tot = 0
     files_deleted_tot = 0
     errors = []
@@ -101,6 +110,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
                 msg = f"{kb.id} app_settings_id not found in data source"
                 logger.warning(msg)
                 errors.append(msg)
+                kbs_failed += 1
                 continue
 
             # Get Microsoft credentials from app settings by ID
@@ -120,11 +130,13 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
                     msg = f"{kb.id} Microsoft credentials incomplete in app settings"
                     logger.warning(msg)
                     errors.append(msg)
+                    kbs_failed += 1
                     continue
             except Exception as e:
                 msg = f"{kb.id} failed to get app settings: {str(e)}"
                 logger.error(msg)
                 errors.append(msg)
+                kbs_failed += 1
                 continue
 
             # ---- schedule gate ----
@@ -134,6 +146,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
                 msg = f"{kb.id} invalid cron: {expr!r}"
                 logger.warning(msg)
                 errors.append(msg)
+                kbs_failed += 1
                 continue
 
             now = datetime.now(timezone.utc)
@@ -154,6 +167,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
             except Exception as e:
                 logger.error(f"Failed to initialize SharePoint client: {e}")
                 errors.append(f"{kb.id} SharePoint init failed: {str(e)}")
+                kbs_failed += 1
                 continue
 
             # ---- enumerate files ----
@@ -162,10 +176,12 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
             except Exception as e:
                 logger.error(f"Failed to list files: {e}")
                 errors.append(f"{kb.id} file listing failed: {str(e)}")
+                kbs_failed += 1
                 continue
 
             # Get existing documents using simplified manager
             existing_files = await rag_manager.get_document_ids(kb)
+            errors_before, files_added_before = len(errors), files_added_tot
 
             new_files = [
                 f
@@ -229,7 +245,17 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
             kb_update = json.loads(kb.model_dump_json())
             kb_update["last_synced"] = datetime.now(timezone.utc)
             kb_update["last_file_date"] = datetime.now(timezone.utc)
+            sync_status, _ = article_sync_outcome(
+                len(new_files),
+                files_added_tot - files_added_before,
+                errors[errors_before:],
+                had_articles=bool(existing_files),
+            )
+            if sync_status in SUCCESSFUL_SYNC_STATUSES:
+                kb_update["last_successful_sync"] = kb_update["last_synced"]
             await kb_service.update(kb.id, KBCreate(**kb_update))
+            if sync_status not in SUCCESSFUL_SYNC_STATUSES:
+                kbs_failed += 1
 
             processed_ds += 1
 
@@ -239,6 +265,7 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
                 f"Unhandled error for KB {getattr(kb, 'id', '<unknown>')}: {e}")
             errors.append(
                 f"{getattr(kb, 'id', '<unknown>')} unhandled error: {str(e)}")
+            kbs_failed += 1
             continue
 
     return {
@@ -246,5 +273,6 @@ async def import_sharepoint_files_to_kb_async(kb_id: Optional[UUID] = None):
         "files_added": files_added_tot,
         "files_deleted": files_deleted_tot,
         "datasources_processed": processed_ds,
+        "kbs_failed": kbs_failed,
         "errors": errors or None,
     }

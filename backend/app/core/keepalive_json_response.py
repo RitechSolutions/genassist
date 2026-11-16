@@ -5,7 +5,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable
 
 from fastapi import Request
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
 from app.core.exceptions.exception_handler import stream_error_body
@@ -30,6 +30,11 @@ async def keepalive_json(request: Request, work: Callable[[], Awaitable[Any]], *
         try:
             async with create_tenant_request_scope():
                 result = await work()
+            if isinstance(result, Response):
+                # The 200 stream has started, so a Response's own status and headers
+                # can't be sent; encoding it would send its attributes (WB-3).
+                # Callers return plain data instead.
+                raise TypeError(f"{name} returned a {type(result).__name__}; return plain data instead")
             await ReadAfterWriteMiddleware.remember_write(request)
             body = JSONResponse(jsonable_encoder(result)).body
             outcome = "done"

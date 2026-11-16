@@ -12,7 +12,7 @@ from app.repositories.ml_models import MLModelsRepository
 from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate
 from app.services import ml_model_manager
 from app.services import ml_models as ml_models_module
-from app.services.ml_model_artifacts import ModelArtifactContract
+from app.services.ml_model_artifacts import ModelArtifactContract, RegistryContractCheck
 from app.services.ml_models import (
     MLModelsService,
     merge_model_inference_params,
@@ -341,6 +341,78 @@ async def test_service_passes_a_known_artifact_contract_to_validation(monkeypatc
 
     assert validator.await_args.kwargs["artifact_contract"] is contract
     repository.create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_saves_features_in_the_file_order_and_returns_the_notices(monkeypatch):
+    repository = MagicMock()
+    repository.get_by_name = AsyncMock(return_value=None)
+    repository.create = AsyncMock(side_effect=lambda model, **_: SimpleNamespace(features=model.features))
+    check = RegistryContractCheck(features=("hour", "lag_24"), notices=("Features were saved in order.",))
+    monkeypatch.setattr(ml_models_module, "validate_model_artifact_registration", AsyncMock(return_value=check))
+    model = MLModelCreate(
+        name="forecast",
+        description="Forecast model",
+        model_type="linear_regression",
+        features=["lag_24", "hour"],
+        target_variable="revenue",
+        pkl_file_id=str(uuid4()),
+    )
+
+    notices = []
+    created = await MLModelsService(repository).create(model, notices=notices)
+
+    assert repository.create.await_args.args[0].features == ["hour", "lag_24"]
+    assert repository.create.await_args.args[0].pkl_file is None
+    assert notices == ["Features were saved in order."]
+    assert not hasattr(created, "registration_notices")
+
+
+@pytest.mark.asyncio
+async def test_update_saves_features_in_the_file_order_and_returns_the_notices(monkeypatch):
+    model_id = uuid4()
+    existing = SimpleNamespace(
+        id=model_id,
+        features=["hour", "lag_24"],
+        target_variable="revenue",
+        pkl_file=None,
+        pkl_file_id=uuid4(),
+        inference_params=None,
+    )
+    repository = MagicMock()
+    repository.get_by_id = AsyncMock(return_value=existing)
+    repository.update = AsyncMock(return_value=SimpleNamespace())
+    check = RegistryContractCheck(features=("hour", "lag_24"), notices=("Target not checked.",))
+    monkeypatch.setattr(ml_models_module, "validate_model_artifact_registration", AsyncMock(return_value=check))
+
+    notices = []
+    updated = await MLModelsService(repository).update(
+        model_id, MLModelUpdate(features=["lag_24", "hour"]), notices=notices
+    )
+
+    assert repository.update.await_args.args[1]["features"] == ["hour", "lag_24"]
+    assert notices == ["Target not checked."]
+    assert not hasattr(updated, "registration_notices")
+
+
+def test_read_schema_has_no_notices_for_a_stored_model():
+    now = datetime.now(timezone.utc)
+    stored = SimpleNamespace(
+        id=uuid4(),
+        name="forecast",
+        description="Forecast model",
+        model_type="linear_regression",
+        features=["hour"],
+        target_variable="revenue",
+        inference_params=None,
+        pkl_file=None,
+        pkl_file_id=None,
+        training_metrics=None,
+        created_at=now,
+        updated_at=now,
+    )
+
+    assert MLModelRead.model_validate(stored).registration_notices == []
 
 
 @pytest.mark.asyncio
