@@ -98,11 +98,6 @@ class OpenAIEmbedder(BaseEmbedder):
             if not await self.initialize():
                 raise RuntimeError("Failed to initialize OpenAI client")
         
-        try:
-            # Use LangChain's embed_query method
-            embedding = await self.client.aembed_query(query)
-            return embedding
-            
-        except Exception as e:
-            logger.error(f"Failed to generate query embedding: {e}")
-            return []
+        # Use LangChain's embed_query method
+        embedding = await self.client.aembed_query(query)
+        return embedding

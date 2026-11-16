@@ -43,9 +43,15 @@ import {
   type HistoryState,
 } from "../../utils/promptEditorGates";
 import {
+  draftStatusOf,
   findPromptVersion,
   isCurrentDraft as isDraftEqual,
 } from "../../utils/promptEditorHistory";
+import {
+  draftReducer,
+  draftStateOf,
+  type DraftAction,
+} from "../../utils/promptEditorDraft";
 import {
   promptHistoryKey,
   promptHistoryWorkflowKey,
@@ -89,16 +95,14 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
   const caps = useMemo(() => promptEditorCapabilities(permissions), [permissions]);
 
   const [activeTab, setActiveTab] = useState("editor");
-  const [localPrompt, setLocalPrompt] = useState(currentValue);
-  const [undoSnapshot, setUndoSnapshot] = useState<string | null>(null);
+  const [draft, setDraft] = useState(() => draftStateOf(currentValue));
+  const localPrompt = draft.content;
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [isVersionsPanelOpen, setIsVersionsPanelOpen] = useState(true);
   const [comparisonCollapsed, setComparisonCollapsed] = useState(false);
   const [comparisonPanel, setComparisonPanel] =
     useState<ImperativePanelHandle | null>(null);
-  const [saveVersionStatus, setSaveVersionStatus] = useState<
-    { type: "success" | "error"; message: string } | null
-  >(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
@@ -143,24 +147,38 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
   const fieldLabel = history?.field_label ?? promptField;
   const subtitle = `${workflow?.name || "Workflow"} / ${resolvedNodeLabel} / ${fieldLabel}`;
 
-  const commitDraft = (value: string) => {
-    setLocalPrompt(value);
-    onPromptChange(value);
+  const commitDraft = (action: DraftAction) => {
+    const next = draftReducer(draft, action);
+    if (next === draft) return;
+    setDraft(next);
+    setSaveError(null);
+    if (next.content !== draft.content) onPromptChange(next.content);
   };
 
-  const handleDraftEdit = (value: string) => {
-    setUndoSnapshot(null);
-    commitDraft(value);
-  };
+  const handleDraftEdit = (content: string) =>
+    commitDraft({ type: "edit", content });
 
-  const handleApplyVersion = (content: string) => {
-    setUndoSnapshot(localPrompt);
-    commitDraft(content);
+  const handleApplyVersion = (content: string, label: string) =>
+    commitDraft({ type: "apply", content, label });
+
+  const draftStatus = useMemo(
+    () =>
+      historyReady && history
+        ? draftStatusOf(localPrompt, history.versions)
+        : null,
+    [historyReady, localPrompt, history],
+  );
+
+  const clearVersionErrors = () => {
+    setCopyError(null);
+    setDeleteError(null);
+    setLinkError(null);
   };
 
   // Clicking the previewed row again hides it. A collapsed comparison is not a
   // preview, so the row that opened it, opens it again rather than deselecting
   const handleVersionSelect = (id: string) => {
+    clearVersionErrors();
     const isDeselect = selectedVersionId === id && !comparisonCollapsed;
     setSelectedVersionId(isDeselect ? null : id);
     if (isDeselect) return;
@@ -173,18 +191,12 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     nodeId,
     promptField,
     draft: localPrompt,
-    onAccepted: handleApplyVersion,
+    onAccepted: (value) => handleApplyVersion(value, "suggestion accepted"),
+    draftSaved: draftStatus?.saved ?? false,
     historyState,
     caps,
     defaultProviderId,
   });
-
-  const handleUndoApply = () => {
-    if (undoSnapshot === null) return;
-    commitDraft(undoSnapshot);
-    setUndoSnapshot(null);
-    measurement.clearSuccessMessage();
-  };
 
   const saveVersionMutation = useMutation({
     mutationFn: async ({
@@ -194,7 +206,7 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
       content: string;
       label: string | undefined;
     }) => {
-      setSaveVersionStatus(null);
+      setSaveError(null);
       const result = await createPromptVersion(workflowId, nodeId, promptField, {
         content,
         label,
@@ -202,19 +214,9 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
       if (!result) throw new Error("Not allowed to save a version");
       return result;
     },
-    onSuccess: (created) => {
-      invalidateNodeHistory();
-      setSaveVersionStatus({
-        type: "success",
-        message: `Saved as v${created.version_number}`,
-      });
-    },
-    onError: (err) => {
-      setSaveVersionStatus({
-        type: "error",
-        message: extractErrorMessage(err, "Failed to save the version"),
-      });
-    },
+    onSuccess: () => invalidateNodeHistory(),
+    onError: (err) =>
+      setSaveError(extractErrorMessage(err, "Failed to save the version")),
   });
 
   const copyVersionMutation = useMutation({
@@ -223,7 +225,7 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
       label: string | undefined;
       sourceVersionId: string;
     }) => {
-      setCopyError(null);
+      clearVersionErrors();
       const result = await createPromptVersion(workflowId, nodeId, promptField, {
         content: vars.content,
         label: vars.label,
@@ -244,7 +246,7 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
 
   const deleteVersionMutation = useMutation({
     mutationFn: async (vars: { versionId: string; isLegacy: boolean }) => {
-      setDeleteError(null);
+      clearVersionErrors();
       await deletePromptVersion(vars.versionId);
     },
     // Wait for delete before closing dialog
@@ -262,7 +264,7 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
 
   const linkLegacyDatasetMutation = useMutation({
     mutationFn: async (suiteId: string) => {
-      setLinkError(null);
+      clearVersionErrors();
       const result = await linkGoldSuite(workflowId, nodeId, promptField, {
         suite_id: suiteId,
       });
@@ -287,6 +289,11 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     if (hasSelectedVersion) comparisonPanel.expand();
     else comparisonPanel.collapse();
   }, [comparisonPanel, hasSelectedVersion]);
+
+  const runPending = measurement.evaluate.pending || measurement.runInFlight;
+  const holdOpenWhileRunning = (event: Event) => {
+    if (runPending) event.preventDefault();
+  };
 
   const status = measurementStatus(measurement);
   const runAnnouncement = [
@@ -313,7 +320,10 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogPortal>
         <DialogOverlay className="z-[1300] bg-black/50 backdrop-blur-sm" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-[1350] flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[1800px] -translate-x-1/2 -translate-y-1/2 flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Content
+          onEscapeKeyDown={holdOpenWhileRunning}
+          onInteractOutside={holdOpenWhileRunning}
+          className="fixed left-1/2 top-1/2 z-[1350] flex h-[90vh] max-h-[90vh] w-[95vw] max-w-[1800px] -translate-x-1/2 -translate-y-1/2 flex-col gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 shadow-lg data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95">
           <div className="shrink-0 border-b px-6 py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -324,7 +334,7 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                     {subtitle}
                   </DialogDescription>
                 </div>
-              <DialogPrimitive.Close className="shrink-0 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none">
+              <DialogPrimitive.Close className="shrink-0 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
                 <X className="h-4 w-4" />
                 <span className="sr-only">Close</span>
               </DialogPrimitive.Close>
@@ -475,13 +485,24 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                               value={localPrompt}
                               onDraftEdit={handleDraftEdit}
                               canEditPrompt={caps.canEditPrompt}
-                              canUndo={undoSnapshot !== null}
-                              onUndo={handleUndoApply}
+                              undo={{
+                                label:
+                                  draft.undo[draft.undo.length - 1]?.label ??
+                                  null,
+                                run: () => commitDraft({ type: "undo" }),
+                              }}
+                              redo={{
+                                label:
+                                  draft.redo[draft.redo.length - 1]?.label ??
+                                  null,
+                                run: () => commitDraft({ type: "redo" }),
+                              }}
+                              status={draftStatus}
                               save={{
                                 gate,
                                 enabled: canSaveVersion,
                                 pending: saveVersionMutation.isPending,
-                                status: saveVersionStatus,
+                                error: saveError,
                                 submit: (label) =>
                                   saveVersionMutation.mutate({
                                     content: localPrompt,
@@ -524,13 +545,14 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
                                     localPrompt,
                                   )}
                                   canEdit={caps.canEditPrompt}
-                                  canUndo={undoSnapshot !== null}
                                   nodeMissing={historyState.nodeMissing}
                                   historyReady={historyReady}
                                   onApply={() =>
-                                    handleApplyVersion(selectedVersion.content)
+                                    handleApplyVersion(
+                                      selectedVersion.content,
+                                      `${isSelectedLegacy ? "legacy " : ""}v${selectedVersion.version_number} applied`,
+                                    )
                                   }
-                                  onUndo={handleUndoApply}
                                   onCopy={() =>
                                     copyVersionMutation.mutate({
                                       content: selectedVersion.content,
@@ -591,6 +613,8 @@ const PromptEditorDialogContent: React.FC<PromptEditorDialogProps> = ({
 
                 <TabsContent
                   value="gold-dataset"
+                  forceMount
+                  hidden={activeTab !== "gold-dataset"}
                   className="mt-0 h-full min-h-0 overflow-y-auto px-6 pb-6 pt-4"
                 >
                       <GoldDatasetTab
