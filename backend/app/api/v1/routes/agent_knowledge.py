@@ -18,8 +18,11 @@ from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import set_url_content_if_no_rag
 from app.dependencies.dependency_injection import RedisString
 from app.dependencies.injector import injector
+from app.modules.data.load_result import SYNC_RESULT_FIELDS
 from app.modules.data.manager import AgentRAGServiceManager, save_load_action
 from app.modules.data.manual_sync_runs import ManualSyncRunStore
+from app.modules.data.providers import KnowledgeSearchError
+from app.modules.data.service import capped_failure_text, error_type_names
 from app.modules.data.providers.legra import (
     FaissFlatIndexer,
     HuggingFaceGenerator,
@@ -28,7 +31,7 @@ from app.modules.data.providers.legra import (
     SemanticChunker,
     SentenceTransformerEmbedder,
 )
-from app.modules.data.utils import FileExtractor, FileTextExtractor
+from app.modules.data.utils import FileExtractor, FileTextExtractor, format_search_results
 from app.modules.workflow.agents.rag import ThreadScopedRAG
 from app.schemas.agent_knowledge import KBBase, KBCreate, KBListItem, KBMinimal, KBRead
 from app.schemas.common import PaginatedResponse
@@ -42,6 +45,7 @@ from app.schemas.knowledge_upload import (
 )
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.agent_knowledge_utils import (
+    mark_indexing_started,
     populate_remote_file_metadata,
     schedule_rag_load,
 )
@@ -144,6 +148,7 @@ async def create_knowledge_item(
     if item.type == "url":
         await set_url_content_if_no_rag(item)
 
+    mark_indexing_started(item)
     result = await knowledge_service.create(item)
 
     # Enrich files with storage metadata when using remote providers (S3, etc.)
@@ -187,6 +192,7 @@ async def update_knowledge_item(
     await apply_stored_copy_dates_on_save(knowledge_service, item_id, item)
     await keep_loaded_files_on_save(knowledge_service, item_id, item)
     load_action = save_load_action(current_item, item)
+    mark_indexing_started(item)
     result = await knowledge_service.update(item_id, item)
 
     # Enrich files with storage metadata when using remote providers (S3, etc.)
@@ -597,7 +603,15 @@ async def search(
     logger.debug(f"search route : query = {query}")
 
     # Search using simplified manager
-    results = await rag_manager.search(items, query, limit=5, format_results=True)
+    try:
+        results = await rag_manager.search(items, query, limit=5, format_results=True)
+    except KnowledgeSearchError as e:
+        failure = capped_failure_text(str(e))
+        if not e.results:
+            logger.error(f"Knowledge search failed: {failure} [{error_type_names(e)}]")
+            raise HTTPException(status_code=500, detail=f"Knowledge search failed: {failure}")
+        logger.warning(f"Knowledge search incomplete: {failure} [{error_type_names(e)}]")
+        results = format_search_results(e.results, include_metadata=False)
 
     if not results:
         logger.debug(f"No results found for query: {query}")
@@ -621,9 +635,10 @@ async def finalize_legra_knowledgebase(
     if success:
         # Update knowledge base to mark LEGRA as finalized
         knowledge_base.legra_finalize = True
+        # The sync and indexing results are left as the row has them now.
         await knowledge_service.update(
             knowledge_base.id, KBCreate(
-                **knowledge_base.model_dump(exclude={"id"}))
+                **knowledge_base.model_dump(exclude={"id", *SYNC_RESULT_FIELDS}))
         )
         return {
             "status": "success",
