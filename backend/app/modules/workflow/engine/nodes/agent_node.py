@@ -674,20 +674,21 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         if not wanted:
             return None
         if agent_type != "ReActAgentLC":
-            return self._skip_first_tool(
+            self._warn_first_tool_skipped(
                 f"'Always call this tool first' works only with the ReActAgentLC agent type; '{wanted}' was not called first."
             )
+            return None
         tool_name = to_snake_case(wanted)
         if tool_name not in {tool.name for tool in tools}:
-            return self._skip_first_tool(
+            self._warn_first_tool_skipped(
                 f"'Always call this tool first' names '{wanted}', which is not a tool connected to this agent."
             )
+            return None
         return tool_name
 
-    def _skip_first_tool(self, warning: str) -> None:
+    def _warn_first_tool_skipped(self, warning: str) -> None:
         logger.warning(f"Agent node {self.node_id}: {warning}")
         self.get_state().annotate_node_execution(self.node_id, warnings=[warning])
-        return None
 
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """

@@ -23,6 +23,7 @@ class ScriptedChatModel(BaseChatModel):
     replies: List[AIMessage] = Field(default_factory=list)
     tool_choices: List[Any] = Field(default_factory=list)
     supports_tool_choice_values: Optional[tuple] = None
+    rejects_named_tool: bool = False
 
     @property
     def _llm_type(self) -> str:
@@ -33,6 +34,9 @@ class ScriptedChatModel(BaseChatModel):
         return self
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        told_which_tool = bool(self.tool_choices and self.tool_choices[-1])
+        if self.rejects_named_tool and told_which_tool:
+            raise ValueError("400: tool_choice forcing tool use is not supported")
         return ChatResult(generations=[ChatGeneration(message=self.replies.pop(0))])
 
 
@@ -124,6 +128,18 @@ async def test_a_model_that_cannot_be_told_gets_the_tool_called_without_an_extra
 
 
 @pytest.mark.asyncio
+async def test_a_provider_that_rejects_the_instruction_gets_the_tool_called_and_the_agent_answers():
+    searches = []
+    model = ScriptedChatModel(replies=[AIMessage(content="It is valid for 95 seconds.")], rejects_named_tool=True)
+
+    messages = await _run(model, [_recording_tool(KNOWLEDGE_TOOL, searches)])
+
+    assert model.tool_choices == [KNOWLEDGE_TOOL, None]
+    assert searches == [USER_MESSAGE]
+    assert messages[-1].content == "It is valid for 95 seconds."
+
+
+@pytest.mark.asyncio
 async def test_a_tool_with_several_inputs_is_not_called_with_the_user_message():
     calls = []
     model = ScriptedChatModel(replies=[AIMessage(content="Please give me your order number.")])
@@ -159,3 +175,21 @@ def test_a_fallback_chain_can_be_told_only_when_every_model_can():
 
     assert model_can_be_told_which_tool(SimpleNamespace(models=[capable, capable])) is True
     assert model_can_be_told_which_tool(SimpleNamespace(models=[capable, unable])) is False
+
+
+@pytest.mark.parametrize(
+    ("thinking", "expected"),
+    [({"type": "enabled", "budget_tokens": 2000}, False), ({"type": "adaptive"}, False), ({"type": "disabled"}, True), (None, True)],
+    ids=["thinking on", "adaptive thinking", "thinking off", "no thinking setting"],
+)
+def test_an_anthropic_model_with_thinking_on_cannot_be_told(thinking, expected):
+    assert model_can_be_told_which_tool(SimpleNamespace(thinking=thinking)) is expected
+
+
+def test_the_model_inside_a_prompt_caching_wrapper_is_the_one_checked():
+    thinking_model = SimpleNamespace(thinking={"type": "enabled"})
+    unable = SimpleNamespace(supports_tool_choice_values=("auto",))
+
+    assert model_can_be_told_which_tool(SimpleNamespace(inner=thinking_model)) is False
+    assert model_can_be_told_which_tool(SimpleNamespace(models=[SimpleNamespace(inner=unable)])) is False
+    assert model_can_be_told_which_tool(SimpleNamespace(inner=SimpleNamespace())) is True
