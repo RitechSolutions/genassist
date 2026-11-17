@@ -12,6 +12,7 @@ from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
 from app.core.utils.token_utils import calculate_history_tokens
 from app.modules.workflow.agents.agent_runtime import run_agent_once
+from app.modules.workflow.agents.base_tool import to_snake_case
 from app.modules.workflow.engine import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
@@ -405,8 +406,10 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
         system_prompt, prompt, all_tools, delegation_map, max_iterations, chat_history,
         stable_volatile_parts: Optional[tuple[str, str]] = None,
         prompt_caching_enabled: bool = False,
+        first_tool: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Invoke the agent, resolving delegation tool calls, until it answers or pauses"""
+        """Invoke the agent, resolving delegation tool calls, until it answers or pauses.
+        ``first_tool`` is called on the user's message only, not again after a sub-agent returns"""
         from app.modules.workflow.agents.sub_agents import orchestrator
         from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY
 
@@ -428,6 +431,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             completed_count, steps, tools_used, current_prompt = self._apply_sub_agent_resume(resume, pii)
             spent = {s["child_node_id"] for s in steps if s.get("type") == "sub_agent" and s.get("child_node_id")}
             all_tools, delegation_map = self._drop_child_tools(all_tools, delegation_map, spent)
+            first_tool = None
 
         while True:
             active_tools = (
@@ -444,7 +448,9 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 stable_volatile_parts=stable_volatile_parts,
                 stable_tool_names=stable_tool_names,
                 prompt_caching_enabled=prompt_caching_enabled,
+                first_tool=first_tool,
             )
+            first_tool = None
             llm_model = run.llm_model
             steps.extend(run.steps)
             tools_used.extend(run.tools_used)
@@ -662,6 +668,27 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             "child_tools_used": tools_used[-SUB_AGENT_TRACE_STEPS_CAP:] if isinstance(tools_used, list) else [],
         }
 
+    def _first_tool_to_call(self, config: Dict[str, Any], agent_type: str, tools: list) -> Optional[str]:
+        """The connected tool to call before each answer, or None with a step warning when it cannot be used"""
+        wanted = str(config.get("firstTool") or "").strip()
+        if not wanted:
+            return None
+        if agent_type != "ReActAgentLC":
+            return self._skip_first_tool(
+                f"'Always call this tool first' works only with the ReActAgentLC agent type; '{wanted}' was not called first."
+            )
+        tool_name = to_snake_case(wanted)
+        if tool_name not in {tool.name for tool in tools}:
+            return self._skip_first_tool(
+                f"'Always call this tool first' names '{wanted}', which is not a tool connected to this agent."
+            )
+        return tool_name
+
+    def _skip_first_tool(self, warning: str) -> None:
+        logger.warning(f"Agent node {self.node_id}: {warning}")
+        self.get_state().annotate_node_execution(self.node_id, warnings=[warning])
+        return None
+
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process an agent node with tool selection and execution.
@@ -699,6 +726,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             logger.error("Invalid sub-agent topology for agent node %s: %s", self.node_id, e)
             return agent_failure(str(e))
         all_tools = tools + delegation_tools if delegation_tools else tools
+        first_tool = self._first_tool_to_call(config, agent_type, all_tools)
 
         # If PII masking is on, wrap every tool
         if config.get("piiMasking") and all_tools:
@@ -742,6 +770,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                     chat_history=chat_history,
                     stable_volatile_parts=stable_volatile_parts,
                     prompt_caching_enabled=prompt_caching_enabled,
+                    first_tool=first_tool,
                 )
 
             run = await run_agent_once(
@@ -758,6 +787,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
                 stable_volatile_parts=stable_volatile_parts,
                 prompt_caching_enabled=prompt_caching_enabled,
                 on_token=self.chat_token_sink(),
+                first_tool=first_tool,
             )
 
             # The agent caught an error internally and returned a standardized error response

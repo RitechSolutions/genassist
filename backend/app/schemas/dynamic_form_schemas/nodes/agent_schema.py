@@ -52,6 +52,16 @@ AGENT_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         default=7
     ),
     FieldSchema(
+        name="firstTool",
+        type="text",
+        label="Always call this tool first",
+        required=False,
+        description=(
+            "ReActAgentLC only. Name of a connected tool, or a variable that holds it. "
+            "The agent calls this tool before answering each message."
+        ),
+    ),
+    FieldSchema(
         name="memory",
         type="boolean",
         label="Enable Memory",
