@@ -5,9 +5,24 @@ import json
 from redis.asyncio import Redis
 from app.dependencies.dependency_injection import RedisString
 from app.core.config.settings import settings
+from app.modules.workflow.script_results import pandas_to_data
 
 
 logger = logging.getLogger(__name__)
+
+
+def _json_fallback(value: Any) -> Any:
+    """json.dumps default: a value JSON can't hold is stored as plain data or text, not lost with the whole turn"""
+    converted = pandas_to_data(value)
+    if converted is not value:
+        return converted
+    if hasattr(value, "isoformat"):  # datetime, date, time, pd.Timestamp
+        return value.isoformat()
+    if hasattr(value, "tolist"):  # numpy scalars and arrays
+        return value.tolist()
+    if isinstance(value, (set, frozenset)):
+        return list(value)
+    return str(value)
 
 
 class Message:
@@ -575,7 +590,7 @@ class RedisConversationMemory(BaseConversationMemory):
 
             # Create message data
             message_data = message.to_dict()
-            message_json = json.dumps(message_data)
+            message_json = json.dumps(message_data, default=_json_fallback)
 
             # Add message to Redis list
             await redis.lpush(self._message_key, message_json)  # type: ignore
@@ -689,7 +704,7 @@ class RedisConversationMemory(BaseConversationMemory):
             redis = await self._get_redis()
 
             # Store metadata as JSON
-            metadata_json = json.dumps(value)
+            metadata_json = json.dumps(value, default=_json_fallback)
             # type: ignore
             await redis.hset(self._metadata_key, key, metadata_json)
             await redis.expire(self._metadata_key, 86400 * 30)  # type: ignore
@@ -1155,7 +1170,7 @@ class RedisConversationMemory(BaseConversationMemory):
             await self._initialize_conversation()
             redis = await self._get_redis()
             # Store value as JSON
-            value_json = json.dumps(value)
+            value_json = json.dumps(value, default=_json_fallback)
             # type: ignore
             await redis.hset(self._stateful_key, key, value_json)
             # Set TTL for stateful values (30 days, same as conversation)

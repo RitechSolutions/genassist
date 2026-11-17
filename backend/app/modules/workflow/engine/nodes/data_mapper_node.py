@@ -5,6 +5,7 @@ Data mapper node implementation using the BaseNode class.
 import logging
 from typing import Any, Dict
 
+from app.modules.workflow.script_results import pandas_to_data
 from app.modules.workflow.utils import execute_python_code, script_error
 
 from ..base_node import BaseNode
@@ -39,6 +40,8 @@ class DataMapperNode(BaseNode):
         try:
             # Execute the Python script with resolved params from code_params
             response = await execute_python_code(python_script, params=self.code_params or {})
+            if "result" in response:
+                response["result"] = pandas_to_data(response["result"])
             failure = script_error(response)
             if failure:
                 return node_failure(
