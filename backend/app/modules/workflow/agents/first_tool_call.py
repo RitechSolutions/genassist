@@ -9,11 +9,18 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
 from app.core.utils.string_utils import truncate_for_log
+from app.modules.workflow.llm.fallback_exceptions import _extract_status_code, is_retryable
 
 logger = logging.getLogger(__name__)
 
 NAMED_TOOL_CHOICE = "tool"
 THINKING_ON_TYPES = ("enabled", "adaptive")
+ACCOUNT_ERROR_STATUSES = (401, 403, 404)
+
+
+def _fails_every_call(error: Exception) -> bool:
+    """Outages and account errors would fail the next model call too"""
+    return is_retryable(error) or _extract_status_code(error) in ACCOUNT_ERROR_STATUSES
 
 
 def _models_behind(model: Any) -> List[Any]:
@@ -34,13 +41,13 @@ def _thinking_is_on(model: Any) -> bool:
 
 
 def model_can_be_told_which_tool(model: Any) -> bool:
-    """False when any model behind it cannot be made to call a named tool"""
-    for each_model in _models_behind(model):
+    """False when any model cannot bind a named tool, or the model tried first has thinking on"""
+    models = _models_behind(model)
+    for each_model in models:
         supported_choices = getattr(each_model, "supports_tool_choice_values", None)
-        named_tool_unsupported = supported_choices is not None and NAMED_TOOL_CHOICE not in supported_choices
-        if named_tool_unsupported or _thinking_is_on(each_model):
+        if supported_choices is not None and NAMED_TOOL_CHOICE not in supported_choices:
             return False
-    return True
+    return not _thinking_is_on(models[0])
 
 
 def _messages_since_user_message(messages: List[BaseMessage]) -> List[BaseMessage]:
@@ -96,12 +103,14 @@ class FirstToolCallMiddleware(AgentMiddleware):
         return response if response is not None else await handler(request)
 
     async def _told_to_call_tool(self, request, handler) -> Optional[Any]:
-        """The model's reply when told to call the tool, or None when it cannot be told or refuses"""
+        """Reply when told to call the tool, None if it cannot be told or refuses; outage and account errors raise"""
         if not model_can_be_told_which_tool(request.model):
             return None
         try:
             response = await handler(request.override(tool_choice=self.tool_name))
         except Exception as error:
+            if _fails_every_call(error):
+                raise
             reason = truncate_for_log(redact_sensitive_substrings(str(error)))
             logger.warning(
                 f"The model refused to be told to call '{self.tool_name}' ({type(error).__name__}: {reason}); "

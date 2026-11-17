@@ -23,7 +23,7 @@ class ScriptedChatModel(BaseChatModel):
     replies: List[AIMessage] = Field(default_factory=list)
     tool_choices: List[Any] = Field(default_factory=list)
     supports_tool_choice_values: Optional[tuple] = None
-    rejects_named_tool: bool = False
+    error_when_told: Optional[Any] = None
 
     @property
     def _llm_type(self) -> str:
@@ -35,9 +35,15 @@ class ScriptedChatModel(BaseChatModel):
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
         told_which_tool = bool(self.tool_choices and self.tool_choices[-1])
-        if self.rejects_named_tool and told_which_tool:
-            raise ValueError("400: tool_choice forcing tool use is not supported")
+        if self.error_when_told is not None and told_which_tool:
+            raise self.error_when_told
         return ChatResult(generations=[ChatGeneration(message=self.replies.pop(0))])
+
+
+class ProviderError(Exception):
+    def __init__(self, status_code: int):
+        super().__init__(f"provider answered {status_code}")
+        self.status_code = status_code
 
 
 def _tool_call(name: str, args: dict) -> AIMessage:
@@ -128,15 +134,38 @@ async def test_a_model_that_cannot_be_told_gets_the_tool_called_without_an_extra
 
 
 @pytest.mark.asyncio
-async def test_a_provider_that_rejects_the_instruction_gets_the_tool_called_and_the_agent_answers():
+@pytest.mark.parametrize(
+    "rejection",
+    [ValueError("tool_choice of type tool is not supported"), ProviderError(400)],
+    ids=["rejected when binding", "rejected by the provider"],
+)
+async def test_a_provider_that_rejects_the_instruction_gets_the_tool_called_and_the_agent_answers(rejection):
     searches = []
-    model = ScriptedChatModel(replies=[AIMessage(content="It is valid for 95 seconds.")], rejects_named_tool=True)
+    model = ScriptedChatModel(replies=[AIMessage(content="It is valid for 95 seconds.")], error_when_told=rejection)
 
     messages = await _run(model, [_recording_tool(KNOWLEDGE_TOOL, searches)])
 
     assert model.tool_choices == [KNOWLEDGE_TOOL, None]
     assert searches == [USER_MESSAGE]
     assert messages[-1].content == "It is valid for 95 seconds."
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error",
+    [TimeoutError("provider timed out"), ProviderError(429), ProviderError(503),
+     ProviderError(401), ProviderError(403), ProviderError(404)],
+    ids=["timeout", "rate limited", "unavailable", "bad key", "no model access", "model not found"],
+)
+async def test_an_outage_or_account_error_fails_the_step_without_calling_the_tool(error):
+    searches = []
+    model = ScriptedChatModel(replies=[], error_when_told=error)
+
+    with pytest.raises(type(error)):
+        await _run(model, [_recording_tool(KNOWLEDGE_TOOL, searches)])
+
+    assert model.tool_choices == [KNOWLEDGE_TOOL]
+    assert searches == []
 
 
 @pytest.mark.asyncio
@@ -184,6 +213,14 @@ def test_a_fallback_chain_can_be_told_only_when_every_model_can():
 )
 def test_an_anthropic_model_with_thinking_on_cannot_be_told(thinking, expected):
     assert model_can_be_told_which_tool(SimpleNamespace(thinking=thinking)) is expected
+
+
+def test_only_the_first_model_of_a_fallback_chain_is_checked_for_thinking():
+    thinking_model = SimpleNamespace(thinking={"type": "enabled"})
+    plain_model = SimpleNamespace()
+
+    assert model_can_be_told_which_tool(SimpleNamespace(models=[plain_model, thinking_model])) is True
+    assert model_can_be_told_which_tool(SimpleNamespace(models=[thinking_model, plain_model])) is False
 
 
 def test_the_model_inside_a_prompt_caching_wrapper_is_the_one_checked():
