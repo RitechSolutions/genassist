@@ -1,4 +1,5 @@
-"""pandas objects a script returns reach the engine, the response and conversation memory as plain JSON data."""
+"""A script's pandas result stays a pandas object between nodes, and becomes plain data where JSON is needed:
+the run response and conversation memory."""
 
 import datetime
 import json
@@ -59,31 +60,56 @@ def test_values_without_pandas_objects_are_left_alone():
     assert pandas_to_data(value)["when"] is when
 
 
-def _workflow(unwrap, node_type="pythonCodeNode", code_field="code"):
-    return {
-        "id": "test-workflow",
-        "nodes": [
-            {"id": "start", "type": "chatInputNode", "data": {"name": "Start", "inputSchema": {"message": {"type": "string", "required": True}}}},
-            {"id": "py", "type": node_type, "data": {"name": "Script", code_field: "result = 1", "unwrap": unwrap}},
-        ],
-        "edges": [{"source": "start", "target": "py", "sourceHandle": "output", "targetHandle": "input"}],
-    }
+START = {
+    "id": "start",
+    "type": "chatInputNode",
+    "data": {"name": "Start", "inputSchema": {"message": {"type": "string", "required": True}}},
+}
 
 
-async def _run(monkeypatch, result, unwrap=False, module=python_tool_node, **workflow_options):
-    async def runner(*_args, **_kwargs):
-        return {"result": result, "output": "", "errors": ""}
+def _workflow(*scripts, node_type="pythonCodeNode", code_field="code"):
+    """Chat Input -> one script node per (code, unwrap) -> Chat Output"""
+    nodes, edges, previous = [START], [], "start"
+    for index, (code, unwrap) in enumerate(scripts):
+        node_id = f"script{index}"
+        nodes.append({"id": node_id, "type": node_type, "data": {"name": node_id, code_field: code, "unwrap": unwrap}})
+        edges.append({"source": previous, "target": node_id, "sourceHandle": "output", "targetHandle": "input"})
+        previous = node_id
+    nodes.append({"id": "out", "type": "chatOutputNode", "data": {"name": "Out"}})
+    edges.append({"source": previous, "target": "out", "sourceHandle": "output", "targetHandle": "input"})
+    return {"id": "test-workflow", "nodes": nodes, "edges": edges}
 
-    monkeypatch.setattr(module, "execute_python_code", runner)
-    memory = MagicMock()
-    memory.add_input_output = AsyncMock()
+
+def _redis_memory():
+    redis = MagicMock()
+    for method in ("exists", "hset", "expire", "lpush"):
+        setattr(redis, method, AsyncMock())
+    memory = RedisConversationMemory("thread-1")
+    memory.redis_client = redis
+    return memory, redis
+
+
+async def _run(workflow):
+    memory, redis = _redis_memory()
     with patch.object(WorkflowState, "get_memory", return_value=memory):
-        state = await WorkflowEngine(_workflow(unwrap, **workflow_options)).execute_from_node(
+        state = await WorkflowEngine(workflow).execute_from_node(
             input_data={"message": "hi"}, persist=True, await_persist=True
         )
-    memory.add_input_output.assert_awaited_once()
-    stored = memory.add_input_output.await_args.args[1]
+    # lpush runs once per message, user's first; each holds the JSON the memory stored
+    stored = [json.loads(call.args[1])["content"] for call in redis.lpush.await_args_list]
     return state, stored
+
+
+def _scripted(monkeypatch, *results, module=python_tool_node):
+    """Stand in for the sandbox: each call returns the next result and records the params it was given"""
+    calls = []
+
+    async def runner(_code, params=None, **_kwargs):
+        calls.append(params)
+        return {"result": results[len(calls) - 1], "output": "", "errors": ""}
+
+    monkeypatch.setattr(module, "execute_python_code", runner)
+    return calls
 
 
 @pytest.mark.asyncio
@@ -97,33 +123,61 @@ async def _run(monkeypatch, result, unwrap=False, module=python_tool_node, **wor
         (pd.DataFrame({"n": [1, 2]}), False, {"result": [{"n": 1}, {"n": 2}], "output": "", "errors": ""}),
     ],
 )
-async def test_python_node_pandas_result_completes_and_is_stored_in_memory(monkeypatch, result, unwrap, expected):
-    state, stored = await _run(monkeypatch, result, unwrap)
+async def test_pandas_result_completes_and_reaches_response_and_memory_as_plain_data(
+    monkeypatch, result, unwrap, expected
+):
+    _scripted(monkeypatch, result)
+    state, stored = await _run(_workflow(("code", unwrap)))
 
+    response = state.format_state_as_response()
+    json.dumps(response)
     assert state.status == "completed"
-    assert state.node_execution_status["py"]["status"] == "success"
-    assert state.output == expected
-    assert stored == expected
-    json.dumps(stored)  # what the memory write does, without a fallback
+    assert response["status"] == "success"
+    assert response["output"] == expected
+    assert stored == ["hi", expected]
 
 
 @pytest.mark.asyncio
-async def test_data_mapper_pandas_result_becomes_plain_data(monkeypatch):
-    state, stored = await _run(
-        monkeypatch, pd.DataFrame({"n": [1]}), module=data_mapper_node, node_type="dataMapperNode", code_field="pythonScript"
-    )
+@pytest.mark.parametrize("unwrap, key", [(False, "source.result"), (True, "source")])
+async def test_next_script_still_gets_the_dataframe(monkeypatch, unwrap, key):
+    frame = pd.DataFrame({"k": ["x", "y", "x"], "n": [1, 2, 3]})
+    calls = _scripted(monkeypatch, frame, {"x_total": 4})
+    state, _ = await _run(_workflow(("code", unwrap), (f"df = params.get('{key}')", False)))
 
     assert state.status == "completed"
-    assert stored == {"result": [{"n": 1}], "output": "", "errors": ""}
+    assert isinstance(calls[1][key], pd.DataFrame)
+    pd.testing.assert_frame_equal(calls[1][key], frame)
+
+
+@pytest.mark.asyncio
+async def test_two_script_pandas_chain_runs_in_the_sandbox():
+    first = "import pandas as pd\ndef executable_function(params):\n    return pd.DataFrame({'k': ['x', 'y', 'x'], 'n': [1, 2, 3]})\n"
+    second = (
+        "def executable_function(params):\n"
+        "    df = params.get('source.result')\n"
+        "    return {'type': type(df).__name__, 'x_total': int(df.groupby('k')['n'].sum()['x'])}\n"
+    )
+    state, stored = await _run(_workflow((first, False), (second, False)))
+
+    response = state.format_state_as_response()
+    assert response["output"]["result"] == {"type": "DataFrame", "x_total": 4}
+    assert response["output"]["errors"] == ""
+    assert stored[1]["result"] == {"type": "DataFrame", "x_total": 4}
+
+
+@pytest.mark.asyncio
+async def test_data_mapper_pandas_result_reaches_response_and_memory_as_plain_data(monkeypatch):
+    _scripted(monkeypatch, pd.DataFrame({"n": [1]}), module=data_mapper_node)
+    state, stored = await _run(_workflow(("code", False), node_type="dataMapperNode", code_field="pythonScript"))
+
+    assert state.status == "completed"
+    assert state.format_state_as_response()["output"] == {"result": [{"n": 1}], "output": "", "errors": ""}
+    assert stored[1] == {"result": [{"n": 1}], "output": "", "errors": ""}
 
 
 @pytest.mark.asyncio
 async def test_memory_stores_values_json_cannot_hold():
-    redis = MagicMock()
-    for method in ("exists", "hset", "expire", "lpush"):
-        setattr(redis, method, AsyncMock())
-    memory = RedisConversationMemory("thread-1")
-    memory.redis_client = redis
+    memory, redis = _redis_memory()
     content = {"s": pd.Series([1]), "n": np.int64(3), "when": datetime.datetime(2024, 1, 1), "tags": {"x"}}
 
     await memory.add_message(Message("assistant", content))

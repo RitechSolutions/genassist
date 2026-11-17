@@ -7,7 +7,6 @@ import logging
 
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
-from app.modules.workflow.script_results import pandas_to_data
 from app.modules.workflow.utils import execute_python_code
 
 logger = logging.getLogger(__name__)
@@ -43,9 +42,6 @@ class PythonToolNode(BaseNode):
         try:
             # Execute the Python code with resolved params from code_params
             response = await execute_python_code(code, self.code_params or {})
-            # The sandbox hands frames back as pandas objects, which the engine and memory can't use
-            if "result" in response:
-                response["result"] = pandas_to_data(response["result"])
             if unwrap:
                 response = response.get("result", None)
             return response
