@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useId } from "react";
 import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/button";
 import { Label } from "@/components/label";
@@ -63,6 +63,7 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
     evalStale,
     evaluate,
   } = measurement;
+  const id = useId();
 
   return (
     <div className="space-y-4">
@@ -79,10 +80,14 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
           {PROMPT_CHECK_TECHNIQUES.map((technique) => (
             <div key={technique} className="flex items-center gap-2">
               <Switch
+                id={`${id}-${technique}`}
                 checked={selectedTechniques.includes(technique)}
                 onCheckedChange={() => toggleTechnique(technique)}
               />
-              <Label className="text-sm cursor-pointer">
+              <Label
+                htmlFor={`${id}-${technique}`}
+                className="text-sm cursor-pointer"
+              >
                 {methodLabel(technique)}
               </Label>
             </div>
@@ -91,8 +96,11 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
 
         {notContainsSelected && (
           <div className="space-y-2">
-            <Label className="text-sm">Forbidden phrases (one per line)</Label>
+            <Label htmlFor={`${id}-phrases`} className="text-sm">
+              Forbidden phrases (one per line)
+            </Label>
             <RichTextarea
+              id={`${id}-phrases`}
               value={phrasesText}
               onChange={(e) => setPhrasesText(e.target.value)}
               placeholder={"discount\nguarantee"}
@@ -107,8 +115,11 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
 
         {nliSelected && (
           <div className="space-y-2">
-            <Label className="text-sm">Minimum entailment score (0-1)</Label>
+            <Label htmlFor={`${id}-nli-score`} className="text-sm">
+              Minimum entailment score (0-1)
+            </Label>
             <RichInput
+              id={`${id}-nli-score`}
               inputMode="decimal"
               value={nliScoreText}
               onChange={(e) => setNliScoreText(e.target.value)}
@@ -127,16 +138,22 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
 
         {judgeSelected && (
           <div className="space-y-2">
-            <Label className="text-sm">Judge rubric</Label>
+            <Label htmlFor={`${id}-rubric`} className="text-sm">
+              Judge rubric
+            </Label>
             <RichTextarea
+              id={`${id}-rubric`}
               value={rubricText}
               onChange={(e) => setRubricText(e.target.value)}
               placeholder="Score from 0.0 to 1.0 how well the reply answers the question."
               size="description"
               className="text-sm"
             />
-            <Label className="text-sm">Minimum judge score (0-1)</Label>
+            <Label htmlFor={`${id}-judge-score`} className="text-sm">
+              Minimum judge score (0-1)
+            </Label>
             <RichInput
+              id={`${id}-judge-score`}
               inputMode="decimal"
               value={judgeScoreText}
               onChange={(e) => setJudgeScoreText(e.target.value)}
@@ -145,10 +162,14 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
             />
             <div className="flex items-center gap-2">
               <Switch
+                id={`${id}-judge-expected`}
                 checked={judgeSeesExpected}
                 onCheckedChange={setJudgeSeesExpected}
               />
-              <Label className="text-sm cursor-pointer">
+              <Label
+                htmlFor={`${id}-judge-expected`}
+                className="text-sm cursor-pointer"
+              >
                 Show the judge the expected output
               </Label>
             </div>
@@ -168,13 +189,15 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
 
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
-            <Label className="text-sm">Cases to check</Label>
+            <Label htmlFor={`${id}-cases`} className="text-sm">
+              Cases to check
+            </Label>
             <Select
               value={String(casesToCheck)}
               onValueChange={(v) => setCasesToCheck(Number(v))}
               disabled={splitActive}
             >
-              <SelectTrigger className="w-20">
+              <SelectTrigger id={`${id}-cases`} className="w-20">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -190,11 +213,15 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
           <GateTooltip reason={split.feasible ? null : split.reason}>
             <span className="flex items-center gap-2">
               <Switch
+                id={`${id}-holdout`}
                 checked={splitActive}
                 disabled={!split.feasible}
                 onCheckedChange={setSplitEnabled}
               />
-              <Label className="text-sm cursor-pointer">
+              <Label
+                htmlFor={`${id}-holdout`}
+                className="text-sm cursor-pointer"
+              >
                 Hold out cases
                 {split.feasible && (
                   <span className="text-muted-foreground">
@@ -225,6 +252,9 @@ export const EvaluateSection: React.FC<EvaluateSectionProps> = ({
             </Button>
           </GateTooltip>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Variables such as {"{{name}}"} are sent as written.
+        </p>
       </div>
 
       {evalRun && (

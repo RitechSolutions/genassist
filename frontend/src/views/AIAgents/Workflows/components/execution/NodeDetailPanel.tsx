@@ -4,10 +4,11 @@ import { cn, formatDateTime } from '@/helpers/utils';
 import JsonViewer from '@/components/JsonViewer';
 import { NodeExecutionView } from '@/interfaces/workflow-execution.interface';
 import { formatDuration } from '../../utils/executionView';
+import NodeWarnings from './NodeWarnings';
 import { STATUS_STYLES } from './statusStyles';
 
 /**
- * Details of the node the user selected in the graph: status, timing, input, output and error.
+ * Details of the node the user selected in the graph: status, timing, input, output, error and warnings.
  * See spec FR-7 / AC-4.
  */
 interface NodeDetailPanelProps {
@@ -101,6 +102,8 @@ const NodeDetailPanel: React.FC<NodeDetailPanelProps> = ({ node, onClose }) => {
             <div className="whitespace-pre-wrap break-words">{node.error}</div>
           </div>
         )}
+
+        <NodeWarnings warnings={node.warnings ?? []} />
 
         <div>
           {node.input === undefined || node.input === null ? (
