@@ -12,6 +12,7 @@ import json
 import pickle
 import struct
 import uuid
+import warnings
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import numpy as np
@@ -698,3 +699,51 @@ def decode_result(data: bytes) -> Dict[str, Any]:
         finally:
             _budget.reset(token)
     return payload
+
+
+def _index_is_positional(index: pd.Index) -> bool:
+    """An unnamed integer index, e.g. the default one or what filtering or sorting leaves, says nothing about a row"""
+    return not isinstance(index, pd.MultiIndex) and index.name is None and pd.api.types.is_integer_dtype(index)
+
+
+def _as_json(value: Union[pd.DataFrame, pd.Series], orient: str, **options: Any) -> Any:
+    """pandas' own JSON: NaN and NaT become null, timestamps ISO text, numpy numbers plain ones"""
+    return json.loads(value.to_json(orient=orient, date_format="iso", default_handler=str, **options))
+
+
+def _pandas_to_data(value: Union[pd.DataFrame, pd.Series]) -> Any:
+    """A Series as a list (or {label: value} when its labels mean something), a frame as a list of row dicts"""
+    if isinstance(value, pd.Series):
+        if _index_is_positional(value.index):
+            return _as_json(value, "values")
+        if value.index.is_unique and not isinstance(value.index, pd.MultiIndex):
+            return _as_json(value, "index")
+        try:
+            value = value.reset_index()
+        except ValueError:  # the Series shares a name with an index level
+            return _as_json(value, "values")
+    elif not _index_is_positional(value.index):
+        try:
+            value = value.reset_index()
+        except ValueError:  # an index level shares a column's name; its labels are left out
+            pass
+    try:
+        return _as_json(value, "records")
+    except ValueError:  # duplicate column names can't be record keys
+        with warnings.catch_warnings():  # pandas warns that columns are left out, but "split" keeps them all
+            warnings.simplefilter("ignore", UserWarning)
+            return _as_json(value, "split", index=False)
+
+
+def pandas_to_data(value: Any) -> Any:
+    """Replace the DataFrames and Series in a script result with plain JSON data, so the result can be shown,
+    tested for truth and stored in conversation memory. Everything else is left as it is"""
+    if isinstance(value, (pd.DataFrame, pd.Series)):
+        return _pandas_to_data(value)
+    if isinstance(value, dict):
+        return {key: pandas_to_data(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [pandas_to_data(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(pandas_to_data(item) for item in value)
+    return value

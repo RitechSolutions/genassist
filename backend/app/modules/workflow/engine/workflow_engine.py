@@ -570,7 +570,7 @@ class WorkflowEngine:
             return
 
         # Handle next nodes based on execution result
-        if node_output and "next_nodes" in node_output:
+        if isinstance(node_output, dict) and "next_nodes" in node_output:
             next_nodes = node_output.get("next_nodes", [])
         else:
             bypass_next = node.get_bypass_next_nodes() if node.is_deactivated() else None
