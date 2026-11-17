@@ -138,6 +138,24 @@ async def test_pandas_result_completes_and_reaches_response_and_memory_as_plain_
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("unwrap", [False, True])
+@pytest.mark.parametrize(
+    "frame, rows",
+    [
+        (pd.DataFrame({"k": ["a", "b"], "v": [1, 2]}).set_index("k"), [{"k": "a", "v": 1}, {"k": "b", "v": 2}]),
+        (pd.DataFrame({"k": ["a", "b", "a"], "v": [1, 2, 3]}).groupby("k").sum(), [{"k": "a", "v": 4}, {"k": "b", "v": 2}]),
+    ],
+)
+async def test_named_index_labels_reach_the_response_as_they_reach_memory(monkeypatch, frame, rows, unwrap):
+    _scripted(monkeypatch, frame)
+    state, stored = await _run(_workflow(("code", unwrap)))
+
+    expected = rows if unwrap else {"result": rows, "output": "", "errors": ""}
+    assert state.format_state_as_response()["output"] == expected
+    assert stored[1] == expected
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("unwrap, key", [(False, "source.result"), (True, "source")])
 async def test_next_script_still_gets_the_dataframe(monkeypatch, unwrap, key):
     frame = pd.DataFrame({"k": ["x", "y", "x"], "n": [1, 2, 3]})
