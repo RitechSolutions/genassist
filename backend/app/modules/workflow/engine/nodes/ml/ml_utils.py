@@ -203,11 +203,9 @@ def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budg
             return [sanitize_for_json(item, _seen, _depth + 1, _budget) for item in obj]
         finally:
             _seen.discard(obj_id)
-    elif isinstance(obj, pd.DataFrame):
-        # Convert DataFrame to dict and sanitize
-        return sanitize_for_json(obj.to_dict("records"), _seen, _depth + 1, _budget)
-    elif isinstance(obj, pd.Series):
-        # A list, or {label: value} when the labels mean something; pd.isna below can't take a Series
+    elif isinstance(obj, (pd.DataFrame, pd.Series)):
+        # Rows (or a list / {label: value} for a Series), keeping index labels that mean something, e.g. a groupby's
+        # keys, the same way conversation memory stores them; pd.isna below can't take a Series
         return sanitize_for_json(pandas_to_data(obj), _seen, _depth + 1, _budget)
     elif pd.isna(obj):
         return None
