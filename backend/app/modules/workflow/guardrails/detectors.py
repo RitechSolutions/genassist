@@ -110,18 +110,19 @@ async def check_text(
     *,
     source: Optional[str] = None,
     node_id: Optional[str] = None,
+    judge=None,
 ) -> tuple[list[dict], bool]:
     if not text or not text.strip():
         return [], False
     try:
-        verdicts = await _check(text, checks, stage, mode, usage, source, node_id)
+        verdicts = await _check(text, checks, stage, mode, usage, source, node_id, judge)
     except Exception as exc:
         logger.warning("Guardrail check failed unexpectedly: %s", type(exc).__name__)
         verdicts = [verdict(stage, "detector_error", mode, "error", category="provider_error", source=source)]
     return verdicts, any(v["action"] == "blocked" for v in verdicts)
 
 
-async def _check(text, checks, stage, mode, usage, source, node_id) -> list[dict]:
+async def _check(text, checks, stage, mode, usage, source, node_id, judge) -> list[dict]:
     def fired(check_type, hit, **kwargs):
         return verdict(stage, check_type, mode, _action(hit, mode), source=source, **kwargs)
 
@@ -149,7 +150,7 @@ async def _check(text, checks, stage, mode, usage, source, node_id) -> list[dict
         return [*verdicts, verdict(stage, "detector_error", mode, "error", category="no_judge", source=source)]
 
     try:
-        llm, provider = await _judge_model(checks.judge_provider_id)
+        llm, provider = await (judge or _judge_model)(checks.judge_provider_id)
     except Exception as exc:
         logger.warning("Guardrail judge could not be built: %s", type(exc).__name__)
         return [*verdicts, verdict(stage, "detector_error", mode, "error", category="provider_error", source=source)]
