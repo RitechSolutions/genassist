@@ -216,6 +216,8 @@ class WorkflowState:
         # Normalized tool-execution events, one per tool call.
         self.tool_events: list[dict] = []
 
+        self.guardrail_events: list[dict] = []
+
         # Edge data and execution context
         self.source_edges = workflow.get("source_edges", {}) if workflow else {}
         self.target_edges = workflow.get("target_edges", {}) if workflow else {}
@@ -423,6 +425,7 @@ class WorkflowState:
             self.tool_events.append(
                 {**event, "workflow_path": parent + event.get("workflow_path", [])}
             )
+        self.guardrail_events.extend(child_state.guardrail_events)
 
     def get_total_llm_usage(self) -> dict:
         """Sum token usage and compute total cost in USD."""
@@ -507,6 +510,7 @@ class WorkflowState:
         self.errors.clear()
         self.llm_usage.clear()
         self.tool_events.clear()
+        self.guardrail_events.clear()
         self.performance_metrics = {
             "totalExecutionTime": 0,
             "averageNodeExecutionTime": 0,
@@ -1036,6 +1040,7 @@ class WorkflowState:
             "cost_usd": None if cost_is_partial else token_usage.get("cost_usd", 0.0),
             "execution_id": self.execution_id,
             "tool_events": self.tool_events,
+            "guardrail_events": self.guardrail_events,
         }
 
         # Sanitize response to ensure JSON compliance (handle inf, -inf, nan values)

@@ -310,6 +310,7 @@ async def process_conversation_update_with_agent(
     current_user_id: UUID,
     audio_bytes: Optional[bytes] = None,
     audio_format: Optional[str] = None,
+    live_voice: bool = False,
 ) -> ConversationModel:
     """
     Process an in-progress conversation update with agent response handling.
@@ -406,6 +407,7 @@ async def process_conversation_update_with_agent(
             session_message=session_message,
             metadata=model.metadata,
             persist=not is_start_form_trigger,
+            live_voice=live_voice,
         )
 
         # Translate a Human In The Loop form to the conversation language (no-op for any

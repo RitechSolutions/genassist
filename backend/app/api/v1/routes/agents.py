@@ -75,6 +75,7 @@ async def run_query_agent_logic(
         session_message: str,
         metadata: Optional[Dict[str, Any]] = None,
         persist: bool = True,
+        live_voice: bool = False,
         ):
     """
     Run a query against an agent.
@@ -103,6 +104,7 @@ async def run_query_agent_logic(
             session_message=session_message,
             metadata=metadata,
             persist=persist,
+            live_voice=live_voice,
             )
     logger.debug("Workflow Final Result: %s", truncate_for_log(redact_sensitive_substrings(str(result))))
 
