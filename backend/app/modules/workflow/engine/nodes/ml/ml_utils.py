@@ -37,6 +37,7 @@ from app.modules.workflow.engine.nodes.ml.training_file_readers import (
     ensure_unique_columns,
     ensure_unique_query_columns,
 )
+from app.modules.workflow.script_results import pandas_to_data
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +206,9 @@ def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budg
     elif isinstance(obj, pd.DataFrame):
         # Convert DataFrame to dict and sanitize
         return sanitize_for_json(obj.to_dict("records"), _seen, _depth + 1, _budget)
+    elif isinstance(obj, pd.Series):
+        # A list, or {label: value} when the labels mean something; pd.isna below can't take a Series
+        return sanitize_for_json(pandas_to_data(obj), _seen, _depth + 1, _budget)
     elif pd.isna(obj):
         return None
     elif isinstance(obj, datetime):
