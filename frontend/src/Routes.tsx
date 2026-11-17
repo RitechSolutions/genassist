@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
+import { AppLoader } from "@/components/AppLoader";
 import AppLayout from "@/layout/AppLayout";
 import { Register } from "@/views/Register";
 import { ChangePassword, Login, LoginSsoCallback } from "@/views/Login";
@@ -655,11 +656,7 @@ export const RoutesProvider = () => {
   );
 
   if (registrationStatus === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-[#6b7280]">
-        Loading...
-      </div>
-    );
+    return <AppLoader />;
   }
 
   const router = registrationStatus === "new" ? organizationRouter : mainRouter;

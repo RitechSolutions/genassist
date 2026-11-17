@@ -39,6 +39,9 @@ const asNumber = (value: unknown): number | undefined =>
 
 const asString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
+const asStringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
 /** Map the backend status to the normalized, display-ready status. */
 const normalizeStatus = (raw: unknown): ExecutionNodeStatus => {
   switch (raw) {
@@ -145,6 +148,7 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     error: asString(entry.error) ?? null,
     ...((asNumber(entry.run) ?? 1) > 1 ? { runCount: asNumber(entry.run) } : {}),
     promptCaching: normalizePromptCaching(rawDiagnostics[nodeId]),
+    warnings: asStringList(entry.warnings),
   }));
 
   // Execution order by startTime (nodes without a startTime sort last, stable by id).
