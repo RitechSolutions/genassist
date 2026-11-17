@@ -16,6 +16,7 @@ from app.core.utils.db_connection_utils import release_idle_connection
 from app.modules.workflow.registry import RegistryItem
 from app.schemas.agent import QueryRequest
 from app.services.agent_config import AgentConfigService
+from app.services.guardrails import record_events_without_conversation
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -65,8 +66,10 @@ async def query_agent(
 ):
     if api_key and thread_id == api_key:
         logger.warning("API key used as thread_id for agent %s; send a per-conversation id instead", str(agent_id)[:8])
-    return await run_query_agent_logic(agent_service, str(agent_id), request.query, {**(request.metadata if
-                                                                                        request.metadata else {}), "thread_id": thread_id})
+    result = await run_query_agent_logic(agent_service, str(agent_id), request.query, {**(request.metadata if
+                                                                                          request.metadata else {}), "thread_id": thread_id})
+    record_events_without_conversation(agent_id, result.get("row_agent_response") or {})
+    return result
 
 
 async def run_query_agent_logic(

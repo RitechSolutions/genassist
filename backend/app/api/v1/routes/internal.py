@@ -9,6 +9,7 @@ from fastapi_injector import Injected
 from app.core.tenant_scope import set_tenant_context
 from app.services.auth import AuthService
 from app.services.agent_config import AgentConfigService
+from app.services.guardrails import record_events_without_conversation
 from app.modules.workflow.registry import RegistryItem
 
 # Dependencies
@@ -182,6 +183,7 @@ async def execute_agent(
             metadata={"thread_id": body.thread_id},
             source="voice",
         )
+        record_events_without_conversation(UUID(body.agent_id), agent_response)
         output = agent_response.get("output")
         if not output:
             return {"success": False, "message": "Agent returned empty response"}

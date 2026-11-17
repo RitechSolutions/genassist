@@ -30,6 +30,7 @@ from app.services.agent_config import AgentConfigService
 from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import update_stats_incrementally
 from app.services.conversations import ConversationService
+from app.services.guardrails import GuardrailService
 from app.services.translations import TranslationsService
 from app.core.utils.custom_attributes import extract_custom_attributes, get_hidden_keys
 from app.core.utils.sensitive_data_utils import build_hidden_value_map, mask_hidden_values
@@ -396,6 +397,7 @@ async def process_conversation_update_with_agent(
             )
         else:
             session_message = model.messages[-1].text
+        checked_message_id = None if is_start_form_trigger else model.messages[-1].id
 
         # Release the pooled connection before the LLM/tool run so it isn't held
         # idle-in-transaction for the duration of the call (see incident-queuepool-exhaustion.md).
@@ -477,6 +479,18 @@ async def process_conversation_update_with_agent(
                 spawn(update_stats_incrementally(agent_response), name=f"analytics:turn:{conversation_id}")
         except Exception as e:
             logger.warning(f"Failed to persist AgentResponseLog after update: {e}", exc_info=True)
+
+        try:
+            reply = updated_conversation.messages[-1] if updated_conversation.messages else None
+            await injector.get(GuardrailService).record_turn_events(
+                agent.id,
+                updated_conversation.id,
+                checked_message_id,
+                reply.id if reply else None,
+                agent_response.get("row_agent_response") or {},
+            )
+        except Exception:
+            logger.warning("Failed to record guardrail events", exc_info=True)
 
     # 1:1 chat: notify dashboard a conversation is updated
     _ = asyncio.create_task(
