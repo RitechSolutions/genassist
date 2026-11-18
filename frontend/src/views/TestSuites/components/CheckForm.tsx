@@ -1082,7 +1082,7 @@ export const CheckForm: React.FC<CheckFormProps> = ({
             <Textarea
               value={check.rubric ?? ""}
               onChange={(event) => update({ rubric: event.target.value })}
-              placeholder="e.g. Ask for the licence plate before creating a ticket"
+              placeholder="e.g. Ask for the order number before opening a ticket"
               size="hint"
             />
           </Field>
