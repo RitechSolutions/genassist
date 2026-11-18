@@ -14,20 +14,6 @@ interface HandleTooltipProps extends HandleProps {
 
 const getCompatibilityColor = (compatibility?: string) => {
   return "hsl(var(--brand-600))";
-  // switch (compatibility) {
-  //   case "text":
-  //     return "blue";
-  //   case "tools":
-  //     return "green";
-  //   case "llm":
-  //     return "purple";
-  //   case "json":
-  //     return "orange";
-  //   case "any":
-  //     return "gray";
-  //   default:
-  //     return "gray";
-  // }
 };
 const getCompatibilityDescription = (
   compatibility?: string,

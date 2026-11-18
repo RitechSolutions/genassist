@@ -51,8 +51,6 @@ class QdrantVectorDB(BaseVectorDB):
     async def initialize(self) -> bool:
         """Initialize the Qdrant connection"""
         try:
-            # Initialize Qdrant client
-            # if self.config.host and self.config.port:
             # Remote Qdrant with async client
             url = f"{DEFAULT_QDRANT_HOST}:{DEFAULT_QDRANT_PORT}"
             logger.info(f"Connecting to Qdrant at: {url}")

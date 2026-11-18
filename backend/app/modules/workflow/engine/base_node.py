@@ -476,7 +476,6 @@ class BaseNode(ABC):
                     # Start execution tracking
                     self.start_execution()
                     self.direct_input = direct_input
-                    # self.set_node_input(input_data)
 
                     # Resolve configuration template variables
                     source_output = self.get_input_from_source()

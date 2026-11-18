@@ -70,10 +70,8 @@ public func parseInteractiveContentBlocks(_ text: String) -> [ChatContentBlock] 
         allMatches.append((match.range, "options", String(text[contentRange])))
     }
     
-    // Sort matches by position
     allMatches.sort { $0.range.location < $1.range.location }
     
-    // Process matches
     for match in allMatches {
         guard let range = Range(match.range, in: text) else { continue }
         

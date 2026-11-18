@@ -548,7 +548,6 @@ class FileManagerService:
     ) -> list[FileModel]:
         """List files with optional filtering."""
         return await self.repository.list_files(
-            # user_id=user_id or context.get("user_id"),
             storage_provider=storage_provider,
             user_id=user_id,
             limit=limit,

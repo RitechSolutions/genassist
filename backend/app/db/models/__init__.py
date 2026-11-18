@@ -2,7 +2,6 @@ from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsMo
 from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.analytics_aggregation_state import AnalyticsAggregationStateModel
 
-# from app.db.models.api_key_permission import ApiKeyPermissionModel
 from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.audio_provider import AudioProvidersModel

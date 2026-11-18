@@ -13,7 +13,7 @@ import { uploadSizeError } from "@/helpers/uploadSize";
 
 export interface FileUploaderProps {
   label: string;
-  acceptedFileTypes?: string[]; // ex: [".json", ".yaml"]
+  acceptedFileTypes?: string[]; // e.g. [".json", ".yaml"]
   initialOriginalFileName?: string;
   initialServerFilePath?: string;
   initialServerFileUrl?: string;
@@ -59,7 +59,6 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
   const handleDownload = (e: React.MouseEvent, isFileUrl: boolean = false) => {
     e.stopPropagation();
 
-    // show error toast
     const showError = (err: unknown) => {
       toast.error(err instanceof Error ? err.message : 'Failed to download file');
     };
@@ -101,7 +100,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
           duration: 5000,
           position: 'top-center',
         });
-        e.target.value = ''; // Reset input
+        e.target.value = '';
         return;
       }
     }
@@ -148,7 +147,7 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
       });
       if (result.length > 0) {
         const fileResponse = result[0];
-        // based on the file response and file manager service, set the server file path and url
+        // Keep the server-side file path and URL returned by the upload.
         setServerFilePath(fileResponse?.file_path);
         setServerFileUrl(fileResponse?.file_url);
 

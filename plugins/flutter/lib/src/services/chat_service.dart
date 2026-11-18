@@ -288,7 +288,7 @@ class ChatService {
         welcomeDataHandler?.call(_welcomeData);
       }
     } catch (e) {
-      // If token expired, reset. Otherwise ignore.
+      // The welcome image is optional, so failures are ignored.
       if (e is http.ClientException) {
         // can't check status here, ignore
       }

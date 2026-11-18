@@ -155,7 +155,7 @@ export const buildGmailOAuthUrl = (
   return `https://accounts.google.com/o/oauth2/auth?${params.toString()}`;
 };
 
-// Office365 scpecific functions
+// Office365-specific functions
 export const getOffice365SettingValue = async (
   setting_key_name: string
 ): Promise<string> => {

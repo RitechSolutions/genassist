@@ -277,7 +277,7 @@ class ProjectSettings(BaseSettings):
     FASTAPI_RUN_PORT: int = 8000
     # Address callers outside the load balancer use, e.g. https://api.example.com/api
     PUBLIC_API_URL: Optional[str] = None
-    # for alembic migration on startup (changed type from int to bool)
+    # Run Alembic migrations on startup
     AUTO_MIGRATE: bool = True
     API_VERSION: Optional[str] = "1.0"
     OPENAPI_PATH: str = "openapi.json"

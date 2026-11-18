@@ -10,23 +10,18 @@ public class SoundManager {
     }
     
     private func setupAudioPlayers() {
-        // Create system sound IDs for recording feedback
-        // These will use the system's built-in sounds for better user experience
         setupSystemSounds()
     }
     
     private func setupSystemSounds() {
-        // For iOS, we'll use system sounds that are commonly used for recording feedback
-        // These are built into the system and don't require additional audio files
+        // Uses built-in system sounds, so there is nothing to preload.
     }
     
     public func playRecordingStartSound() {
-        // Play a short beep sound to indicate recording has started
         AudioServicesPlaySystemSound(1103) // System sound for recording start
     }
     
     public func playRecordingStopSound() {
-        // Play a different sound to indicate recording has stopped
         AudioServicesPlaySystemSound(1104) // System sound for recording stop
     }
     

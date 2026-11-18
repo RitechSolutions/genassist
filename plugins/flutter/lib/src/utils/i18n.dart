@@ -93,8 +93,8 @@ String resolveLanguage(String? languageProp) {
   if (languageProp != null && languageProp.isNotEmpty) {
     return languageProp.toLowerCase();
   }
-  // Use platform locale - in Flutter we can't easily access this without
-  // WidgetsBinding, so default to 'en'
+  // The platform locale is not used: reading it here would require
+  // WidgetsBinding.
   return 'en';
 }
 

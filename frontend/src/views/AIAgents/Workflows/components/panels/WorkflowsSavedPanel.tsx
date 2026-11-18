@@ -124,7 +124,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   );
   const [isSwitching, setIsSwitching] = useState(false);
 
-  // Compare mode: pick exactly two versions of this agent and open a read-only diff (FR-1).
+  // Compare mode: pick exactly two versions of this agent and open a read-only diff.
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [compareSelection, setCompareSelection] = useState<string[]>([]);
   const [isDiffDialogOpen, setIsDiffDialogOpen] = useState(false);
@@ -135,7 +135,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
     setIsDiffDialogOpen(false);
   };
 
-  // Toggle a version's selection; never selects a third (FR-1).
+  // Toggle a version's selection; never selects a third.
   const toggleCompareSelection = (workflow: Workflow) => {
     const id = workflow.id;
     if (!id) return;
@@ -147,7 +147,7 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
   };
 
   // Resolve the two selected versions into base (older) / target (newer): base = earlier
-  // created_at, tie-broken by the lower version string, so the newer version is the target (FR-2).
+  // created_at, tie-broken by the lower version string, so the newer version is the target.
   const comparePair = useMemo(() => {
     if (compareSelection.length !== 2) return null;
     const first = workflows.find((w) => w.id === compareSelection[0]);
@@ -319,8 +319,6 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
     setCreateDialogOpen(false);
     setEditDialogOpen(false);
     setVersionError(null);
-    // setWorkflowName("");
-    // setWorkflowDescription("");
   };
 
   const handleUpdateWorkflow = async () => {
@@ -402,11 +400,6 @@ const WorkflowsSavedPanel: React.FC<WorkflowsSavedPanelProps> = ({
       setIsDeleting(false);
     }
   };
-
-  // // Format date
-  // const formatDate = (dateString: string) => {
-  //   return new Date(dateString).toLocaleString();
-  // };
 
   if (!isOpen) return null;
 

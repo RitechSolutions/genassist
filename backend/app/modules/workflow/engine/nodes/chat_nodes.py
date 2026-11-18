@@ -119,7 +119,6 @@ class ChatOutputNode(BaseNode):
         Returns:
             The output from the last connected node
         """
-        # source_output = self.get_last_node_output()
         source_output = self.get_input_from_source()
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("ChatOutputNode %s forwarding output: %s", self.node_id, truncate_for_log(str(source_output)))

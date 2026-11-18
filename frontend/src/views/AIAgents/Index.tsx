@@ -7,7 +7,6 @@ import ChatAsCustomer from "@/views/AIAgents/components/Customer/ChatAsCustomer"
 import SecurityPage from "@/views/AIAgents/components/Customer/SecurityPage";
 import SchedulingPage from "@/views/AIAgents/Scheduling/SchedulingPage";
 import AgentStudioPage from './Workflows/Index';
-// import Tools from '../Tools/Index';
 
 const AIAgentsView: React.FC = () => {
   const isMobile = useIsMobile();
@@ -16,7 +15,6 @@ const AIAgentsView: React.FC = () => {
     <div className="flex-1">
       <Routes>
         <Route path="/" element={<Dashboard />} />
-        {/* <Route path="/tools" element={<Tools />} /> */}
 
         <Route path="chat/:agentId/:threadId" element={<Chat />} />
         <Route path="new" element={<AgentStudioPage />} />

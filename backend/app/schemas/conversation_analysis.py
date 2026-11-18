@@ -34,12 +34,6 @@ class ConversationAnalysisRead(ConversationAnalysisBase):
     )
 
 
-# class AnalysisResult(BaseModel):
-#     summary: str
-#     title: str
-#     customer_speaker: str
-#     kpi_metrics: Dict[str, int]  # Example: {"Response Time": 8, "Customer Satisfaction": 9}
-    
 @dataclass
 class AnalysisResult:
     summary: str
