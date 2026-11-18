@@ -24,23 +24,17 @@ _REGISTERED_FIELDS = [
     for field, spec in fields.items()
 ]
 
-_HAND_WRITTEN_DIALOGS = {"guardrailProvenanceNode"}
 
-_SCHEMA_BACKED_FIELDS = [
-    entry for entry in _REGISTERED_FIELDS if entry[0] not in _HAND_WRITTEN_DIALOGS
-]
-
-
-def test_the_guardrail_is_the_only_dialog_without_a_dynamic_schema():
+def test_every_prompt_field_node_has_a_dynamic_schema():
     unschemad = {n for n, _, _ in _REGISTERED_FIELDS if n not in NODE_DIALOG_SCHEMAS}
 
-    assert unschemad == _HAND_WRITTEN_DIALOGS
+    assert unschemad == set()
 
 
 @pytest.mark.parametrize(
     "node_type,field,spec",
-    _SCHEMA_BACKED_FIELDS,
-    ids=[f"{node_type}.{field}" for node_type, field, _ in _SCHEMA_BACKED_FIELDS],
+    _REGISTERED_FIELDS,
+    ids=[f"{node_type}.{field}" for node_type, field, _ in _REGISTERED_FIELDS],
 )
 def test_registered_fields_match_their_dialog_schema(node_type, field, spec):
     dialog_field = next(
