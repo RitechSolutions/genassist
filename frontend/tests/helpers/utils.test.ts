@@ -62,7 +62,7 @@ describe("getTimeFromDatetime", () => {
   });
 
   it("returns the browser's clock time in Local time mode", () => {
-    process.env.TZ = "America/Vancouver";
+    process.env.TZ = "America/Los_Angeles";
     vi.stubGlobal("localStorage", { getItem: () => "local" });
     expect(getTimeFromDatetime("2026-02-17T09:05:03Z")).toBe("1:05:03");
   });

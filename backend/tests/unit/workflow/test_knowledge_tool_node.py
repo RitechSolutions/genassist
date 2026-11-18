@@ -27,7 +27,7 @@ RESULTS = [
         score=0.91,
         source="vector",
     ),
-    SearchResult(id="KB:kb-1#chunk_2", content="Parking zones", metadata={"kb_id": "kb-1"}, score=0.4, source="legra"),
+    SearchResult(id="KB:kb-1#chunk_2", content="Delivery zones", metadata={"kb_id": "kb-1"}, score=0.4, source="legra"),
 ]
 
 
