@@ -23,7 +23,6 @@ export const GlobalChat = () => {
     fontSize: "14px",
   });
   const colorMode = useColorMode();
-  // const tenantId = localStorage.getItem('tenant_id') as string | undefined;
 
   useEffect(() => {
     (async () => {
@@ -51,7 +50,6 @@ export const GlobalChat = () => {
       baseUrl={baseUrl}
       websocketUrl={websocketUrl}
       apiKey={genassistApiKey}
-      // tenant={tenantId}
       headerTitle="Genassist Chat"
       brandLogoUrl={colorMode === "dark" ? BRAND_LOGO_DARK_URL : BRAND_LOGO_URL}
       theme={theme}

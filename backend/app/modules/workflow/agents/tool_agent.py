@@ -124,7 +124,7 @@ class ToolAgent(BaseToolAgent):
 
             if text_parts:
                 return '\n'.join(text_parts)
-        # fallback old version
+        # Fallback for plain string content
         return response.content if hasattr(response, 'content') else str(response)
 
     def _parse_tool_call(self, response: str) -> Optional[Dict[str, Any]]:

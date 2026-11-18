@@ -318,7 +318,7 @@ async def _run_s3_scheduled_sync(files, load_results, knowledge_bases=None, rag_
 @pytest.mark.asyncio
 async def test_s3_scheduled_sync_reports_a_failed_load_as_an_error():
     result = await _run_s3_scheduled_sync(
-        {"in/a.txt": "refund policy", "in/b.txt": "parking zones"},
+        {"in/a.txt": "refund policy", "in/b.txt": "shipping rates"},
         {"a.txt": {"vector": True}, "b.txt": {"vector": False}},
     )
 
@@ -403,7 +403,7 @@ async def _run_sharepoint_sync(files, load_results, kb_service=None):
 @pytest.mark.asyncio
 async def test_sharepoint_sync_reports_a_failed_load_as_an_error():
     result, _ = await _run_sharepoint_sync(
-        {"a.txt": "refund policy", "b.txt": "parking zones"},
+        {"a.txt": "refund policy", "b.txt": "shipping rates"},
         {"a.txt": {"vector": True}, "b.txt": {"vector": False}},
     )
 

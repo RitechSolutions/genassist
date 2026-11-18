@@ -101,10 +101,3 @@ async def serve_file(rec_id: UUID, service: AudioService = Injected(AudioService
         settings.RECORDINGS_DIR,
     )
     return FileResponse(safe_serving_path, headers=no_store_headers())
-
-
-# @router.post("/transcribe_no_save")
-# async def transcribe_no_save(file: UploadFile, service: RecordingService = Depends()):
-#     # TODO Fabio/Emiliano endpoint remove in the future or add security
-#     result = await service.generate_transcript_from_audio_no_save(file)
-#     return result

@@ -35,12 +35,10 @@ class AlchemyEncoder(json.JSONEncoder):
             ]:
                 data = obj.__getattribute__(field)
                 try:
-                    # print(f"Field: {field}, dump Data: {data}")  # Debugging line
                     json.dumps(data)
                     fields[field] = data
                 except TypeError:
                     val = str(data)
-                    # print(f"Field: {field}, str Data: {data}")  # Debugging line
                     if (
                         not val.startswith("<sqlalchemy.orm")
                         and not val.startswith("<app.models")

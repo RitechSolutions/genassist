@@ -178,9 +178,7 @@ class SnowflakeManager:
         def _do_connect():
             return snowflake.connector.connect(**params)
 
-        # If your stack is **purely async**, uncomment the next line to avoid blocking:
-        # self.connection = await asyncio.to_thread(_do_connect)
-        # For simplicity, we'll block here (still fine for many apps):
+        # Blocking connect; wrap _do_connect in asyncio.to_thread if this ever runs on the event loop.
         self.connection = _do_connect()
         logger.info("Connected to Snowflake data warehouse.")
 
@@ -216,7 +214,6 @@ class SnowflakeManager:
                 cur.close()
 
         try:
-            # rows = await asyncio.to_thread(_run_once)  # optional in async contexts
             rows = _run_once()
             return rows, None
         except Exception as e:
@@ -225,7 +222,6 @@ class SnowflakeManager:
                 try:
                     await self.disconnect()
                     await self.connect()
-                    # rows = await asyncio.to_thread(_run_once)
                     rows = _run_once()
                     return rows, None
                 except Exception as e2:

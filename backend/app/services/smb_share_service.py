@@ -142,7 +142,6 @@ class SMBShareFSService:
         subpath = subpath.replace("/", "\\").lstrip("\\")
         # First join \\HOST\SHARE
         root = f"\\\\{self.smb_host}\\{self.smb_share}"
-        # return smbpath.join(root, subpath) if subpath else root
         return root +"\\"+subpath if subpath else root
     async def _smb_exists(self, abs_unc: str) -> bool:
         return await asyncio.to_thread(smbpath.exists, abs_unc)
@@ -266,7 +265,7 @@ class SMBShareFSService:
         abs_unc = self._smb_abspath(filepath)
 
         # Ensure parent directory exists (create if missing)
-        _, unc_parent = await self.get_unc_subpath(abs_unc)  # smbpath.dirname(abs_unc)
+        _, unc_parent = await self.get_unc_subpath(abs_unc)
         if not await self._smb_exists(unc_parent):
             await asyncio.to_thread(mkdir, unc_parent)
 
@@ -327,7 +326,7 @@ class SMBShareFSService:
                 return
 
             for de in entries:
-                child = unc + "\\" + de.name # smbpath.join(unc, de.name)
+                child = unc + "\\" + de.name
                 if de.is_dir():
                     await _rm_tree(child)
                     await asyncio.to_thread(rmdir, child)

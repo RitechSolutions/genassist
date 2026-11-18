@@ -42,9 +42,6 @@ public actor SpeechRecognizer: Observable {
         Task {
             // Check permissions before starting transcription
             do {
-//                guard let recognizer = recognizer, recognizer.isAvailable else {
-//                    throw RecognizerError.recognizerIsUnavailable
-//                }
                 guard await SFSpeechRecognizer.hasAuthorizationToRecognize() else {
                     throw RecognizerError.notAuthorizedToRecognize
                 }
@@ -176,7 +173,7 @@ extension AVAudioSession {
                     continuation.resume(returning: authorized)
                 }
             } else {
-                // Fallback on earlier versions
+                // TODO: handle iOS < 17 (AVAudioSession.requestRecordPermission); the continuation is never resumed here.
             }
         }
     }
@@ -203,7 +200,6 @@ class SpeechRecognizerViewModel: ObservableObject {
     }
 
     func start() async {
-        // Clear any previous errors
         permissionError = nil
         
         recognizer.startTranscribing()

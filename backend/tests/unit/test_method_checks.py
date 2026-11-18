@@ -41,7 +41,7 @@ class TestReplyMethods:
     def test_each_reply_method_becomes_one_check(self):
         conversion = convert_methods(
             ["exact_match", "contains", "json_match", "no_errors", "not_contains"],
-            {"not_contains": {"phrases": ["RingGo", "JustPark"]}},
+            {"not_contains": {"phrases": ["RivalApp", "OtherApp"]}},
         )
         assert sentences(conversion) == [
             "On every turn, the reply should be exactly the expected reply.",
@@ -49,8 +49,8 @@ class TestReplyMethods:
             # JSON Match compared the whole output with the whole expected output.
             'On every turn, the value at "outputs" should be the expected reply.',
             "In every conversation, no step should ever fail.",
-            'In every conversation, the reply should never mention "RingGo".',
-            'In every conversation, the reply should never mention "JustPark".',
+            'In every conversation, the reply should never mention "RivalApp".',
+            'In every conversation, the reply should never mention "OtherApp".',
         ]
         assert conversion.left_out == []
 
@@ -169,10 +169,10 @@ class TestReplyMethods:
 
     def test_odd_stored_settings_do_not_stop_the_others(self):
         conversion = convert_methods(["not_contains", "field_equals"], {
-            "not_contains": {"phrases": None, "text": "RingGo"},
+            "not_contains": {"phrases": None, "text": "RivalApp"},
             "field_equals": {"expected": ""},
         })
-        assert sentences(conversion) == ['In every conversation, the reply should never mention "RingGo".']
+        assert sentences(conversion) == ['In every conversation, the reply should never mention "RivalApp".']
         assert conversion.left_out == ["Field Equals with no expected value."]
         empty_tool = convert_methods(["tool_used"], {"tool_used": {"rules": [{"id": "r", "tool_ids": ["", "tool-1"]}]}}, CATALOG)
         assert [check["tool"] for check in empty_tool.checks] == ["tool-1"]

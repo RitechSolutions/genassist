@@ -8,7 +8,7 @@ import {
 
 const originalTz = process.env.TZ;
 beforeAll(() => {
-  process.env.TZ = "America/Vancouver";
+  process.env.TZ = "America/Los_Angeles";
 });
 afterAll(() => {
   if (originalTz === undefined) delete process.env.TZ;

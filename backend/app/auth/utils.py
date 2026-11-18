@@ -87,9 +87,6 @@ def is_current_user_internal():
         return any(role.name in internal_roles for role in roles)
     return False
 
-# def has_permission(user_or_api_key, required: str) -> bool:
-#     return required in user_or_api_key.permissions or "*" in user_or_api_key.permissions
-
 
 def generate_password(length: int = 14) -> str:
     alphabet = string.ascii_letters + string.digits

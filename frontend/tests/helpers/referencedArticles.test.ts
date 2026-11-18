@@ -9,7 +9,7 @@ const log = (nodeExecutionStatus: Record<string, unknown>) => ({
 
 const legacyText = [
   "Found 2 results:\n",
-  `--- Result 1 (Score: 0.812, Source: vector) ---\nID: KB:${KB}#article_101\nContent: How to get a refund\n\nOpen the app and tap Parking history.\n`,
+  `--- Result 1 (Score: 0.812, Source: vector) ---\nID: KB:${KB}#article_101\nContent: How to get a refund\n\nOpen the app and tap Order history.\n`,
   `--- Result 2 (Score: 0.400, Source: vector) ---\nID: KB:${KB}#s3_faq.pdf\nContent: Frequently asked questions\nMore text\n`,
 ].join("\n");
 

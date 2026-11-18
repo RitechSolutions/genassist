@@ -114,6 +114,21 @@ describe('buildExecutionViewModel', () => {
     expect(m.byId.once.runCount).toBeUndefined();
   });
 
+  it('keeps the warnings a node noted and drops malformed ones', () => {
+    const m = buildExecutionViewModel({
+      state: {
+        nodeExecutionStatus: {
+          kb: { status: 'success', warnings: ['Knowledge bases not found and skipped: kb-9', 42] },
+          plain: { status: 'success' },
+          malformed: { status: 'success', warnings: 'not a list' },
+        },
+      },
+    });
+    expect(m.byId.kb.warnings).toEqual(['Knowledge bases not found and skipped: kb-9']);
+    expect(m.byId.plain.warnings).toEqual([]);
+    expect(m.byId.malformed.warnings).toEqual([]);
+  });
+
   it('reads from the top level when there is no nested state', () => {
     const m = buildExecutionViewModel({
       total_steps: 2,

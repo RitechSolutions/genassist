@@ -440,7 +440,7 @@ const clause = (check: ScenarioCheck, modal: string): string => {
   }
 };
 
-/** A check read back as one sentence, e.g. 'The reply should never mention "RingGo".' */
+/** A check read back as one sentence, e.g. 'The reply should never mention "RivalApp".' */
 // Capitalised, with no second full stop after a quote that already ends with one.
 const asSentence = (sentence: string): string =>
   `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}${/[.!?]["”]?$/.test(sentence) ? "" : "."}`;

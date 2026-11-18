@@ -1539,8 +1539,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           {turn.agent.trim() !== '' && renderLiveBubble('agent', turn.agent, turn.createTime)}
         </React.Fragment>
       ))}
-      {/* In-progress turn: streams the partial transcript live (ChatMessage now
-          tracks its text prop, so these update in place as chunks arrive). */}
+      {/* In-progress turn: streams the partial transcript live (ChatMessage renders
+          its text prop directly, so these update in place as chunks arrive). */}
       {liveVoice.isActive && liveCaption.user.trim() !== '' &&
         renderLiveBubble('customer', liveCaption.user, liveCaption.createTime, '__live_caption_user__')}
       {liveVoice.isActive && liveCaption.agent.trim() !== '' &&

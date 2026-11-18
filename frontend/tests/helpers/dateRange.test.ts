@@ -23,7 +23,7 @@ import {
 
 const originalTz = process.env.TZ;
 beforeAll(() => {
-  process.env.TZ = "America/Vancouver";
+  process.env.TZ = "America/Los_Angeles";
 });
 afterAll(() => {
   if (originalTz === undefined) delete process.env.TZ;
@@ -125,14 +125,14 @@ describe("agent performance parameter families", () => {
 
 describe("calendarToday", () => {
   afterEach(() => {
-    process.env.TZ = "America/Vancouver";
+    process.env.TZ = "America/Los_Angeles";
     vi.useRealTimers();
   });
 
   it.each([
     ["Pacific/Kiritimati", "2026-10-30T11:53:00Z", "2026-10-30", "2026-10-31"],
     ["Asia/Tokyo", "2026-10-30T22:00:00Z", "2026-10-30", "2026-10-31"],
-    ["America/Vancouver", "2026-10-31T02:00:00Z", "2026-10-31", "2026-11-01"],
+    ["America/Los_Angeles", "2026-10-31T02:00:00Z", "2026-10-31", "2026-11-01"],
     ["UTC", "2026-10-30T11:53:00Z", "2026-10-30", "2026-10-31"],
   ])("in %s at %s, Today is the UTC day the server counts", (tz, now, today, next) => {
     process.env.TZ = tz;
@@ -167,10 +167,10 @@ describe("in Local time mode", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
-    process.env.TZ = "America/Vancouver";
+    process.env.TZ = "America/Los_Angeles";
   });
 
-  it("spans Vancouver's 25-hour day when DST ends", () => {
+  it("spans Los Angeles' 25-hour day when DST ends", () => {
     const interval = toExactInterval({ from: day(2026, 11, 1), to: day(2026, 11, 1) })!;
     expect(interval.start.toISOString()).toBe("2026-11-01T07:00:00.000Z");
     expect(interval.endExclusive.toISOString()).toBe("2026-11-02T08:00:00.000Z");

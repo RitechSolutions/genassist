@@ -1,5 +1,3 @@
-// src/services/smbShareFolderService.ts
-
 import { apiRequest } from "@/config/api";
 
 // -----------------------------------------------------------------------------

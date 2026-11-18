@@ -1,4 +1,3 @@
-# app/services/knowledge_base_service.py
 from typing import List
 from uuid import UUID
 from fastapi import logger

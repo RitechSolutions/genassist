@@ -35,11 +35,11 @@ describe("categories", () => {
   });
 
   it("say which evaluations Run all starts", () => {
-    expect(runAllScope(ALL_CATEGORIES, "Parker")).toBe("every evaluation of Parker");
-    expect(runAllScope(categoryOption("Refunds"), "Parker")).toBe(
-      "the evaluations of Parker in the category “Refunds”",
+    expect(runAllScope(ALL_CATEGORIES, "Helpdesk")).toBe("every evaluation of Helpdesk");
+    expect(runAllScope(categoryOption("Refunds"), "Helpdesk")).toBe(
+      "the evaluations of Helpdesk in the category “Refunds”",
     );
-    expect(runAllScope(NO_CATEGORY, "Parker")).toBe("the evaluations of Parker that have no category");
+    expect(runAllScope(NO_CATEGORY, "Helpdesk")).toBe("the evaluations of Helpdesk that have no category");
   });
 
   it("filter a list kept in the page", () => {

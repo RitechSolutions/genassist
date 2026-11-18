@@ -495,7 +495,7 @@ class TestFileImport:
         bundle = json.dumps({"kind": "genassist.evaluation-bundle-set"}).encode()
 
         result = await service.import_cases_from_files(
-            suite_id, [DatasetUpload("parker-evaluations.json", bundle)]
+            suite_id, [DatasetUpload("helpdesk-evaluations.json", bundle)]
         )
 
         assert result.files[0].status == "evaluation_bundle"

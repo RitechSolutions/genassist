@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { planSections, sectionKeyFor } from "@/views/TestSuites/helpers/evaluationSections";
 
 const rows = [
-  { key: "w1", name: "Parker" },
+  { key: "w1", name: "Helpdesk" },
   { key: "w2", name: "Northwind Billing" },
   { key: "unassigned", name: "Unassigned evaluations" },
 ];
@@ -24,11 +24,11 @@ describe("planSections", () => {
   });
 
   it("shows a workflow whose name matches with all its evaluations, and one with matches with just those", () => {
-    const plan = planSections(rows, " parker ", new Map([["w2", 2]]), { w1: false }, new Set());
+    const plan = planSections(rows, " helpdesk ", new Map([["w2", 2]]), { w1: false }, new Set());
     expect(keys(plan)).toEqual(["w1", "w2"]);
     const [byName, byEvaluations] = plan.sections;
     expect(byName).toMatchObject({ search: "", matches: null, open: true });
-    expect(byEvaluations).toMatchObject({ search: "parker", matches: 2, open: true });
+    expect(byEvaluations).toMatchObject({ search: "helpdesk", matches: 2, open: true });
   });
 
   it("folds for the search only, and says when the search has not answered", () => {

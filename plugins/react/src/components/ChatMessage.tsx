@@ -75,13 +75,11 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   autoPlayAudioMessageId,
   receiptStatus,
 }) => {
-  // Merge translations with defaults
   const translations = React.useMemo(
     () => mergeTranslations(customTranslations, defaultTranslations),
     [customTranslations]
   );
 
-  // Translation helper
   const t = (key: string, fallback?: string): string => {
     return getTranslationString(key, translations, fallback);
   };
@@ -93,7 +91,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   // Track the message text directly (don't snapshot on mount): live-voice caption
   // bubbles grow their text as the transcript streams, and a frozen snapshot would
   // pin them to the first chunk. Normal messages have stable text, so this is a
-  // no-op for them. (The disabled typewriter below can re-introduce local state.)
+  // no-op for them.
   const displayText = message.text;
   const contentBlocks = React.useMemo(
     () => parseInteractiveContentBlocks(displayText, message?.type as 'file' | 'message' | undefined),
@@ -110,35 +108,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
     return formatTimestamp(message.create_time, language, timeTranslations);
   }, [message.create_time, language, translations]);
 
-  // Fast typewriter effect for newly displayed agent messages, fix later
-  // React.useEffect(() => {
-  //   if (!isUser && !isSpecial && enableTypewriter && message.text !== lastAnimatedRef.current) {
-  //     lastAnimatedRef.current = message.text;
-  //     setIsTypewriting(true);
-  //     setDisplayText('');
-  //     let i = 0;
-  //     const total = message.text.length;
-  //     const tickMs = 16;
-  //     const targetMs = 1200;
-  //     const charsPerTick = Math.max(1, Math.round(total / (targetMs / tickMs)));
-  //     const interval = window.setInterval(() => {
-  //       i += charsPerTick;
-  //       if (i >= total) {
-  //         setDisplayText(message.text);
-  //         setIsTypewriting(false);
-  //         window.clearInterval(interval);
-  //       } else {
-  //         setDisplayText(message.text.slice(0, i));
-  //       }
-  //     }, tickMs);
-  //     return () => window.clearInterval(interval);
-  //   } else {
-  //     setDisplayText(message.text);
-  //     setIsTypewriting(false);
-  //   }
-  // }, [message.text, enableTypewriter, isUser, isSpecial]);
-
-  // Updated design colors
+  // Theme colors with defaults
   const themeTextColor = theme?.textColor || '#000000';
   const mutedTextColor = theme?.mutedTextColor || '#6b7280';
   const borderColor = theme?.borderColor || '#e5e7eb';

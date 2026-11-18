@@ -496,7 +496,6 @@ const ParameterDialog: FC<ParameterDialogProps> = ({
                 type="button"
                 variant="destructive"
                 onClick={handleDelete}
-                // disabled={totalParams <= 1}
               >
                 Delete Parameter
               </Button>

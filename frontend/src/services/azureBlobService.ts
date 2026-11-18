@@ -1,5 +1,3 @@
-// src/services/azureBlobService.ts
-
 import { apiRequest } from "@/config/api";
 
 // -----------------------------------------------------------------------------

@@ -50,7 +50,7 @@ async def get_agent_for_start(
 
         test_input = agent.workflow.get('testInput', None)
 
-        # remove message from testInput with pop()
+        # Strip the test message from testInput
         if test_input and 'message' in test_input:
             test_input.pop('message')
         agent.workflow = test_input

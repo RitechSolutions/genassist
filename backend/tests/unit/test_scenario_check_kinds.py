@@ -304,15 +304,15 @@ class TestPrompts:
 
 class TestTurnFacts:
     def test_each_listed_turn_says_what_it_did(self):
-        item = Check(id="m", kind="reply_mentions", text="RingGo", expect="should_not")
+        item = Check(id="m", kind="reply_mentions", text="RivalApp", expect="should_not")
         conversations = [[
-            turn("a1", "a", 0, reply="Try RingGo"),
+            turn("a1", "a", 0, reply="Try RivalApp"),
             turn("a2", "a", 1, reply="No"),
-            turn("a3", "a", 2, reply="ringgo again"),
+            turn("a3", "a", 2, reply="rivalapp again"),
         ]]
         (entry,) = grade([item], conversations)
         assert entry["result"]["turns"] == [1, 3]
-        assert entry["result"]["facts"] == ['The reply mentioned "RingGo".', 'The reply mentioned "RingGo".']
+        assert entry["result"]["facts"] == ['The reply mentioned "RivalApp".', 'The reply mentioned "RivalApp".']
 
 
 # ---- every older-method setting as a check ------------------------------------------------
@@ -735,10 +735,10 @@ class TestGradingThatBroke:
     def test_an_unread_turn_keeps_a_check_it_could_change_from_passing(self):
         unread = TurnRecord(case_id="a2", conversation_key="a", turn_index=1, position=1, message="m",
                             ran=False, skip_reason=UNREADABLE_TURN)
-        conversations = [[turn("a1", "a", 0, reply="Try RingGo"), unread]]
+        conversations = [[turn("a1", "a", 0, reply="Try RivalApp"), unread]]
         # Seen at some point stands; never or on every turn could hide in the unread turn.
-        (seen,) = grade([check(kind="reply_mentions", text="RingGo", match=None)], conversations)
+        (seen,) = grade([check(kind="reply_mentions", text="RivalApp", match=None)], conversations)
         assert seen["result"]["status"] == "passed"
-        (never,) = grade([check(kind="reply_mentions", text="JustPark", match=None, expect="should_not")], conversations)
+        (never,) = grade([check(kind="reply_mentions", text="OtherApp", match=None, expect="should_not")], conversations)
         assert never["result"]["status"] == "not_evaluated" and never["result"]["error"]
         assert never["result"]["comment"] == f"Turn 2: {UNREADABLE_TURN}"

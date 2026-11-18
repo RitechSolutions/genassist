@@ -119,12 +119,6 @@ public struct InputFieldConfiguration {
         self.iconSize = iconSize
     }
 }
-//            buttonFont: Font = .body,
-//            buttonTextColor: Color = .white,
-//            buttonBackgroundColor: Color = Color(red: 187 / 255, green: 39 / 255, blue: 26 / 255),
-//            buttonCornerRadius: CGFloat = 12,
-//            buttonPadding: CGFloat = 16,
-//            buttonSpacing: CGFloat = 12
 public enum OptionsOrientation {
     case horizontal
     case vertical

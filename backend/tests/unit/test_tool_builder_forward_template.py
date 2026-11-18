@@ -40,7 +40,7 @@ WITH_DOUBLE_QUOTES = 'The sign said "3 per hour" but I was charged 16.72.'
 
 WITH_TAB = "Location 12345\tcharged 16.72 instead of 6.00."
 
-WITH_BACKSLASH = "Receipt saved under C:\\parking\\receipt.pdf"
+WITH_BACKSLASH = "Receipt saved under C:\\documents\\receipt.pdf"
 
 
 def _resolve_forward_template(description: str) -> str:

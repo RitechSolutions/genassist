@@ -5,9 +5,9 @@ from fastapi import HTTPException
 
 from app.api.v1.routes.dashboard import resolve_today_bounds
 
-VANCOUVER = timezone(timedelta(hours=-7))
-TODAY_START = datetime(2026, 10, 30, tzinfo=VANCOUVER)
-TODAY_END = datetime(2026, 10, 31, tzinfo=VANCOUVER)
+PACIFIC = timezone(timedelta(hours=-7))
+TODAY_START = datetime(2026, 10, 30, tzinfo=PACIFIC)
+TODAY_END = datetime(2026, 10, 31, tzinfo=PACIFIC)
 NAIVE_START = datetime(2026, 10, 30)
 NAIVE_END = datetime(2026, 10, 31)
 

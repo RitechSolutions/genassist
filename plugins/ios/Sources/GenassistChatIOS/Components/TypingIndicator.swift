@@ -1,9 +1,3 @@
-//
-//  TypingIndicator.swift
-//  GenassistChatIOS
-//
-//  Created by Krist V on 24.5.25.
-//
 
 import SwiftUI
 
@@ -71,7 +65,7 @@ public struct TypingIndicator: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             
-            // Message bubble (styled like user message)
+            // Message bubble (styled like a received message)
             HStack {
                 
                 HStack(spacing: 4) {
@@ -125,20 +119,17 @@ public struct TypingIndicator: View {
     }
     
     private func setupThinkingPhrases() {
-        // Check if we have more than 1 thinking phrase
         guard thinkingPhrases.count > 1 else {
             currentPhrasePart = ""
             isTransitioning = false
             return
         }
         
-        // Randomly select one thinking phrase
         let selectedPhrase = thinkingPhrases.randomElement() ?? ""
         
-        // Split by "|" and trim whitespace
+        // A phrase can hold several parts separated by "|", shown one after another
         phraseParts = selectedPhrase.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         
-        // Start with the first part
         currentPartIndex = 0
         currentPhrasePart = phraseParts.first ?? ""
         isTransitioning = false

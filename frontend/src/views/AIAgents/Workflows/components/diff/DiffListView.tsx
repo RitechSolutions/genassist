@@ -72,7 +72,7 @@ const DiffListView: React.FC<DiffListViewProps> = ({ diff }) => {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Summary strip (FR-4): one calm segmented row of stat tiles. */}
+      {/* Summary strip: one calm segmented row of stat tiles. */}
       <div
         className="grid grid-cols-4 divide-x divide-border overflow-hidden rounded-lg border border-border bg-card"
         role="list"

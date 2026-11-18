@@ -1,5 +1,5 @@
 """
-Security hardening for public embed API keys (FG-1 / C-2).
+Security hardening for public embed API keys.
 
 - GET /api/conversations/{id} requires read:conversation (ai agent keys cannot enumerate).
 - When token_based_auth is enabled, in-progress poll/update reject bare ai-agent API keys

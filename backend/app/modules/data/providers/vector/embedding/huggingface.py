@@ -111,11 +111,6 @@ class HuggingFaceEmbedder(BaseEmbedder):
             if not await self.initialize():
                 raise RuntimeError("Failed to initialize embeddings model")
         
-        try:
-            # Use LangChain's embed_query method which may have different preprocessing
-            embedding = await self.embeddings.aembed_query(query)
-            return embedding
-            
-        except Exception as e:
-            logger.error(f"Failed to generate query embedding: {e}")
-            return []
+        # Use LangChain's embed_query method which may have different preprocessing
+        embedding = await self.embeddings.aembed_query(query)
+        return embedding

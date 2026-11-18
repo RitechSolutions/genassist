@@ -1,6 +1,7 @@
 import threading
 
 import pytest
+import redis
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.services.llm_pricing_cache import (
 TENANT = "acme"
 RATES = {"openai": {"gpt-4o": {"input_per_1k": 0.005, "output_per_1k": 0.02}}}
 NEWER = {"openai": {"gpt-4o": {"input_per_1k": 0.009, "output_per_1k": 0.03}}}
+VERSION_KEY = "tenant:acme:llm_cost_rates:version"
 
 
 class FakeClock:
@@ -52,6 +54,35 @@ class BlockingLoader(Loader):
             self.entered.set()
             assert self.released.wait(5), "the parked load was never released"
         return result
+
+
+class FakeRedis:
+
+    def __init__(self):
+        self.store = {}
+        self.down = False
+        self.gets = 0
+
+    def get(self, key):
+        self.gets += 1
+        if self.down:
+            raise redis.ConnectionError("Redis is unreachable")
+        return self.store.get(key)
+
+    def set(self, key, value):
+        if self.down:
+            raise redis.ConnectionError("Redis is unreachable")
+        self.store[key] = value
+        return True
+
+
+@pytest.fixture(autouse=True)
+def shared_redis(monkeypatch):
+    fake = FakeRedis()
+    monkeypatch.setattr(pricing_cache, "_redis", lambda: fake)
+    monkeypatch.setattr(pricing_cache, "_seen_version", {})
+    monkeypatch.setattr(pricing_cache, "_redis_skip_until", 0.0)
+    return fake
 
 
 def _reset():
@@ -359,3 +390,74 @@ def test_a_commit_drains_the_queue_once(monkeypatch, clock, session):
 
     assert pricing_cache._cache.get(TENANT) is not None, "a later commit must not re-clear"
 
+
+def test_a_save_in_another_process_reaches_the_next_read_within_the_ttl(monkeypatch, clock, shared_redis):
+    loader = _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+
+    shared_redis.store[VERSION_KEY] = "saved-elsewhere"
+    assert get_db_pricing_nested(TENANT) == NEWER
+    assert get_db_pricing_nested(TENANT) == NEWER
+    assert loader.calls == 2
+
+
+def test_a_save_in_another_process_beats_the_stale_copy_after_idle(monkeypatch, clock, shared_redis):
+    loader = _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+    clock.advance(3 * 3600)
+
+    shared_redis.store[VERSION_KEY] = "saved-elsewhere"
+    assert get_db_pricing_nested(TENANT) == NEWER
+    assert loader.calls == 2
+
+
+def test_an_unreachable_redis_serves_the_cached_copy_and_backs_off(monkeypatch, clock, shared_redis):
+    loader = _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+    shared_redis.store[VERSION_KEY] = "saved-elsewhere"
+    shared_redis.down = True
+
+    assert get_db_pricing_nested(TENANT) == RATES
+    assert get_db_pricing_nested(TENANT) == RATES
+    assert shared_redis.gets == 2, "one failed GET, then none during the cooldown"
+
+    shared_redis.down = False
+    clock.advance(pricing_cache._FAILURE_COOLDOWN_SECONDS + 1)
+    assert get_db_pricing_nested(TENANT) == NEWER
+    assert loader.calls == 2
+
+
+def test_a_commit_publishes_a_new_token_and_a_rollback_publishes_none(monkeypatch, clock, session, shared_redis):
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    session.rollback()
+    session.commit()
+    assert shared_redis.store == {}
+
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    session.commit()
+    first = shared_redis.store[VERSION_KEY]
+
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    session.commit()
+    assert shared_redis.store[VERSION_KEY] != first
+
+
+def test_a_failed_publish_still_commits_and_drops_the_local_copy(monkeypatch, clock, session, shared_redis):
+    _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+    shared_redis.down = True
+
+    invalidate_llm_cost_rates_cache_after_commit(session, TENANT)
+    session.commit()
+
+    assert TENANT not in pricing_cache._cache
+
+
+def test_a_reload_caused_by_another_process_publishes_nothing(monkeypatch, clock, shared_redis):
+    _install(monkeypatch, Loader(RATES, NEWER))
+    get_db_pricing_nested(TENANT)
+
+    shared_redis.store[VERSION_KEY] = "saved-elsewhere"
+    get_db_pricing_nested(TENANT)
+
+    assert shared_redis.store == {VERSION_KEY: "saved-elsewhere"}

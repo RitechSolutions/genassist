@@ -342,7 +342,7 @@ def fingerprint(message: Any) -> str:
 
 
 def describe_check(check: Check) -> str:
-    """The check read back as one sentence, e.g. 'The reply should never mention "RingGo".'"""
+    """The check read back as one sentence, e.g. 'The reply should never mention "RivalApp".'"""
     whole = check.level in ("every_conversation", "conversation")
     once = whole and check.when == "anywhere"
     if check.expect == "should_not":

@@ -43,6 +43,8 @@ import DynamicRagConfigSection from '../components/DynamicRagConfigSection';
 import SalesforceSyncOptions from '../components/SalesforceSyncOptions';
 import { resolveSalesforceContentFormat } from '../utils/salesforceOptions';
 import { useManualSync } from '../hooks/useManualSync';
+import { isIndexedOnSave, isSyncErrorStatus, syncStatusBadgeVariant } from '../utils/syncStatus';
+import KnowledgeBaseIndexingStatus from '../components/KnowledgeBaseIndexingStatus';
 import ArticlesToCopy, { ArticleOption } from '../components/ArticlesToCopy';
 import { DataSourceDialog } from '@/views/DataSources/components/DataSourceDialog';
 import { isEqual } from 'lodash';
@@ -117,22 +119,6 @@ const acceptedFileTypes = [
   '.pdf', '.docx', '.doc', '.txt', '.csv', '.xls', '.xlsx',
   '.pptx', '.ppt', '.html', '.htm', '.yaml', '.yml', '.json', '.jsonl', '.md',
 ];
-
-function syncStatusBadgeVariant(
-  status: string
-): 'default' | 'secondary' | 'destructive' | 'outline' | 'success' {
-  const s = status.toLowerCase();
-  if (s === 'error' || s.includes('fail')) return 'destructive';
-  if (s.includes('warning')) return 'secondary';
-  if (s === 'success') return 'success';
-  return 'outline';
-}
-
-function isSyncErrorStatus(status: string | null | undefined): boolean {
-  if (!status) return false;
-  const s = status.toLowerCase();
-  return s === 'error' || s.includes('fail');
-}
 
 function hasRestrictedArticlesSwitch(type: string): boolean {
   return type === 'zendesk' || type === 'salesforce';
@@ -710,6 +696,13 @@ const KnowledgeBaseForm: React.FC = () => {
                               </SelectContent>
                             </Select>
                           </div>
+
+                          {isIndexedOnSave(editingItem?.type) && (
+                            <KnowledgeBaseIndexingStatus
+                              status={editingItem?.last_sync_status}
+                              details={editingItem?.last_sync_error}
+                            />
+                          )}
 
                           {formData.type === 'text' ? (
                             <div>

@@ -82,8 +82,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── helpers ────────────────────────────────────────────────────────
-
   const emitChange = useCallback(() => {
     if (!editorRef.current) return;
     const html = editorRef.current.innerHTML;
@@ -106,8 +104,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     },
     [emitChange],
   );
-
-  // ── toolbar handlers ───────────────────────────────────────────────
 
   const handleBold = useCallback(() => exec("bold"), [exec]);
   const handleItalic = useCallback(() => exec("italic"), [exec]);
@@ -199,8 +195,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   const isItalic = document.queryCommandState?.("italic") ?? false;
 
   const hasToolbar = Object.values(toolbar).some(Boolean);
-
-  // ── render ─────────────────────────────────────────────────────────
 
   return (
     <div
@@ -329,7 +323,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         />
       )}
 
-      {/* Editable area */}
       <div
         ref={editorRef}
         contentEditable={!disabled}
