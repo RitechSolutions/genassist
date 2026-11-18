@@ -3,6 +3,7 @@ import { Button } from "@/components/button";
 import { ArrowLeft } from "lucide-react";
 import { SidebarTrigger } from "@/components/sidebar";
 import SecurityPanel from "@/views/AIAgents/components/Customer/SecurityPanel";
+import { GuardrailsPanel } from "@/views/AIAgents/components/Customer/GuardrailsPanel";
 
 export default function SecurityPage() {
   const { agentId } = useParams<{ agentId: string }>();
@@ -34,6 +35,7 @@ export default function SecurityPage() {
           </div>
 
           <SecurityPanel agentId={agentId} />
+          <GuardrailsPanel agentId={agentId} />
         </div>
       </div>
     </main>
