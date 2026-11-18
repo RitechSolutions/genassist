@@ -12,7 +12,6 @@ import { NodeData } from "@/views/AIAgents/Workflows/types/nodes";
 
 const BASE = "genagent/workflow";
 
-// Get all workflows
 export const getAllWorkflows = () => apiRequest<Workflow[]>("GET", `${BASE}/`);
 
 // Get lightweight workflow list (id, name, version only)
@@ -25,11 +24,9 @@ export const getWorkflowSummaries = (agentId: string) =>
     `${BASE}/summaries?agent_id=${encodeURIComponent(agentId)}`
   );
 
-// Get workflow by ID
 export const getWorkflowById = (id: string) =>
   apiRequest<Workflow>("GET", `${BASE}/${id}`);
 
-// Create a new workflow
 export const createWorkflow = (workflow: WorkflowCreatePayload) =>
   apiRequest<Workflow>(
     "POST",
@@ -37,7 +34,6 @@ export const createWorkflow = (workflow: WorkflowCreatePayload) =>
     workflow as unknown as Record<string, unknown>
   );
 
-// Update an existing workflow
 export const updateWorkflow = (id: string, workflow: WorkflowUpdatePayload) =>
   apiRequest<Workflow>(
     "PUT",
@@ -45,11 +41,10 @@ export const updateWorkflow = (id: string, workflow: WorkflowUpdatePayload) =>
     workflow as unknown as Record<string, unknown>
   );
 
-// Delete a workflow
 export const deleteWorkflow = (id: string) =>
   apiRequest<void>("DELETE", `${BASE}/${id}`);
 
-// Test a workflow configuration with a test message
+// Payload for testing a workflow configuration with a test message
 export interface WorkflowTestPayload {
   input_data: Record<string, any>;
   workflow: Workflow;

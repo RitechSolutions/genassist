@@ -18,7 +18,7 @@ interface HistoryState {
 interface UseUndoRedoOptions {
   maxHistorySize?: number;
   debounceTime?: number;
-  // Puts back node data that JSON cloning strips out on undo/redo 
+  // Puts back node data that JSON cloning strips out on undo/redo
   hydrateNodes?: (nodes: Node[]) => Node[];
 }
 
@@ -28,7 +28,7 @@ interface UseUndoRedoReturn {
   canUndo: boolean;
   canRedo: boolean;
   takeSnapshot: () => void;
-  // Seeds a fresh baseline and drops both stacks; used when a new workflow loads 
+  // Seeds a fresh baseline and drops both stacks; used when a new workflow loads
   resetHistory: (state: HistoryState) => void;
   // Drops both stacks but rebaselines to the live canvas without suppressing the next edit
   clear: () => void;

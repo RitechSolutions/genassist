@@ -225,7 +225,7 @@ export interface GenAgentChatProps {
   showWelcomeBeforeStart?: boolean;
   allowedExtensions?: AllowedExtension[]; // If provided, only show file attachments with these extensions. Defaults to all extensions.
   serverUnavailableMessage?: string; // Custom message when server is down
-  serverUnavailableContactUrl?: string; // Optional URL for a contact/support
+  serverUnavailableContactUrl?: string; // Optional contact/support URL
   serverUnavailableContactLabel?: string; // Label for the contact link
   formDisplay?: 'inline' | 'footer'; // Where to render dynamic forms: 'inline' = chat bubble, 'footer' = replaces input. Defaults to 'footer'.
   onConfigLoaded?: (props: { chatInputMetadata?: Record<string, any> }) => void;

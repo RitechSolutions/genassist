@@ -157,10 +157,6 @@ class TrainModelNode(BaseNode):
                     "success": False,
                     "error": f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
                 }
-                # raise AppException(
-                #     error_key=ErrorKey.INTERNAL_ERROR,
-                #     error_detail=f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
-                # )
 
             # For a time-based split, sort chronologically first so a positional
             # split later puts the earliest rows in train and latest in validation.

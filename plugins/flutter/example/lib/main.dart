@@ -79,15 +79,14 @@ class _ChatExamplePageState extends State<ChatExamplePage> {
   Widget _buildChat() {
     return GenAgentChat(
       url: 'http://localhost:8000/',
-      apiKey: 'Hwi7_hSzDu1JNAddVqMPfVV8pLvuG4Cq4aRqS5JVKx0FXSXqqIP87g',
+      apiKey: 'your-api-key',
       tenant: 'your-tenant-id',
       mode: _selectedMode,
       theme: const GenAgentChatTheme(
-        primaryColor: Color(0xFF6CC24A),
-        secondaryColor: Color(0xFF6CC24A),
+        primaryColor: Color(0xFF6366F1),
+        secondaryColor: Color(0xFF818CF8),
       ),
       headerTitle: 'Support',
-      logoUrl: 'https://pt.berkeley.edu/sites/default/files/styles/openberkeley_image_full/public/paybyphone_v2-side.png?itok=6ZCEePXQ&timestamp=1557789282',
       useWs: true,
       usePoll: false,
       useFile: true,

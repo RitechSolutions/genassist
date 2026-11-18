@@ -17,7 +17,6 @@ export const GlobalChat = () => {
     fontFamily: "Roboto, Arial, sans-serif",
     fontSize: "14px",
   });
-  // const tenantId = localStorage.getItem('tenant_id') as string | undefined;
 
   useEffect(() => {
     (async () => {
@@ -45,7 +44,6 @@ export const GlobalChat = () => {
       baseUrl={baseUrl}
       websocketUrl={websocketUrl}
       apiKey={genassistApiKey}
-      // tenant={tenantId}
       headerTitle="Genassist Chat"
       brandLogoUrl="https://cdn.prod.website-files.com/689da2a76e017a77b0596d1c/694291f3d893f585af78bdd7_genassist_logo.svg"
       theme={theme}

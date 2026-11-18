@@ -27,7 +27,6 @@ import { UploadFileResponse } from "@/interfaces/file-manager.interface";
 // Re-export types for backward compatibility
 export type { AgentConfig, AgentListItem, PaginatedResponse };
 
-// Define knowledge item interface
 interface KnowledgeItem {
   id?: string;
   name: string;
@@ -39,7 +38,6 @@ interface KnowledgeItem {
   [key: string]: unknown;
 }
 
-// Define tool interface
 interface Tool {
   id?: string;
   name: string;
@@ -50,7 +48,6 @@ interface Tool {
   [key: string]: unknown;
 }
 
-// Define parameter interface
 interface ParametersSchema {
   type: string;
   properties: Record<string, unknown>;
@@ -608,7 +605,7 @@ export const uploadFiles = async (
   return results;
 };
 
-// Endpoint to trigger KB synchronization execution MANUALLY
+// Trigger a manual knowledge base sync.
 export const executeKnowledgeBaseSyncronizationManually = async (kbId: string) => {
   return apiRequest(
     "GET",

@@ -304,7 +304,6 @@ public class ChatService {
             self?.saveConversation()
             handler(message)
         }
-        // self.messageHandler = handler
     }
     
     public func getPossibleQueries() -> [String] {
@@ -379,7 +378,6 @@ public class ChatService {
                         outputFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                         let plus1sec = parsedDate.addingTimeInterval(1)
                         let newStr = outputFormatter.string(from: plus1sec)
-                        // Fetch new messages from API
                         
                         fetchNewMessages(conversationId: savedConversationId, fromCreateDatetime: newStr) { [weak self] result in
                             switch result {
@@ -408,7 +406,7 @@ public class ChatService {
             self.messages = []
         }
         
-        // Load saved possible queries
+        // Load the saved agent configuration (includes the possible queries)
         if let savedConfig = UserDefaults.standard.data(forKey: agentConfigKey) {
             do {
             let decodedConfig = try JSONDecoder().decode(AgentConfiguration.self, from: savedConfig)
@@ -571,9 +569,6 @@ public class ChatService {
             text: message
         )
         if !useWs {
-            // Add the sent message to messages array
-            // messages.append(chatMessage)
-            // saveConversation()
             messageHandler?(chatMessage)
 
         }
@@ -591,7 +586,6 @@ public class ChatService {
         var finalMetadata: [String: Any] = self.metadata.getMetadata()
         if let customerId = customerId { finalMetadata["customerId"] = customerId }
         if let extraMetadata = extraMetadata {
-            // Convert Any values to String for consistency with existing metadata structure
             for (key, value) in extraMetadata {
                 finalMetadata[key] = value
             }
@@ -608,9 +602,6 @@ public class ChatService {
         
         // If not using WebSocket, try to retrieve the response message from the update conversation response
         if !useWs {
-            // Add the sent message to messages array
-            // messages.append(chatMessage)
-            // saveConversation()
             
             do {
                 let responseData = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -708,7 +699,6 @@ public class ChatService {
         return messages
     }
     
-    // Fetch new messages from server
     private func fetchNewMessages(conversationId: String, fromCreateDatetime: String, completion: @escaping (Result<[Message], Error>) -> Void) {
         guard let url = URL(string: "\(baseURL)/api/conversations/\(conversationId)?from_create_datetime_messages=\(fromCreateDatetime)") else {
             completion(.failure(NSError(domain: "ChatService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid URL"])))
@@ -731,7 +721,6 @@ public class ChatService {
             }
             do {
                 let decoder = JSONDecoder()
-                // Make decoder more lenient with unknown keys
                 let conversationResp = try decoder.decode(ConversationResponse.self, from: data)
                 // Use messages array directly if available, otherwise fallback to transcription string
                 if let messages = conversationResp.messages {

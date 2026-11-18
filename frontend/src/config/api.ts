@@ -189,9 +189,9 @@ export const apiRequest = async <T>(
   config: Partial<AxiosRequestConfig> = {}
 ): Promise<T | null> => {
   const baseURL = await getApiUrl();
-  // remove starting slash from endpoint
+  // Strip the leading slash from the endpoint.
   let fullUrl = `${baseURL}${endpoint.replace(/^\//, "")}`
-  // remove last slash && remove last slash also before ? or & or #
+  // Strip a trailing slash, including one right before ?, & or #.
   fullUrl = fullUrl.replace(/\/$/, "").replace(/\/([?&#])/, "$1");
 
   try {
@@ -201,7 +201,7 @@ export const apiRequest = async <T>(
       data,
       ...config,
     });
-    // mark up on any sucessful request
+    // Any successful request marks the server as up.
     setServerUp();
     return response.data;
   } catch (error) {
@@ -215,7 +215,7 @@ export const apiRequest = async <T>(
       return null;
     }
 
-    // Mark server as down for 5xx errors allowed 500, 501
+    // Mark the server as down for 5xx errors other than 500 and 501.
     if (status && status > 501) {
       setServerDown();
     } else if (hasResponse) {

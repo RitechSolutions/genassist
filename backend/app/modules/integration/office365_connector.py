@@ -67,42 +67,12 @@ class Office365Connector:
             new_token = result["access_token"]
             self.access_token = new_token
             logger.info("Successfully refreshed access token.")
-            # print("Access token:", result["access_token"])
             return new_token
         else:
             print("Error:", result.get("error_description"))
             
         
         
-        # logger.info("Refreshing Microsoft Graph access token...")
-        # token_url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-
-        # data = {
-        #     "client_id": self.client_id,
-        #     "client_secret": self.client_secret,
-        #     "refresh_token": self.refresh_token,
-        #     "grant_type": "refresh_token",
-        #     "redirect_uri": self.redirect_uri,
-        #     "scope": "offline_access https://graph.microsoft.com/User.Read",
-        # }
-
-        # headers = {
-        #     "Content-Type": "application/x-www-form-urlencoded",
-        # }
-
-        # response = requests.post(token_url, data=data, headers=headers)
-
-        # if response.status_code != 200:
-        #     logger.error(f"Failed to refresh token: {response.status_code} - {response.text}")
-        #     raise Exception("Unable to refresh access token")
-
-        # token_data = response.json()
-        # new_token = token_data["access_token"]
-        # self.access_token = new_token
-        # #self.headers["Authorization"] = f"Bearer {new_token}"
-        # logger.info("Successfully refreshed access token.")
-        # return new_token
-
     async def list_files(self, folder_path: Optional[str] = None) -> dict:
         """
         Recursively list all files in the specified SharePoint folder.

@@ -21,9 +21,6 @@ from app.tasks.base import run_async_in_celery
 logger = logging.getLogger(__name__)
 
 
-# Helper function removed - now using simplified manager
-
-
 # ------------------------------ Helpers --------------------------------- #
 def _compute_next_run(cron_expr: Optional[str], last_synced: Optional[datetime]) -> Optional[datetime]:
     """

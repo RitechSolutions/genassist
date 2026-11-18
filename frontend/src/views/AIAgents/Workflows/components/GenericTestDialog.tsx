@@ -34,7 +34,7 @@ interface GenericTestDialogProps {
   nodeType: string;
   nodeData: NodeData;
   nodeName?: string;
-  nodeId?: string; // Add nodeId prop
+  nodeId?: string;
 }
 
 export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
@@ -184,7 +184,6 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     const configString = JSON.stringify(data);
     const extractedVars = extractDynamicVariables(configString);
 
-    // Convert Set to Array
     return Array.from(extractedVars);
   };
 

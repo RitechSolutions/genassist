@@ -286,13 +286,6 @@ class ZendeskConnector:
             payload["ticket"]["tags"] = tags
         if custom_fields:
             payload["ticket"]["custom_fields"] = custom_fields
-        # elif conversation_id and settings.ZENDESK_CUSTOM_FIELD_CONVERSATION_ID:
-        #     payload["ticket"]["custom_fields"] = [
-        #         {
-        #             "id": settings.ZENDESK_CUSTOM_FIELD_CONVERSATION_ID,
-        #             "value": conversation_id,
-        #         }
-        #     ]
 
         try:
             result = await self._make_request("POST", url, json=payload)

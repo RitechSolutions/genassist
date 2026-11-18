@@ -4,7 +4,7 @@ import { registerAllNodeTypes } from "./nodeTypes";
 import nodeRegistry from "./registry/nodeRegistry";
 import { ReactFlowProvider } from "reactflow";
 
-// Initialize node types
+// Register node types at module load
 registerAllNodeTypes();
 
 const AgentStudioPage: React.FC = () => {

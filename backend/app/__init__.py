@@ -43,7 +43,7 @@ def create_app() -> FastAPI:
         middleware=build_middlewares(),
     )
 
-    app.celery_app = create_celery()  # new
+    app.celery_app = create_celery()
 
     add_di_middleware(app)
 
@@ -54,10 +54,6 @@ def create_app() -> FastAPI:
 
     # Initialize rate limiting
     init_rate_limiter(app)
-
-    # TODO: retest this
-    # from fastapi.staticfiles import StaticFiles
-    # app.mount("/docu", StaticFiles(directory="docs-site", html=True), name="docu")
 
     # Service-level probes (outside `/api`)
     app.include_router(health.router)

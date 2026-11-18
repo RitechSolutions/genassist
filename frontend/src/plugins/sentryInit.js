@@ -22,9 +22,8 @@ if (dsn) {
         window.dispatchEvent(new CustomEvent(SENTRY_CLIENT_ERROR_EVENT));
       }
 
-      // get user from isolation scope
       const user = Sentry.getIsolationScope().getUser();
-      // show report dialog if in development mode
+      // Show the report dialog in development mode
       if (import.meta.env.DEV) {
         Sentry.showReportDialog({ eventId: event.event_id, user: user });
         return null;

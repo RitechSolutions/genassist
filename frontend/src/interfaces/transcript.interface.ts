@@ -129,7 +129,7 @@ export interface Transcript {
   supervisor_username?: string | null;
   feedback?: ConversationFeedbackEntry[];
 
-  // NOTE: used to avoid parsing issues
+  // Typed loosely because the API may return the transcript as a raw string.
   transcript?: TranscriptEntry[] | string | null;
   thumbs_up_count?: number;
   thumbs_down_count?: number;

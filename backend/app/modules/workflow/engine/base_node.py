@@ -358,7 +358,6 @@ class BaseNode(ABC):
                 try:
                     # Start execution tracking
                     self.start_execution()
-                    # self.set_node_input(input_data)
 
                     # Resolve configuration template variables
                     source_output = self.get_input_from_source()

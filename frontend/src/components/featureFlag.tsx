@@ -14,8 +14,8 @@ interface FeatureFlagProps {
 }
 
 /**
- * Component that conditionally renders content based on feature flags.
- * Uses the hierarchical approach similar to the Maersk Web implementation.
+ * Renders its children unless the given feature flag hides or disables them
+ * (then `fallback` is rendered). Content is shown when no matching flag exists.
  */
 export function FeatureFlag({ 
   flagKey, 
@@ -25,7 +25,6 @@ export function FeatureFlag({
 }: FeatureFlagProps) {
   const { flags } = useFeatureFlag();
   
-  // Get the specific feature item
   const featureItem = useFeatureFlag().getFeatureItem(flagKey);
 
   if (!featureItem) {
@@ -59,7 +58,7 @@ interface FeatureFlagMenuItemProps {
 }
 
 /**
- * Component specific for menu items, similar to Maersk's FeatureToggleMainMenuItem
+ * Feature-flag wrapper for a sidebar menu item.
  */
 export function FeatureFlagMenuItem({ 
   itemKey, 
@@ -75,7 +74,6 @@ export function FeatureFlagMenuItem({
     return <>{fallback}</>;
   }
 
-  // Clone the element with additional props
   return React.isValidElement(children) 
     ? React.cloneElement(children as React.ReactElement, rest) 
     : <>{children}</>;

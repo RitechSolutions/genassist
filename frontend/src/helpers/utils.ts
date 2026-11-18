@@ -70,7 +70,7 @@ export function tryParse(value: any) {
 }
 
 export function maskInput(inputVal: string, maxLength: number = 36): string {
-  let maskSize = inputVal.length;  // default mask size
+  let maskSize = inputVal.length;
   if (inputVal.length > maxLength) {
     maskSize = maxLength;
   }
