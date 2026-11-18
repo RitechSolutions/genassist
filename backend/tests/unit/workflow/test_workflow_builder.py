@@ -589,7 +589,7 @@ def test_system_prompt_argument_and_missing_field_hint():
 
 def test_set_field_writes_long_text_verbatim_and_parses_non_text_fields():
     draft = chatbot()
-    prompt = 'You are "Parker".\nRules:\n- say {{session.message}} back\n- never use \\ or } carelessly'
+    prompt = 'You are "Helper".\nRules:\n- say {{session.message}} back\n- never use \\ or } carelessly'
     draft.set_field("n2", "systemPrompt", prompt)
     agent = draft.find("n2")
     assert agent["data"]["systemPrompt"] == prompt
@@ -597,8 +597,8 @@ def test_set_field_writes_long_text_verbatim_and_parses_non_text_fields():
     draft.set_field("n2", "maxIterations", "12")
     draft.set_field("n2", "memory", "false")
     assert agent["data"]["maxIterations"] == 12 and agent["data"]["memory"] is False
-    draft.set_field("n2", "name", "Parker")
-    assert agent["data"]["name"] == "Parker"
+    draft.set_field("n2", "name", "Helper")
+    assert agent["data"]["name"] == "Helper"
 
     with pytest.raises(DraftError, match="no config field"):
         draft.set_field("n2", "prompt", "x")
