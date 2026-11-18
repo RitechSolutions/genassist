@@ -102,7 +102,9 @@ async def _run_s3_output_sync(
     kb_service.get_by_id = AsyncMock(return_value=kb)
     ds_service = MagicMock()
     ds_service.get_by_id = AsyncMock(
-        return_value=SimpleNamespace(source_type="s3", name="S3 DS", connection_data={"bucket_name": "acme"})
+        return_value=SimpleNamespace(
+            source_type="s3", name="S3 DS", connection_data={"bucket_name": "acme", "access_key": "k", "secret_key": "s"}
+        )
     )
     rag_manager = MagicMock()
     if store_available:

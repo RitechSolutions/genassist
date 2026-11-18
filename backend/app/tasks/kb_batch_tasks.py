@@ -119,6 +119,7 @@ async def batch_process_files_kb_async(
     count_fail = 0
     count_unchanged = 0
     files_not_loaded = 0
+    server_role_refusal: Optional[str] = None
     files_processed = []
     count_zendesk_syncs = len(zendesk_sync_results)
 
@@ -185,8 +186,13 @@ async def batch_process_files_kb_async(
         ##############################################
         # Process S3 Datasource/KB
         if ds_item.source_type.lower() == "s3":
-            keyid_username = conn.get("access_key")
-            secret_password = conn.get("secret_key")
+            try:
+                keyid_username, secret_password = s3_data_source_keys(conn)
+            except ServerRoleNotAllowedError as refusal:
+                logger.error(f"KB {kb_item.id} not synced: {refusal}")
+                count_fail += 1
+                server_role_refusal = str(refusal)
+                continue
             bucket_server = conn.get("bucket_name")
             prefix_input_folder = (conn.get("prefix") or "").lstrip("/").strip()
             filter_pattern = processing_filter # filter defined in KB not DS
@@ -330,6 +336,9 @@ async def batch_process_files_kb_async(
         result["message"] = (
             f"{files_not_loaded} file(s) could not be loaded into the knowledge base and were left in the input folder."
         )
+    if server_role_refusal:
+        result["status"] = "error"
+        result["message"] = server_role_refusal
 
     return result
 
@@ -341,7 +350,7 @@ async def batch_process_files_kb_async(
 ############################################
 import fnmatch
 
-import boto3
+from app.core.utils.s3_utils import ServerRoleNotAllowedError, build_s3_client, s3_data_source_keys
 
 
 async def _add_s3_document(
@@ -432,13 +441,7 @@ async def s3_list_source(
 ):
 
     try:
-        # Create S3 client directly
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=api_key,
-            aws_secret_access_key=api_secret,
-            region_name=region
-        )
+        s3_client = build_s3_client(aws_access_key_id=api_key, aws_secret_access_key=api_secret, region_name=region)
 
         # Prepare parameters
         list_params = {
@@ -488,13 +491,7 @@ async def s3_download_file(
 ):
 
     try:
-        # Create S3 client directly
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=api_key,
-            aws_secret_access_key=api_secret,
-            region_name=region
-        )
+        s3_client = build_s3_client(aws_access_key_id=api_key, aws_secret_access_key=api_secret, region_name=region)
 
         # Get object metadata
         metadata = s3_client.head_object(
@@ -536,12 +533,7 @@ async def s3_move_file(
     destination: str
 ):
     try:
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=api_key,
-            aws_secret_access_key=api_secret,
-            region_name=region
-        )
+        s3_client = build_s3_client(aws_access_key_id=api_key, aws_secret_access_key=api_secret, region_name=region)
         s3_client.copy_object(
             Bucket=bucket_name,
             CopySource={'Bucket': bucket_name, 'Key': item},
