@@ -1,7 +1,7 @@
 """
 Everything a Datadog deployment needs from the app, behind one switch.
 
-DATADOG_ENABLED=true (set only by deployments that ship to Datadog, e.g. PayByPhone):
+DATADOG_ENABLED=true (set only by deployments that ship to Datadog):
 - logs: one JSON object per stdout line, using Datadog's standard attribute names, so
   the level and fields are read without a log pipeline;
 - traces: genassist.agent_id / workflow_id / conversation_id on the current span, read
