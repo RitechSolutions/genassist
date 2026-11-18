@@ -24432,68 +24432,6 @@
         }
       }
     },
-    "/api/playground/getParkings": {
-      "get": {
-        "tags": [
-          "v1",
-          "Playground"
-        ],
-        "summary": "Get Parkings",
-        "description": "Get Pittsburgh parking zones filtered by location and radius.",
-        "operationId": "get_parkings_api_playground_getParkings_get",
-        "deprecated": true,
-        "parameters": [
-          {
-            "name": "latitude",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "number",
-              "title": "Latitude"
-            }
-          },
-          {
-            "name": "longitude",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "number",
-              "title": "Longitude"
-            }
-          },
-          {
-            "name": "radius",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "number",
-              "default": -1,
-              "title": "Radius"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/playground/webhook": {
       "post": {
         "tags": [
