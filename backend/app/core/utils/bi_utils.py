@@ -178,7 +178,7 @@ def allowed_file(filename):
 
 def extract_transcript_from_whisper_model(transcription_object):
 
-    # TODO Check why it fails without if in seed method
+    # TODO: find out why the seed path fails without this check
     if not transcription_object or "segments" not in transcription_object:
         return []
     transcript_data = [

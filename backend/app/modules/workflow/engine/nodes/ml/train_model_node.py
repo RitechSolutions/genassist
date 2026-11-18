@@ -610,10 +610,6 @@ class TrainModelNode(BaseNode):
                     "success": False,
                     "error": f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
                 }
-                # raise AppException(
-                #     error_key=ErrorKey.INTERNAL_ERROR,
-                #     error_detail=f"Columns not found in data: {missing_columns}. Available columns: {all_columns}",
-                # )
 
             # Each row's number in the data this node received (first data
             # row = 1), so the ratio-target check below can name the rows it

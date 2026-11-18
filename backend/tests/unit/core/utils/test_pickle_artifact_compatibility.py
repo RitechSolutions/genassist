@@ -4,7 +4,7 @@ The allowlist shared by the static validator and the restricted loader must
 keep accepting the artifacts the product actually serves: fitted scikit-learn
 and XGBoost models, saved either as the Train Model payload
 (``{"model", "metadata", "version"}``) or as a raw model pickled directly,
-which is the legacy format of the local client fixtures.
+which is the legacy format of older saved models.
 """
 
 import itertools
@@ -705,7 +705,7 @@ class TestTrainModelPayload:
 
 @pytest.mark.skipif(xgb is None, reason="XGBoost is not installed")
 class TestLegacyRawModel:
-    """Raw models pickled directly, as the local client fixtures are (XGBRegressor, protocol 4)."""
+    """Raw models pickled directly, as older saved models are (XGBRegressor, protocol 4)."""
 
     @pytest.mark.parametrize("protocol", [3, 4, pickle.HIGHEST_PROTOCOL])
     def test_raw_xgboost_regressor_preserves_predictions(self, tmp_path, protocol):
@@ -727,7 +727,7 @@ class TestLegacyRawModel:
 
     def test_raw_model_loads_through_model_manager(self, tmp_path):
         model = _fit(_REGRESSORS["xgboost"], _Y_REGRESSION)
-        pickle_file = tmp_path / "hourly_revenue_fixture.pkl"
+        pickle_file = tmp_path / "raw_model_fixture.pkl"
         pickle_file.write_bytes(pickle.dumps(model, protocol=4))
 
         is_valid, error = validate_pickle_file_safe(str(pickle_file))

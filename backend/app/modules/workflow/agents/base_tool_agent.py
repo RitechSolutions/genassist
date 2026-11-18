@@ -142,7 +142,7 @@ class BaseToolAgent(ABC):
 
             if text_parts:
                 return '\n'.join(text_parts)
-        # fallback old version
+        # Fallback for plain string content
         return response.content if hasattr(response, 'content') else str(response)
 
     def _log_if_verbose(self, message: str):

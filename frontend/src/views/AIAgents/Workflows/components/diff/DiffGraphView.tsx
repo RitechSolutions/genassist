@@ -179,7 +179,7 @@ const DiffGraphView: React.FC<DiffGraphViewProps> = ({ diff }) => {
         />
       </div>
 
-      {/* Shared detail panel: reveals the selected node's field-level changes (FR-13). */}
+      {/* Shared detail panel: reveals the selected node's field-level changes. */}
       <div className="h-40 shrink-0 overflow-hidden rounded-lg border border-border bg-card">
         {selectedNode && selectedStyle ? (
           <div className="flex h-full flex-col">

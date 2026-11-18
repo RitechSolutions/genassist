@@ -16,7 +16,7 @@ export function getPageItems(
   const safeCurrent = Math.min(Math.max(1, currentPage || 1), safeTotal);
 
   const totalNumbers = siblingCount * 2 + 3; // current, first, last, siblings
-  const totalBlocks = totalNumbers + 2; // add two ellipsis
+  const totalBlocks = totalNumbers + 2; // plus two ellipses
 
   if (safeTotal <= totalBlocks) {
     return Array.from({ length: safeTotal }, (_, i) => i + 1);

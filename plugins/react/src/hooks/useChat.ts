@@ -158,7 +158,7 @@ export interface UseChatProps {
   apiKey: string;
   tenant?: string | undefined;
   metadata?: Record<string, any>;
-  //  If false, the chat will run in HTTP-only mode (no WebSocket connection).
+  // If false, the chat runs in HTTP-only mode (no WebSocket connection).
   useWs?: boolean;
   usePoll?: boolean;
   language?: string;
@@ -284,7 +284,7 @@ export const useChat = ({
       conversationGoneRef.current(chatServiceRef.current?.getConversationId() ?? null, "unavailable"),
   });
 
-  // Scoped messages key for apiKey, conversatioId
+  // Messages storage key, scoped by apiKey and conversation id
   const buildMessagesKey = useCallback(
     (apiKeyVal: string, convId: string | null) => buildMessagesStorageKey(apiKeyVal, convId),
     [],

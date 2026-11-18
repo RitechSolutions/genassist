@@ -155,10 +155,8 @@ class GoogleStorageService:
         if not src_blob.exists():
             raise FileNotFoundError(f"Source blob {src_blob_name} does not exist.")
 
-        # Copy the blob to the new destination
         new_blob = bucket.copy_blob(src_blob, bucket, dst_blob_name)
 
-        # Delete the old blob
         src_blob.delete()
 
         print(f"OK - Moved gs://{bucket.name}/{src_blob_name} -> gs://{bucket.name}/{dst_blob_name}")
@@ -176,43 +174,3 @@ class GoogleStorageService:
         except Exception as e:
             print(f"XX - Error listing files: {e}")
             return []
-
-
-##############################################
-# usage
-##############################################
-# #Initialize Service
-# service = GoogleStorageService(
-#     config_json=json.dumps({
-#         "type": "service_account",
-#         "project_id": "genassist-stt",
-#         ....
-#         "client_email": "stt-service@genassist-stt.iam.gserviceaccount.com",
-#         "token_uri": "https://oauth2.googleapis.com/token"
-#     }),
-#     storage_bucket="genassist-stt-audio-bucket"
-# )
-
-# # Upload File
-# service.file_upload(
-#     local_file_path="./audio/test.wav",
-#     destination_name="uploads/test.wav"
-# )
-
-# # List Files
-# files = service.file_list(prefix="uploads/")
-# print(files)
-
-# # Check if file exists
-# exists = service.file_exists("uploads/test.wav")
-# print("Exists:", exists)
-
-# # Delete File
-# service.file_delete("uploads/test.wav")
-
-# # Move file
-# service.file_move(
-#     source_name="test.wav",
-#     source_prefix="uploads",
-#     destination_prefix="processed"
-# )

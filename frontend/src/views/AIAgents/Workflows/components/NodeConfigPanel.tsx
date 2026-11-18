@@ -58,7 +58,7 @@ interface WorkflowNodesPanelProps {
   jsonStateData?: Record<string, unknown> | string | null;
   // Node ID for calculating predecessor state
   nodeId?: string;
-  // New props for testing functionality
+  // Testing
   nodeType?: string;
   data?: NodeData;
   // Unwrap field props
@@ -84,7 +84,7 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   showJsonState = true,
   jsonStateData = null,
   nodeId,
-  // New props for testing functionality
+  // Testing
   nodeType,
   data,
   // Unwrap field props

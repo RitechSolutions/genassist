@@ -137,19 +137,19 @@ describe("groupWorkflowVersions", () => {
 describe("groupWorkflowVersions naming", () => {
   it("names a group after its agent, as Agent Studio does", () => {
     const groups = groupWorkflowVersions([
-      wf({ id: "w1", name: "Helpdesk Workflow", version: "1.0", agent_id: "a", agent_name: "Helpdesk", is_active_version: true }),
-      wf({ id: "w2", name: "Helpdesk New Workflow", version: "1.1", agent_id: "a", agent_name: "Helpdesk" }),
+      wf({ id: "w1", name: "Sample Workflow", version: "1.0", agent_id: "a", agent_name: "Sample Agent", is_active_version: true }),
+      wf({ id: "w2", name: "Sample New Workflow", version: "1.1", agent_id: "a", agent_name: "Sample Agent" }),
     ]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].name).toBe("Helpdesk");
-    expect(groups[0].workflowName).toBe("Helpdesk Workflow");
+    expect(groups[0].name).toBe("Sample Agent");
+    expect(groups[0].workflowName).toBe("Sample Workflow");
   });
 
   it("falls back to the workflow name when the agent is gone", () => {
     const groups = groupWorkflowVersions([
-      wf({ id: "w1", name: "Helpdesk 4.1 REPRO", version: "1.1", agent_id: "gone", agent_name: null }),
+      wf({ id: "w1", name: "Sample Workflow 4.1 REPRO", version: "1.1", agent_id: "gone", agent_name: null }),
     ]);
-    expect(groups[0].name).toBe("Helpdesk 4.1 REPRO");
+    expect(groups[0].name).toBe("Sample Workflow 4.1 REPRO");
   });
 
   it("sorts by the name it displays, agent or workflow", () => {

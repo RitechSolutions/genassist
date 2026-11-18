@@ -53,7 +53,6 @@ async def get_file_manager_settings(svc: AppSettingsService = Injected(AppSettin
     # read from app settings
     app_settings = await svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
     if not app_settings:
-        # create a new app settings
         app_settings = await svc.create(AppSettingsCreate(
             name="File Manager Settings",
             type="FileManagerSettings",

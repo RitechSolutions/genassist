@@ -19,8 +19,9 @@ from app.db.models import StorageProvider
 from app.modules.data.utils import FileTextExtractor
 from app.schemas.agent_knowledge import KBBase, KBRead
 
-from .providers import SearchResult
-from .service import AgentRAGService
+from .load_result import has_text
+from .providers import KnowledgeSearchError, SearchResult
+from .service import AgentRAGService, search_failure_reason
 from .utils.doc import bulk_delete_documents, format_search_results
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,12 @@ logger = logging.getLogger(__name__)
 ARTICLE_SYNC_KB_TYPES = ("zendesk", "salesforce")
 FILE_SYNC_KB_TYPES = ("s3", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket")
 SYNC_OWNED_KB_TYPES = ARTICLE_SYNC_KB_TYPES + FILE_SYNC_KB_TYPES
+SAVE_INDEXED_KB_TYPES = ("text", "file", "url")
+STORES_UNAVAILABLE_ERROR = "the embedding model or the document store could not be started"
+LOAD_FAILED_ERROR = "the documents could not be loaded"
+FILE_NOT_STORED_ERROR = "the file has no stored path or link"
+FILE_UNREADABLE_ERROR = "the file could not be read"
+NO_TEXT_ERROR = "no readable text"
 
 
 EMBEDDING_STORAGE_FIELDS = ("type", "model_name", "model_id", "max_length", "normalize_embeddings")
@@ -100,6 +107,43 @@ def save_load_action(current: KBRead, incoming: KBBase) -> str:
         rag_config_changed or _file_sync_source_changed(current, incoming)
     )
     return "clear" if type_changed or file_sync_inputs_changed else "update"
+
+
+def _named(entry: Dict[str, Any], name: Optional[str]) -> Dict[str, Any]:
+    """The load result with the name the user knows the document by, when there is one."""
+    return {**entry, "name": name} if name else entry
+
+
+def _not_indexed(document_id: str, reason: str, name: Optional[str] = None) -> Dict[str, Any]:
+    """The load result of a document that was not stored, with the reason in plain words."""
+    return _named({"id": document_id, "result": {}, "error": reason}, name)
+
+
+def _is_web_link(location: str) -> bool:
+    return location.startswith("http://") or location.startswith("https://")
+
+
+def _stored_location(file_item: Any) -> tuple[Optional[str], bool]:
+    """Where a file of a knowledge base is kept and whether it is a link to download; None when not stored."""
+    if isinstance(file_item, str):
+        return file_item, _is_web_link(file_item)
+    if not isinstance(file_item, dict):
+        return None, False
+    default_provider = file_storage_settings.FILE_MANAGER_PROVIDER or StorageProvider.LOCAL
+    provider = file_item.get("storage_provider") or default_provider
+    file_url = file_item.get("file_url")
+    is_stored_remotely = provider == StorageProvider.S3 and bool(file_url) and _is_web_link(file_url)
+    if is_stored_remotely:
+        return file_url, True
+    if provider == "local" and file_item.get("file_path"):
+        return file_item["file_path"], False
+    return None, False
+
+
+def _file_name(file_item: Any, location: Optional[str]) -> Optional[str]:
+    """The name the file was uploaded with, else the name it is stored under."""
+    original_name = file_item.get("original_file_name") if isinstance(file_item, dict) else None
+    return original_name or os.path.basename(urllib.parse.urlparse(location or "").path) or None
 
 
 def _service_setup(kb_id: str, rag_config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -258,6 +302,15 @@ class AgentRAGServiceManager:
         except Exception as e:
             logger.error(f"Failed to clear documents of KB {kb_obj.id}: {e}")
 
+    async def _search_knowledge_base(self, kb_obj: KBRead, query: str, limit: int) -> List[SearchResult]:
+        """Search one knowledge base; raises KnowledgeSearchError when it cannot be searched."""
+        service = await self.get_service(kb_obj)
+        if not service:
+            raise KnowledgeSearchError(
+                "its search could not be started (embedding model or document store unavailable)"
+            )
+        return await service.search(query, limit)
+
     async def search(
         self,
         kb_objects: List[KBRead],
@@ -277,21 +330,31 @@ class AgentRAGServiceManager:
 
         Returns:
             Search results or formatted string
+
+        Raises:
+            KnowledgeSearchError: part of the search failed; its results hold what the rest found
         """
         all_results = []
+        failures: List[str] = []
+        error_types: List[str] = []
 
         for kb_obj in kb_objects:
-            service = await self.get_service(kb_obj)
-            if service:
-                try:
-                    results = await service.search(query, limit)
-                    all_results.extend(results)
-                except Exception as e:
-                    logger.error(f"Search failed for KB {kb_obj.id}: {e}")
+            try:
+                all_results.extend(await self._search_knowledge_base(kb_obj, query, limit))
+            except KnowledgeSearchError as e:
+                all_results.extend(e.results)
+                failures.append(f'Search failed for knowledge base "{kb_obj.name}": {e}')
+                error_types.extend(e.error_types or [type(e).__name__])
+            except Exception as e:
+                failures.append(f'Search failed for knowledge base "{kb_obj.name}": {search_failure_reason(e)}')
+                error_types.append(type(e).__name__)
 
         # Sort by score and limit
         all_results.sort(key=lambda x: x.score, reverse=True)
         final_results = all_results[:limit]
+
+        if failures:
+            raise KnowledgeSearchError("; ".join(failures), results=final_results, error_types=error_types)
 
         if format_results:
             return format_search_results(final_results, include_metadata=False)
@@ -379,6 +442,7 @@ class AgentRAGServiceManager:
 
             if not service:
                 logger.warning(f"Could not get service for KB {kb_id}")
+                results.append(_not_indexed(f"KB:{kb_id}", STORES_UNAVAILABLE_ERROR))
                 continue
 
             if action == "update":
@@ -389,93 +453,72 @@ class AgentRAGServiceManager:
                     logger.debug(
                         f"KB document deletion results: {delete_result}")
 
-            # Process all items for this KB
             for item in items:
                 try:
-                    doc_ids = [f"KB:{kb_id}#content"]
-                    contents = [getattr(item, "content", "")]
-
-                    # Handle file content
-                    if (
-                        getattr(item, "type", "") == "file"
-                        and hasattr(item, "files")
-                        and item.files
-                    ):
-
-                        doc_ids = []
-                        contents = []
-
-                        for idx, file_item in enumerate(item.files):
-                            try:
-                                # Handle URL string (files stored as list of URLs), path string, or legacy dict
-                                if isinstance(file_item, str):
-                                    doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_item}")
-                                    if file_item.startswith("http://") or file_item.startswith("https://"):
-                                        temp_content = await self._download_url_to_temp_file(file_item, extractor, delete_file=True)
-                                        # Download from URL to temp file and extract
-                                        contents.append(temp_content)
-                                    else:
-                                        # Local file path
-                                        contents.append(extractor.extract(path=file_item))
-                                elif isinstance(file_item, dict):
-                                    # Legacy format: dict with file_path and/or url/urls
-                                    file_path = file_item.get("file_path")
-                                    # file_url = file_item.get("url") or file_item.get("urls")
-                                    file_url = file_item.get("file_url")
-                                    # file storage provider
-                                    file_storage_provider = file_item.get("storage_provider") or file_storage_settings.FILE_MANAGER_PROVIDER or StorageProvider.LOCAL
-
-                                    # Handle url from file manager and other providers vs local file path
-                                    if file_storage_provider == StorageProvider.S3 and file_url and (file_url.startswith("http://") or file_url.startswith("https://")):
-                                        doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_url}")
-                                        temp_content = await self._download_url_to_temp_file(file_url, extractor, delete_file=True)
-                                        contents.append(temp_content)
-                                    elif file_storage_provider == "local" and file_path:
-                                        doc_ids.append(f"KB:{kb_id}#file_{idx}:{file_path}")
-                                        contents.append(extractor.extract(path=file_path))
-                                    else:
-                                        logger.warning(f"File item {idx} missing file_path or url: {file_item}")
-
-                            except Exception as e:
-                                file_path_str = (
-                                    file_item
-                                    if isinstance(file_item, str)
-                                    else file_item.get("file_path") or file_item.get("url") or file_item.get("urls") or "unknown"
-                                )
-                                logger.error(
-                                    f"Error extracting file {file_path_str}: {e}")
-
-                    # Handle URL content
-                    elif getattr(item, "type", "") == "url":
-                        from app.core.utils.bi_utils import set_url_content_if_has_rag
-
-                        await set_url_content_if_has_rag(item)
-                        contents = [getattr(item, "content", "")]
-
-                    for doc_id, content in zip(doc_ids, contents):
-
-                        metadata = {
-                            "name": getattr(item, "name", ""),
-                            "description": getattr(item, "description", ""),
-                            "id": doc_id,
-                            "kb_id": kb_id,
-                        }
-
-                        result = await service.add_document(
-                            doc_id,
-                            content,
-                            metadata,
-                            legra_finalize=getattr(
-                                item, "legra_finalize", False),
-                        )
-                        results.append({"id": doc_id, "result": result})
-
+                    for document in await self._item_documents(kb_id, item, extractor):
+                        results.append(await self._store_document(service, kb_id, item, document))
                 except Exception as e:
                     logger.error(f"Error loading item {item.id}: {e}")
-                    results.append(
-                        {"id": doc_id, "result": {}, "error": str(e)})
+                    results.append(_not_indexed(f"KB:{kb_id}", LOAD_FAILED_ERROR))
 
         return results
+
+    async def _item_documents(self, kb_id: str, item: Any, extractor: FileTextExtractor) -> List[Dict[str, Any]]:
+        """The documents of a knowledge base item: one per file, otherwise its content."""
+        has_files = getattr(item, "type", "") == "file" and bool(getattr(item, "files", None))
+        if has_files:
+            return [
+                await self._file_document(kb_id, position, file_item, extractor)
+                for position, file_item in enumerate(item.files)
+            ]
+        if getattr(item, "type", "") == "url":
+            from app.core.utils.bi_utils import set_url_content_if_has_rag
+
+            await set_url_content_if_has_rag(item)
+        return [{"id": f"KB:{kb_id}#content", "content": getattr(item, "content", "")}]
+
+    async def _file_document(
+        self, kb_id: str, position: int, file_item: Any, extractor: FileTextExtractor
+    ) -> Dict[str, Any]:
+        """A file as a document to store, or as a not-indexed entry when it cannot be read."""
+        location, is_web_link = _stored_location(file_item)
+        name = _file_name(file_item, location)
+        document_id = f"KB:{kb_id}#file_{position}:{location or ''}"
+        if not location:
+            logger.warning(f"File item {position} missing file_path or url: {file_item}")
+            return _not_indexed(document_id, FILE_NOT_STORED_ERROR, name)
+        try:
+            content = await self._file_text(location, is_web_link, extractor)
+        except Exception as e:
+            logger.error(f"Error extracting file {location}: {e}")
+            return _not_indexed(document_id, FILE_UNREADABLE_ERROR, name)
+        return {"id": document_id, "name": name, "content": content}
+
+    async def _file_text(self, location: str, is_web_link: bool, extractor: FileTextExtractor) -> str:
+        """The text of a stored file; a linked file is downloaded first."""
+        if is_web_link:
+            return await self._download_url_to_temp_file(location, extractor, delete_file=True)
+        return extractor.extract(path=location)
+
+    async def _store_document(
+        self, service: AgentRAGService, kb_id: str, item: Any, document: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Add a document to the stores; returns its load result, or why it was not indexed."""
+        if document.get("error"):
+            return document
+        document_id, name = document["id"], document.get("name")
+        if not has_text(document["content"]):
+            return _not_indexed(document_id, NO_TEXT_ERROR, name)
+        metadata = {
+            "name": getattr(item, "name", ""),
+            "description": getattr(item, "description", ""),
+            "id": document_id,
+            "kb_id": kb_id,
+        }
+        result = await service.add_document(
+            document_id, document["content"], metadata, legra_finalize=getattr(item, "legra_finalize", False)
+        )
+        return _named({"id": document_id, "result": result}, name)
 
     async def _remove_service(self, kb_id: str):
         """Remove a service from cache"""

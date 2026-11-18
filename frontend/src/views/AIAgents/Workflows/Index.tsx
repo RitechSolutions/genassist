@@ -3,7 +3,7 @@ import { GraphFlow } from "./GraphFlow";
 import { registerAllNodeTypes } from "./nodeTypes";
 import { ReactFlowProvider } from "reactflow";
 
-// Initialize node types
+// Register node types at module load
 registerAllNodeTypes();
 
 const AgentStudioPage: React.FC = () => {

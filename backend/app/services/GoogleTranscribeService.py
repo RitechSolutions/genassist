@@ -120,10 +120,8 @@ class GoogleTranscribeService:
             self.storage_service.delete_file(self.storage_bucket, blob_name)
 
         if content:
-            # self.storage_service.upload_bytes(self.storage_bucket, blob_name, content)
             self.storage_service.file_upload_content(local_file_content=content,local_file_name=blob_name, destination_name=blob_name, prefix="uploads")
         else:
-            # self.storage_service.upload_file(self.storage_bucket, file_name, blob_name)
             self.storage_service.file_upload(local_file_path=file_name, destination_name=blob_name, prefix="uploads")
 
         print(self.storage_service.file_list())
@@ -150,8 +148,6 @@ class GoogleTranscribeService:
         response = operation.result(timeout=3600)
         print("OK - Transcription complete.")
 
-        # Cleanup
-        #self.storage_service.delete_file(self.storage_bucket, blob_name)
         self.storage_service.file_delete(filename=blob_name, prefix="uploads")
 
         return response
@@ -176,10 +172,8 @@ class GoogleTranscribeService:
             self.storage_service.delete_file(self.storage_bucket, blob_name)
 
         if content:
-            # self.storage_service.upload_bytes(self.storage_bucket, blob_name, content)
             self.storage_service.file_upload_content(local_file_content=content,local_file_name=blob_name, destination_name=blob_name, prefix="uploads")
         else:
-            # self.storage_service.upload_file(self.storage_bucket, file_name, blob_name)
             self.storage_service.file_upload(local_file_path=blob_name, destination_name=blob_name, prefix="uploads")
 
         print(self.storage_service.file_list())
@@ -245,7 +239,6 @@ class GoogleTranscribeService:
                     for result in inline_response.results:
                         if result.alternatives:
                             transcripts.append(result.alternatives[0].transcript.strip())
-                            # print(result.language_code)
                             lang_code=result.language_code
 
                 # Fallback to outer transcript object if inline missing
@@ -253,7 +246,6 @@ class GoogleTranscribeService:
                     for result in file_result.transcript.results:
                         if result.alternatives:
                             transcripts.append(result.alternatives[0].transcript.strip())
-                            # print(result.language_code)
                             lang_code=result.language_code
 
             # Merge with space (you can use ". " if you want sentence separation)
@@ -270,33 +262,3 @@ class GoogleTranscribeService:
         }
 
         return return_result
-
-##############################################
-# usage
-##############################################
-# #Initialize Service
-# google_json_config = {
-#         "type": "service_account",
-#         "project_id": "genassist-stt",
-#         ....
-#         "client_email": "stt-service@genassist-stt.iam.gserviceaccount.com",
-#         "token_uri": "https://oauth2.googleapis.com/token"
-#     }
-#
-# gsc = GoogleStorageService(
-#     config_json=json.dumps(google_json_config ),
-#     storage_bucket="genassist-stt-audio-bucket"
-# )
-# gts = GoogleTranscribeService(
-#     config_json=json.dumps(google_json_config),
-#     storage_bucket="genassist-stt-audio-bucket",
-#     storage_service = gsc,
-#     sst_region=_region
-# )
-
-
-# # Transcribe File
-# result= gts.transcribe_long_audio(file_name=local_file)
-
-# # Convert result in wisper compatibile format
-# result_whisper = gts.get_merged_transcripts(result)

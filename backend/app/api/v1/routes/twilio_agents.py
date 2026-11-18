@@ -182,8 +182,6 @@ async def handle_incoming_call(request: Request, agent_id: str):
 
     protocol = request.url.scheme
     ws_protocol = "wss"
-    #if protocol == "http":
-    #    ws_protocol = "ws"
 
     port = request.url.port
     if port is None:

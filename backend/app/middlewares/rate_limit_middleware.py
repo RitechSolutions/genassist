@@ -27,7 +27,7 @@ def get_user_identifier(request: Request) -> str:
     Get a unique identifier for rate limiting.
     Prefers authenticated user ID, falls back to IP address.
     """
-    # # Try to get user ID from request state (set by auth middleware)
+    # Try to get the user ID from request state (set by the auth middleware)
     user = getattr(request.state, "user", None)
     if user and hasattr(user, "id"):
         return f"user:{user.id}"

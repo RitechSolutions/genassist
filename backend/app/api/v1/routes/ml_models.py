@@ -259,7 +259,6 @@ async def upload_pkl_file(
                     await anyio.lowlevel.checkpoint_if_cancelled()
                     file_path = copy_path
                     stage_start = _mark("copy into ml_models", stage_start)
-                # file_path = await file_manager_service.get_file_url(created_file)
         except BaseException:
             # The client never gets this file's id, so it can't discard it: remove it here.
             # BaseException, so a cancelled request (client gone, timeout) cleans up too; the

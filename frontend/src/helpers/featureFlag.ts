@@ -83,7 +83,6 @@ export const isFeatureEnabled = (featureFlags: FeatureFlag[], key: string): bool
     if (exactFlag.attribute === FeatureToggleAttribute.DISABLED) {
       return exactFlag.val !== 'true';
     }
-    // Default behavior
     return exactFlag.val === 'true';
   }
 

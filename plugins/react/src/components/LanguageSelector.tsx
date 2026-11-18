@@ -25,7 +25,6 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   translations,
   theme,
 }) => {
-  // Translation helper
   const t = (key: string, fallback?: string): string => {
     return getTranslationString(key, translations, fallback);
   };

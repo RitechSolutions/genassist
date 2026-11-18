@@ -170,7 +170,7 @@ describe("in Local time mode", () => {
     process.env.TZ = "America/Los_Angeles";
   });
 
-  it("spans Los Angeles's 25-hour day when DST ends", () => {
+  it("spans Los Angeles' 25-hour day when DST ends", () => {
     const interval = toExactInterval({ from: day(2026, 11, 1), to: day(2026, 11, 1) })!;
     expect(interval.start.toISOString()).toBe("2026-11-01T07:00:00.000Z");
     expect(interval.endExclusive.toISOString()).toBe("2026-11-02T08:00:00.000Z");

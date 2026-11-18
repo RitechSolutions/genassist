@@ -83,11 +83,10 @@ class _ChatExamplePageState extends State<ChatExamplePage> {
       tenant: 'your-tenant-id',
       mode: _selectedMode,
       theme: const GenAgentChatTheme(
-        primaryColor: Color(0xFF6CC24A),
-        secondaryColor: Color(0xFF6CC24A),
+        primaryColor: Color(0xFF6366F1),
+        secondaryColor: Color(0xFF818CF8),
       ),
       headerTitle: 'Support',
-      logoUrl: 'https://example.com/logo.png',
       useWs: true,
       usePoll: false,
       useFile: true,
