@@ -52,7 +52,6 @@ function buildWebSocketUrl(
     return `${wsBaseUrl}/ws/dashboard/list?access_token=${token}&${topicsQuery}${tenantParam}${langParam}`;
   }
 
-  // conversation
   if (!conversationId) {
     throw new Error("conversationId is required for conversation room type");
   }
@@ -109,7 +108,7 @@ export function useWebSocket({
         if (roomType === "conversation" && !conversationId) return;
 
         let baseApiUrl = await getApiUrl();
-        // replace http with ws
+        // http(s) -> ws(s)
         baseApiUrl = baseApiUrl.replace("http", "ws");
 
         const wsUrl = normalizeWebSocketUrl(

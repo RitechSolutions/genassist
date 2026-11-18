@@ -62,7 +62,6 @@ async def process_zendesk_tickets():
             ticket_subject = ticket.get("subject") or ""
             ticket_status = ticket.get("status") or ""
 
-            # transcript_string = json.dumps([item["body"] for item in comments], ensure_ascii=False, default=str)
             transcript_string = json.dumps(comments, ensure_ascii=False, default=str)
 
             conversation_transcript = ConversationCreate(
@@ -127,7 +126,6 @@ async def process_zendesk_tickets():
                     ],
                 }
             }
-            # await conversation_service.store_zendesk_analysis(saved_conversation, conversation_analysis) #using ZendeskClient - it creates new ticket
 
             # if ticket status is 'closed' - no update is allowed so related followup ticket must be created
             # otherwise is status is 'solved' it is allowed to update it and change the status to 'closed'

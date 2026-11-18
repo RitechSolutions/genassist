@@ -39,7 +39,6 @@ async def get_current_user(
         if api_key_object is None:
             return None
         request.state.api_key = api_key_object
-        # logger.debug("user:"+str(api_key_object.user.id)+" for api key:"+api_key)
         return api_key_object.user
 
     user = await auth_service.decode_jwt(token)

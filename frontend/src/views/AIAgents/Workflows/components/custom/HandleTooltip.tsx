@@ -12,20 +12,6 @@ interface HandleTooltipProps extends HandleProps {
 
 const getCompatibilityColor = (compatibility?: string) => {
   return "hsl(var(--brand-600))";
-  // switch (compatibility) {
-  //   case "text":
-  //     return "blue";
-  //   case "tools":
-  //     return "green";
-  //   case "llm":
-  //     return "purple";
-  //   case "json":
-  //     return "orange";
-  //   case "any":
-  //     return "gray";
-  //   default:
-  //     return "gray";
-  // }
 };
 const getCompatibilityDescription = (
   compatibility?: string,
@@ -145,10 +131,6 @@ const HandleTooltipComponent: React.FC<HandleTooltipProps> = ({
           style={{
             left: handleRef.current?.offsetLeft + 20,
             top: handleRef.current?.offsetTop + 20,
-            // transform:
-            //   handleProps.position === Position.Left
-            //     ? "translateX(-100%)"
-            //     : "none",
           }}
         >
           <Badge style={{ background: getCompatibilityColor(compatibility) }}>

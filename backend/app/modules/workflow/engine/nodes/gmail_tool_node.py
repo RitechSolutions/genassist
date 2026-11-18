@@ -110,7 +110,6 @@ class GmailToolNode(BaseNode):
                     "operation": operation
                 }
 
-            # self.save_output(response)
             # A helper (or the unsupported-operation branch) may return an HTTP
             # error envelope; record it as a failure while preserving the payload.
             if isinstance(response, dict) and response.get("status", 200) >= 400:

@@ -239,7 +239,7 @@ class UserRepository(DbRepository[UserModel]):
             user.entra_oid = update_dump["entra_oid"]
 
         # Update password (hashed)
-        # TODO decide allow update password or do forgot password link
+        # TODO: decide whether to allow password updates here or only via the forgot-password flow
         if data.password:
             user.hashed_password = get_password_hash(data.password)
 

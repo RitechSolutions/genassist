@@ -288,7 +288,6 @@ class AudioService:
         transcribed_result = chirp_transcriber_service.transcribe_long_audio(content=file.file.getvalue(),
                                                                              file_name=file.filename)
         final_transcribed = chirp_transcriber_service.get_merged_transcripts(transcribed_result)
-        # whisper_transcription_object = await transcribe_audio_whisper(rec_path, model.transcription_model_name)
 
         # Separate speakers with GPT
         if not model.llm_analyst_speaker_separator_id:

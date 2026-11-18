@@ -124,8 +124,7 @@ def init_error_handlers(app):
             field = field or m.group("field")
             value = m.group("value")
 
-        # Build a uniform response
-        # TODO Handle multi language
+        # TODO: localize error messages
         return JSONResponse(
                 status_code=400,
                 content={
