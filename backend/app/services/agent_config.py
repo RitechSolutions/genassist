@@ -191,7 +191,6 @@ class AgentConfigService:
             ),
         )
 
-        # await self.db.commit()
         null_unloaded_attributes(created_agent)
         return created_agent
 

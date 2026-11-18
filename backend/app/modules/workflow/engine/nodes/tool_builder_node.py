@@ -62,7 +62,7 @@ class ToolBuilderNode(BaseNode):
         no_source_template = config.get("forwardTemplate", "{}").replace("source.", "")
         temp_data["node_outputs"][self.node_id] = json.loads(no_source_template)
 
-        # Create a new workflow engine with the current workflow configuration
+        # Build a workflow engine from the current workflow configuration
         current_workflow = self.get_state().workflow
         if not current_workflow:
             raise ValueError("No workflow found in state")

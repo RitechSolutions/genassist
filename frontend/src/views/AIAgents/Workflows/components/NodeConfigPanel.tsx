@@ -51,14 +51,14 @@ interface WorkflowNodesPanelProps {
   children: React.ReactNode;
   footer: React.ReactNode;
   className?: string;
-  // New props for the JSON state section
+  // JSON state section
   showJsonState?: boolean;
   jsonStateTitle?: string;
   jsonStateData?: Record<string, unknown> | string | null;
   jsonStateType?: "predecessor-outputs" | "input-schemas" | "test-results";
   // Node ID for calculating predecessor state
   nodeId?: string;
-  // New props for testing functionality
+  // Testing
   nodeType?: string;
   data?: NodeData;
   showHelp?: boolean;
@@ -80,13 +80,13 @@ export const NodeConfigPanel: React.FC<WorkflowNodesPanelProps> = ({
   children,
   footer,
   className,
-  // New props for the JSON state section
+  // JSON state section
   showJsonState = true,
   jsonStateTitle = "Node State",
   jsonStateData = null,
   jsonStateType = "predecessor-outputs",
   nodeId,
-  // New props for testing functionality
+  // Testing
   nodeType,
   data,
   showHelp = false,

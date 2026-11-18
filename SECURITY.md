@@ -63,7 +63,7 @@ Given that GenAssist handles AI workflows, user data, and integrates with variou
 
 ### Public embed integrations (browser widgets)
 
-**Never ship GenAssist API keys in static JS, CSS, HTML, or source maps** served to anonymous visitors or shared backoffice bundles. Browser credentials are public to every user and script on that origin.
+**Never ship GenAssist API keys in static JS, CSS, HTML, or source maps** served to anonymous visitors or shared admin bundles. Browser credentials are public to every user and script on that origin.
 
 Supported pattern for public help centers and similar surfaces:
 

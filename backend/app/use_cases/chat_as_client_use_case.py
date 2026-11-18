@@ -610,7 +610,6 @@ async def process_attachments_from_metadata(
     """
     # Check for attachments on metadata
     if model.metadata and model.metadata.get("attachments"):
-        # supported_file_extensions = ["pdf", "docx", "txt"]
         supported_file_extensions = ["pdf"]
 
         # process attachments
@@ -698,7 +697,6 @@ async def process_file_upload_from_chat(
             text=file_data,
             type="file",
             speaker="user",
-            # file_id=file_id,
             start_time=0.0,
             end_time=0.0,
         )

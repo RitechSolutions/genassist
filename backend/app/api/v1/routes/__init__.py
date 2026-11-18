@@ -104,8 +104,6 @@ router.include_router(
 router.include_router(voice.router, prefix="/voice", tags=["Voice"])
 router.include_router(voice_live.router, prefix="/voice", tags=["Voice"])
 
-# router.include_router(conversation_analysis.router, prefix="/conversation-analysis", tags=["ConversationAnalysisRead"])
-
 router.include_router(llm_providers.router, prefix="/llm-providers", tags=["LlmProviders"])
 router.include_router(fallback_chains.router, prefix="/fallback-chains", tags=["FallbackChains"])
 router.include_router(audio_providers.router, prefix="/audio-providers", tags=["AudioProviders"])

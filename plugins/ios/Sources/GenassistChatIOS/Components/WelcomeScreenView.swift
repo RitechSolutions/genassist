@@ -33,14 +33,12 @@ public struct WelcomeScreenView: View {
                 .clipShape(Circle())
             }
             
-            // Title with anchor emoji
             HStack(spacing: 4) {
                 Text(welcomeScreenData.title)
                     .font(configuration.welcomeScreen.titleFont)
                     .foregroundColor(configuration.welcomeScreen.titleColor)
             }
             
-            // Description
             Text(welcomeScreenData.description)
                 .font(configuration.welcomeScreen.descriptionFont)
                 .foregroundColor(configuration.welcomeScreen.descriptionColor)

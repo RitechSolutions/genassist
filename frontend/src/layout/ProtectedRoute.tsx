@@ -23,7 +23,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   const isLoading = useIsLoadingPermissions();
   const refreshPermissions = useRefreshPermissions();
   const { status, isOffline } = useServerStatus();
-  // Removed proactive refresh to avoid duplicate API calls when server is down
 
   useEffect(() => {
     if (

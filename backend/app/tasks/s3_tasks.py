@@ -21,9 +21,6 @@ from app.tasks.base import run_async_in_celery
 logger = logging.getLogger(__name__)
 
 
-# Helper function removed - now using simplified manager
-
-
 @shared_task
 def import_s3_files_to_kb():
     """

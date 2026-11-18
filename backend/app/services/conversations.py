@@ -333,7 +333,6 @@ class ConversationService:
         # Get only the count for sequence numbering
         next_sequence = await self.transcript_message_repo.get_message_count(conversation_id)
 
-        # Save new messages
         new_messages = await self.save_new_messages(conversation_id, in_progress_conv_update.messages, next_sequence)
 
         # Convert new messages to schema format (filter MESSAGE type only)
@@ -383,7 +382,6 @@ class ConversationService:
         new_messages = [schema_to_transcript_message(segment, conversation_id, next_sequence + idx) for idx, segment in
             enumerate(input_messages)]
 
-        # Save new messages
         await self.transcript_message_repo.save_messages(new_messages)
         return new_messages
 
@@ -610,8 +608,7 @@ class ConversationService:
                 await self.gpt_kpi_analyzer_service.partial_hostility_analysis(transcript, llm_analyst=llm_analyst,
                         conversation_id=conversation.id, agent_id=agent_id))
         else:
-            # TODO remove after fixing seed
-            # Temporary solution to avoid seed missing llm_analyst
+            # TODO: remove once the seed data always has an llm_analyst (temporary workaround)
             analysis_result = {
                 "hostile_score": 0, "topic": "Other", "negative_reason": "OTHER",
                 }

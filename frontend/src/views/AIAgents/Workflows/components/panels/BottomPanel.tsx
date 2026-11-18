@@ -108,14 +108,12 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   // Save graph to local file
   const handleSaveToFile = () => {
-    // Convert to JSON string
     const jsonData = JSON.stringify(workflow, null, 2);
 
-    // Create blob and download link
     const blob = new Blob([jsonData], { type: "application/json" });
     const url = URL.createObjectURL(blob);
 
-    // Create download link and trigger click
+    // Trigger the download via a temporary link
     const a = document.createElement("a");
     a.href = url;
     a.download = `langgraph-config-${new Date()
@@ -124,7 +122,6 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     document.body.appendChild(a);
     a.click();
 
-    // Clean up
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };

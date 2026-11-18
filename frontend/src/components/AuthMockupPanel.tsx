@@ -25,13 +25,11 @@ export function AuthMockupPanel({ className }: AuthMockupPanelProps) {
         className
       )}
     >
-      {/* Light theme */}
       <div
         aria-hidden
         style={{ backgroundImage: `url('${MOCKUP_LIGHT_SRC}')` }}
         className="absolute inset-0 bg-cover bg-left-top bg-no-repeat dark:hidden"
       />
-      {/* Dark theme */}
       <div
         aria-hidden
         style={{ backgroundImage: `url('${MOCKUP_DARK_SRC}')` }}

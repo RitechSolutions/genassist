@@ -162,7 +162,6 @@ async def upload_pkl_file(
                 copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
                 await asyncio.to_thread(shutil.copyfile, file_path, copy_path)
                 file_path = copy_path
-            # file_path = await file_manager_service.get_file_url(created_file)
 
         file_id = str(created_file.id)
 

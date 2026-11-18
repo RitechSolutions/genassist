@@ -122,15 +122,6 @@ logger = logging.getLogger(__name__)
 
 class Dependencies(Module):
 
-    # ------------------------------------------------------------------
-    # PROVIDERS  (must be class methods,)
-    # ------------------------------------------------------------------
-    # @provider
-    # @singleton
-    # def provide_session_factory(self) -> async_sessionmaker:
-    #     # Use multi-tenant session manager
-    #     return multi_tenant_manager.get_master_session_factory()
-
     @provider
     @singleton
     def provide_redis_string(self) -> RedisString:

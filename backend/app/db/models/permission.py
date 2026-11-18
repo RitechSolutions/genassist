@@ -14,7 +14,6 @@ class PermissionModel(Base):
 
     # Many-to-many via role_permissions
     role_permissions = relationship("RolePermissionModel", back_populates="permission", cascade="all, delete-orphan")
-    # api_key_permissions = relationship("ApiKeyPermissionModel", back_populates="permission")
 
     def __repr__(self):
         return f"<Permissions(id={self.id}, name={self.name})>"

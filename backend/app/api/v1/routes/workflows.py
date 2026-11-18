@@ -261,7 +261,6 @@ async def execute_workflow(
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        # Use the new engine approach
         workflow_config = {
             "id": str(workflow_id),
             "nodes": workflow.nodes,
@@ -350,7 +349,6 @@ async def test_workflow(
                 "edges": workflow.edges,
             }
 
-        # Use the new engine approach
         workflow_engine = WorkflowEngine(workflow_config)
 
         thread_id = input_data.get("thread_id", str(uuid.uuid4()))
@@ -440,7 +438,6 @@ async def test_individual_node(test_data: Dict[str, Any]):
         )
 
     try:
-        # Create a unique test ID
         test_id = f"test-{node_type}-{int(time.time())}"
 
         # Build workflow configuration with single node

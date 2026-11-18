@@ -1688,13 +1688,13 @@ class TestLlmJudge:
         self.registry._invoke_json_judge = fake_judge
         await self.registry.evaluate(
             ["llm_judge"],
-            inputs={"message": "How do I pay for parking?"},
+            inputs={"message": "How do I update my billing address?"},
             outputs="Tap the app.",
             reference_outputs=None,
             technique_configs={"llm_judge": {"rubric": "Is the reply relevant?"}},
         )
         assert "QUESTION:" in captured["user_content"]
-        assert "How do I pay for parking?" in captured["user_content"]
+        assert "How do I update my billing address?" in captured["user_content"]
 
     @pytest.mark.asyncio
     async def test_malformed_judge_output_is_evaluator_error(self):
