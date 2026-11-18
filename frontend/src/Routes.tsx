@@ -115,7 +115,6 @@ export const RoutesProvider = () => {
   }, [setRegistrationStatus]);
 
   useEffect(() => {
-    // check if the user has skipped onboarding
     const skipFlag = localStorage.getItem("skip_onboarding") === "true";
     if (skipFlag) {
       setSkipOnboarding(true);
@@ -127,7 +126,7 @@ export const RoutesProvider = () => {
     checkRegistration();
   }, [checkRegistration]);
 
-  // temporary skip handler
+  // Lets onboarding be skipped via a "skip-onboarding" window event.
   useEffect(() => {
     const handleSkip = () => setRegistrationStatus("existing");
     window.addEventListener("skip-onboarding", handleSkip);

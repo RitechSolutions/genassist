@@ -38,7 +38,7 @@ async def get_configs_list(
     return await config_service.get_list_paginated(filter_obj, is_system=is_system)
 
 
-# TODO set permission validation
+# TODO: add permission validation
 @router.get(
     "/configs",
     response_model=List[AgentRead],

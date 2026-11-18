@@ -1,9 +1,3 @@
-//
-//  GenassistChat.swift
-//  GenassistChatIOS
-//
-//  Created by Krist V on 24.5.25.
-//
 import SwiftUI
 import Foundation
 import AVFoundation
@@ -78,7 +72,6 @@ public struct GenassistChat: View {
     
     public var body: some View {
         mainContainer
-        //.overlay(loadingOverlay)
             .alert("Error", isPresented: .constant(error != nil)) {
                 Button("OK") { error = nil }
             } message: {
@@ -111,14 +104,6 @@ public struct GenassistChat: View {
             .onDisappear {
                 chatService.disconnect()
             }
-        //            .onReceive(NotificationCenter.default.publisher(for: .scenePhase)) { phase in
-        //                // Check permissions when app becomes active (e.g., returning from Settings)
-        //                if phase == .active && configuration.useVoice {
-        //                    Task {
-        //                        await viewModel.checkPermissions()
-        //                    }
-        //                }
-        //            }
     }
     
     private var mainContainer: some View {
@@ -178,7 +163,6 @@ public struct GenassistChat: View {
                             }()
                             
                             await sendMessage(
-                                //"Schedule confirmed with \(scheduleItem.restaurants.count) restaurants",
                                 "Confirm Schedule",
                                 extraMetadata: ["confirmSchedule": scheduleStringified]
                             )
@@ -187,12 +171,6 @@ public struct GenassistChat: View {
                 },
                 onMessageUpdate: { updatedContent in
                     if let messageIndex = messages.firstIndex(where: { $0.id == message.id }) {
-//                        messages[messageIndex] = ChatMessage(
-//                            id: message.id,
-//                            content: updatedContent,
-//                            isUser: message.isUser,
-//                            timestamp: message.timestamp
-//                        )
                         chatService.updateMessage(index:messageIndex, text:updatedContent)
 
                     }
@@ -219,7 +197,6 @@ public struct GenassistChat: View {
                                 }
                             }
                         )
-//                        .padding(.horizontal)
                     }
                     conversationSection
                     
@@ -332,11 +309,6 @@ public struct GenassistChat: View {
     private var inputView: some View {
         HStack(spacing: 8) {
             HStack {
-                // Button(action: {}) {
-                //     Image(systemName: "paperclip")
-                //         .foregroundColor(Color(.systemGray))
-                //         .frame(width: 24, height: 24)
-                // }
                 
                 TextField(placeholder, text: $newMessage)
                     .textFieldStyle(.plain)
@@ -463,9 +435,6 @@ public struct GenassistChat: View {
                         )
                     }
                 }
-//                if chatMessage.isUser {
-//                    isLoading = true
-//                }
             }
             // Load saved messages
             let savedMessages = chatService.getMessages()
@@ -524,9 +493,6 @@ public struct GenassistChat: View {
         lastUserMessageWasSpeech = wasSentViaSpeech
         
         newMessage = ""
-//        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-//            isLoading = true
-//        }
         
         // Set waitingForResponse to true after 1 second
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -536,7 +502,7 @@ public struct GenassistChat: View {
         do {
             try await chatService.sendMessage(trimmedMessage,extraMetadata:extraMetadata)
         } catch {
-            //self.error = error
+            // Send errors are not surfaced in the UI.
         }
 
     }
@@ -591,18 +557,13 @@ public struct GenassistChat: View {
     }
     
     private func handleFeedback(isPositive: Bool, messageId: UUID) {
-        // Handle feedback - you can customize this based on your needs
-        // For now, we'll just print the feedback
+       // Logs the feedback. A thumbs-down also sends a follow-up message to the agent.
         print("Feedback received: \(isPositive ? "thumbs up" : "thumbs down") for message \(messageId)")
         if !isPositive {
             Task {
                 await sendMessage("Not a good response!")
             }
         }
-        // You can add additional logic here such as:
-        // - Sending feedback to your backend
-        // - Storing feedback locally
-        // - Updating UI state to show feedback was received
     }
     
 }

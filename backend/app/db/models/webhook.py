@@ -1,4 +1,3 @@
-# app/db/models/webhook.py
 from sqlalchemy import Column, String, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID

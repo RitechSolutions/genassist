@@ -88,7 +88,6 @@ class DatabaseManager:
     """
 
     def __init__(self, config: Dict[str, Any]):
-        # self.config: Dict = self._load_config(config_path)
         self.config = config
         self.connection_string = self.config.get("connection_string")
         # Map source_type to database_type for compatibility
@@ -332,7 +331,6 @@ class DatabaseManager:
                 (ssh_host, int(ssh_port)),
                 ssh_username=ssh_user,
                 ssh_pkey=ssh_key_path,
-                # ssh_pkey=private_key,
                 remote_bind_address=(db_host, int(db_port)),
             )
 

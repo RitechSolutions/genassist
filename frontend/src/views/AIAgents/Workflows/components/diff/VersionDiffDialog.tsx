@@ -122,7 +122,7 @@ const VersionDiffDialog: React.FC<VersionDiffDialogProps> = ({ open, onClose, ba
           </DialogDescription>
         </DialogHeader>
 
-        {/* Base vs target identity (FR-2) */}
+        {/* Base vs target identity */}
         <div className="flex flex-wrap items-center gap-2 border-b border-border py-3">
           {versionChip(base, 'base')}
           <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />

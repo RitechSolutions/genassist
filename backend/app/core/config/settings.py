@@ -220,7 +220,7 @@ class ProjectSettings(BaseSettings):
     LOG_LEVEL: str = "DEBUG"
     SQLALCHEMY_LOG_LEVEL: str = "ERROR"
     FASTAPI_RUN_PORT: int = 8000
-    # for alembic migration on startup (changed type from int to bool)
+    # Run Alembic migrations on startup
     AUTO_MIGRATE: bool = True
     API_VERSION: Optional[str] = "1.0"
     OPENAPI_PATH: str = "openapi.json"

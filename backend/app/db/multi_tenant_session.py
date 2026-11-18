@@ -212,7 +212,7 @@ class MultiTenantSessionManager:
 
             # Point Alembic at our alembic.ini configurations (same pattern as migrations.py)
             # Get the project root relative to this file
-            current_file = os.path.abspath(__file__)  # app/db/multi_tenant_session.py
+            current_file = os.path.abspath(__file__)
             project_root = os.path.dirname(
                 os.path.dirname(os.path.dirname(current_file))
             )  # project root

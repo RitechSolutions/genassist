@@ -80,10 +80,7 @@ class SimpleChunker(BaseChunker):
         Returns:
             List of text chunks
         """
-        # if not separators:
-        #     return [text] if text else []
-        
-        # recursivly no separators left → must hard-split if still too big
+        # No separators left: hard-split if the text is still too big
         if not separators:
             if len(text) <= self.config.chunk_size:
                 return [text]

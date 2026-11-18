@@ -85,7 +85,6 @@ class ErrorKey(Enum):
     TOOL_DELETION_FAILED = "TOOL_DELETION_FAILED"
     KB_NOT_FOUND = "KB_NOT_FOUND"
     AGENT_NOT_ACTIVE = "AGENT_NOT_ACTIVE"
-    # MISSING_API_KEY_LLM_PROVIDER = "MISSING_API_KEY_LLM_PROVIDER"
     EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS"
     ENTRA_OID_IN_USE = "ENTRA_OID_IN_USE"
     AGENT_INACTIVE = "AGENT_INACTIVE"
@@ -407,7 +406,3 @@ def validate_error_messages():
         missing_keys = base_keys - set(messages.keys())
         if missing_keys:
             logger.warning(f"Warning: Missing keys in '{lang}': {missing_keys}")
-
-
-# TODO uncomment in case we add other languages in the future and want warnings about missing keys
-# validate_error_messages()

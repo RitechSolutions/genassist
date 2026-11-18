@@ -131,7 +131,6 @@ struct InteractiveChatItem: View {
                     }
                 },
                 onScheduleUpdate: { updatedScheduleItem in
-                    // Update state directly
                     updateScheduleItemState(scheduleItem: updatedScheduleItem, restaurant: nil, selectedSlot: nil)
                 },
                 onScheduleConfirm: onScheduleConfirm,
@@ -166,7 +165,7 @@ struct DynamicItemView: View {
         if item.category != nil && !item.category!.isEmpty {
             extraLines = 2
         }
-        let maxLines = max(1, Int(availableHeight / lineHeight) - extraLines) // -1 for title space
+        let maxLines = max(1, Int(availableHeight / lineHeight) - extraLines) // reserve lines for the title (and category)
 
         return min(maxLines, 6) // Cap at 6 lines for reasonable UX
     }
@@ -331,13 +330,11 @@ struct SlotsView: View {
     
     var body: some View {
         HStack(spacing: 4) {
-            // Show day header if all slots are on the same date
-            //if let day = slotDisplayData.day {
+            // Day header when all slots share a date, otherwise "Slots"
                 Text(slotDisplayData.day ?? "Slots")
                     .font(configuration.dynamicItem.descriptionFont)
                     .foregroundColor(configuration.dynamicItem.descriptionColor)
                     .fontWeight(.medium)
-            //}
             
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: configuration.dynamicItem.optionsConfiguration.spacing) {
@@ -440,15 +437,13 @@ struct ScheduleItemView: View {
                                 isRemovable: true,
                                 onTap: {},
                                 onItemTap: { _ in
-                                    // do nothing
+                                    // No action on item tap
                                 },
                                 onItemSlotTap: { item, slot in
-                                    // Update internal state
                                     updateRestaurantSlot(restaurant: item, selectedSlot: slot)
                                     hasChanges = true
                                 },
                                 onItemDelete: { item in
-                                    // Update internal state
                                     removeRestaurant(restaurant: item)
                                     hasChanges = true
                                 },

@@ -267,7 +267,6 @@ export const JsonInput: React.FC<JsonInputProps> = ({
 
   return (
     <div className={className}>
-      {/* Header */}
       {(label || showValid || showError) && (
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -327,7 +326,6 @@ export const JsonInput: React.FC<JsonInputProps> = ({
         <p className="text-xs text-gray-500 mb-2">{description}</p>
       )}
 
-      {/* Editor */}
       <div
         className={cn(
           "relative rounded-lg overflow-hidden border transition-all",
@@ -361,7 +359,6 @@ export const JsonInput: React.FC<JsonInputProps> = ({
             </div>
           )}
 
-          {/* Editor container */}
           <div className="flex-1 relative">
             {/* Syntax highlighted overlay */}
             <pre
@@ -412,7 +409,6 @@ export const JsonInput: React.FC<JsonInputProps> = ({
         </div>
       </div>
 
-      {/* Error message */}
       {showError && (
         <div className="mt-2 p-2 rounded-md bg-red-50 border border-red-200">
           <p className="text-xs text-red-700 font-medium flex items-start gap-1.5">

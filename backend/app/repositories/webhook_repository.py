@@ -98,7 +98,7 @@ class WebhookRepository(DbRepository[WebhookModel]):
         if not webhook:
             return False
         webhook.is_deleted = 1
-        # await self.db.delete(webhook) # Only Soft Delete
+        # Soft delete only; the row is kept.
         await self.db.flush()
         await self.db.refresh(webhook)
         return True

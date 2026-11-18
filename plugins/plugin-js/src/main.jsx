@@ -2,11 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { GenAgentChat } from "../../react/src";
 
-// Import CSS files
 import "./font.css";
 import "./index.css";
 
-// Keep a reference to the React root so we can safely re-bootstrap
+// Keep a reference to the React root so bootstrap() can safely run again
 let genassistRoot = null;
 
 function bootstrap() {
@@ -44,8 +43,8 @@ function bootstrap() {
   );
 }
 
-// expose for debugging if needed
+// Exposed so the host page can re-render after changing GENASSIST_CONFIG
 window.GenassistBootstrap = bootstrap;
 
-// auto-start if config exists
+// Render on load (no-op when the root container is missing)
 bootstrap();

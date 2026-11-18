@@ -312,7 +312,6 @@ class AgentRAGServiceManager:
                                 elif isinstance(file_item, dict):
                                     # Legacy format: dict with file_path and/or url/urls
                                     file_path = file_item.get("file_path")
-                                    # file_url = file_item.get("url") or file_item.get("urls")
                                     file_url = file_item.get("file_url")
                                     # file storage provider
                                     file_storage_provider = file_item.get("storage_provider") or file_storage_settings.FILE_MANAGER_PROVIDER or StorageProvider.LOCAL

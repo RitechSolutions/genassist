@@ -511,9 +511,7 @@ async def get_content_from_file(mode: str, file):
             return result
 
 
-        # MODE: TRANSCRIBE
         elif mode == "transcribe":
-            # whisper.transcribe
             the_file = UploadFile(
                 filename=file.filename,
                 file=file,
@@ -540,7 +538,6 @@ async def get_content_from_file(mode: str, file):
             return result
 
 
-        # MODE: EXTRACT
         elif mode == "extract":
 
             result["content"] = FileTextExtractor().extract(file = file)

@@ -44,7 +44,6 @@ export const FeatureFlagProvider: React.FC<FeatureFlagProviderProps> = ({ childr
   };
 
   useEffect(() => {
-    // check if the user is authenticated
     if (isAuthenticated()) {
       fetchFlags();
       return;

@@ -84,8 +84,6 @@ class UserService:
             return None
         user_auth = UserReadAuth.model_validate(user)
         logger.debug("User found: user_id=%s, tenant_id=%s", user_id, tenant_id)
-        # if user.user_type.name == 'console':
-        #     raise AppException(error_key=ErrorKey.LOGIN_ERROR_CONSOLE_USER)
         return user_auth
 
     async def get_by_username(self, username: str, *, include_deleted: bool = False, throw_not_found: bool = True):

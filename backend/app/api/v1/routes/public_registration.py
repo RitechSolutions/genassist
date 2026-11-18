@@ -29,7 +29,7 @@ async def get_registration_id():
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
 
-    # Create a new GUID and write it
+    # Create a new registration ID and write it to the file
     try:
         registration_id = str(uuid.uuid4())
         with open(FILE_PATH, "w") as f:

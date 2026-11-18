@@ -330,7 +330,6 @@ export function EntityTableCard<T extends { id?: string | number }>({
     }
   };
 
-  // Filtering.
   const query = searchQuery.trim();
   const filteredItems =
     query.length === 0
@@ -389,7 +388,6 @@ export function EntityTableCard<T extends { id?: string | number }>({
 
   const allColumns = actionsColumn ? [...dataColumns, actionsColumn] : dataColumns;
 
-  // Empty state.
   const resolvedEmptyState: ReactNode | undefined = !emptyState
     ? undefined
     : isEntityEmptyState(emptyState)
