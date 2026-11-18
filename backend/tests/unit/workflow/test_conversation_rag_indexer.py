@@ -12,8 +12,8 @@ from tests.unit.workflow.thread_rag_fakes import ACME_CHAT, GLOBEX_CHAT, make_se
 INDEXER_LOGGER = "app.modules.workflow.agents.conversation_rag_indexer"
 RETRIEVED_BLOCK_TYPE = "rag_retrieved_history"
 TOPICS = [
-    "parking", "refunds", "invoices", "permits", "zones", "fines", "tickets", "billing", "accounts", "passwords",
-    "cards", "receipts", "vouchers", "discounts", "garages", "meters", "plates", "vehicles", "badges", "sensors",
+    "shipping", "refunds", "invoices", "returns", "warranties", "coupons", "tickets", "billing", "accounts", "passwords",
+    "cards", "receipts", "vouchers", "discounts", "subscriptions", "newsletters", "profiles", "deliveries", "badges", "sensors",
 ]
 RECENT_MESSAGES = 6
 ORDER_TURN = 1

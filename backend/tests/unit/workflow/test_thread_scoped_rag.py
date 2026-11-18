@@ -44,7 +44,7 @@ async def test_retrieve_returns_nothing_from_another_chat(thread_rag):
 
 @pytest.mark.asyncio
 async def test_retrieve_returns_the_best_matches_first_up_to_top_k(thread_rag):
-    await thread_rag.add_message(ACME_CHAT, "Parking permits are renewed every month.", "acme-1")
+    await thread_rag.add_message(ACME_CHAT, "Library cards are renewed every month.", "acme-1")
     await thread_rag.add_message(ACME_CHAT, ACME_NOTE, "acme-2")
     await thread_rag.add_message(ACME_CHAT, "The invoice was paid in March.", "acme-3")
 
