@@ -109,3 +109,14 @@ export interface GroupAgentItem {
   id: string;
   name: string;
 }
+
+export interface GuardrailTotalsItem {
+  check_type: string;
+  blocked: number;
+  flagged: number;
+  errors: number;
+}
+
+export interface GuardrailTotalsResponse {
+  items: GuardrailTotalsItem[];
+}

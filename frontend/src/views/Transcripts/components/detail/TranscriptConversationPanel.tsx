@@ -40,6 +40,7 @@ export function TranscriptConversationPanel({
     chatContainerRef,
     showCosts,
     costsByMessageId,
+    guardrailByMessageId,
     handleMessageFeedback,
     openDebugMessage,
   } = controller;
@@ -74,6 +75,7 @@ export function TranscriptConversationPanel({
             isCall={isCall}
             showCosts={showCosts}
             costsByMessageId={costsByMessageId}
+            guardrailByMessageId={guardrailByMessageId}
             onMessageFeedback={handleMessageFeedback}
             onTranscriptChange={setTranscript}
             onDebugMessage={openDebugMessage}

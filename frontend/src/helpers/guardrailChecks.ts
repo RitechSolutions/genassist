@@ -1,5 +1,6 @@
 import {
   GuardrailCheckSettings,
+  GuardrailEvent,
   GuardrailPolicy,
   GuardrailStage,
   GuardrailVerdict,
@@ -85,3 +86,35 @@ const STAGE_LABELS: Record<GuardrailStage, string> = {
 
 export const guardrailStageLabel = (stage: string): string =>
   STAGE_LABELS[stage as GuardrailStage] ?? stage;
+
+type UnknownRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is UnknownRecord =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isVerdict = (value: unknown): value is GuardrailVerdict =>
+  isRecord(value) &&
+  typeof value.check_type === "string" &&
+  typeof value.action === "string";
+
+export const extractGuardrailChecks = (parsed: unknown): GuardrailVerdict[] => {
+  if (!isRecord(parsed)) return [];
+  const row = isRecord(parsed.row_agent_response)
+    ? parsed.row_agent_response.guardrail_events
+    : undefined;
+  const events = Array.isArray(row) ? row : parsed.guardrail_events;
+  return Array.isArray(events) ? events.filter(isVerdict) : [];
+};
+
+export type GuardrailChip = "blocked" | "flagged";
+
+export const guardrailChipsByMessage = (
+  events: GuardrailEvent[]
+): Record<string, GuardrailChip> => {
+  const chips: Record<string, GuardrailChip> = {};
+  for (const { transcript_message_id: id, action } of events) {
+    if (!id || (action !== "blocked" && action !== "flagged")) continue;
+    if (chips[id] !== "blocked") chips[id] = action;
+  }
+  return chips;
+};
