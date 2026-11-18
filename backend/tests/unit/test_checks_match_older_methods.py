@@ -120,9 +120,9 @@ class TestReplies:
 
     def test_does_not_contain_fails_the_conversation_on_any_turn(self):
         turns = [(case("c1", turn_index=0), trace({"message": "Hello"})),
-                 (case("c2", turn_index=1), trace({"message": "Try JustPark"}))]
-        assert [old("not_contains", {"phrases": ["JustPark"]}, *turn) for turn in turns] == ["passed", "failed"]
-        assert new("not_contains", {"phrases": ["JustPark"]}, turns) == "failed"
+                 (case("c2", turn_index=1), trace({"message": "Try OtherApp"}))]
+        assert [old("not_contains", {"phrases": ["OtherApp"]}, *turn) for turn in turns] == ["passed", "failed"]
+        assert new("not_contains", {"phrases": ["OtherApp"]}, turns) == "failed"
 
     @pytest.mark.parametrize("output, verdict", [
         ({"a": 1}, "passed"),

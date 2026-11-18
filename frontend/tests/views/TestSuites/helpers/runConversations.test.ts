@@ -230,7 +230,7 @@ describe("a turn's results", () => {
     const skipped = rule({
       id: "r2",
       status: "not_evaluated",
-      details: { expected: "The reply should mention RingGo", observed: "not evaluated", comment: "No reply." },
+      details: { expected: "The reply should mention RivalApp", observed: "not evaluated", comment: "No reply." },
     });
     expect(
       turnChecks(turn({ rules: [failed, skipped] })).map(({ key, status, title, actual, note }) => ({
@@ -248,7 +248,7 @@ describe("a turn's results", () => {
         actual: "Called once",
         note: null,
       },
-      { key: "r2", status: "not_evaluated", title: "The reply should mention RingGo", actual: null, note: "No reply." },
+      { key: "r2", status: "not_evaluated", title: "The reply should mention RivalApp", actual: null, note: "No reply." },
     ]);
   });
 
@@ -584,7 +584,7 @@ describe("a conversation's findings", () => {
             id: "w",
             scope: "conversation",
             status: "failed",
-            details: { expected: "The reply should never mention RingGo" },
+            details: { expected: "The reply should never mention RivalApp" },
           }),
         ],
       }),
@@ -594,7 +594,7 @@ describe("a conversation's findings", () => {
       "Turn 2: the turn did not finish",
       "Turn 3: Is the answer correct?",
       'Turn 4: Any agent must use "Save region" on turn 4.',
-      "The reply should never mention RingGo",
+      "The reply should never mention RivalApp",
     ]);
   });
 

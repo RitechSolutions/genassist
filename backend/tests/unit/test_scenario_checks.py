@@ -66,7 +66,7 @@ class TestModel:
     def test_a_complete_config_parses(self):
         parsed = parse_checks_config({
             "checks": [
-                {"id": "a", "kind": "reply_mentions", "text": "RingGo", "expect": "should_not"},
+                {"id": "a", "kind": "reply_mentions", "text": "RivalApp", "expect": "should_not"},
                 {"id": "b", "kind": "tool_called", "tool_name": "save_region", "level": "turn", "case_id": "x"},
             ],
             "llm_provider_id": "p1",
@@ -318,8 +318,8 @@ class TestGrading:
         assert broke["result"]["checked_facts"][1] == 'The reply did not mention "London".'
 
     def test_should_not_fails_on_the_first_time_it_happens(self):
-        conversations = [[turn("a1", "a", 0, reply="Use RingGo"), turn("a2", "a", 1, reply="or RingGo")]]
-        (entry,) = grade([check(text="ringgo", expect="should_not", level="conversation", conversation_id="a")],
+        conversations = [[turn("a1", "a", 0, reply="Use RivalApp"), turn("a2", "a", 1, reply="or RivalApp")]]
+        (entry,) = grade([check(text="rivalapp", expect="should_not", level="conversation", conversation_id="a")],
                          conversations)
         assert entry["result"]["status"] == "failed"
         assert entry["result"]["observed"].startswith("Turn 1:")

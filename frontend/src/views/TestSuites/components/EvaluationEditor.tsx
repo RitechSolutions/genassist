@@ -312,7 +312,7 @@ export const EvaluationEditor: React.FC<EvaluationEditorProps> = ({
               id={`${fieldId}-name`}
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="e.g. Parker refunds"
+              placeholder="e.g. Helpdesk refunds"
             />
           </Field>
           <Field id={`${fieldId}-description`} label="Description">

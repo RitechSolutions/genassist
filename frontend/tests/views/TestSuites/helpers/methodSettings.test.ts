@@ -31,7 +31,7 @@ describe("method settings", () => {
     expect(fresh.nliMinEntailScore).toBe("0.5");
     expect(fresh.judgeProviderId).toBe("p1");
     expect(fresh.toolRules).toEqual([]);
-    expect(methodDefaults({ notContainsText: "RingGo" }, []).notContainsText).toBe("RingGo");
+    expect(methodDefaults({ notContainsText: "RivalApp" }, []).notContainsText).toBe("RivalApp");
   });
 
   it("rewrite legacy tool names to ids, and keep the same rules when nothing changed", () => {
@@ -46,12 +46,12 @@ describe("method settings", () => {
 describe("checks in the evaluation form", () => {
   const evaluation: TestEvaluationConfig = {
     id: "e1",
-    name: "Parker",
+    name: "Helpdesk",
     suite_id: "s1",
     techniques: ["contains", "checks"],
     technique_configs: {
       checks: {
-        checks: [{ id: "c1", kind: "reply_mentions", text: "RingGo", expect: "should_not", level: "every_conversation", when: "anywhere" }],
+        checks: [{ id: "c1", kind: "reply_mentions", text: "RivalApp", expect: "should_not", level: "every_conversation", when: "anywhere" }],
         llm_provider_id: "p2",
       },
     },
