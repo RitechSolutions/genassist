@@ -37,7 +37,7 @@ export function resolveTakeoverSupervisorId(
     return id || undefined;
 }
 
-// New interfaces for dashboard WebSocket
+// Dashboard WebSocket
 export interface UseWebSocketDashboardOptions {
     token: string;
     lang?: string;

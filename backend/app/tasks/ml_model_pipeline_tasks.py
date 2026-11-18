@@ -403,11 +403,9 @@ async def check_and_execute_scheduled_pipelines_async():
             config_repository = MLModelPipelineConfigRepository(session)
             run_repository = MLModelPipelineRunRepository(session)
 
-            # Get all configs with cron schedules (this would need a new method)
-            # For now, we'll get all configs and filter
-            # TODO: Add a method to get configs with cron schedules
+            # TODO: add a repository method that returns only configs with a cron schedule
 
-            # Get all active configs (simplified - in production, add a method to filter by cron_schedule)
+            # For now, load all active configs and filter them here
             from sqlalchemy import select
             from app.db.models.ml_model_pipeline import MLModelPipelineConfig
 

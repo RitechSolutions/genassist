@@ -300,7 +300,6 @@ class WorkflowState:
         if node_id not in self.node_outputs:
             self.node_outputs[node_id] = {}
         self.node_outputs[node_id][output_key] = output
-        # if node_id not in self.execution_path:
         self.execution_path.append(node_id)
 
     def get_node_config(self, node_id: str) -> dict:
@@ -798,7 +797,6 @@ class WorkflowState:
     def set_node_output(self, node_id: str, output: Any) -> None:
         """Set the output of a specific node"""
         self.node_outputs[node_id] = output
-        # if node_id not in self.execution_path:
         self.execution_path.append(node_id)
 
     def set_node_input(self, node_id: str, input_data: Any) -> None:

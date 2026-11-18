@@ -101,7 +101,6 @@ import type { DataSource } from "@/interfaces/dataSource.interface";
 import type { FieldSchema } from "@/interfaces/dynamicFormSchemas.interface";
 import WorkflowMiniMap from "./components/WorkflowMiniMap";
 
-// Get node types and edge types for React Flow
 const nodeTypes = getNodeTypes();
 const edgeTypes = getEdgeTypes();
 
@@ -215,7 +214,6 @@ const GraphFlowContent: React.FC = () => {
   const [minimapVisible, setMinimapVisible] = useState(false);
   const minimapHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Context menu state
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
 
   // Node search state (spotlight search — opened via ⌘K / Ctrl+K or "/")
@@ -255,7 +253,6 @@ const GraphFlowContent: React.FC = () => {
         { zoom: 1.2, duration: 400 }
       );
 
-      // Select the node
       setNodes((nds) =>
         nds.map((n) => ({
           ...n,
@@ -386,7 +383,7 @@ const GraphFlowContent: React.FC = () => {
   const agentLoadRef = useRef(0);
   const edgeReconnectSuccessful = useRef(true);
 
-  // Handle double-click on nodes to focus view using helper function
+  // Double-clicking a node focuses the view on it
   const onNodeDoubleClick: NodeMouseHandler = useCallback(
     (event, node) => {
       handleNodeDoubleClick(event, node, reactFlowInstance);
@@ -631,7 +628,6 @@ const GraphFlowContent: React.FC = () => {
     [agentId, handleAgentUpdated]
   );
 
-  // Drag and drop handlers using helper functions
   const onDragOver = useCallback((event: React.DragEvent) => {
     handleDragOver(event);
   }, []);
@@ -665,7 +661,7 @@ const GraphFlowContent: React.FC = () => {
     [validateConnection, nodes, edges]
   );
 
-  // Connection handler with special handling for connections
+  // Connection handler
   const onConnect = useCallback(
     (params: Connection) => {
       const check = checkConnection(params);
@@ -750,7 +746,6 @@ const GraphFlowContent: React.FC = () => {
     []
   );
 
-  // Toggle panel functions
   const toggleNodePanel = () => {
     setShowNodePanel(!showNodePanel);
     if (showWorkflowPanel) setShowWorkflowPanel(false);
@@ -768,7 +763,6 @@ const GraphFlowContent: React.FC = () => {
     setNodes((nds) => restoreNodeFunctions(nds));
   }, [restoreNodeFunctions, setNodes]);
 
-  // Add a new node
   const addNewNode = (
     nodeType: string,
     nodePosition?: { x: number; y: number }
@@ -886,7 +880,6 @@ const GraphFlowContent: React.FC = () => {
     }
   }, [nodes, edges, isSettling, takeSnapshot]);
 
-  // Handler for adding nodes from context menu
   const handleAddNodeFromContextMenu = useCallback(
     (nodeType: string, position: { x: number; y: number }) => {
       addNewNode(nodeType, position);
@@ -909,7 +902,7 @@ const GraphFlowContent: React.FC = () => {
     [reactFlowInstance]
   );
 
-  // Keyboard event handlers for copy/paste/undo/redo
+  // Clipboard handlers for copy/paste
   // Copy selected nodes and their internal edges to clipboard
   const copySelectedNodes = useCallback(() => {
     const copied = getSelectedWithGroupChildren(nodesRef.current);
@@ -1284,7 +1277,7 @@ const GraphFlowContent: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
 
-      // Compare lowercase keys 
+      // Compare lowercase keys
       const isUndo =
         (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey;
       const isRedo =

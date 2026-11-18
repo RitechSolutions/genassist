@@ -338,9 +338,6 @@ class LightRAGProvider(FinalizableProvider):
             # mainly ensures all pending operations are complete
             logger.info(f"Finalizing LightRAG for KB {self.knowledge_base_id}")
 
-            # Any additional finalization steps can be added here
-            # For now, we just confirm the system is ready
-
             logger.info(f"LightRAG finalization complete for KB {self.knowledge_base_id}")
             return True
 
@@ -377,6 +374,5 @@ class LightRAGProvider(FinalizableProvider):
         if self.rag:
             # LightRAG cleanup if needed
             logger.info(f"Closing LightRAG provider for KB {self.knowledge_base_id}")
-            # Any specific cleanup operations can be added here
 
         self._document_map.clear()

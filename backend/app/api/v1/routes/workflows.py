@@ -274,7 +274,6 @@ async def execute_workflow(
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        # Use the new engine approach
         workflow_config = {
             "id": str(workflow_id),
             "nodes": workflow.nodes,

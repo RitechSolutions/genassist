@@ -12,27 +12,23 @@ public class TextToSpeechManager: NSObject, ObservableObject, @unchecked Sendabl
     }
     
     public func speak(_ text: String, voice: AVSpeechSynthesisVoice? = nil, rate: Float = AVSpeechUtteranceDefaultSpeechRate, volume: Float = 0.8) {
-        // Stop any current speech
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
         
         let utterance = AVSpeechUtterance(string: text)
         
-        // Configure voice settings
         if let voice = voice {
             utterance.voice = voice
         } else {
-            // Use system default voice
+            // Default to US English
             utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
         }
         
-        // Configure speech settings
         utterance.rate = rate
         utterance.pitchMultiplier = 1.0
         utterance.volume = volume
         
-        // Start speaking
         synthesizer.speak(utterance)
         DispatchQueue.main.async {
             self.isSpeaking = true
