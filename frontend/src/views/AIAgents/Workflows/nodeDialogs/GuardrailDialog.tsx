@@ -7,6 +7,7 @@ import { useToast } from "@/components/use-toast";
 import {
   DEFAULT_BLOCKED_MESSAGE,
   HARM_CATEGORIES,
+  guardrailLimitError,
 } from "@/helpers/guardrailChecks";
 import {
   GuardrailCheckSettings,
@@ -48,12 +49,21 @@ export const GuardrailDialog: React.FC<Props> = (props) => {
   const topicsComplete = values.denied_topics.every(
     (topic) => topic.name.trim() && topic.definition.trim()
   );
+  const limitError = guardrailLimitError(values);
 
   const saveIfValid = () => {
     if (!topicsComplete) {
       toast({
         title: "Topic incomplete",
         description: "Give each denied topic a name and a definition.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (limitError) {
+      toast({
+        title: "Over the limit",
+        description: limitError,
         variant: "destructive",
       });
       return;
@@ -68,7 +78,10 @@ export const GuardrailDialog: React.FC<Props> = (props) => {
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={saveIfValid} disabled={!topicsComplete}>
+          <Button
+            onClick={saveIfValid}
+            disabled={!topicsComplete || !!limitError}
+          >
             <Save className="h-4 w-4 mr-2" />
             Save Changes
           </Button>

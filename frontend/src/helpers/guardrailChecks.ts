@@ -43,6 +43,32 @@ export const usesJudge = (
   settings.denied_topics.length > 0 ||
   untrustedContent !== "off";
 
+const MAX_BLOCKED_WORDS = 200;
+const MAX_BLOCKED_WORD_LENGTH = 100;
+const MAX_EXAMPLE_LENGTH = 200;
+
+export const guardrailLimitError = ({
+  blocked_words,
+  denied_topics,
+}: Pick<GuardrailCheckSettings, "denied_topics" | "blocked_words">):
+  | string
+  | null => {
+  if (blocked_words.length > MAX_BLOCKED_WORDS) {
+    return `Keep blocked words to ${MAX_BLOCKED_WORDS} or fewer.`;
+  }
+  if (blocked_words.some((word) => word.length > MAX_BLOCKED_WORD_LENGTH)) {
+    return `Keep each blocked word to ${MAX_BLOCKED_WORD_LENGTH} characters or fewer.`;
+  }
+  if (
+    denied_topics.some((topic) =>
+      topic.examples.some((example) => example.length > MAX_EXAMPLE_LENGTH)
+    )
+  ) {
+    return `Keep each topic example to ${MAX_EXAMPLE_LENGTH} characters or fewer.`;
+  }
+  return null;
+};
+
 const CHECK_LABELS: Record<string, string> = {
   blocked_words: "Blocked word",
   too_long: "Too long to check",

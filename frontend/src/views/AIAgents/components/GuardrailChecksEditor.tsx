@@ -12,7 +12,11 @@ import {
   SelectValue,
 } from "@/components/select";
 import { TagsFieldInput } from "@/components/TagsFieldInput";
-import { HARM_CATEGORIES, usesJudge } from "@/helpers/guardrailChecks";
+import {
+  HARM_CATEGORIES,
+  guardrailLimitError,
+  usesJudge,
+} from "@/helpers/guardrailChecks";
 import {
   DeniedTopic,
   GuardrailCheckSettings,
@@ -87,6 +91,8 @@ export function GuardrailChecksEditor({
         i === index ? { ...topic, ...patch } : topic
       ),
     });
+
+  const limitError = guardrailLimitError(value);
 
   return (
     <div className="space-y-6">
@@ -241,6 +247,8 @@ export function GuardrailChecksEditor({
           Matched as whole words. No judge needed.
         </p>
       </div>
+
+      {limitError && <p className="text-xs text-destructive">{limitError}</p>}
     </div>
   );
 }
