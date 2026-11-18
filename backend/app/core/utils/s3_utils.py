@@ -1,10 +1,30 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
 
+from app.core.config.settings import settings
+
 logger = logging.getLogger(__name__)
+
+SERVER_ROLE_NOT_ALLOWED = (
+    "Enter the access key and secret key: this server does not allow S3 data sources to use its own AWS access."
+)
+
+
+class ServerRoleNotAllowedError(ValueError):
+    """An S3 data source has no keys and the server does not allow its own AWS access."""
+
+
+def s3_data_source_keys(connection_data: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """The data source's access key and secret key; both None means the server's own AWS access."""
+    access_key = connection_data.get("access_key") or None
+    secret_key = connection_data.get("secret_key") or None
+    has_no_keys = access_key is None and secret_key is None
+    if has_no_keys and not settings.S3_DATA_SOURCES_USE_SERVER_ROLE:
+        raise ServerRoleNotAllowedError(SERVER_ROLE_NOT_ALLOWED)
+    return access_key, secret_key
 
 
 def is_s3_not_found_error(error: ClientError) -> bool:
@@ -13,6 +33,23 @@ def is_s3_not_found_error(error: ClientError) -> bool:
     code = str(response.get("Error", {}).get("Code", ""))
     status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
     return code in {"404", "NoSuchKey", "NotFound"} or status == 404
+
+
+def build_s3_client(
+    aws_access_key_id: Optional[str] = None,
+    aws_secret_access_key: Optional[str] = None,
+    region_name: Optional[str] = None,
+    aws_session_token: Optional[str] = None,
+):
+    """A boto3 S3 client; empty settings are left out, so empty keys use the server's AWS role."""
+    settings = {
+        "region_name": region_name,
+        "aws_access_key_id": aws_access_key_id,
+        "aws_secret_access_key": aws_secret_access_key,
+        "aws_session_token": aws_session_token,
+    }
+    client_options: Dict[str, Any] = {name: value for name, value in settings.items() if value}
+    return boto3.client("s3", **client_options)
 
 
 class S3Client:
@@ -29,19 +66,7 @@ class S3Client:
         If credentials are not provided, boto3 will use the default credential chain.
         """
         self.bucket_name = bucket_name
-        client_options: Dict[str, Any] = {}
-        if region_name:
-            client_options["region_name"] = region_name
-        if aws_access_key_id:
-            client_options["aws_access_key_id"] = aws_access_key_id
-        if aws_secret_access_key:
-            client_options["aws_secret_access_key"] = aws_secret_access_key
-        if aws_session_token:
-            client_options["aws_session_token"] = aws_session_token
-
-        # With no explicit credentials, boto3 uses its standard credential
-        # chain (environment, shared config, container or instance roles).
-        self.s3_client = boto3.client("s3", **client_options)
+        self.s3_client = build_s3_client(aws_access_key_id, aws_secret_access_key, region_name, aws_session_token)
 
     def list_files(
         self,
@@ -270,10 +295,11 @@ class S3Client:
 
     @staticmethod
     def test_connection(cd: dict) -> dict:
+        access_key, secret_key = s3_data_source_keys(cd)
         client = S3Client(
             bucket_name=cd["bucket_name"],
-            aws_access_key_id=cd.get("access_key"),
-            aws_secret_access_key=cd.get("secret_key"),
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
             region_name=cd.get("region"),
         )
         client.list_files(prefix=cd.get("prefix", ""), max_keys=1)
