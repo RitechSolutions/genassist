@@ -501,7 +501,6 @@ export const WorkflowExecutionProvider: React.FC<
         session: resolveSessionData(),
         source: source,
         node_outputs: nodeOutputs,
-        // predecessors: predecessorIds,
       };
 
       return availableData;

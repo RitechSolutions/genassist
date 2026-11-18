@@ -11,6 +11,8 @@ from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
+import pandas as pd
+
 from app.core.config.llm_pricing import canonical_prompt_tokens
 from app.core.utils.llm_usage_utils import extract_cache_tokens, is_usage_metadata_missing
 from app.modules.workflow.agents.memory import (
@@ -19,6 +21,12 @@ from app.modules.workflow.agents.memory import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _has_output(value: Any) -> bool:
+    """Whether the run's output is worth returning; a pandas object, whose truth value is ambiguous, always is"""
+    return isinstance(value, (pd.DataFrame, pd.Series)) or bool(value)
+
 
 # Cap the size of tool arguments/results stored on an event so a large tool
 # result cannot bloat the persisted trace.
@@ -292,7 +300,6 @@ class WorkflowState:
         if node_id not in self.node_outputs:
             self.node_outputs[node_id] = {}
         self.node_outputs[node_id][output_key] = output
-        # if node_id not in self.execution_path:
         self.execution_path.append(node_id)
 
     def get_node_config(self, node_id: str) -> dict:
@@ -790,7 +797,6 @@ class WorkflowState:
     def set_node_output(self, node_id: str, output: Any) -> None:
         """Set the output of a specific node"""
         self.node_outputs[node_id] = output
-        # if node_id not in self.execution_path:
         self.execution_path.append(node_id)
 
     def set_node_input(self, node_id: str, input_data: Any) -> None:
@@ -1001,7 +1007,7 @@ class WorkflowState:
 
         output = (
             state["output"]
-            if state["output"]
+            if _has_output(state["output"])
             else (
                 summary["node_outputs"][summary["execution_path"][-1]]
                 if "execution_path" in summary and summary["execution_path"]

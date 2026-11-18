@@ -56,7 +56,7 @@ class ChainOfThoughtAgent:
 
             if text_parts:
                 return '\n'.join(text_parts)
-        # fallback old version
+        # Fallback for plain string content
         return response.content if hasattr(response, 'content') else str(response)
 
     async def invoke(

@@ -100,7 +100,7 @@ class ConversationModel(Base, GroupScopedMixin):
     conversation_date: Mapped[Optional[datetime.datetime]] = mapped_column(
         DateTime(True)
     )
-    # TODO REMOVE transcription AFTER MIGRATION
+    # TODO: remove transcription once the migration to transcript messages is done
     transcription: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     topic: Mapped[Optional[str]] = mapped_column(Text)
     feedback: Mapped[Optional[str]] = mapped_column(Text)
@@ -133,7 +133,6 @@ class ConversationModel(Base, GroupScopedMixin):
         DateTime(timezone=True), nullable=True
     )
 
-    # NEW: Add relationship to messages
     messages: Mapped[list["TranscriptMessageModel"]] = relationship(
         "TranscriptMessageModel",
         back_populates="conversation",

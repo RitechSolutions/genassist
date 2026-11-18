@@ -7,7 +7,7 @@ export function createWebSocket(
   url: string,
   protocols?: string | string[],
 ): WebSocket {
-  // Use native browser WebSocket and polyfilled by bundlers when needed
+  // Native browser WebSocket (or a bundler-provided polyfill)
   if (typeof globalThis !== "undefined" && globalThis.WebSocket) {
     return new globalThis.WebSocket(url, protocols);
   }
@@ -31,7 +31,7 @@ export function createWebSocket(
 export function redactUrl(url: string): string {
   try {
     const urlObj = new URL(url);
-    // Redact api_key, access_token, and access_token query params
+    // Redact the api_key, access_token and guest_token query params
     if (urlObj.searchParams.has("api_key")) {
       urlObj.searchParams.set("api_key", "[REDACTED]");
     }

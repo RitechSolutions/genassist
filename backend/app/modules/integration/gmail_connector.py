@@ -31,15 +31,6 @@ class GmailConnector:
     Gmail API connector for sending and retrieving emails
     """
 
-    # Gmail API scopes
-    # I have seen they are implemented in frontend, so I will comment out for now
-    # SCOPES = [
-    #     'https://www.googleapis.com/auth/gmail.send',
-    #     'https://www.googleapis.com/auth/gmail.readonly',
-    #     'https://www.googleapis.com/auth/gmail.modify'
-    #     "https://www.googleapis.com/auth/calendar.events"
-    # ]
-
     def __init__(self, ds_id: UUID):
         """
         Initialize Gmail connector
@@ -139,14 +130,6 @@ class GmailConnector:
 
             if self.expires_at:
                 try:
-                    # Parse expiration time (assuming ISO format or timestamp)
-                    # if self.expires_at.isdigit():
-                    # Unix timestamp
-                    # self.expires_at = datetime.fromtimestamp(int(gmail_token_expires_at.value))
-                    # else:
-                    # ISO format
-                    # expires_at = datetime.fromisoformat(self.expires_at.replace('Z', '+00:00'))
-
                     # Add 5-minute buffer to refresh before actual expiration
                     if current_time >= (self.expires_at - timedelta(minutes=5)):
                         logger.info(

@@ -8,6 +8,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from .config import LegraConfig
 from ..base import FinalizableProvider, SearchResult
+from ..models import KnowledgeSearchError
 from ..legra import FaissFlatIndexer, HuggingFaceGenerator, Legra, LeidenClusterer, SemanticChunker, \
     SentenceTransformerEmbedder
 logger = logging.getLogger(__name__)
@@ -153,74 +154,73 @@ class LegraProvider(FinalizableProvider):
     ) -> List[SearchResult]:
         """Search using LEGRA graph-based retrieval"""
         if not self._initialized or self.legra_instance is None:
-            logger.error("LEGRA provider not initialized")
-            return []
+            raise KnowledgeSearchError("LEGRA is not initialized")
 
         try:
             self.legra_instance = Legra.load(str(self.knowledge_base_id))
-            results = self.legra_instance.query(query, mode=mode, generate=False)
+        except FileNotFoundError:
+            logger.warning(f"LEGRA index of KB {self.knowledge_base_id} not found, returning no results")
+            return []
 
-            # Convert LEGRA results to SearchResult format
-            search_results = []
-            if results:
-                # LEGRA returns a single result string or structured data
-                if isinstance(results, str):
-                    # Single text result
+        results = self.legra_instance.query(query, mode=mode, generate=False)
+
+        # Convert LEGRA results to SearchResult format
+        search_results = []
+        if results:
+            # LEGRA returns a single result string or structured data
+            if isinstance(results, str):
+                # Single text result
+                search_result = SearchResult(
+                    id=f"legra_result_{len(search_results)}",
+                    content=results,
+                    metadata={
+                        "kb_id": self.knowledge_base_id,
+                        "search_mode": mode,
+                        "provider": "legra"
+                    },
+                    score=1.0,  # LEGRA doesn't provide explicit scores
+                    source="legra",
+                    chunk_count=1
+                )
+                search_results.append(search_result)
+
+            elif isinstance(results, list):
+                # Multiple results
+                for i, result in enumerate(results[:limit]):
                     search_result = SearchResult(
-                        id=f"legra_result_{len(search_results)}",
-                        content=results,
-                        metadata={
-                            "kb_id": self.knowledge_base_id,
-                            "search_mode": mode,
-                            "provider": "legra"
-                        },
-                        score=1.0,  # LEGRA doesn't provide explicit scores
-                        source="legra",
-                        chunk_count=1
-                    )
-                    search_results.append(search_result)
-
-                elif isinstance(results, list):
-                    # Multiple results
-                    for i, result in enumerate(results[:limit]):
-                        search_result = SearchResult(
-                            id=f"legra_result_{i}",
-                            content=str(result),
-                            metadata={
-                                "kb_id": self.knowledge_base_id,
-                                "search_mode": mode,
-                                "provider": "legra",
-                                "result_index": i
-                            },
-                            score=1.0 - (i * 0.1),  # Decrease score by rank
-                            source="legra",
-                            chunk_count=1
-                        )
-                        search_results.append(search_result)
-
-                elif isinstance(results, dict):
-                    # Structured result
-                    content = results.get("answer", str(results))
-                    search_result = SearchResult(
-                        id="legra_structured_result",
-                        content=content,
+                        id=f"legra_result_{i}",
+                        content=str(result),
                         metadata={
                             "kb_id": self.knowledge_base_id,
                             "search_mode": mode,
                             "provider": "legra",
-                            "raw_result": results
+                            "result_index": i
                         },
-                        score=1.0,
+                        score=1.0 - (i * 0.1),  # Decrease score by rank
                         source="legra",
                         chunk_count=1
                     )
                     search_results.append(search_result)
 
-            return search_results
+            elif isinstance(results, dict):
+                # Structured result
+                content = results.get("answer", str(results))
+                search_result = SearchResult(
+                    id="legra_structured_result",
+                    content=content,
+                    metadata={
+                        "kb_id": self.knowledge_base_id,
+                        "search_mode": mode,
+                        "provider": "legra",
+                        "raw_result": results
+                    },
+                    score=1.0,
+                    source="legra",
+                    chunk_count=1
+                )
+                search_results.append(search_result)
 
-        except Exception as e:
-            logger.error(f"Failed to search LEGRA: {e}")
-            return []
+        return search_results
 
     async def finalize(self) -> bool:
         """Finalize LEGRA after adding all documents"""

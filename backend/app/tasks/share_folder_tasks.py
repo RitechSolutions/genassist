@@ -149,7 +149,6 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
         smb_port = conn.get("smb_port", 445)
 
         use_local_fs = conn.get("use_local_fs", False)
-        # local_root = conn.get("local_root", "")
         base_folder = conn.get("local_root", "")  # e.g. "/recordings"
 
         metadata = RecordingCreate(
@@ -162,7 +161,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
             customer_id=None,
         )
 
-        # Create SMB session - faling to create object
+        # Create the SMB session
         async with SMBShareFSService(
             smb_host=smb_host,
             smb_share=smb_share,
@@ -186,12 +185,6 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
                 file_path = f"{base_folder}/{filename}"
 
                 try:
-                    # Prevent reprocessing
-                    # if await audioService.recording_exists(file_path, ds_item.id):
-                    #     logger.info(f"Skipping already processed: {file_path}")
-                    #     count_skipped += 1
-                    #     continue
-
                     # Read raw audio bytes from SMB
                     content = await smb.read_file(file_path, binary=True)
 
@@ -199,11 +192,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
 
                     logger.debug(f"Transcribing SMB file: {file_path}")
 
-                    # await audioService.process_recording(upload_file, metadata) # old version with whisper
-
-                    # transcribed_result = gts.transcribe_long_audio(content=content,file_name=filename)
-                    # final_transcribed = gts.get_merged_transcripts(transcribed_result)
-                    # PROCESSING: save the transcrition
+                    # Save the transcription
                     await audioService.process_recording_chirp(
                         upload_file, metadata, gts
                     )

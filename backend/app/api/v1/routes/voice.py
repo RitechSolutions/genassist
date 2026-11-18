@@ -36,7 +36,6 @@ async def get_openai_session_key(lang_code: str = Query(default=""), input_audio
     # "gpt-4o-transcribe" for multilingual transcription
     # whisper-1 for single language transcription
 
-    #input_audio_format: pcm16 | g711_ulaw
     model = "gpt-4o-transcribe"  # Default model for multilingual transcription
     if lang_code:
         model = "whisper-1"  # Use whisper-1 for single language transcription
@@ -84,19 +83,17 @@ async def ws_tts(
     logger.debug("Received WebSocket data [%d bytes]", len(text_message))
     message = json.loads(text_message)["text"]
 
-    #await websocket.send_text('|AUDIO_START|')
     client = openai.OpenAI()
     client.api_key = os.getenv("OPENAI_API_KEY")
 
     with client.audio.speech.with_streaming_response.create(
                     model="tts-1",
                     voice="nova",
-                    response_format="mp3",  # Changed to mp3 format
+                    response_format="mp3",
                     input=message,
                 ) as response:
                     for chunk in response.iter_bytes(chunk_size=1024):
                         await websocket.send_bytes(chunk)
-    #await websocket.send_text('|AUDIO_END|')
     await websocket.close()
     return {"message": "WebSocket connection closed"}
 

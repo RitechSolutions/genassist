@@ -105,8 +105,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
 
         for file_info in audio_files:
             try:
-                # TODO: if file is already processed skip it (if there is record in recordings)
-                # read list of files from S3
+                # Skip files that already have a recording
                 if await audioService.recording_exists(file_info["key"], ds_item.id):
                     logger.debug(
                         f"Recording: {file_info['key']} of Datasource {ds_item.name} already processed!!!"
@@ -134,15 +133,12 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
                     logger.debug(
                         f"Transcribing file: {file_info['key']} of Datasource {ds_item.name}"
                     )
-                    # transcript = await transcribe_audio_whisper_no_save(upload_file)
 
                     transcribed_recording = await audioService.process_recording(
                         upload_file, metadata
                     )
 
                     logger.debug(f"Transcription for {file_info['key']}: completed")
-
-                    # TODO: save it in Recording
 
                     transcribed.append(
                         {"file": file_info["key"], "timestamp": datetime.now().isoformat()}

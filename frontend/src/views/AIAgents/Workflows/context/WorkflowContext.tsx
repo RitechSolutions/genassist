@@ -1,16 +1,13 @@
 import React, { createContext, useContext, useMemo } from "react";
 import { Workflow } from "@/interfaces/workflow.interface";
 
-// Define the context type
 export type WorkflowContextType = {
   workflow: Workflow | undefined;
   setWorkflow: React.Dispatch<React.SetStateAction<Workflow | undefined>>;
 };
 
-// Create the context
 export const WorkflowContext = createContext<WorkflowContextType | undefined>(undefined);
 
-// Custom hook for consuming the context
 export const useWorkflow = () => {
   const context = useContext(WorkflowContext);
   if (!context) {
@@ -19,7 +16,6 @@ export const useWorkflow = () => {
   return context;
 };
 
-// Provider component
 export const WorkflowProvider: React.FC<{
   workflow: Workflow | undefined;
   setWorkflow: React.Dispatch<React.SetStateAction<Workflow | undefined>>;

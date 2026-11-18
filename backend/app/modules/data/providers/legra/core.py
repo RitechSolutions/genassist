@@ -150,7 +150,7 @@ class Legra:
         # ------------------------------------------------------------------ #
         # 1. Chunk the new document                                          #
         # ------------------------------------------------------------------ #
-        chunks: list[str] = self.chunker(extracted_text)  # List[str]
+        chunks: list[str] = self.chunker(extracted_text)
         _logger.info(f"Chunked into {len(chunks)} pieces.")
 
         # 2. Embed

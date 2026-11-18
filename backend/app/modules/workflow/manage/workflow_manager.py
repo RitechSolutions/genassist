@@ -8,7 +8,7 @@ from app.schemas.dynamic_form_schemas.base import FieldSchema
 from app.schemas.dynamic_form_schemas.nodes import NODE_DIALOG_SCHEMAS, NODE_HANDLERS_SCHEMAS
 
 
-#TODO: Validate Handlers
+# TODO: validate handlers
 class WorkflowManager:
     def __init__(
         self,

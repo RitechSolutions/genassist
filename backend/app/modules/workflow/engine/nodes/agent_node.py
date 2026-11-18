@@ -687,7 +687,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             "systemPrompt", "You are a helpful assistant.")
         prompt = config.get("userPrompt", "What is the capital of France?")
 
-        # Get tools from connected nodes using the new generic method
+        # Get tools from connected nodes
         tools = self.get_connected_nodes("tools")
 
         # Append a delegation tool per attached sub-agent child

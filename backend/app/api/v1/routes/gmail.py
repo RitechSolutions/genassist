@@ -31,7 +31,7 @@ class GmailAuthResponse(BaseModel):
     status: str
     message: str
 
-# TODO choose which permissions to use
+# TODO: decide which permissions these endpoints require
 @router.post("/oauth/callback", response_model=GmailAuthResponse, dependencies=[
     Depends(auth),
     Depends(permissions(P.AppSettings.WRITE))  # Adjust permission as needed

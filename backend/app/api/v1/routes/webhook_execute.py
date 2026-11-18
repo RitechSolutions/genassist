@@ -1,5 +1,3 @@
-# app/api/v1/routes/webhooks_execute_router.py
-
 from fastapi import APIRouter, Request, Query, Header, status
 from uuid import UUID
 from app.services.webhook import WebhookService

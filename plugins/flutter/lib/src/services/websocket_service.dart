@@ -151,7 +151,7 @@ class WebSocketService {
         ? '&x-tenant-id=${Uri.encodeComponent(tenant!)}'
         : '';
 
-    // New websocket service
+    // Dedicated WebSocket service
     if (websocketUrl != null && websocketUrl!.isNotEmpty) {
       final wsBase = websocketUrl!.endsWith('/')
           ? websocketUrl!.substring(0, websocketUrl!.length - 1)
