@@ -127,7 +127,7 @@ filterNode(3) config:
   field: "{{source.message}}"
   operator: "equal"
   value: "on_topic"
-  stopMessage: "Sorry, I can only help with Client questions."
+  stopMessage: "Sorry, I can only help with questions about our products."
 
 Edges: 1→2, 2→3, 3→4, 4→5
 ```
