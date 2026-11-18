@@ -106,22 +106,20 @@ export const GuardrailProvenanceDialog: React.FC<Props> = (props) => {
             onChange={(e) => setField("min_score", Number(e.target.value))}
           />
         </div>
-        {false && (
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label>Fail on violation</Label>
-              <p className="text-xs text-muted-foreground">
-                When enabled, blocks the workflow branch if the provenance score is below the threshold.
-              </p>
-            </div>
-            <Switch
-              checked={values.fail_on_violation ?? false}
-              onCheckedChange={(checked) =>
-                setField("fail_on_violation", checked)
-              }
-            />
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <Label>Fail on violation</Label>
+            <p className="text-xs text-muted-foreground">
+              Sends an unsupported answer to the Blocked exit. With nothing connected there, the reply is a default message.
+            </p>
           </div>
-        )}
+          <Switch
+            checked={values.fail_on_violation ?? false}
+            onCheckedChange={(checked) =>
+              setField("fail_on_violation", checked)
+            }
+          />
+        </div>
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <Label>Fallback answer on violation</Label>

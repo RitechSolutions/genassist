@@ -1,21 +1,26 @@
 import { NodeProps } from "reactflow";
+import { defaultGuardrailPolicy } from "@/helpers/guardrailChecks";
 import {
   NodeTypeDefinition,
   NodeData,
   TemplateNodeData,
   DataMapperNodeData,
+  GuardrailNodeData,
   GuardrailProvenanceNodeData,
   GuardrailNliNodeData,
   FileReaderNodeData,
+  NodeHandler,
 } from '../../types/nodes';
 import TemplateNode from "./templateNode";
 import DataMapperNode from "./dataMapperNode";
 import GuardrailProvenanceNode from "./guardrailProvenanceNode";
 import GuardrailNliNode from "./guardrailNliNode";
+import GuardrailNode from "./guardrailNode";
 import FileReaderNode from './fileReaderNode';
 import {
   DATA_TRANSFORMER_HELP_CONTENT,
   FILE_READER_HELP_CONTENT,
+  GUARDRAIL_HELP_CONTENT,
   GUARDRAIL_NLI_HELP_CONTENT,
   GUARDRAIL_PROVENANCE_HELP_CONTENT,
   TEXT_TEMPLATE_HELP_CONTENT,
@@ -116,6 +121,58 @@ def executable_function(params):
     }),
   };
 
+const GUARDRAIL_HANDLERS: NodeHandler[] = [
+  { id: "input", type: "target", compatibility: "any", position: "left" },
+  {
+    id: "output",
+    type: "source",
+    compatibility: "any",
+    position: "right",
+    label: "Passed",
+  },
+  {
+    id: "output_blocked",
+    type: "source",
+    compatibility: "any",
+    position: "right",
+    label: "Blocked",
+  },
+];
+
+export const GUARDRAIL_NODE_DEFINITION: NodeTypeDefinition<GuardrailNodeData> = {
+  type: "guardrailNode",
+  label: "Guardrail",
+  description:
+    "Checks text for prompt attacks, harmful content, denied topics and blocked words.",
+  shortDescription: "Check text before it moves on",
+  helpContent: GUARDRAIL_HELP_CONTENT,
+  configSubtitle:
+    "Configure the text to check, the checks to run and the message sent when it is blocked.",
+  category: "guardrails",
+  icon: "ShieldCheck",
+  defaultData: {
+    name: "Guardrail",
+    text: "{{session.message}}",
+    providerId: "",
+    prompt_attack: "off",
+    harmful_content: defaultGuardrailPolicy().harmful_content,
+    denied_topics: [],
+    blocked_words: [],
+    blocked_message: "",
+    handlers: GUARDRAIL_HANDLERS,
+  },
+  getHandlers: () => GUARDRAIL_HANDLERS,
+  component: GuardrailNode as React.ComponentType<NodeProps<NodeData>>,
+  createNode: (id, position, data) => ({
+    id,
+    type: "guardrailNode",
+    position,
+    data: {
+      ...data,
+    },
+  }),
+};
+
 export const GUARDRAIL_PROVENANCE_NODE_DEFINITION: NodeTypeDefinition<GuardrailProvenanceNodeData> =
   {
     type: "guardrailProvenanceNode",
@@ -126,7 +183,7 @@ export const GUARDRAIL_PROVENANCE_NODE_DEFINITION: NodeTypeDefinition<GuardrailP
     helpContent: GUARDRAIL_PROVENANCE_HELP_CONTENT,
     configSubtitle:
       "Configure which fields contain the answer and context, and the minimum provenance score.",
-    category: "utils",
+    category: "guardrails",
     icon: "ShieldQuestionMark",
     defaultData: {
       name: "Guardrail Provenance",
@@ -139,21 +196,9 @@ export const GUARDRAIL_PROVENANCE_NODE_DEFINITION: NodeTypeDefinition<GuardrailP
       embedding_model_name: "all-MiniLM-L6-v2",
       use_llm_judge: false,
       llm_provider_id: "",
-      handlers: [
-        {
-          id: "input",
-          type: "target",
-          compatibility: "any",
-          position: "left",
-        },
-        {
-          id: "output",
-          type: "source",
-          compatibility: "any",
-          position: "right",
-        },
-      ],
+      handlers: GUARDRAIL_HANDLERS,
     },
+    getHandlers: () => GUARDRAIL_HANDLERS,
     component:
       GuardrailProvenanceNode as React.ComponentType<NodeProps<NodeData>>,
     createNode: (id, position, data) => ({
@@ -176,7 +221,7 @@ export const GUARDRAIL_NLI_NODE_DEFINITION: NodeTypeDefinition<GuardrailNliNodeD
     helpContent: GUARDRAIL_NLI_HELP_CONTENT,
     configSubtitle:
       "Configure which fields contain the answer and evidence, and the minimum entailment score.",
-    category: "utils",
+    category: "guardrails",
     icon: "ShieldAlert",
     defaultData: {
       name: "Guardrail NLI",
@@ -184,21 +229,9 @@ export const GUARDRAIL_NLI_NODE_DEFINITION: NodeTypeDefinition<GuardrailNliNodeD
       evidence_field: "",
       min_entail_score: 0.5,
       fail_on_contradiction: false,
-      handlers: [
-        {
-          id: "input",
-          type: "target",
-          compatibility: "any",
-          position: "left",
-        },
-        {
-          id: "output",
-          type: "source",
-          compatibility: "any",
-          position: "right",
-        },
-      ],
+      handlers: GUARDRAIL_HANDLERS,
     },
+    getHandlers: () => GUARDRAIL_HANDLERS,
     component: GuardrailNliNode as React.ComponentType<NodeProps<NodeData>>,
     createNode: (id, position, data) => ({
       id,

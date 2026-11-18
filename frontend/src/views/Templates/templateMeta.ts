@@ -77,6 +77,7 @@ const NODE_LABELS: Record<string, string> = {
   nlpNode: "NLP",
   webScraperNode: "Web",
   humanInTheLoopNode: "Human",
+  guardrailNode: "Guardrail",
   guardrailNliNode: "Guardrail",
   guardrailProvenanceNode: "Guardrail",
   workflowExecutorNode: "Sub-flow",

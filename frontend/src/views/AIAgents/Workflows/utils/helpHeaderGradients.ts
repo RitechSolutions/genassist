@@ -11,6 +11,7 @@ export const helpHeaderGradientByCategory: Record<string, string> = {
   tools: "bg-gradient-to-b from-sky-100/80 via-sky-50/50 to-white dark:from-sky-600/30 dark:via-sky-600/10 dark:to-transparent",
   training: "bg-gradient-to-b from-rose-100/80 via-rose-50/50 to-white dark:from-rose-600/30 dark:via-rose-600/10 dark:to-transparent",
   utils: "bg-gradient-to-b from-slate-100/80 via-slate-50/50 to-white dark:from-slate-600/30 dark:via-slate-600/10 dark:to-transparent",
+  guardrails: "bg-gradient-to-b from-slate-100/80 via-slate-50/50 to-white dark:from-slate-600/30 dark:via-slate-600/10 dark:to-transparent",
   audio: "bg-gradient-to-b from-teal-100/80 via-teal-50/50 to-white dark:from-teal-600/30 dark:via-teal-600/10 dark:to-transparent",
 };
 
