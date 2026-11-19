@@ -119,7 +119,7 @@ async def batch_process_files_kb_async(
     count_fail = 0
     count_unchanged = 0
     files_not_loaded = 0
-    server_role_refusal: Optional[str] = None
+    keys_refusal: Optional[str] = None
     files_processed = []
     count_zendesk_syncs = len(zendesk_sync_results)
 
@@ -188,10 +188,10 @@ async def batch_process_files_kb_async(
         if ds_item.source_type.lower() == "s3":
             try:
                 keyid_username, secret_password = s3_data_source_keys(conn)
-            except ServerRoleNotAllowedError as refusal:
+            except S3KeysNotUsableError as refusal:
                 logger.error(f"KB {kb_item.id} not synced: {refusal}")
                 count_fail += 1
-                server_role_refusal = str(refusal)
+                keys_refusal = str(refusal)
                 continue
             bucket_server = conn.get("bucket_name")
             prefix_input_folder = (conn.get("prefix") or "").lstrip("/").strip()
@@ -336,9 +336,9 @@ async def batch_process_files_kb_async(
         result["message"] = (
             f"{files_not_loaded} file(s) could not be loaded into the knowledge base and were left in the input folder."
         )
-    if server_role_refusal:
+    if keys_refusal:
         result["status"] = "error"
-        result["message"] = server_role_refusal
+        result["message"] = keys_refusal
 
     return result
 
@@ -350,7 +350,7 @@ async def batch_process_files_kb_async(
 ############################################
 import fnmatch
 
-from app.core.utils.s3_utils import ServerRoleNotAllowedError, build_s3_client, s3_data_source_keys
+from app.core.utils.s3_utils import S3KeysNotUsableError, build_s3_client, s3_data_source_keys
 
 
 async def _add_s3_document(

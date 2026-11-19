@@ -7,7 +7,7 @@ from typing import Optional
 from celery import shared_task
 from fastapi import UploadFile
 
-from app.core.utils.s3_utils import S3Client, ServerRoleNotAllowedError, s3_data_source_keys
+from app.core.utils.s3_utils import S3Client, S3KeysNotUsableError, s3_data_source_keys
 from app.db.seed.seed_data_config import SeedTestData
 from app.dependencies.injector import injector
 from app.schemas.recording import RecordingCreate
@@ -71,7 +71,7 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
         logger.debug(f"Processing S3 Datasource: {ds_item.name}")
         try:
             access_key, secret_key = s3_data_source_keys(conn_data)
-        except ServerRoleNotAllowedError as refusal:
+        except S3KeysNotUsableError as refusal:
             logger.error(f"S3 data source {ds_item.name} not transcribed: {refusal}")
             continue
 
