@@ -10,10 +10,7 @@ from app.core.config.settings import settings
 from app.db.models import ConversationAnalysisModel, ConversationModel
 from app.db.seed.seed_data_config import seed_test_data
 
-# PromptConfigModel.gold_suite has a string relationship() to "TestSuiteModel",
-# but app/db/models/__init__.py never imports that module. Without this, the
-# first mapper configure() triggered anywhere in the process (e.g. by
-# instantiating ConversationModel below) fails with a clsregistry KeyError.
+# Registers TestSuiteModel so the mappers that reference it by name can configure.
 from app.db.models.test_suite import TestSuiteModel  # noqa: F401
 
 
@@ -96,10 +93,7 @@ async def test_audit_log_insert_payload_includes_values_but_redacts_secrets(clie
 
 @pytest.mark.asyncio
 async def test_audit_log_update_redacts_only_sensitive_substrings_in_text_fields(client):
-    """
-    Free-form text fields (message/text/text_search) should keep surrounding context
-    and redact only the sensitive substrings (e.g. emails/tokens).
-    """
+    """Free-form text fields keep their context and redact only the sensitive substrings."""
     search_response = client.get(
         "/api/audit-logs/search",
         headers={"X-API-Key": "test123"},
@@ -143,14 +137,7 @@ async def test_audit_log_update_redacts_only_sensitive_substrings_in_text_fields
 
 @pytest.mark.asyncio
 async def test_conversation_update_does_not_lazy_load_analysis_relationship():
-    """
-    Regression test for the audit `before_flush` hook (app/db/models/audit_log.py).
-
-    The hook must diff only column attributes. Iterating relationship attrs
-    (e.g. `analysis`) and calling `get_history` on an unloaded one triggers a
-    lazy load during flush, adding an extra query to every conversation
-    update (see SCROSS-4439).
-    """
+    """The audit `before_flush` hook diffs only column attributes, so an update never lazy-loads `analysis`."""
     engine = create_async_engine(settings.DATABASE_URL)
     session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     conversation_id = uuid.uuid4()
