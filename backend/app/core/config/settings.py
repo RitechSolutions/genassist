@@ -352,6 +352,9 @@ class ProjectSettings(BaseSettings):
     BEDROCK_MAX_RETRY_QUERY_EMBEDDING: int = 3
     BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS: int = 8
 
+    # S3 data sources without keys use the server's AWS access; keep off on servers shared by several tenants.
+    S3_DATA_SOURCES_USE_SERVER_ROLE: bool = False
+
     # === CORS Configuration ===
     CORS_ALLOWED_ORIGINS: Optional[str] = None  # Comma-separated list of additional allowed origins
     # Optional regex an *unknown* (per-agent) Origin must match before AgentCORSMiddleware

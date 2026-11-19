@@ -82,6 +82,7 @@ class DataSourceService:
         # Ensure connection_data exists in both
         update_conn_data = update_data.get("connection_data", {})
         existing_conn_data = db_datasource.connection_data or {}
+        cleared_secret = False
 
         for field_name in self.encrypted_fields:
             if field_name in update_conn_data:
@@ -90,6 +91,7 @@ class DataSourceService:
                     or update_conn_data[field_name] == None
                 ):
                     del update_conn_data[field_name]
+                    cleared_secret = cleared_secret or bool(existing_conn_data.get(field_name))
                 elif (
                     field_name not in existing_conn_data
                     or update_conn_data[field_name] != existing_conn_data[field_name]
@@ -101,7 +103,7 @@ class DataSourceService:
 
         if "connection_data" in update_data:
             # Check if any connection field actually changed (after encryption processing)
-            connection_data_changed = any(
+            connection_data_changed = cleared_secret or any(
                 update_data["connection_data"].get(k) != existing_conn_data.get(k)
                 for k in update_data["connection_data"]
             )

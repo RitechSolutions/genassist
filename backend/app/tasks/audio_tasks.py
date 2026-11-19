@@ -7,7 +7,7 @@ from typing import Optional
 from celery import shared_task
 from fastapi import UploadFile
 
-from app.core.utils.s3_utils import S3Client
+from app.core.utils.s3_utils import S3Client, S3KeysNotUsableError, s3_data_source_keys
 from app.db.seed.seed_data_config import SeedTestData
 from app.dependencies.injector import injector
 from app.schemas.recording import RecordingCreate
@@ -69,11 +69,14 @@ async def transcribe_audio_files_async(ds_id: Optional[str] = None):
         count_datasource += 1
         conn_data = ds_item.connection_data
         logger.debug(f"Processing S3 Datasource: {ds_item.name}")
+        try:
+            access_key, secret_key = s3_data_source_keys(conn_data)
+        except S3KeysNotUsableError as refusal:
+            logger.error(f"S3 data source {ds_item.name} not transcribed: {refusal}")
+            continue
 
         prefix = conn_data.get("prefix", "").lstrip("/").strip() or ""
         bucket = conn_data["bucket_name"]
-        access_key = conn_data["access_key"]
-        secret_key = conn_data["secret_key"]
         region = conn_data["region"]
 
         s3_client = S3Client(
