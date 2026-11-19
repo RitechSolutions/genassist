@@ -10,7 +10,7 @@ from celery import shared_task
 from croniter import croniter
 
 from app.core.observability.datadog_observability import datadog_observability
-from app.core.utils.s3_utils import S3Client, ServerRoleNotAllowedError, s3_data_source_keys
+from app.core.utils.s3_utils import S3Client, S3KeysNotUsableError, s3_data_source_keys
 from app.dependencies.injector import injector
 from app.modules.data.load_result import (
     SUCCESSFUL_SYNC_STATUSES,
@@ -125,7 +125,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         conn_data = ds.connection_data
         try:
             access_key, secret_key = s3_data_source_keys(conn_data)
-        except ServerRoleNotAllowedError as refusal:
+        except S3KeysNotUsableError as refusal:
             logger.error(f"Knowledge base {kb.id} not synced: {refusal}")
             kb_errors.append(f"{kb.name}: {refusal}")
             kbs_failed += 1

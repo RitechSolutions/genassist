@@ -13,17 +13,31 @@ SERVER_ROLE_NOT_ALLOWED = (
 )
 
 
-class ServerRoleNotAllowedError(ValueError):
+ONLY_ONE_KEY = "Enter both the access key and the secret key, or leave both empty."
+
+
+class S3KeysNotUsableError(ValueError):
+    """An S3 data source's keys cannot be used as entered."""
+
+
+class ServerRoleNotAllowedError(S3KeysNotUsableError):
     """An S3 data source has no keys and the server does not allow its own AWS access."""
+
+
+class OnlyOneS3KeyError(S3KeysNotUsableError):
+    """An S3 data source has one key without the other."""
 
 
 def s3_data_source_keys(connection_data: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
     """The data source's access key and secret key; both None means the server's own AWS access."""
     access_key = connection_data.get("access_key") or None
     secret_key = connection_data.get("secret_key") or None
-    has_no_keys = access_key is None and secret_key is None
-    if has_no_keys and not settings.S3_DATA_SOURCES_USE_SERVER_ROLE:
+    is_missing_a_key = access_key is None or secret_key is None
+    has_only_one_key = (access_key is None) != (secret_key is None)
+    if is_missing_a_key and not settings.S3_DATA_SOURCES_USE_SERVER_ROLE:
         raise ServerRoleNotAllowedError(SERVER_ROLE_NOT_ALLOWED)
+    if has_only_one_key:
+        raise OnlyOneS3KeyError(ONLY_ONE_KEY)
     return access_key, secret_key
 
 
