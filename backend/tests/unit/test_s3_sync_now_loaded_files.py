@@ -153,7 +153,7 @@ class _DataSourceReadFromTheDatabase:
     """A data source whose fields cannot be read after its session was rolled back, like a database object."""
 
     source_type = "s3"
-    connection_data = {"bucket_name": "acme"}
+    connection_data = {"bucket_name": "acme", "access_key": "k", "secret_key": "s"}
 
     def __init__(self):
         self.session_rolled_back = False
