@@ -10,6 +10,7 @@ from langchain.agents.middleware.types import AgentMiddleware
 from langgraph.types import Command
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
+from app.modules.workflow.agents.first_tool_call import FirstToolCallMiddleware
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.agent_utils import (
     create_error_response,
@@ -98,6 +99,7 @@ class ReActAgentLC(BaseToolAgent):
         verbose: bool = False,
         max_iterations: int = 5,
         on_token: Optional["TokenSink"] = None,
+        first_tool: Optional[str] = None,
     ):
         """Initialize a LangGraph ReAct agent
 
@@ -110,6 +112,7 @@ class ReActAgentLC(BaseToolAgent):
             verbose: Whether to enable verbose logging of reasoning cycles
             max_iterations: Maximum number of reasoning/action cycles
             on_token: Called with (model call id, text) as this agent's own model calls write
+            first_tool: Name of a tool the agent calls before answering each message
         """
         super().__init__(
             llm_model,
@@ -119,6 +122,7 @@ class ReActAgentLC(BaseToolAgent):
             max_iterations=max_iterations,
         )
         self.on_token = on_token
+        self.first_tool = first_tool
 
         # Convert BaseTool instances to LangChain StructuredTool instances
         self.lc_tools = self._convert_tools_to_langchain(self.tools)
@@ -219,12 +223,14 @@ class ReActAgentLC(BaseToolAgent):
 
     def _create_langgraph_agent(self):
         """Create the LangGraph React agent executor"""
-        # Create the agent with system prompt
+        middleware: List[AgentMiddleware] = [RetryOnToolErrorMiddleware(), HistorySystemContentMiddleware()]
+        if self.first_tool:
+            middleware.append(FirstToolCallMiddleware(self.first_tool))
         agent_executor = create_agent(
             model=self.llm_model,
             tools=self.lc_tools,
             system_prompt=self.system_prompt,
-            middleware=[RetryOnToolErrorMiddleware(), HistorySystemContentMiddleware()],
+            middleware=middleware,
         )
 
         return agent_executor
