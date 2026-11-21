@@ -65,6 +65,9 @@ class ChunkConfig(BaseModel):
         elif self.type == "simple":
             from .simple import SimpleChunker
             return SimpleChunker(self.model_copy())
+        elif self.type == "sections":
+            from .sections import SectionChunker
+            return SectionChunker(self.model_copy())
         else:
             raise ValueError(f"Invalid chunker type: {self.type}")
 
@@ -82,6 +85,8 @@ class Chunk(BaseModel):
         description="Ending character position in original text")
     metadata: Optional[Dict[str, Any]] = Field(
         default_factory=lambda: {}, description="Additional metadata for the chunk")
+    embedding_text: Optional[str] = Field(
+        default=None, description="Text to embed when it differs from the stored content")
 
     @field_validator('metadata', mode='before')
     @classmethod
