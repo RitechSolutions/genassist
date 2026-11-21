@@ -140,6 +140,10 @@ AGENT_RAG_FORM_SCHEMAS_VECTOR_AND_LEGRA: Dict[str, TypeSchema] = {
                                 "value": "simple",
                                 "label": "Simple Separator-based Chunking",
                             },
+                            {
+                                "value": "sections",
+                                "label": "Section-based Chunking (Headings)",
+                            },
                         ],
                         description="Method used to split text into chunks",
                     )
@@ -252,6 +256,34 @@ AGENT_RAG_FORM_SCHEMAS_VECTOR_AND_LEGRA: Dict[str, TypeSchema] = {
                             required=False,
                             default=True,
                             description="Whether to strip leading and trailing whitespace from chunks",
+                        ),
+                    ],
+                    "sections": [
+                        FieldSchema(
+                            name="chunk_size",
+                            type="number",
+                            label="Chunk Size",
+                            required=True,
+                            default=1000,
+                            min=100,
+                            max=8000,
+                            step=100,
+                            description=(
+                                "Maximum size of a chunk in characters. Text is split at Markdown headings and bold "
+                                "lines; a longer section, or content without headings, is split at this size. "
+                                "Synced articles and web pages need the Markdown content format."
+                            ),
+                        ),
+                        FieldSchema(
+                            name="chunk_overlap",
+                            type="number",
+                            label="Chunk Overlap",
+                            required=True,
+                            default=200,
+                            min=0,
+                            max=1000,
+                            step=50,
+                            description="Overlap in characters between the chunks of one long section",
                         ),
                     ],
                 },
