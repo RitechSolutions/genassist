@@ -12,6 +12,7 @@ from app.core.utils.html_utils import html2markdown, html2plaintext
 from app.dependencies.injector import injector
 from app.modules.data.load_result import article_sync_outcome, load_document, sync_result_fields
 from app.modules.data.manager import AgentRAGServiceManager
+from app.modules.data.providers.models import DOCUMENT_TITLE_KEY
 from app.modules.integration.zendesk import ZendeskConnector
 from app.schemas.agent_knowledge import KBCreate
 from app.services.agent_knowledge import KnowledgeBaseService
@@ -19,6 +20,8 @@ from app.services.datasources import DataSourceService
 from app.tasks.base import run_async_in_celery
 
 logger = logging.getLogger(__name__)
+
+ARTICLE_UPDATED_AT_KEY = "zendesk_article_updated_at"
 
 
 def _kb_update_dict(kb: Any) -> dict[str, Any]:
@@ -427,7 +430,7 @@ async def import_zendesk_articles_to_kb_async(
             )
 
             # Load last-known updated_at per article from KB extra_metadata (for skip-if-unchanged)
-            article_updated_at_key = "zendesk_article_updated_at"
+            article_updated_at_key = ARTICLE_UPDATED_AT_KEY
             stored_updated_at: dict = (kb.extra_metadata or {}).get(
                 article_updated_at_key
             ) or {}
@@ -492,6 +495,7 @@ async def import_zendesk_articles_to_kb_async(
 
                     metadata = {
                         "name": article_title,
+                        DOCUMENT_TITLE_KEY: article_title,
                         "description": f"Zendesk article from {ds.name}",
                         "kb_id": str(kb.id),
                         "article_id": str(article["id"]),
@@ -540,6 +544,7 @@ async def import_zendesk_articles_to_kb_async(
 
                     metadata = {
                         "name": article_title,
+                        DOCUMENT_TITLE_KEY: article_title,
                         "description": f"Zendesk article from {ds.name}",
                         "kb_id": str(kb.id),
                         "article_id": str(article["id"]),

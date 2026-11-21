@@ -109,7 +109,8 @@ class VectorProvider(BaseDataProvider):
 
             # Generate embeddings for chunks
             chunk_texts = [chunk.content for chunk in chunks]
-            embeddings = await self.embedder.embed_texts(chunk_texts)
+            texts_to_embed = [chunk.embedding_text or chunk.content for chunk in chunks]
+            embeddings = await self.embedder.embed_texts(texts_to_embed)
 
             if len(embeddings) != len(chunks):
                 logger.error(f"Embedding count mismatch for document {doc_id}")
