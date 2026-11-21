@@ -18,6 +18,7 @@ from app.db.transaction_manager import TransactionManager
 from app.dependencies.injector import injector
 from app.modules.data.load_result import article_sync_outcome, load_document, sync_result_fields
 from app.modules.data.manager import AgentRAGServiceManager
+from app.modules.data.providers.models import DOCUMENT_TITLE_KEY
 from app.modules.integration.salesforce import SalesforceConnector
 from app.schemas.agent_knowledge import KBRead
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
@@ -27,12 +28,14 @@ from app.schemas.dynamic_form_schemas.app_settings_schemas import (
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.app_settings import AppSettingsService
 from app.services.datasources import DataSourceService
+from app.tasks.zendesk_article_sync_tasks import ARTICLE_UPDATED_AT_KEY as ZENDESK_ARTICLE_UPDATED_AT_KEY
 
 logger = logging.getLogger(__name__)
 
 
 CONTENT_FORMATS = ("text", "markdown", "html")
 ARTICLE_UPDATED_AT_KEY = "salesforce_article_updated_at"
+COPY_DATES_KEY_BY_TYPE = {"salesforce": ARTICLE_UPDATED_AT_KEY, "zendesk": ZENDESK_ARTICLE_UPDATED_AT_KEY}
 FULL_LINK_SCHEMES = ("http", "https", "mailto", "tel")
 PROGRESS_SAVE_EVERY = 50
 SETTINGS_CHANGED_WARNING = (
@@ -123,7 +126,8 @@ def _copy_settings(kb: Any) -> tuple[str, dict]:
 
 def clear_copy_dates_on_content_change(current: Any, incoming: Any) -> None:
     """On save, keep the stored copy dates; clear them when the format or RAG settings change, so the next sync re-copies every article."""
-    if incoming.type != "salesforce":
+    copy_dates_key = COPY_DATES_KEY_BY_TYPE.get(incoming.type)
+    if copy_dates_key is None:
         return
     current_metadata = current.extra_metadata or {}
     incoming_metadata = dict(incoming.extra_metadata or {})
@@ -131,19 +135,19 @@ def clear_copy_dates_on_content_change(current: Any, incoming: Any) -> None:
     rag_config_changed = incoming.rag_config is not None and (
         _with_rag_editor_defaults(current.rag_config) != _with_rag_editor_defaults(incoming.rag_config)
     )
-    stored_copy_dates = current_metadata.get(ARTICLE_UPDATED_AT_KEY)
+    stored_copy_dates = current_metadata.get(copy_dates_key)
     if format_changed or rag_config_changed:
-        incoming_metadata[ARTICLE_UPDATED_AT_KEY] = {}
+        incoming_metadata[copy_dates_key] = {}
     elif stored_copy_dates is None:
-        incoming_metadata.pop(ARTICLE_UPDATED_AT_KEY, None)
+        incoming_metadata.pop(copy_dates_key, None)
     else:
-        incoming_metadata[ARTICLE_UPDATED_AT_KEY] = stored_copy_dates
+        incoming_metadata[copy_dates_key] = stored_copy_dates
     incoming.extra_metadata = incoming_metadata
 
 
 async def apply_stored_copy_dates_on_save(kb_service: KnowledgeBaseService, kb_id: UUID, incoming: Any) -> None:
     """Lock the KB row while a save reads its copy dates, so a running sync cannot write between the read and the save."""
-    if incoming.type != "salesforce":
+    if incoming.type not in COPY_DATES_KEY_BY_TYPE:
         return
     current_row = await _current_kb_row(kb_service, kb_id)
     if current_row is not None:
@@ -684,6 +688,7 @@ async def import_salesforce_articles_to_kb_async(
                 content = "\n\n".join(parts)
                 metadata = {
                     "name": article_title,
+                    DOCUMENT_TITLE_KEY: article_title,
                     "description": f"SalesForce article from {ds.name}",
                     "kb_id": str(kb.id),
                     "article_id": str(article["id"]),

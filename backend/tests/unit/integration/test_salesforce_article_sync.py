@@ -552,6 +552,17 @@ async def test_failed_article_is_retried_alone():
     assert [doc_id for doc_id, _, _ in retry_rag.added] == [f"KB:{kb_id}#article_ka-1"]
 
 
+@pytest.mark.asyncio
+async def test_article_is_stored_with_its_title_as_the_document_title():
+    kb = _make_kb(uuid.uuid4())
+    rag = _FakeRagManager()
+
+    await _run_sync(kb, _make_datasource(), rag, articles=[_article("ka-1")])
+
+    _, _, metadata = rag.added[0]
+    assert metadata["document_title"] == "T-ka-1"
+
+
 def _saved_kb(kb_type="salesforce", extra_metadata=None, rag_config=None):
     from app.schemas.agent_knowledge import KBBase
 
@@ -589,7 +600,7 @@ def test_save_clears_copy_dates_only_when_content_settings_change(stored_metadat
 def test_save_of_other_kb_types_keeps_their_metadata():
     from app.tasks.salesforce_article_sync_tasks import clear_copy_dates_on_content_change
 
-    saved = _saved_kb(kb_type="zendesk", extra_metadata={**_DATES, "content_format": "markdown"})
+    saved = _saved_kb(kb_type="s3", extra_metadata={**_DATES, "content_format": "markdown"})
     clear_copy_dates_on_content_change(_stored_kb({**_DATES, "content_format": "text"}), saved)
 
     assert saved.extra_metadata["salesforce_article_updated_at"] == _DATES["salesforce_article_updated_at"]
@@ -705,7 +716,7 @@ async def test_save_of_another_kb_type_takes_no_lock():
     from app.tasks.salesforce_article_sync_tasks import apply_stored_copy_dates_on_save
 
     kb_service = _make_kb_service(_stored_kb({}))
-    page = _saved_kb(kb_type="zendesk", extra_metadata={"content_format": "text"})
+    page = _saved_kb(kb_type="s3", extra_metadata={"content_format": "text"})
 
     await apply_stored_copy_dates_on_save(kb_service, uuid.uuid4(), page)
 
