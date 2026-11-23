@@ -6,7 +6,8 @@
       "turns": [
         {
           "input_data": { "message": "My order hasn't arrived yet." },
-          "expected_output": { "value": "Sorry about the delay. What's your order number?" }
+          "expected_output": { "value": "Sorry about the delay. What's your order number?" },
+          "expected_articles": ["Track an order"]
         },
         {
           "input_data": { "message": "It's order 4417." },

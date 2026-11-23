@@ -7,15 +7,19 @@ import type { TestCase } from "@/interfaces/testSuite.interface";
 import {
   answerOf,
   answerToExpected,
+  articlesToSave,
   isPlainRecord,
   parseRecordObject,
   questionOf,
   questionToInput,
+  withoutArticle,
 } from "../helpers/recordFields";
+import { ExpectedArticlesField } from "./ExpectedArticlesField";
 
 export interface RecordPayload {
   input_data: Record<string, unknown>;
   expected_output: Record<string, unknown> | null;
+  expected_articles: string[] | null;
 }
 
 interface RecordDialogProps {
@@ -34,6 +38,8 @@ interface Values {
   answer: string;
   inputJson: string;
   expectedJson: string;
+  /** The expected articles; they come from dataset files and can only be removed here. */
+  articles: string[];
   [key: string]: unknown;
 }
 
@@ -60,6 +66,7 @@ export const RecordDialog: React.FC<RecordDialogProps> = ({
         expectedJson: record.expected_output
           ? JSON.stringify(record.expected_output, null, 2)
           : "",
+        articles: record.expected_articles ?? [],
       }
     : null;
 
@@ -76,6 +83,7 @@ export const RecordDialog: React.FC<RecordDialogProps> = ({
         answer: "",
         inputJson: "",
         expectedJson: "",
+        articles: [],
       }}
       editValues={editValues}
       title={{
@@ -118,10 +126,12 @@ export const RecordDialog: React.FC<RecordDialogProps> = ({
         };
       }}
       onSubmit={async (values) => {
+        const expectedArticles = articlesToSave(values.articles);
         if (values.mode === "text") {
           await onSubmit({
             input_data: questionToInput(values.question),
             expected_output: answerToExpected(values.answer) ?? null,
+            expected_articles: expectedArticles,
           });
           return;
         }
@@ -132,6 +142,7 @@ export const RecordDialog: React.FC<RecordDialogProps> = ({
         await onSubmit({
           input_data: input.value ?? {},
           expected_output: expected?.value ?? null,
+          expected_articles: expectedArticles,
         });
       }}
     >
@@ -284,6 +295,11 @@ export const RecordDialog: React.FC<RecordDialogProps> = ({
                 </p>
               )}
             </div>
+
+            <ExpectedArticlesField
+              articles={form.values.articles}
+              onRemove={(position) => form.setField("articles", withoutArticle(form.values.articles, position))}
+            />
           </>
         );
       }}
