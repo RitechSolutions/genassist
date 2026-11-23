@@ -13,7 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.schemas.test_suite import Category
+from app.schemas.test_suite import Category, ExpectedArticles
 
 EVALUATION_BUNDLE_KIND = "genassist.evaluation-bundle"
 EVALUATION_BUNDLE_SCHEMA_VERSION = 1
@@ -65,6 +65,7 @@ class BundleCase(BaseModel):
     local_id: int
     input_data: Dict[str, Any]
     expected_output: Optional[Dict[str, Any]] = None
+    expected_articles: ExpectedArticles = None
     tags: Optional[List[str]] = None
     weight: Optional[float] = None
     source_conversation_id: Optional[UUID] = None

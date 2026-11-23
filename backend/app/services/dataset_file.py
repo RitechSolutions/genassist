@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.schemas.eval_bundle import EVALUATION_BUNDLE_KIND, EVALUATION_BUNDLE_SET_KIND
+from app.schemas.test_suite import clean_expected_articles
 
 DATASET_FILE_KIND = "genassist.dataset"
 DATASET_FILE_SCHEMA_VERSION = 1
@@ -25,7 +26,7 @@ FILE_IMPORT_TAG = "imported-file"
 _RESERVED_TAGS = frozenset({"imported", FILE_IMPORT_TAG})
 
 _BUNDLE_KINDS = frozenset({EVALUATION_BUNDLE_KIND, EVALUATION_BUNDLE_SET_KIND})
-_TURN_FIELDS = frozenset({"input_data", "expected_output", "tags", "weight"})
+_TURN_FIELDS = frozenset({"input_data", "expected_output", "expected_articles", "tags", "weight"})
 
 FILE_STATUS_OK = "ok"
 FILE_STATUS_FAILED = "failed"
@@ -38,6 +39,7 @@ class DatasetTurn:
     expected_output: Optional[Dict[str, Any]]
     tags: List[str]
     weight: Optional[float]
+    expected_articles: Optional[List[str]] = None
 
 
 @dataclass
@@ -222,6 +224,9 @@ def _parse_turn(
     expected = raw.get("expected_output")
     if expected is not None and not isinstance(expected, dict):
         problems.append('"expected_output" must be an object, such as {"value": "..."}')
+    expected_articles, articles_problem = _read_expected_articles(raw.get("expected_articles"))
+    if articles_problem:
+        problems.append(articles_problem)
     tags = raw.get("tags")
     if tags is not None and not (
         isinstance(tags, list) and all(isinstance(tag, str) for tag in tags)
@@ -239,7 +244,16 @@ def _parse_turn(
         expected_output=expected or None,
         tags=_with_import_tag(tags or []),
         weight=_as_number(weight),
+        expected_articles=expected_articles,
     )
+
+
+def _read_expected_articles(raw: Any) -> Tuple[Optional[List[str]], Optional[str]]:
+    """A turn's expected articles as they are stored, or what is wrong with them."""
+    try:
+        return clean_expected_articles(raw), None
+    except ValueError as error:
+        return None, str(error)
 
 
 def _with_import_tag(tags: List[str]) -> List[str]:
