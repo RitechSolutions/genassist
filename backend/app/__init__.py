@@ -273,6 +273,7 @@ async def output_open_api(app):
 # 10 minutes above it, so a task is always stopped by its own timeout first.
 LONG_TASK_TIMEOUTS = {
     "execute_test_suite_run": 2 * 60 * 60,
+    "write_dataset_questions": 2 * 60 * 60,
     "execute_workflow_run": 2 * 60 * 60,
     "execute_webhook_trigger_run": 2 * 60 * 60,
     "execute_pipeline_run": 2 * 60 * 60,
@@ -320,6 +321,7 @@ def create_celery():
         "app.tasks.ml_model_pipeline_tasks",
         "app.tasks.ml_training_job_tasks",
         "app.tasks.test_suite_tasks",
+        "app.tasks.generated_question_tasks",
         "app.tasks.workflow_schedule_tasks",
         "app.tasks.workflow_trigger_tasks",
     ]
@@ -399,6 +401,7 @@ def create_celery():
             "execute_pipeline_run": {"queue": "ml"},
             "run_ml_training_job": {"queue": "ml"},
             "execute_test_suite_run": {"queue": "ml"},
+            "write_dataset_questions": {"queue": "ml"},
             "app.tasks.ml_model_pipeline_tasks.check_scheduled_pipeline_runs": {"queue": "ml"},
             "execute_workflow_run": {"queue": "ml"},
             "execute_webhook_trigger_run": {"queue": "ml"},

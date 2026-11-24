@@ -159,6 +159,37 @@ class ImportCasesFromFilesResult(BaseModel):
     error: Optional[str] = None
 
 
+class WriteQuestionsRequest(BaseModel):
+    """Which knowledge base to write test questions from, and the model that writes them"""
+    knowledge_base_id: UUID
+    llm_provider_id: UUID
+    sample_size: Optional[int] = Field(
+        default=None, ge=1, description="Use this many articles, picked at random; all of them when not set."
+    )
+
+
+class WriteQuestionsEstimate(BaseModel):
+    """What a run would ask of the model"""
+    articles: int
+    writing_calls: int
+    judging_calls_at_most: int
+
+
+class WriteQuestionsStatus(BaseModel):
+    """The run in progress on a dataset, else its last run's outcome"""
+    status: str
+    run_id: Optional[str] = None
+    knowledge_base_id: Optional[str] = None
+    articles_total: int = 0
+    articles_done: int = 0
+    articles_failed: int = 0
+    messages_added: int = 0
+    messages_dropped: int = 0
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    error: Optional[str] = None
+
+
 # Upper bound on how many datasets one conversation can be added to at once.
 MAX_CONVERSATION_SUITES = 50
 
