@@ -9,7 +9,8 @@ import logging
 from typing import List, Dict, Any, Union, cast
 from .db import SearchResult as DBSearchResult
 from ..base import BaseDataProvider
-from ..models import KnowledgeSearchError, SearchResult
+from ..models import KnowledgeSearchError, SearchResult, StoredDocument
+from .stored_documents import joined_document, pieces_by_document
 from .config import VectorConfig
 from .embedding.base import BaseEmbedder
 from .db.base import BaseVectorDB
@@ -284,6 +285,21 @@ class VectorProvider(BaseDataProvider):
         except Exception as e:
             logger.error(f"Failed to get document IDs: {e}")
             return []
+
+    async def get_documents(self, kb_id: Union[str, None] = None) -> List[StoredDocument]:
+        """Every stored document of the knowledge base, its pieces joined in reading order"""
+        if not self._initialized and not await self.initialize():
+            return []
+        filter_kb_id = kb_id or self.knowledge_base_id
+        if not filter_kb_id:
+            return []
+        piece_ids = await self.vector_db.get_all_ids({"kb_id": filter_kb_id})
+        documents = []
+        for doc_id, ids in pieces_by_document(piece_ids).items():
+            pieces = await self.vector_db.get_by_ids(ids)
+            if pieces:
+                documents.append(joined_document(doc_id, pieces))
+        return documents
 
     def _consolidate_chunks(self, search_results: List[DBSearchResult], limit: int) -> List[Dict[str, Any]]:
         """

@@ -14,6 +14,13 @@ class SearchResult(BaseModel):
         default=None, description="Number of chunks for this result")
 
 
+class StoredDocument(BaseModel):
+    """A document as the knowledge base stores it, with its whole text"""
+    id: str = Field(description="Document identifier, as search results carry it")
+    title: Optional[str] = Field(default=None, description="The name search results show for it")
+    content: str = Field(description="Its stored pieces joined in reading order")
+
+
 class KnowledgeSearchError(Exception):
     """A knowledge search that failed in whole or in part.
 

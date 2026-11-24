@@ -15,6 +15,7 @@ from .config import AgentRAGConfig, KbRAGConfig
 # instantiated: importing them pulls torch/sentence_transformers/faiss (vector, legra)
 # and the lightrag library, which must not be loaded in a Celery prefork master process.
 from .providers import SearchResult, BaseDataProvider, KnowledgeSearchError, PlainProvider
+from .providers.models import StoredDocument
 
 if TYPE_CHECKING:  # for type hints only — never imported at runtime
     from .providers import LegraProvider
@@ -246,6 +247,17 @@ class AgentRAGService:
                     f"{provider.name} get_document_ids failed: {e}")
 
         return list(all_ids)
+
+    async def get_documents(self) -> List[StoredDocument]:
+        """Every stored document with its text, from the first provider that can give it back"""
+        if not self._initialized:
+            logger.error("DataSourceService not initialized")
+            return []
+        for provider in self.data_provider:
+            documents = await provider.get_documents()
+            if documents:
+                return documents
+        return []
 
     async def search(
         self,
