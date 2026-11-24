@@ -21,6 +21,7 @@ from app.schemas.agent_knowledge import KBBase, KBRead
 
 from .load_result import has_text
 from .providers import KnowledgeSearchError, SearchResult
+from .providers.models import StoredDocument
 from .service import AgentRAGService, search_failure_reason
 from .utils.doc import bulk_delete_documents, format_search_results
 
@@ -376,6 +377,20 @@ class AgentRAGServiceManager:
             return []
 
         return await service.get_document_ids()
+
+    async def get_documents(self, kb_obj: KBRead) -> List[StoredDocument]:
+        """Every stored document of a knowledge base with its text"""
+        service = await self.get_service(kb_obj)
+        if not service:
+            return []
+        return await service.get_documents()
+
+    async def get_stored_document_ids(self, kb_obj: KBRead) -> List[str]:
+        """Ids of the stored documents of a knowledge base whose text can be read back"""
+        service = await self.get_service(kb_obj)
+        if not service:
+            return []
+        return await service.get_stored_document_ids()
 
     async def finalize_legra(self, kb_obj: KBRead) -> bool:
         """

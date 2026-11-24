@@ -39,6 +39,11 @@ export const CHECK_KINDS: { value: CheckKind; label: string; description: string
     label: "Allowed tools",
     description: "Only the tools on a list are used. With Should not, none of them is.",
   },
+  {
+    value: "search_finds",
+    label: "Article found",
+    description: "The knowledge search finds the turn's expected article in the dataset.",
+  },
   { value: "step_runs", label: "Step ran", description: "A step of the workflow runs to the end." },
   { value: "step_fails", label: "Step failed", description: "A step of the workflow ends with an error." },
   { value: "route_taken", label: "Route taken", description: "A router or switch picks a branch." },
@@ -75,8 +80,8 @@ export const GROUNDS: { value: CheckContext; label: string }[] = [
   { value: "run_value", label: "A value in the run" },
 ];
 
-/** Each reply is graded against its own turn, so these hold on every turn they apply to. */
-export const EVERY_TURN_KINDS = new Set<CheckKind>(["reply_matches", "reply_grounded"]);
+/** Each turn is graded against what it has of its own, so these hold on every turn they apply to. */
+export const EVERY_TURN_KINDS = new Set<CheckKind>(["reply_matches", "reply_grounded", "search_finds"]);
 
 export const PASS_SCORE = 0.5;
 
@@ -269,6 +274,12 @@ export const branchName = (check: ScenarioCheck): string => text(check.branch_la
 export const isPerTurn = (check: ScenarioCheck): boolean =>
   EVERY_TURN_KINDS.has(check.kind) || check.level === "turn" || check.when === "every_turn";
 
+/** How a sentence says the article has to be among the first results. */
+const withinFirst = (count: number | null | undefined): string => {
+  if (count == null) return "";
+  return count === 1 ? " as the first result" : ` in the first ${count} results`;
+};
+
 const MATCH_VERBS: Record<CheckMatch, string> = {
   exact: "be exactly",
   contains: "contain",
@@ -435,6 +446,8 @@ const clause = (check: ScenarioCheck, modal: string): string => {
         : `a router ${modal} take "${branchName(check)}"`;
     case "value_equals":
       return `the value at "${text(check.path)}" ${modal} be ${filled(check.value) ? `"${text(check.value)}"` : "the expected reply"}`;
+    case "search_finds":
+      return `the knowledge search ${modal} find the turn's expected article${withinFirst(check.within_first)}`;
     default:
       return `the remembered value "${text(check.key)}" ${modal} be "${text(check.value)}"`;
   }
@@ -576,6 +589,11 @@ export const checkMissing = (check: ScenarioCheck): string | null => {
       return filled(check.branch) || filled(check.branch_label) ? null : "Pick the branch.";
     case "value_equals":
       return filled(check.path) ? null : "Enter where the value is.";
+    case "search_finds": {
+      const first = check.within_first ?? null;
+      if (first != null && (!Number.isInteger(first) || first < 1)) return "The first results are a whole number from 1.";
+      return check.expect === "should_not" ? "The knowledge search check only says what should be found." : null;
+    }
     default:
       if (!filled(check.key)) return "Pick or type the value's name.";
       return filled(check.value) ? null : "Enter the value it should have.";
@@ -717,6 +735,7 @@ const KIND_FIELDS: Record<CheckKind, (keyof ScenarioCheck)[]> = {
   state_equals: ["key", "value"],
   value_equals: ["path", "value"],
   step_fails: [],
+  search_finds: ["within_first"],
 };
 
 const LEVEL_FIELDS: Record<CheckLevel, (keyof ScenarioCheck)[]> = {

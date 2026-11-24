@@ -2,6 +2,7 @@
 import pytest
 
 from app.services.scenario_checks import (
+    NO_EXPECTED_ARTICLE,
     NO_EXPECTED_REPLY,
     NO_PASSAGES,
     UNREADABLE_TURN,
@@ -200,6 +201,108 @@ class TestKnowledgeBase:
         item = check(kind="reply_meets", rubric="Quote prices", context="knowledge_base", level="turn", case_id="a1")
         (entry,) = grade([item], [[turn("a1", "a", 0, reply="x")]])
         assert entry["result"]["comment"] == NO_PASSAGES
+
+
+def search(**fields) -> Check:
+    return Check(**{"id": "c1", "kind": "search_finds", **fields})
+
+
+def found(*titles):
+    """One knowledge search with these articles, best first."""
+    articles = [{"id": f"KB:kb-1#article_{number}", "title": title} for number, title in enumerate(titles, 1)]
+    return [{"step": "kb", "label": "Help centre", "failed": False, "articles": articles}]
+
+
+class TestKnowledgeSearch:
+    @pytest.mark.parametrize(
+        "fields, sentence",
+        [
+            ({}, "On every turn, the knowledge search should find the turn's expected article."),
+            ({"within_first": 1}, "On every turn, the knowledge search should find the turn's expected article as the first result."),
+            ({"within_first": 3, "level": "turn", "case_id": "a1"},
+             "The knowledge search should find the turn's expected article in the first 3 results."),
+        ],
+    )
+    def test_the_check_reads_as_a_sentence(self, fields, sentence):
+        assert describe_check(search(**fields)) == sentence
+
+    def test_it_only_says_what_should_be_found(self):
+        with pytest.raises(ValueError, match="only says what should be found"):
+            search(expect="should_not")
+
+    def test_the_first_results_start_at_one(self):
+        with pytest.raises(ValueError):
+            search(within_first=0)
+
+    def test_the_expected_article_is_checked_on_each_turn(self):
+        item = search(when="anywhere")
+        assert item.when == "every_turn"
+        assert item.per_turn
+
+    def test_an_article_typed_into_an_older_check_is_ignored(self):
+        item = search(article="Old prices")
+        conversations = [[turn("a1", "a", 0, expected_articles=["Lock the bike"], searches=found("Lock the bike"))]]
+        (entry,) = grade([item], conversations)
+        assert describe_check(item) == "On every turn, the knowledge search should find the turn's expected article."
+        assert entry["result"]["status"] == "passed"
+
+    def test_only_turns_with_an_expected_article_are_checked(self):
+        conversations = [[
+            turn("a1", "a", 0, expected_articles=["Lock the bike"], searches=found("Lock the bike")),
+            turn("a2", "a", 1, searches=found("Pay for a ride")),
+        ]]
+        (entry,) = grade([search()], conversations)
+        assert entry["result"]["status"] == "passed"
+        assert entry["result"]["observed"] == "Held on the one turn checked; the other turn could not be checked."
+
+    def test_any_of_a_turns_expected_articles_counts(self):
+        conversations = [[turn("a1", "a", 0, expected_articles=["Return the bike", "lock the bike"], searches=found("Pay for a ride", "Lock the bike"))]]
+        (entry,) = grade([search()], conversations)
+        assert entry["result"]["status"] == "passed"
+        assert entry["result"]["checked_facts"] == ['The knowledge search found "Lock the bike" as result 2.']
+
+    def test_a_turn_that_missed_its_expected_article_fails(self):
+        conversations = [[
+            turn("a1", "a", 0, expected_articles=["Lock the bike"], searches=found("Lock the bike")),
+            turn("a2", "a", 1, expected_articles=["Return the bike"], searches=found("Pay for a ride")),
+        ]]
+        (entry,) = grade([search()], conversations)
+        assert entry["result"]["status"] == "failed"
+        assert entry["result"]["observed"] == (
+            'Turn 2: The knowledge search did not find "Return the bike". It found: "Pay for a ride".'
+        )
+
+    def test_an_expected_article_below_the_first_results_fails(self):
+        conversations = [[turn("a1", "a", 0, expected_articles=["Lock the bike"], searches=found("Pay for a ride", "Lock the bike"))]]
+        (entry,) = grade([search(within_first=1)], conversations)
+        assert entry["result"]["status"] == "failed"
+        assert entry["result"]["observed"] == (
+            'Turn 1: The knowledge search found "Lock the bike" as result 2, not as the first result.'
+        )
+
+    def test_a_turn_that_did_not_search_for_its_expected_article_fails(self):
+        (entry,) = grade([search()], [[turn("a1", "a", 0, expected_articles=["Lock the bike"])]])
+        assert entry["result"]["status"] == "failed"
+        assert entry["result"]["observed"] == "Turn 1: No knowledge search ran on this turn."
+
+    def test_no_expected_article_anywhere_is_said_of_the_conversation(self):
+        (entry,) = grade([search()], [[turn("a1", "a", 0, searches=found("Lock the bike"))]])
+        assert entry["result"]["status"] == "not_evaluated"
+        assert entry["result"]["comment"] == "No turn of this conversation has an expected article in the dataset."
+
+    def test_a_turn_level_check_without_an_expected_article_is_not_graded(self):
+        (entry,) = grade([search(level="turn", case_id="a1")], [[turn("a1", "a", 0, searches=found("Lock the bike"))]])
+        assert entry["result"]["status"] == "not_evaluated"
+        assert entry["result"]["comment"] == NO_EXPECTED_ARTICLE
+
+    def test_a_turn_level_check_reads_that_turn(self):
+        conversations = [[
+            turn("a1", "a", 0, expected_articles=["Lock the bike"], searches=found("Lock the bike")),
+            turn("a2", "a", 1, expected_articles=["Lock the bike"], searches=found("Pay for a ride")),
+        ]]
+        (entry,) = grade([search(level="turn", case_id="a2")], conversations)
+        assert entry["result"]["status"] == "failed"
+        assert entry["case_id"] == "a2"
 
 
 class TestFailedSteps:

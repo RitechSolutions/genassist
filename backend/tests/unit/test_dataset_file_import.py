@@ -236,6 +236,24 @@ class TestParseDatasetFile:
 
         assert '"tags" must be a list of text values' in parsed.errors[0]
 
+    def test_expected_articles_are_read_without_blanks_or_repeats(self):
+        articles = [" Lock the bike ", "", "article_7", "Lock the bike"]
+
+        parsed = parse_dataset_file(_file(_conversation(_turn(expected_articles=articles), _turn("q2"))))
+
+        first, second = parsed.conversations[0]
+        assert first.expected_articles == ["Lock the bike", "article_7"]
+        assert second.expected_articles is None
+
+    @pytest.mark.parametrize("articles", ["Lock the bike", ["Lock the bike", 7], {"title": "Lock the bike"}])
+    def test_expected_articles_must_be_a_list_of_text(self, articles):
+        parsed = parse_dataset_file(_file(_conversation(_turn(expected_articles=articles))))
+
+        assert parsed.status == "failed"
+        assert parsed.errors == [
+            'Conversation 1, turn 1: "expected_articles" must be a list of article titles or ids.'
+        ]
+
     def test_the_error_list_is_capped(self):
         bad = [_conversation({"input_data": {}}) for _ in range(MAX_FILE_ERRORS + 3)]
 
@@ -399,6 +417,20 @@ class TestFileImport:
         assert cases[1].tags == ["refund", FILE_IMPORT_TAG]
         assert cases[1].weight == 2.0
         assert (result.conversations, result.turns) == (2, 3)
+
+    @pytest.mark.asyncio
+    async def test_import_stores_each_turns_expected_articles(self):
+        service = _service()
+        suite_id = _arrange(service)
+        upload = DatasetUpload(
+            "a.json",
+            content=_file(_conversation(_turn("q1", expected_articles=["Lock the bike"]), _turn("q2"))),
+        )
+
+        await service.import_cases_from_files(suite_id, [upload])
+
+        cases = _inserted(service)
+        assert [case.expected_articles for case in cases] == [["Lock the bike"], None]
 
     @pytest.mark.asyncio
     async def test_conversations_the_dataset_already_holds_are_skipped(self):

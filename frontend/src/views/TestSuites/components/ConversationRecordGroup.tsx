@@ -68,6 +68,7 @@ const RecordField: React.FC<{
 // view matches the editor. One structured half puts the whole turn in JSON.
 const RecordBody: React.FC<{ entry: TestCase }> = ({ entry }) => {
   const plain = isPlainRecord(entry.input_data, entry.expected_output);
+  const expectedArticles = entry.expected_articles ?? [];
   return (
     <div className="mt-3 space-y-3">
       <RecordField
@@ -83,6 +84,13 @@ const RecordBody: React.FC<{ entry: TestCase }> = ({ entry }) => {
         raw={entry.expected_output}
         emptyText={hasExpected(entry.expected_output) ? undefined : 'No expected reply.'}
       />
+      {expectedArticles.length > 0 && (
+        <RecordField
+          label="Expected articles"
+          rawLabel="Expected articles"
+          text={expectedArticles.join("\n")}
+        />
+      )}
     </div>
   );
 };
