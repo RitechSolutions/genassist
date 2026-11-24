@@ -35,6 +35,9 @@ _MAX_EVENT_VALUE_CHARS = 8000
 # Set by an evaluation run to read real tool arguments by event id; never stored.
 RAW_TOOL_ARGUMENTS: ContextVar[Optional[Dict[str, Any]]] = ContextVar("raw_tool_arguments", default=None)
 
+# A Studio test runs under a test id; the saved workflow it belongs to goes here.
+SAVED_WORKFLOW_ID_KEY = "saved_workflow_id"
+
 
 def _bound_event_value(value: Any) -> Any:
     """Return a JSON-safe copy of the value, truncated when it serializes too large.
