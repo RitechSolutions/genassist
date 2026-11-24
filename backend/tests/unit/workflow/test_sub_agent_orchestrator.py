@@ -184,6 +184,23 @@ async def test_run_child_turn_forces_child_pii_when_inherited():
     assert child_node["data"]["piiMasking"] is True
 
 
+@pytest.mark.asyncio
+async def test_run_child_turn_keeps_the_saved_workflow_of_a_test_run():
+    stack, _, _, _, engine_cls = _patch_env(_fake_child_state())
+    with stack:
+        await orchestrator.run_child_turn(
+            workflow={**_WORKFLOW, "config": {"id": "test-workflow", "saved_workflow_id": "wf-saved"}},
+            root_thread_id="root",
+            child_node_id="child",
+            invocation_id="inv",
+            message="do it",
+            timeout_seconds=120,
+        )
+    built_config = engine_cls.call_args.args[0]
+    assert built_config["id"] == "test-workflow"
+    assert built_config["saved_workflow_id"] == "wf-saved"
+
+
 def test_envelope_round_trip_and_gating():
     env = orchestrator.make_envelope(
         status="completed",
