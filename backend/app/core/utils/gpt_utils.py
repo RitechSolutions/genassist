@@ -25,6 +25,7 @@ OPENAI_MODELS = [
     OpenAIModel("gpt-5-nano", "GPT 5 nano", "o200k_base", 128000),
     OpenAIModel("gpt-5.1", "GPT 5.1", "o200k_base", 200000),
     OpenAIModel("gpt-5.2", "GPT 5.2", "o200k_base", 200000),
+    OpenAIModel("gpt-6.1-terra", "GPT 6.1 Terra", "o200k_base", 200000),
     OpenAIModel("gpt-4o", "GPT-4o", "cl100k_base", 128000),
     OpenAIModel("gpt-4o-mini", "GPT-4o Mini", "cl100k_base", 128000),
     OpenAIModel("gpt-4", "GPT-4", "cl100k_base", 8192),

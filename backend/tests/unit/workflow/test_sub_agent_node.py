@@ -179,6 +179,18 @@ def test_sanitize_leaves_normal_and_hitl_output_untouched():
     assert _sanitize_output_for_memory(form) == form
 
 
+def test_sanitize_keeps_only_the_reply_of_an_agent_output():
+    agent_output = {
+        "message": "Done: I added the Slack step.",
+        "steps": [{"tool_name": "apply_plan", "tool_args": {"operations": "[...]"}}],
+        "tools_used": [{"tool_name": "apply_plan"}],
+    }
+    assert _sanitize_output_for_memory(agent_output) == "Done: I added the Slack step."
+    # A dict with a message but no agent working is some other node's output: kept whole.
+    other = {"message": "hi", "data": {"x": 1}}
+    assert _sanitize_output_for_memory(other) == other
+
+
 def test_find_next_nodes_skips_output_sub_agent_edge():
     workflow = {
         "id": "wf1",

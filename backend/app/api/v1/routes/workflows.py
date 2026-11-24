@@ -74,6 +74,7 @@ SUPPORTED_NODE_TYPES = [
     "preprocessingNode",
     "trainModelNode",
     "mcpNode",
+    "workflowBuilderToolsNode",
     "workflowExecutorNode",
     "humanInTheLoopNode",
     "setStateNode",

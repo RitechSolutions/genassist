@@ -20,6 +20,7 @@ export type {
   ScheduleItem,
   Translations,
   StreamEvent,
+  StreamStep,
   StreamingReply,
 } from './types';
 export {

@@ -39,6 +39,7 @@ import MLModelInferenceNode from "./tools/mlModelInferenceNode";
 import ThreadRAGNode from "./tools/threadRAGNode";
 import WorkflowExecutorNode from "./tools/workflowExecutorNode";
 import MCPNode from "./llm/mcpNode";
+import WorkflowBuilderToolsNode from "./llm/workflowBuilderToolsNode";
 import ReadMailsNode from "./integrations/readMailsNode";
 import ToolBuilderNode from "./llm/toolBuilderNode";
 import ChatOutputNode from "./chat/chatOutputNode";
@@ -50,6 +51,7 @@ import {
   MODEL_NODE_DEFINITION,
   TOOL_BUILDER_NODE_DEFINITION,
   MCP_NODE_DEFINITION,
+  WORKFLOW_BUILDER_TOOLS_NODE_DEFINITION,
   VOICE_AGENT_NODE_DEFINITION,
   NLP_NODE_DEFINITION,
 } from "./llm/definitions";
@@ -180,6 +182,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(TRAIN_MODEL_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(MCP_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(WORKFLOW_BUILDER_TOOLS_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(WORKFLOW_EXECUTOR_NODE_DEFINITION);
 
@@ -239,6 +242,7 @@ export const getNodeTypes = () => {
     preprocessingNode: PreprocessingNode,
     trainModelNode: TrainModelNode,
     mcpNode: MCPNode,
+    workflowBuilderToolsNode: WorkflowBuilderToolsNode,
     workflowExecutorNode: WorkflowExecutorNode,
     humanInTheLoopNode: HumanInTheLoopNode,
     fileReaderNode: FileReaderNode,

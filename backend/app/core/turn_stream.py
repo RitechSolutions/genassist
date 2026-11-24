@@ -107,6 +107,19 @@ def emit_activity(kind: ActivityKind, phase: ActivityPhase) -> None:
         stream.activity(kind, phase)
 
 
+def emit_step(step_id: str, kind: str, text: str, phase: ActivityPhase = "start", detail: str = "") -> None:
+    """
+    Narrate one step of an agent's work in plain words ("Adding 3 steps"), so a
+    chat can show what is happening instead of a bare "Thinking". ``kind`` groups
+    steps for an icon (read, lookup, search, edit, test, finalize, question);
+    ``detail`` on the end frame is the outcome ("7 of 7 applied"). A no-op
+    outside a streamed turn.
+    """
+    stream = current_stream.get()
+    if stream is not None:
+        stream.emit("step", id=step_id, kind=kind, text=text, phase=phase, detail=detail)
+
+
 def end_reply(node_id: str) -> None:
     stream = current_stream.get()
     if stream is not None:

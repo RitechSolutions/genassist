@@ -23,6 +23,7 @@ _Rate = TypeVar("_Rate", Decimal, float)
 # Static fallback when DB is empty or missing a row (also used before first migration).
 STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
     "openai": {
+        "gpt-6.1-terra": {"input_per_1k": 0.001, "output_per_1k": 0.005},
         "gpt-4o": {"input_per_1k": 0.0025, "output_per_1k": 0.01},
         "gpt-4o-mini": {"input_per_1k": 0.00015, "output_per_1k": 0.0006},
         "gpt-4-turbo": {"input_per_1k": 0.01, "output_per_1k": 0.03},

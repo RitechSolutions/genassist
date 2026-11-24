@@ -527,3 +527,24 @@ class TestAnnotateNodeExecution:
         state = _state()
         state.annotate_node_execution("kb", sources=[])
         assert state.node_execution_status == {}
+
+
+class TestBuilderTestRunSubtotal:
+    def test_test_run_calls_are_counted_in_the_totals_and_summed_apart(self):
+        from app.modules.workflow.engine.workflow_state import BUILDER_TEST_RUN_PURPOSE
+
+        s = _state()
+        s.add_llm_usage(100, 10, provider="openai", model="gpt-4o", node_id="builder")
+        s.add_llm_usage(40, 4, provider="openai", model="gpt-4o", node_id="n3", purpose=BUILDER_TEST_RUN_PURPOSE)
+        s.add_llm_usage(20, 2, provider="openai", model="gpt-4o", node_id="n3", purpose=BUILDER_TEST_RUN_PURPOSE)
+        usage = s.get_total_llm_usage()
+
+        assert usage["calls"] == 3 and usage["input_tokens"] == 160 and usage["output_tokens"] == 16
+        assert usage["test_runs"]["calls"] == 2
+        assert usage["test_runs"]["input_tokens"] == 60 and usage["test_runs"]["output_tokens"] == 6
+        assert 0 < usage["test_runs"]["cost_usd"] < usage["cost_usd"]
+
+    def test_a_run_without_test_runs_has_no_subtotal(self):
+        s = _state()
+        s.add_llm_usage(100, 10, provider="openai", model="gpt-4o")
+        assert "test_runs" not in s.get_total_llm_usage()

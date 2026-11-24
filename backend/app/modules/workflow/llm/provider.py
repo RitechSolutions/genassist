@@ -11,7 +11,7 @@ import httpx
 from injector import inject
 if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls torch/transformers
     from langchain_core.language_models import BaseChatModel
-from app.core.config.llm_prompt_cache_capabilities import bedrock_cache_family
+from app.core.config.llm_prompt_cache_capabilities import CLAUDE_FAMILY, bedrock_cache_family
 from app.core.utils.encryption_utils import decrypt_key
 from app.modules.workflow.llm.model_params import (
     SAMPLING_PARAMS,
@@ -39,6 +39,30 @@ def _bedrock_supports_prompt_caching(model_name: Optional[str]) -> bool:
         return True
     logger.debug("Prompt caching skipped: %r is not a cache-capable Bedrock model", model_name)
     return False
+
+
+def apply_max_tokens_floor(connection_data: Dict[str, Any], floor: Optional[int]) -> Dict[str, Any]:
+    """
+    `connection_data` with its max_tokens raised to at least `floor`. Only a form that
+    has the setting is touched, so a provider class without a max_tokens option never
+    receives one it does not know.
+    """
+    if not floor or "max_tokens" not in connection_data:
+        return connection_data
+    try:
+        current = int(connection_data.get("max_tokens") or 0)
+    except (TypeError, ValueError):
+        current = 0
+    if current >= int(floor):
+        return connection_data
+    return {**connection_data, "max_tokens": int(floor)}
+
+
+def _caches_conversation(provider: str, model_name: Optional[str]) -> bool:
+    """Whether the model accepts a cache marker inside messages, not just on the system prompt"""
+    if provider == "anthropic":
+        return True
+    return provider == "bedrock_converse" and bedrock_cache_family(model_name) == CLAUDE_FAMILY
 
 
 def _single_attempt_kwargs(provider: str, seconds: float) -> Dict[str, Any]:
@@ -195,7 +219,9 @@ async def build_chat_model(
     ):
         from app.modules.workflow.llm.prompt_caching_chat_model import PromptCachingChatModel
 
-        return PromptCachingChatModel(inner=llm, cache_style=provider)
+        return PromptCachingChatModel(
+            inner=llm, cache_style=provider, cache_conversation=_caches_conversation(provider, model_name)
+        )
 
     return llm
 
@@ -353,6 +379,7 @@ class LLMProvider:
         self,
         model_id: str | None = None,
         prompt_caching_enabled: bool = False,
+        min_max_tokens: Optional[int] = None,
     ) -> BaseChatModel:
         from app.dependencies.injector import injector
         llm_provider_service = injector.get(LlmProviderService)
@@ -364,7 +391,7 @@ class LLMProvider:
         else:
             llm_provider = await llm_provider_service.get_by_id(model_id)
 
-        return await self._build_from_provider(llm_provider, prompt_caching_enabled)
+        return await self._build_from_provider(llm_provider, prompt_caching_enabled, min_max_tokens=min_max_tokens)
 
     async def get_model_from_provider(
         self,
@@ -377,7 +404,9 @@ class LLMProvider:
             llm_provider, prompt_caching_enabled, call_timeout_seconds=call_timeout_seconds
         )
 
-    async def _build_one(self, model_id: str, prompt_caching_enabled: bool = False) -> BaseChatModel:
+    async def _build_one(
+        self, model_id: str, prompt_caching_enabled: bool = False, min_max_tokens: Optional[int] = None
+    ) -> BaseChatModel:
         """Build a single chat model from a stored provider id.
 
         Shared by get_model and get_model_with_fallback so residency checks,
@@ -387,11 +416,17 @@ class LLMProvider:
         llm_provider_service = injector.get(LlmProviderService)
 
         llm_provider = await llm_provider_service.get_by_id(model_id)
-        return await self._build_from_provider(llm_provider, prompt_caching_enabled)
+        return await self._build_from_provider(llm_provider, prompt_caching_enabled, min_max_tokens=min_max_tokens)
 
     async def _build_from_provider(
-        self, llm_provider, prompt_caching_enabled: bool = False, call_timeout_seconds: Optional[float] = None
+        self,
+        llm_provider,
+        prompt_caching_enabled: bool = False,
+        call_timeout_seconds: Optional[float] = None,
+        min_max_tokens: Optional[int] = None,
     ) -> BaseChatModel:
+        """``min_max_tokens`` raises the stored max_tokens for a caller whose replies are
+        known to outgrow the form default (the Workflow Builder's plans); the stored value wins when higher."""
         from app.dependencies.injector import injector
         from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
         from app.services.app_settings import AppSettingsService
@@ -426,6 +461,7 @@ class LLMProvider:
             )  # clone the data
 
             validated_data.pop("masked_api_key", None)
+            validated_data = apply_max_tokens_floor(validated_data, min_max_tokens)
 
             # Decrypt stored secrets for providers that need it
             original_provider = (llm_provider.llm_model_provider or "").lower()
@@ -454,6 +490,7 @@ class LLMProvider:
         provider_id: str | None,
         fallback_chain_id: str | None = None,
         prompt_caching_enabled: bool = False,
+        min_max_tokens: Optional[int] = None,
     ) -> BaseChatModel:
         """Resolve the model a node should use, honoring an optional fallback chain.
 
@@ -463,7 +500,7 @@ class LLMProvider:
         is applied per provider.
         """
         if not fallback_chain_id:
-            return await self.get_model(provider_id, prompt_caching_enabled)
+            return await self.get_model(provider_id, prompt_caching_enabled, min_max_tokens=min_max_tokens)
 
         from app.dependencies.injector import injector
         from app.services.fallback_chains import FallbackChainService
@@ -477,13 +514,16 @@ class LLMProvider:
             effective_ids = chain_ids
 
         retry_policy = chain.retry_policy.model_dump() if chain.retry_policy else None
-        return await self.get_model_with_fallback(effective_ids, retry_policy, prompt_caching_enabled)
+        return await self.get_model_with_fallback(
+            effective_ids, retry_policy, prompt_caching_enabled, min_max_tokens=min_max_tokens
+        )
 
     async def get_model_with_fallback(
         self,
         provider_ids: list[str],
         retry_policy: Optional[Dict[str, Any]] = None,
         prompt_caching_enabled: bool = False,
+        min_max_tokens: Optional[int] = None,
     ) -> BaseChatModel:
         """Build a chat model that fails over across an ordered list of providers.
 
@@ -523,7 +563,7 @@ class LLMProvider:
         # Fast path: single provider, no retries, no timeout → no wrapper, zero
         # behavior change for plain single-provider nodes.
         if len(ids) == 1 and not has_retry and not has_timeout:
-            return await self._build_one(ids[0], prompt_caching_enabled)
+            return await self._build_one(ids[0], prompt_caching_enabled, min_max_tokens=min_max_tokens)
 
         from app.modules.workflow.llm.fallback_chat_model import FallbackChatModel
 
@@ -534,7 +574,7 @@ class LLMProvider:
                 # Children stay as raw chat models (NOT wrapped with .with_retry, which
                 # returns a RunnableRetry lacking bind_tools and would break the agent
                 # path). Per-provider retry is handled inside FallbackChatModel instead.
-                model = await self._build_one(pid, prompt_caching_enabled)
+                model = await self._build_one(pid, prompt_caching_enabled, min_max_tokens=min_max_tokens)
             except Exception as e:
                 # A provider that can't even be instantiated (e.g. deleted) is skipped
                 # so the rest of the chain can still serve the request.

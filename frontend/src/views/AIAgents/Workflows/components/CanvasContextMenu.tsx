@@ -13,7 +13,7 @@ import {
 import nodeRegistry from "@/views/AIAgents/Workflows/registry/nodeRegistry";
 import { getNodeColor } from "@/views/AIAgents/Workflows/utils/nodeColors";
 import { renderIcon } from "@/views/AIAgents/Workflows/utils/iconUtils";
-import { Plus, Undo, Redo, Group, Ungroup } from "lucide-react";
+import { Plus, Undo, Redo, Group, Ungroup, Sparkles } from "lucide-react";
 import { useHiddenNodeTypes } from "@/views/AIAgents/Workflows/hooks/useHiddenNodeTypes";
 
 interface CanvasContextMenuProps {
@@ -27,6 +27,9 @@ interface CanvasContextMenuProps {
   /** Wrap the selected nodes in a visual group (enabled when nodes are selected). */
   onGroupSelection: () => void;
   canGroupSelection: boolean;
+  /** AI actions on the current selection (shown when something is selected). */
+  onExplainSelection?: () => void;
+  onOptimizeSelection?: () => void;
   /** Remove the selected group container(s), keeping their nodes. */
   onUngroupSelection: () => void;
   canUngroupSelection: boolean;
@@ -54,6 +57,8 @@ const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
   clickPosition,
   onGroupSelection,
   canGroupSelection,
+  onExplainSelection,
+  onOptimizeSelection,
   onUngroupSelection,
   canUngroupSelection,
 }) => {
@@ -116,6 +121,19 @@ const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
         </ContextMenuSub>
 
         <ContextMenuSeparator />
+
+        {onExplainSelection && (
+          <ContextMenuItem onClick={onExplainSelection} disabled={!canGroupSelection} className="flex items-center">
+            <Sparkles className="mr-2 h-4 w-4 text-[hsl(var(--brand-600))]" />
+            Explain selection with AI
+          </ContextMenuItem>
+        )}
+        {onOptimizeSelection && (
+          <ContextMenuItem onClick={onOptimizeSelection} disabled={!canGroupSelection} className="flex items-center">
+            <Sparkles className="mr-2 h-4 w-4 text-[hsl(var(--brand-600))]" />
+            Optimize selection with AI
+          </ContextMenuItem>
+        )}
 
         {/* Visual grouping of the current selection */}
         <ContextMenuItem

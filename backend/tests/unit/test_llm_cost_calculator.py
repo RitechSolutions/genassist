@@ -817,3 +817,15 @@ class TestDisplayDictOmitsInheritedCacheRates:
 
     def test_family_derived_cache_rates_stay_out_of_the_display_dict(self, no_db_rates):
         assert display_rates("anthropic", "claude-3-5-sonnet") == {"input_per_1k": 0.003, "output_per_1k": 0.015}
+
+
+class TestBundledGpt61Terra:
+    """The Workflow Builder's seeded model prices from the bundled table"""
+
+    def test_resolves_the_base_rates_from_the_fallback(self):
+        res = llm_pricing.resolve_pricing("openai", "gpt-6.1-terra", {})
+
+        assert res.status == llm_pricing.PricingStatus.FALLBACK
+        assert res.matched_model_key == "gpt-6.1-terra"
+        assert (res.input_per_1k, res.output_per_1k) == (Decimal("0.001"), Decimal("0.005"))
+        assert (res.cache_read_per_1k, res.cache_creation_per_1k) == (None, None)
