@@ -161,7 +161,10 @@ async def screen_tool_result(tool, result: Any) -> Any:
     turn = current_guardrails.get()
     if turn is None or turn.policy.untrusted_content == "off":
         return result
-    text = result if isinstance(result, str) else json.dumps(result, default=str, ensure_ascii=False)
+    try:
+        text = result if isinstance(result, str) else json.dumps(result, default=str, ensure_ascii=False)
+    except (TypeError, ValueError):
+        text = str(result)
     mode = "block" if turn.policy.mode == "block" and turn.policy.untrusted_content == "block" else "detect"
     usage: list[dict] = []
     verdicts, blocked = await check_text(
@@ -172,6 +175,8 @@ async def screen_tool_result(tool, result: Any) -> Any:
         for entry in usage:
             state.add_llm_usage(**entry)
         state.guardrail_events.extend(verdicts)
+    if mode != "block":
+        return result
     if blocked:
         return (
             f"ERROR: the '{tool.name}' tool result was withheld because it contained instructions aimed at the "

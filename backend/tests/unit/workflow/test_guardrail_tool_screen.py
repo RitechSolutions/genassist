@@ -1,6 +1,7 @@
 import asyncio
 import json
 import uuid
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,9 @@ from langchain_core.messages import AIMessage
 
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.simple_tool_agent import SimpleToolAgent
+from app.modules.workflow.engine.base_node import BaseNode
+from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+from app.modules.workflow.engine.workflow_state import WorkflowState
 from app.modules.workflow.guardrails import detectors
 from app.modules.workflow.guardrails import turn as guardrail_turn
 from app.schemas.guardrails import GuardrailPolicy
@@ -72,9 +76,9 @@ def judge(monkeypatch):
     return use
 
 
-def _tool(state, return_direct=False):
+def _tool(state, return_direct=False, result=None):
     async def search(_inp):
-        return dict(RESULT)
+        return dict(RESULT) if result is None else result
 
     return BaseTool(
         node_id="tool1", name="Search Docs", description="d", parameters={}, function=search,
@@ -113,40 +117,69 @@ async def test_results_are_unchanged_without_a_tool_screen(judge, untrusted):
 
 
 @pytest.mark.asyncio
-async def test_a_clean_result_is_wrapped_as_untrusted_data(judge):
+async def test_a_clean_result_is_wrapped_as_untrusted_data_when_both_block(judge):
     judge('{"prompt_attack": 0}')
     state = _State()
-    assert await _invoke(_tool(state), "block", "flag") == WRAPPED
+    assert await _invoke(_tool(state), "block", "block") == WRAPPED
     assert _events(state) == [("untrusted_content", "passed", "search_docs")]
     assert [(u["purpose"], u["node_id"]) for u in state.llm_usage] == [("guardrail_tool", "tool1")]
     assert state.tool_events[0]["result"] == RESULT
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("mode", "untrusted", "observation", "action"),
-    [("block", "block", WITHHELD, "blocked"), ("block", "flag", WRAPPED, "flagged"), ("detect", "block", WRAPPED, "flagged")],
-)
-async def test_hidden_instructions_are_withheld_only_when_both_block(judge, mode, untrusted, observation, action):
+async def test_hidden_instructions_are_withheld_when_both_block(judge):
     judge('{"prompt_attack": 3}')
     state = _State()
-    assert await _invoke(_tool(state), mode, untrusted) == observation
-    assert _events(state) == [("untrusted_content", action, "search_docs")]
+    assert await _invoke(_tool(state), "block", "block") == WITHHELD
+    assert _events(state) == [("untrusted_content", "blocked", "search_docs")]
     assert state.tool_events[0]["result"] == RESULT
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("mode", "untrusted", "observation", "action"),
-    [("block", "block", WITHHELD, "blocked"), ("block", "flag", WRAPPED, "flagged")],
-)
-async def test_two_malformed_judge_replies_withhold_in_block_and_flag_in_flag(judge, mode, untrusted, observation, action):
+async def test_two_malformed_judge_replies_withhold_when_both_block(judge):
     fake = judge(PROSE, PROSE)
     state = _State()
-    assert await _invoke(_tool(state), mode, untrusted) == observation
-    assert _events(state) == [("malformed_verdict", action, "search_docs")]
+    assert await _invoke(_tool(state), "block", "block") == WITHHELD
+    assert _events(state) == [("malformed_verdict", "blocked", "search_docs")]
     assert fake.calls == 2
     assert len(state.llm_usage) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "untrusted", "replies", "events"),
+    [
+        ("block", "flag", ['{"prompt_attack": 0}'], [("untrusted_content", "passed", "search_docs")]),
+        ("block", "flag", ['{"prompt_attack": 3}'], [("untrusted_content", "flagged", "search_docs")]),
+        ("block", "flag", [PROSE, PROSE], [("malformed_verdict", "flagged", "search_docs")]),
+        ("detect", "block", ['{"prompt_attack": 3}'], [("untrusted_content", "flagged", "search_docs")]),
+        ("detect", "flag", ['{"prompt_attack": 3}'], [("untrusted_content", "flagged", "search_docs")]),
+    ],
+    ids=["block+flag clean", "block+flag fired", "block+flag malformed", "detect+block fired", "detect+flag fired"],
+)
+async def test_outside_block_and_block_the_agent_reads_the_tools_own_result(judge, mode, untrusted, replies, events):
+    fake = judge(*replies)
+    state = _State()
+    result = dict(RESULT)
+    assert await _invoke(_tool(state, result=result), mode, untrusted) is result
+    assert _events(state) == events
+    assert fake.calls == len(replies)
+
+
+def _circular():
+    loop = {"title": "Refund policy"}
+    loop["self"] = loop
+    return loop
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result", [{date(2026, 1, 1): 5}, _circular()], ids=["date key", "contains itself"])
+async def test_a_result_json_cannot_encode_is_still_judged_and_returned_unchanged(judge, result):
+    fake = judge('{"prompt_attack": 0}')
+    state = _State()
+    assert await _invoke(_tool(state, result=result), "detect", "flag") is result
+    assert fake.calls == 1
+    assert _events(state) == [("untrusted_content", "passed", "search_docs")]
 
 
 @pytest.mark.asyncio
@@ -177,7 +210,7 @@ async def test_parallel_tool_calls_in_one_turn_share_one_judge_build(judge):
 
     assert fake.builds() == 1
     assert fake.calls == 2
-    assert results == [WRAPPED, WRAPPED]
+    assert results == [RESULT, RESULT]
     assert _events(state) == [("untrusted_content", "passed", "search_docs")] * 2
 
 
@@ -212,7 +245,36 @@ async def test_the_judge_is_built_at_turn_start_when_tool_results_are_screened(j
 
     token = guardrail_turn.current_guardrails.set(turn)
     try:
-        assert await _tool(_State()).invoke() == WRAPPED
+        assert await _tool(_State()).invoke() == RESULT
     finally:
         guardrail_turn.current_guardrails.reset(token)
     assert fake.builds() == 1
+
+
+class _LookupNode(BaseNode):
+    async def process(self, config):
+        return {"hours": "9:00 to 17:00"}
+
+
+def _tools_from_node_data(skip):
+    lookup = {"id": "lookup", "type": "lookupNode", "data": {"name": "Get opening hours", **skip}}
+    search = {"id": "search", "type": "lookupNode", "data": {"name": "Search Docs"}}
+    agent = {"id": "agent", "type": "lookupNode", "data": {"name": "Agent"}}
+    edges = [{"source": n, "target": "agent", "sourceHandle": "output", "targetHandle": "input_tools"} for n in ("lookup", "search")]
+    state = WorkflowState(workflow={"nodes": [lookup, search, agent], "target_edges": {"agent": edges}}, thread_id="t1")
+    return {tool.name: tool for tool in _LookupNode("agent", agent, state).get_connected_nodes("tools")}, state
+
+
+@pytest.mark.asyncio
+async def test_a_tool_set_to_skip_the_check_costs_no_judge_call_while_its_sibling_is_screened(judge, monkeypatch):
+    monkeypatch.setitem(WorkflowEngine._node_registry, "lookupNode", _LookupNode)
+    fake = judge('{"prompt_attack": 3}')
+    tools, state = _tools_from_node_data({"skipToolResultCheck": True})
+
+    skipped = await _invoke(tools["get_opening_hours"], "block", "block")
+    screened = await _invoke(tools["search_docs"], "block", "block")
+
+    assert skipped == {"hours": "9:00 to 17:00"}
+    assert screened == WITHHELD
+    assert fake.calls == 1
+    assert [(v["source"], v["action"]) for v in state.guardrail_events] == [("search_docs", "blocked")]
