@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  BookOpen,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
@@ -33,6 +34,11 @@ const ORIGINS: Record<
     iconClass: "text-blue-600",
   },
   file: { label: "Imported from a file", Icon: FileJson, iconClass: "text-violet-600" },
+  generated: {
+    label: "Written from a knowledge base",
+    Icon: BookOpen,
+    iconClass: "text-emerald-600",
+  },
   // The line under the pen keeps it apart from the turns' pencil edit buttons.
   manual: { label: "Written by hand", Icon: PenLine, iconClass: "text-muted-foreground" },
 };
