@@ -150,10 +150,10 @@ async def estimate_cases_from_knowledge_base(
     service: TestSuiteService = Injected(TestSuiteService),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
 ):
-    """How many articles the knowledge base holds and the model calls a run would make."""
+    """How many articles a run could read from the knowledge base and the model calls it would make."""
     await service.get_suite(suite_id)
     knowledge_base = await knowledge_service.get_by_id(knowledge_base_id)
-    document_ids = await injector.get(AgentRAGServiceManager).get_document_ids(knowledge_base)
+    document_ids = await injector.get(AgentRAGServiceManager).get_stored_document_ids(knowledge_base)
     return model_calls(len(document_ids), sample_size)
 
 

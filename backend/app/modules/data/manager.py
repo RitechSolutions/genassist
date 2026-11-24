@@ -385,6 +385,13 @@ class AgentRAGServiceManager:
             return []
         return await service.get_documents()
 
+    async def get_stored_document_ids(self, kb_obj: KBRead) -> List[str]:
+        """Ids of the stored documents of a knowledge base whose text can be read back"""
+        service = await self.get_service(kb_obj)
+        if not service:
+            return []
+        return await service.get_stored_document_ids()
+
     async def finalize_legra(self, kb_obj: KBRead) -> bool:
         """
         Finalize LEGRA for a knowledge base

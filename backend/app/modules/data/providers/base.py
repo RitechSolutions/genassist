@@ -85,6 +85,10 @@ class BaseDataProvider(ABC):
         """Every stored document with its text; none for a provider that cannot give it back"""
         return []
 
+    async def get_stored_document_ids(self) -> List[str]:
+        """Ids of the documents get_documents gives back; none for a provider that cannot give text back"""
+        return []
+
     @abstractmethod
     async def search(
         self,

@@ -91,3 +91,38 @@ class TestReadingBack:
         service._initialized = True
         service.data_provider = [SimpleNamespace(get_documents=none), SimpleNamespace(get_documents=some)]
         assert await service.get_documents() == [document]
+
+
+class TestCountingWhatCanBeReadBack:
+    @pytest.mark.asyncio
+    async def test_the_vector_provider_names_the_documents_it_would_return(self):
+        provider = vector_provider([
+            piece("doc-a_chunk_0", "Lock the bike"), piece("doc-a_chunk_1", "Push the ring lock down."),
+            piece("docs/report_chunk_1.pdf_chunk_0", "Report"),
+        ])
+        document_ids = await provider.get_stored_document_ids()
+        assert document_ids == ["doc-a", "docs/report_chunk_1.pdf"]
+        assert document_ids == [document.id for document in await provider.get_documents()]
+
+    @pytest.mark.asyncio
+    async def test_a_provider_that_cannot_give_its_text_back_names_none(self):
+        assert await BaseDataProvider.get_stored_document_ids(SimpleNamespace()) == []
+
+    @pytest.mark.asyncio
+    async def test_the_service_leaves_out_documents_whose_text_cannot_be_read_back(self):
+        async def none():
+            return []
+
+        async def some():
+            return ["doc-a", "doc-b"]
+
+        async def own_ids_only():
+            return ["graph-1", "graph-2", "graph-3"]
+
+        graph_store = SimpleNamespace(get_stored_document_ids=none, get_document_ids=own_ids_only)
+        service = object.__new__(AgentRAGService)
+        service._initialized = True
+        service.data_provider = [graph_store]
+        assert await service.get_stored_document_ids() == []
+        service.data_provider = [graph_store, SimpleNamespace(get_stored_document_ids=some)]
+        assert await service.get_stored_document_ids() == ["doc-a", "doc-b"]

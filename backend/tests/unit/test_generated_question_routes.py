@@ -34,7 +34,7 @@ class Services:
 @pytest.fixture
 def started(monkeypatch):
     redis, sent = FakeRedis(), []
-    rag = SimpleNamespace(get_document_ids=lambda _kb: _ids(["a", "b", "c"]))
+    rag = SimpleNamespace(get_stored_document_ids=lambda _kb: _ids(["a", "b", "c"]))
     monkeypatch.setattr(routes, "get_tenant_context", lambda: TENANT)
     monkeypatch.setattr(routes.injector, "get", lambda cls: rag if cls is routes.AgentRAGServiceManager else redis)
     monkeypatch.setattr(routes.write_dataset_questions_task, "delay", lambda *args: sent.append(args))

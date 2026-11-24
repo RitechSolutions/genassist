@@ -259,6 +259,17 @@ class AgentRAGService:
                 return documents
         return []
 
+    async def get_stored_document_ids(self) -> List[str]:
+        """Ids of the documents get_documents would give back, from the first provider that holds any"""
+        if not self._initialized:
+            logger.error("DataSourceService not initialized")
+            return []
+        for provider in self.data_provider:
+            document_ids = await provider.get_stored_document_ids()
+            if document_ids:
+                return document_ids
+        return []
+
     async def search(
         self,
         query: str,
