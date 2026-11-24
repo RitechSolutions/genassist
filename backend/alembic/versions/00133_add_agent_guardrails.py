@@ -1,7 +1,7 @@
 """add agent guardrails
 
 Revision ID: f1376a542c32
-Revises: 242b618b4766
+Revises: bc71d6b34aec
 Create Date: 2026-11-17 12:45:40.705992
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'f1376a542c32'
-down_revision: Union[str, None] = '242b618b4766'
+down_revision: Union[str, None] = 'bc71d6b34aec'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
