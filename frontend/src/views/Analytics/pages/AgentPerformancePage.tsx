@@ -372,8 +372,6 @@ const AgentPerformancePage = () => {
                 containmentRate={containmentRate}
               />
 
-              {guardrailTotals.length > 0 && <GuardrailTotals items={guardrailTotals} />}
-
               {/* Escalation tracking — only when a specific agent is selected */}
               {summary && agentFilter !== "all" && (
                 <div className={cn("space-y-3", analyticsFadeUpClass)}>
@@ -475,34 +473,36 @@ const AgentPerformancePage = () => {
               )}
 
               {showDetailSections && (
-                <>
-                  <AgentExecutionChart
-                    items={items}
-                    loading={false}
-                    agentNameMap={agentNameMap}
-                  />
+                <AgentExecutionChart
+                  items={items}
+                  loading={false}
+                  agentNameMap={agentNameMap}
+                />
+              )}
 
-                  <div className={analyticsFadeUpClass}>
-                    <DataTable
-                      data={
-                        agentFilter === "all"
-                          ? aggregatedItems
-                          : (items as unknown as AgentAggregated[])
-                      }
-                      columns={statsColumns as Column<AgentAggregated>[]}
-                      loading={false}
-                      error={error}
-                      emptyState={<AgentPerformanceTableEmptyState />}
-                      keyExtractor={(item) => item.id}
-                      pageSize={10}
-                      onRowClick={
-                        agentFilter !== "all"
-                          ? (item) => setSelectedItem(item as unknown as AgentDailyStatsItem)
-                          : undefined
-                      }
-                    />
-                  </div>
-                </>
+              {guardrailTotals.length > 0 && <GuardrailTotals items={guardrailTotals} />}
+
+              {showDetailSections && (
+                <div className={analyticsFadeUpClass}>
+                  <DataTable
+                    data={
+                      agentFilter === "all"
+                        ? aggregatedItems
+                        : (items as unknown as AgentAggregated[])
+                    }
+                    columns={statsColumns as Column<AgentAggregated>[]}
+                    loading={false}
+                    error={error}
+                    emptyState={<AgentPerformanceTableEmptyState />}
+                    keyExtractor={(item) => item.id}
+                    pageSize={10}
+                    onRowClick={
+                      agentFilter !== "all"
+                        ? (item) => setSelectedItem(item as unknown as AgentDailyStatsItem)
+                        : undefined
+                    }
+                  />
+                </div>
               )}
                 </div>
               )}
