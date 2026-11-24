@@ -25,6 +25,7 @@ export interface GuardrailCheckSettings {
   harmful_content: HarmfulContent;
   denied_topics: DeniedTopic[];
   blocked_words: string[];
+  previous_reply_context?: boolean;
 }
 
 export interface GuardrailPolicy extends GuardrailCheckSettings {

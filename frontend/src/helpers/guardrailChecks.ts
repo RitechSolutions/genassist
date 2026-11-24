@@ -29,6 +29,7 @@ export const defaultGuardrailPolicy = (): GuardrailPolicy => ({
   ) as HarmfulContent,
   denied_topics: [],
   blocked_words: [],
+  previous_reply_context: true,
   check_replies: false,
   untrusted_content: "off",
   blocked_message: DEFAULT_BLOCKED_MESSAGE,

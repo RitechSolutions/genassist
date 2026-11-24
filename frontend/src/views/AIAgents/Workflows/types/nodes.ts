@@ -47,6 +47,7 @@ export interface ToolBaseNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
   outputSchema?: NodeSchema;
   returnDirect?: boolean;
+  skipToolResultCheck?: boolean;
   forwardTemplate?: string;
 }
 

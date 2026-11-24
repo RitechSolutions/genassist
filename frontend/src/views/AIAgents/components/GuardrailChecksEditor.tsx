@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/select";
+import { Switch } from "@/components/switch";
 import { TagsFieldInput } from "@/components/TagsFieldInput";
 import {
   HARM_CATEGORIES,
@@ -122,6 +123,25 @@ export function GuardrailChecksEditor({
             Pick a judge model to run these checks.
           </p>
         )}
+      </div>
+
+      <div className="flex items-center justify-between gap-4">
+        <div className="space-y-0.5">
+          <Label htmlFor="guardrails-previous-reply">
+            Previous reply as context
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            The judge also reads the end of the agent's last reply. Only the
+            checked text is scored.
+          </p>
+        </div>
+        <Switch
+          id="guardrails-previous-reply"
+          checked={!!value.previous_reply_context}
+          onCheckedChange={(previous_reply_context) =>
+            update({ previous_reply_context })
+          }
+        />
       </div>
 
       <div className="space-y-2">
