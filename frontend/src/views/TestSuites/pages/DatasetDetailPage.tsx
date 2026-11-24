@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { PageLayout } from "@/components/PageLayout";
 import toast from "react-hot-toast";
@@ -10,7 +10,7 @@ import {
   removeConversationFromSuite,
   updateTestCase,
 } from "@/services/testSuites";
-import { TestCase, TestSuite } from "@/interfaces/testSuite.interface";
+import { QuestionRunStatus, TestCase, TestSuite } from "@/interfaces/testSuite.interface";
 import { Button } from "@/components/button";
 import {
   DropdownMenu,
@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu";
 import {
+  BookOpen,
   ChevronDown,
   ChevronLeft,
   FileJson,
@@ -34,6 +35,8 @@ import { CategoryBadge } from "../components/CategoryBadge";
 import { ConversationRecordGroup } from "../components/ConversationRecordGroup";
 import { ImportFromConversationDialog } from "../components/ImportFromConversationDialog";
 import { ImportFromFilesDialog } from "../components/ImportFromFilesDialog";
+import { ImportFromKnowledgeBaseDialog } from "../components/ImportFromKnowledgeBaseDialog";
+import { QuestionRunNotice } from "../components/QuestionRunProgress";
 import { RecordDialog, RecordPayload } from "../components/RecordDialog";
 import {
   conversationLabels,
@@ -42,6 +45,8 @@ import {
   searchConversations,
   type ConversationGroup,
 } from "../helpers/datasetConversations";
+import { LIST_RELOAD_FAILED, describeOutcome, isRunInProgress } from "../helpers/questionRun";
+import { useQuestionRun } from "../hooks/useQuestionRun";
 
 const DatasetDetailPage: React.FC = () => {
   const navigate = useNavigate();
@@ -59,6 +64,7 @@ const DatasetDetailPage: React.FC = () => {
   } | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isFileImportDialogOpen, setIsFileImportDialogOpen] = useState(false);
+  const [isKnowledgeImportOpen, setIsKnowledgeImportOpen] = useState(false);
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [caseToDelete, setCaseToDelete] = useState<TestCase | null>(null);
@@ -100,6 +106,28 @@ const DatasetDetailPage: React.FC = () => {
     };
     load();
   }, [datasetId]);
+
+  // A reload that fails or is refused leaves the list as it is, and says so.
+  const reloadCases = useCallback(async () => {
+    if (!datasetId) return;
+    const reloaded = await listTestCases(datasetId).catch(() => null);
+    if (reloaded) setCases(reloaded);
+    else toast.error(LIST_RELOAD_FAILED);
+  }, [datasetId]);
+
+  // The open dialog already shows how the run ended, so the toast is for when it is closed.
+  const handleQuestionRunEnded = (ended: QuestionRunStatus) => {
+    void reloadCases();
+    const outcome = describeOutcome(ended);
+    if (!outcome || isKnowledgeImportOpen) return;
+    if (outcome.isProblem) toast.error(outcome.text);
+    else toast.success(outcome.text);
+  };
+  const {
+    run: questionRun,
+    statusProblem: questionRunProblem,
+    showRun: showQuestionRun,
+  } = useQuestionRun(datasetId, handleQuestionRunEnded);
 
   const toggleRecordExpansion = (id: string) => {
     setExpandedRecords((prev) => {
@@ -287,6 +315,10 @@ const DatasetDetailPage: React.FC = () => {
                 <FileJson className="h-4 w-4 text-muted-foreground" />
                 From files
               </DropdownMenuItem>
+              <DropdownMenuItem className="gap-2" onSelect={() => setIsKnowledgeImportOpen(true)}>
+                <BookOpen className="h-4 w-4 text-muted-foreground" />
+                From knowledge base
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
           <Button
@@ -302,6 +334,14 @@ const DatasetDetailPage: React.FC = () => {
         </div>
       </div>
 
+      {isRunInProgress(questionRun) && (
+        <QuestionRunNotice
+          run={questionRun}
+          statusProblem={questionRunProblem}
+          onOpen={() => setIsKnowledgeImportOpen(true)}
+        />
+      )}
+
       {isLoading || conversationMatches.length === 0 ? (
         <div className="rounded-lg border bg-card dark:bg-zinc-900 overflow-hidden">
           {isLoading ? <PageListSkeleton bordered={false} /> : null}
@@ -314,7 +354,7 @@ const DatasetDetailPage: React.FC = () => {
               description={
                 isSearching
                   ? "No conversations match your search. Try adjusting your query."
-                  : "A dataset holds the conversations you evaluate an agent against. Import them from real transcripts or from files, or write your own."
+                  : "A dataset holds the conversations you evaluate an agent against. Import them from real transcripts or from files, have questions written from a knowledge base, or write your own."
               }
               action={
                 isSearching ? undefined : (
@@ -399,6 +439,15 @@ const DatasetDetailPage: React.FC = () => {
         onOpenChange={setIsFileImportDialogOpen}
         suite={suite}
         onDatasetChanged={(_suiteId, records) => setCases(records)}
+      />
+
+      <ImportFromKnowledgeBaseDialog
+        open={isKnowledgeImportOpen}
+        onOpenChange={setIsKnowledgeImportOpen}
+        suite={suite}
+        run={questionRun}
+        statusProblem={questionRunProblem}
+        onStarted={showQuestionRun}
       />
 
       <ConfirmDialog
