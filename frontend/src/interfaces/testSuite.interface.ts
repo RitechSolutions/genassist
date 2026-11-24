@@ -18,6 +18,8 @@ export interface TestCase {
   suite_id: string;
   input_data: Record<string, unknown>;
   expected_output?: Record<string, unknown>;
+  /** Articles the knowledge search should find on this turn, each by title or id. */
+  expected_articles?: string[] | null;
   tags?: string[];
   weight?: number;
   /** Cases sharing a source conversation replay as one memory thread. */
@@ -76,6 +78,38 @@ export interface ImportCasesFromFilesResult {
   repeated: number;
   failed_files: number;
   /** Set when the import cannot go ahead at all, e.g. it adds too many turns. */
+  error?: string | null;
+}
+
+/** What to write test questions from, and the model that writes them. */
+export interface WriteQuestionsPayload {
+  knowledge_base_id: string;
+  llm_provider_id: string;
+  /** Use this many articles, picked at random; all of them when not set. */
+  sample_size?: number | null;
+}
+
+/** What a question-writing run would ask of the model. */
+export interface WriteQuestionsEstimate {
+  articles: number;
+  writing_calls: number;
+  judging_calls_at_most: number;
+}
+
+export type QuestionRunState = "idle" | "queued" | "running" | "succeeded" | "stopped" | "failed";
+
+/** The question-writing run in progress on a dataset, else its last run's outcome. */
+export interface QuestionRunStatus {
+  status: QuestionRunState;
+  run_id?: string | null;
+  knowledge_base_id?: string | null;
+  articles_total: number;
+  articles_done: number;
+  articles_failed: number;
+  messages_added: number;
+  messages_dropped: number;
+  started_at?: string | null;
+  finished_at?: string | null;
   error?: string | null;
 }
 
@@ -228,6 +262,8 @@ export interface CreateTestCasePayload {
   input_data: Record<string, unknown>;
   /** Explicit null clears the stored value; undefined leaves it untouched. */
   expected_output?: Record<string, unknown> | null;
+  /** Explicit null clears the stored articles; undefined leaves them untouched. */
+  expected_articles?: string[] | null;
   tags?: string[];
   weight?: number;
   /** Cases sharing this replay as one memory thread. */

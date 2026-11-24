@@ -7,6 +7,27 @@ from uuid import UUID
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 
+MAX_EXPECTED_ARTICLES = 20
+MAX_ARTICLE_NAME_LENGTH = 500
+
+
+def clean_expected_articles(value: Any) -> Optional[List[str]]:
+    """Expected articles trimmed, without blanks or repeats; none left becomes null."""
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(isinstance(name, str) for name in value):
+        raise ValueError('"expected_articles" must be a list of article titles or ids')
+    names = list(dict.fromkeys(name.strip() for name in value if name.strip()))
+    if len(names) > MAX_EXPECTED_ARTICLES:
+        raise ValueError(f'"expected_articles" can hold at most {MAX_EXPECTED_ARTICLES} articles')
+    if any(len(name) > MAX_ARTICLE_NAME_LENGTH for name in names):
+        raise ValueError(f'an expected article can be at most {MAX_ARTICLE_NAME_LENGTH} characters long')
+    return names or None
+
+
+ExpectedArticles = Annotated[Optional[List[str]], BeforeValidator(clean_expected_articles)]
+
+
 class TestCaseBase(BaseModel):
     input_data: Dict[str, Any] = Field(
         ...,
@@ -17,6 +38,13 @@ class TestCaseBase(BaseModel):
     expected_output: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Expected output (string/JSON) for evaluators.",
+    )
+    expected_articles: ExpectedArticles = Field(
+        default=None,
+        description=(
+            "Articles the knowledge search should find on this turn, each by title or id; "
+            "finding any of them counts."
+        ),
     )
     tags: Optional[List[str]] = Field(
         default=None, description="Optional labels, e.g. ['refund', 'es-ES']."
@@ -45,6 +73,7 @@ class TestCaseCreate(TestCaseBase):
 class TestCaseUpdate(BaseModel):
     input_data: Optional[Dict[str, Any]] = None
     expected_output: Optional[Dict[str, Any]] = None
+    expected_articles: ExpectedArticles = None
     tags: Optional[List[str]] = None
     weight: Optional[float] = None
 
@@ -127,6 +156,37 @@ class ImportCasesFromFilesResult(BaseModel):
     repeated: int = 0
     failed_files: int = 0
     # Set when the import cannot go ahead as a whole, e.g. it adds too many turns.
+    error: Optional[str] = None
+
+
+class WriteQuestionsRequest(BaseModel):
+    """Which knowledge base to write test questions from, and the model that writes them"""
+    knowledge_base_id: UUID
+    llm_provider_id: UUID
+    sample_size: Optional[int] = Field(
+        default=None, ge=1, description="Use this many articles, picked at random; all of them when not set."
+    )
+
+
+class WriteQuestionsEstimate(BaseModel):
+    """What a run would ask of the model"""
+    articles: int
+    writing_calls: int
+    judging_calls_at_most: int
+
+
+class WriteQuestionsStatus(BaseModel):
+    """The run in progress on a dataset, else its last run's outcome"""
+    status: str
+    run_id: Optional[str] = None
+    knowledge_base_id: Optional[str] = None
+    articles_total: int = 0
+    articles_done: int = 0
+    articles_failed: int = 0
+    messages_added: int = 0
+    messages_dropped: int = 0
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
     error: Optional[str] = None
 
 

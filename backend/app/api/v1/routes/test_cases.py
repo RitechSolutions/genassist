@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, UploadFile, status
@@ -6,6 +6,10 @@ from fastapi_injector import Injected
 
 from app.auth.dependencies import auth, permissions
 from app.core.permissions.constants import Permissions as P
+from app.core.tenant_scope import get_tenant_context
+from app.dependencies.dependency_injection import RedisString
+from app.dependencies.injector import injector
+from app.modules.data.manager import AgentRAGServiceManager
 from app.schemas.test_suite import (
     AddConversationToSuitesRequest,
     AddConversationToSuitesResult,
@@ -17,9 +21,17 @@ from app.schemas.test_suite import (
     TestCase,
     TestCaseCreate,
     TestCaseUpdate,
+    WriteQuestionsEstimate,
+    WriteQuestionsRequest,
+    WriteQuestionsStatus,
 )
+from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.dataset_file import read_uploads
+from app.services.generated_question_job import model_calls
+from app.services.generated_question_runs import NOT_STARTED_ERROR, STATUS_FAILED, GeneratedQuestionRunStore
+from app.services.llm_providers import LlmProviderService
 from app.services.test_suite import TestSuiteService
+from app.tasks.generated_question_tasks import write_dataset_questions_task
 
 
 router = APIRouter()
@@ -120,6 +132,78 @@ async def import_cases_from_files(
 ):
     """Add the conversations in these dataset files; unreadable files are reported, not fatal."""
     return await service.import_cases_from_files(suite_id, await read_uploads(files))
+
+
+def _question_run_store() -> GeneratedQuestionRunStore:
+    return GeneratedQuestionRunStore(injector.get(RedisString))
+
+
+@router.get(
+    "/suites/{suite_id}/cases/import-from-knowledge-base/estimate",
+    response_model=WriteQuestionsEstimate,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+)
+async def estimate_cases_from_knowledge_base(
+    suite_id: UUID,
+    knowledge_base_id: UUID,
+    sample_size: Optional[int] = None,
+    service: TestSuiteService = Injected(TestSuiteService),
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
+):
+    """How many articles a run could read from the knowledge base and the model calls it would make."""
+    await service.get_suite(suite_id)
+    knowledge_base = await knowledge_service.get_by_id(knowledge_base_id)
+    document_ids = await injector.get(AgentRAGServiceManager).get_stored_document_ids(knowledge_base)
+    return model_calls(len(document_ids), sample_size)
+
+
+@router.post(
+    "/suites/{suite_id}/cases/import-from-knowledge-base",
+    response_model=WriteQuestionsStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.UPDATE))],
+)
+async def write_cases_from_knowledge_base(
+    suite_id: UUID,
+    data: WriteQuestionsRequest,
+    service: TestSuiteService = Injected(TestSuiteService),
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
+    llm_provider_service: LlmProviderService = Injected(LlmProviderService),
+):
+    """
+    Start writing test questions from a knowledge base's articles.
+
+    The run adds them to the dataset in the background; while one is in progress
+    its state is returned and no second run starts.
+    """
+    await service.get_suite(suite_id)
+    await knowledge_service.get_by_id(data.knowledge_base_id)
+    await llm_provider_service.get_by_id(data.llm_provider_id)
+    store, tenant = _question_run_store(), get_tenant_context()
+    run_id = await store.claim(tenant, str(suite_id), str(data.knowledge_base_id))
+    if run_id:
+        try:
+            write_dataset_questions_task.delay(
+                run_id, tenant, str(suite_id), str(data.knowledge_base_id), str(data.llm_provider_id), data.sample_size
+            )
+        except Exception:
+            await store.finish(tenant, str(suite_id), run_id, STATUS_FAILED, NOT_STARTED_ERROR)
+            raise
+    return await store.status(tenant, str(suite_id))
+
+
+@router.get(
+    "/suites/{suite_id}/cases/import-from-knowledge-base",
+    response_model=WriteQuestionsStatus,
+    dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
+)
+async def get_cases_from_knowledge_base_status(
+    suite_id: UUID,
+    service: TestSuiteService = Injected(TestSuiteService),
+):
+    """The question-writing run in progress on this dataset, else its last run's outcome."""
+    await service.get_suite(suite_id)
+    return await _question_run_store().status(get_tenant_context(), str(suite_id))
 
 
 @router.get(

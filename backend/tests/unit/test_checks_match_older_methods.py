@@ -48,7 +48,7 @@ CATALOG = {
 
 def case(case_id="c1", expected=None, message="Hi", conversation="conv-1", turn_index=0):
     return SimpleNamespace(
-        id=case_id, expected_output=expected, input_data={"message": message},
+        id=case_id, expected_output=expected, expected_articles=None, input_data={"message": message},
         source_conversation_id=conversation, turn_index=turn_index,
     )
 

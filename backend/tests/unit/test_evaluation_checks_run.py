@@ -12,10 +12,14 @@ from langchain_core.messages import AIMessage
 from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.dependencies import injector as injector_module
+from app.modules.data.manager import AgentRAGServiceManager
+from app.modules.data.providers import SearchResult
 from app.modules.workflow.agents.memory import ConversationMemory
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 from app.modules.workflow.engine.workflow_state import RAW_TOOL_ARGUMENTS, WorkflowState
 from app.schemas.test_suite import TestEvaluationCreate, TestEvaluationUpdate
+from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.scenario_checks import Check, JudgeRequest, TurnRecord
 import app.services.test_suite as test_suite_module
 from app.services.test_suite import TestSuiteService as EvalService
@@ -43,6 +47,23 @@ EDGES = [
     {"source": "set", "target": "reply", "sourceHandle": "output", "targetHandle": "input"},
 ]
 SECRET = "tok-secret-123456"
+
+SEARCH_NODES = [
+    NODES[0],
+    {"id": "kb", "type": "knowledgeBaseNode",
+     "data": {"name": "Help centre", "selectedBases": ["kb-1"], "query": "lock"}},
+    {"id": "reply", "type": "templateNode", "data": {"name": "Reply", "template": "Here is what I found."}},
+]
+SEARCH_EDGES = [
+    {"source": "start", "target": "kb", "sourceHandle": "output", "targetHandle": "input"},
+    {"source": "kb", "target": "reply", "sourceHandle": "output", "targetHandle": "input"},
+]
+FOUND_ARTICLES = [
+    SearchResult(id="KB:kb-1#article_7", content="Use the ring lock.", metadata={"name": "Lock the bike", "kb_id": "kb-1"},
+                 score=0.9, source="vector"),
+    SearchResult(id="KB:kb-1#article_9", content="Leave it at a station.", metadata={"name": "Return the bike", "kb_id": "kb-1"},
+                 score=0.6, source="vector"),
+]
 
 
 def _service() -> EvalService:
@@ -97,6 +118,17 @@ async def _execute(service, cases, checks, *, nodes=NODES, edges=EDGES, engine=N
         if patcher:
             patcher.stop()
     return run
+
+
+@pytest.fixture
+def knowledge_search(monkeypatch):
+    """The knowledge search step finds FOUND_ARTICLES; every other service stays the real one."""
+    knowledge_service = MagicMock(get_by_ids=AsyncMock(return_value=[SimpleNamespace(id="kb-1", name="Help centre")]))
+    rag_manager = MagicMock(search=AsyncMock(return_value=FOUND_ARTICLES))
+    real_injector = injector_module.injector
+    stand_ins = {KnowledgeBaseService: knowledge_service, AgentRAGServiceManager: rag_manager}
+    stand_in_injector = MagicMock(get=lambda cls: stand_ins.get(cls) or real_injector.get(cls))
+    monkeypatch.setattr(injector_module, "injector", stand_in_injector)
 
 
 @pytest.fixture
@@ -233,6 +265,37 @@ class TestChecksInARun:
         assert rows["grounded"].status == "not_evaluated"
         assert rows["grounded"].details["comment"] == (
             "No turn of this conversation found knowledge-base passages to check against."
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_articles_a_knowledge_search_found_come_from_the_run(self, in_memory, knowledge_search):
+        found, missed, second = uuid4(), uuid4(), uuid4()
+        found_case = _case(found, 0, {"message": "How do I lock it?", "region": "uk"})
+        found_case.expected_articles = ["Lock the bike"]
+        missed_case = _case(missed, 0, {"message": "What does a ride cost?", "region": "uk"})
+        missed_case.expected_articles = ["Pay for a ride"]
+        second_case = _case(second, 0, {"message": "Where do I leave it?", "region": "uk"})
+        second_case.expected_articles = ["article_9"]
+        checks = [
+            {"id": "expected", "kind": "search_finds"},
+            {"id": "first", "kind": "search_finds", "within_first": 1},
+        ]
+        service = _service()
+
+        await _execute(service, [found_case, missed_case, second_case], checks, nodes=SEARCH_NODES, edges=SEARCH_EDGES)
+
+        rows = {(row.rule_id, str(row.source_conversation_id)): row for row in _rows(service)}
+        assert rows[("expected", str(found))].status == "passed"
+        assert rows[("expected", str(missed))].status == "failed"
+        assert rows[("expected", str(missed))].details["observed"] == (
+            'Turn 1: The knowledge search did not find "Pay for a ride". '
+            'It found: "Lock the bike", "Return the bike".'
+        )
+        assert rows[("expected", str(second))].status == "passed"
+        assert rows[("first", str(found))].status == "passed"
+        assert rows[("first", str(second))].status == "failed"
+        assert rows[("first", str(second))].details["observed"] == (
+            'Turn 1: The knowledge search found "Return the bike" as result 2, not as the first result.'
         )
 
     def test_more_to_grade_by_ai_gets_more_time(self):

@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.services.evaluation_text import names_equal, normalize_text
 from app.services.rule_scopes import RULE_FAILED, RULE_NOT_EVALUATED, RULE_PASSED
+from app.services.search_checks import article_fact, within_first_phrase
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,11 @@ KINDS = (
     "state_equals",
     "value_equals",
     "step_fails",
+    "search_finds",
 )
 LEVELS = ("every_conversation", "conversation", "turn")
-# Each reply is graded against its own turn, so these hold on every turn they apply to.
-EVERY_TURN_KINDS = frozenset({"reply_matches", "reply_grounded"})
+# Each turn is graded against what it has of its own, so these hold on every turn they apply to.
+EVERY_TURN_KINDS = frozenset({"reply_matches", "reply_grounded", "search_finds"})
 MATCH_MODES = ("exact", "contains", "meaning")
 # What an AI grader can read besides the reply.
 CONTEXTS = ("expected_reply", "knowledge_base", "tool_calls", "session", "run_value")
@@ -51,12 +53,14 @@ NO_REPLY_TEXT = "The reply was empty, so there was nothing to check."
 NO_PASSAGES = "This turn found no knowledge-base passages to check against."
 NO_TOOL_CALLS = "This turn called no tools to check against."
 NO_SESSION = "This turn has no session values to check against."
+NO_EXPECTED_ARTICLE = "This turn has no expected article in the dataset."
 # The same reasons, said of a whole conversation.
 _CONVERSATION_REASONS = {
     NO_EXPECTED_REPLY: "No turn of this conversation has an expected reply in the dataset.",
     NO_PASSAGES: "No turn of this conversation found knowledge-base passages to check against.",
     NO_TOOL_CALLS: "No turn of this conversation called a tool to check against.",
     NO_SESSION: "No turn of this conversation has session values to check against.",
+    NO_EXPECTED_ARTICLE: "No turn of this conversation has an expected article in the dataset.",
 }
 
 
@@ -116,6 +120,7 @@ class Check(BaseModel):
         "state_equals",
         "value_equals",
         "step_fails",
+        "search_finds",
     ]
     level: Literal["every_conversation", "conversation", "turn"] = "every_conversation"
     # Every conversation or the chosen ones: hold on every turn, or at some point.
@@ -171,6 +176,8 @@ class Check(BaseModel):
     # value_equals: where in the turn the value is, as a dotted path.
     path: Optional[str] = None
     value: Any = None
+    # search_finds: the turn's expected article counts only among this many first results.
+    within_first: Optional[int] = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _check_fields(self) -> "Check":
@@ -196,9 +203,12 @@ class Check(BaseModel):
             "state_equals": not _filled(self.key) or self.value is None,
             "value_equals": not _filled(self.path),
             "step_fails": False,
+            "search_finds": False,
         }[self.kind]
         if missing:
             raise ValueError(f"check {self.id!r}: fill in what the {self.kind} check looks for")
+        if self.kind == "search_finds" and self.expect == "should_not":
+            raise ValueError(f"check {self.id!r}: the knowledge search check only says what should be found")
         if self.kind in EVERY_TURN_KINDS:
             # Each turn is checked, so "at some point" has no meaning here.
             self.when = "every_turn"
@@ -448,6 +458,8 @@ def _clause(check: Check, modal: str) -> str:
         if not (_filled(check.router) or _filled(check.router_name)):
             return f'a router {modal} take "{branch_display(check)}"'
         return f'the router "{router_display(check)}" {modal} take "{branch_display(check)}"'
+    if check.kind == "search_finds":
+        return f"the knowledge search {modal} find the turn's expected article" + within_first_phrase(check.within_first)
     if check.kind == "value_equals":
         expected = f'"{_value_text(check.value)}"' if _filled(check.value) else "the expected reply"
         return f'the value at "{normalize_text(check.path)}" {modal} be {expected}'
@@ -560,8 +572,12 @@ class TurnRecord:
     # The dataset's expected reply, as text and as stored.
     expected: str = ""
     expected_value: Any = None
+    # The dataset's expected articles, each by title or id; finding any of them counts.
+    expected_articles: List[str] = field(default_factory=list)
     # The knowledge-base passages the turn found, as the AI grader reads them.
     passages: str = ""
+    # The turn's knowledge searches in the order they ran, each with the articles it found, best first.
+    searches: List[Dict[str, Any]] = field(default_factory=list)
     # What went wrong in the turn's steps; empty when nothing did.
     step_errors: str = ""
     # The turn's tool calls and session values, as the AI grader reads them.
@@ -832,6 +848,9 @@ def turn_fact(check: Check, targets: Targets, turn: TurnRecord) -> Tuple[Optiona
     if check.kind == "value_equals":
         return _value_fact(check, turn)
 
+    if check.kind == "search_finds":
+        return _search_fact(check, turn)
+
     # state_equals
     key = normalize_text(check.key)
     if key not in turn.state:
@@ -869,6 +888,13 @@ def _value_fact(check: Check, turn: TurnRecord) -> Tuple[Optional[bool], str]:
     else:
         same = actual == expected or (actual.lower() in ("true", "false") and actual.lower() == expected.lower())
     return same, f'The value at "{path}" was "{actual}".'
+
+
+def _search_fact(check: Check, turn: TurnRecord) -> Tuple[Optional[bool], str]:
+    """Whether the turn's knowledge searches found one of the turn's expected articles."""
+    if not turn.expected_articles:
+        return None, NO_EXPECTED_ARTICLE
+    return article_fact(turn.expected_articles, turn.searches, check.within_first)
 
 
 def _plain(value: Any) -> str:

@@ -6,8 +6,11 @@ export const IMPORTED_TAG = "imported";
 /** Tag the backend stamps on cases imported from a dataset file. */
 export const FILE_IMPORTED_TAG = "imported-file";
 
+/** Tag the backend stamps on questions written from a knowledge base. */
+export const GENERATED_TAG = "generated";
+
 /** Where a conversation's turns came from. */
-export type ConversationOrigin = "conversation" | "file" | "manual";
+export type ConversationOrigin = "conversation" | "file" | "generated" | "manual";
 
 export interface ConversationGroup {
   key: string;
@@ -21,6 +24,7 @@ export interface ConversationGroup {
 const originOf = (entry: TestCase): ConversationOrigin => {
   if (entry.tags?.includes(IMPORTED_TAG)) return "conversation";
   if (entry.tags?.includes(FILE_IMPORTED_TAG)) return "file";
+  if (entry.tags?.includes(GENERATED_TAG)) return "generated";
   return "manual";
 };
 

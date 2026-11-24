@@ -125,6 +125,18 @@ describe("groupCasesByConversation", () => {
     expect(groups[0].origin).toBe("file");
   });
 
+  it("marks a group written from a knowledge base by its own tag", () => {
+    const groups = groupCasesByConversation([
+      tc({
+        id: "g0",
+        source_conversation_id: "generated-1",
+        turn_index: 0,
+        tags: ["generated"],
+      }),
+    ]);
+    expect(groups[0].origin).toBe("generated");
+  });
+
   it("does not hoist imported conversations above hand-authored ones", () => {
     const groups = groupCasesByConversation([
       tc({ id: "m0", source_conversation_id: "thread-1", turn_index: 0 }),

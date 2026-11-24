@@ -179,7 +179,8 @@ export type CheckKind =
   | "step_fails"
   | "route_taken"
   | "state_equals"
-  | "value_equals";
+  | "value_equals"
+  | "search_finds";
 // How closely a reply has to match the dataset's expected reply.
 export type CheckMatch = "exact" | "contains" | "meaning";
 // What an AI grader reads besides the reply; for reply_grounded, what the reply sticks to.
@@ -256,6 +257,8 @@ export interface ScenarioCheck {
   /** value_equals: where in the turn the value is, as a dotted path. */
   path?: string | null;
   value?: string | null;
+  /** search_finds: the turn's expected article counts only among this many first results. */
+  within_first?: number | null;
 }
 
 // The older methods an evaluation had before they became checks, and what could not become one.

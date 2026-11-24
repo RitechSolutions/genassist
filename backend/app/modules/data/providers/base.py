@@ -7,7 +7,7 @@ Defines the common interface that all data providers must implement.
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 
-from .models import SearchResult
+from .models import SearchResult, StoredDocument
 
 class BaseDataProvider(ABC):
     """
@@ -80,6 +80,14 @@ class BaseDataProvider(ABC):
             List of document identifiers
         """
         pass
+
+    async def get_documents(self) -> List[StoredDocument]:
+        """Every stored document with its text; none for a provider that cannot give it back"""
+        return []
+
+    async def get_stored_document_ids(self) -> List[str]:
+        """Ids of the documents get_documents gives back; none for a provider that cannot give text back"""
+        return []
 
     @abstractmethod
     async def search(

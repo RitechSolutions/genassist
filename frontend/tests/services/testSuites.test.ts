@@ -30,6 +30,9 @@ import {
   getTestRun,
   getTestRunsBatch,
   listResultsForRun,
+  estimateQuestionsFromKnowledgeBase,
+  writeQuestionsFromKnowledgeBase,
+  getQuestionRunStatus,
 } from "@/services/testSuites";
 
 const mockApiRequest = vi.mocked(apiRequest);
@@ -151,5 +154,50 @@ describe("testSuites service", () => {
   it("listResultsForRun GETs the results for a run", async () => {
     await listResultsForRun("run2");
     expect(mockApiRequest).toHaveBeenCalledWith("GET", "genagent/eval/runs/run2/results");
+  });
+
+  it("estimateQuestionsFromKnowledgeBase GETs the estimate for the knowledge base", async () => {
+    await estimateQuestionsFromKnowledgeBase("s8", "kb1");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/eval/suites/s8/cases/import-from-knowledge-base/estimate?knowledge_base_id=kb1",
+      undefined,
+      {},
+      { rethrowForbidden: true },
+    );
+  });
+
+  it("estimateQuestionsFromKnowledgeBase adds the number of articles when one is given", async () => {
+    await estimateQuestionsFromKnowledgeBase("s8", "kb1", 20);
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/eval/suites/s8/cases/import-from-knowledge-base/estimate?knowledge_base_id=kb1&sample_size=20",
+      undefined,
+      {},
+      { rethrowForbidden: true },
+    );
+  });
+
+  it("writeQuestionsFromKnowledgeBase POSTs the knowledge base and the model", async () => {
+    const payload = { knowledge_base_id: "kb1", llm_provider_id: "p1", sample_size: null };
+    await writeQuestionsFromKnowledgeBase("s8", payload);
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "genagent/eval/suites/s8/cases/import-from-knowledge-base",
+      payload,
+      {},
+      { rethrowForbidden: true },
+    );
+  });
+
+  it("getQuestionRunStatus GETs the run of the dataset", async () => {
+    await getQuestionRunStatus("s8");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "genagent/eval/suites/s8/cases/import-from-knowledge-base",
+      undefined,
+      {},
+      { rethrowForbidden: true },
+    );
   });
 });

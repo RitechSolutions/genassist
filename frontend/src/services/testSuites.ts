@@ -6,11 +6,14 @@ import type {
   CreateTestSuitePayload,
   ImportCasesFromFilesResult,
   ImportFromConversationsResult,
+  QuestionRunStatus,
   RunConversations,
   TestCase,
   TestResult,
   TestRun,
   TestSuite,
+  WriteQuestionsEstimate,
+  WriteQuestionsPayload,
 } from "@/interfaces/testSuite.interface";
 
 const BASE = "genagent/eval";
@@ -98,6 +101,42 @@ export const importCasesFromFiles = (suiteId: string, files: File[]) =>
     `${BASE}/suites/${suiteId}/cases/import-from-files`,
     datasetFilesForm(files),
   );
+
+const questionsFromKnowledgeBase = (suiteId: string) =>
+  `${BASE}/suites/${suiteId}/cases/import-from-knowledge-base`;
+
+// A refused request is an error here, so the screen can say so instead of showing nothing.
+const REFUSAL_IS_AN_ERROR = { rethrowForbidden: true };
+
+/** How many articles the knowledge base holds and the model calls a run would make. */
+export const estimateQuestionsFromKnowledgeBase = (
+  suiteId: string,
+  knowledgeBaseId: string,
+  sampleSize?: number | null,
+) => {
+  const params = new URLSearchParams({ knowledge_base_id: knowledgeBaseId });
+  if (sampleSize) params.set("sample_size", String(sampleSize));
+  return apiRequest<WriteQuestionsEstimate>(
+    "GET",
+    `${questionsFromKnowledgeBase(suiteId)}/estimate?${params.toString()}`,
+    undefined,
+    {},
+    REFUSAL_IS_AN_ERROR,
+  );
+};
+
+/** Starts the run; while one is in progress the server answers with that run instead. */
+export const writeQuestionsFromKnowledgeBase = (suiteId: string, payload: WriteQuestionsPayload) =>
+  apiRequest<QuestionRunStatus>(
+    "POST",
+    questionsFromKnowledgeBase(suiteId),
+    payload as unknown as Record<string, unknown>,
+    {},
+    REFUSAL_IS_AN_ERROR,
+  );
+
+export const getQuestionRunStatus = (suiteId: string) =>
+  apiRequest<QuestionRunStatus>("GET", questionsFromKnowledgeBase(suiteId), undefined, {}, REFUSAL_IS_AN_ERROR);
 
 /** Every dataset, with how much of this conversation each already holds. */
 export const listDatasetsForConversation = (conversationId: string) =>
