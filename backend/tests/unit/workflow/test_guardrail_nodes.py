@@ -1,3 +1,4 @@
+import re
 import time
 import uuid
 from types import SimpleNamespace
@@ -5,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.messages import AIMessage
 
+from app.modules.workflow.agents.memory import InMemoryConversationMemory, Message
 from app.modules.workflow.engine.nodes import guardrail_nli_node
 from app.modules.workflow.engine.nodes.guardrail_nli_node import GuardrailNliNode
 from app.modules.workflow.engine.nodes.guardrail_node import GuardrailNode
@@ -45,16 +47,21 @@ def _fired(state):
 class _Judge:
     def __init__(self, reply):
         self.reply = reply
+        self.calls = []
 
     async def ainvoke(self, messages):
+        self.calls.append(messages)
         return AIMessage(content=self.reply, usage_metadata={"input_tokens": 10, "output_tokens": 2, "total_tokens": 12})
 
 
 def _use_judge(monkeypatch, reply):
+    judge = _Judge(reply)
+
     async def fake_model(provider_id):
-        return _Judge(reply), SimpleNamespace(id=uuid.UUID(JUDGE_ID), llm_model_provider="OpenAI", llm_model="gpt-4o-mini")
+        return judge, SimpleNamespace(id=uuid.UUID(JUDGE_ID), llm_model_provider="OpenAI", llm_model="gpt-4o-mini")
 
     monkeypatch.setattr(detectors, "_judge_model", fake_model)
+    return judge
 
 
 WORDS = {"text": "Try competitorX today", "blocked_words": ["competitorX"], "blocked_message": "Not here."}
@@ -160,6 +167,30 @@ async def test_an_unwired_block_before_chat_output_is_the_reply():
     state = await WorkflowEngine(workflow).execute_from_node(input_data={"message": "Try competitorX"}, persist=False)
     assert state.output == "Not here."
     assert "tpl" not in state.execution_path and "out" not in state.execution_path
+
+
+QUESTION = "Which size would you like?"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("setting", "sent"),
+    [
+        ({"previous_reply_context": True}, "<context-F>\n" + QUESTION + "\n</context-F>\n<data-F>\nLarge\n</data-F>"),
+        ({}, "<data-F>\nLarge\n</data-F>"),
+    ],
+    ids=["switch on", "saved before the switch"],
+)
+async def test_the_node_hands_the_judge_the_previous_reply_only_when_switched_on(monkeypatch, setting, sent):
+    judge = _use_judge(monkeypatch, '{"prompt_attack": 0}')
+    node = _guardrail(passed=["reply"], blocked=["apology"])
+    node.state.memory = InMemoryConversationMemory("t1")
+    await node.state.memory.add_message(Message("user", "Hello"))
+    await node.state.memory.add_message(Message("assistant", QUESTION))
+    await node.process({"text": "Large", "providerId": JUDGE_ID, "prompt_attack": "medium", **setting})
+    content = judge.calls[0][1].content
+    fence = re.match(r"<\w+-([0-9a-f]{16})>", content).group(1)
+    assert content == sent.replace("-F>", f"-{fence}>")
 
 
 NLI = {"answer_field": "The sky is green.", "evidence_field": "The sky is blue.", "fail_on_contradiction": True}

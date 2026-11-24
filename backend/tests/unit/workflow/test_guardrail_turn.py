@@ -1,9 +1,10 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.core.turn_stream import TurnStream, current_stream
+from app.modules.workflow.agents.memory import ConversationMemory, InMemoryConversationMemory, Message
 from app.modules.workflow.guardrails import turn as guardrail_turn
 from app.modules.workflow.guardrails.detectors import verdict
 from app.modules.workflow.registry import RegistryItem
@@ -35,11 +36,17 @@ def _policy(**overrides):
 
 
 @pytest.fixture
-def checker(monkeypatch):
+def contexts():
+    return []
+
+
+@pytest.fixture
+def checker(monkeypatch, contexts):
     calls = []
 
     async def fake_check_text(text, checks, stage, mode, usage, **kwargs):
         calls.append((text, stage, mode))
+        contexts.append(kwargs.get("context"))
         fired = "attack" in text
         action = ("blocked" if mode == "block" else "flagged") if fired else "passed"
         return [verdict(stage, "blocked_words", mode, action, detector="rules")], action == "blocked"
@@ -162,3 +169,75 @@ def test_a_stored_policy_dict_is_read_and_an_invalid_one_is_ignored():
     assert guardrail_turn.active_policy({"mode": "detect", "blocked_words": ["x"]}).blocked_words == ["x"]
     assert guardrail_turn.active_policy({"mode": "sometimes"}) is None
     assert guardrail_turn.active_policy({"mode": "off"}) is None
+
+
+JUDGE_ID = "0199e3a0-0000-7000-8000-0000000000aa"
+QUESTION = "Which size would you like?"
+
+
+def _context_policy(**overrides):
+    return _policy(**{"previous_reply_context": True, "prompt_attack": "medium", "judge_provider_id": JUDGE_ID, **overrides})
+
+
+async def _memory(*messages):
+    memory = InMemoryConversationMemory("t1")
+    for role, content in messages:
+        await memory.add_message(Message(role, content))
+    return memory
+
+
+@pytest.mark.asyncio
+async def test_the_message_check_gets_the_previous_reply_from_thread_memory(checker, contexts):
+    item = _item(_context_policy())
+    memory = await _memory(("user", "Hello"), ("assistant", {"message": QUESTION}))
+    with patch.object(ConversationMemory, "get_instance", return_value=memory) as opened:
+        result = await item.execute("Large", {"thread_id": "t1"})
+    assert contexts == [QUESTION]
+    opened.assert_called_once_with(thread_id="t1")
+    assert result["output"] == {"message": "agent reply"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("policy", "metadata"),
+    [
+        (_context_policy(previous_reply_context=False), {"thread_id": "t1"}),
+        (_policy(previous_reply_context=True), {"thread_id": "t1"}),
+        (_context_policy(), {}),
+    ],
+    ids=["switch off", "rules only", "no thread id"],
+)
+async def test_memory_is_not_read_without_the_switch_a_judge_or_a_thread(checker, contexts, policy, metadata):
+    item = _item(policy)
+    memory = await _memory(("assistant", {"message": QUESTION}))
+    with patch.object(ConversationMemory, "get_instance", return_value=memory) as opened:
+        await item.execute("Large", metadata)
+    opened.assert_not_called()
+    assert contexts == [None]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "messages",
+    [
+        [("assistant", QUESTION), ("user", "Hello?")],
+        [("assistant", {"status": "awaiting_input", "message": "Fill in the form", "fields": []})],
+        [],
+    ],
+    ids=["newest is the customer's", "form", "empty thread"],
+)
+async def test_no_previous_reply_gives_no_context(checker, contexts, messages):
+    memory = await _memory(*messages)
+    with patch.object(ConversationMemory, "get_instance", return_value=memory):
+        await _item(_context_policy()).execute("Large", {"thread_id": "t1"})
+    assert contexts == [None]
+
+
+@pytest.mark.asyncio
+async def test_a_policy_cached_before_the_switch_existed_still_runs_the_turn(checker, contexts):
+    stale = _context_policy()
+    del stale.__dict__["previous_reply_context"]
+    with patch.object(ConversationMemory, "get_instance", return_value=await _memory()):
+        result = await _item(stale).execute("hello", {"thread_id": "t1"})
+    assert result["output"] == {"message": "agent reply"}
+    assert contexts == [None]

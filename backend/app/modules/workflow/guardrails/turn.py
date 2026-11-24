@@ -44,7 +44,7 @@ def active_policy(value) -> Optional[GuardrailPolicy]:
     if value is None:
         return None
     try:
-        policy = value if isinstance(value, GuardrailPolicy) else GuardrailPolicy.model_validate(value)
+        policy = GuardrailPolicy.model_validate(value.model_dump() if isinstance(value, GuardrailPolicy) else value)
     except ValidationError:
         logger.warning("Ignoring an invalid Guardrails policy")
         return None
@@ -86,7 +86,12 @@ async def _blocked_message(message: str, agent_id: str, language: Optional[str])
 async def check_input(turn: GuardrailTurn, text: str, form_resume: bool, usage_context, thread_id) -> tuple[list[dict], bool]:
     mode = "detect" if form_resume else turn.policy.mode
     usage: list[dict] = []
-    verdicts, blocked = await check_text(text, turn.policy, "input", mode, usage, judge=turn.judge)
+    context = None
+    if turn.policy.previous_reply_context and turn.policy.uses_judge() and thread_id:
+        from app.modules.workflow.agents.memory import ConversationMemory
+
+        context = await previous_reply(ConversationMemory.get_instance(thread_id=thread_id))
+    verdicts, blocked = await check_text(text, turn.policy, "input", mode, usage, judge=turn.judge, context=context)
     record_usage(usage, usage_context, thread_id)
     return verdicts, blocked
 
@@ -101,6 +106,13 @@ def reply_text(output: Any) -> Optional[str]:
             return None
         return str(output.get("message") or output.get("response") or output)
     return str(output)
+
+
+async def previous_reply(memory) -> Optional[str]:
+    last = await memory.get_messages(max_messages=1)
+    if not last or last[-1].get("role") != "assistant":
+        return None
+    return reply_text(last[-1].get("content"))
 
 
 def _sub_agent_envelope(output: Any) -> Optional[dict]:
