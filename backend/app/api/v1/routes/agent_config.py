@@ -24,6 +24,7 @@ router = APIRouter()
     ],
 )
 async def get_configs_list(
+    request: Request,
     filter_obj: BaseFilterModel = Depends(),
     is_system: bool | None = Query(None, description="Filter by system (true) or user (false) agents"),
     config_service: AgentConfigService = Injected(AgentConfigService),
@@ -35,7 +36,10 @@ async def get_configs_list(
     needed for list display (id, name, workflow_id, possible_queries, is_active).
     Use GET /configs/{agent_id} to get full details when clicking on an item.
     """
-    return await config_service.get_list_paginated(filter_obj, is_system=is_system)
+    user = getattr(request.state, "user", None)
+    return await config_service.get_list_paginated(
+        filter_obj, is_system=is_system, user_id=user.id if user else None
+    )
 
 
 # TODO: add permission validation

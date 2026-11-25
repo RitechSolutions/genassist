@@ -179,6 +179,8 @@ class AgentListItem(BaseModel):
     possible_queries: List[str] = Field(default_factory=list, description="FAQ queries")
     is_active: bool = False
     is_system: bool = False
+    # The signed-in user created it: the list offers "Save as template" on these and on system agents.
+    is_mine: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

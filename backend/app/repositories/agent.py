@@ -136,6 +136,7 @@ class AgentRepository(DbRepository[AgentModel]):
             AgentModel.possible_queries,
             AgentModel.is_active,
             AgentModel.is_system,
+            AgentModel.created_by,
         ).where(AgentModel.is_deleted == 0)
         if group_clause is not None:
             data_stmt = data_stmt.where(group_clause)

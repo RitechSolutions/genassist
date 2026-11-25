@@ -22,6 +22,10 @@ class FeatureFlagRepository(DbRepository[FeatureFlagModel]):
     async def get_by_id(self, id: UUID) -> Optional[FeatureFlagModel]:
         return await self.db.get(FeatureFlagModel, id)
 
+    async def get_by_key(self, key: str) -> Optional[FeatureFlagModel]:
+        result = await self.db.execute(select(FeatureFlagModel).where(FeatureFlagModel.key == key))
+        return result.scalars().first()
+
     async def get_all(self) -> List[FeatureFlagModel]:
         result = await self.db.execute(select(FeatureFlagModel))
         return result.scalars().all()
