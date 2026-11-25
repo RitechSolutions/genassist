@@ -83,6 +83,15 @@ async def test_final_verdict_is_normalised(subtopic, expected):
     assert result.kpi_metrics["Subtopic"] == expected
 
 
+@pytest.mark.asyncio
+async def test_a_title_with_lines_under_it_keeps_its_sub_topic():
+    with _llm_replying(_reply("technical issue  \nSub-topic: Login issues\n\n---", "login issues")):
+        result = await analyzer.analyze_transcript("customer: hi", llm_analyst=_analyst())
+
+    assert result.title == "Technical issue"
+    assert result.kpi_metrics["Subtopic"] == "Login issues"
+
+
 @pytest.mark.parametrize("topic, expected", [("technical issue", "Technical issue"), (None, None)])
 @pytest.mark.asyncio
 async def test_live_topic_is_normalised_only_when_a_string(topic, expected):
