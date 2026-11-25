@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 # with a real node output field.
 NODE_FAILURE_MARKER = "__node_failed__"
 
+# Failure code of a node that refused its input before acting.
+INPUT_REJECTED = "input_rejected"
+
 
 def node_failure(
     message: str,
@@ -57,6 +60,16 @@ def node_failure(
         "details": details or {},
         "output": output,
     }
+
+
+def input_rejection(message: str) -> Dict[str, Any]:
+    """Failure envelope of a node that refused its input and took no action."""
+    return node_failure(message, code=INPUT_REJECTED)
+
+
+def is_input_rejection(failure: Optional[Dict[str, Any]]) -> bool:
+    """Whether failure info from ``is_node_failure`` is a refused input."""
+    return failure is not None and failure.get("code") == INPUT_REJECTED
 
 
 def _extract_error_message(result: Dict[str, Any]) -> str:

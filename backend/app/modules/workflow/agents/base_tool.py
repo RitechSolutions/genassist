@@ -5,6 +5,8 @@ from typing import Any, Callable, Protocol
 
 logger = logging.getLogger(__name__)
 
+FAILURE_SHOWN_TO_USER = "Sorry, this could not be completed. Please check the details and try again."
+
 
 def is_empty_parameter_value(value: Any) -> bool:
     """Whether a tool argument should count as not provided."""
@@ -94,7 +96,7 @@ class BaseTool(Tool):
         the node acting on blanks.
         """
         # Imported lazily to avoid any import-time coupling with the engine package.
-        from app.modules.workflow.engine.node_result import is_node_failure
+        from app.modules.workflow.engine.node_result import is_input_rejection, is_node_failure
         from app.modules.workflow.engine.workflow_state import WorkflowPausedException
 
         missing_parameters = self._missing_required_parameters(kwargs)
@@ -118,8 +120,12 @@ class BaseTool(Tool):
         failure = is_node_failure(result)
         if failure is not None:
             reason = failure.get("error") or "the tool did not complete its action"
-            logger.warning("Tool '%s' (node %s) failed: %s", self.name, self.node_id, reason)
             self._record_event(kwargs, result, status="failed", error=reason)
+            if self.return_direct:
+                return self._failure_shown_to_user(reason)
+            if is_input_rejection(failure):
+                return self._refused_input_observation(reason)
+            logger.warning("Tool '%s' (node %s) failed: %s", self.name, self.node_id, reason)
             return (
                 f"ERROR: the '{self.name}' tool did not complete successfully and no "
                 f"action was taken. Reason: {reason}. Do not tell the user this "
@@ -153,6 +159,20 @@ class BaseTool(Tool):
             f"ERROR: the '{self.name}' tool was not run and no action was taken. "
             f"Required parameters are missing or empty: {fields}. Collect these values "
             f"(ask the user if you do not have them), then call the tool again."
+        )
+
+    def _failure_shown_to_user(self, reason: str) -> str:
+        """Reply of a return_direct tool that failed: it goes to the user as written, so it holds no instructions."""
+        logger.warning("Tool '%s' (node %s) failed: %s", self.name, self.node_id, reason)
+        return FAILURE_SHOWN_TO_USER
+
+    def _refused_input_observation(self, reason: str) -> str:
+        """Tell the agent a value was refused, so it corrects the value instead of reporting a failure."""
+        logger.warning("Tool '%s' (node %s) not run: %s", self.name, self.node_id, reason)
+        return (
+            f"ERROR: the '{self.name}' tool was not run and no action was taken. {reason}. "
+            f"Correct the value (ask the user if you do not have it), then call the tool again. "
+            f"This is not a failure, so do not tell the user that anything failed."
         )
 
     def _record_event(self, arguments: dict, result: Any, *, status: str, error: str = None) -> None:

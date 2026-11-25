@@ -6,14 +6,43 @@ import logging
 from typing import Dict, Any, Optional
 from uuid import UUID
 
+from fastapi import HTTPException
+
 from ..base_node import BaseNode
-from ..node_result import node_failure
+from ..node_result import input_rejection, node_failure
+from app.core.utils.email_utils import is_valid_email_address
 from app.core.utils.encryption_utils import decrypt_key
-from app.modules.integration.zendesk import ZendeskConnector
+from app.modules.integration.zendesk import ZendeskAPIError, ZendeskConnector
 from app.modules.workflow.engine.nodes.requester_pii import persist_requester_pii
 from app.services.app_settings import AppSettingsService
 from app.dependencies.injector import injector
 logger = logging.getLogger(__name__)
+
+REQUESTER_FIELD = "requester"
+INVALID_REQUESTER_EMAIL = (
+    "The requester email is not a valid email address. "
+    "Use only an address the user gave, or leave it empty when there is none"
+)
+REFUSED_REQUESTER = (
+    "Zendesk did not accept the requester's contact details. Ask the user for a different email address"
+)
+
+
+def _given_email(value: Any) -> Optional[str]:
+    """The email without surrounding spaces, or None when none was given."""
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _refused_ticket_failure(refusal: ZendeskAPIError) -> Dict[str, Any]:
+    """Failure for a ticket Zendesk refused: names the refused field, never its value."""
+    requester_refused = refusal.field == REQUESTER_FIELD
+    if requester_refused:
+        logger.warning("Zendesk tool: Zendesk refused the requester, ticket not created")
+        return input_rejection(REFUSED_REQUESTER)
+    error_msg = f"Zendesk ticket was not created: {refusal.detail}"
+    logger.error(error_msg)
+    return node_failure(error_msg, code=refusal.status_code)
 
 
 class ZendeskToolNode(BaseNode):
@@ -37,7 +66,7 @@ class ZendeskToolNode(BaseNode):
         subject = config.get("subject")
         description = config.get("description")
         requester_name = config.get("requester_name")
-        requester_email = config.get("requester_email")
+        requester_email = _given_email(config.get("requester_email"))
         tags = config.get("tags")
         custom_fields = config.get("custom_fields")
         app_settings_id = config.get("app_settings_id")
@@ -46,6 +75,11 @@ class ZendeskToolNode(BaseNode):
             error_msg = "Zendesk tool: Missing required fields: subject or description"
             logger.error(error_msg)
             return node_failure(error_msg, code=400)
+
+        has_unusable_email = requester_email is not None and not is_valid_email_address(requester_email)
+        if has_unusable_email:
+            logger.warning("Zendesk tool: requester email is not a valid address, ticket not sent")
+            return input_rejection(INVALID_REQUESTER_EMAIL)
 
         try:
             # Get app settings from database
@@ -75,8 +109,7 @@ class ZendeskToolNode(BaseNode):
                 client_id=client_id,
                 client_secret=client_secret,
             )
-            # Create the Zendesk ticket
-            result = await zendesk_connector.create_ticket(
+            result = await zendesk_connector.submit_ticket(
                 subject=subject,
                 description=description,
                 requester_name=requester_name,
@@ -85,18 +118,6 @@ class ZendeskToolNode(BaseNode):
                 custom_fields=custom_fields,
             )
 
-            # The connector swallows Zendesk API errors and returns None. That
-            # previously looked like a success (no exception, no output). Treat a
-            # missing ticket as an explicit failure so admins/agents know the
-            # ticket was never created.
-            if result is None:
-                error_msg = (
-                    "Zendesk ticket was not created: the Zendesk API rejected the "
-                    "request or was unreachable."
-                )
-                logger.error(error_msg)
-                return node_failure(error_msg, code=502)
-
             await self._persist_pii_to_conversation(
                 requester_email=requester_email,
                 requester_name=requester_name,
@@ -104,6 +125,12 @@ class ZendeskToolNode(BaseNode):
 
             return result
 
+        except ZendeskAPIError as refusal:
+            return _refused_ticket_failure(refusal)
+        except HTTPException:
+            error_msg = "Zendesk ticket was not created: Zendesk could not be reached."
+            logger.error(error_msg)
+            return node_failure(error_msg, code=502)
         except Exception as e:
             error_msg = f"Error creating Zendesk ticket: {str(e)}"
             logger.error(error_msg)

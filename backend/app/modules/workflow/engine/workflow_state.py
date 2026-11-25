@@ -915,6 +915,16 @@ class WorkflowState:
             })
         return failed
 
+    def blocking_failures(self) -> list[dict]:
+        """Failed nodes that left no output, so the nodes after them did not run."""
+        blocking = []
+        for failed_node in self._collect_failed_nodes():
+            entry = self.node_execution_status.get(failed_node["node_id"]) or {}
+            left_no_output = entry.get("status") == "failed" and entry.get("output") is None
+            if left_no_output:
+                blocking.append({**failed_node, "code": entry.get("failure_code")})
+        return blocking
+
     def _run_status(self, output: Any, failed_nodes: list[dict]) -> str:
         """The run's overall status, as reported by every run surface.
 
