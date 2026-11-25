@@ -177,6 +177,7 @@ class AgentConfigService:
         )
 
         old_workflow = await self.workflow_service.get_by_id(created_agent.workflow_id)
+        # update() writes every field, so a field left out here is erased.
         await self.workflow_service.update(
             created_agent.workflow_id,
             WorkflowUpdate(
@@ -184,7 +185,9 @@ class AgentConfigService:
                 description=old_workflow.description,
                 nodes=old_workflow.nodes,
                 edges=old_workflow.edges,
+                testInput=old_workflow.testInput,
                 executionState=old_workflow.executionState,
+                settings=old_workflow.settings,
                 user_id=user_id,
                 version=old_workflow.version,
                 agent_id=created_agent.id,
