@@ -5,8 +5,10 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from fastapi import Request
 
 import app.api.v1.routes.workflows as workflows_route
+from app.modules.workflow import test_runs
 
 
 class FakeEngine:
@@ -48,7 +50,8 @@ class FakeWorkflowService:
 @pytest.fixture(autouse=True)
 def _stub_engine(monkeypatch):
     monkeypatch.setattr(workflows_route, "WorkflowEngine", FakeEngine)
-    monkeypatch.setattr(workflows_route, "SubAgentTurnRouter", FakeTurnRouter)
+    # The test turn (routing included) runs in app.modules.workflow.test_runs.
+    monkeypatch.setattr(test_runs, "SubAgentTurnRouter", FakeTurnRouter)
     FakeEngine.last = None
 
 
@@ -62,6 +65,7 @@ def _graph(**overrides) -> dict:
 async def test_saved_graph_attributes_usage_without_changing_execution():
     saved_id = uuid4()
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {"input_data": {"message": "hi"}, "workflow": _graph(id=str(saved_id))},
         workflow_service=FakeWorkflowService(),
     )
@@ -75,8 +79,29 @@ async def test_saved_graph_attributes_usage_without_changing_execution():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "submitted_id, saved_workflow_id",
+    [
+        ("5b0e8f3c-2d1a-4c7b-8e9f-0a1b2c3d4e5f", "5b0e8f3c-2d1a-4c7b-8e9f-0a1b2c3d4e5f"),
+        ("not-a-uuid", None),
+    ],
+)
+async def test_submitted_graph_names_its_saved_workflow_for_the_nodes(submitted_id, saved_workflow_id):
+    await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
+        {"input_data": {"message": "hi"}, "workflow": _graph(id=submitted_id)},
+        workflow_service=FakeWorkflowService(),
+    )
+
+    config = FakeEngine.last.workflow_config
+    assert config["saved_workflow_id"] == saved_workflow_id
+    assert config["id"] == "test-workflow"
+
+
+@pytest.mark.asyncio
 async def test_unsaved_graph_stays_unattributed():
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {"input_data": {"message": "hi"}, "workflow": _graph()},
         workflow_service=FakeWorkflowService(),
     )
@@ -89,6 +114,7 @@ async def test_unsaved_graph_stays_unattributed():
 @pytest.mark.asyncio
 async def test_unparsable_submitted_id_stays_unattributed():
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {"input_data": {"message": "hi"}, "workflow": _graph(id="not-a-uuid")},
         workflow_service=FakeWorkflowService(),
     )
@@ -102,6 +128,7 @@ async def test_workflow_id_query_param_path_is_unchanged():
     service = FakeWorkflowService(SimpleNamespace(nodes=[], edges=[]))
 
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {"input_data": {"message": "hi"}},
         workflow_id=saved_id,
         workflow_service=service,
@@ -118,6 +145,7 @@ async def test_submitted_graph_and_run_inputs_reach_the_engine_verbatim():
     nodes = [{"id": "n1", "type": "chatInputNode"}]
     edges = [{"id": "e1", "source": "n1", "target": "n1"}]
     await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
         {
             "input_data": {"message": "hi", "thread_id": "t-1", "human_in_the_loop_node_id": "n1"},
             "workflow": _graph(id=str(uuid4()), nodes=nodes, edges=edges),

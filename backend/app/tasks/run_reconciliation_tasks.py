@@ -20,6 +20,7 @@ from app.core.tenant_scope import get_tenant_context
 from app.db.multi_tenant_session import multi_tenant_manager
 from app.repositories.test_suite import TestRunRepository
 from app.repositories.workflow_schedule_run import WorkflowScheduleRunRepository
+from app.repositories.workflow_trigger_run import WorkflowTriggerRunRepository
 from app.tasks.base import run_async_in_celery, run_task_with_tenant_support
 
 logger = logging.getLogger(__name__)
@@ -27,11 +28,15 @@ logger = logging.getLogger(__name__)
 RUN_QUEUE = "ml"
 EVALUATION_RUN_TASK = "execute_test_suite_run"
 WORKFLOW_RUN_TASK = "execute_workflow_run"
+WORKFLOW_TRIGGER_RUN_TASK = "execute_webhook_trigger_run"
 RECONCILER_TIMEOUT_SECONDS = 240
 
 STUCK_TEST_RUN_ERROR = (
     "Run stopped unexpectedly (its worker crashed or was restarted) and was "
     "marked failed by the reconciliation job."
+)
+UNSTARTED_TEST_RUN_ERROR = (
+    "No worker picked up this run. Check that a worker is listening on the ml queue."
 )
 STUCK_WORKFLOW_RUN_ERROR = (
     "Run did not complete — the worker/pod was lost or restarted "
@@ -51,6 +56,8 @@ class RunReconciliation:
     waiting_max_age_seconds: int
     running_max_age_seconds: int
     error_message: str
+    # Reason given to a run that never started; defaults to error_message.
+    waiting_error_message: Optional[str] = None
 
 
 def run_id_from_message(raw, task_name: str) -> Optional[str]:
@@ -115,10 +122,14 @@ async def _reconcile_runs(spec: RunReconciliation) -> None:
         try:
             repository = spec.repository(session)
             candidates = await repository.get_waiting_ids_older_than(waiting_before)
+            messages = {"error_message": spec.error_message}
+            # Only repositories that can tell the two apart get the second message.
+            if spec.waiting_error_message:
+                messages["waiting_error_message"] = spec.waiting_error_message
             failed = await repository.mark_orphaned_as_failed(
                 waiting_ids=await orphaned_waiting_runs(candidates, spec.task_name),
                 running_before=running_before,
-                error_message=spec.error_message,
+                **messages,
             )
             # Repos only flush; this out-of-band session owns its commit
             await session.commit()
@@ -145,6 +156,7 @@ async def reconcile_stuck_test_runs_async() -> None:
             waiting_max_age_seconds=settings.TEST_RUN_QUEUED_MAX_AGE_SECONDS,
             running_max_age_seconds=settings.TEST_RUN_RUNNING_MAX_AGE_SECONDS,
             error_message=STUCK_TEST_RUN_ERROR,
+            waiting_error_message=UNSTARTED_TEST_RUN_ERROR,
         )
     )
 
@@ -155,6 +167,19 @@ async def reconcile_stuck_workflow_runs_async() -> None:
             kind="workflow schedule run",
             repository=WorkflowScheduleRunRepository,
             task_name=WORKFLOW_RUN_TASK,
+            waiting_max_age_seconds=settings.WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS,
+            running_max_age_seconds=settings.WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS,
+            error_message=STUCK_WORKFLOW_RUN_ERROR,
+        )
+    )
+
+
+async def reconcile_stuck_workflow_trigger_runs_async() -> None:
+    await _reconcile_runs(
+        RunReconciliation(
+            kind="workflow trigger run",
+            repository=WorkflowTriggerRunRepository,
+            task_name=WORKFLOW_TRIGGER_RUN_TASK,
             waiting_max_age_seconds=settings.WORKFLOW_SCHEDULE_PENDING_MAX_AGE_SECONDS,
             running_max_age_seconds=settings.WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS,
             error_message=STUCK_WORKFLOW_RUN_ERROR,
@@ -183,4 +208,16 @@ def reconcile_stuck_workflow_runs():
         ),
         timeout=RECONCILER_TIMEOUT_SECONDS,
         task_name="reconcile_stuck_workflow_runs",
+    )
+
+
+@shared_task
+def reconcile_stuck_workflow_trigger_runs():
+    """Celery beat task to fail webhook-triggered runs orphaned by a worker/pod loss."""
+    run_async_in_celery(
+        run_task_with_tenant_support(
+            reconcile_stuck_workflow_trigger_runs_async, "reconcile stuck workflow trigger runs"
+        ),
+        timeout=RECONCILER_TIMEOUT_SECONDS,
+        task_name="reconcile_stuck_workflow_trigger_runs",
     )

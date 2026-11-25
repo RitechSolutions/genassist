@@ -151,6 +151,7 @@ async def run_child_turn(
     child LLM calls are captured exactly once.
     """
     from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+    from app.modules.workflow.engine.workflow_state import SAVED_WORKFLOW_ID_KEY
 
     nodes = workflow.get("nodes", [])
     if inherit_pii:
@@ -159,14 +160,11 @@ async def run_child_turn(
         "id": (workflow.get("config") or {}).get("id") or workflow.get("id"),
         "nodes": nodes,
         "edges": workflow.get("edges", []),
+        SAVED_WORKFLOW_ID_KEY: (workflow.get("config") or {}).get(SAVED_WORKFLOW_ID_KEY),
     }
     engine = WorkflowEngine(workflow_config)
     thread_id = child_thread_id(root_thread_id, child_node_id, invocation_id)
-    # Pass the parent session as one nested object
-    input_data = {"message": message}
-    canonical = _canonical_session(session or {})
-    if canonical:
-        input_data["session"] = canonical
+    input_data = {"message": message, "session": {**_canonical_session(session or {}), "message": message}}
 
     tenant = get_tenant_context()
     from app.core.utils.db_connection_utils import (

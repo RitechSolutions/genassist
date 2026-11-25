@@ -177,6 +177,8 @@ class DashboardRepository:
         from_date: Optional[datetime] = None,
         to_date: Optional[datetime] = None,
         limit: int = 5,
+        today_start: Optional[datetime] = None,
+        today_end: Optional[datetime] = None,
     ) -> list[dict]:
         """Load a short list of agents and their stats for the dashboard"""
         # Get agents with their operators and statistics
@@ -193,8 +195,9 @@ class DashboardRepository:
         result = await self.db.execute(query)
         agents = list(result.scalars().all())
 
-        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = today_start + timedelta(days=1)
+        if today_start is None or today_end is None:
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
         agent_ids = [a.id for a in agents]
         cost_by_agent = await self._agent_cost_today(agent_ids, today_start, today_end)
 
@@ -211,6 +214,7 @@ class DashboardRepository:
                     ConversationModel.operator_id.in_(operator_ids),
                     ConversationModel.is_deleted == 0,
                     ConversationModel.conversation_date >= today_start,
+                    ConversationModel.conversation_date < today_end,
                 )
                 .group_by(ConversationModel.operator_id)
             )

@@ -162,6 +162,10 @@ export interface RawNodeExecutionEntry {
   input?: unknown;
   output?: unknown;
   error?: string | null;
+  /** How many times the node has run; only sent from the second run (a node inside a loop). */
+  run?: number;
+  /** Problems the node noted while still completing, such as a knowledge base it skipped. */
+  warnings?: string[];
 }
 
 /** What a node asked of prompt caching, and what it got. */
@@ -202,7 +206,11 @@ export interface NodeExecutionView {
   error?: string | null;
   /** 0-based execution order, when derivable from startTime. */
   order?: number;
+  /** Times the node ran, when more than once (inside a loop); the other fields describe the last run. */
+  runCount?: number;
   promptCaching?: PromptCachingDiagnostic;
+  /** Problems the node noted while still completing. */
+  warnings?: string[];
 }
 
 /** Everything the Execution view needs, derived once from the test response. */

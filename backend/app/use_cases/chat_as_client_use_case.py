@@ -9,13 +9,17 @@ from uuid import UUID
 from app.api.v1.routes.agents import run_query_agent_logic
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
+from app.core.observability import datadog_observability
+from app.core.utils.background_tasks import spawn
 from app.core.utils.db_connection_utils import release_idle_connection
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
+from app.core.utils.transcript_utils import VOICE_MESSAGE_PLACEHOLDER
 from app.db.base import generate_sequential_uuid
 from app.db.models.conversation import ConversationModel
 from app.dependencies.injector import injector
 from app.modules.websockets.socket_connection_manager import SocketConnectionManager
 from app.core.tenant_scope import get_tenant_context
+from app.core.turn_stream import current_stream
 from app.schemas.conversation import ConversationRead
 from app.schemas.conversation_transcript import (
     ConversationTranscriptCreate,
@@ -318,6 +322,7 @@ async def process_conversation_update_with_agent(
 
     Returns the updated conversation as ConversationModel.
     """
+    datadog_observability.tag_conversation(conversation_id)
     service = injector.get(ConversationService)
     socket_connection_manager = injector.get(SocketConnectionManager)
     agent_config_service = injector.get(AgentConfigService)
@@ -355,7 +360,7 @@ async def process_conversation_update_with_agent(
         user_message.audio_format = audio_format or "webm"
         user_message.type = "audio"
         if not user_message.text or user_message.text.strip() == "":
-            user_message.text = "[Voice message]"
+            user_message.text = VOICE_MESSAGE_PLACEHOLDER
 
     # 1:1 chat: broadcast user message immediately with pre-generated ID
     if not is_start_form_trigger:
@@ -363,6 +368,10 @@ async def process_conversation_update_with_agent(
 
     if conversation.status == ConversationStatus.IN_PROGRESS.value:
         agent = await agent_config_service.get_by_user_id(current_user_id, with_workflow=True)
+        datadog_observability.tag_agent(agent.id, agent.workflow_id)
+        hidden_keys = get_hidden_keys(agent.workflow.get("nodes") if agent.workflow else None)
+        if hidden_keys and (stream := current_stream.get()):
+            stream.withhold_text()
 
         session_data = {"metadata": model.metadata if model.metadata else {}}
         session_data["thread_id"] = str(conversation_id)
@@ -410,7 +419,6 @@ async def process_conversation_update_with_agent(
         # real values (and Redis functional stores already hold them), so this only
         # affects stored/displayed data: agent_response_logs.raw_response,
         # transcript_messages.text, and conversations.custom_attributes.
-        hidden_keys = get_hidden_keys(agent.workflow.get("nodes") if agent.workflow else None)
         if hidden_keys:
             node_statuses = (
                 agent_response.get("row_agent_response", {})
@@ -464,7 +472,7 @@ async def process_conversation_update_with_agent(
                     workflow_execution_id=agent_response.get("row_agent_response", {}).get("execution_id"),
                 )
                 # Fire incremental analytics update in background
-                _ = asyncio.create_task(update_stats_incrementally(agent_response))
+                spawn(update_stats_incrementally(agent_response), name=f"analytics:turn:{conversation_id}")
         except Exception as e:
             logger.warning(f"Failed to persist AgentResponseLog after update: {e}", exc_info=True)
 

@@ -45,7 +45,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 min=0.0,
                 max=2.0,
                 step=0.1,
-                description="Controls randomness (0.0 to 2.0)",
+                description="Controls randomness (0.0 to 2.0). Leave empty to use the model's default.",
             ),
             FieldSchema(
                 name="max_tokens",
@@ -62,11 +62,17 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 type="select",
                 label="Reasoning Effort",
                 required=False,
-                description="Only supported by reasoning models (o-series, GPT-5 family). Leave unset for other models.",
+                default="none",
+                description=(
+                    "Only used by reasoning models (o-series, GPT-5 family); other models "
+                    "ignore it. None means no extra reasoning."
+                ),
                 options=[
+                    {"value": "none", "label": "None"},
                     {"value": "low", "label": "Low"},
                     {"value": "medium", "label": "Medium"},
                     {"value": "high", "label": "High"},
+                    {"value": "xhigh", "label": "Extra High"},
                 ],
             ),
             FieldSchema(
@@ -133,7 +139,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 min=0.0,
                 max=2.0,
                 step=0.1,
-                description="Controls randomness (0.0 to 2.0)",
+                description="Controls randomness (0.0 to 2.0). Leave empty to use the model's default.",
             ),
             FieldSchema(
                 name="max_tokens",
@@ -205,7 +211,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 min=0.0,
                 max=2.0,
                 step=0.1,
-                description="Controls randomness (0.0 to 2.0)",
+                description="Controls randomness (0.0 to 2.0). Leave empty to use the model's default.",
             ),
             FieldSchema(
                 name="max_tokens",
@@ -279,7 +285,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 min=0.0,
                 max=2.0,
                 step=0.1,
-                description="Controls randomness (0.0 to 2.0)",
+                description="Controls randomness (0.0 to 2.0). Leave empty to use the model's default.",
             ),
             FieldSchema(
                 name="max_tokens",
@@ -322,9 +328,13 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 required=False,
                 default=0.7,
                 min=0.0,
-                max=2.0,
+                max=1.0,
                 step=0.1,
-                description="Controls randomness (0.0 to 2.0)",
+                description=(
+                    "Controls randomness (0.0 to 1.0). Leave empty to use the model's default. "
+                    "Newer Claude models (Opus 4.7+, Sonnet 5+, Haiku 5.5) don't accept it, "
+                    "so it is not sent to them."
+                ),
             ),
             FieldSchema(
                 name="max_tokens",
@@ -342,7 +352,10 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 label="Enable Extended Thinking",
                 required=False,
                 default=False,
-                description="Anthropic extended thinking. Forces Temperature to 1, as Anthropic requires when this is enabled.",
+                description=(
+                    "Anthropic extended thinking. Claude 4.6 and newer decide how much to think "
+                    "(adaptive thinking). Older models use the budget below and Temperature 1."
+                ),
             ),
             FieldSchema(
                 name="thinking_budget_tokens",
@@ -353,7 +366,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 min=1024,
                 step=1,
                 conditional=ConditionalField(field="thinking_enabled", value=True),
-                description="Token budget for the model's internal reasoning.",
+                description="Token budget for the model's internal reasoning. Used by models older than Claude 4.6 only.",
             ),
         ],
     ),
@@ -509,7 +522,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 min=0.0,
                 max=2.0,
                 step=0.1,
-                description="Controls randomness (0.0 to 2.0)",
+                description="Controls randomness (0.0 to 2.0). Leave empty to use the model's default.",
             ),
             FieldSchema(
                 name="max_tokens",
@@ -722,7 +735,7 @@ LLM_FORM_SCHEMAS: Dict[str, TypeSchema] = {
                 min=0.0,
                 max=2.0,
                 step=0.1,
-                description="Controls randomness (0.0 to 2.0)",
+                description="Controls randomness (0.0 to 2.0). Leave empty to use the model's default.",
             ),
             FieldSchema(
                 name="max_tokens",

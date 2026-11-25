@@ -656,6 +656,7 @@ class TestMixedChainKeepsTheLegacyString:
 
 
 _INIT = "langchain.chat_models.init_chat_model"
+_OPENAI_MODEL = "app.modules.workflow.llm.openai_refused_settings.RefusalAdjustingChatOpenAI"
 _OPIK = "app.modules.workflow.llm.opik_tracing.get_opik_callbacks"
 
 
@@ -795,9 +796,10 @@ class TestUnwrappedCases:
         assert llm is init.return_value
 
     async def test_an_opted_in_openai_provider_stays_plain(self):
-        llm, init = await _build("openai", {"api_key": "k"})
-        assert llm is init.return_value
-        assert "prompt_caching_enabled" not in init.call_args.kwargs
+        with patch(_OPENAI_MODEL) as openai_model:
+            llm = await build_chat_model("openai", {"api_key": "k"}, "a-model", True)
+        assert llm is openai_model.return_value
+        assert "prompt_caching_enabled" not in openai_model.call_args.kwargs
 
     @pytest.mark.parametrize("raw", [True, "true", "false", 1, 0, None, ""], ids=repr)
     async def test_a_stale_stored_key_never_decides_anything(self, raw):
@@ -824,6 +826,26 @@ class TestOpikCallbacks:
             llm, init = await _build("anthropic", {"api_key": "k"})
         assert init.call_args.kwargs["callbacks"] == [callback]
         assert llm.callbacks is None
+
+
+@pytest.mark.asyncio
+class TestStreamUsage:
+    @pytest.mark.parametrize(
+        "provider, connection_data",
+        [
+            ("vllm", {"base_url": "http://vllm.internal/v1"}),
+            ("openrouter", {"api_key": "k"}),
+            ("azure_openai", {"api_key": "k", "azure_endpoint": "https://x.openai.azure.com"}),
+        ],
+    )
+    async def test_openai_compatible_providers_report_usage_on_streamed_replies(self, provider, connection_data):
+        _, init = await _build(provider, connection_data, requested=False)
+        assert init.call_args.kwargs["stream_usage"] is True
+
+    @pytest.mark.parametrize("provider", ["anthropic", "bedrock"])
+    async def test_other_providers_keep_their_own_default(self, provider):
+        _, init = await _build(provider, {"api_key": "k"}, requested=False)
+        assert "stream_usage" not in init.call_args.kwargs
 
 
 def _patch_provider_lookups(chain=None):

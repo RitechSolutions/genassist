@@ -2,8 +2,10 @@ import { apiRequest } from "@/config/api";
 import { AppSetting } from "@/interfaces/app-setting.interface";
 import { DynamicFormSchema } from "@/interfaces/dynamicFormSchemas.interface";
 import { FileManagerSettings } from "./fileManager";
+import { hasPermission } from "./auth";
 
 export const getAllAppSettings = async (): Promise<AppSetting[]> => {
+  if (!hasPermission("read:app_settings")) return [];
   try {
     const data = await apiRequest<AppSetting[]>("GET", "app-settings/");
     if (!data) {

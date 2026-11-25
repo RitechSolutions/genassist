@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 
 from ..base import BaseStorageProvider
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.storage_path import configured_base_path
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,8 @@ class LocalFileSystemProvider(BaseStorageProvider):
             config: Configuration dictionary containing 'base_path' key
         """
         super().__init__(config)
-        self.base_path = Path(config.get("base_path", self.tmp_folder))
+        # A blank base_path would be the working folder, so it falls back too.
+        self.base_path = Path(configured_base_path(config) or self.tmp_folder)
         self.base_path.mkdir(parents=True, exist_ok=True)
 
     async def initialize(self) -> bool:
@@ -137,6 +139,17 @@ class LocalFileSystemProvider(BaseStorageProvider):
         except Exception as e:
             logger.error(f"Failed to upload file {file_path}: {e}")
             return False
+
+    async def download_file_to_path(self, file_path: str, local_path: str) -> bool:
+        """Copy a stored file to local_path on disk, without reading it into memory."""
+        import asyncio
+        import shutil
+
+        full_path = self._resolve_path(file_path)
+        if not full_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        await asyncio.to_thread(shutil.copyfile, full_path, local_path)
+        return True
 
     async def download_file(self, file_path: str) -> bytes:
         """

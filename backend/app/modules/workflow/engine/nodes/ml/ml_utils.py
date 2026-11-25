@@ -4,18 +4,40 @@ Utility functions for ML workflow nodes.
 This module contains shared functionality used across ML-related nodes.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
-import logging
+import ast
+import asyncio
 import csv
+import io
+import json
+import keyword
+import logging
 import math
 import os
-import pandas as pd
+import re
+import warnings
+import tokenize
+import uuid
+from collections import deque
+from collections.abc import AsyncIterable, Sequence
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
 
 from app.core.exceptions.error_messages import ErrorKey
+from app.core.exceptions.error_policy import sanitize_error_detail
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.sensitive_data_utils import redact_sensitive_substrings
+from app.core.utils.storage_path import configured_base_path
+from app.core.utils.string_utils import truncate_for_log
+from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+    ensure_unique_columns,
+    ensure_unique_query_columns,
+)
+from app.modules.workflow.script_results import pandas_to_data
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +45,100 @@ logger = logging.getLogger(__name__)
 # depth, and a cap on total nodes visited (size). Cycles are caught separately.
 _MAX_SANITIZE_DEPTH = 200
 _MAX_SANITIZE_NODES = 1_000_000
+_STREAM_SOURCE_DETAILS = {
+    "query": ("query", "extract", "Add a filter or LIMIT"),
+    "csv": ("CSV file", "CSV file", "Use a smaller file"),
+    "file": ("training file", "training file", "Use a smaller file"),
+}
+
+# Distinct values listed per categorical column in a CSV analysis.
+_MAX_ANALYSIS_CATEGORIES = 100
+
+_QUERY_REASON_PATTERNS = (
+    r"no such (?:column|table): [\w.\"`]+",
+    r"(?:column|relation|table) \"[^\"]+\" does not exist",
+    r"syntax error at or near \"[^\"]*\"",
+    r"Unknown column '[^']+'(?: in '[^']+')?",
+    r"Table '[^']+' doesn't exist",
+    r"You have an error in your SQL syntax.*?near '[^']{0,80}'",
+    r"Invalid (?:column|object) name '[^']+'",
+    r"invalid identifier '[^']+'",
+    r"near [\"'][^\"']{0,80}[\"']: syntax error",
+)
+_QUERY_REASON_RE = re.compile(
+    "|".join(f"(?:{pattern})" for pattern in _QUERY_REASON_PATTERNS),
+    re.IGNORECASE,
+)
+
+
+def sanitized_database_diagnostic(error: Any) -> str:
+    """Return a bounded, redacted database diagnostic suitable for logs."""
+    redacted = redact_sensitive_substrings(str(error))
+    return sanitize_error_detail(str(redacted), max_len=2_000)
+
+
+def client_safe_database_error(
+    error: Any,
+    *,
+    has_bound_parameters: bool,
+) -> str:
+    """Return an actionable database error without exposing driver details."""
+    if has_bound_parameters:
+        return (
+            "Database query failed. Check that each workflow variable's "
+            "value matches the column it is compared with."
+        )
+
+    # Driver errors may contain codes, hosts, credentials and the full SQL.
+    # Publish only a recognized correction phrase and its identifier.
+    match = _QUERY_REASON_RE.search(str(error))
+    if match:
+        safe_reason = sanitize_error_detail(
+            str(redact_sensitive_substrings(match.group(0))),
+            max_len=300,
+        )
+        if safe_reason:
+            return f"Database query failed: {safe_reason}"
+
+    return (
+        "Could not run the query on the selected data source. "
+        "Check the query and connection settings."
+    )
+
+
+# Model types that only support one task type, regardless of the target variable
+_CLASSIFICATION_ONLY_MODEL_TYPES: set[str] = {"logistic_regression"}
+_REGRESSION_ONLY_MODEL_TYPES = {"linear_regression", "ridge_regression", "lasso_regression", "elastic_net"}
+
+
+def is_classification_task(y: pd.Series, model_type: str) -> bool:
+    """
+    Determine whether a target column represents a classification or regression task.
+
+    Args:
+        y: Target variable series
+        model_type: Type of model (e.g. "logistic_regression", "linear_regression")
+
+    Returns:
+        True if classification, False if regression
+    """
+    if model_type in _CLASSIFICATION_ONLY_MODEL_TYPES:
+        return True
+    if model_type in _REGRESSION_ONLY_MODEL_TYPES:
+        return False
+
+    # For others (e.g. xgboost, random_forest, svm, knn, neural_network), infer from target variable
+    # Boolean columns (e.g. from Parquet/Excel, which preserve a native bool dtype instead of
+    # coercing to strings) must be checked explicitly - they match neither the object nor the
+    # int64/int32 branch below and would otherwise silently fall through to regression.
+    if pd.api.types.is_bool_dtype(y):
+        return True
+    if y.dtype in ["int64", "int32"] and y.nunique() <= 20:
+        return True
+    if y.dtype == "object":
+        return True
+
+    return False
 
 
 def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budget: list | None = None) -> Any:
@@ -87,11 +203,16 @@ def sanitize_for_json(obj: Any, _seen: set | None = None, _depth: int = 0, _budg
             return [sanitize_for_json(item, _seen, _depth + 1, _budget) for item in obj]
         finally:
             _seen.discard(obj_id)
-    elif isinstance(obj, pd.DataFrame):
-        # Convert DataFrame to dict and sanitize
-        return sanitize_for_json(obj.to_dict("records"), _seen, _depth + 1, _budget)
+    elif isinstance(obj, (pd.DataFrame, pd.Series)):
+        # Rows (or a list / {label: value} for a Series), keeping index labels that mean something, e.g. a groupby's
+        # keys, the same way conversation memory stores them; pd.isna below can't take a Series
+        return sanitize_for_json(pandas_to_data(obj), _seen, _depth + 1, _budget)
     elif pd.isna(obj):
         return None
+    elif isinstance(obj, datetime):
+        # pd.Timestamp subclasses datetime. Without this it falls through to
+        # the __dict__ branch below and serializes as an empty {}.
+        return obj.isoformat()
     elif isinstance(obj, (str, int, bool, type(None))):
         # Basic JSON-serializable types
         return obj
@@ -224,12 +345,633 @@ def get_sample_data(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sanitize_for_json(result)
 
 
+# A CSV stores only text, so a plain pd.read_csv re-guesses every column's
+# type. For a file written from an already-typed DataFrame (the Data
+# Preprocessing node's output), the real dtypes are saved next to it in
+# "<name>.dtypes.json" and reapplied by read_csv_with_dtypes - otherwise a
+# "Change Column Data Type" step is lost the moment the next node (e.g.
+# Train Model) reloads the file: "001" as text comes back as the number 1,
+# datetimes come back as text, Int64 with missing values comes back as float.
+_DTYPES_SIDECAR_SUFFIX = ".dtypes.json"
+
+# Dtypes read_csv can apply directly from their saved name.
+_READ_CSV_DTYPES = {
+    "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
+    "float32", "float64", "bool",
+    "Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64",
+    "Float32", "Float64", "boolean", "string", "category",
+}
+
+
+def dtypes_sidecar_path(csv_path: Any) -> Path:
+    """Path of the saved-dtypes file for a CSV: data.csv -> data.dtypes.json."""
+    path = Path(csv_path)
+    return path.with_name(path.stem + _DTYPES_SIDECAR_SUFFIX)
+
+
+def write_dtypes_sidecar(csv_path: Any, df: pd.DataFrame) -> str:
+    """Save df's column dtypes next to csv_path; returns the saved file's path."""
+    sidecar = dtypes_sidecar_path(csv_path)
+    sidecar.write_text(
+        json.dumps({str(c): str(t) for c, t in df.dtypes.items()}), encoding="utf-8"
+    )
+    return str(sidecar)
+
+
+def write_dtypes_mapping_sidecar(csv_path: Any, dtypes: Dict[str, str]) -> str:
+    """Save an already-known column -> dtype mapping next to csv_path."""
+    sidecar = dtypes_sidecar_path(csv_path)
+    sidecar.write_text(json.dumps({str(c): str(t) for c, t in dtypes.items()}), encoding="utf-8")
+    return str(sidecar)
+
+
+# A column is read as text only when it looks like a code - an ID, a postcode,
+# a product code - whose zeros mean something: every value is digits, all the
+# same length ("001".."123", "02134"), and at least one starts with a zero.
+# A numeric column with one stray zero-padded value ("7", "12", "07") keeps
+# its number type, so existing workflows and trained models see the types
+# they always did.
+_CODE_VALUE = r"^\d+$"
+
+
+# Rows per chunk when scanning a file as text for code columns, so a large
+# upload is never held in memory as one all-text frame.
+_LEADING_ZERO_SCAN_CHUNK_ROWS = 50_000
+
+
+class _CodeColumnScan:
+    """Per-column state while scanning a file as text, chunk by chunk."""
+
+    def __init__(self) -> None:
+        self.width: Dict[str, int] = {}
+        self.has_leading_zero: Dict[str, bool] = {}
+        self.not_code: set = set()
+
+    def add(self, text_df: pd.DataFrame) -> None:
+        for column in text_df.columns:
+            if column in self.not_code:
+                continue
+            values = text_df[column].dropna().str.strip()
+            values = values[values != ""]
+            if values.empty:
+                continue
+            widths = values.str.len().unique()
+            if (
+                not values.str.match(_CODE_VALUE).all()
+                or len(widths) != 1
+                or self.width.setdefault(column, int(widths[0])) != int(widths[0])
+            ):
+                self.not_code.add(column)
+                continue
+            # "0" alone is a number; "07" is zero-padded.
+            if values.str.match(r"^0\d").any():
+                self.has_leading_zero[column] = True
+
+    def columns(self) -> List[str]:
+        return [
+            column
+            for column in self.width
+            if column not in self.not_code and self.has_leading_zero.get(column)
+        ]
+
+
+def leading_zero_columns(text_df: pd.DataFrame) -> List[str]:
+    """Columns of an all-text frame that look like zero-padded codes (see _CODE_VALUE)."""
+    scan = _CodeColumnScan()
+    scan.add(text_df)
+    return scan.columns()
+
+
+def read_csv_keeping_leading_zeros(source: Any, **read_csv_kwargs: Any) -> pd.DataFrame:
+    """pd.read_csv with its usual type inference, except that a column of
+    zero-padded codes ("001", "02134") is read as text, so its zeros are kept.
+
+    `source` is a path or a seekable text buffer. The file is read twice: first
+    as text, in chunks, to find those columns, then once with types.
+    """
+    start = source.tell() if hasattr(source, "seek") else None
+    scan = _CodeColumnScan()
+    with pd.read_csv(
+        source, dtype=str, chunksize=_LEADING_ZERO_SCAN_CHUNK_ROWS, **read_csv_kwargs
+    ) as chunks:
+        for chunk in chunks:
+            scan.add(chunk)
+    keep_as_text = scan.columns()
+    if start is not None:
+        source.seek(start)
+    if not keep_as_text:
+        return pd.read_csv(source, **read_csv_kwargs)
+    return pd.read_csv(source, dtype={column: str for column in keep_as_text}, **read_csv_kwargs)
+
+
+def read_csv_with_dtypes(file_path: Any, **read_csv_kwargs: Any) -> pd.DataFrame:
+    """pd.read_csv that reapplies the dtypes saved next to the file, if any.
+
+    Files without a saved-dtypes file (e.g. a CSV upload) get pandas' own
+    type inference, except that leading-zero columns stay text (see
+    read_csv_keeping_leading_zeros). If the saved dtypes can't be applied (the
+    file was edited, a value no longer fits its type), it falls back to that
+    read rather than failing the node.
+    """
+    sidecar = dtypes_sidecar_path(file_path)
+    if not sidecar.exists():
+        return read_csv_keeping_leading_zeros(file_path, **read_csv_kwargs)
+
+    try:
+        saved_dtypes: Dict[str, str] = json.loads(sidecar.read_text(encoding="utf-8"))
+        # nrows=0 reads just the header; any nrows the caller passed is for the real read.
+        header_kwargs = {k: v for k, v in read_csv_kwargs.items() if k != "nrows"}
+        header = set(pd.read_csv(file_path, nrows=0, **header_kwargs).columns)
+        dtype_arg: Dict[str, Any] = {}
+        parse_dates: List[str] = []
+        for column, dtype_name in saved_dtypes.items():
+            if column not in header:
+                continue
+            if dtype_name.startswith("datetime64"):
+                parse_dates.append(column)
+            elif dtype_name == "object":
+                # Text stays text ("001" must not become 1).
+                dtype_arg[column] = str
+            elif dtype_name in _READ_CSV_DTYPES:
+                dtype_arg[column] = dtype_name
+        return pd.read_csv(
+            file_path,
+            dtype=dtype_arg or None,
+            parse_dates=parse_dates or False,
+            **read_csv_kwargs,
+        )
+    except (ValueError, TypeError, OSError) as e:
+        logger.warning(
+            f"Could not apply saved column types from {sidecar} ({e}); "
+            "reading the file with inferred types instead"
+        )
+        return read_csv_keeping_leading_zeros(file_path, **read_csv_kwargs)
+
+
+def normalize_dtypes_for_training(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert pandas extension dtypes to the plain NumPy/object dtypes the
+    Train Model pipeline works with.
+
+    Train Model picks columns by exact dtype - int64/float64 for outlier
+    handling and scaling, object for one-hot encoding, bool for the bool
+    pass - so nullable Int64/boolean, string, category or 32-bit columns
+    (now that preprocessing dtypes survive into Train Model, see
+    read_csv_with_dtypes) would otherwise be silently skipped or left
+    unencoded.
+
+    - integer (incl. nullable Int64): int64, or float64 if values are missing
+    - float (incl. Float64, float32): float64
+    - boolean: bool, or float64 (1.0/0.0/NaN) if values are missing
+    - string / category: object (text), so it is one-hot encoded as before
+    - datetime: text, matching how a date column always reached Train Model
+      before (the time-based split parses its date column itself)
+    """
+    df = df.copy()
+    for column in df.columns:
+        series = df[column]
+        dtype = series.dtype
+        has_missing = bool(series.isna().any())
+        if pd.api.types.is_bool_dtype(dtype):
+            if dtype != bool:
+                df[column] = series.astype("float64") if has_missing else series.astype(bool)
+        elif pd.api.types.is_integer_dtype(dtype):
+            if has_missing:
+                df[column] = series.astype("float64")
+            elif dtype != "int64":
+                df[column] = series.astype("int64")
+        elif pd.api.types.is_float_dtype(dtype):
+            if dtype != "float64":
+                df[column] = series.astype("float64")
+        elif pd.api.types.is_datetime64_any_dtype(dtype):
+            df[column] = series.astype(str).where(series.notna(), np.nan).astype(object)
+        elif isinstance(dtype, pd.CategoricalDtype) or (
+            pd.api.types.is_string_dtype(dtype) and dtype != object
+        ):
+            df[column] = series.astype(object).where(series.notna(), np.nan)
+    return df
+
+
+# df["col"] / df['col'] column references, as the Custom Expression field
+# used to suggest.
+_DF_COLUMN_REFERENCE = re.compile(r"""\bdf\s*\[\s*(["'])(.*?)\1\s*\]""")
+
+
+def normalize_feature_expression(expression: str) -> str:
+    """Rewrite df["col"] / df['col'] references to the plain column names
+    DataFrame.eval understands.
+
+    Custom Expression features are evaluated with DataFrame.eval, where
+    columns are referenced by name (price * quantity) and there is no `df`
+    variable - but the Train Model dialog used to suggest df["column_name"],
+    so expressions written that way failed with "name 'df' is not defined".
+    A name that isn't a valid identifier (e.g. it has a space) becomes a
+    backtick-quoted reference, which DataFrame.eval also supports.
+    """
+    def to_name(match: "re.Match[str]") -> str:
+        name = match.group(2)
+        return name if name.isidentifier() and not keyword.iskeyword(name) else f"`{name}`"
+
+    return _DF_COLUMN_REFERENCE.sub(to_name, expression or "")
+
+
+# Feature engineering strategies that turn numeric source columns into new
+# numeric columns through a (possibly fitted) transform. Labels are what the
+# Train Model dialog shows, used in error messages.
+COLUMN_TRANSFORM_STRATEGY_LABELS = {
+    "log_transform": "Log Transform",
+    "quantile_transform": "Quantile Transformer",
+    "power_transform": "Power Transformer",
+    "pca": "PCA",
+    "math_transform": "Math Function",
+}
+
+# Math Function (math_transform): element-wise functions of numeric columns,
+# with nothing fitted. Log is Log Transform's job, not offered here.
+MATH_FUNCTIONS = {
+    "sin": ("Sine", np.sin),
+    "cos": ("Cosine", np.cos),
+    "sqrt": ("Square Root", np.sqrt),
+    "abs": ("Absolute Value", np.abs),
+    "square": ("Square", np.square),
+    "cbrt": ("Cube Root", np.cbrt),
+}
+
+# Date-Time Features (datetime_features): calendar parts of one date/time
+# column, each a new numeric column named <newColumnName>_<part>.
+DATETIME_PARTS = ("year", "month", "day", "day_of_week", "quarter", "hour", "is_weekend")
+
+
+# A date written with the day and month as numbers before a year, e.g.
+# 01/02/2024, 13.02.2024 or 1-2-24. Which number is the day can't be told from
+# one such value; dates that start with the year (2024-02-01) aren't affected.
+_DAY_MONTH_YEAR = re.compile(r"^\s*(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4}|\d{2})(?!\d)")
+
+
+def numeric_date_order(values: Any) -> Dict[str, Any]:
+    """Whether a column's numeric dates (01/02/2024) put the day or the month first.
+
+    Read from the whole column, since one value like 01/02/2024 can't say.
+    Returns {"order": ..., "day_first_example": ..., "month_first_example": ...}
+    where order is:
+    - "none": no value is written that way, so the order doesn't matter;
+    - "day_first": some value has a first number over 12 (13/02/2024);
+    - "month_first": some value has a second number over 12 (02/13/2024);
+    - "mixed": both - the column mixes the two orders;
+    - "ambiguous": every such value has both numbers 12 or less, so either
+      order reads them and gives different dates.
+    """
+    day_first_example = month_first_example = None
+    seen = False
+    for value in pd.Series(values).dropna():
+        if isinstance(value, (pd.Timestamp, datetime)):
+            continue
+        match = _DAY_MONTH_YEAR.match(str(value))
+        if not match:
+            continue
+        seen = True
+        first, second = int(match.group(1)), int(match.group(2))
+        if first > 12 and day_first_example is None:
+            day_first_example = value
+        if second > 12 and month_first_example is None:
+            month_first_example = value
+    if not seen:
+        order = "none"
+    elif day_first_example is not None and month_first_example is not None:
+        order = "mixed"
+    elif day_first_example is not None:
+        order = "day_first"
+    elif month_first_example is not None:
+        order = "month_first"
+    else:
+        order = "ambiguous"
+    return {
+        "order": order,
+        "day_first_example": day_first_example,
+        "month_first_example": month_first_example,
+    }
+
+
+def parse_datetime_values(values: Any, day_first: bool = False) -> pd.Series:
+    """Read values as dates/times; anything unreadable becomes NaT.
+
+    Shared by training and inference, so a value reads the same way at
+    prediction time as it did when the model was trained. Values are read as
+    text unless they're already dates, so 20240105 isn't taken for a count of
+    nanoseconds. When any value carries a UTC offset (+02:00, Z), all values
+    are read in UTC - whether they arrive together or one at a time - and
+    values without an offset are taken as UTC.
+
+    `day_first` reads a numeric date like 01/02/2024 as 1 February; training
+    works it out for the column (numeric_date_order) and saves it, so
+    prediction reads every value the same way. Year-first dates (2024-02-01)
+    read the same either way.
+    """
+    series = pd.Series(values)
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series.dt.tz_convert("UTC") if series.dt.tz is not None else series
+    text = series.astype("string")
+    with warnings.catch_warnings():
+        # pandas 2 warns (pandas 3 raises) on mixed offsets; both are handled below.
+        warnings.simplefilter("ignore", FutureWarning)
+        try:
+            parsed = pd.to_datetime(text, errors="coerce", format="mixed", dayfirst=day_first)
+        except (TypeError, ValueError):
+            parsed = None
+    if parsed is None or not pd.api.types.is_datetime64_any_dtype(parsed) or parsed.dt.tz is not None:
+        parsed = pd.to_datetime(text, errors="coerce", format="mixed", dayfirst=day_first, utc=True)
+    return parsed
+
+
+def has_time_of_day(parsed: pd.Series) -> bool:
+    """Whether any value has a time other than midnight (so an hour is meaningful)."""
+    times = parsed.dropna()
+    return bool(((times.dt.hour != 0) | (times.dt.minute != 0) | (times.dt.second != 0)).any())
+
+
+def datetime_part_values(parsed: pd.Series, part: str) -> np.ndarray:
+    """One calendar part of parsed dates: day_of_week is 0 (Monday) to 6, is_weekend 1 or 0."""
+    dates = parsed.dt
+    if part == "day_of_week":
+        return dates.dayofweek.to_numpy(dtype=float)
+    if part == "is_weekend":
+        return (dates.dayofweek >= 5).astype(int).to_numpy(dtype=float)
+    return getattr(dates, part).to_numpy(dtype=float)
+
+
+def column_transform_value_problem(
+    strategy: str,
+    values: np.ndarray,
+    columns: List[str],
+    power_method: Optional[str] = None,
+    math_function: Optional[str] = None,
+) -> Optional[str]:
+    """Why `values` can't go through this transform, or None if they can.
+
+    Shared by training and inference, so a value that would be rejected at
+    training is rejected the same way at prediction time.
+    """
+    problem_code = column_transform_value_problem_code(
+        strategy, values, power_method, math_function
+    )
+    if problem_code == "non_finite":
+        non_finite = ~np.isfinite(values)
+        counts = {c: int(n) for c, n in zip(columns, non_finite.sum(axis=0)) if n}
+        return f"empty or infinite values in {counts}"
+    if problem_code == "negative_log_input":
+        negative = values < 0
+        counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
+        return f"Log Transform uses log(1 + x), which needs values of 0 or more; negative values in {counts}"
+    if problem_code == "negative_sqrt_input":
+        negative = values < 0
+        counts = {c: int(n) for c, n in zip(columns, negative.sum(axis=0)) if n}
+        return f"Square Root needs values of 0 or more; negative values in {counts}"
+    if problem_code == "non_positive_box_cox_input":
+        not_positive = values <= 0
+        counts = {c: int(n) for c, n in zip(columns, not_positive.sum(axis=0)) if n}
+        return (
+            f"Box-Cox needs values above 0; values of 0 or less in {counts}. "
+            "Use the Yeo-Johnson method instead, which accepts any value"
+        )
+    return None
+
+
+def column_transform_value_problem_code(
+    strategy: str,
+    values: np.ndarray,
+    power_method: Optional[str] = None,
+    math_function: Optional[str] = None,
+) -> Optional[str]:
+    """Stable reason code for an invalid column-transform input matrix."""
+    if (~np.isfinite(values)).any():
+        return "non_finite"
+    if strategy == "log_transform" and (values < 0).any():
+        return "negative_log_input"
+    if strategy == "math_transform" and math_function == "sqrt" and (values < 0).any():
+        return "negative_sqrt_input"
+    if all((
+        strategy == "power_transform",
+        power_method == "box-cox",
+        (values <= 0).any(),
+    )):
+        return "non_positive_box_cox_input"
+    return None
+
+
+def column_transform_output_problem(values: np.ndarray, columns: List[str]) -> Optional[str]:
+    """Why a transform's output can't be used (infinite or empty results), or None."""
+    non_finite = ~np.isfinite(values)
+    if not non_finite.any():
+        return None
+    counts = {c: int(n) for c, n in zip(columns, non_finite.sum(axis=0)) if n}
+    return f"the result is infinite or empty for {counts} - the values are too large for this function"
+
+
+def apply_column_transform(
+    strategy: str, transformer: Any, values: np.ndarray, math_function: Optional[str] = None
+) -> np.ndarray:
+    """Apply a column-transform feature: log(1 + x) for Log Transform, the
+    chosen function for Math Function, else the transformer fitted on the
+    training split (QuantileTransformer, PowerTransformer, or a
+    [StandardScaler +] PCA pipeline)."""
+    if strategy == "log_transform":
+        return np.log1p(values)
+    if strategy == "math_transform":
+        return MATH_FUNCTIONS[math_function][1](values)
+    return transformer.transform(values)
+
+
+def ordinal_key(value: Any) -> Optional[str]:
+    """Normalize a value for ordinal-mapping lookup.
+
+    Ordinal mappings come from JSON, so their keys are always strings, while
+    the data values may be numbers (a CSV column of 1/2/3 loads as int, or as
+    float 1.0/2.0 when values are missing) or text with stray spaces. Without
+    one normalization applied to both sides, those values silently map to
+    NaN. Missing values stay missing (None). Matching is case-sensitive, so
+    distinct categories like "A" and "a" are never merged.
+    """
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, (bool, np.bool_)):
+        return str(bool(value))
+    if isinstance(value, (int, np.integer)):
+        return str(int(value))
+    if isinstance(value, (float, np.floating)) and float(value).is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+
+_BACKTICK_NAME = re.compile(r"`([^`]*)`")
+
+
+def _with_pandas_boolean_precedence(expression: str) -> str:
+    """Swap & and | for `and` / `or`, as DataFrame.eval's parser does.
+
+    pandas binds & and | looser than comparisons, so size == "High" & price > 3
+    means (size == "High") & (price > 3). Python binds them tighter - it reads
+    size == ("High" & price) > 3 - so without this the text would never be
+    seen as compared to size.
+    """
+    tokens = tokenize.generate_tokens(io.StringIO(expression).readline)
+    swapped = {"&": "and", "|": "or"}
+    return tokenize.untokenize(
+        (tokenize.NAME, swapped[tok.string]) if tok.type == tokenize.OP and tok.string in swapped
+        else (tok.type, tok.string)
+        for tok in tokens
+    )
+
+
+class _BoolOpToBitwise(ast.NodeTransformer):
+    """Turn `and` / `or` back into & / |, which unparse wraps in parentheses."""
+
+    def visit_BoolOp(self, node: ast.BoolOp) -> ast.AST:
+        self.generic_visit(node)
+        op = ast.BitAnd() if isinstance(node.op, ast.And) else ast.BitOr()
+        result = node.values[0]
+        for value in node.values[1:]:
+            result = ast.BinOp(left=result, op=op, right=value)
+        return result
+
+
+def translate_category_literals(
+    expression: str,
+    label_encodings: Dict[str, Dict[Any, int]],
+    ordinal_encodings: Dict[str, Dict[Any, Any]],
+) -> str:
+    """Rewrite text compared against a label/ordinal column into its code.
+
+    Label/ordinal encoding runs before feature engineering, so in a Custom
+    Expression those columns hold codes, not categories - size == "High"
+    would compare numbers to a string and be False on every row. Each string
+    in a comparison with an encoded column (==, !=, <, >, in, not in, either
+    side) becomes that category's code, so the expression means what it
+    says. Numbers are left alone (they are already codes). Raises ValueError
+    for text that isn't one of the column's categories.
+
+    The result is what training evaluates and stores for inference, which
+    replays it on the same codes. Expressions with nothing to translate come
+    back unchanged.
+    """
+    if not expression or not (label_encodings or ordinal_encodings):
+        return expression
+
+    # `name with spaces` isn't valid Python - parse with placeholders instead.
+    backtick_names: Dict[str, str] = {}
+
+    def to_placeholder(match: "re.Match[str]") -> str:
+        placeholder = f"__col{len(backtick_names)}__"
+        backtick_names[placeholder] = match.group(1)
+        return placeholder
+
+    try:
+        tree = ast.parse(
+            _with_pandas_boolean_precedence(_BACKTICK_NAME.sub(to_placeholder, expression)), mode="eval"
+        )
+    except (SyntaxError, tokenize.TokenError):
+        return expression  # DataFrame.eval reports the real error
+
+    def column_of(node: ast.AST) -> Optional[str]:
+        if isinstance(node, ast.Name):
+            name = backtick_names.get(node.id, node.id)
+            if name in label_encodings or name in ordinal_encodings:
+                return name
+        return None
+
+    def to_code(column: str, value: str) -> Any:
+        if column in label_encodings:
+            mapping = label_encodings[column]
+            code = mapping.get(value, mapping.get(value.strip()))
+        else:
+            code = ordinal_encodings[column].get(ordinal_key(value))
+        if code is None:
+            known = list(label_encodings.get(column) or ordinal_encodings.get(column) or {})
+            raise ValueError(
+                f"compares '{column}' with '{value}', which is not one of its categories (known: {known[:10]}"
+                f"{' ...' if len(known) > 10 else ''})"
+            )
+        return code.item() if isinstance(code, np.generic) else code
+
+    translated_any = False
+
+    def translate(node: ast.AST, column: str) -> ast.AST:
+        nonlocal translated_any
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            translated_any = True
+            return ast.Constant(value=to_code(column, node.value))
+        if isinstance(node, (ast.List, ast.Tuple)):
+            node.elts = [translate(elt, column) for elt in node.elts]
+        return node
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        operands = [node.left] + node.comparators
+        for i, operand in enumerate(operands):
+            neighbours = operands[max(i - 1, 0):i] + operands[i + 1:i + 2]
+            column = next((c for c in map(column_of, neighbours) if c), None)
+            if column is None:
+                continue
+            translated = translate(operand, column)
+            if i == 0:
+                node.left = translated
+            else:
+                node.comparators[i - 1] = translated
+            # Text left inside the operand (e.g. "High" + x) would still
+            # compare a string to codes and quietly be False on every row.
+            leftover = next(
+                (n.value for n in ast.walk(translated) if isinstance(n, ast.Constant) and isinstance(n.value, str)),
+                None,
+            )
+            if leftover is not None:
+                raise ValueError(
+                    f"compares '{column}' with an expression containing '{leftover}', which can't be matched "
+                    f"to one of its categories - wrap each comparison in parentheses, e.g. ({column} == \"{leftover}\")"
+                )
+
+    if not translated_any:
+        return expression
+    result = ast.unparse(_BoolOpToBitwise().visit(tree))
+    for placeholder, name in backtick_names.items():
+        result = re.sub(rf"\b{placeholder}\b", f"`{name}`", result)
+    return result
+
+
+def new_training_output_path(thread_id: str, suffix: str = "") -> Path:
+    """A new output file under DATA_VOLUME/train/<thread>; the random part keeps names unguessable and unique."""
+    uploads_dir = DATA_VOLUME / "train" / thread_id
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return uploads_dir / f"{thread_id}_{timestamp}_{uuid.uuid4().hex}{suffix}.csv"
+
+
+def data_volume_reference(file_path: Any, base: str = "train") -> str:
+    """The path a node shows for a file it wrote, relative to DATA_VOLUME/<base>.
+
+    Node outputs are shown to users, so they name files by where they sit in
+    the data volume ("<thread>/<file>.csv"), never by the server's absolute
+    path. resolve_csv_file_path reads these back. A path outside that folder is
+    returned unchanged so it keeps working.
+    """
+    root = os.path.realpath(str(DATA_VOLUME / base))
+    real_path = os.path.realpath(str(file_path))
+    if real_path.startswith(root + os.sep):
+        return Path(os.path.relpath(real_path, root)).as_posix()
+    return str(file_path)
+
+
 async def save_data_to_csv(
     data: List[Dict[str, Any]],
     columns: List[str],
     thread_id: str,
     suffix: Optional[str] = None,
     file_description: str = "CSV",
+    dtypes: Optional[Dict[str, str]] = None,
 ) -> str:
     """
     Save data to CSV file using thread_id and timestamp as filename.
@@ -240,24 +982,14 @@ async def save_data_to_csv(
         thread_id: Thread ID for filename generation
         suffix: Optional suffix to add to filename (e.g., "_preprocess")
         file_description: Description for logging (e.g., "CSV", "preprocessed CSV")
+        dtypes: Optional column -> dtype name map, saved next to the CSV so
+            read_csv_with_dtypes can restore the column types on reload
 
     Returns:
         Path to the saved CSV file
     """
     try:
-        # Create uploads directory within the project's data volume
-        uploads_dir = DATA_VOLUME / "train" / thread_id
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-
-        # Get timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Generate filename using thread_id and timestamp with optional suffix
-        if suffix:
-            filename = f"{thread_id}_{timestamp}{suffix}.csv"
-        else:
-            filename = f"{thread_id}_{timestamp}.csv"
-        file_path = uploads_dir / filename
+        file_path = new_training_output_path(thread_id, suffix or "")
 
         # Write CSV file
         if data and columns:
@@ -270,6 +1002,9 @@ async def save_data_to_csv(
                 writer = csv.writer(csvfile)
                 if columns:
                     writer.writerow(columns)
+
+        if dtypes:
+            dtypes_sidecar_path(file_path).write_text(json.dumps(dtypes), encoding="utf-8")
 
         logger.info(f"Saved {file_description} file: {file_path}")
         return str(file_path)
@@ -291,72 +1026,237 @@ async def save_data_to_csv(
         ) from e
 
 
-def parse_csv_file(file_path: str) -> List[Dict[str, Any]]:
+async def stream_rows_to_csv(
+    row_chunks: AsyncIterable[Tuple[Sequence[str], Sequence[Sequence[Any]]]],
+    thread_id: str,
+    *,
+    max_rows: int,
+    max_bytes: int,
+    suffix: str = "",
+    source_kind: str = "query",
+) -> Tuple[str, List[str], int, List[Dict[str, Any]]]:
+    """Write streamed row chunks to one CSV with bounded memory usage."""
+    try:
+        source_label, byte_source_label, limit_hint = _STREAM_SOURCE_DETAILS[source_kind]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported stream source kind: {source_kind}") from exc
+
+    file_path = new_training_output_path(thread_id, suffix)
+    columns: List[str] = []
+    row_count = 0
+    preview_head: List[Tuple[Any, ...]] = []
+    preview_tail = deque(maxlen=3)
+
+    try:
+        with open(file_path, "w", newline="", encoding="utf-8") as handle:
+            writer = None
+            async for chunk_columns, rows in row_chunks:
+                current_columns = list(chunk_columns)
+                if writer is None:
+                    if source_kind == "query":
+                        # Both columns would land in the CSV, and the next
+                        # node's read_csv would rename one to "<name>.1".
+                        ensure_unique_query_columns(current_columns)
+                    columns = current_columns
+                    writer = csv.writer(handle, lineterminator="\n")
+                    writer.writerow(columns)
+                    _enforce_stream_byte_limit(
+                        handle.tell(),
+                        max_bytes,
+                        byte_source_label,
+                        limit_hint,
+                    )
+                elif current_columns != columns:
+                    raise AppException(
+                        error_key=ErrorKey.INTERNAL_ERROR,
+                        error_detail=(
+                            "Database column ordering changed while streaming the query."
+                            if source_kind == "query"
+                            else "The file's columns changed while it was being read."
+                        ),
+                    )
+
+                observed_rows = row_count + len(rows)
+                if observed_rows > max_rows:
+                    raise AppException(
+                        error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
+                        error_detail=(
+                            f"The {source_label} returned more than {max_rows:,} rows, "
+                            f"which exceeds the limit of {max_rows:,}. {limit_hint}, or ask "
+                            "an administrator to raise the row limit."
+                        ),
+                    )
+
+                for row in rows:
+                    normalized_row = tuple(
+                        None if isinstance(value, float) and math.isnan(value) else value
+                        for value in row
+                    )
+                    if len(preview_head) < 3:
+                        preview_head.append(normalized_row)
+                    else:
+                        preview_tail.append(normalized_row)
+                    writer.writerow(normalized_row)
+                row_count = observed_rows
+                _enforce_stream_byte_limit(
+                    handle.tell(),
+                    max_bytes,
+                    byte_source_label,
+                    limit_hint,
+                )
+
+            # A row stream should always yield its columns once. Keeping
+            # this fallback makes a broken/custom iterator produce a valid,
+            # deterministic empty CSV rather than no file contents at all.
+            if writer is None:
+                writer = csv.writer(handle, lineterminator="\n")
+
+    except BaseException:
+        file_path.unlink(missing_ok=True)
+        raise
+    finally:
+        close_chunks = getattr(row_chunks, "aclose", None)
+        if close_chunks is not None:
+            await close_chunks()
+
+    logger.info("Wrote %s rows to %s", f"{row_count:,}", file_path)
+    preview = sanitize_for_json(
+        [
+            dict(zip(columns, row))
+            for row in preview_head + list(preview_tail)
+        ]
+    )
+    return str(file_path), columns, row_count, preview
+
+
+def _enforce_stream_byte_limit(
+    observed_bytes: int,
+    max_bytes: int,
+    source_label: str = "extract",
+    limit_hint: str = "Add a filter or LIMIT",
+) -> None:
+    if observed_bytes <= max_bytes:
+        return
+    raise AppException(
+        error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
+        error_detail=(
+            f"The {source_label} is {observed_bytes:,} bytes, which exceeds "
+            f"the limit of {max_bytes:,} bytes. {limit_hint}, or ask an "
+            "administrator to raise the file-size limit."
+        ),
+    )
+
+
+async def iter_csv_chunks(
+    file_path: str, chunk_size: int
+) -> AsyncIterable[Tuple[List[str], List[Tuple[Any, ...]]]]:
+    """Yield CSV columns and rows while keeping only one chunk in memory."""
+    try:
+        with open(
+            file_path,
+            "r",
+            encoding="utf-8-sig",
+            newline="",
+        ) as handle:
+            sample = handle.read(1024)
+            handle.seek(0)
+            try:
+                delimiter = csv.Sniffer().sniff(sample).delimiter
+            except Exception:
+                delimiter = ","
+
+            reader = csv.reader(handle, delimiter=delimiter)
+            header = next(reader, [])
+            # Spreadsheet exports often end the header with empty cells
+            # ("price,size,,"); those columns are dropped, as the Excel
+            # reader drops them, as long as no row puts a value in one.
+            width = len(header)
+            while width and not header[width - 1].strip():
+                width -= 1
+            columns = header[:width]
+            # Rows are matched to columns by position, so a repeated name
+            # would reach the next node as "<name>.1" - refuse it instead.
+            ensure_unique_columns(columns, "CSV file")
+            yield columns, []
+
+            batch: List[Tuple[Any, ...]] = []
+            for row in reader:
+                if not row:
+                    continue
+                if len(row) > len(header):
+                    raise AppException(
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
+                        error_detail=(
+                            f"Line {reader.line_num} has more values than the header has columns."
+                        ),
+                    )
+                unnamed = next((i for i in range(width, len(row)) if row[i].strip()), None)
+                if unnamed is not None:
+                    raise AppException(
+                        error_key=ErrorKey.ML_EXTRACT_FILE_INVALID,
+                        error_detail=(
+                            f"Line {reader.line_num} has a value in column {unnamed + 1}, which "
+                            "has no name in the header. Name the column or delete it, and "
+                            "upload the file again."
+                        ),
+                    )
+                batch.append(
+                    tuple(
+                        None if index >= len(row) or row[index] == "" else row[index]
+                        for index in range(width)
+                    )
+                )
+                if len(batch) >= chunk_size:
+                    yield columns, batch
+                    batch = []
+                    await asyncio.sleep(0)
+
+            if batch:
+                yield columns, batch
+    except UnicodeDecodeError:
+        raise AppException(
+            error_key=ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID,
+            error_detail=(
+                "The uploaded CSV could not be decoded as UTF-8. "
+                "Save it with UTF-8 encoding and upload it again."
+            ),
+        ) from None
+
+
+async def iter_record_chunks(
+    records: Sequence[Dict[str, Any]], chunk_size: int
+) -> AsyncIterable[Tuple[List[str], List[Tuple[Any, ...]]]]:
+    """Yield already-parsed records in bounded batches for the CSV writer."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer")
+
+    columns = list(records[0].keys()) if records else []
+    yield columns, []
+
+    for start in range(0, len(records), chunk_size):
+        batch = records[start : start + chunk_size]
+        yield columns, [tuple(record.get(column) for column in columns) for record in batch]
+        await asyncio.sleep(0)
+
+
+def parse_excel_file(file_path: str) -> List[Dict[str, Any]]:
     """
-    Parse CSV file with proper encoding detection and delimiter handling.
+    Parse an Excel (.xlsx) file into a list of row dictionaries.
 
     Args:
-        file_path: Path to CSV file
+        file_path: Path to the Excel file
 
     Returns:
-        List of dictionaries representing CSV rows
+        List of dictionaries representing spreadsheet rows
     """
-    # Common encodings to try
-    encodings = ["utf-8", "utf-8-sig", "latin-1", "cp1252", "iso-8859-1"]
-
-    # Read a sample to detect delimiter
-    sample_size = 1024
-    delimiter = ","
-
-    for encoding in encodings:
-        try:
-            with open(file_path, "r", encoding=encoding, errors="replace") as f:
-                sample = f.read(sample_size)
-                f.seek(0)
-
-                # Try to detect delimiter
-                try:
-                    sniffer = csv.Sniffer()
-                    dialect = sniffer.sniff(sample)
-                    delimiter = dialect.delimiter
-                    logger.debug(
-                        f"Detected delimiter: '{delimiter}' for encoding: {encoding}"
-                    )
-                except Exception:
-                    # Fall back to comma if detection fails
-                    delimiter = ","
-                    logger.debug(
-                        f"Using default delimiter ',' for encoding: {encoding}"
-                    )
-
-                # Parse the CSV
-                reader = csv.DictReader(f, delimiter=delimiter)
-                results = []
-
-                for row in reader:
-                    # Convert empty strings to None for consistency
-                    cleaned_row = {
-                        k: (v if v != "" else None) for k, v in row.items()
-                    }
-                    results.append(cleaned_row)
-
-                logger.info(f"Successfully parsed CSV with encoding: {encoding}")
-                return results
-
-        except Exception as e:
-            logger.debug(f"Failed to parse CSV with encoding {encoding}: {str(e)}")
-            continue
-
-    # If all encodings fail, try with pandas as fallback
     try:
-        logger.info("Trying pandas fallback for CSV parsing")
-        df = pd.read_csv(file_path, encoding="utf-8", on_bad_lines="skip")
+        df = pd.read_excel(file_path, engine="openpyxl")
         return df.to_dict("records")
     except Exception as e:
-        logger.error(f"Pandas fallback also failed: {str(e)}")
+        logger.error(f"Error parsing Excel file {file_path}: {str(e)}", exc_info=True)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Could not parse CSV file: {str(e)}",
+            error_detail=f"Could not parse Excel file: {str(e)}",
         ) from e
 
 
@@ -392,10 +1292,144 @@ async def extra_csv_directories(settings_service=None) -> List[Path]:
 
     values = file_manager_settings.values if file_manager_settings and isinstance(file_manager_settings.values, dict) else {}
     provider = values.get("file_manager_provider") or file_storage_settings.default_provider_name
-    base_path = values.get("base_path")
-    if provider == "local" and isinstance(base_path, str) and base_path:
+    base_path = configured_base_path(values)
+    if provider == "local" and base_path:
         return [Path(base_path)]
     return []
+
+
+def parse_json_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse a JSON file (array of records) into a list of row dictionaries.
+
+    Args:
+        file_path: Path to the JSON file
+
+    Returns:
+        List of dictionaries representing JSON records
+    """
+    try:
+        df = pd.read_json(file_path, orient="records")
+        return df.to_dict("records")
+    except Exception as e:
+        logger.error(f"Error parsing JSON file {file_path}: {str(e)}", exc_info=True)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Could not parse JSON file: {str(e)}",
+        ) from e
+
+
+def parse_parquet_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse a Parquet file into a list of row dictionaries.
+
+    Args:
+        file_path: Path to the Parquet file
+
+    Returns:
+        List of dictionaries representing Parquet rows
+    """
+    try:
+        df = pd.read_parquet(file_path)
+        return df.to_dict("records")
+    except Exception as e:
+        logger.error(f"Error parsing Parquet file {file_path}: {str(e)}", exc_info=True)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Could not parse Parquet file: {str(e)}",
+        ) from e
+
+
+_TRAINING_FILE_PARSERS = {
+    ".xlsx": parse_excel_file,
+    ".json": parse_json_file,
+    ".parquet": parse_parquet_file,
+}
+
+SUPPORTED_TRAINING_FILE_SUFFIXES = frozenset({".csv", *_TRAINING_FILE_PARSERS})
+
+
+def parse_training_file(file_path: str) -> List[Dict[str, Any]]:
+    """
+    Parse an uploaded training data file based on its extension.
+
+    Args:
+        file_path: Path to a .xlsx, .json, or .parquet file. CSV files use
+            ``iter_csv_chunks`` so they never materialize all rows at once.
+
+    Returns:
+        List of dictionaries representing file rows
+
+    Raises:
+        AppException: If the file extension is not supported
+    """
+    suffix = Path(file_path).suffix.lower()
+    parser = _TRAINING_FILE_PARSERS.get(suffix)
+    if not parser:
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=(
+                f"Unsupported file type: {suffix}. "
+                f"Supported types: {', '.join(_TRAINING_FILE_PARSERS)}"
+            ),
+        )
+    return parser(file_path)
+
+
+def csv_path_candidates(file_url: str, thread_id: Optional[str] = None) -> List[Any]:
+    """The paths resolve_csv_file_path tries for a file path, in order."""
+    if file_url.startswith("/"):
+        return [file_url]
+    if thread_id:
+        # A node's data_path is relative to DATA_VOLUME/train and may come
+        # from an earlier run with another thread (e.g. testing one node).
+        return [
+            DATA_VOLUME / "train" / thread_id / file_url,
+            DATA_VOLUME / "train" / file_url,
+            os.path.abspath(file_url),
+        ]
+    # Relative to DATA_VOLUME/train, then the current folder, then DATA_VOLUME
+    return [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
+
+
+INLINE_DATA_DETAIL = (
+    "File URL contains data, not a file path - it is probably set to the upstream "
+    "node's data output. Use its file path instead, e.g. {{source.data_path}}."
+)
+
+
+_PLACEHOLDER_PART = re.compile(r"\{\{.*?\}\}")
+
+
+def looks_like_inline_data(value: Optional[str]) -> bool:
+    """Whether a File URL that names no file looks like data (rows or CSV text).
+
+    Only used to choose the message once no file was found, so a real file is
+    never refused. JSON rows look like [ ... ] or { ... }. CSV text has a line
+    break or, since the single-line File URL field drops pasted line breaks, a
+    comma, semicolon or tab outside any {{placeholder}}. A value ending in a
+    training file type (customers, 2024.csv) is a path, and a web address is
+    not data.
+    """
+    from app.modules.workflow.engine.nodes.ml import training_file_readers
+
+    text = (value or "").strip()
+    if not text or text.lower().startswith(("http://", "https://")):
+        return False
+    if starts_like_json_rows(text) or "\n" in text or "\r" in text:
+        return True
+    if text.lower().endswith(tuple(training_file_readers.SUPPORTED_TRAINING_FILE_SUFFIXES)):
+        return False
+    outside_placeholders = _PLACEHOLDER_PART.sub("", text)
+    return any(separator in outside_placeholders for separator in (",", ";", "\t"))
+
+
+def starts_like_json_rows(text: str) -> bool:
+    """JSON rows or an object, [ ... ] or { ... } - never a {{placeholder}} or "[Q1] sales.csv"."""
+    text = (text or "").strip()
+    return (text.startswith("[") and text.endswith("]")) or (
+        text.startswith("{") and text.endswith("}") and not text.startswith("{{")
+    )
 
 
 def resolve_csv_file_path(
@@ -415,26 +1449,29 @@ def resolve_csv_file_path(
     Raises:
         AppException: If file is not found or is not a CSV file
     """
+    # A File URL wired to the upstream node's "data" (its sample rows), or
+    # CSV text pasted into it, is not a path. Say so without repeating the
+    # data, instead of "File not found: <the data>" or "File name too long".
+    # JSON rows can never be a file name: say so at once. CSV text is only
+    # named as data once no file was found under that name, so a real path
+    # with a comma in it is never refused.
+    stripped_url = (file_url or "").strip()
+    if starts_like_json_rows(stripped_url):
+        raise AppException(
+            error_key=ErrorKey.FILE_NOT_FOUND,
+            error_detail=INLINE_DATA_DETAIL,
+        )
+    file_url = stripped_url
+
     try:
-        # Handle both absolute paths and relative paths
-        if file_url.startswith("/"):
-            # Absolute path
-            candidates = [file_url]
-        elif file_url.startswith("http://") or file_url.startswith("https://"):
+        if file_url.startswith("http://") or file_url.startswith("https://"):
             # For HTTP URLs, we'd need to download first
             # For now, raise an error
             raise AppException(
                 error_key=ErrorKey.FILE_NOT_FOUND,
                 error_detail=f"HTTP/HTTPS URLs are not yet supported: {file_url}",
             )
-        else:
-            # Try relative to DATA_VOLUME/train/thread_id if thread_id provided, then the current folder
-            if thread_id:
-                candidates = [DATA_VOLUME / "train" / thread_id / file_url, os.path.abspath(file_url)]
-            else:
-                # Try relative to DATA_VOLUME/train (common location for CSV files),
-                # then the current folder, then directly in DATA_VOLUME
-                candidates = [DATA_VOLUME / "train" / file_url, os.path.abspath(file_url), DATA_VOLUME / file_url]
+        candidates = csv_path_candidates(file_url, thread_id)
 
         # Only files inside the data volume, or the configured storage folder, can be read
         directories = [DATA_VOLUME, *(allowed_directories or [])]
@@ -448,7 +1485,8 @@ def resolve_csv_file_path(
         if file_path is None:
             raise AppException(
                 error_key=ErrorKey.FILE_NOT_FOUND,
-                error_detail=f"File not found: {file_url}",
+                # Never repeat pasted data back in the message
+                error_detail=INLINE_DATA_DETAIL if looks_like_inline_data(file_url) else f"File not found: {file_url}",
             )
 
         # Check if it's a CSV file
@@ -462,7 +1500,7 @@ def resolve_csv_file_path(
         if not os.access(file_path, os.R_OK):
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"CSV file is not readable: {file_path}",
+                error_detail=f"CSV file is not readable: {file_url}",
             )
 
         return file_path
@@ -471,52 +1509,181 @@ def resolve_csv_file_path(
         raise
     except Exception as e:
         logger.error(f"Error resolving file path {file_url}: {str(e)}", exc_info=True)
+        if looks_like_inline_data(file_url):
+            # e.g. "File name too long" for pasted data: never repeat the data
+            raise AppException(error_key=ErrorKey.FILE_NOT_FOUND, error_detail=INLINE_DATA_DETAIL) from e
+        # An OSError's message names the server path it tried; show only the reason.
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to resolve file path: {str(e)}",
+            error_detail=f"Failed to resolve file path: {reason}",
         ) from e
 
 
 def load_csv_file(
     file_url: str, thread_id: Optional[str] = None, allowed_directories: Optional[List[Path]] = None
-) -> Tuple[List[Dict[str, Any]], pd.DataFrame]:
+) -> pd.DataFrame:
     """
     Load data from a CSV file URL/path.
 
     Args:
         file_url: URL or path to the file (CSV expected)
         thread_id: Optional thread ID for relative path resolution
+        allowed_directories: Folders besides the data volume that files may be read from
 
     Returns:
-        Tuple of (data as list of dicts, DataFrame)
+        DataFrame
 
     Raises:
         AppException: If file cannot be loaded
     """
+    file_path = resolve_csv_file_path(file_url, thread_id, allowed_directories)
+    return load_resolved_csv(file_path, shown_as=file_url)
+
+
+def load_resolved_csv(file_path: Union[str, Path], shown_as: Optional[str] = None) -> pd.DataFrame:
+    """Load a CSV whose path was already resolved and checked by the caller.
+
+    Used for a File Manager / S3 file downloaded to a temp file, which
+    resolve_csv_file_path would refuse because it is outside the data volume.
+    Errors never name the server path; shown_as is only used in the log.
+    """
     try:
-        file_path = resolve_csv_file_path(file_url, thread_id, allowed_directories)
-
-        # Load CSV file using pandas
-        df = pd.read_csv(file_path, encoding="utf-8")
-        data = df.to_dict("records")
-
-        logger.info(f"Loaded {len(data)} rows from {file_path}")
-
-        return data, df
-
+        # Load CSV file using pandas (with any saved column types reapplied)
+        df = read_csv_with_dtypes(file_path, encoding="utf-8")
+        logger.info(f"Loaded {len(df)} rows from {file_path}")
+        return df
     except AppException:
         raise
     except Exception as e:
-        logger.error(f"Error loading file {file_url}: {str(e)}", exc_info=True)
+        logger.error(f"Error loading file {shown_as or file_path}: {str(e)}", exc_info=True)
+        # An OSError's message names the resolved server path; show only the reason.
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to load file: {str(e)}",
+            error_detail=f"Failed to load file: {reason}",
         ) from e
+
+
+_PREPROCESS_MAX_RESULT_BYTES = 128 * 1024 * 1024
+
+# Runs in the sandbox before a preprocessing script that names params["data"], rebuilding it from df
+_DATA_FROM_DF = """
+if params.get("df") is not None:
+    params["data"] = params["df"].to_dict("records")
+"""
+
+
+def _names_data(python_code: str) -> bool:
+    try:
+        tree = ast.parse(python_code)
+    except SyntaxError:
+        return False
+    dict_keys = {key for node in ast.walk(tree) if isinstance(node, ast.Dict) for key in node.keys}
+    return any(
+        isinstance(node, ast.Constant) and node.value == "data" and node not in dict_keys for node in ast.walk(tree)
+    )
+
+
+# Marker _subprocess_worker puts before an exception the user's code raised,
+# after whatever else was written to stderr (e.g. pandas warnings).
+_USER_EXCEPTION_MARKER = "Global errors: "
+_WRAPPER_ERROR_PREFIX = "Error processing parameters: "
+_TRACEBACK_HEADER = "Traceback (most recent call last):"
+_MAX_LOGGED_ERROR_CHARS = 4000
+_NO_RESULT_MESSAGE = (
+    "The preprocessing code returned nothing - executable_function must return the processed DataFrame"
+)
+# The innermost frame of the user's code (exec'd from a string)
+_USER_CODE_FRAME = re.compile(r'File "<string>", line (\d+)')
+_EXCEPTION_LINE = re.compile(r"^([A-Za-z_][\w.]*)(?::\s?(.*))?$")
+# Exceptions whose message already says what went wrong (e.g. a step's own
+# column check), so the type name would only be noise
+_SELF_DESCRIBING_EXCEPTIONS = {"ValueError", "Exception"}
+# Display names of the Data Preprocessing steps (getStepTypeDisplayName in the frontend)
+# Mirrors getStepTypeDisplayName in the frontend's preprocessingConfig.ts,
+# including the moved step types (MOVED_STEP_NAMES there): older workflows'
+# code still runs those steps, so an error can come from inside one.
+_PREPROCESSING_STEP_NAMES = {
+    "column_filter": "Column Filter",
+    "remove_duplicates": "Remove Duplicate Rows",
+    "drop_column_or_row": "Remove Column/Row",
+    "drop_high_null_columns": "Remove High-Null Columns",
+    "change_dtype": "Change Column Data Type",
+    "missing_value_handling": "Missing Value Handling",
+    "outlier_handling": "Outlier Handling",
+    "categorical_encoding": "Categorical Encoding",
+    "feature_engineering": "Feature Engineering",
+}
+_STEP_MARKER = re.compile(r"#\s*STEP_(START|END):[^:\n]+:(\w+)")
+
+
+def _step_at_line(python_code: str, line_number: int) -> Optional[str]:
+    """Display name of the preprocessing step whose markers enclose a line of the code, if any."""
+    step = None
+    for line in python_code.splitlines()[: max(line_number, 0)]:
+        marker = _STEP_MARKER.search(line)
+        if marker:
+            step = marker.group(2) if marker.group(1) == "START" else None
+    return _PREPROCESSING_STEP_NAMES.get(step, step) if step else None
+
+
+def _exception_type(traceback_text: str, message: str) -> str:
+    """The raised exception's class name, from its "Type: <message>" line.
+
+    Matched against the message's first line, since lines after it (the rest
+    of a multi-line message, exception notes) can look like "Name: value" too.
+    """
+    first_line = message.splitlines()[0].strip() if message else ""
+    for line in reversed(traceback_text.splitlines()):
+        if not line.strip() or line[0].isspace():
+            continue
+        match = _EXCEPTION_LINE.match(line.strip())
+        if match and (match.group(2) or "").strip() == first_line:
+            return match.group(1).rsplit(".", 1)[-1]
+    return ""
+
+
+def _short_user_code_error(raw_error: str, python_code: str = "") -> str:
+    """The message to show for preprocessing code that raised.
+
+    The sandbox hands back the wrapper's "Error processing parameters: <message>"
+    followed by the whole traceback, which names server paths (/opt/venv/...)
+    and library internals. The user gets only the exception, led by the step
+    it was raised in; the full text is logged on the server.
+    """
+    text = raw_error.strip()
+    if _USER_EXCEPTION_MARKER in text:
+        text = text.partition(_USER_EXCEPTION_MARKER)[2].strip()
+    if text.startswith(_WRAPPER_ERROR_PREFIX):
+        text = text[len(_WRAPPER_ERROR_PREFIX):]
+    message, header, traceback_text = text.partition(_TRACEBACK_HEADER)
+    message = message.strip()
+    if not header:
+        return message
+
+    exception_type = _exception_type(traceback_text, message)
+    if exception_type and exception_type not in _SELF_DESCRIBING_EXCEPTIONS:
+        message = f"{exception_type}: {message}" if message else exception_type
+
+    frames = _USER_CODE_FRAME.findall(traceback_text)
+    step = _step_at_line(python_code, int(frames[-1])) if frames and python_code else None
+    if step and not message.startswith(f"{step}:"):
+        message = f"{step}: {message}"
+    return message or "Preprocessing code failed"
+
+
+def _user_code_failure(raw_error: str, python_code: str) -> str:
+    """Log a failed run's full error server-side and return the short message for the user."""
+    # Masked and capped like node errors: the message can hold data values
+    logger.warning(
+        "Preprocessing code failed: %s", truncate_for_log(redact_sensitive_substrings(raw_error), _MAX_LOGGED_ERROR_CHARS)
+    )
+    return _short_user_code_error(raw_error, python_code)
 
 
 async def execute_and_process_preprocessing_code(
     python_code: str,
-    data: Optional[List[Dict[str, Any]]],
     df: Optional[pd.DataFrame],
     file_url: str,
     raise_on_error: bool = True,
@@ -526,7 +1693,6 @@ async def execute_and_process_preprocessing_code(
 
     Args:
         python_code: Python code for data preprocessing
-        data: Optional list of dictionaries representing the data rows
         df: Optional pandas DataFrame
         file_url: URL or path to the file
         raise_on_error: If True, raise AppException on errors. If False, return error info.
@@ -538,31 +1704,61 @@ async def execute_and_process_preprocessing_code(
     Raises:
         AppException: If code execution fails or result cannot be processed (only if raise_on_error=True)
     """
-    from app.modules.workflow.utils import execute_python_code
+    from app.modules.workflow.utils import execute_python_code, script_error
 
     # Prepare parameters for Python code execution
     params = {
-        "data": data,
+        "data": None,
         "df": df,
         "fileUrl": file_url,
     }
 
     # Execute the preprocessing Python code
-    response = await execute_python_code(python_code, params, wrap_code=True)
+    response = await execute_python_code(
+        python_code,
+        params,
+        wrap_code=True,
+        max_result_bytes=_PREPROCESS_MAX_RESULT_BYTES,
+        prelude=_DATA_FROM_DF if _names_data(python_code) else "",
+    )
 
-    # Check for errors in response
-    errors = response.get("errors", None)
-    if errors and errors != "":
+    # Library warnings land in stderr, so only a runner error or a raised script counts as failure
+    failure = script_error(response)
+    if failure:
+        # A script that raised comes back with the wrapper's prefix and the full
+        # traceback; runner errors (syntax, sandbox, timeout) are short already
+        if failure == response.get("script_error"):
+            failure = _user_code_failure(failure, python_code)
         if raise_on_error:
             raise AppException(
                 error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"Error executing preprocessing code: {errors}",
+                error_detail=failure,
             )
         else:
-            return None, errors, response
+            return None, failure, response
 
-    # Extract result from response
+    stderr_output = response.get("errors")
     result = response.get("result")
+    if stderr_output and result is None:
+        if _USER_EXCEPTION_MARKER in stderr_output:
+            user_error = _user_code_failure(stderr_output, python_code)
+        else:
+            # Nothing was raised - stderr only holds warnings, which can name
+            # server paths; the real problem is the missing result
+            logger.warning(
+                "Preprocessing code returned no result; stderr: %s",
+                truncate_for_log(redact_sensitive_substrings(stderr_output), _MAX_LOGGED_ERROR_CHARS),
+            )
+            user_error = _NO_RESULT_MESSAGE
+        if raise_on_error:
+            raise AppException(
+                error_key=ErrorKey.INTERNAL_ERROR,
+                error_detail=user_error,
+            )
+        else:
+            return None, user_error, response
+    if stderr_output:
+        logger.warning("Preprocessing code produced warnings/stderr output: %s", stderr_output)
 
     # Process the result similar to train_preprocess_node
     if isinstance(result, pd.DataFrame):
@@ -603,9 +1799,25 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
         - columns_info: Detailed info per column
     """
     try:
-        # Load CSV using pandas for better analysis
-        df = pd.read_csv(file_path, encoding="utf-8", on_bad_lines="skip")
+        # Load CSV using pandas for better analysis (with any saved column
+        # types reapplied, so the analysis matches what the next node sees)
+        df = read_csv_with_dtypes(file_path, encoding="utf-8", on_bad_lines="skip")
+        return analyze_dataframe(df)
+    except AppException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
+        # An OSError's message names the server path; show only the reason.
+        reason = (e.strerror or type(e).__name__) if isinstance(e, OSError) else str(e)
+        raise AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Failed to analyze CSV file: {reason}",
+        ) from e
 
+
+def analyze_dataframe(df: pd.DataFrame) -> Dict[str, Any]:
+    """The analysis report (see analyze_csv_data) for an already-loaded frame."""
+    try:
         # Convert to list of dicts for sample data
         data = df.to_dict("records")
 
@@ -623,11 +1835,14 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
             col_info = {
                 "name": col,
                 "dtype": str(df[col].dtype),
-                "missing_count": int(df[col].isna().sum() + (df[col] == "").sum()),
+                "missing_count": int(
+                    df[col].isna().sum()
+                    + (df[col].astype(object) == "").sum()
+                ),
             }
 
-            # Determine if numeric
-            is_numeric = pd.api.types.is_numeric_dtype(df[col])
+            # Determine if numeric (bool/boolean count as categorical, not numeric)
+            is_numeric = pd.api.types.is_numeric_dtype(df[col]) and not pd.api.types.is_bool_dtype(df[col])
 
             if is_numeric:
                 # Numeric column stats
@@ -638,9 +1853,24 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
                 col_info["unique_count"] = int(df[col].nunique())
             else:
                 # Non-numeric column stats
-                col_info["type"] = "categorical" if df[col].dtype == "object" else "other"
+                is_categorical = (
+                    df[col].dtype == "object"
+                    or isinstance(df[col].dtype, pd.CategoricalDtype)
+                    or pd.api.types.is_string_dtype(df[col])
+                    or pd.api.types.is_bool_dtype(df[col])
+                )
+                col_info["type"] = "categorical" if is_categorical else "other"
                 col_info["unique_count"] = int(df[col].nunique())
                 col_info["category_count"] = int(df[col].nunique())
+                if is_categorical:
+                    # The distinct values, so the Train Model dialog can offer
+                    # them for ordering an ordinal encoding. Normalized the same
+                    # way the encoding itself matches them (ordinal_key).
+                    keys = {ordinal_key(v) for v in df[col].dropna().unique()}
+                    keys.discard(None)
+                    categories = sorted(keys)
+                    col_info["categories"] = categories[:_MAX_ANALYSIS_CATEGORIES]
+                    col_info["categories_truncated"] = len(categories) > _MAX_ANALYSIS_CATEGORIES
 
             # Sanitize the column info
             col_info = sanitize_for_json(col_info)
@@ -656,8 +1886,8 @@ def analyze_csv_data(file_path: str) -> Dict[str, Any]:
         return sanitize_for_json(response)
 
     except Exception as e:
-        logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
+        logger.error(f"Error analyzing data: {str(e)}", exc_info=True)
         raise AppException(
             error_key=ErrorKey.INTERNAL_ERROR,
-            error_detail=f"Failed to analyze CSV file: {str(e)}",
+            error_detail=f"Failed to analyze data: {str(e)}",
         ) from e

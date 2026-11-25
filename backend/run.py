@@ -12,18 +12,21 @@ if "TRANSFORMERS_CACHE" in os.environ:
     del os.environ["TRANSFORMERS_CACHE"]
 
 import logging
-import uvicorn
 
 from app import create_app
 from app.core.config.settings import settings
-from migrations import run_migrations  # Import after logging is set up
 
 logger = logging.getLogger(__name__)
 
-# Create the FastAPI app (after logging is ready)
-app = create_app()
+# Create the FastAPI app (after logging is ready); skipped when a sandbox child re-runs this file as __mp_main__
+if __name__ != "__mp_main__":
+    app = create_app()
 
 if __name__ == "__main__":
+    import uvicorn
+
+    from migrations import run_migrations  # Import after logging is set up
+
     os.environ.setdefault("ALEMBIC_SKIP_FILECONFIG", "1")
     run_migrations(settings.DATABASE_URL_SYNC)
 

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.utils.llm_usage_utils import USAGE_METADATA_MISSING
 from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
 from app.modules.workflow.engine.llm_usage_tracking import merge_llm_usage_from_result
 from app.modules.workflow.engine.workflow_state import WorkflowState
@@ -126,6 +127,21 @@ class TestTotalLlmUsageCacheTokens:
         assert usage["cost_is_partial"] is True
         assert usage["cost_usd"] == round(1000 / 1000 * 0.003, 6), "only the priced call is counted"
 
+    def test_bedrock_cache_tokens_count_toward_the_run_input_like_the_ledger(self, monkeypatch):
+        import app.core.config.llm_pricing as llm_pricing
+
+        monkeypatch.setattr(llm_pricing, "get_db_pricing_nested", lambda tenant: {})
+        s = _state()
+        s.add_llm_usage(
+            100, 10, provider="bedrock", model="us.amazon.nova-2-lite-v1:0", total_tokens=1010,
+            token_details={"input_token_details": {"cache_read": 900, "cache_creation": 0}},
+        )
+
+        usage = s.get_total_llm_usage()
+        assert usage["input_tokens"] == 1000, "Converse reports inputTokens without the cached tokens"
+        assert usage["total_tokens"] == 1010
+        assert usage["cost_usd"] == 0.000023, "pricing still sees the raw 100 uncached tokens"
+
     def test_a_fully_priced_run_is_not_partial(self, monkeypatch):
         import app.core.config.llm_pricing as llm_pricing
 
@@ -134,6 +150,29 @@ class TestTotalLlmUsageCacheTokens:
         s.add_llm_usage(1000, 0, provider="anthropic", model="claude-3-5-sonnet")
 
         assert s.get_total_llm_usage()["cost_is_partial"] is False
+
+
+class TestTotalLlmUsageFallbackCalls:
+    def test_counts_non_zero_costs_priced_outside_the_tenant_rows(self, monkeypatch):
+        import app.core.config.llm_pricing as llm_pricing
+
+        monkeypatch.setattr(
+            llm_pricing,
+            "get_db_pricing_nested",
+            lambda tenant: {"openai": {"gpt-4o": {"input_per_1k": 0.001, "output_per_1k": 0.002}}},
+        )
+        s = _state()
+        s.add_llm_usage(10, 5, provider="openai", model="gpt-4o")
+        s.add_llm_usage(10, 5, provider="openai", model="unknown-model-xyz")
+        s.add_llm_usage(10, 5, provider="openai", model="gpt-3.5-turbo")
+        s.add_llm_usage(10, 5, provider="OpenAI ", model=" GPT-3.5-Turbo")
+        s.add_llm_usage(10, 5, provider="ollama", model="llama3")
+        usage = s.get_total_llm_usage()
+        assert usage["fallback_calls"] == 2
+        assert usage["fallback_models"] == ["openai/gpt-3.5-turbo"]
+        assert usage["calls"] == 5
+        assert usage["cost_usd"] > 0
+        assert usage["cost_is_partial"] is True, "the unrated and the local model are unpriced, like the ledger"
 
 
 class TestTheNodeRequestDrivesTheTotals:
@@ -211,6 +250,25 @@ class TestTheRunCostNeverPassesOffASubtotal:
     def test_an_entirely_unpriced_run_is_not_reported_as_free(self):
         s = _state()
         self._unpriced_call(s)
+
+        response = s.format_state_as_response()
+        assert response["cost_usd"] is None
+        assert response["token_usage"]["cost_is_partial"] is True
+
+    def test_an_unrated_model_leaves_the_reply_without_a_cost(self):
+        s = _state()
+        s.add_llm_usage(1000, 1000, provider="openai", model="gpt-5.5-turbo-ultra")
+
+        response = s.format_state_as_response()
+        assert response["cost_usd"] is None
+        assert response["token_usage"]["cost_is_partial"] is True
+        assert response["token_usage"]["cost_usd"] == 0.0
+
+    def test_a_call_with_no_reported_usage_is_unpriced_like_the_ledger(self):
+        s = _state()
+        s.add_llm_usage(
+            0, 0, provider="anthropic", model="claude-3-5-sonnet", token_details={USAGE_METADATA_MISSING: True}
+        )
 
         response = s.format_state_as_response()
         assert response["cost_usd"] is None
@@ -450,3 +508,22 @@ class TestOwnDiagnosticsSurviveTheSubFlowMerge:
         parent.update_nodes_from_another_state(child)
 
         assert parent.prompt_caching_diagnostics == {"ok": _APPLIED}
+
+
+class TestAnnotateNodeExecution:
+    def test_extra_data_survives_completion_and_the_response(self):
+        node = {"id": "kb", "type": "knowledgeBaseNode", "data": {"name": "KB"}}
+        state = WorkflowState(workflow={**WF, "nodes": [node]}, thread_id=THREAD, initial_values={"message": "hi"})
+        state.start_node_execution("kb")
+
+        state.annotate_node_execution("kb", sources=[{"id": "a", "score": 0.5}])
+        state.complete_node_execution("kb", output="text")
+
+        entry = state.format_state_as_response()["state"]["nodeExecutionStatus"]["kb"]
+        assert entry["sources"] == [{"id": "a", "score": 0.5}]
+        assert entry["output"] == "text"
+
+    def test_a_node_that_has_not_started_is_left_alone(self):
+        state = _state()
+        state.annotate_node_execution("kb", sources=[])
+        assert state.node_execution_status == {}

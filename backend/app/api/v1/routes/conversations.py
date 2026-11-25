@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Query, Request, WebSocket
 from fastapi.responses import JSONResponse
 from fastapi_injector import Injected
+from starlette.requests import HTTPConnection
 from starlette.websockets import WebSocketDisconnect
 
 from app.auth.dependencies import auth, permissions, require_admin_user, socket_auth
@@ -27,14 +28,18 @@ from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.exception_handler import send_socket_error
+from app.core.observability import datadog_observability
 from app.core.permissions.constants import Permissions as P
 from app.core.tenant_scope import get_tenant_context
+from app.core.turn_stream_response import stream_turn
+from app.core.utils.background_tasks import spawn
 from app.core.utils.bi_utils import increment_feedback
 from app.core.utils.enums.conversation_status_enum import ConversationStatus
 from app.core.utils.enums.gdpr_delete_mode_enum import GdprDeleteMode
 from app.core.utils.enums.message_feedback_enum import Feedback
 from app.core.utils.enums.reader_role_enum import ReaderRole
 from app.core.utils.recaptcha_utils import verify_recaptcha_token
+from app.dependencies.injector import injector
 from app.middlewares.rate_limit_middleware import (
     get_agent_rate_limit_start,
     get_agent_rate_limit_start_hour,
@@ -62,12 +67,18 @@ from app.schemas.conversation_transcript import (
     TranscriptSegmentFeedback,
 )
 from app.schemas.common import PaginatedResponse
-from app.schemas.filter import ConversationFilter, MessageIssueFilter
+from app.schemas.filter import ConversationFilter, MessageIssueFilter, MessageIssueSummaryFilter
 from app.schemas.message_issue import (
-    IssueStatusUpdate,
+    IssueHistoryEvent,
+    IssueNoteCreate,
+    IssueNoteRead,
+    IssueStatusSummary,
+    IssueUpdate,
+    MessageIssueRead,
     ReportedIssueRead,
 )
 from app.schemas.socket_principal import SocketPrincipal
+from app.schemas.topic_options import TopicOptionsRead
 from app.services.agent_config import AgentConfigService
 from app.services.agent_response_log import AgentResponseLogService
 from app.services.analytics_realtime import (
@@ -79,6 +90,7 @@ from app.services.auth import AuthService
 from app.services.conversations import ConversationService
 from app.services.dashboard import DashboardService
 from app.services.file_manager import FileManagerService
+from app.services.llm_analysts import LlmAnalystService
 from app.services.realtime_notifications import (
     emit_notification,
     conversation_started_notification_description,
@@ -93,7 +105,28 @@ from app.use_cases.chat_as_client_use_case import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+
+async def tag_trace_with_conversation(connection: HTTPConnection) -> None:
+    """Tag the trace with the conversation id from the URL, for every conversation route.
+
+    Router-level dependencies run before each route's own dependencies and its own
+    rate limit, so requests rejected by auth, the agent lookup or a route's rate limit
+    are tagged too. The global per-IP limit is checked in middleware before any
+    dependency runs, so a request it rejects is not tagged. Only a valid UUID is used,
+    so a malformed path never ends up in a tag.
+
+    Async so FastAPI runs it on the event loop instead of its threadpool.
+    """
+    raw = connection.path_params.get("conversation_id")
+    if raw is None:
+        return
+    try:
+        datadog_observability.tag_conversation(UUID(str(raw)))
+    except ValueError:
+        pass
+
+
+router = APIRouter(dependencies=[Depends(tag_trace_with_conversation)])
 
 
 async def _voice_provider_has_key(provider_id) -> bool:
@@ -338,6 +371,32 @@ async def get_message_issues(
 
 
 @router.get(
+    "/issues/summary",
+    response_model=IssueStatusSummary,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def get_message_issue_summary(
+    filter_obj: MessageIssueSummaryFilter = Depends(),
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    """Reported issues counted per status, with the list's filters and group scope."""
+    return await transcript_message_service.get_issue_status_summary(filter_obj)
+
+
+@router.get(
+    "/topic-options",
+    response_model=TopicOptionsRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def get_topic_options(
+    llm_analyst_service: LlmAnalystService = Injected(LlmAnalystService),
+):
+    return await llm_analyst_service.get_topic_options()
+
+
+@router.get(
     "/{conversation_id}",
     response_model=ConversationRead,
     dependencies=[
@@ -387,6 +446,7 @@ async def start(
         raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
 
     logger.debug(f"agent: {agent.name}")
+    datadog_observability.tag_agent(agent.id, agent.workflow_id)
 
     # Verify reCAPTCHA token if it is present in the request body, using agent-specific settings
     reCaptchaToken = model.recaptcha_token or None
@@ -404,9 +464,10 @@ async def start(
     agent_read = AgentRead.model_validate(agent)
     model.operator_id = agent.operator_id
     conversation = await service.start_in_progress_conversation(model)
+    datadog_observability.tag_conversation(conversation.id)
 
     # Increment conversation counters in background
-    _ = asyncio.create_task(update_conversation_started(agent.id))
+    spawn(update_conversation_started(agent.id), name=f"analytics:start:{agent.id}")
 
     # Notify dashboard that a new conversation was started (e.g. from chatbot)
     tenant_id = get_tenant_context()
@@ -782,13 +843,22 @@ async def update_no_agent(
 async def update(
     request: Request,
     conversation_id: UUID,
-    file_manager_service: FileManagerService = Injected(FileManagerService),
 ):
     """
     Append segments to an existing in-progress conversation.
     Accepts JSON body (text messages) or multipart/form-data (audio messages).
     If agent.security_settings.token_based_auth is true, only accepts JWT tokens (rejects API keys).
     """
+    # Get agent from request.state (set by get_agent_for_update dependency)
+    agent = getattr(request.state, "agent", None)
+    if not agent:
+        logger.debug("agent not found")
+        raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
+    # Tag before any validation so rejected replies can be split by agent too.
+    # The agent here is usually the cached AgentMinimalForCache; entries pickled
+    # before workflow_id was added to it don't have the attribute at all.
+    datadog_observability.tag_agent(agent.id, getattr(agent, "workflow_id", None))
+
     content_type = request.headers.get("content-type", "")
     audio_bytes: bytes | None = None
     audio_format: str | None = None
@@ -807,12 +877,6 @@ async def update(
 
     tenant_id = get_tenant_context()
 
-    # Get agent from request.state (set by get_agent_for_start dependency)
-    agent = getattr(request.state, "agent", None)
-    if not agent:
-        logger.debug("agent not found")
-        raise AppException(error_key=ErrorKey.AGENT_NOT_FOUND, status_code=404)
-
     # validate recaptcha token
     reCaptchaToken = model.recaptcha_token or None
     is_valid, score, reason = verify_recaptcha_token(reCaptchaToken, agent=agent)
@@ -820,36 +884,44 @@ async def update(
         logger.warning(f"reCAPTCHA verification failed: {reason}")
         raise AppException(error_key=ErrorKey.RECAPTCHA_VERIFICATION_FAILED, status_code=403)
 
-    # process attachments from metadata
-    await process_attachments_from_metadata(
-        base_url=str(request.base_url).rstrip("/"),
-        conversation_id=conversation_id,
-        model=model,
-        tenant_id=tenant_id,
-        current_user_id=get_current_user_id(),
-        file_manager_service=file_manager_service,
-    )
+    current_user_id = get_current_user_id()
+    base_url = str(request.base_url).rstrip("/")
 
-    updated_conversation = await process_conversation_update_with_agent(
-        conversation_id=conversation_id,
-        model=model,
-        tenant_id=tenant_id,
-        current_user_id=get_current_user_id(),
-        audio_bytes=audio_bytes,
-        audio_format=audio_format,
-    )
+    async def run_turn() -> dict:
+        # process attachments from metadata
+        await process_attachments_from_metadata(
+            base_url=base_url,
+            conversation_id=conversation_id,
+            model=model,
+            tenant_id=tenant_id,
+            current_user_id=current_user_id,
+            file_manager_service=injector.get(FileManagerService),
+        )
 
-    # invalidate the cache for the conversation
-    await invalidate_cache("conversations:in_progress_poll", conversation_id)
+        updated_conversation = await process_conversation_update_with_agent(
+            conversation_id=conversation_id,
+            model=model,
+            tenant_id=tenant_id,
+            current_user_id=current_user_id,
+            audio_bytes=audio_bytes,
+            audio_format=audio_format,
+        )
 
-    upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
+        # invalidate the cache for the conversation
+        await invalidate_cache("conversations:in_progress_poll", conversation_id)
+
+        upd_conv_pyd: ConversationRead = ConversationRead.model_validate(updated_conversation)
+        return upd_conv_pyd.model_dump(mode="json")
+
+    if "text/event-stream" in request.headers.get("accept", ""):
+        response = stream_turn(request, run_turn, conversation_id)
+    else:
+        response = JSONResponse(content=await run_turn())
 
     agent_security_settings = agent.security_settings if agent and hasattr(agent, "security_settings") else None
+    apply_agent_cors_headers(request, response, agent_security_settings)
 
-    json_response = JSONResponse(content=upd_conv_pyd.model_dump(mode="json"))
-    apply_agent_cors_headers(request, json_response, agent_security_settings)
-
-    return json_response
+    return response
 
 
 async def _any_conversation_read(request: Request):
@@ -864,6 +936,12 @@ async def _any_conversation_read(request: Request):
         if has_permission(perms, P.Conversation.READ) or has_permission(perms, P.Conversation.READ_IN_PROGRESS):
             return
     raise AppException(ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE, status_code=403)
+
+
+async def _agent_id_of_conversation(service: ConversationService, conversation_id: UUID) -> UUID | None:
+    conversation = await service.get_conversation_by_id_with_operator_agent(conversation_id)
+    agent = conversation.operator.agent if conversation and conversation.operator else None
+    return agent.id if agent else None
 
 
 @router.get(
@@ -929,31 +1007,38 @@ async def finalize(
                 msg_type="finalize",
                 room_id=roomId,
                 current_user_id=get_current_user_id(),
+                payload={"conversation_id": str(conversation_id)},
                 required_topic="finalize",
                 tenant_id=tenant_id,
             )
         )
 
-    # Notify dashboard and conversation room
-    notify_socket(conversation_id)
-    notify_socket(SocketRoomType.DASHBOARD)
-
     # Resolve analyst: explicit override > agent's configured analyst > default seed
     analyst_id = finalize.llm_analyst_id
+    agent_id = None
     if not analyst_id:
         conversation = await service.get_conversation_by_id(conversation_id, raise_not_found=False)
         if conversation:
             agent = await agent_config_service.get_by_operator_id(conversation.operator_id)
+            agent_id = agent.id
             if agent and agent.llm_analyst_id:
                 analyst_id = agent.llm_analyst_id
+    else:
+        agent_id = await _agent_id_of_conversation(service, conversation_id)
 
     finalized_conversation_analysis = await service.finalize_in_progress_conversation(
         conversation_id=conversation_id,
         llm_analyst_id=analyst_id,
     )
 
+    # Notify dashboard and conversation room only once the conversation is really finalized —
+    # announcing it up front makes listeners drop a conversation a failed finalize left running.
+    notify_socket(conversation_id)
+    notify_socket(SocketRoomType.DASHBOARD)
+
     # Increment finalized conversation counters in background
-    _ = asyncio.create_task(update_conversation_finalized(conversation_id))
+    if agent_id:
+        spawn(update_conversation_finalized(agent_id), name=f"analytics:finalize:{conversation_id}")
 
     await invalidate_cache("conversations:in_progress_poll", conversation_id)
     return finalized_conversation_analysis
@@ -1038,21 +1123,63 @@ async def get_conversation_count(
 
 
 @router.patch(
-    "/issues/{message_feedback_id}/status",
-    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+    "/issues/{message_feedback_id}",
+    response_model=MessageIssueRead,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.UPDATE))],
 )
-async def update_message_issue_status(
+async def update_message_issue(
     message_feedback_id: UUID,
-    payload: IssueStatusUpdate,
+    payload: IssueUpdate,
     transcript_message_service: TranscriptMessageService = Injected(
         TranscriptMessageService
     ),
 ):
-    """Set the resolution status of a reported issue (a message comment)."""
-    issue = await transcript_message_service.set_issue_status(
-        message_feedback_id, payload.status
-    )
-    return {"message_feedback_id": str(message_feedback_id), "status": issue.status}
+    """Partially update a reported issue: omitted fields are kept, null clears."""
+    return await transcript_message_service.update_issue(message_feedback_id, payload)
+
+
+@router.get(
+    "/issues/{message_feedback_id}/notes",
+    response_model=list[IssueNoteRead],
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def list_message_issue_notes(
+    message_feedback_id: UUID,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    return await transcript_message_service.list_issue_notes(message_feedback_id)
+
+
+@router.post(
+    "/issues/{message_feedback_id}/notes",
+    response_model=IssueNoteRead,
+    status_code=201,
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.UPDATE))],
+)
+async def add_message_issue_note(
+    message_feedback_id: UUID,
+    payload: IssueNoteCreate,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    return await transcript_message_service.add_issue_note(message_feedback_id, payload)
+
+
+@router.get(
+    "/issues/{message_feedback_id}/history",
+    response_model=list[IssueHistoryEvent],
+    dependencies=[Depends(auth), Depends(permissions(P.Conversation.READ))],
+)
+async def list_message_issue_history(
+    message_feedback_id: UUID,
+    transcript_message_service: TranscriptMessageService = Injected(
+        TranscriptMessageService
+    ),
+):
+    return await transcript_message_service.list_issue_history(message_feedback_id)
 
 
 @router.delete(
@@ -1120,7 +1247,8 @@ async def add_message_feedback(
 
         # Fire incremental analytics update for thumbs in background
         is_thumbs_up = transcript_feedback.feedback in (Feedback.GOOD, Feedback.VERY_GOOD)
-        _ = asyncio.create_task(update_feedback_given(conversation_id, is_thumbs_up))
+        if agent_id := await _agent_id_of_conversation(conversation_service, conversation_id):
+            spawn(update_feedback_given(agent_id, is_thumbs_up), name=f"analytics:thumbs:{conversation_id}")
 
     return {"message": f"Successfully added message feedback, for message id:{message_id} "}
 

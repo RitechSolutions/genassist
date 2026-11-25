@@ -9,7 +9,7 @@ describe("modelTypeLabel", () => {
   });
 
   it("falls back to the raw value for unknown types", () => {
-    expect(modelTypeLabel("catboost")).toBe("catboost");
+    expect(modelTypeLabel("not_a_model_type")).toBe("not_a_model_type");
   });
 
   it("renders an em dash for missing types", () => {

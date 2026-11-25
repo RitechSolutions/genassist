@@ -7,6 +7,7 @@ import type {
   IntegrationsResponse,
 } from "@/interfaces/dashboard.interface";
 import type { Notification } from "@/interfaces/notification.interface";
+import type { ExactInterval } from "@/helpers/dateRange";
 
 /**
  * Fetch complete dashboard data
@@ -81,12 +82,18 @@ export const fetchDashboardConversations = async (
  * Fetch agent statistics for dashboard
  */
 export const fetchDashboardAgents = async (
-  days: number = 30
+  days: number = 30,
+  today?: ExactInterval
 ): Promise<AgentStatsResponse | null> => {
+  const params = new URLSearchParams({ days: String(days) });
+  if (today) {
+    params.set("today_start", today.start.toISOString());
+    params.set("today_end", today.endExclusive.toISOString());
+  }
   try {
     return await apiRequest<AgentStatsResponse>(
       "get",
-      `/dashboard/agents?days=${days}`
+      `/dashboard/agents?${params}`
     );
   } catch (error) {
     console.error("Error fetching dashboard agents:", error);

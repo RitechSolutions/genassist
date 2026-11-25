@@ -23,7 +23,7 @@ _VOLATILE_VARS = [
 ]
 
 _AGENT_CONFIG = {"providerId": "prov-1", "type": "ToolSelector", "memory": False}
-_SUB_CONFIG = {"providerId": "prov-1", "mode": "single_turn", "timeoutSeconds": 120}
+_SUB_CONFIG = {"providerId": "prov-1", "mode": "single_turn", "timeoutSeconds": 120, "memory": False}
 
 
 def _state():
@@ -32,6 +32,7 @@ def _state():
         workflow={"nodes": [], "edges": []},
         initial_values={},
         get_memory=MagicMock(return_value=None),
+        get_session=MagicMock(return_value={}),
     )
 
 
@@ -95,7 +96,25 @@ class TestVolatilityGate:
         kwargs = await _run(node_cls, module, config, node_data={"name": "Agent"})
 
         assert kwargs["stable_volatile_parts"] is not None
-        assert kwargs["system_prompt"].startswith("You are a helpful assistant.")
+        expected = "You are a helpful specialist sub-agent." if node_cls is SubAgentNode else "You are a helpful assistant."
+        assert kwargs["system_prompt"].startswith(expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("node_cls,module,config", _NODES)
+class TestMaxIterations:
+    @pytest.mark.parametrize("stored", [None, 0], ids=repr)
+    async def test_an_empty_stored_value_runs_with_seven(self, node_cls, module, config, stored):
+        kwargs = await _run(
+            node_cls, module, {**config, "maxIterations": stored}, node_data={}, tools=[MagicMock(name="tool")]
+        )
+
+        assert kwargs["max_iterations"] == 7
+
+    async def test_a_set_value_is_kept(self, node_cls, module, config):
+        kwargs = await _run(node_cls, module, {**config, "maxIterations": 3}, node_data={})
+
+        assert kwargs["max_iterations"] == 3
 
 
 class TestTimestampedSystemPromptHelper:

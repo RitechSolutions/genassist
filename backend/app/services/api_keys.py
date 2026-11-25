@@ -2,27 +2,26 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import UUID
+from cryptography.fernet import InvalidToken
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.decorator import cache
 from injector import inject
 from starlette_context import context
-from uuid import UUID
-from app.auth.utils import current_user_is_admin, generate_api_key, hash_api_key
-from app.auth.utils import get_current_user_id
+from app.auth.utils import current_user_is_admin, generate_api_key, get_current_user_id, hash_api_key
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.utils.date_time_utils import utc_now
 from app.core.utils.encryption_utils import decrypt_key, encrypt_key
 from app.db.models import ApiKeyModel
 from app.db.models.audit_log import AuditLogModel
+from app.repositories.api_keys import ApiKeysRepository, api_key_key_builder
 from app.repositories.audit_logs import AuditLogRepository
 from app.repositories.roles import RolesRepository
-from app.schemas.api_key import ApiKeyCreate, ApiKeyInternal, ApiKeyRotate, ApiKeyUpdate
-from app.repositories.api_keys import ApiKeysRepository, api_key_key_builder
-from app.schemas.filter import ApiKeysFilter
+from app.schemas.api_key import ApiKeyCreate, ApiKeyCreateRead, ApiKeyInternal, ApiKeyRotate, ApiKeySafeRead, ApiKeyUpdate
+from app.schemas.common import PaginatedResponse
+from app.schemas.filter import ApiKeyListFilter, ApiKeysFilter
 from app.schemas.role import RoleRead
-from cryptography.fernet import InvalidToken
-
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +86,7 @@ class ApiKeysService:
         )
 
         # Build the pydantic return object, including the 'key_val'
-        api_key_pyd_model.key_val = generated_api_key
-        return api_key_pyd_model
+        return self._with_secret(api_key_pyd_model, generated_api_key)
 
     async def get(self, api_key_id: UUID):
         api_key = await self.repository.get_by_id(api_key_id)
@@ -99,12 +97,17 @@ class ApiKeysService:
     async def get_all(self, api_key_filter: ApiKeysFilter):
         return await self.repository.get_all(api_key_filter)
 
+    async def get_list_paginated(self, filter_obj: ApiKeyListFilter) -> PaginatedResponse[ApiKeySafeRead]:
+        rows, total = await self.repository.get_list_paginated(filter_obj)
+        items = [ApiKeySafeRead.model_validate(api_key) for api_key in rows]
+        return PaginatedResponse.from_filter(items, total, filter_obj)
+
     async def reveal(self, api_key_id: UUID):
         api_key = await self.repository.get_by_id(api_key_id)
         if not api_key:
             raise AppException(error_key=ErrorKey.API_KEY_NOT_FOUND, status_code=404)
         try:
-            api_key.key_val = decrypt_key(api_key.key_val)
+            secret = decrypt_key(api_key.key_val)
         except InvalidToken:
             raise AppException(error_key=ErrorKey.INVALID_API_KEY_ENCRYPTION, status_code=500)
 
@@ -120,7 +123,7 @@ class ApiKeysService:
         self.audit_log_repository.db.add(audit_entry)
         await self.audit_log_repository.db.commit()
 
-        return api_key
+        return self._with_secret(api_key, secret)
 
 
     async def delete(self, api_key_id: UUID):
@@ -161,8 +164,10 @@ class ApiKeysService:
             hashed_value,
             data.overlap_seconds,
         )
-        model.key_val = generated_api_key
-        return model
+        return self._with_secret(model, generated_api_key)
+
+    def _with_secret(self, api_key: ApiKeyModel, secret: str) -> ApiKeyCreateRead:
+        return ApiKeyCreateRead.model_validate(api_key).model_copy(update={"key_val": secret})
 
     def _validate_role_ids(self, user_roles: list[RoleRead], requested_role_ids: list[UUID]) -> None:
         """

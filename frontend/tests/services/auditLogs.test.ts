@@ -17,7 +17,7 @@ const mockApiRequest = vi.mocked(apiRequest);
 beforeEach(() => vi.clearAllMocks());
 
 describe("fetchAuditLogs", () => {
-  it("appends every truthy filter plus limit/offset and returns the list", async () => {
+  it("appends every truthy filter plus limit and returns the list", async () => {
     const logs = [{ id: "1" }];
     mockApiRequest.mockResolvedValue(logs as never);
 
@@ -28,32 +28,46 @@ describe("fetchAuditLogs", () => {
       "users",
       "alice",
       50,
-      10,
     );
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
       "/audit-logs/search?date_from=2024-01-01&date_to=2024-02-01&action=UPDATE" +
-        "&table_name=users&user=alice&limit=50&offset=10",
+        "&table_name=users&user=alice&limit=50",
     );
     expect(result).toEqual(logs);
   });
 
-  it("omits empty filters, keeping only limit and offset", async () => {
+  it("omits empty filters, keeping only limit", async () => {
     mockApiRequest.mockResolvedValue([] as never);
 
-    await fetchAuditLogs("", "", "", "", "", 25, 0);
+    await fetchAuditLogs("", "", "", "", "", 25);
 
     expect(mockApiRequest).toHaveBeenCalledWith(
       "GET",
-      "/audit-logs/search?limit=25&offset=0",
+      "/audit-logs/search?limit=25",
+    );
+  });
+
+  it("sends the last loaded row as the cursor with its timestamp untouched", async () => {
+    mockApiRequest.mockResolvedValue([] as never);
+
+    await fetchAuditLogs("", "", "", "", "", 30, {
+      id: "31",
+      modified_at: "2026-11-03T12:00:01.123458Z",
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/audit-logs/search?limit=30" +
+        "&before_modified_at=2026-11-03T12%3A00%3A01.123458Z&before_id=31",
     );
   });
 
   it("returns an empty array when the response is null", async () => {
     mockApiRequest.mockResolvedValue(null as never);
 
-    await expect(fetchAuditLogs("", "", "", "", "", 25, 0)).resolves.toEqual([]);
+    await expect(fetchAuditLogs("", "", "", "", "", 25)).resolves.toEqual([]);
   });
 });
 

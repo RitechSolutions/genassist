@@ -11,7 +11,9 @@ import logging
 import threading
 import time
 from typing import Any
+from uuid import uuid4
 
+import redis
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -30,6 +32,26 @@ _refreshing: set[str] = set()
 _global_generation = 0
 _tenant_generation: dict[str, int] = {}
 _sync_session_factories: dict[str, sessionmaker[Any]] = {}
+_REDIS_TIMEOUT_SECONDS = 0.25
+_redis_client: redis.Redis | None = None
+_redis_skip_until = 0.0
+_seen_version: dict[str, str | None] = {}
+
+
+def _redis() -> redis.Redis:
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = redis.Redis.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+            socket_timeout=_REDIS_TIMEOUT_SECONDS,
+            socket_connect_timeout=_REDIS_TIMEOUT_SECONDS,
+        )
+    return _redis_client
+
+
+def _version_key(tenant: str) -> str:
+    return f"tenant:{tenant}:llm_cost_rates:version"
 
 
 def _session_factory_for_tenant(tenant: str) -> sessionmaker[Any]:
@@ -54,17 +76,43 @@ def _session_factory_for_tenant(tenant: str) -> sessionmaker[Any]:
         return _sync_session_factories[tenant]
 
 
-def invalidate_llm_cost_rates_cache(tenant: str | None = None) -> None:
+def _drop_local_copy(tenant: str | None) -> None:
     global _global_generation
+    if tenant is None:
+        _global_generation += 1
+        _cache.clear()
+        _next_retry.clear()
+    else:
+        _tenant_generation[tenant] = _tenant_generation.get(tenant, 0) + 1
+        _cache.pop(tenant, None)
+        _next_retry.pop(tenant, None)
+
+
+def invalidate_llm_cost_rates_cache(tenant: str | None = None) -> None:
     with _lock:
-        if tenant is None:
-            _global_generation += 1
-            _cache.clear()
-            _next_retry.clear()
-        else:
-            _tenant_generation[tenant] = _tenant_generation.get(tenant, 0) + 1
-            _cache.pop(tenant, None)
-            _next_retry.pop(tenant, None)
+        _drop_local_copy(tenant)
+    if tenant is None:
+        return
+    try:
+        _redis().set(_version_key(tenant), uuid4().hex)
+    except Exception as e:
+        logger.warning("Could not share the llm_cost_rates change for tenant %s: %s", tenant, e)
+
+
+def _drop_if_changed_elsewhere(tenant: str) -> None:
+    global _redis_skip_until
+    if time.monotonic() < _redis_skip_until:
+        return
+    try:
+        version = _redis().get(_version_key(tenant))
+    except Exception as e:
+        _redis_skip_until = time.monotonic() + _FAILURE_COOLDOWN_SECONDS
+        logger.warning("Could not read the llm_cost_rates version for tenant %s: %s", tenant, e)
+        return
+    with _lock:
+        if _seen_version.get(tenant) != version:
+            _seen_version[tenant] = version
+            _drop_local_copy(tenant)
 
 
 _PENDING_INVALIDATIONS = "llm_cost_rate_invalidations"
@@ -158,6 +206,7 @@ def get_db_pricing_nested(tenant: str) -> dict[str, dict[str, dict[str, float]]]
     """Cached {provider: {model: rates}} from llm_cost_rates, refreshed every _TTL_SECONDS.
     One DB load at a time per tenant. An expired warm entry is served stale while a
     background thread refreshes. Only a cold miss blocks, rather than pricing with an empty table"""
+    _drop_if_changed_elsewhere(tenant)
     while True:
         with _condition:
             while True:

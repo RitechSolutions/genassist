@@ -6,6 +6,7 @@ import {
   EvaluationBundleSet,
 } from "@/interfaces/evalBundle.interface";
 import { EvaluationToolCatalog } from "@/interfaces/testEvaluation.interface";
+import type { CategoryQuery } from "@/services/testEvaluations";
 
 const slugify = (value: string): string =>
   value
@@ -17,8 +18,11 @@ const slugify = (value: string): string =>
 export const bundleFilename = (evaluationName: string): string =>
   `evaluation-${slugify(evaluationName) || "bundle"}.json`;
 
-export const bundleSetFilename = (workflowName: string): string =>
-  `evaluations-${slugify(workflowName) || "workflow"}.json`;
+export const bundleSetFilename = (workflowName: string, filter: CategoryQuery = {}): string => {
+  // A file with one category's evaluations is named after it, so it isn't taken for the whole workflow.
+  const scope = filter.uncategorized ? "no-category" : filter.category ? slugify(filter.category) || "category" : "";
+  return `evaluations-${slugify(workflowName) || "workflow"}${scope ? `-${scope}` : ""}.json`;
+};
 
 export const downloadJsonFile = (filename: string, data: unknown): void => {
   const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -77,8 +81,8 @@ export const catalogOptionsForKind = (
   return catalog.action_nodes.map((node) => ({ id: node.id, label: node.label }));
 };
 
-/** Node type per target-workflow node id. Routers are omitted upstream because
- * they are all routerNode, so a type comparison there says nothing. */
+/** Node type per target-workflow node id. Routers carry theirs too, since a
+ * Conditional Router and a Switch record different routes. */
 export const buildNodeTypeIndex = (
   catalog: EvaluationToolCatalog | null,
 ): Record<string, string> => {
@@ -89,6 +93,9 @@ export const buildNodeTypeIndex = (
     for (const tool of agent.tools) {
       if (tool.type) types[tool.id] = tool.type;
     }
+  }
+  for (const router of catalog.routers) {
+    if (router.type) types[router.id] = router.type;
   }
   for (const node of catalog.action_nodes) {
     if (node.type) types[node.id] = node.type;

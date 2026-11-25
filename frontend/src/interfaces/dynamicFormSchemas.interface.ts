@@ -5,8 +5,10 @@
  * to ensure consistency and maintainability.
  */
 
+import type { TextareaSize } from '@/components/ui/textarea-sizing';
+
 // Field types supported across all schemas
-export type FieldType = 'text' | 'number' | 'password' | 'select' | 'boolean' | 'tags' | 'files';
+export type FieldType = 'text' | 'textarea' | 'number' | 'password' | 'select' | 'boolean' | 'tags' | 'files';
 
 // The set of values a form field can hold.
 export type FieldValue = string | number | boolean | string[] | undefined;
@@ -27,12 +29,17 @@ export interface FieldSchema {
   type: FieldType; // Field type
   label: string; // Display label for the field
   required: boolean; // Whether field is required (default: false)
+  alternative_names?: string[]; // Other fields that may satisfy this requirement
   description?: string; // Field description
   placeholder?: string; // Placeholder text
   default?: FieldValue; // Default value
 
   // For select fields
   options?: Array<{ value: string; label: string }>; // Options for select fields
+
+  // For textarea fields
+  size?: TextareaSize; // Height preset (default: 'body')
+  rows?: number; // Explicit row count, overriding the preset
 
   // For number fields
   min?: number; // Minimum value for number fields
@@ -95,4 +102,3 @@ export interface TypeSchema {
 export interface DynamicFormSchema {
   [key: string]: TypeSchema;
 }
-

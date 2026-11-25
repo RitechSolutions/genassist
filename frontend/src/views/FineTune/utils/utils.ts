@@ -1,5 +1,5 @@
-import type { FineTuneJob } from "@/interfaces/fineTune.interface";
 import type { AccuracyPoint } from "@/views/FineTune/types";
+import { displayTimeZone } from "@/helpers/timeZone";
 
 export const inProgressStatuses = new Set([
   "running",
@@ -72,6 +72,7 @@ export const formatDate = (value: unknown): string => {
     hour: "numeric",
     minute: "numeric",
     second: "numeric",
+    timeZone: displayTimeZone(),
   });
 };
 

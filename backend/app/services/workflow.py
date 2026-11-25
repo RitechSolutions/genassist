@@ -118,6 +118,21 @@ class WorkflowService:
         )
         return rows.scalar_one_or_none()
 
+    async def same_lineage(self, workflow_id: UUID, other_id: Optional[UUID]) -> bool:
+        if other_id is None:
+            return False
+        if workflow_id == other_id:
+            return True
+        agent_ids = await self.repository.get_agent_ids([workflow_id, other_id])
+        agent_id = agent_ids.get(workflow_id)
+        return agent_id is not None and agent_id == agent_ids.get(other_id)
+
+    async def node_in_another_lineage(self, workflow_id: UUID, node_id: str, node_name: str) -> bool:
+        agent_ids = await self.repository.get_agent_ids([workflow_id])
+        return await self.repository.node_exists_outside(
+            workflow_id, agent_ids.get(workflow_id), node_id, node_name
+        )
+
     async def get_by_id(self, workflow_id: UUID) -> WorkflowInDB:
         orm_obj = await self.repository.get_by_id(workflow_id)
         if not orm_obj:
@@ -172,11 +187,27 @@ class WorkflowService:
                     error_detail=detail,
                 ) from e
 
+    @staticmethod
+    def _validate_loops(payload: dict) -> None:
+        """Save-time Loop wiring check"""
+        from app.modules.workflow.engine.loops import LoopTopologyError, validate_loop_topology
+
+        try:
+            validate_loop_topology(payload.get("nodes"), payload.get("edges"))
+        except LoopTopologyError as e:
+            raise AppException(
+                error_key=ErrorKey.LOOP_INVALID_TOPOLOGY,
+                status_code=400,
+                error_variables=[str(e)],
+                error_detail=str(e),
+            ) from e
+
     # ---------- WRITE ----------
     async def create(self, data: WorkflowCreate) -> WorkflowInDB:
         # convert schema ➜ ORM
         payload = data.model_dump()
         self._validate_sub_agents(payload)
+        self._validate_loops(payload)
         # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
         payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
         new_workflow = WorkflowModel(**payload)
@@ -193,6 +224,7 @@ class WorkflowService:
         # mutate ORM object in place
         payload = data.model_dump()
         self._validate_sub_agents(payload)
+        self._validate_loops(payload)
         # Encrypt hidden Chat Input defaults so they are never stored in plaintext.
         payload["nodes"] = encrypt_hidden_defaults(payload.get("nodes"))
         for field, value in payload.items():
@@ -205,17 +237,54 @@ class WorkflowService:
         result.nodes = decrypt_hidden_defaults(result.nodes)
         return result
 
+    async def lock_for_activation(self, workflow_id: UUID) -> None:
+        if not await self.repository.lock_live_shared(workflow_id):
+            raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
+
     async def delete(self, workflow_id: UUID) -> None:
-        orm_obj = await self.repository.get_by_id(workflow_id, eager=["agent"])
+        orm_obj = await self.repository.get_locked(workflow_id)
         if not orm_obj:
             raise AppException(status_code=404, error_key=ErrorKey.WORKFLOW_NOT_FOUND)
-        if orm_obj.agent:
-            await self._invalidate_agent_caches(orm_obj.agent.id)
-        await self.repository.delete(orm_obj)
+        active_id = await self.get_active_version_id(workflow_id)
+        if active_id == workflow_id:
+            raise AppException(status_code=409, error_key=ErrorKey.WORKFLOW_VERSION_ACTIVE)
+        mcp_servers = await self.repository.live_mcp_server_names(workflow_id)
+        if mcp_servers:
+            raise AppException(
+                status_code=409,
+                error_key=ErrorKey.WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER,
+                error_variables=[", ".join(mcp_servers)],
+            )
+        ml_models = await self.repository.live_ml_model_names(workflow_id)
+        if ml_models:
+            raise AppException(
+                status_code=409,
+                error_key=ErrorKey.WORKFLOW_VERSION_IN_USE_BY_ML_MODEL,
+                error_variables=[", ".join(ml_models)],
+            )
+        await self.repository.repoint_test_data(workflow_id, active_id)
+        await self.repository.soft_delete(orm_obj)
 
     async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> None:
-        """Retire every version of an agent's workflow when the agent is deleted."""
-        await self.repository.soft_delete_by_agent(agent_id, commit=commit)
+        """Retire every version of an agent's workflow when the agent is deleted.
+
+        Refused with a 409 while a live ML pipeline configuration trains on one
+        of the versions, so the model never ends up on a deleted workflow. The
+        versions are retired first and the check runs on exactly those ids: a
+        config write in flight holds its version, so the UPDATE waits for it
+        and the check then sees the new config. A refusal undoes the UPDATE.
+        """
+        async with self.repository.db.begin_nested():
+            retired = await self.repository.soft_delete_by_agent(agent_id, commit=False)
+            ml_models = await self.repository.live_ml_model_names_for(retired)
+            if ml_models:
+                raise AppException(
+                    status_code=409,
+                    error_key=ErrorKey.AGENT_IN_USE_BY_ML_MODEL,
+                    error_variables=[", ".join(ml_models)],
+                )
+        if commit:
+            await self.repository.db.flush()
 
     async def _invalidate_agent_caches(self, agent_id: UUID) -> None:
         """Best-effort bust of every agent cache that embeds the workflow.

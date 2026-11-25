@@ -96,6 +96,7 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
         <Label htmlFor="query">Query</Label>
         <DraggableTextArea
           id="query"
+          size="description"
           value={values.query}
           onChange={(e) => setField("query", e.target.value)}
           placeholder="Enter a query for this node"
@@ -110,7 +111,7 @@ export const KnowledgeBaseDialog: React.FC<KnowledgeBaseDialogProps> = (
             id="limit"
             type="number"
             value={values.limit}
-            onChange={(e) => setField("limit", parseInt(e.target.value))}
+            onChange={(e) => setField("limit", parseInt(e.target.value) || 5)}
             placeholder="5"
             min="1"
             className="w-full"

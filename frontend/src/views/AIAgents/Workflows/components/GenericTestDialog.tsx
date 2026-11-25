@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useContext, useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,13 +9,22 @@ import {
 import { Button } from "@/components/button";
 import { Play, X } from "lucide-react";
 import { NodeData, HumanInTheLoopNodeData } from "../types/nodes";
-import { testNode } from "@/services/workflows";
+import {
+  getNodeTestFailureMessage,
+  getTrainDataSourceTestFailureMessage,
+  isTrainingWaitAborted,
+  testNode,
+  TrainingJob,
+} from "@/services/workflows";
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
+import { testNodeSettingsKey, upstreamSourcesKey } from "../utils/trainingInputFile";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
+import { WorkflowContext } from "../context/WorkflowContext";
 import { SchemaField, SchemaType } from "../types/schemas";
 import { useAudioTest } from "../hooks/useAudioTest";
 import { TestInputFields, STTAudioInput } from "./TestInputFields";
 import { TestOutputSection } from "./TestOutputSection";
+import { TrainingJobProgress } from "./TrainingJobProgress";
 
 export interface GenericTestInputField {
   id: string;
@@ -51,6 +60,24 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     null
   );
   const [isLoading, setIsLoading] = useState(false);
+  // Set while a Train Model test runs on the background worker.
+  const [trainingJob, setTrainingJob] = useState<TrainingJob | null>(null);
+  // Stops waiting for a training job when the dialog closes; the job keeps
+  // running and the next test run follows it (or the user cancels it).
+  const testAbortRef = useRef<AbortController | null>(null);
+  const startTestRun = (): AbortSignal => {
+    testAbortRef.current?.abort();
+    testAbortRef.current = new AbortController();
+    return testAbortRef.current.signal;
+  };
+
+  useEffect(() => {
+    if (!isOpen) testAbortRef.current?.abort();
+  }, [isOpen]);
+
+  useEffect(() => () => testAbortRef.current?.abort(), []);
+  // A run aborted because a new one started must not reset the new run's state.
+  const isCurrentRun = (signal: AbortSignal) => testAbortRef.current?.signal === signal;
   const [error, setError] = useState<string | null>(null);
   const [inputFields, setInputFields] = useState<GenericTestInputField[]>([]);
   const [availableData, setAvailableData] = useState<Record<
@@ -63,8 +90,22 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
     getAudioKey, handleAudioFileUpload, startRecording, stopRecording,
   } = useAudioTest({ nodeType, nodeData, setFormData, setError });
 
-  const { updateNodeOutput, getAvailableDataForNode, getNodeOutput } =
+  const { updateNodeOutput, getAvailableDataForNode, getNodeOutput, nodes, edges } =
     useWorkflowExecution();
+  const workflowId = useContext(WorkflowContext)?.workflow?.id;
+
+  // The Train Data Source settings this test's output comes from - see
+  // upstreamSourcesKey. A Train Data Source is tagged with its own (possibly
+  // unsaved) settings. Any other node read its input from the upstream nodes'
+  // Test Node outputs (the same ones getAvailableDataForNode filled the form
+  // from), so it is checked against those - see testNodeSettingsKey.
+  const testSettingsKey = () => {
+    if (!nodeId) return undefined;
+    if (nodeType === "trainDataSourceNode") {
+      return upstreamSourcesKey(nodeId, nodes, edges, { id: nodeId, type: nodeType, data: nodeData });
+    }
+    return testNodeSettingsKey(nodeId, nodes, edges, getNodeOutput);
+  };
 
   // Extract variables from node config when dialog opens
   useEffect(() => {
@@ -94,8 +135,6 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       let variables = extractVariablesFromNodeConfig(nodeData);
       variables = variables.filter((v) => v !== "direct_input");
       const schemaFields = extractInputSchemaFields(nodeData);
-      // Create a set of schema field names to avoid duplicates
-      const schemaFieldNames = new Set(schemaFields.map((field) => field.id));
       const availableData = nodeId ? getAvailableDataForNode(nodeId) : null;
 
       if (!nodeId) {
@@ -251,36 +290,59 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
   const allFieldsOptional = nodeType === "humanInTheLoopNode" && inputFields.length > 0 && inputFields.every((f) => !f.required);
 
   const handleSkip = async () => {
+    const signal = startTestRun();
     setIsLoading(true);
     setError(null);
     setOutput(null);
 
     try {
-      const response = await testNode({
-        input_data: {},
-        node_type: nodeType,
-        node_config: nodeData,
-      });
+      const response = await testNode(
+        {
+          input_data: {},
+          node_type: nodeType,
+          node_config: nodeData,
+          node_id: nodeId,
+          workflow_id: workflowId,
+        },
+        { onTrainingProgress: setTrainingJob, signal }
+      );
+
+      setError(
+        nodeType === "trainDataSourceNode"
+          ? getTrainDataSourceTestFailureMessage(response)
+          : getNodeTestFailureMessage(response)
+      );
 
       if (response && response.output !== undefined) {
         const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
         setOutput(Object.assign({}, response, { output: truncatedOutput }));
         if (nodeId) {
-          updateNodeOutput(nodeId, truncatedOutput, nodeType, nodeData.name || nodeType);
+          updateNodeOutput(
+            nodeId,
+            truncatedOutput,
+            nodeType,
+            nodeData.name || nodeType,
+            testSettingsKey()
+          );
         }
       } else {
         setOutput(response);
       }
     } catch (err) {
+      if (isTrainingWaitAborted(err)) return;
       const errorMessage = err instanceof Error ? err.message : "An error occurred";
       setError(errorMessage);
       setOutput({ status: "error", output: errorMessage });
     } finally {
-      setIsLoading(false);
+      if (isCurrentRun(signal)) {
+        setIsLoading(false);
+        setTrainingJob(null);
+      }
     }
   };
 
   const handleRun = async () => {
+    const signal = startTestRun();
     setIsLoading(true);
     setError(null);
     setOutput(null);
@@ -362,12 +424,22 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
         }
       }
 
-      const response = await testNode({
-        input_data: parsedData,
-        node_type: nodeType,
-        node_config: nodeData,
-      });
+      const response = await testNode(
+        {
+          input_data: parsedData,
+          node_type: nodeType,
+          node_config: nodeData,
+          node_id: nodeId,
+          workflow_id: workflowId,
+        },
+        { onTrainingProgress: setTrainingJob, signal }
+      );
 
+      setError(
+        nodeType === "trainDataSourceNode"
+          ? getTrainDataSourceTestFailureMessage(response)
+          : getNodeTestFailureMessage(response)
+      );
 
       if (response && response.output !== undefined) {
         const truncatedOutput = truncateNodeOutput(response.output) as string | Record<string, unknown>;
@@ -380,7 +452,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
               nodeId,
               truncatedOutput,
               nodeType,
-              nodeData.name || nodeType
+              nodeData.name || nodeType,
+              testSettingsKey()
             );
         }
       } else {
@@ -388,18 +461,22 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
       }
 
     } catch (err) {
+      if (isTrainingWaitAborted(err)) return;
       const errorMessage =
         err instanceof Error ? err.message : "An error occurred";
       setError(errorMessage);
       setOutput({ status: "error", output: errorMessage });
     } finally {
-      setIsLoading(false);
+      if (isCurrentRun(signal)) {
+        setIsLoading(false);
+        setTrainingJob(null);
+      }
     }
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[85vh] w-full overflow-hidden" style={{ zIndex: 1201 }}>
+      <DialogContent className="w-[95vw] max-w-[min(1100px,95vw)] max-h-[90vh] flex flex-col overflow-hidden" style={{ zIndex: 1201 }}>
         <DialogHeader>
           <DialogTitle>{`Test ${nodeName}`}</DialogTitle>
           <p className="text-sm text-muted-foreground">
@@ -415,7 +492,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           )}
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-1 max-h-[calc(85vh-180px)] min-w-0">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-1 min-w-0">
           <div className="flex flex-col space-y-4 min-w-0 w-full">
             {isAudioInputNode && (
               <STTAudioInput
@@ -441,6 +518,8 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
               />
             )}
 
+            {isLoading && trainingJob && <TrainingJobProgress job={trainingJob} />}
+
             <TestOutputSection
               output={output}
               error={error}
@@ -449,7 +528,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="mt-4">
           <Button variant="outline" onClick={onClose}>
             <X className="h-4 w-4 mr-2" />
             Close

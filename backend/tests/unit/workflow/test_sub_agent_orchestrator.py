@@ -87,6 +87,7 @@ async def test_run_child_turn_uses_derived_thread_and_persists_history():
     assert kwargs["thread_id"] == "root:sub:child:inv"
     assert kwargs["persist"] is False
     assert kwargs["input_data"]["message"] == "do it"
+    assert kwargs["input_data"]["session"] == {"message": "do it"}
     child_state.get_memory().add_input_output.assert_awaited_once_with("do it", "done")
     session.close.assert_awaited_once()
     set_tenant.assert_called_once_with("tenant-1")
@@ -161,7 +162,7 @@ async def test_run_child_turn_passes_canonical_nested_session():
     input_data = engine.execute_from_node.call_args.kwargs["input_data"]
     assert input_data["message"] == "task"
     assert not any(isinstance(k, str) and k.startswith("session.") for k in input_data)
-    assert input_data["session"] == {"message": "orig", "thread_id": "t", "agent_id": "a"}
+    assert input_data["session"] == {"message": "task", "thread_id": "t", "agent_id": "a"}
 
 
 @pytest.mark.asyncio
@@ -181,6 +182,23 @@ async def test_run_child_turn_forces_child_pii_when_inherited():
     built_config = engine_cls.call_args.args[0]
     child_node = next(n for n in built_config["nodes"] if n["id"] == "child")
     assert child_node["data"]["piiMasking"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_child_turn_keeps_the_saved_workflow_of_a_test_run():
+    stack, _, _, _, engine_cls = _patch_env(_fake_child_state())
+    with stack:
+        await orchestrator.run_child_turn(
+            workflow={**_WORKFLOW, "config": {"id": "test-workflow", "saved_workflow_id": "wf-saved"}},
+            root_thread_id="root",
+            child_node_id="child",
+            invocation_id="inv",
+            message="do it",
+            timeout_seconds=120,
+        )
+    built_config = engine_cls.call_args.args[0]
+    assert built_config["id"] == "test-workflow"
+    assert built_config["saved_workflow_id"] == "wf-saved"
 
 
 def test_envelope_round_trip_and_gating():

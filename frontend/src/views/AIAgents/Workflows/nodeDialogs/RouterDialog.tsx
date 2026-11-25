@@ -246,6 +246,8 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
                   <PromptEditorButton
                     workflowId={workflow.id}
                     nodeId={props.nodeId}
+                    nodeType={props.nodeType}
+                    nodeLabel={values.name}
                     promptField="systemPrompt"
                     currentValue={values.systemPrompt}
                     onPromptChange={(val) => setField("systemPrompt", val)}
@@ -255,10 +257,11 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
               </div>
               <DraggableTextArea
                 id="router-system-prompt"
+                size="body"
                 value={values.systemPrompt}
                 onChange={(e) => setField("systemPrompt", e.target.value)}
                 placeholder="Optional. Leave empty to use the built-in routing instructions."
-                className="w-full min-h-[100px] text-sm"
+                className="w-full text-sm"
               />
             </div>
 
@@ -269,6 +272,8 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
                   <PromptEditorButton
                     workflowId={workflow.id}
                     nodeId={props.nodeId}
+                    nodeType={props.nodeType}
+                    nodeLabel={values.name}
                     promptField="smartPrompt"
                     currentValue={values.smartPrompt}
                     onPromptChange={(val) => setField("smartPrompt", val)}
@@ -278,10 +283,11 @@ export const RouterDialog: React.FC<RouterDialogProps> = (props) => {
               </div>
               <DraggableTextArea
                 id="router-smart-prompt"
+                size="body"
                 value={values.smartPrompt}
                 onChange={(e) => setField("smartPrompt", e.target.value)}
                 placeholder="Describe when the workflow should take the true branch. The model must answer only true or false."
-                className="w-full min-h-[120px] text-sm"
+                className="w-full text-sm"
               />
             </div>
 

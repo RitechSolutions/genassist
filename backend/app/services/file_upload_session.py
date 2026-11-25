@@ -17,6 +17,15 @@ from app.core.config.settings import file_storage_settings, settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
+from app.core.utils.storage_path import tenant_scoped_storage_prefix
+from app.core.utils.training_upload import (
+    check_training_upload_name,
+    check_training_upload_size,
+    is_training_upload,
+    training_upload_max_bytes,
+    training_upload_metadata,
+    training_upload_too_large,
+)
 from app.core.utils.upload_streaming import append_bytes_to_path
 from app.db.models.files_upload_session import FilesUploadSessionModel
 from app.repositories.file_upload_session import FileUploadSessionRepository
@@ -61,9 +70,22 @@ class FileUploadSessionService:
         self._session_dir = str(DATA_VOLUME / SESSION_SUBDIR)
         os.makedirs(self._session_dir, exist_ok=True)
 
-    def _max_upload_bytes(self) -> int:
+    def _max_upload_bytes(self, purpose: Optional[str] = None) -> int:
+        if is_training_upload(purpose):
+            return training_upload_max_bytes()
         # Backward compatible: if FILES_* is not present, fall back to KNOWLEDGE_*.
         return int(getattr(settings, "FILES_MAX_UPLOAD_BYTES", settings.FILES_MAX_UPLOAD_BYTES))
+
+    @staticmethod
+    def _purpose(row: Any) -> Optional[str]:
+        return getattr(row, "upload_purpose", None)
+
+    @staticmethod
+    def _over_limit_error(purpose: Optional[str], size: int, max_b: int, message: str) -> Exception:
+        """Training uploads get a 413 that names both sizes; others keep their 400."""
+        if is_training_upload(purpose):
+            return training_upload_too_large(size, max_b)
+        return ValueError(message)
 
     def _max_chunk_bytes(self) -> int:
         return int(
@@ -75,8 +97,12 @@ class FileUploadSessionService:
         original_filename: str,
         expected_size: Optional[int],
         content_type: Optional[str] = None,
+        purpose: Optional[str] = None,
     ) -> FilesUploadSessionCreateResponse:
-        max_b = self._max_upload_bytes()
+        if is_training_upload(purpose):
+            check_training_upload_name(original_filename)
+            check_training_upload_size(expected_size)
+        max_b = self._max_upload_bytes(purpose)
         if expected_size is not None and expected_size > max_b:
             max_mb = round(max_b / 1024 / 1024, 2)
             raise ValueError(f"Declared file size exceeds maximum allowed ({max_mb} MB).")
@@ -93,6 +119,7 @@ class FileUploadSessionService:
             expected_bytes=expected_size,
             error_message=None,
             result_json=None,
+            upload_purpose=purpose,
         )
         await self.repository.create(row)
         return FilesUploadSessionCreateResponse(
@@ -106,7 +133,6 @@ class FileUploadSessionService:
         chunk_bytes: bytes,
         chunk_index: int,
     ) -> int:
-        max_b = self._max_upload_bytes()
         max_chunk = self._max_chunk_bytes()
         if len(chunk_bytes) > max_chunk:
             raise ValueError(f"Chunk exceeds maximum chunk size ({max_chunk} bytes).")
@@ -117,12 +143,14 @@ class FileUploadSessionService:
         if row.status != STATUS_RECEIVING:
             raise ValueError(f"Cannot append to session in status: {row.status}")
 
+        purpose = self._purpose(row)
+        max_b = self._max_upload_bytes(purpose)
         new_total = row.bytes_received + len(chunk_bytes)
         if new_total > max_b:
             row.status = STATUS_FAILED
             row.error_message = f"Upload exceeds maximum allowed size ({max_b} bytes)."
             await self.repository.update(row)
-            raise ValueError(row.error_message)
+            raise self._over_limit_error(purpose, new_total, max_b, row.error_message)
 
         await append_bytes_to_path(row.temp_path, chunk_bytes)
         row.bytes_received = new_total
@@ -172,12 +200,13 @@ class FileUploadSessionService:
         if row.bytes_received <= 0:
             raise ValueError("No data received for this upload session.")
 
-        max_b = self._max_upload_bytes()
+        purpose = self._purpose(row)
+        max_b = self._max_upload_bytes(purpose)
         if row.bytes_received > max_b:
             row.status = STATUS_FAILED
             row.error_message = f"Upload exceeds maximum allowed size ({max_b} bytes)."
             await self.repository.update(row)
-            raise ValueError(row.error_message)
+            raise self._over_limit_error(purpose, row.bytes_received, max_b, row.error_message)
 
         if row.expected_bytes is not None and row.bytes_received != row.expected_bytes:
             raise ValueError(
@@ -220,6 +249,7 @@ class FileUploadSessionService:
                     path=sub_folder,
                     storage_provider=storage_provider.name,
                     file_extension=file_extension,
+                    file_metadata=training_upload_metadata(purpose),
                 )
 
                 created_file = await file_manager_service.create_file_from_local_path(
@@ -306,7 +336,11 @@ class FileUploadSessionService:
                 "Direct S3 upload is disabled. Set FILES_DIRECT_S3_UPLOAD_ENABLED=true.",
             )
 
-        max_b = self._max_upload_bytes()
+        purpose = payload.purpose
+        if is_training_upload(purpose):
+            check_training_upload_name(payload.original_filename)
+            check_training_upload_size(payload.expected_size)
+        max_b = self._max_upload_bytes(purpose)
         if payload.expected_size is not None and payload.expected_size > max_b:
             max_mb = round(max_b / 1024 / 1024, 2)
             raise ValueError(f"Declared file size exceeds maximum allowed ({max_mb} MB).")
@@ -365,6 +399,7 @@ class FileUploadSessionService:
 
         # Folder prefix: payload.path (if provided) overrides the route default.
         clean_sub_folder = _clean_prefix(getattr(payload, "path", None)) or _clean_prefix(sub_folder)
+        clean_sub_folder = tenant_scoped_storage_prefix(clean_sub_folder)
         object_key = f"{clean_sub_folder}/{unique_filename}" if clean_sub_folder else unique_filename
 
         # Pre-create a placeholder ``files`` row so the client gets a stable file_id
@@ -372,7 +407,7 @@ class FileUploadSessionService:
         # with size/mime_type on finalize, or soft-deleted on failure.
         user_meta = getattr(payload, "file_metadata", None)
         file_meta: Dict[str, Any] = dict(user_meta) if isinstance(user_meta, dict) else {}
-        file_meta.update({"direct_upload": True, "status": "pending"})
+        file_meta.update({"direct_upload": True, "status": "pending", **training_upload_metadata(purpose)})
         file_base = FileBase(
             name=unique_filename,
             original_filename=original_name,
@@ -434,6 +469,7 @@ class FileUploadSessionService:
             error_message=None,
             result_json=result_json,
             upload_mode=UPLOAD_MODE_DIRECT_S3,
+            upload_purpose=purpose,
         )
         try:
             await self.repository.create(row)
@@ -560,7 +596,8 @@ class FileUploadSessionService:
             raise ValueError("Uploaded object not found in S3.")
 
         actual_size = int(head.get("size") or 0)
-        max_b = self._max_upload_bytes()
+        purpose = self._purpose(row)
+        max_b = self._max_upload_bytes(purpose)
         if actual_size <= 0:
             await self._cleanup_direct_upload(
                 row,
@@ -580,8 +617,11 @@ class FileUploadSessionService:
                 object_key,
                 error=f"Uploaded object exceeds max allowed size ({max_b} bytes).",
             )
-            raise ValueError(
-                f"Uploaded object exceeds max allowed size ({max_b} bytes)."
+            raise self._over_limit_error(
+                purpose,
+                actual_size,
+                max_b,
+                f"Uploaded object exceeds max allowed size ({max_b} bytes).",
             )
         if (
             row.expected_bytes is not None

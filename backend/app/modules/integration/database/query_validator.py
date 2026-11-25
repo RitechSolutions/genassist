@@ -1,21 +1,9 @@
-from typing import Dict, Tuple, Optional, Set, List
+from typing import Dict, Tuple, Optional, Set
 import re
 import sqlparse
 from sqlparse import tokens as T
-from dataclasses import dataclass
-from app.modules.integration.database import DatabaseManager
-
-
-@dataclass
-class ValidationResult:
-    """Result of query validation."""
-
-    is_valid: bool
-    error_message: Optional[str] = None
-    warnings: List[str] = None
-    query_type: Optional[str] = None
-    tables_used: Set[str] = None
-    columns_used: Set[str] = None
+from app.modules.integration.database.database_manager import DatabaseManager
+from .validation_result import ValidationResult
 
 
 class AdvancedQueryValidator:
@@ -387,6 +375,8 @@ def validate_with_sqlglot(
             dialect_mapping = {
                 "mysql": "mysql",
                 "postgresql": "postgres",
+                "timescaledb": "postgres",
+                "timedb": "postgres",
                 "sqlite": "sqlite",
                 "mssql": "tsql",
                 "snowflake": "snowflake",

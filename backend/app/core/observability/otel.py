@@ -315,3 +315,4 @@ def record_web_search_event(
         _web_search_duration_histogram.record(max(0.0, duration_seconds), attributes)
     if _web_search_results_histogram is not None:
         _web_search_results_histogram.record(max(0, int(result_count)), attributes)
+

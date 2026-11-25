@@ -41,7 +41,7 @@ export interface FileManagerSettings {
   values: {
     file_manager_enabled: boolean;
     file_manager_provider: string;
-    base_path: string;
+    base_path: string | null;
     aws_bucket_name: string;
     azure_container_name: string;
     /**
@@ -113,6 +113,19 @@ export const listFiles = async (
   if (params?.tag != null && params.tag !== "") search.set("tag", params.tag);
   const q = search.toString();
   return apiRequest<FileRecord[]>("GET", `file-manager/files${q ? `?${q}` : ""}`);
+};
+
+/**
+ * One file's record (name, size, …). Null on 403 (apiRequest maps it) or 404.
+ * Other errors are rethrown so React Query doesn't cache them as "no file".
+ */
+export const getFileManagerFile = async (fileId: string): Promise<FileRecord | null> => {
+  try {
+    return await apiRequest<FileRecord>("GET", `file-manager/files/${fileId}`);
+  } catch (error) {
+    if (error instanceof AxiosError && error.response?.status === 404) return null;
+    throw error;
+  }
 };
 
 export const getFileBase64 = async (fileId: string): Promise<FileBase64Response | null> => {

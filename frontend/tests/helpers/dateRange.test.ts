@@ -1,14 +1,36 @@
-import { describe, expect, it } from "vitest";
+import { format } from "date-fns";
 import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import {
+  calendarToday,
+  lastDaysDateRange,
   normalizeDateRange,
   toExactActivityParams,
   toExactInterval,
+  toInclusiveDateParams,
   toUtcBucketDateParams,
+  dayEndIso,
+  dayStartIso,
 } from "@/helpers/dateRange";
 
-const day = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h);
+const originalTz = process.env.TZ;
+beforeAll(() => {
+  process.env.TZ = "America/Los_Angeles";
+});
+afterAll(() => {
+  if (originalTz === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTz;
+});
 
-const offsetMinutes = (d: Date) => d.getTimezoneOffset();
+const day = (y: number, m: number, d: number, h = 0) => new Date(y, m - 1, d, h);
 
 describe("normalizeDateRange", () => {
   it("leaves a complete range untouched", () => {
@@ -28,47 +50,32 @@ describe("normalizeDateRange", () => {
 });
 
 describe("toExactInterval", () => {
-  it("spans whole local days, end exclusive", () => {
+  it("spans whole UTC days of the picked dates, end exclusive", () => {
     const interval = toExactInterval({ from: day(2026, 8, 1, 13), to: day(2026, 8, 3, 9) })!;
-    expect(interval.start).toEqual(day(2026, 8, 1));
-    expect(interval.endExclusive).toEqual(day(2026, 8, 4));
+    expect(interval.start.toISOString()).toBe("2026-08-01T00:00:00.000Z");
+    expect(interval.endExclusive.toISOString()).toBe("2026-08-04T00:00:00.000Z");
   });
 
-  it("covers exactly one day for a from-only range", () => {
+  it("covers exactly one UTC day for a from-only range", () => {
     const interval = toExactInterval({ from: day(2026, 8, 1), to: undefined })!;
-    expect(interval.start).toEqual(day(2026, 8, 1));
-    expect(interval.endExclusive).toEqual(day(2026, 8, 2));
-  });
-
-  it("keeps local midnight across a DST transition", () => {
-    for (const [from, to] of [
-      [day(2026, 3, 28), day(2026, 3, 30)],
-      [day(2026, 11, 1), day(2026, 11, 3)],
-    ]) {
-      const interval = toExactInterval({ from, to })!;
-      expect(interval.start.getHours()).toBe(0);
-      expect(interval.endExclusive.getHours()).toBe(0);
-      expect(interval.endExclusive.getDate()).toBe(to.getDate() + 1);
-    }
+    expect(interval.start.toISOString()).toBe("2026-08-01T00:00:00.000Z");
+    expect(interval.endExclusive.toISOString()).toBe("2026-08-02T00:00:00.000Z");
   });
 });
 
 describe("toExactActivityParams", () => {
-  it("emits both boundaries as UTC ISO strings", () => {
-    const params = toExactActivityParams({ from: day(2026, 8, 1), to: day(2026, 8, 7) });
-    expect(params.activity_from_datetime).toBe(day(2026, 8, 1).toISOString());
-    expect(params.activity_to_datetime).toBe(day(2026, 8, 8).toISOString());
+  it("emits the picked days as UTC midnights", () => {
+    expect(toExactActivityParams({ from: day(2026, 8, 1), to: day(2026, 8, 7) })).toEqual({
+      activity_from_datetime: "2026-08-01T00:00:00.000Z",
+      activity_to_datetime: "2026-08-08T00:00:00.000Z",
+    });
   });
 
-  it("emits a complete one-day interval for a from-only range", () => {
-    const params = toExactActivityParams({ from: day(2026, 8, 1), to: undefined });
-    expect(params.activity_from_datetime).toBeDefined();
-    expect(params.activity_to_datetime).toBeDefined();
-    const spanMs =
-      new Date(params.activity_to_datetime!).getTime() -
-      new Date(params.activity_from_datetime!).getTime();
-    expect(spanMs).toBeGreaterThan(0);
-    expect(spanMs).toBeLessThanOrEqual(25 * 60 * 60 * 1000);
+  it("keeps a 24-hour day across the local DST change", () => {
+    expect(toExactActivityParams({ from: day(2026, 11, 1), to: day(2026, 11, 1) })).toEqual({
+      activity_from_datetime: "2026-11-01T00:00:00.000Z",
+      activity_to_datetime: "2026-11-02T00:00:00.000Z",
+    });
   });
 
   it("returns nothing for an empty range so callers can fall back to all-time", () => {
@@ -77,29 +84,18 @@ describe("toExactActivityParams", () => {
 });
 
 describe("toUtcBucketDateParams", () => {
-  it("always returns both bounds for a from-only range", () => {
-    const params = toUtcBucketDateParams({ from: day(2026, 8, 1), to: undefined });
-    expect(params.from_date).toBeDefined();
-    expect(params.to_date).toBeDefined();
+  it("sends exactly the picked days", () => {
+    expect(toUtcBucketDateParams({ from: day(2026, 8, 1), to: day(2026, 8, 7) })).toEqual({
+      from_date: "2026-08-01",
+      to_date: "2026-08-07",
+    });
   });
 
-  it("expands to the UTC dates the local interval touches", () => {
-    const range = { from: day(2026, 8, 1), to: day(2026, 8, 7) };
-    const params = toUtcBucketDateParams(range);
-    const west = offsetMinutes(range.from) > 0;
-    const east = offsetMinutes(range.from) < 0;
-    expect(params.from_date).toBe(east ? "2026-07-31" : "2026-08-01");
-    expect(params.to_date).toBe(west ? "2026-08-08" : "2026-08-07");
-  });
-
-  it("matches the exact interval it is derived from", () => {
-    const range = { from: day(2026, 8, 1), to: day(2026, 8, 7) };
-    const interval = toExactInterval(range)!;
-    const params = toUtcBucketDateParams(range);
-    expect(params.from_date).toBe(interval.start.toISOString().slice(0, 10));
-    expect(params.to_date).toBe(
-      new Date(interval.endExclusive.getTime() - 1).toISOString().slice(0, 10),
-    );
+  it("sends the one picked day for a from-only range", () => {
+    expect(toUtcBucketDateParams({ from: day(2026, 8, 1), to: undefined })).toEqual({
+      from_date: "2026-08-01",
+      to_date: "2026-08-01",
+    });
   });
 
   it("returns nothing for an empty range", () => {
@@ -124,5 +120,96 @@ describe("agent performance parameter families", () => {
     expect(new Date(params.activity_from_datetime!).getTime()).toBeLessThan(
       new Date(params.activity_to_datetime!).getTime(),
     );
+  });
+});
+
+describe("calendarToday", () => {
+  afterEach(() => {
+    process.env.TZ = "America/Los_Angeles";
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ["Pacific/Kiritimati", "2026-10-30T11:53:00Z", "2026-10-30", "2026-10-31"],
+    ["Asia/Tokyo", "2026-10-30T22:00:00Z", "2026-10-30", "2026-10-31"],
+    ["America/Los_Angeles", "2026-10-31T02:00:00Z", "2026-10-31", "2026-11-01"],
+    ["UTC", "2026-10-30T11:53:00Z", "2026-10-30", "2026-10-31"],
+  ])("in %s at %s, Today is the UTC day the server counts", (tz, now, today, next) => {
+    process.env.TZ = tz;
+    const picked = calendarToday(new Date(now));
+    expect(format(picked, "yyyy-MM-dd HH:mm")).toBe(`${today} 00:00`);
+    expect(toExactActivityParams({ from: picked, to: picked })).toEqual({
+      activity_from_datetime: `${today}T00:00:00.000Z`,
+      activity_to_datetime: `${next}T00:00:00.000Z`,
+    });
+  });
+
+  it("ends the last-7-days default on the UTC day", () => {
+    process.env.TZ = "Pacific/Kiritimati";
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-30T11:53:00Z"));
+    const range = lastDaysDateRange(7);
+    expect(format(range.from!, "yyyy-MM-dd HH:mm")).toBe("2026-10-23 00:00");
+    expect(format(range.to!, "yyyy-MM-dd HH:mm")).toBe("2026-10-30 00:00");
+  });
+});
+
+describe("UTC day bounds", () => {
+  it("brackets the picked calendar day whatever the local time of the Date", () => {
+    expect(dayStartIso(day(2026, 11, 1, 23))).toBe("2026-11-01T00:00:00.000Z");
+    expect(dayEndIso(day(2026, 11, 1, 23))).toBe("2026-11-01T23:59:59.999999Z");
+  });
+});
+
+describe("in Local time mode", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", { getItem: () => "local" });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    process.env.TZ = "America/Los_Angeles";
+  });
+
+  it("spans Los Angeles' 25-hour day when DST ends", () => {
+    const interval = toExactInterval({ from: day(2026, 11, 1), to: day(2026, 11, 1) })!;
+    expect(interval.start.toISOString()).toBe("2026-11-01T07:00:00.000Z");
+    expect(interval.endExclusive.toISOString()).toBe("2026-11-02T08:00:00.000Z");
+  });
+
+  it("spans Berlin's 25-hour day when DST ends", () => {
+    process.env.TZ = "Europe/Berlin";
+    const interval = toExactInterval({ from: day(2026, 10, 25), to: day(2026, 10, 25) })!;
+    expect(interval.start.toISOString()).toBe("2026-10-24T22:00:00.000Z");
+    expect(interval.endExclusive.toISOString()).toBe("2026-10-25T23:00:00.000Z");
+  });
+
+  it("brackets the picked day in local time", () => {
+    expect(dayStartIso(day(2026, 11, 1, 23))).toBe("2026-11-01T07:00:00.000Z");
+    expect(dayEndIso(day(2026, 11, 1, 23))).toBe("2026-11-02T07:59:59.999999Z");
+  });
+
+  it("takes Today from the local clock", () => {
+    process.env.TZ = "Pacific/Kiritimati";
+    const picked = calendarToday(new Date("2026-10-30T11:53:00Z"));
+    expect(format(picked, "yyyy-MM-dd HH:mm")).toBe("2026-10-31 00:00");
+  });
+});
+
+describe("toInclusiveDateParams", () => {
+  it("sends nothing for all-time", () => {
+    expect(toInclusiveDateParams(undefined)).toEqual({});
+  });
+
+  it("leaves the end open for a from-only pick", () => {
+    expect(toInclusiveDateParams({ from: day(2026, 10, 1, 13), to: undefined })).toEqual({
+      from_date: "2026-10-01",
+    });
+  });
+
+  it("covers the whole last day", () => {
+    expect(toInclusiveDateParams({ from: day(2026, 10, 1), to: day(2026, 10, 6) })).toEqual({
+      from_date: "2026-10-01",
+      to_date: "2026-10-06 23:59:59",
+    });
   });
 });

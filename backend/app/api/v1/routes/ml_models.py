@@ -1,23 +1,53 @@
 import asyncio
 import logging
 import os
+import re
 import shutil
 import tempfile
+import time
 import uuid
+from contextlib import aclosing
+from decimal import Decimal
 from pathlib import Path
-from typing import Optional
+from typing import Any, Literal, Optional
 from uuid import UUID
 
+import anyio
 import pandas as pd
+import sqlglot
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, Response, UploadFile
 from fastapi_injector import Injected
+from pydantic import BaseModel
+from sqlglot import exp
 
 from app.auth.dependencies import auth, permissions
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.core.project_path import DATA_VOLUME
-from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.core.utils.training_upload import format_bytes, training_upload_max_bytes
+from app.modules.integration.database.provider_manager import DBProviderManager
+from app.modules.integration.database.read_only_sql import (
+    SQLGLOT_DIALECTS,
+    read_only_sql_blocked_message,
+    validate_read_only_sql,
+)
+from app.modules.workflow.engine.nodes.ml import ml_utils, training_data_storage
+from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+    CSV_SUFFIXES,
+    EXCEL_SUFFIXES,
+    SUPPORTED_TRAINING_FILE_LABEL,
+    SUPPORTED_TRAINING_FILE_SUFFIXES,
+    duplicate_column_name,
+    ensure_supported_training_file,
+    ensure_unique_query_columns,
+    list_excel_sheets,
+    read_training_file_preview,
+    stored_file_suffix,
+    training_file_suffix,
+)
+from app.modules.workflow.engine.utils import has_volatile_template_vars
 from app.schemas.file import FileBase, FileUploadResponse
 from app.schemas.ml_model import MLModelCreate, MLModelRead, MLModelUpdate, is_in_ml_models_dir
 from app.services.app_settings import AppSettingsService
@@ -37,6 +67,49 @@ os.makedirs(ML_MODELS_UPLOAD_DIR, exist_ok=True)
 MAX_PKL_FILE_SIZE = 500 * 1024 * 1024
 
 
+class ProfileDataRequest(BaseModel):
+    """Input for profiling an uploaded CSV or a database query result."""
+
+    source_type: Literal["csv", "datasource"] = "csv"
+    file_url: Optional[str] = None
+    file_id: Optional[UUID] = None
+    file_name: Optional[str] = None
+    data_source_id: Optional[UUID] = None
+    query: Optional[str] = None
+    sheet_name: Optional[str] = None
+
+
+class AnalyzeFileRequest(BaseModel):
+    """Input for previewing an uploaded training file of any supported type."""
+
+    file_id: Optional[UUID] = None
+    # A File Manager URL (its file id is used) or a path under the data volume.
+    file_url: Optional[str] = None
+    # The original upload name - its extension picks the reader.
+    file_name: Optional[str] = None
+    sheet_name: Optional[str] = None
+
+
+class QueryPreviewRequest(BaseModel):
+    """Input for previewing a database query result."""
+
+    data_source_id: UUID
+    query: str
+
+
+QUERY_PREVIEW_ROWS = 6
+PROFILE_QUERY_CHUNK_ROWS = 1000
+
+
+_require_data_source_read = permissions(P.DataSource.READ)
+_require_file_manager_read = permissions(P.FileManager.READ)
+
+
+def _with_notices(ml_model: Any, notices: list[str]) -> MLModelRead:
+    """The saved model plus this save's model-file notices, which are not stored."""
+    return MLModelRead.model_validate(ml_model).model_copy(update={"registration_notices": notices})
+
+
 @router.post("", response_model=MLModelRead, dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.CREATE))
@@ -46,7 +119,9 @@ async def create_ml_model(
     service: MLModelsService = Injected(MLModelsService),
 ):
     """Create a new ML model."""
-    return await service.create(ml_model)
+    notices: list[str] = []
+    created = await service.create(ml_model, notices=notices)
+    return _with_notices(created, notices)
 
 
 @router.get("/{ml_model_id}", response_model=MLModelRead, dependencies=[
@@ -82,7 +157,9 @@ async def update_ml_model(
     service: MLModelsService = Injected(MLModelsService)
 ):
     """Update an existing ML model."""
-    return await service.update(ml_model_id, ml_model_update)
+    notices: list[str] = []
+    updated = await service.update(ml_model_id, ml_model_update, notices=notices)
+    return _with_notices(updated, notices)
 
 
 @router.delete("/{ml_model_id}", status_code=204, dependencies=[
@@ -121,6 +198,17 @@ async def upload_pkl_file(
     - Saves file with unique filename
     - Returns file path and original filename
     """
+    # FastAPI has already received and parsed the whole body when this runs. The request's
+    # "Request handled" duration minus the route total logged below is the time before the
+    # route: mostly the file transfer, plus multipart parsing and the auth checks.
+    route_start = time.perf_counter()
+    stage_ms: dict[str, float] = {}
+
+    def _mark(stage: str, since: float) -> float:
+        now = time.perf_counter()
+        stage_ms[stage] = (now - since) * 1000
+        return now
+
     try:
         logger.info(f"Received file upload: {file.filename}, content_type: {file.content_type}")
 
@@ -136,6 +224,7 @@ async def upload_pkl_file(
         # initialize the file manager service
         app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
         storage_provider = await file_manager_service.initialize(base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings = app_settings_config)
+        stage_start = _mark("settings", route_start)
 
         # create file base
         file_base = FileBase(
@@ -149,21 +238,44 @@ async def upload_pkl_file(
 
         # create file in file manager service
         created_file = await file_manager_service.create_file(file, file_base=file_base, allowed_extensions=["pkl"], max_file_size=MAX_PKL_FILE_SIZE)
+        stage_start = _mark("storage write", stage_start)
 
-        # get file info
-        file_url = await file_manager_service.get_file_source_url(created_file.id)
-        file_path = None
+        copy_path = None
+        try:
+            # get file info
+            file_url = await file_manager_service.get_file_source_url(created_file.id)
+            stage_start = _mark("source URL", stage_start)
+            file_path = None
 
-        if created_file.storage_provider == "local":
-            file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
-            # A custom file manager folder puts the file outside the ML models folder, where
-            # pkl_file is not accepted, so the model gets a copy inside it.
-            if not is_in_ml_models_dir(file_path):
-                copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
-                await asyncio.to_thread(shutil.copyfile, file_path, copy_path)
-                file_path = copy_path
+            if created_file.storage_provider == "local":
+                file_path = f"{storage_provider.get_base_path()}/{created_file.path}"
+                # A custom file manager folder puts the file outside the ML models folder, where
+                # pkl_file is not accepted, so the model gets a copy inside it.
+                if not is_in_ml_models_dir(file_path):
+                    copy_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"{created_file.id}.{file_extension}")
+                    # Not asyncio.to_thread: on cancel its thread kept copying after the cleanup
+                    # below. anyio finishes the copy first; the checkpoint then raises the cancel.
+                    await anyio.to_thread.run_sync(shutil.copyfile, file_path, copy_path)
+                    await anyio.lowlevel.checkpoint_if_cancelled()
+                    file_path = copy_path
+                    stage_start = _mark("copy into ml_models", stage_start)
+        except BaseException:
+            # The client never gets this file's id, so it can't discard it: remove it here.
+            # BaseException, so a cancelled request (client gone, timeout) cleans up too; the
+            # cleanup is shielded, or the same cancellation would stop it at its first await.
+            with anyio.CancelScope(shield=True):
+                await _remove_failed_pkl_upload(file_manager_service, created_file.id, copy_path)
+            raise
 
         file_id = str(created_file.id)
+        logger.info(
+            "Model file upload %s: %s bytes on %s storage, %s, route total %.0f ms",
+            file_id,
+            getattr(created_file, "size", None),
+            getattr(created_file, "storage_provider", None),
+            ", ".join(f"{stage} {ms:.0f} ms" for stage, ms in stage_ms.items()),
+            (time.perf_counter() - route_start) * 1000,
+        )
 
         return FileUploadResponse(
             filename=file.filename,
@@ -182,6 +294,74 @@ async def upload_pkl_file(
             status_code=500,
             detail=f"Error uploading file: {str(e)}"
         ) from e
+
+
+async def _remove_failed_pkl_upload(
+    file_manager_service: FileManagerService, file_id: UUID, copy_path: Optional[str]
+) -> None:
+    """Best effort: delete a .pkl whose upload failed after it was stored. Never raises."""
+    try:
+        await file_manager_service.delete_file(file_id)
+    except Exception as exc:
+        logger.warning("Could not remove the failed model upload %s: %s", file_id, type(exc).__name__)
+    if copy_path and os.path.isfile(copy_path):
+        try:
+            os.remove(copy_path)
+        except OSError as exc:
+            logger.warning("Could not remove the model file copy %s: %s", copy_path, type(exc).__name__)
+
+
+async def _init_upload_storage(
+    request: Request, file_manager_service: FileManagerService, app_settings_svc: AppSettingsService
+) -> None:
+    """Same storage setup as the uploads, so a custom folder or bucket from File Manager
+    Settings is where an unused upload is deleted from."""
+    app_settings_config = await app_settings_svc.get_by_type_and_name("FileManagerSettings", "File Manager Settings")
+    await file_manager_service.initialize(
+        base_url=str(request.base_url).rstrip('/'), base_path=str(DATA_VOLUME), app_settings=app_settings_config
+    )
+
+
+@router.delete("/upload/{file_id}", status_code=204, dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.CREATE))
+])
+async def discard_unused_upload(
+    request: Request,
+    file_id: UUID,
+    service: MLModelsService = Injected(MLModelsService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Delete a .pkl uploaded for a save that was then rejected.
+
+    Only a recent ML model upload made by the caller and used by no model is deleted;
+    any other file id answers 404.
+    """
+    await _init_upload_storage(request, file_manager_service, app_settings_svc)
+    await service.discard_unused_upload(file_id, file_manager_service)
+    return Response(status_code=204)
+
+
+@router.delete("/training-data/upload/{file_id}", status_code=204, dependencies=[
+    Depends(auth),
+    Depends(permissions(P.FileManager.DELETE))
+])
+async def discard_unused_training_upload(
+    request: Request,
+    file_id: UUID,
+    service: MLModelsService = Injected(MLModelsService),
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+    app_settings_svc: AppSettingsService = Injected(AppSettingsService),
+):
+    """Delete a Train Data Source upload that was rejected, replaced, removed or cancelled.
+
+    Only a recent training upload made by the caller that no live workflow version or ML
+    model points at is deleted; any other file id answers 404.
+    """
+    await _init_upload_storage(request, file_manager_service, app_settings_svc)
+    await service.discard_unused_training_upload(file_id, file_manager_service)
+    return Response(status_code=204)
 
 
 @router.get("/cache/stats", dependencies=[
@@ -278,12 +458,22 @@ async def validate_model_file(
         )
     }
 
+_UNFILLED_PLACEHOLDER = re.compile(r"{{[^}]*}}")
+UNFILLED_FILE_PATH_DETAIL = (
+    "The file path still has an unfilled {{...}} placeholder. Run the node "
+    "that provides the file first, then try again."
+)
+
+
 @router.post("/analyze-csv", dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.READ))
 ])
 async def analyze_csv(
-    file_url: str = Body(..., embed=True, description="Path or URL to CSV file"),
+    request: Request,
+    file_url: Optional[str] = Body(None, embed=True, description="Path or URL to CSV file"),
+    file_id: Optional[UUID] = Body(None, embed=True, description="File Manager ID"),
+    file_name: Optional[str] = Body(None, embed=True, description="Original CSV file name"),
     python_code: Optional[str] = Body(None, embed=True, description="Optional Python code to preprocess data before analysis"),
     file_manager_service: FileManagerService = Injected(FileManagerService)
 ):
@@ -294,6 +484,10 @@ async def analyze_csv(
     - An absolute path (starting with /)
     - A relative path (will be checked in DATA_VOLUME/train directories)
     - A path within DATA_VOLUME
+    - A File Manager URL (resolved by ID, including S3-backed files)
+
+    A file_id can be supplied directly so non-local files do not need to be
+    fetched through their HTTP source URL.
 
     If python_code is provided, the data will be preprocessed using the Python code
     before analysis. The code should accept params with 'data' (list of dicts), 'df' (DataFrame),
@@ -314,30 +508,21 @@ async def analyze_csv(
             - min: Minimum value (for numeric)
             - max: Maximum value (for numeric)
     """
-    try:
-        allowed_directories = await ml_utils.extra_csv_directories()
-        # Resolve and validate file path using shared utility
-        try:
-            # check if the file_url includes a valid file id
-            if file_url.startswith("http://") or file_url.startswith("https://"):
-                dest_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"csv_file_{uuid.uuid4()}.csv")
-                await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
-                file_path = dest_path
-            else:
-                file_path = ml_utils.resolve_csv_file_path(file_url, allowed_directories=allowed_directories)
+    # A {{...}} left in the path means the client couldn't fill it (e.g.
+    # {{source.data_path}} before the source node has run). Say so instead of
+    # failing to find a file by that literal name.
+    if file_id is None and file_url and _UNFILLED_PLACEHOLDER.search(file_url):
+        raise HTTPException(status_code=400, detail=UNFILLED_FILE_PATH_DETAIL)
 
-        except AppException as e:
-            # Convert AppException to HTTPException for API endpoint
-            if e.error_key == ErrorKey.FILE_NOT_FOUND:
-                raise HTTPException(
-                    status_code=404,
-                    detail=e.error_detail
-                )
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=e.error_detail
-                )
+    temporary_path: Optional[Path] = None
+    try:
+        file_path, temporary_path = await _resolve_csv_input(
+            file_url=file_url,
+            file_id=file_id,
+            file_name=file_name,
+            request=request,
+            file_manager_service=file_manager_service,
+        )
 
         logger.info(f"Analyzing CSV file: {file_path}")
 
@@ -346,30 +531,44 @@ async def analyze_csv(
             logger.info("Preprocessing data with Python code before analysis")
 
             try:
-                # Load the CSV file using shared utility
-                data, df = ml_utils.load_csv_file(file_url, allowed_directories=allowed_directories)
+                # file_path is already resolved and checked: a local file inside
+                # the data volume, or a File Manager / S3 file downloaded to a
+                # temp file. Read it as it is; resolving it again would refuse
+                # the temp file because it is outside the data volume.
+                df = await asyncio.to_thread(
+                    ml_utils.load_resolved_csv, file_path, file_url or file_name
+                )
 
+                # The code's fileUrl: the local path as before, but for a
+                # downloaded copy the name the user knows, never the temp path.
+                code_file_url = (
+                    (file_name or file_url or "") if temporary_path is not None else str(file_path)
+                )
                 # Execute preprocessing code using shared utility
                 # Use raise_on_error=True to raise exceptions for API endpoint
                 processed_df, _, _ = await ml_utils.execute_and_process_preprocessing_code(
-                    python_code, data, df, str(file_path), raise_on_error=True
+                    python_code, df, code_file_url, raise_on_error=True
                 )
 
-                # Save processed data to a temporary CSV file
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, encoding='utf-8') as tmp_file:
-                    processed_df.to_csv(tmp_file.name, index=False, encoding='utf-8')
-                    temp_file_path = tmp_file.name
-
-                try:
-                    # Analyze the processed CSV file
-                    analysis = ml_utils.analyze_csv_data(temp_file_path)
-                    return analysis
-                finally:
-                    # Clean up temporary file
+                # Save processed data to a temporary CSV file. Keep the column
+                # types the preprocessing code produced, so the analysis reports
+                # them the way the next node will see them. The thread owns its
+                # files and removes them itself, so a cancelled request can't
+                # leave them behind.
+                def _analyze_processed() -> dict:
+                    path = _temporary_csv_path(".csv")
                     try:
-                        os.unlink(temp_file_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to delete temporary file {temp_file_path}: {str(e)}")
+                        processed_df.to_csv(path, index=False, encoding="utf-8")
+                        ml_utils.write_dtypes_sidecar(str(path), processed_df)
+                        return ml_utils.analyze_csv_data(str(path))
+                    finally:
+                        for leftover in (path, ml_utils.dtypes_sidecar_path(path)):
+                            try:
+                                Path(leftover).unlink(missing_ok=True)
+                            except OSError as e:
+                                logger.warning(f"Failed to delete temporary file {leftover}: {str(e)}")
+
+                return await asyncio.to_thread(_analyze_processed)
 
             except AppException as e:
                 # Convert AppException to HTTPException for API endpoint
@@ -378,82 +577,715 @@ async def analyze_csv(
                     detail=e.error_detail
                 )
             except Exception as e:
+                # The exception text can name a server path; it goes to the log only.
                 logger.error(f"Error executing preprocessing code: {str(e)}", exc_info=True)
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Error executing preprocessing code: {str(e)}"
+                    detail="Error executing preprocessing code. Check the server log for details.",
                 ) from e
 
         # If no python_code, analyze the original CSV file directly
-        analysis = ml_utils.analyze_csv_data(str(file_path))
-        return analysis
+        return await asyncio.to_thread(ml_utils.analyze_csv_data, str(file_path))
 
     except HTTPException:
         raise
-    except AppException:
-        raise
+    except AppException as exc:
+        if exc.status_code == 403:
+            raise
+        status_code = 404 if exc.error_key == ErrorKey.FILE_NOT_FOUND else 400
+        raise HTTPException(
+            status_code=status_code,
+            detail=exc.error_detail,
+        ) from exc
     except Exception as e:
+        # The exception text can name a server path; it goes to the log only.
         logger.error(f"Error analyzing CSV file: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error analyzing CSV file: {str(e)}"
+            detail="Error analyzing CSV file. Check the server log for details.",
         ) from e
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning(
+                    "Failed to delete temporary CSV preview file",
+                    exc_info=True,
+                )
 
 
-def _build_profile_report_html(file_path: str) -> str:
+async def _ensure_unique_csv_header(path: Path) -> None:
+    """Refuse a repeated header name, which pd.read_csv renames to '<name>.1'.
+
+    The header is read by the run's own CSV reader (BOM, delimiter sniffing,
+    trailing empty cells), so the profile never accepts a file the run then
+    refuses. Only the header is read.
+    """
+    chunks = ml_utils.iter_csv_chunks(str(path), chunk_size=1)
+    try:
+        async with aclosing(chunks):
+            await anext(chunks, None)
+    except AppException as exc:
+        if exc.error_key == ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID:
+            return  # pd.read_csv reports the encoding with its own message.
+        raise HTTPException(status_code=400, detail=exc.error_detail) from exc
+
+
+def _build_profile_report_html(
+    file_path: str,
+    display_name: Optional[str] = None,
+) -> str:
     """Run ydata-profiling on a CSV file and return the report as an HTML string."""
+    path = Path(file_path)
+    try:
+        # Same column types the workflow nodes see: saved types reapplied,
+        # leading-zero columns ("001") kept as text.
+        df = ml_utils.read_csv_with_dtypes(
+            path,
+            encoding="utf-8",
+            on_bad_lines="skip",
+            nrows=settings.ML_PROFILE_MAX_ROWS,
+        )
+    except pd.errors.EmptyDataError as exc:
+        raise HTTPException(status_code=400, detail="The file has no rows.") from exc
+
+    return _build_dataframe_profile_report_html(
+        df,
+        title=(
+            f"Data Profile: {Path(display_name).name if display_name else path.name} "
+            f"(up to {settings.ML_PROFILE_MAX_ROWS:,} rows)"
+        ),
+        empty_detail="The file has no rows.",
+    )
+
+
+def _normalize_profile_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert common driver objects into types understood by ydata-profiling."""
+    normalized = df.copy()
+    for column in normalized.columns:
+        non_null = normalized[column].dropna()
+        if non_null.empty:
+            continue
+        if non_null.map(lambda value: isinstance(value, Decimal)).all():
+            normalized[column] = pd.to_numeric(normalized[column], errors="coerce")
+        elif non_null.map(lambda value: isinstance(value, UUID)).all():
+            normalized[column] = normalized[column].map(
+                lambda value: str(value) if isinstance(value, UUID) else value
+            )
+    return normalized
+
+
+def _limit_read_query(query: str, db_type: str, row_limit: int) -> str:
+    """Validate and cap a read-only query without increasing a smaller limit."""
+    validation = validate_read_only_sql(query, db_type)
+    if not validation.is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=read_only_sql_blocked_message(validation),
+        )
+
+    dialect = SQLGLOT_DIALECTS[db_type.strip().lower()]
+    statement = sqlglot.parse_one(query, read=dialect)
+    existing_limit = statement.args.get("limit")
+    effective_limit = row_limit
+    existing_count = None
+    if isinstance(existing_limit, exp.Limit):
+        existing_count = existing_limit.expression
+    elif isinstance(existing_limit, exp.Fetch):
+        existing_count = existing_limit.args.get("count")
+    if isinstance(existing_count, exp.Literal):
+        try:
+            effective_limit = min(effective_limit, int(existing_count.this))
+        except (TypeError, ValueError):
+            pass
+
+    limited_query = statement.limit(effective_limit, copy=True).sql(dialect=dialect)
+    limited_validation = validate_read_only_sql(limited_query, db_type)
+    if not limited_validation.is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail=read_only_sql_blocked_message(limited_validation),
+        )
+    return limited_query
+
+
+async def _collect_query_preview(
+    manager,
+    query: str,
+    chunk_size: int = QUERY_PREVIEW_ROWS,
+) -> tuple[list[str], list[tuple]]:
+    """Collect the bounded preview while retaining columns for empty results."""
+    columns: list[str] = []
+    rows: list[tuple] = []
+    stream = manager.stream_query(query, chunk_size=chunk_size)
+    async with aclosing(stream):
+        async for chunk_columns, chunk_rows in stream:
+            if not columns:
+                columns = chunk_columns
+                if duplicate_column_name(columns) is not None:
+                    # Refused by the caller; no need to read any rows.
+                    break
+            rows.extend(chunk_rows)
+    return columns, rows
+
+
+def _build_dataframe_profile_report_html(
+    df: pd.DataFrame,
+    *,
+    title: str,
+    empty_detail: str = "The query returned no rows.",
+) -> str:
+    """Run ydata-profiling on an already-loaded dataframe."""
+    if df.empty:
+        raise HTTPException(status_code=400, detail=empty_detail)
+
     from ydata_profiling import ProfileReport
 
-    df = pd.read_csv(file_path, encoding="utf-8", on_bad_lines="skip")
-    profile = ProfileReport(df, title=f"Data Profile: {Path(file_path).name}")
+    profile = ProfileReport(_normalize_profile_dataframe(df), title=title)
     return profile.to_html()
 
 
-@router.post("/profile-csv", dependencies=[
+# An extension a real file can have (".tsv", ".xls"), unlike ".3" or ".2,4" from pasted numbers.
+_REAL_EXTENSION = re.compile(r"\.[a-z][a-z0-9]{0,9}")
+
+
+def _temporary_csv_path(suffix: str = ".csv") -> Path:
+    """Create a closed temporary file path (default .csv) suitable for async downloads."""
+    with tempfile.NamedTemporaryFile(suffix=suffix or ".csv", delete=False) as temp_file:
+        return Path(temp_file.name)
+
+
+def _training_file_http_error(exc: AppException) -> HTTPException:
+    status_code = 404 if exc.error_key in (ErrorKey.FILE_NOT_FOUND, ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE) else 400
+    return HTTPException(status_code=status_code, detail=exc.error_detail)
+
+
+class TrainingDataLimits(BaseModel):
+    """Effective Train Data Source limits, shown in the upload UI."""
+
+    max_upload_bytes: int
+    max_upload_label: str
+    json_max_bytes: int
+    max_rows: int
+    supported_extensions: list[str]
+
+
+@router.get("/training-data/limits", response_model=TrainingDataLimits, dependencies=[
     Depends(auth),
     Depends(permissions(P.MlModel.READ))
 ])
-async def profile_csv(
-    file_url: str = Body(..., embed=True, description="Path or URL to CSV file"),
+async def get_training_data_limits() -> TrainingDataLimits:
+    """The largest training file a user can upload, and the extraction limits."""
+    max_upload = training_upload_max_bytes()
+    return TrainingDataLimits(
+        max_upload_bytes=max_upload,
+        max_upload_label=format_bytes(max_upload),
+        json_max_bytes=min(settings.ML_EXTRACT_JSON_MAX_BYTES, max_upload),
+        max_rows=settings.ML_EXTRACT_MAX_ROWS,
+        supported_extensions=sorted(SUPPORTED_TRAINING_FILE_SUFFIXES),
+    )
+
+
+@router.post("/analyze-file", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.READ))
+])
+async def analyze_training_file(
+    analyze_request: AnalyzeFileRequest,
+    request: Request,
+    file_manager_service: FileManagerService = Injected(FileManagerService),
+):
+    """Preview an uploaded training file: CSV, Parquet, Excel or JSON.
+
+    Reads at most ML_PROFILE_MAX_ROWS rows through the same streaming readers
+    the Train Data Source node uses, so a large file is never loaded whole.
+    Returns the analyze-csv report plus:
+        - rows_analyzed / rows_truncated: how much of the file the stats cover
+        - row_count: the file's total rows when known (Parquet metadata, or the
+          whole file was read), otherwise rows_analyzed
+        - sheet_names / sheet_name: for Excel workbooks
+    """
+    temporary_path: Optional[Path] = None
+    try:
+        path, temporary_path = await _resolve_csv_input(
+            file_url=analyze_request.file_url,
+            file_id=analyze_request.file_id,
+            file_name=analyze_request.file_name,
+            request=request,
+            file_manager_service=file_manager_service,
+            allowed_suffixes=SUPPORTED_TRAINING_FILE_SUFFIXES,
+        )
+        suffix = training_file_suffix(path)
+        sheet_names = None
+        sheet_name = (analyze_request.sheet_name or "").strip() or None
+        if suffix in EXCEL_SUFFIXES:
+            sheet_names = await asyncio.to_thread(list_excel_sheets, path)
+            sheet_name = sheet_name or (sheet_names[0] if sheet_names else None)
+
+        frame, total_rows, truncated = await read_training_file_preview(
+            path,
+            settings.ML_PROFILE_MAX_ROWS,
+            sheet_name=sheet_name,
+            json_max_bytes=settings.ML_EXTRACT_JSON_MAX_BYTES,
+        )
+        analysis = await asyncio.to_thread(ml_utils.analyze_dataframe, frame)
+        analysis["rows_analyzed"] = len(frame)
+        analysis["rows_truncated"] = truncated
+        analysis["row_count"] = total_rows if total_rows is not None else len(frame)
+        if sheet_names is not None:
+            analysis["sheet_names"] = sheet_names
+            analysis["sheet_name"] = sheet_name
+        return analysis
+    except HTTPException:
+        raise
+    except AppException as exc:
+        raise _training_file_http_error(exc) from exc
+    except Exception as exc:
+        logger.error("Error analyzing training file: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not analyze the file.") from exc
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+async def _resolve_profile_csv(
+    profile_request: ProfileDataRequest,
+    request: Request,
+    file_manager_service: FileManagerService,
+) -> tuple[Path, Optional[Path]]:
+    """Resolve the CSV input used by data profiling."""
+    return await _resolve_csv_input(
+        file_url=profile_request.file_url,
+        file_id=profile_request.file_id,
+        file_name=profile_request.file_name,
+        request=request,
+        file_manager_service=file_manager_service,
+        allowed_suffixes=SUPPORTED_TRAINING_FILE_SUFFIXES,
+    )
+
+
+async def _resolve_csv_input(
+    *,
+    file_url: Optional[str],
+    file_id: Optional[UUID],
+    file_name: Optional[str],
+    request: Request,
+    file_manager_service: FileManagerService,
+    allowed_suffixes: frozenset[str] | set[str] = CSV_SUFFIXES,
+) -> tuple[Path, Optional[Path]]:
+    """Resolve a local file or download a File Manager/non-local file.
+
+    Only files whose extension is in allowed_suffixes are accepted (CSV by
+    default). The second tuple item identifies a temporary file owned by this
+    request and therefore requiring cleanup. Reading a File Manager record
+    also requires File Manager read permission; local paths do not.
+    """
+    if file_id is None and file_url:
+        file_id = await file_manager_service.extract_file_id_from_url(file_url)
+
+
+    if file_id is not None:
+        await _require_file_manager_read(request)
+        try:
+            stored_file = await file_manager_service.get_file_by_id(file_id)
+            if stored_file is None:
+                raise LookupError("File Manager record not found")
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Could not access the selected file. Check that it still "
+                    "exists and that the storage configuration is valid."
+                ),
+            ) from exc
+        suffix = _validate_file_manager_file(stored_file, allowed_suffixes)
+        # Reject from stored metadata before downloading the object.
+        stored_size = getattr(stored_file, "size", None)
+        if isinstance(stored_size, int):
+            _raise_if_csv_input_too_large(stored_size)
+
+        # Keep the upload's extension so a Parquet/Excel/JSON file is read
+        # with the right reader.
+        temp_path = _temporary_csv_path(suffix)
+        try:
+            await file_manager_service.download_file_to_path(
+                file_id,
+                str(temp_path),
+            )
+        except Exception as exc:
+            temp_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Could not access the selected file. Check that it still "
+                    "exists and that the storage configuration is valid."
+                ),
+            ) from exc
+        try:
+            _enforce_csv_input_byte_limit(temp_path)
+        except HTTPException:
+            temp_path.unlink(missing_ok=True)
+            raise
+        return temp_path, temp_path
+
+    candidate_name = file_url or file_name
+    candidate_suffix = ""
+    if candidate_name:
+        candidate_suffix = Path(candidate_name.split("?", maxsplit=1)[0]).suffix.lower()
+        if candidate_suffix and candidate_suffix not in allowed_suffixes:
+            if not _REAL_EXTENSION.fullmatch(candidate_suffix) and ml_utils.looks_like_inline_data(file_url):
+                # Pasted data such as "1.5,2.3" reads as a file ending in ".3",
+                # which can't be an extension; say what it is, without repeating it.
+                raise HTTPException(status_code=400, detail=ml_utils.INLINE_DATA_DETAIL)
+            raise _unsupported_file_type_error(candidate_suffix, allowed_suffixes)
+
+    if file_url and not file_url.startswith(("http://", "https://")):
+        # Only files inside the data volume, or the configured storage folder, can be read
+        extra_directories = await ml_utils.extra_csv_directories()
+        if candidate_suffix in ("", ".csv"):
+            await training_data_storage.fetch_training_data(file_url, allowed_directories=extra_directories)
+            try:
+                local_path = ml_utils.resolve_csv_file_path(
+                    file_url, allowed_directories=extra_directories
+                )
+            except AppException as exc:
+                # No file by that name and it looks like pasted data: a bad
+                # request, not a missing file.
+                if exc.error_detail == ml_utils.INLINE_DATA_DETAIL:
+                    raise HTTPException(status_code=400, detail=exc.error_detail) from exc
+                raise
+        else:
+            local_path = _training_file_path_inside(file_url, extra_directories)
+        _enforce_csv_input_byte_limit(local_path)
+        return local_path, None
+
+    if file_url and file_url.startswith(("http://", "https://")):
+        temp_path = _temporary_csv_path(candidate_suffix or ".csv")
+        try:
+            downloaded = await file_manager_service.download_file_from_url_to_path(
+                file_url,
+                str(temp_path),
+            )
+            if not downloaded:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Could not fetch the file.",
+                )
+        except HTTPException:
+            temp_path.unlink(missing_ok=True)
+            raise
+        except Exception as exc:
+            temp_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=400,
+                detail="Could not fetch the file.",
+            ) from exc
+        try:
+            _enforce_csv_input_byte_limit(temp_path)
+        except HTTPException:
+            temp_path.unlink(missing_ok=True)
+            raise
+        return temp_path, temp_path
+
+    raise HTTPException(
+        status_code=400,
+        detail="A file path, URL, or File Manager ID is required.",
+    )
+
+
+def _training_file_path_inside(file_url: str, extra_directories: list[Path]) -> Path:
+    """A non-CSV training file path, only from inside the data volume or storage folder."""
+    candidates = [file_url] if os.path.isabs(file_url) else [
+        DATA_VOLUME / "train" / file_url,
+        DATA_VOLUME / file_url,
+    ]
+    directories = [DATA_VOLUME, *extra_directories]
+    for candidate in candidates:
+        path = ml_utils._csv_path_inside(candidate, directories)
+        if path is not None:
+            return path
+    raise HTTPException(
+        status_code=404,
+        detail="The uploaded file is no longer available. Upload it again.",
+    )
+
+
+def _unsupported_file_type_error(
+    suffix: str, allowed_suffixes: frozenset[str] | set[str]
+) -> HTTPException:
+    if set(allowed_suffixes) == set(CSV_SUFFIXES):
+        return HTTPException(
+            status_code=400,
+            detail="Only CSV files can be previewed or profiled.",
+        )
+    try:
+        ensure_supported_training_file(f"file{suffix}")
+    except AppException as exc:
+        return HTTPException(status_code=400, detail=exc.error_detail)
+    return HTTPException(
+        status_code=400,
+        detail=f"This file type can't be previewed. Use one of: {SUPPORTED_TRAINING_FILE_LABEL}.",
+    )
+
+
+def _enforce_csv_input_byte_limit(file_path: Path) -> None:
+    """Apply the Train Data Source byte ceiling to preview/profile inputs."""
+    _raise_if_csv_input_too_large(file_path.stat().st_size)
+
+
+def _raise_if_csv_input_too_large(file_size: int) -> None:
+    if file_size <= settings.ML_EXTRACT_MAX_BYTES:
+        return
+
+    raise HTTPException(
+        status_code=413,
+        detail=(
+            f"The CSV file is {file_size:,} bytes, which exceeds the "
+            f"{settings.ML_EXTRACT_MAX_BYTES:,}-byte training-data limit."
+        ),
+    )
+
+
+def _validate_file_manager_file(
+    stored_file: object,
+    allowed_suffixes: frozenset[str] | set[str] = CSV_SUFFIXES,
+) -> str:
+    """Validate a File Manager record using server-controlled metadata; return its suffix."""
+    suffix = stored_file_suffix(stored_file)
+    if suffix not in allowed_suffixes:
+        raise _unsupported_file_type_error(suffix, allowed_suffixes)
+    return suffix
+
+
+async def _get_query_database_manager(data_source_id: UUID):
+    """Return the data source's database manager, or 404 when it does not exist."""
+    try:
+        manager = await DBProviderManager.get_instance().get_database_manager(
+            str(data_source_id)
+        )
+    except AppException as exc:
+        if exc.error_key == ErrorKey.DATASOURCE_NOT_FOUND:
+            raise HTTPException(status_code=404, detail="Data source not found.") from exc
+        raise
+    if manager is None:
+        raise HTTPException(status_code=404, detail="Data source not found.")
+    return manager
+
+
+async def _load_query_profile_dataframe(
+    request: ProfileDataRequest,
+) -> pd.DataFrame:
+    """Execute a validated read-only query and return its rows as a dataframe."""
+    if request.data_source_id is None or not (request.query or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="A data source and query are required for SQL profiling.",
+        )
+
+    manager = await _get_query_database_manager(request.data_source_id)
+
+    query = request.query.strip()
+    if has_volatile_template_vars(query):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Profiling cannot resolve workflow variables. Replace {{...}} "
+                "with sample values before profiling."
+            ),
+        )
+
+    profile_query = _limit_read_query(
+        query,
+        manager.get_db_type(),
+        settings.ML_PROFILE_MAX_ROWS,
+    )
+
+    # Streamed as (columns, tuples) like the preview and the run: rows as
+    # dicts would keep only one of two columns with the same name.
+    try:
+        columns, rows = await asyncio.wait_for(
+            _collect_query_preview(
+                manager,
+                profile_query,
+                chunk_size=max(1, min(settings.ML_PROFILE_MAX_ROWS, PROFILE_QUERY_CHUNK_ROWS)),
+            ),
+            timeout=settings.ML_EXTRACT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=408,
+            detail="The profiling query timed out.",
+        ) from exc
+    except Exception as exc:
+        logger.error(
+            "Data profiling query failed: %s",
+            ml_utils.sanitized_database_diagnostic(exc),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ml_utils.client_safe_database_error(
+                exc,
+                has_bound_parameters=False,
+            ),
+        ) from exc
+
+    try:
+        ensure_unique_query_columns(columns)
+    except AppException as exc:
+        raise HTTPException(status_code=400, detail=exc.error_detail) from exc
+
+    dataframe = pd.DataFrame.from_records(rows, columns=columns)
+    if dataframe.empty:
+        raise HTTPException(status_code=400, detail="The query returned no rows.")
+    return dataframe
+
+
+@router.post("/preview-query", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.READ))
+])
+async def preview_query(
+    preview_request: QueryPreviewRequest,
+    request: Request,
+):
+    """Return a bounded, read-only preview of a database query."""
+    await _require_data_source_read(request)
+
+    query = preview_request.query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="A query is required for preview.")
+    if has_volatile_template_vars(query):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Preview cannot resolve workflow variables. Replace {{...}} "
+                "with sample values before previewing."
+            ),
+        )
+
+    manager = await _get_query_database_manager(preview_request.data_source_id)
+
+    limited_query = _limit_read_query(
+        query,
+        manager.get_db_type(),
+        QUERY_PREVIEW_ROWS,
+    )
+    try:
+        columns, rows = await asyncio.wait_for(
+            _collect_query_preview(manager, limited_query),
+            timeout=settings.ML_EXTRACT_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=408,
+            detail="The preview query timed out.",
+        ) from exc
+    except Exception as exc:
+        logger.error(
+            "Data preview query failed: %s",
+            ml_utils.sanitized_database_diagnostic(exc),
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=ml_utils.client_safe_database_error(
+                exc,
+                has_bound_parameters=False,
+            ),
+        ) from exc
+
+    # Refused like the run refuses it; dict(zip()) would also hide a column.
+    try:
+        ensure_unique_query_columns(columns)
+    except AppException as exc:
+        raise HTTPException(status_code=400, detail=exc.error_detail) from exc
+
+    preview_rows = [dict(zip(columns, row)) for row in rows[:QUERY_PREVIEW_ROWS]]
+    return ml_utils.sanitize_for_json(
+        {
+            "row_count": len(preview_rows),
+            "column_count": len(columns),
+            "column_names": columns,
+            "sample_data": preview_rows,
+            "columns_info": [],
+        }
+    )
+
+
+@router.post("/profile-data", dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.READ))
+])
+@router.post("/profile-csv", include_in_schema=False, dependencies=[
+    Depends(auth),
+    Depends(permissions(P.MlModel.READ))
+])
+async def profile_data(
+    profile_request: ProfileDataRequest,
+    request: Request,
     file_manager_service: FileManagerService = Injected(FileManagerService)
 ):
     """
-    Run pandas/ydata data profiling on a CSV file and return the report as a
-    downloadable HTML file.
-
-    The file_url can be:
-    - An absolute path (starting with /)
-    - A relative path (will be checked in DATA_VOLUME/train directories)
-    - A path within DATA_VOLUME
-    - An HTTP(S) URL (downloaded before profiling)
+    Profile a local/non-local CSV file or the result of a read-only SQL query.
     """
+    if profile_request.source_type == "datasource":
+        await _require_data_source_read(request)
+
+    temporary_path: Optional[Path] = None
     try:
-        try:
-            if file_url.startswith("http://") or file_url.startswith("https://"):
-                dest_path = os.path.join(ML_MODELS_UPLOAD_DIR, f"csv_file_{uuid.uuid4()}.csv")
-                await file_manager_service.download_file_from_url_to_path(file_url, dest_path)
-                file_path = dest_path
-            else:
-                file_path = ml_utils.resolve_csv_file_path(file_url, allowed_directories=await ml_utils.extra_csv_directories())
-        except AppException as e:
-            if e.error_key == ErrorKey.FILE_NOT_FOUND:
-                raise HTTPException(
-                    status_code=404,
-                    detail=e.error_detail
+        if profile_request.source_type == "datasource":
+            logger.info(
+                "Profiling SQL results for datasource %s",
+                profile_request.data_source_id,
+            )
+            dataframe = await _load_query_profile_dataframe(profile_request)
+            html = await asyncio.to_thread(
+                _build_dataframe_profile_report_html,
+                dataframe,
+                title=(
+                    "Data Profile: SQL Query Results "
+                    f"(up to {settings.ML_PROFILE_MAX_ROWS:,} rows)"
+                ),
+            )
+            download_name = "query_profile.html"
+        else:
+            file_path, temporary_path = await _resolve_profile_csv(
+                profile_request,
+                request,
+                file_manager_service,
+            )
+            logger.info("Profiling training file: %s", file_path)
+            display_name = profile_request.file_name
+            if display_name is None and temporary_path is not None:
+                display_name = "data.csv"
+            if training_file_suffix(file_path) in CSV_SUFFIXES:
+                await _ensure_unique_csv_header(Path(file_path))
+                html = await asyncio.to_thread(
+                    _build_profile_report_html,
+                    str(file_path),
+                    display_name,
                 )
             else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=e.error_detail
+                # Parquet / Excel / JSON: the first rows through the streaming
+                # readers, so profiling never loads a large file whole.
+                frame, _, _ = await read_training_file_preview(
+                    file_path,
+                    settings.ML_PROFILE_MAX_ROWS,
+                    sheet_name=profile_request.sheet_name,
+                    json_max_bytes=settings.ML_EXTRACT_JSON_MAX_BYTES,
                 )
+                html = await asyncio.to_thread(
+                    _build_dataframe_profile_report_html,
+                    frame,
+                    title=(
+                        f"Data Profile: {Path(display_name or str(file_path)).name} "
+                        f"(up to {settings.ML_PROFILE_MAX_ROWS:,} rows)"
+                    ),
+                    empty_detail="The file has no rows.",
+                )
+            report_stem = Path(display_name or str(file_path)).stem
+            download_name = f"{report_stem}_profile.html"
 
-        logger.info(f"Profiling CSV file: {file_path}")
-
-        # ydata-profiling is CPU-bound and can take a while on large files;
-        # run it off the event loop so it doesn't block other requests.
-        html = await asyncio.to_thread(_build_profile_report_html, str(file_path))
-
-        download_name = f"{Path(str(file_path)).stem}_profile.html"
         return Response(
             content=html,
             media_type="text/html",
@@ -462,11 +1294,24 @@ async def profile_csv(
 
     except HTTPException:
         raise
-    except AppException:
-        raise
+    except AppException as exc:
+        if exc.status_code == 403:
+            raise
+        status_code = 404 if exc.error_key == ErrorKey.FILE_NOT_FOUND else 400
+        raise HTTPException(status_code=status_code, detail=exc.error_detail) from exc
     except Exception as e:
-        logger.error(f"Error profiling CSV file: {str(e)}", exc_info=True)
+        logger.error("Error profiling data: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Error profiling CSV file: {str(e)}"
+            detail="Error profiling data."
         ) from e
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning(
+                    "Failed to delete temporary profile file %s",
+                    temporary_path,
+                    exc_info=True,
+                )

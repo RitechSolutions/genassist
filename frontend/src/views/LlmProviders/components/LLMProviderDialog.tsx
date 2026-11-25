@@ -114,7 +114,9 @@ export function LLMProviderDialog({
       setConnectionData((prev) => {
         const defaultValues = supportedModels[llmType].fields.reduce(
           (acc, field) => {
-            if (field.default !== undefined && !prev[field.name]) {
+            // Only fill fields that were never set: a saved 0, false or a
+            // field the user cleared (null) must survive reopening the dialog.
+            if (field.default !== undefined && prev[field.name] === undefined) {
               acc[field.name] = field.default as string | number | string[];
             }
             return acc;
@@ -143,14 +145,20 @@ export function LLMProviderDialog({
 
   const handleConnectionDataChange = (
     fieldName: string,
-    value: string | number | string[]
+    value: string | number | string[] | undefined
   ) => {
     if (fieldName === "model") {
       setLlmModel(value as string);
     }
     setConnectionData((prev) => ({
       ...prev,
-      [fieldName]: value,
+      // A cleared field is saved as null so the backend leaves it out of the
+      // request (e.g. Temperature, which newer models reject) and reopening the
+      // dialog doesn't fill the default back in.
+      [fieldName]: (value === undefined ? null : value) as
+        | string
+        | number
+        | string[],
     }));
   };
 
@@ -163,12 +171,20 @@ export function LLMProviderDialog({
         connectionData,
         providerId
       );
+      // A setting the model refused comes back with the value used instead.
+      const adjustedSettings = (result.adjusted_settings ?? {}) as Record<
+        string,
+        string | number | string[]
+      >;
+      setConnectionData((prev) => ({ ...prev, ...adjustedSettings }));
       setTestStatus({
         status: result.success ? "Connected" : "Error",
         last_tested_at: new Date().toISOString(),
         message: result.message,
       });
-      setTestedConnectionData(structuredClone(connectionData));
+      setTestedConnectionData(
+        structuredClone({ ...connectionData, ...adjustedSettings })
+      );
     } catch {
       setTestStatus({
         status: "Error",

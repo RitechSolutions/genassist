@@ -1,4 +1,9 @@
 import { Transcript } from "@/interfaces/transcript.interface";
+import {
+  calendarDayNumber,
+  dateParts,
+  displayTimeZone,
+} from "@/helpers/timeZone";
 
 // Hostility constants for live conversations
 export const HOSTILITY_POSITIVE_MAX = 20;
@@ -15,9 +20,23 @@ export const getSentimentFromHostility = (hostilityScore: number): string => {
   }
 };
 
+/**
+ * A live conversation's status reaches the UI in two spellings: the REST API returns
+ * `in_progress`, while the dashboard websocket normalises the same state to `in-progress`.
+ * Compare through here so a running conversation is never mistaken for a finalized one just
+ * because of the separator.
+ */
+export const isLiveConversationStatus = (status?: string | null): boolean => {
+  const normalized = (status ?? "").trim().toLowerCase().replace(/-/g, "_");
+  return normalized === "in_progress" || normalized === "takeover";
+};
+
+export const isLiveTranscript = (transcript: Transcript | null | undefined): boolean =>
+  isLiveConversationStatus(transcript?.status);
+
 // Gets the effective sentiment for a transcript
 export const getEffectiveSentiment = (transcript: Transcript): string => {
-  const isLive = transcript?.status === "in_progress" || transcript?.status === "takeover";
+  const isLive = isLiveTranscript(transcript);
   
   if (isLive) {
     // Sentiment from hostility score
@@ -72,18 +91,46 @@ export const formatDateTime = (dateString: string = ""): string => {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: displayTimeZone(),
     });
   } catch (error) {
     return dateString || "N/A";
   }
 };
 
+/** Time for a list row: clock time for today, short date before that. */
+export function formatRowTimestamp(timestamp?: string): string {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const isToday = calendarDayNumber(date) === calendarDayNumber(new Date());
+  const timeZone = displayTimeZone();
+
+  return isToday
+    ? date.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone,
+      })
+    : date.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        timeZone,
+      });
+}
+
 export const formatMetric = (value: number = 0, precision: number = 1): string => {
   if (typeof value !== 'number' || isNaN(value)) {
     return "0.0";
   }
   return value.toFixed(precision);
+};
+
+export const formatConversationTotalCost = (total: number, pricedCount: number, incomplete: boolean): string => {
+  if (incomplete && pricedCount === 0) return "N/A";
+  return `${incomplete ? "≥ " : ""}$${total.toFixed(6)}`;
 };
 
 export const getTranscriptTypeLabel = (transcript: Transcript): string => {
@@ -119,7 +166,10 @@ export const formatMessageTime = (createTime: string | number | undefined): stri
     
     if (isNaN(date.getTime())) return "";
     
-    return date.toTimeString().split(' ')[0];
+    const { hours, minutes, seconds } = dateParts(date);
+    return [hours, minutes, seconds]
+      .map((part) => String(part).padStart(2, "0"))
+      .join(":");
   } catch (error) {
     return "";
   }

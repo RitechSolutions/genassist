@@ -204,28 +204,48 @@ export function describeCron(cron: string): string | null {
   return null;
 }
 
-/**
- * The model file a run produced, read out of the workflow's final output.
- * Promotion copies this onto the model (see the backend's `promote_run`).
- */
-export function runModelFilePath(run: PipelineRun): string | null {
+function runOutputString(run: PipelineRun, key: string): string | null {
   const output = (run.execution_output as { output?: unknown } | undefined)?.output;
   if (!output || typeof output !== "object") return null;
-  const path = (output as { model_file_path?: unknown }).model_file_path;
-  return typeof path === "string" && path.length > 0 ? path : null;
+  const value = (output as Record<string, unknown>)[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
+
+/**
+ * The model file a run produced, read out of the workflow's final output. Newer
+ * runs give it relative to the data volume; older runs recorded the server path.
+ */
+export function runModelFilePath(run: PipelineRun): string | null {
+  return runOutputString(run, "model_file_path");
+}
+
+/**
+ * The File Manager id of the model file a run uploaded. Promotion points the
+ * model at this id (see the backend's `promote_run`). Runs from before file ids
+ * were recorded have none.
+ */
+export function runModelFileId(run: PipelineRun): string | null {
+  return runOutputString(run, "pkl_file_id");
+}
+
+/** The fields of a model that say which file it serves. */
+export type ModelFileRef = { pkl_file?: string | null; pkl_file_id?: string | null };
 
 /**
  * Whether this run's output is the model's currently active file. There is no
  * "promoted" column on a run, so it is derived by matching the file the run
- * produced against the one the model now points at.
+ * produced against the one the model now points at: by uploaded file id, or by
+ * path for runs that recorded no id.
  */
 export function isRunPromoted(
   run: PipelineRun,
-  modelFilePath: string | null | undefined
+  model: ModelFileRef | null | undefined
 ): boolean {
+  if (!model) return false;
+  const fileId = runModelFileId(run);
+  if (fileId) return !!model.pkl_file_id && fileId === String(model.pkl_file_id);
   const produced = runModelFilePath(run);
-  return !!produced && !!modelFilePath && produced === modelFilePath;
+  return !!produced && !!model.pkl_file && produced === model.pkl_file;
 }
 
 /** Whether this run used the pipeline configuration that is the model's default. */
@@ -244,10 +264,11 @@ export function isRunDefaultPipeline(
  */
 export function isRunFullyPromoted(
   run: PipelineRun,
-  modelFilePath: string | null | undefined,
+  model: ModelFileRef | null | undefined,
   defaultConfigId: string | null | undefined
 ): boolean {
   const isDefault = isRunDefaultPipeline(run, defaultConfigId);
   if (!isDefault) return false;
-  return runModelFilePath(run) ? isRunPromoted(run, modelFilePath) : true;
+  const producedFile = runModelFileId(run) || runModelFilePath(run);
+  return producedFile ? isRunPromoted(run, model) : true;
 }

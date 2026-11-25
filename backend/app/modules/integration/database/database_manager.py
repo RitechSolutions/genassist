@@ -1,21 +1,39 @@
-from typing import Dict, List, Any, Tuple, Optional
+import asyncio
 import logging
-import yaml
 import os
+from collections.abc import Mapping
+from contextlib import aclosing
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 from urllib.parse import quote
-from sshtunnel import SSHTunnelForwarder
-from app.core.utils.encryption_utils import decrypt_key
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
-from sqlalchemy import column as sql_column
+
+import yaml
 from sqlalchemy import func, literal_column, quoted_name, select, text
+from sqlalchemy import column as sql_column
 from sqlalchemy import table as sql_table
 from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
-import asyncio
-from app.modules.integration.snowflake import SnowflakeManager
+from sshtunnel import SSHTunnelForwarder
+
 from app.core.config.settings import settings
+from app.core.utils.encryption_utils import decrypt_key
+from app.core.exceptions.error_policy import sanitize_database_error
+from app.core.utils.sensitive_data_utils import redact_sql_literals
+from app.modules.integration.database.bound_parameters import BoundValueError
+from app.modules.integration.snowflake import SnowflakeManager
 
 logger = logging.getLogger(__name__)
+
+# SQLAlchemy logs every statement when its engine logger is at INFO, which
+# init_logging turns on whenever DEBUG is set. Datasource queries hold user
+# values (e.g. WHERE password = '...'), so their engines log under their own
+# name and stay at WARNING. aiosqlite (only used for SQLite datasources) logs
+# each statement at DEBUG the same way.
+DATASOURCE_ENGINE_LOGGING_NAME = "datasource"
+logging.getLogger(f"sqlalchemy.engine.Engine.{DATASOURCE_ENGINE_LOGGING_NAME}").setLevel(logging.WARNING)
+logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 
 
 POSTGRES_SCHEMA = "public"
@@ -96,9 +114,7 @@ class DatabaseManager:
         if source_type == "snowflake":
             self.db_type = "snowflake"
         else:
-            self.db_type = self.config.get("database_type") or self.config.get(
-                "source_type"
-            )
+            self.db_type = self.config.get("database_type") or self.config.get("source_type")
 
         ssh_config = {
             "ssh_tunnel_host": self.config.get("ssh_tunnel_host"),
@@ -123,6 +139,23 @@ class DatabaseManager:
 
     def get_db_type(self) -> str:
         return self.db_type
+
+    def _loggable_query(self, query: str) -> str:
+        return redact_sql_literals(query, dialect=self.db_type)
+
+    def _safe_query_error(
+        self,
+        error: Exception,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+    ) -> str:
+        """The driver error without the query's literal or bound values."""
+        return sanitize_database_error(
+            error,
+            query=query,
+            parameters=parameters,
+            dialect=self.db_type,
+        )
 
     async def initialize(self):
         await self.connect()
@@ -173,6 +206,7 @@ class DatabaseManager:
     @staticmethod
     async def test_connection(cd: dict) -> dict:
         from app.core.utils.encryption_utils import encrypt_key
+
         db_cd = dict(cd)
         for field in ["database_password", "ssh_tunnel_private_key"]:
             if db_cd.get(field):
@@ -217,6 +251,8 @@ class DatabaseManager:
                 self.engine = create_async_engine(
                     connection_url,
                     echo=False,
+                    hide_parameters=True,
+                    logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
                 )
@@ -240,6 +276,8 @@ class DatabaseManager:
                 self.engine = create_async_engine(
                     connection_url,
                     echo=False,
+                    hide_parameters=True,
+                    logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
                 )
@@ -275,6 +313,8 @@ class DatabaseManager:
                 self.engine = create_async_engine(
                     connection_url,
                     echo=False,
+                    hide_parameters=True,
+                    logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
                     poolclass=NullPool,  # Use NullPool for external database connections
                     future=True,
                 )
@@ -284,11 +324,13 @@ class DatabaseManager:
                 # Use aiosqlite for SQLite connections
                 db_path = self.config.get("database_path", ":memory:")
                 connection_string = f"sqlite+aiosqlite:///{db_path}"
-                logger.info(
-                    f"Connecting to SQLite with connection string: {connection_string}"
-                )
+                logger.info(f"Connecting to SQLite with connection string: {connection_string}")
                 self.engine = create_async_engine(
-                    connection_string, echo=False, future=True
+                    connection_string,
+                    echo=False,
+                    hide_parameters=True,
+                    logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
+                    future=True,
                 )
                 logger.info("Connected to SQLite database")
             elif self.db_type and self.db_type.lower() == "snowflake":
@@ -312,16 +354,12 @@ class DatabaseManager:
             ssh_host = self.ssh_config.get("ssh_tunnel_host")
             ssh_port = self.ssh_config.get("ssh_tunnel_port", 22)
             ssh_user = self.ssh_config.get("ssh_tunnel_user")
-            ssh_key_content = decrypt_key(
-                self.ssh_config.get("ssh_tunnel_private_key")
-            )  # PEM content as string
+            ssh_key_content = decrypt_key(self.ssh_config.get("ssh_tunnel_private_key"))  # PEM content as string
             db_host = self.config.get("database_host")
             db_port = self.config.get("database_port")
 
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            ssh_key_path = os.path.join(
-                current_dir, f"{self.config.get('database_name')}_ssh_key.pem"
-            )
+            ssh_key_path = os.path.join(current_dir, f"{self.config.get('database_name')}_ssh_key.pem")
             logger.info("ssh key path: %s", ssh_key_path)
 
             self._save_key_to_file(ssh_key_content, ssh_key_path)
@@ -431,7 +469,9 @@ class DatabaseManager:
                 self.tunnel = None
 
     async def execute_query(
-        self, query: str, parameters: List = None
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
     ) -> Tuple[List[Dict], Optional[str]]:
         """
         Executes a database query and returns the results.
@@ -457,7 +497,7 @@ class DatabaseManager:
             if not self.engine:
                 await self.connect()
 
-            logger.info(f"Executing query: {query}")
+            logger.info("Executing query: %s", self._loggable_query(query))
 
             async with self.engine.begin() as conn:
                 if parameters:
@@ -476,9 +516,400 @@ class DatabaseManager:
             return results, None
 
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Error executing query: {error_msg}")
+            error_msg = self._safe_query_error(e, query, parameters)
+            logger.error("Error executing query: %s", error_msg)
             return [], error_msg
+
+    async def execute_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+    ) -> Tuple[List[Dict], Optional[str]]:
+        """Execute a user-facing datasource read with DB-level defense in depth.
+
+        This does not replace ``validate_read_only_sql`` and does not guarantee
+        that SELECT functions/UDFs are side-effect free. Callers that run
+        untrusted SQL must validate first, then call this method.
+
+        PostgreSQL, MySQL, and SQLite apply a read-only transaction or
+        connection for this call only. MSSQL and Snowflake keep ordinary
+        execution semantics; SELECT-only logins/roles are a datasource
+        configuration requirement.
+        """
+        try:
+            db_type = (self.db_type or "").strip().lower()
+
+            if db_type == "snowflake":
+                # Long-lived connector session: do not USE ROLE or ALTER SESSION.
+                # A SELECT-only Snowflake role in connection_data is the second layer.
+                if not self.snowflake_manager:
+                    await self.connect()
+                return await self.snowflake_manager.execute_query(query, parameters)
+
+            if db_type not in {"postgresql", "mysql", "sql", "mssql", "sqlite"}:
+                return [], f"Unsupported database type: {self.db_type}"
+
+            if not self.engine:
+                await self.connect()
+
+            logger.info("Executing read query: %s", self._loggable_query(query))
+
+            if db_type == "postgresql":
+                return await self._execute_postgres_read_query(query, parameters)
+            if db_type in {"mysql", "sql"}:
+                return await self._execute_mysql_read_query(query, parameters)
+            if db_type == "sqlite":
+                return await self._execute_sqlite_read_query(query, parameters)
+
+            # MSSQL has no transaction-level READ ONLY equivalent.
+            # ApplicationIntent=ReadOnly is replica routing, not authorization.
+            # Database permissions (e.g. db_datareader) are the second layer.
+            return await self._execute_generic_sqlalchemy_query(query, parameters)
+
+        except BoundValueError:
+            logger.error("A bound workflow variable has an invalid database value type")
+            raise
+        except Exception as e:
+            error_msg = self._safe_query_error(e, query, parameters)
+            logger.error("Error executing read query: %s", error_msg)
+            return [], error_msg
+
+    async def stream_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+        *,
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        """Stream a read-only query as ``(columns, tuple_rows)`` chunks.
+
+        The first yielded chunk always contains the result columns, even when
+        the query returns no rows. Database cursors and read-only transactions
+        remain open only while the iterator is being consumed.
+        """
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be a positive integer")
+
+        try:
+            db_type = (self.db_type or "").strip().lower()
+
+            if db_type == "snowflake":
+                if not self.snowflake_manager:
+                    await self.connect()
+                stream = self.snowflake_manager.stream_query(
+                    query,
+                    parameters,
+                    chunk_size=chunk_size,
+                )
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                return
+
+            if db_type not in {"postgresql", "mysql", "sql", "mssql", "sqlite"}:
+                raise RuntimeError(f"Unsupported database type: {self.db_type}")
+
+            if not self.engine:
+                await self.connect()
+
+            logger.info("Streaming read query: %s", self._loggable_query(query))
+
+            if db_type == "postgresql":
+                stream = self._stream_postgres_read_query(query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                return
+            if db_type in {"mysql", "sql"}:
+                stream = self._stream_mysql_read_query(query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                return
+            if db_type == "sqlite":
+                stream = self._stream_sqlite_read_query(query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                return
+
+            # MSSQL has no transaction-level READ ONLY equivalent. Its
+            # datasource login must be restricted to read access.
+            async with self.engine.connect() as conn:
+                stream = self._stream_connection_rows(conn, query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+
+        except BoundValueError:
+            logger.error("A bound workflow variable has an invalid database value type")
+            raise
+        except Exception as exc:
+            error_msg = self._safe_query_error(exc, query, parameters)
+            logger.error("Error streaming read query: %s", error_msg)
+            raise RuntimeError(error_msg) from None
+
+    async def _stream_postgres_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        async with self.engine.begin() as conn:
+            await conn.execute(text("SET TRANSACTION READ ONLY"))
+            converted = await self._coerce_postgres_parameters(conn, query, parameters)
+            stream = self._stream_connection_rows(conn, query, converted, chunk_size)
+            async with aclosing(stream):
+                async for chunk in stream:
+                    yield chunk
+
+    async def _stream_mysql_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        async with self.engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            started = False
+            committed = False
+            try:
+                await conn.execute(text("START TRANSACTION READ ONLY"))
+                started = True
+                stream = self._stream_connection_rows(conn, query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+                await conn.execute(text("COMMIT"))
+                committed = True
+            finally:
+                if started and not committed:
+                    try:
+                        await conn.execute(text("ROLLBACK"))
+                    except Exception:
+                        logger.debug("MySQL read-only ROLLBACK failed", exc_info=True)
+
+    async def _stream_sqlite_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        readonly_url = self._sqlite_file_readonly_url()
+        if readonly_url is not None:
+            ro_engine = create_async_engine(
+                readonly_url,
+                echo=False,
+                hide_parameters=True,
+                logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
+                future=True,
+                poolclass=NullPool,
+            )
+            try:
+                async with ro_engine.connect() as conn:
+                    stream = self._stream_connection_rows(conn, query, parameters, chunk_size)
+                    async with aclosing(stream):
+                        async for chunk in stream:
+                            yield chunk
+            finally:
+                await ro_engine.dispose()
+            return
+
+        async with self.engine.connect() as conn:
+            await conn.execute(text("PRAGMA query_only = ON"))
+            try:
+                stream = self._stream_connection_rows(conn, query, parameters, chunk_size)
+                async with aclosing(stream):
+                    async for chunk in stream:
+                        yield chunk
+            finally:
+                await conn.execute(text("PRAGMA query_only = OFF"))
+
+    @staticmethod
+    async def _stream_connection_rows(
+        conn,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+        chunk_size: int,
+    ) -> AsyncIterator[Tuple[List[str], List[Tuple[Any, ...]]]]:
+        result = await conn.stream(text(query), parameters or {})
+        try:
+            columns = list(result.keys()) if result.keys() else []
+            # Column metadata exists before the first row and must survive an
+            # empty result set.
+            yield columns, []
+            async for partition in result.partitions(chunk_size):
+                yield columns, [tuple(row) for row in partition]
+        finally:
+            await result.close()
+
+    async def _execute_postgres_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+    ) -> Tuple[List[Dict], Optional[str]]:
+        """SET TRANSACTION READ ONLY on the same txn as the user query.
+
+        SQLAlchemy 2 ``engine.begin()`` does not emit SQL BEGIN; the first
+        ``execute`` starts the DBAPI transaction. Issuing SET TRANSACTION
+        before the user SQL therefore applies to the current transaction
+        without changing session defaults.
+        """
+        async with self.engine.begin() as conn:
+            await conn.execute(text("SET TRANSACTION READ ONLY"))
+            converted = await self._coerce_postgres_parameters(conn, query, parameters)
+            return await self._fetch_query_rows(conn, query, converted), None
+
+    async def _coerce_postgres_parameters(
+        self,
+        conn,
+        query: str,
+        parameters: Optional[Mapping[str, Any]],
+    ) -> Optional[Mapping[str, Any]]:
+        """Convert string inputs to the types inferred by PostgreSQL."""
+        if not parameters:
+            return parameters
+
+        compiled = text(query).compile(dialect=self.engine.dialect)
+        parameter_order = list(compiled.positiontup or [])
+        if not parameter_order:
+            return parameters
+
+        raw_connection = await conn.get_raw_connection()
+        prepared = await raw_connection.driver_connection.prepare(str(compiled))
+        inferred_types = prepared.get_parameters()
+        converted = dict(parameters)
+        variable_names = getattr(parameters, "variable_names", {})
+
+        for bind_name, inferred_type in zip(parameter_order, inferred_types):
+            value = converted.get(bind_name)
+            if not isinstance(value, str):
+                continue
+            pg_type = str(getattr(inferred_type, "name", "")).lower()
+            try:
+                converted[bind_name] = self._coerce_postgres_value(value, pg_type)
+            except (ValueError, TypeError, InvalidOperation):
+                variable_name = variable_names.get(bind_name, bind_name)
+                expected_type = pg_type or "database-compatible"
+                raise BoundValueError(variable_name, expected_type) from None
+        return converted
+
+    @staticmethod
+    def _coerce_postgres_value(value: str, pg_type: str) -> Any:
+        if pg_type in {"int2", "int4", "int8"}:
+            return int(value)
+        if pg_type in {"float4", "float8"}:
+            return float(value)
+        if pg_type == "numeric":
+            return Decimal(value)
+        if pg_type == "bool":
+            normalized = value.strip().lower()
+            if normalized in {"true", "t", "yes", "y", "on", "1"}:
+                return True
+            if normalized in {"false", "f", "no", "n", "off", "0"}:
+                return False
+            raise ValueError("invalid boolean")
+        if pg_type == "date":
+            return date.fromisoformat(value)
+        if pg_type in {"timestamp", "timestamptz"}:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return value
+
+    async def _execute_mysql_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+    ) -> Tuple[List[Dict], Optional[str]]:
+        """Run the user query inside START TRANSACTION READ ONLY.
+
+        SQLAlchemy 2 + aiomysql ``engine.begin()`` only starts a Python
+        transaction; the DBAPI then implicitly begins a read-write MySQL
+        transaction (autocommit off). ``SET TRANSACTION READ ONLY`` after
+        that is too late. ``isolation_level="AUTOCOMMIT"`` here only calls
+        ``autocommit(True)`` — it is not ``SET SESSION TRANSACTION READ ONLY``.
+        ``START TRANSACTION READ ONLY`` is then the real MySQL begin.
+        COMMIT/ROLLBACK are issued as SQL because DBAPI commit/rollback are
+        ignored while autocommit is on.
+        """
+        async with self.engine.connect() as conn:
+            await conn.execution_options(isolation_level="AUTOCOMMIT")
+            started = False
+            try:
+                await conn.execute(text("START TRANSACTION READ ONLY"))
+                started = True
+                rows = await self._fetch_query_rows(conn, query, parameters)
+                await conn.execute(text("COMMIT"))
+                return rows, None
+            except Exception:
+                if started:
+                    try:
+                        await conn.execute(text("ROLLBACK"))
+                    except Exception:
+                        logger.debug("MySQL read-only ROLLBACK failed", exc_info=True)
+                raise
+
+    async def _execute_sqlite_read_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+    ) -> Tuple[List[Dict], Optional[str]]:
+        """Per-call SQLite read-only enforcement; does not alter ``self.engine``."""
+        readonly_url = self._sqlite_file_readonly_url()
+        if readonly_url is not None:
+            ro_engine = create_async_engine(
+                readonly_url,
+                echo=False,
+                hide_parameters=True,
+                logging_name=DATASOURCE_ENGINE_LOGGING_NAME,
+                future=True,
+                poolclass=NullPool,
+            )
+            try:
+                return await self._execute_generic_sqlalchemy_query(query, parameters, engine=ro_engine)
+            finally:
+                await ro_engine.dispose()
+
+        # :memory: (and anything without a file URI) cannot use a separate
+        # mode=ro connection. Toggle query_only on this checkout only.
+        async with self.engine.begin() as conn:
+            await conn.execute(text("PRAGMA query_only = ON"))
+            try:
+                return await self._fetch_query_rows(conn, query, parameters), None
+            finally:
+                await conn.execute(text("PRAGMA query_only = OFF"))
+
+    def _sqlite_file_readonly_url(self) -> Optional[str]:
+        db_path = self.config.get("database_path", ":memory:")
+        if not isinstance(db_path, str):
+            return None
+        stripped = db_path.strip()
+        if not stripped or stripped == ":memory:" or stripped.startswith("file::memory:"):
+            return None
+        abs_path = os.path.abspath(stripped)
+        return f"sqlite+aiosqlite:///file:{abs_path}?mode=ro&uri=true"
+
+    async def _execute_generic_sqlalchemy_query(
+        self,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+        engine: Optional[AsyncEngine] = None,
+    ) -> Tuple[List[Dict], Optional[str]]:
+        target = engine if engine is not None else self.engine
+        async with target.begin() as conn:
+            return await self._fetch_query_rows(conn, query, parameters), None
+
+    async def _fetch_query_rows(
+        self,
+        conn,
+        query: str,
+        parameters: Optional[Mapping[str, Any]] = None,
+    ) -> List[Dict]:
+        if parameters:
+            result = await conn.execute(text(query), parameters)
+        else:
+            result = await conn.execute(text(query))
+        columns = list(result.keys()) if result.keys() else []
+        return [dict(zip(columns, row)) for row in result.fetchall()]
 
     async def _get_schema(
         self,
@@ -600,10 +1031,7 @@ class DatabaseManager:
                             }
 
                             # Add categorical values if requested and column appears to be categorical
-                            if (
-                                include_categorical_values
-                                and self._is_categorical_column(column[1], column[4])
-                            ):
+                            if include_categorical_values and self._is_categorical_column(column[1], column[4]):
                                 try:
                                     # Savepoint so a failed query does not abort the rest of the read
                                     async with conn.begin_nested():
@@ -629,9 +1057,7 @@ class DatabaseManager:
                                         )
 
                                 except Exception as e:
-                                    logger.warning(
-                                        f"Could not fetch categorical values for {table}.{column[0]}: {e}"
-                                    )
+                                    logger.warning(f"Could not fetch categorical values for {table}.{column[0]}: {e}")
                                     col_info["possible_values"] = []
 
                             table_info["columns"].append(col_info)
@@ -676,9 +1102,7 @@ class DatabaseManager:
                                 )
 
                             except Exception as e:
-                                logger.warning(
-                                    f"Could not fetch samples for table {table}: {e}"
-                                )
+                                logger.warning(f"Could not fetch samples for table {table}: {e}")
                                 table_info["samples"] = []
 
                         schema["tables"].append(table_info)
@@ -754,10 +1178,7 @@ class DatabaseManager:
                             }
 
                             # Add categorical values if requested and column appears to be categorical
-                            if (
-                                include_categorical_values
-                                and self._is_categorical_column(column[1])
-                            ):
+                            if include_categorical_values and self._is_categorical_column(column[1]):
                                 try:
                                     # Get distinct values for categorical columns
                                     quoted_column = (
@@ -776,9 +1197,7 @@ class DatabaseManager:
                                         text(query), {"limit": max_categorical_values}
                                     )
 
-                                    distinct_values = [
-                                        row[0] for row in result.fetchall()
-                                    ]
+                                    distinct_values = [row[0] for row in result.fetchall()]
                                     col_info["possible_values"] = distinct_values
 
                                     # Get count of distinct values
@@ -799,9 +1218,7 @@ class DatabaseManager:
                                         )
 
                                 except Exception as e:
-                                    logger.warning(
-                                        f"Could not fetch categorical values for {table}.{column[0]}: {e}"
-                                    )
+                                    logger.warning(f"Could not fetch categorical values for {table}.{column[0]}: {e}")
                                     col_info["possible_values"] = []
 
                             table_info["columns"].append(col_info)
@@ -843,9 +1260,7 @@ class DatabaseManager:
                                 table_info["samples"] = samples
 
                             except Exception as e:
-                                logger.warning(
-                                    f"Could not fetch samples for table {table}: {e}"
-                                )
+                                logger.warning(f"Could not fetch samples for table {table}: {e}")
                                 table_info["samples"] = []
 
                         schema["tables"].append(table_info)
@@ -956,19 +1371,14 @@ class DatabaseManager:
                             }
 
                             # Add categorical values if requested and column appears to be categorical
-                            if (
-                                include_categorical_values
-                                and self._is_categorical_column(column[1], column[4])
-                            ):
+                            if include_categorical_values and self._is_categorical_column(column[1], column[4]):
                                 try:
                                     # Get distinct values for categorical columns
                                     result = await conn.execute(
                                         _distinct_values_query(table, column[0], max_categorical_values)
                                     )
 
-                                    distinct_values = [
-                                        row[0] for row in result.fetchall()
-                                    ]
+                                    distinct_values = [row[0] for row in result.fetchall()]
                                     col_info["possible_values"] = distinct_values
 
                                     # Get count of distinct values to know if we hit the limit
@@ -985,9 +1395,7 @@ class DatabaseManager:
                                         )
 
                                 except Exception as e:
-                                    logger.warning(
-                                        f"Could not fetch categorical values for {table}.{column[0]}: {e}"
-                                    )
+                                    logger.warning(f"Could not fetch categorical values for {table}.{column[0]}: {e}")
                                     col_info["possible_values"] = []
 
                             table_info["columns"].append(col_info)
@@ -1031,9 +1439,7 @@ class DatabaseManager:
                                 )
 
                             except Exception as e:
-                                logger.warning(
-                                    f"Could not fetch samples for table {table}: {e}"
-                                )
+                                logger.warning(f"Could not fetch samples for table {table}: {e}")
                                 table_info["samples"] = []
 
                         schema["tables"].append(table_info)
@@ -1070,9 +1476,7 @@ class DatabaseManager:
 
             elif db_type == "sqlite":
                 async with self.engine.begin() as conn:
-                    result = await conn.execute(
-                        text("SELECT name FROM sqlite_master WHERE type='table'")
-                    )
+                    result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'"))
                     tables = [row[0] for row in result.fetchall()]
 
                     if not self.allowed_tables or len(self.allowed_tables) == 0:
@@ -1107,19 +1511,14 @@ class DatabaseManager:
                             }
 
                             # Add categorical values if requested and column appears to be categorical
-                            if (
-                                include_categorical_values
-                                and self._is_categorical_column(column[2])
-                            ):
+                            if include_categorical_values and self._is_categorical_column(column[2]):
                                 try:
                                     # Get distinct values for categorical columns
                                     result = await conn.execute(
                                         _distinct_values_query(table, column[1], max_categorical_values)
                                     )
 
-                                    distinct_values = [
-                                        row[0] for row in result.fetchall()
-                                    ]
+                                    distinct_values = [row[0] for row in result.fetchall()]
                                     col_info["possible_values"] = distinct_values
 
                                     # Get count of distinct values
@@ -1136,9 +1535,7 @@ class DatabaseManager:
                                         )
 
                                 except Exception as e:
-                                    logger.warning(
-                                        f"Could not fetch categorical values for {table}.{column[1]}: {e}"
-                                    )
+                                    logger.warning(f"Could not fetch categorical values for {table}.{column[1]}: {e}")
                                     col_info["possible_values"] = []
 
                             table_info["columns"].append(col_info)
@@ -1165,9 +1562,7 @@ class DatabaseManager:
                                 table_info["samples"] = samples
 
                             except Exception as e:
-                                logger.warning(
-                                    f"Could not fetch samples for table {table}: {e}"
-                                )
+                                logger.warning(f"Could not fetch samples for table {table}: {e}")
                                 table_info["samples"] = []
 
                         schema["tables"].append(table_info)
@@ -1228,15 +1623,10 @@ class DatabaseManager:
             return True
 
         # String/character types with reasonable length limits
-        if any(
-            str_type in data_type_lower
-            for str_type in ["varchar", "char", "text", "string"]
-        ):
+        if any(str_type in data_type_lower for str_type in ["varchar", "char", "text", "string"]):
             # For PostgreSQL, use max_length if available
             if max_length is not None:
-                return (
-                    max_length <= 100
-                )  # Arbitrary threshold for categorical vs free text
+                return max_length <= 100  # Arbitrary threshold for categorical vs free text
             # For MySQL/SQLite, extract length from type definition
             elif "(" in data_type_lower:
                 try:
@@ -1249,9 +1639,7 @@ class DatabaseManager:
             return True
 
         # Boolean types
-        if any(
-            bool_type in data_type_lower for bool_type in ["bool", "boolean", "bit"]
-        ):
+        if any(bool_type in data_type_lower for bool_type in ["bool", "boolean", "bit"]):
             return True
 
         # Small integer types (likely categorical)

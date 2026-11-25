@@ -4,7 +4,7 @@ LLM cost calculation service.
 Calculates cost in USD from token usage using provider/model pricing.
 """
 
-from app.core.config.llm_pricing import blended_token_cost, inclusive_cache_fallback, resolve_live_pricing
+from app.core.config.llm_pricing import LivePricing, blended_token_cost, inclusive_cache_fallback, resolve_live_pricing
 
 
 class LlmCostCalculator:
@@ -16,6 +16,7 @@ class LlmCostCalculator:
         output_tokens: int,
         cache_read_tokens: int = 0,
         cache_creation_tokens: int = 0,
+        pricing: LivePricing | None = None,
     ) -> float | None:
         """
         Calculate cost in USD for given token usage.
@@ -29,14 +30,17 @@ class LlmCostCalculator:
             cache_creation_tokens: Prompt tokens written to the provider's cache
 
         Returns:
-            Cost in USD, or None when an active cache bucket has no resolvable rate
+            Cost in USD, or None when the model has no rate or an active cache bucket has no resolvable rate
         """
+        provider_key = (provider or "").strip().lower()
+        if pricing is None:
+            pricing = resolve_live_pricing(provider, model)
+        if pricing is None:
+            return None
         if input_tokens < 0 or output_tokens < 0:
             return 0.0
-        provider_key = (provider or "").strip().lower()
-        pricing = resolve_live_pricing(provider, model)
-        input_per_1k = pricing.display_rates.get("input_per_1k", 0.001)
-        output_per_1k = pricing.display_rates.get("output_per_1k", 0.002)
+        input_per_1k = pricing.display_rates["input_per_1k"]
+        output_per_1k = pricing.display_rates["output_per_1k"]
         read_rate = inclusive_cache_fallback(provider_key, pricing.cache_read_per_1k, input_per_1k)
         creation_rate = inclusive_cache_fallback(provider_key, pricing.cache_creation_per_1k, input_per_1k)
 

@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     PrimaryKeyConstraint,
     String,
@@ -35,10 +36,13 @@ class ConversationAnalysisModel(Base):
         UniqueConstraint(
             "conversation_id", name="uq_conversation_analysis_conversation_id"
         ),
+        # is_deleted keeps the soft-delete filter on an index-only scan
+        Index("ix_conversation_analysis_topic_subtopic", "topic", "subtopic", "is_deleted"),
     )
 
     conversation_id: Mapped[UUID] = mapped_column(UUID)
     topic: Mapped[Optional[str]] = mapped_column(String(255))
+    subtopic: Mapped[Optional[str]] = mapped_column(String(255))
     summary: Mapped[Optional[str]] = mapped_column(Text)
     negative_sentiment: Mapped[Optional[int]] = mapped_column(Integer)
     positive_sentiment: Mapped[Optional[int]] = mapped_column(Integer)
@@ -75,6 +79,9 @@ class ConversationModel(Base, GroupScopedMixin):
             ["recording_id"], ["recordings.id"], name="recording_id_fk"
         ),
         PrimaryKeyConstraint("id", name="conversations_pkey"),
+        # Non-partial by design: analytics discovery scans soft-deleted rows too.
+        # Created CONCURRENTLY by its migration; declared so autogenerate keeps it.
+        Index("ix_conversations_updated_at", "updated_at"),
     )
 
     zendesk_ticket_id: Mapped[Optional[int]] = mapped_column(
@@ -110,10 +117,17 @@ class ConversationModel(Base, GroupScopedMixin):
     in_progress_hostility_score: Mapped[int] = mapped_column(
         Integer, server_default=text("0")
     )
+    hostility_messages_since_check: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     conversation_type: Mapped[str] = mapped_column(String(50), nullable=False)
     thumbs_down_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     thumbs_up_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
     finalize_llm_analyst_id: Mapped[Optional[UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    # Backfill retry bookkeeping
+    analysis_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    analysis_last_attempt_at: Mapped[Optional[datetime.datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    analysis_last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     custom_attributes: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     pii_redacted_at: Mapped[Optional[datetime.datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True

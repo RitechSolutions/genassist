@@ -1,10 +1,13 @@
-import pytest
 from unittest.mock import Mock, patch
 
+import pytest
+from botocore.exceptions import ClientError
+
+from app.core.utils.s3_utils import S3Client
 from app.modules.filemanager.providers.s3.provider import S3StorageProvider
 
-
 # ==================== Fixtures ====================
+
 
 @pytest.fixture
 def s3_config():
@@ -13,6 +16,7 @@ def s3_config():
         "AWS_BUCKET_NAME": "test-bucket",
         "AWS_ACCESS_KEY_ID": "test-access-key",
         "AWS_SECRET_ACCESS_KEY": "test-secret-key",
+        "AWS_SESSION_TOKEN": "test-session-token",
         "AWS_REGION": "us-east-1",
     }
 
@@ -28,7 +32,7 @@ def mock_s3_client():
 def s3_provider(s3_config, mock_s3_client):
     """Create an S3StorageProvider with mocked S3Client."""
     # Patch S3Client during provider initialization
-    with patch('app.modules.filemanager.providers.s3.provider.S3Client', return_value=mock_s3_client):
+    with patch("app.modules.filemanager.providers.s3.provider.S3Client", return_value=mock_s3_client):
         provider = S3StorageProvider(config=s3_config)
     # Ensure the mock is set (in case patch didn't work as expected)
     provider.s3_client = mock_s3_client
@@ -37,37 +41,43 @@ def s3_provider(s3_config, mock_s3_client):
 
 # ==================== Unit Tests ====================
 
+
 class TestS3StorageProvider:
     """Test S3 storage provider with mocked S3Client."""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("prefix,limit,expected_keys,expected_call_args", [
-        (
-            None, None,
-            ["file1.txt", "file2.pdf", "folder1/file3.txt"],
-            {"prefix": "", "max_keys": 1000},
-        ),
-        (
-            "folder1/", None,
-            ["folder1/file1.txt", "folder1/file2.pdf"],
-            {"prefix": "folder1/", "max_keys": 1000},
-        ),
-        (
-            None, 2,
-            ["file1.txt", "file2.pdf"],
-            {"prefix": "", "max_keys": 2},
-        ),
-        (
-            "folder1/", 1,
-            ["folder1/file1.txt"],
-            {"prefix": "folder1/", "max_keys": 1},
-        ),
-    ])
+    @pytest.mark.parametrize(
+        "prefix,limit,expected_keys,expected_call_args",
+        [
+            (
+                None,
+                None,
+                ["file1.txt", "file2.pdf", "folder1/file3.txt"],
+                {"prefix": "", "max_keys": 1000},
+            ),
+            (
+                "folder1/",
+                None,
+                ["folder1/file1.txt", "folder1/file2.pdf"],
+                {"prefix": "folder1/", "max_keys": 1000},
+            ),
+            (
+                None,
+                2,
+                ["file1.txt", "file2.pdf"],
+                {"prefix": "", "max_keys": 2},
+            ),
+            (
+                "folder1/",
+                1,
+                ["folder1/file1.txt"],
+                {"prefix": "folder1/", "max_keys": 1},
+            ),
+        ],
+    )
     async def test_list_files(self, s3_provider, mock_s3_client, prefix, limit, expected_keys, expected_call_args):
         """Test listing files with various prefix/limit combinations."""
-        mock_s3_client.list_files.return_value = {
-            "files": [{"key": k} for k in expected_keys]
-        }
+        mock_s3_client.list_files.return_value = {"files": [{"key": k} for k in expected_keys]}
 
         kwargs = {}
         if prefix is not None:
@@ -94,26 +104,108 @@ class TestS3StorageProvider:
         """Test getting the base path returns bucket name."""
         assert s3_provider.get_base_path() == "test-bucket"
 
+    @pytest.mark.asyncio
+    async def test_download_file_to_path_uses_native_s3_download(
+        self,
+        s3_provider,
+        mock_s3_client,
+        tmp_path,
+    ):
+        destination = tmp_path / "training.csv"
+        mock_s3_client.download_file.return_value = True
+
+        downloaded = await s3_provider.download_file_to_path(
+            "uploads/training.csv",
+            str(destination),
+        )
+
+        assert downloaded is True
+        mock_s3_client.download_file.assert_called_once_with(
+            "uploads/training.csv",
+            str(destination),
+        )
+
+    @pytest.mark.asyncio
+    async def test_copy_file_uses_configured_bucket(self, s3_provider, mock_s3_client):
+        mock_s3_client.copy_file.return_value = True
+
+        copied = await s3_provider.copy_file("uploads/source.csv", "tenant-a/uploads/source.csv")
+
+        assert copied is True
+        mock_s3_client.copy_file.assert_called_once_with(
+            "uploads/source.csv",
+            "tenant-a/uploads/source.csv",
+        )
+
+    @pytest.mark.asyncio
+    async def test_file_exists_uses_head_not_download(self, s3_provider, mock_s3_client):
+        mock_s3_client.head_object.return_value = {"size": 1}
+
+        assert await s3_provider.file_exists("tenant-a/uploads/source.csv") is True
+
+        mock_s3_client.head_object.assert_called_once_with("tenant-a/uploads/source.csv")
+        mock_s3_client.get_file_content.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_file_exists_returns_false_only_for_missing_key(self, s3_provider, mock_s3_client):
+        mock_s3_client.head_object.side_effect = ClientError(
+            {
+                "Error": {"Code": "NoSuchKey", "Message": "missing"},
+                "ResponseMetadata": {"HTTPStatusCode": 404},
+            },
+            "HeadObject",
+        )
+
+        assert await s3_provider.file_exists("missing.csv") is False
+
+    @pytest.mark.asyncio
+    async def test_file_exists_propagates_non_missing_s3_errors(self, s3_provider, mock_s3_client):
+        mock_s3_client.head_object.side_effect = ClientError(
+            {
+                "Error": {"Code": "AccessDenied", "Message": "denied"},
+                "ResponseMetadata": {"HTTPStatusCode": 403},
+            },
+            "HeadObject",
+        )
+
+        with pytest.raises(ClientError):
+            await s3_provider.file_exists("private.csv")
+
     def test_get_stats(self, s3_provider):
         """Test getting provider statistics."""
         stats = s3_provider.get_stats()
 
         assert stats["provider_type"] == "s3"
         assert stats["bucket_name"] == "test-bucket"
-        assert stats["initialized"] == False
+        assert not stats["initialized"]
         assert stats["status"] == "stub - not implemented"
 
     def test_initialization_with_config(self, s3_config, mock_s3_client):
         """Test provider initialization with configuration."""
-        with patch('app.modules.filemanager.providers.s3.provider.S3Client', return_value=mock_s3_client):
+        with patch("app.modules.filemanager.providers.s3.provider.S3Client", return_value=mock_s3_client):
             provider = S3StorageProvider(config=s3_config)
 
             assert provider.aws_bucket_name == "test-bucket"
-            # Access keys are not kept on the provider; the S3 client uses the default AWS credentials
-            assert not hasattr(provider, "aws_access_key_id")
-            assert not hasattr(provider, "aws_secret_access_key")
+            assert provider.aws_access_key_id == "test-access-key"
+            assert provider.aws_secret_access_key == "test-secret-key"
+            assert provider.aws_session_token == "test-session-token"
             assert provider.aws_region_name == "us-east-1"
             assert provider.s3_client == mock_s3_client
+
+    def test_initialization_passes_temporary_credentials_to_client(self, s3_config, mock_s3_client):
+        with patch(
+            "app.modules.filemanager.providers.s3.provider.S3Client",
+            return_value=mock_s3_client,
+        ) as client_class:
+            S3StorageProvider(config=s3_config)
+
+        client_class.assert_called_once_with(
+            bucket_name="test-bucket",
+            aws_access_key_id="test-access-key",
+            aws_secret_access_key="test-secret-key",
+            aws_session_token="test-session-token",
+            region_name="us-east-1",
+        )
 
     def test_initialization_with_partial_config_keeps_none_region(self, mock_s3_client):
         """Test provider initialization when region is not provided."""
@@ -123,8 +215,83 @@ class TestS3StorageProvider:
             "AWS_SECRET_ACCESS_KEY": "test-secret-key",
         }
 
-        with patch('app.modules.filemanager.providers.s3.provider.S3Client', return_value=mock_s3_client):
+        with patch("app.modules.filemanager.providers.s3.provider.S3Client", return_value=mock_s3_client):
             provider = S3StorageProvider(config=config)
 
         assert provider.aws_bucket_name == "test-bucket"
         assert provider.aws_region_name is None
+
+
+def test_s3_client_copy_file_uses_multipart_capable_boto3_copy():
+    client = object.__new__(S3Client)
+    client.bucket_name = "shared-bucket"
+    client.s3_client = Mock()
+    client.s3_client.head_object.return_value = {
+        "ContentType": "text/csv",
+        "Metadata": {"owner": "tenant-a"},
+        "ContentLength": 10,
+        "ServerSideEncryption": "aws:kms",
+        "SSEKMSKeyId": "key-1",
+        "StorageClass": "STANDARD_IA",
+    }
+
+    assert client.copy_file("uploads/source.csv", "tenants/tenant-a/uploads/source.csv") is True
+
+    # Headers are passed explicitly so large (multipart) copies keep them too.
+    client.s3_client.copy.assert_called_once_with(
+        Bucket="shared-bucket",
+        CopySource={"Bucket": "shared-bucket", "Key": "uploads/source.csv"},
+        Key="tenants/tenant-a/uploads/source.csv",
+        ExtraArgs={
+            "MetadataDirective": "REPLACE",
+            "Metadata": {"owner": "tenant-a"},
+            "ContentType": "text/csv",
+            "ServerSideEncryption": "aws:kms",
+            "SSEKMSKeyId": "key-1",
+            "StorageClass": "STANDARD_IA",
+        },
+    )
+
+
+def test_s3_client_head_missing_key_does_not_log_error(caplog):
+    client = object.__new__(S3Client)
+    client.bucket_name = "shared-bucket"
+    client.s3_client = Mock()
+    client.s3_client.head_object.side_effect = ClientError(
+        {
+            "Error": {"Code": "NoSuchKey", "Message": "missing"},
+            "ResponseMetadata": {"HTTPStatusCode": 404},
+        },
+        "HeadObject",
+    )
+
+    with pytest.raises(ClientError), caplog.at_level("ERROR"):
+        client.head_object("uploads/missing.csv")
+
+    assert not caplog.records
+
+
+class TestS3ClientCredentials:
+    def test_uses_standard_credential_chain_when_credentials_are_omitted(self):
+        with patch("app.core.utils.s3_utils.boto3.client") as boto_client:
+            S3Client(bucket_name="test-bucket", region_name="us-east-1")
+
+        boto_client.assert_called_once_with("s3", region_name="us-east-1")
+
+    def test_passes_session_token_with_temporary_credentials(self):
+        with patch("app.core.utils.s3_utils.boto3.client") as boto_client:
+            S3Client(
+                bucket_name="test-bucket",
+                aws_access_key_id="test-access-key",
+                aws_secret_access_key="test-secret-key",
+                aws_session_token="test-session-token",
+                region_name="us-east-1",
+            )
+
+        boto_client.assert_called_once_with(
+            "s3",
+            aws_access_key_id="test-access-key",
+            aws_secret_access_key="test-secret-key",
+            aws_session_token="test-session-token",
+            region_name="us-east-1",
+        )

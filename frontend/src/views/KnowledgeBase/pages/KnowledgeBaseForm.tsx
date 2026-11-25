@@ -6,7 +6,6 @@ import {
   createKnowledgeItem,
   updateKnowledgeItem,
   uploadFiles as apiUploadFiles,
-  executeKnowledgeBaseSyncronizationManually,
 } from '@/services/api';
 import { getApiUrlString } from '@/config/api';
 import { getAllDataSources } from '@/services/dataSources';
@@ -41,11 +40,18 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { RagConfigValues } from '../types/ragSchema';
 import { LegacyRagConfig, DEFAULT_LEGACY_RAG_CONFIG } from '../utils/ragDefaults';
 import DynamicRagConfigSection from '../components/DynamicRagConfigSection';
+import SalesforceSyncOptions from '../components/SalesforceSyncOptions';
+import { resolveSalesforceContentFormat } from '../utils/salesforceOptions';
+import { useManualSync } from '../hooks/useManualSync';
+import { isIndexedOnSave, isSyncErrorStatus, syncStatusBadgeVariant } from '../utils/syncStatus';
+import KnowledgeBaseIndexingStatus from '../components/KnowledgeBaseIndexingStatus';
+import ArticlesToCopy, { ArticleOption } from '../components/ArticlesToCopy';
 import { DataSourceDialog } from '@/views/DataSources/components/DataSourceDialog';
 import { isEqual } from 'lodash';
 import { KnowledgeItem, UrlHeaderRow, UploadResult, FileItem } from '../types/knowledgeBase';
 import { useIsMobile } from '@/hooks/useMobile';
 import { Progress } from '@/components/progress';
+import { formatDateTime } from '@/helpers/utils';
 
 const DEFAULT_FORM_DATA: KnowledgeItem = {
   id: uuidv4(),
@@ -86,6 +92,19 @@ const toPlainHeaders = (o: unknown): Record<string, string> =>
       )
     : {};
 
+const ZENDESK_ARTICLE_OPTIONS: ArticleOption[] = [
+  {
+    key: 'allow_unpublished_articles',
+    label: 'Include unpublished articles',
+    hint: 'Drafts not yet live on the Help Centre.',
+  },
+  {
+    key: 'include_restricted_articles',
+    label: 'Include restricted articles',
+    hint: 'Visible only to signed-in users, staff or groups.',
+  },
+];
+
 const targetTypes = {
   s3: 'S3',
   sharepoint: 'o365',
@@ -101,20 +120,14 @@ const acceptedFileTypes = [
   '.pptx', '.ppt', '.html', '.htm', '.yaml', '.yml', '.json', '.jsonl', '.md',
 ];
 
-function syncStatusBadgeVariant(
-  status: string
-): 'default' | 'secondary' | 'destructive' | 'outline' | 'success' {
-  const s = status.toLowerCase();
-  if (s === 'error' || s.includes('fail')) return 'destructive';
-  if (s.includes('warning')) return 'secondary';
-  if (s === 'success') return 'success';
-  return 'outline';
+function hasRestrictedArticlesSwitch(type: string): boolean {
+  return type === 'zendesk' || type === 'salesforce';
 }
 
-function isSyncErrorStatus(status: string | null | undefined): boolean {
-  if (!status) return false;
-  const s = status.toLowerCase();
-  return s === 'error' || s.includes('fail');
+function comparableContentFormat(type: string, extraMetadata?: Record<string, unknown>): string | undefined {
+  if (type === 'salesforce') return resolveSalesforceContentFormat(extraMetadata);
+  if (type === 'zendesk' || type === 'url') return (extraMetadata?.content_format as string) || 'text';
+  return undefined;
 }
 
 const KnowledgeBaseForm: React.FC = () => {
@@ -134,7 +147,6 @@ const KnowledgeBaseForm: React.FC = () => {
   const [urlHeaders, setUrlHeaders] = useState<UrlHeaderRow[]>([]);
   const [availableSources, setAvailableSources] = useState([]);
   const [llmAnalysts, setLlmAnalysts] = useState([]);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [isSyncSaveDialogOpen, setIsSyncSaveDialogOpen] = useState(false);
   const [isDataSourceDialogOpen, setIsDataSourceDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -251,10 +263,8 @@ const KnowledgeBaseForm: React.FC = () => {
       save_output: Boolean(formData.save_output),
       save_output_path: formData.save_output_path ?? null,
       allow_unpublished_articles: formData.type === 'zendesk' ? Boolean(formData.extra_metadata?.allow_unpublished_articles) : undefined,
-      allow_html_content: formData.type === 'salesforce' ? Boolean(formData.extra_metadata?.allow_html_content) : undefined,
-      content_format: formData.type === 'zendesk' || formData.type === 'url'
-        ? ((formData.extra_metadata?.content_format as string) || 'text')
-        : undefined,
+      include_restricted_articles: hasRestrictedArticlesSwitch(formData.type) ? Boolean(formData.extra_metadata?.include_restricted_articles) : undefined,
+      content_format: comparableContentFormat(formData.type, formData.extra_metadata),
       rag_config: formData.rag_config ?? {},
       filePaths: formData.type === 'file'
         ? (formData.files || []).map((f) => typeof f === 'string' ? f : (f as FileItem).file_path)
@@ -279,10 +289,8 @@ const KnowledgeBaseForm: React.FC = () => {
       save_output: Boolean(em.save_output),
       save_output_path: (em.save_output_path as string) ?? null,
       allow_unpublished_articles: orig.type === 'zendesk' ? Boolean(em.allow_unpublished_articles) : undefined,
-      allow_html_content: orig.type === 'salesforce' ? Boolean(em.allow_html_content) : undefined,
-      content_format: orig.type === 'zendesk' || orig.type === 'url'
-        ? ((em.content_format as string) || 'text')
-        : undefined,
+      include_restricted_articles: hasRestrictedArticlesSwitch(orig.type) ? Boolean(em.include_restricted_articles) : undefined,
+      content_format: comparableContentFormat(orig.type, em),
       rag_config: orig.rag_config ?? {},
       filePaths: (orig.files || []).map((f) => typeof f === 'string' ? f : (f as FileItem).file_path),
       hasNewFiles: false,
@@ -298,6 +306,10 @@ const KnowledgeBaseForm: React.FC = () => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleExtraMetadataChange = (key: string, value: unknown) => {
+    setFormData((prev) => ({ ...prev, extra_metadata: { ...prev.extra_metadata, [key]: value } }) as KnowledgeItem);
   };
 
   const handleUrlChange = (index: number, value: string) => {
@@ -377,71 +389,20 @@ const KnowledgeBaseForm: React.FC = () => {
     return addTenantId(fileItem.url ?? (fileItem as { urls?: string }).urls ?? null);
   };
 
+  const refreshEditingItem = async () => {
+    if (!id) return;
+    try {
+      setEditingItem((await getKnowledgeItem(id)) as KnowledgeItem);
+    } catch {
+      /* ignore refresh failure */
+    }
+  };
+
+  const { isSyncing, startSync } = useManualSync(id, editingItem, refreshEditingItem);
+
   const performSync = async () => {
     if (!editingItem?.id) return;
-    let syncApiReturned = false;
-    try {
-      setIsSyncing(true);
-      type SyncResult = {
-        status?: string;
-        error?: string;
-        message?: string;
-        articles_added?: number;
-        articles_updated?: number;
-        articles_deleted?: number;
-        per_kb?: Array<{ status?: string; reason?: string; error?: string; note?: string }>;
-      };
-      const data = (await executeKnowledgeBaseSyncronizationManually(editingItem.id)) as {
-        status?: string;
-        message?: string;
-        zendesk_sync_results?: Array<{ result?: SyncResult }>;
-        salesforce_sync_results?: Array<{ result?: SyncResult }>;
-      };
-      syncApiReturned = true;
-      if (data.status === 'error') {
-        toast.error(data.message ?? 'Synchronization failed.');
-        return;
-      }
-      const isSalesforce = formData.type === 'salesforce';
-      const providerLabel = isSalesforce ? 'SalesForce' : 'Zendesk';
-      const z = isSalesforce
-        ? data.salesforce_sync_results?.[0]?.result
-        : data.zendesk_sync_results?.[0]?.result;
-      if (z?.status === 'failed') {
-        toast.error(z.error ?? z.message ?? `${providerLabel} sync failed.`);
-        return;
-      }
-      const firstKb = z?.per_kb?.[0];
-      if (firstKb?.status === 'skipped') {
-        toast.error(
-          `Sync skipped: ${firstKb.reason ?? 'unknown'}. Check schedule, datasource, or ${providerLabel} connection.`
-        );
-        return;
-      }
-      if (firstKb?.status === 'error') {
-        console.error(firstKb?.error ?? 'Unknown error');
-        toast.error(`${providerLabel} sync error. See knowledge base sync status.`);
-        return;
-      }
-      if (z != null && (z.articles_added != null || z.articles_updated != null || z.articles_deleted != null)) {
-        toast.success(
-          `Sync completed: ${z.articles_added ?? 0} added, ${z.articles_updated ?? 0} updated, ${z.articles_deleted ?? 0} removed.`
-        );
-      } else {
-        toast.success('Synchronization completed successfully.');
-      }
-    } catch {
-      toast.error('Failed to trigger synchronization.');
-    } finally {
-      setIsSyncing(false);
-      if (syncApiReturned && id) {
-        try {
-          setEditingItem((await getKnowledgeItem(id)) as KnowledgeItem);
-        } catch {
-          /* ignore refresh failure */
-        }
-      }
-    }
+    await startSync(editingItem.id, formData.type);
   };
 
   const handleSyncNow = async () => {
@@ -531,6 +492,7 @@ const KnowledgeBaseForm: React.FC = () => {
         dataToSubmit.extra_metadata = {
           ...(dataToSubmit.extra_metadata || {}),
           allow_unpublished_articles: dataToSubmit.extra_metadata?.allow_unpublished_articles || false,
+          include_restricted_articles: dataToSubmit.extra_metadata?.include_restricted_articles || false,
           content_format: dataToSubmit.extra_metadata?.content_format || 'text',
         };
       }
@@ -545,7 +507,8 @@ const KnowledgeBaseForm: React.FC = () => {
       if (formData.type === 'salesforce') {
         dataToSubmit.extra_metadata = {
           ...(dataToSubmit.extra_metadata || {}),
-          allow_html_content: dataToSubmit.extra_metadata?.allow_html_content || false,
+          content_format: resolveSalesforceContentFormat(dataToSubmit.extra_metadata),
+          include_restricted_articles: Boolean(dataToSubmit.extra_metadata?.include_restricted_articles),
         };
       }
 
@@ -611,7 +574,8 @@ const KnowledgeBaseForm: React.FC = () => {
         if (syncAfterSaveRef.current) {
           syncAfterSaveRef.current = false;
           setEditingItem((prev) => (prev ? { ...prev, ...dataToSubmit } : null) as KnowledgeItem);
-          await performSync();
+          // Not awaited: the save is done, and the sync can run for a long time.
+          void performSync();
           return;
         }
       } else {
@@ -680,27 +644,27 @@ const KnowledgeBaseForm: React.FC = () => {
                         </div>
 
                         <div className="md:col-span-2 space-y-6">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <div className="mb-1">Name</div>
-                              <Input
-                                id="name"
-                                name="name"
-                                value={formData.name}
-                                onChange={handleInputChange}
-                                placeholder="Name for this knowledge base item"
-                              />
-                            </div>
-                            <div>
-                              <div className="mb-1">Description</div>
-                              <Input
-                                id="description"
-                                name="description"
-                                value={formData.description}
-                                onChange={handleInputChange}
-                                placeholder="Brief description of this knowledge base item"
-                              />
-                            </div>
+                          <div>
+                            <div className="mb-1">Name</div>
+                            <Input
+                              id="name"
+                              name="name"
+                              value={formData.name}
+                              onChange={handleInputChange}
+                              placeholder="Name for this knowledge base item"
+                            />
+                          </div>
+
+                          <div>
+                            <div className="mb-1">Description</div>
+                            <Textarea
+                              id="description"
+                              name="description"
+                              size="description"
+                              value={formData.description}
+                              onChange={handleInputChange}
+                              placeholder="Brief description of this knowledge base item"
+                            />
                           </div>
 
                           <div>
@@ -733,6 +697,13 @@ const KnowledgeBaseForm: React.FC = () => {
                             </Select>
                           </div>
 
+                          {isIndexedOnSave(editingItem?.type) && (
+                            <KnowledgeBaseIndexingStatus
+                              status={editingItem?.last_sync_status}
+                              details={editingItem?.last_sync_error}
+                            />
+                          )}
+
                           {formData.type === 'text' ? (
                             <div>
                               <div className="mb-1">Content</div>
@@ -742,8 +713,7 @@ const KnowledgeBaseForm: React.FC = () => {
                                 value={formData.content}
                                 onChange={handleInputChange}
                                 placeholder="The knowledge content"
-                                rows={4}
-                                className="min-h-32"
+                                size="prompt"
                               />
                             </div>
                           ) : formData.type === 'url' ? (
@@ -1083,66 +1053,19 @@ const KnowledgeBaseForm: React.FC = () => {
                                       </SelectContent>
                                     </Select>
                                   </div>
-                                  <div className="rounded-lg border bg-card dark:bg-zinc-900 p-4">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex-1 pr-4">
-                                        <div className="text-sm font-medium text-foreground">
-                                          Allow Unpublished Articles
-                                        </div>
-                                        <p className="text-sm text-muted-foreground mt-1">
-                                          Allow unpublished articles to be indexed in the knowledge base.
-                                        </p>
-                                      </div>
-                                      <Switch
-                                        checked={
-                                          (formData.extra_metadata?.allow_unpublished_articles as boolean) || false
-                                        }
-                                        onCheckedChange={(checked) =>
-                                          setFormData(
-                                            (prev) =>
-                                              ({
-                                                ...prev,
-                                                extra_metadata: {
-                                                  ...prev.extra_metadata,
-                                                  allow_unpublished_articles: checked,
-                                                },
-                                              }) as KnowledgeItem
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
+                                  <ArticlesToCopy
+                                    options={ZENDESK_ARTICLE_OPTIONS}
+                                    extraMetadata={formData.extra_metadata}
+                                    onChange={handleExtraMetadataChange}
+                                  />
                                 </div>
                               )}
 
                               {formData.type === 'salesforce' && (
-                                <div className="flex flex-col gap-6 mt-6">
-                                  <div className="rounded-lg border bg-card dark:bg-zinc-900 p-4">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex-1 pr-4">
-                                        <div className="text-sm font-medium text-foreground">Allow HTML Content</div>
-                                        <p className="text-sm text-muted-foreground mt-1">
-                                          Allow HTML content to be indexed in the knowledge base.
-                                        </p>
-                                      </div>
-                                      <Switch
-                                        checked={(formData.extra_metadata?.allow_html_content as boolean) || false}
-                                        onCheckedChange={(checked) =>
-                                          setFormData(
-                                            (prev) =>
-                                              ({
-                                                ...prev,
-                                                extra_metadata: {
-                                                  ...prev.extra_metadata,
-                                                  allow_html_content: checked,
-                                                },
-                                              }) as KnowledgeItem
-                                          )
-                                        }
-                                      />
-                                    </div>
-                                  </div>
-                                </div>
+                                <SalesforceSyncOptions
+                                  extraMetadata={formData.extra_metadata}
+                                  onChange={handleExtraMetadataChange}
+                                />
                               )}
 
                               {['s3', 'sharepoint', 'smb_share_folder', 'azure_blob', 'zendesk', 'salesforce'].includes(
@@ -1192,7 +1115,7 @@ const KnowledgeBaseForm: React.FC = () => {
                                               <span className="text-xs text-muted-foreground">
                                                 Last sync
                                                 {editingItem.last_synced
-                                                  ? `: ${new Date(editingItem.last_synced).toLocaleString()}`
+                                                  ? `: ${formatDateTime(editingItem.last_synced)}`
                                                   : ''}
                                               </span>
                                               {editingItem.last_sync_status ? (

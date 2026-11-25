@@ -7,6 +7,7 @@ import { Loader2, Square, HeartPulse, MessageSquare, AlertCircle } from "lucide-
 import { toast } from "react-hot-toast";
 import type { LocalFineTuneDeployment } from "@/interfaces/localFineTune.interface";
 import { stopDeployment, checkDeploymentHealth } from "@/services/localFineTune";
+import { displayTimeZone } from "@/helpers/timeZone";
 import { LocalFineTuneTestDialog } from "@/views/LocalFineTune/components/LocalFineTuneTestDialog";
 import {
   Tooltip,
@@ -25,6 +26,7 @@ function formatShortDate(value: unknown): string {
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: displayTimeZone(),
   });
 }
 

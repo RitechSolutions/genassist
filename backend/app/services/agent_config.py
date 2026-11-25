@@ -210,6 +210,8 @@ class AgentConfigService:
         scalar_changes = agent_update.model_dump(
             exclude_unset=True,
         )
+        if scalar_changes.get("workflow_id"):
+            await self.workflow_service.lock_for_activation(scalar_changes["workflow_id"])
 
         # Handle security_settings separately
         security_settings_update = scalar_changes.pop("security_settings", None)
@@ -291,8 +293,9 @@ class AgentConfigService:
         if not agent_delete:
             raise AppException(ErrorKey.AGENT_NOT_FOUND, status_code=404)
         # One transaction: a live workflow must never outlive its deleted agent.
-        await self.repository.soft_delete(agent_delete, commit=False)
+        # Workflows first: that call refuses (409) while an ML model trains on one.
         await self.workflow_service.soft_delete_by_agent(agent_id, commit=False)
+        await self.repository.soft_delete(agent_delete, commit=False)
         await self.db.commit()
 
         # Invalidate cache entries for this agent

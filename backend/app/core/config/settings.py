@@ -1,7 +1,8 @@
+import logging
 from typing import Optional, Tuple
 from urllib.parse import quote, unquote, urlparse
 
-from pydantic import ConfigDict, Field, computed_field, field_validator
+from pydantic import AliasChoices, ConfigDict, Field, computed_field, field_validator
 from pydantic_settings import BaseSettings
 
 from app.core.project_path import DATA_VOLUME
@@ -75,6 +76,13 @@ class ProjectSettings(BaseSettings):
     # (worker died mid-run). Kept above the 2h execution timeout and the broker
     # redelivery delay so a lost run is re-run before it is declared dead.
     WORKFLOW_SCHEDULE_RUNNING_MAX_AGE_SECONDS: int = 9000  # 2h30m
+    # Loop node: the most iterations one Loop may run, and the most a single run
+    # may spend across all of its loops (bounds nested loops).
+    WORKFLOW_LOOP_MAX_ITERATIONS: int = 1000
+    WORKFLOW_LOOP_MAX_TOTAL_ITERATIONS: int = 5000
+    # Webhook Trigger node ingress (public /webhook/execute/{id} for workflow_trigger rows).
+    WEBHOOK_TRIGGER_MAX_BODY_BYTES: int = 1_048_576  # 1 MiB
+    WEBHOOK_TRIGGER_HMAC_TOLERANCE_SECONDS: int = 300
     # Evaluation (test) runs use the same orphaned-run reconciliation.
     CELERY_ENABLE_RECONCILE_STUCK_TEST_RUNS_TASK: bool = True
     TEST_RUN_QUEUED_MAX_AGE_SECONDS: int = 900  # 15 minutes
@@ -108,6 +116,12 @@ class ProjectSettings(BaseSettings):
 
     # === Conversation Cleanup Settings ===
     CONVERSATION_CLEANUP_STALE_MINUTES: int = 30
+    # Backfill gives up on a conversation after 3 runs, each run makes up to 3 LLM calls
+    CONVERSATION_ANALYSIS_BACKFILL_MAX_ATTEMPTS: int = 3
+    # Only conversations created within 30 days are backfilled, 0 disables the window
+    CONVERSATION_ANALYSIS_BACKFILL_MAX_AGE_DAYS: int = 30
+    # Minimum 60 minutes wait between runs for one conversation
+    CONVERSATION_ANALYSIS_BACKFILL_RETRY_DELAY_MINUTES: int = 60
 
     # === GDPR Right-to-Erasure ===
     # Default mode used by the admin GDPR delete endpoint when the caller does
@@ -117,9 +131,11 @@ class ProjectSettings(BaseSettings):
     # row in place for a manual hard purge later.
     GDPR_DEFAULT_DELETE_MODE: str = "soft"
 
-    # Number of latest messages used for in-progress hostility scoring.
-    # If the conversation has fewer messages than this, all messages are used.
+    # Number of latest message/audio rows used for in-progress hostility scoring.
+    # If the conversation has fewer, or this is 0 or less, all of them are used.
     HOSTILITY_SCORE_MESSAGE_COUNT: int = 20
+    # Scored on every Nth customer message
+    HOSTILITY_SCORE_EVERY_N_MESSAGES: int = Field(default=3, ge=1)
 
     FERNET_KEY: Optional[str]
 
@@ -160,6 +176,37 @@ class ProjectSettings(BaseSettings):
     # File-manager uploads (canonical). Defaults match knowledge settings for backward compatibility.
     FILES_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100MB
     FILES_UPLOAD_MAX_CHUNK_BYTES: int = 20 * 1024 * 1024  # 20MB per chunk
+    # Train Data Source extraction ceilings. Workflow nodes may request lower
+    # values, but these settings remain the operator-controlled upper bounds.
+    ML_EXTRACT_MAX_ROWS: int = 2_000_000
+    ML_EXTRACT_MAX_BYTES: int = 2 * 1024**3  # 2 GiB
+    # Largest Train Data Source file a user can upload (purpose="training_data"
+    # on /file-manager/upload, /upload-session and /upload-session/presign).
+    # Other File Manager uploads keep FILES_MAX_UPLOAD_BYTES / MAX_CONTENT_LENGTH.
+    # The effective limit never exceeds ML_EXTRACT_MAX_BYTES.
+    ML_TRAINING_UPLOAD_MAX_BYTES: int = Field(default=2 * 1024**3, gt=0)  # 2 GiB
+    ML_EXTRACT_TIMEOUT_SECONDS: int = Field(
+        default=600,
+        validation_alias=AliasChoices(
+            "ML_EXTRACT_TIMEOUT_SECONDS",
+            "ML_EXTRACT_QUERY_TIMEOUT_SECONDS",
+        ),
+    )
+    ML_EXTRACT_CHUNK_ROWS: int = Field(default=2_000, gt=0)
+    # CPU cores one Train Model job may use, for cross-validation workers and
+    # estimator threads together.
+    ML_TRAINING_MAX_CORES: int = Field(default=2, gt=0)
+    # Largest hyperparameter search (candidates x cross-validation folds) a
+    # Train Model node may run. A bigger search is refused before it starts.
+    ML_HPO_MAX_FITS: int = Field(default=1_000, gt=0)
+    # How long a background training job's status and result stay readable.
+    ML_TRAINING_JOB_TTL_SECONDS: int = Field(default=24 * 60 * 60, gt=0)
+    # A .json array upload is parsed in one piece (JSON Lines and the other
+    # formats stream), so it gets its own, lower ceiling.
+    ML_EXTRACT_JSON_MAX_BYTES: int = Field(default=512 * 1024 * 1024, gt=0)
+    # Profiling builds an in-memory DataFrame and therefore uses lower limits
+    # than a streamed training-data extraction.
+    ML_PROFILE_MAX_ROWS: int = Field(default=100_000, gt=0)
     # Direct browser -> S3 presigned PUT uploads (Phase 1: single PUT).
     # Off by default; enables a new opt-in /file-manager/upload-session/presign + /finalize flow
     # used only when FILE_MANAGER_PROVIDER == "s3". Existing /upload and /upload-session paths
@@ -208,6 +255,11 @@ class ProjectSettings(BaseSettings):
     # Lock wait cap for startup migrations (0 waits forever) and the retries after a lock timeout
     MIGRATION_LOCK_TIMEOUT_SECONDS: int = Field(default=5, ge=0, le=2147483)  # Postgres maximum
     MIGRATION_LOCK_RETRIES: int = Field(default=5, ge=0)
+    # Celery workers wait at startup until the databases are at the migration head of
+    # this image, so they never query columns a pending migration adds (see migrations.py)
+    CELERY_WAIT_FOR_SCHEMA: bool = True
+    SCHEMA_WAIT_TIMEOUT_SECONDS: int = Field(default=900, ge=0)
+    SCHEMA_WAIT_INTERVAL_SECONDS: int = Field(default=5, ge=1)
 
     # === Multi-Tenancy ===
     MULTI_TENANT_ENABLED: bool = False
@@ -218,8 +270,13 @@ class ProjectSettings(BaseSettings):
     DEV: bool = False
     FASTAPI_DEBUG: bool = True
     LOG_LEVEL: str = "DEBUG"
+    # Datadog logs (JSON on stdout) and trace tags, see app/core/observability/datadog_observability.py.
+    # Off by default; only deployments that ship to Datadog turn it on.
+    DATADOG_ENABLED: bool = False
     SQLALCHEMY_LOG_LEVEL: str = "ERROR"
     FASTAPI_RUN_PORT: int = 8000
+    # Address callers outside the load balancer use, e.g. https://api.example.com/api
+    PUBLIC_API_URL: Optional[str] = None
     # Run Alembic migrations on startup
     AUTO_MIGRATE: bool = True
     API_VERSION: Optional[str] = "1.0"
@@ -295,6 +352,9 @@ class ProjectSettings(BaseSettings):
     BEDROCK_MAX_RETRY_QUERY_EMBEDDING: int = 3
     BEDROCK_TIMEOUT_QUERY_EMBEDDING_SECONDS: int = 8
 
+    # S3 data sources without keys use the server's AWS access; keep off on servers shared by several tenants.
+    S3_DATA_SOURCES_USE_SERVER_ROLE: bool = False
+
     # === CORS Configuration ===
     CORS_ALLOWED_ORIGINS: Optional[str] = None  # Comma-separated list of additional allowed origins
     # Optional regex an *unknown* (per-agent) Origin must match before AgentCORSMiddleware
@@ -363,6 +423,10 @@ class ProjectSettings(BaseSettings):
     # Conversation history max messages for chat input node
     CONVERSATION_HISTORY_NODE_MAX_MESSAGES: int = 100
 
+    # === Python Sandbox ===
+    # Comma-separated IPs or CIDR ranges user Python code may reach besides public addresses, for every tenant
+    SANDBOX_ALLOWED_NETWORKS: Optional[str] = None
+
     # === Web Search Node ===
     # Kill switch: when False every search returns a structured failure envelope
     # immediately and no upstream traffic is sent.
@@ -370,6 +434,16 @@ class ProjectSettings(BaseSettings):
     # Max searches per tenant per minute. Only the request that actually runs the
     # search counts; duplicate in-flight requests reuse that result and are not charged.
     WEB_SEARCH_TENANT_PER_MINUTE: int = 30
+
+    # === Analytics Aggregation ===
+    # Rollout flag: off restores the legacy discovery strategy. Not a full revert,
+    # the shared UTC date alignment stays active either way.
+    ANALYTICS_AGG_V2: bool = True
+    ANALYTICS_AGG_PREVIEW_ENABLED: bool = False
+    # First-cutover seed window below the MAX(last_aggregated_at).
+    ANALYTICS_AGG_HEAL_LOOKBACK_HOURS: int = 12
+    # Discovery overlap absorbing in-flight commits; recompute is idempotent.
+    ANALYTICS_AGG_SCAN_OVERLAP_MINUTES: int = 15
 
     @property
     def _zendesk_base(self) -> str:
@@ -431,6 +505,32 @@ class ProjectSettings(BaseSettings):
         # Blank, whitespace, "none" and "null" all mean unset.
         is_unset_spelling = isinstance(value, str) and value.strip().lower() in ("", "none", "null")
         return None if is_unset_spelling else value
+
+    @field_validator("PUBLIC_API_URL", mode="before")
+    @classmethod
+    def _public_api_url_is_the_api_root(cls, value: object) -> Optional[str]:
+        text = str(value or "").strip().rstrip("/")
+        if text.lower() in ("", "none", "null"):
+            return None
+        try:
+            parsed = urlparse(text)
+            is_api_root = (
+                parsed.scheme in ("http", "https")
+                and bool(parsed.hostname)
+                and (parsed.port is None or parsed.port > 0)
+                and parsed.path.endswith("/api")
+                and not (parsed.username or parsed.password or parsed.params or parsed.query or parsed.fragment)
+                and not any(char.isspace() for char in text)
+            )
+        except ValueError:
+            is_api_root = False
+        if is_api_root:
+            return text
+        # Dropped rather than raised so a typo can't stop startup; not echoed as it can hold credentials
+        logging.getLogger(__name__).error(
+            "Ignoring PUBLIC_API_URL: it must be the API's public root, e.g. https://api.example.com/api"
+        )
+        return None
 
     @property
     def read_statement_timeout(self) -> int:
@@ -532,6 +632,7 @@ class FileStorageSettings(BaseSettings):
 
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_SESSION_TOKEN: Optional[str] = None
     AWS_STORAGE_BUCKET: Optional[str] = None
     AWS_REGION: Optional[str] = None
     AWS_S3_ENDPOINT_URL: Optional[str] = None

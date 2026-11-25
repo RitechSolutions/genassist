@@ -13,7 +13,10 @@ class ErrorKey(Enum):
     TOOL_USAGE_CONFIG_INVALID = "tool_usage_config_invalid"
     RULE_CONFIG_INVALID = "rule_config_invalid"
     EVALUATION_TARGET_NOT_A_VERSION = "evaluation_target_not_a_version"
+    EVALUATION_WORKFLOW_REQUIRED = "evaluation_workflow_required"
+    EVALUATION_TECHNIQUES_REQUIRED = "evaluation_techniques_required"
     EVALUATION_BUNDLE_INVALID = "evaluation_bundle_invalid"
+    DATASET_FILE_IMPORT_INVALID = "dataset_file_import_invalid"
     NOT_FOUND = "not_found"
     AUDIT_LOG_NOT_FOUND = "audit_log_not_found"
     SENTIMENT_OBJECT_STRUCTURE = "sentiment_object_structure"
@@ -71,6 +74,7 @@ class ErrorKey(Enum):
     CONVERSATION_TAKEN_OVER = "CONVERSATION_TAKEN_OVER"
     CONVERSATION_TAKEN_OVER_OTHER = "CONVERSATION_TAKEN_OVER_OTHER"
     DATASOURCE_NOT_FOUND = "DATASOURCE_NOT_FOUND"
+    READ_ONLY_SQL_BLOCKED = "READ_ONLY_SQL_BLOCKED"
     WEBHOOK_NOT_FOUND = "WEBHOOK_NOT_FOUND"
     LLM_PROVIDER_NOT_FOUND = "LLM_PROVIDER_NOT_FOUND"
     LLM_ANALYST_NOT_FOUND = "LLM_ANALYST_NOT_FOUND"
@@ -92,9 +96,14 @@ class ErrorKey(Enum):
     APP_SETTINGS_NOT_FOUND = "APP_SETTINGS_NOT_FOUND"
     FEATURE_FLAG_NOT_FOUND = "FEATURE_FLAG_NOT_FOUND"
     WORKFLOW_NOT_FOUND = "WORKFLOW_NOT_FOUND"
+    WORKFLOW_VERSION_ACTIVE = "WORKFLOW_VERSION_ACTIVE"
+    WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER = "WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER"
+    WORKFLOW_VERSION_IN_USE_BY_ML_MODEL = "WORKFLOW_VERSION_IN_USE_BY_ML_MODEL"
+    AGENT_IN_USE_BY_ML_MODEL = "AGENT_IN_USE_BY_ML_MODEL"
     SUB_AGENT_SESSION_STALE = "SUB_AGENT_SESSION_STALE"
     SUB_AGENT_INVALID_TOPOLOGY = "SUB_AGENT_INVALID_TOPOLOGY"
     SUB_AGENT_INVALID_CONFIG = "SUB_AGENT_INVALID_CONFIG"
+    LOOP_INVALID_TOPOLOGY = "LOOP_INVALID_TOPOLOGY"
     OPERATOR_ROLE_MISSING = "OPERATOR_ROLE_MISSING"
     CREATE_USER_TYPE_IN_MENU = "CREATE_USER_TYPE_IN_MENU"
     LOGIN_ERROR_CONSOLE_USER = "LOGIN_ERROR_CONSOLE_USER"
@@ -120,9 +129,30 @@ class ErrorKey(Enum):
     ERROR_CONNECTING_WHISPER_SERVICE = "ERROR_CONNECTING_WHISPER_SERVICE"
     ERROR_INSIDE_WHISPER_SERVICE = "ERROR_INSIDE_WHISPER_SERVICE"
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
+    ISSUE_STATUS_NOT_FOUND = "ISSUE_STATUS_NOT_FOUND"
+    ISSUE_STATUS_KEY_TAKEN = "ISSUE_STATUS_KEY_TAKEN"
+    ISSUE_STATUS_PROTECTED = "ISSUE_STATUS_PROTECTED"
+    ISSUE_STATUS_ORDER_INVALID = "ISSUE_STATUS_ORDER_INVALID"
     ERROR_EXTRACTING_FROM_FILE = "ERROR_EXTRACTING_FROM_FILE"
+    ML_EXTRACT_CONFIGURATION_INVALID = "ML_EXTRACT_CONFIGURATION_INVALID"
+    ML_EXTRACT_QUERY_FAILED = "ML_EXTRACT_QUERY_FAILED"
+    ML_EXTRACT_FILE_UNAVAILABLE = "ML_EXTRACT_FILE_UNAVAILABLE"
+    ML_EXTRACT_FILE_ENCODING_INVALID = "ML_EXTRACT_FILE_ENCODING_INVALID"
+    ML_EXTRACT_FILE_UNSUPPORTED = "ML_EXTRACT_FILE_UNSUPPORTED"
+    ML_EXTRACT_FILE_INVALID = "ML_EXTRACT_FILE_INVALID"
+    ML_EXTRACT_LIMIT_EXCEEDED = "ML_EXTRACT_LIMIT_EXCEEDED"
+    ML_TRAINING_UPLOAD_TOO_LARGE = "ML_TRAINING_UPLOAD_TOO_LARGE"
+    ML_TRAINING_SEARCH_TOO_LARGE = "ML_TRAINING_SEARCH_TOO_LARGE"
+    ML_TRAINING_JOB_NOT_FOUND = "ML_TRAINING_JOB_NOT_FOUND"
+    ML_TRAINING_JOB_ALREADY_RUNNING = "ML_TRAINING_JOB_ALREADY_RUNNING"
+    ML_TRAINING_JOB_NEEDS_USER = "ML_TRAINING_JOB_NEEDS_USER"
+    ML_EXTRACT_FAILED = "ML_EXTRACT_FAILED"
+    ML_TRAINING_DATA_STORAGE_FAILED = "ML_TRAINING_DATA_STORAGE_FAILED"
     ML_MODEL_NOT_FOUND = "ML_MODEL_NOT_FOUND"
     ML_MODEL_NAME_EXISTS = "ML_MODEL_NAME_EXISTS"
+    ML_INFERENCE_INPUT_INVALID = "ML_INFERENCE_INPUT_INVALID"
+    ML_MODEL_ARTIFACT_INVALID = "ML_MODEL_ARTIFACT_INVALID"
+    ML_PIPELINE_RUN_NOT_PROMOTABLE = "ML_PIPELINE_RUN_NOT_PROMOTABLE"
     INVALID_PKL_FILE = "INVALID_PKL_FILE"
     PKL_FILE_TOO_LARGE = "PKL_FILE_TOO_LARGE"
     ERROR_UPLOAD_FILE_OPEN_AI = "ERROR_UPLOAD_FILE_OPEN_AI"
@@ -181,6 +211,15 @@ class ErrorKey(Enum):
     LLM_CATALOG_MODEL_ALREADY_EXISTS = "LLM_CATALOG_MODEL_ALREADY_EXISTS"
     LLM_CATALOG_UNKNOWN_PROVIDER = "LLM_CATALOG_UNKNOWN_PROVIDER"
     LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD = "LLM_CATALOG_PROVIDER_HAS_NO_MODEL_FIELD"
+    PROMPT_CONTEXT_INVALID = "PROMPT_CONTEXT_INVALID"
+    PROMPT_FIELD_NOT_SUPPORTED = "PROMPT_FIELD_NOT_SUPPORTED"
+    PROMPT_VERSION_CONFLICT = "PROMPT_VERSION_CONFLICT"
+    PROMPT_EVAL_TECHNIQUE_UNSUPPORTED = "PROMPT_EVAL_TECHNIQUE_UNSUPPORTED"
+    PROMPT_CASE_SELECTION_INVALID = "PROMPT_CASE_SELECTION_INVALID"
+    PROMPT_OPTIMIZE_UNUSABLE = "PROMPT_OPTIMIZE_UNUSABLE"
+    PROMPT_EXECUTION_TIMEOUT = "PROMPT_EXECUTION_TIMEOUT"
+    PROMPT_MODEL_CALL_FAILED = "PROMPT_MODEL_CALL_FAILED"
+    PROMPT_GOLD_DATASET_INVALID = "PROMPT_GOLD_DATASET_INVALID"
 
 
 ERROR_MESSAGES = {
@@ -189,7 +228,10 @@ ERROR_MESSAGES = {
         ErrorKey.TOOL_USAGE_CONFIG_INVALID: "The tool usage configuration could not be resolved to canonical tool ids.",
         ErrorKey.RULE_CONFIG_INVALID: "The evaluation rule configuration is not valid.",
         ErrorKey.EVALUATION_TARGET_NOT_A_VERSION: "The target workflow is not a version of the evaluation's workflow.",
+        ErrorKey.EVALUATION_WORKFLOW_REQUIRED: "This evaluation has no workflow. Edit it and choose a workflow.",
+        ErrorKey.EVALUATION_TECHNIQUES_REQUIRED: "Add at least one check or method to the evaluation.",
         ErrorKey.EVALUATION_BUNDLE_INVALID: "The evaluation bundle is invalid or could not be imported.",
+        ErrorKey.DATASET_FILE_IMPORT_INVALID: "The dataset files could not be imported.",
         ErrorKey.NOT_FOUND: "The requested resource was not found.",
         ErrorKey.AUDIT_LOG_NOT_FOUND: "The requested log was not found.",
         ErrorKey.SENTIMENT_OBJECT_STRUCTURE: "Sentiment object must have 'positive', 'neutral', and 'negative' fields.",
@@ -249,6 +291,7 @@ ERROR_MESSAGES = {
         ErrorKey.CONVERSATION_TAKEN_OVER: "Conversation already taken over.",
         ErrorKey.CONVERSATION_TAKEN_OVER_OTHER: "Conversation already taken over by another user.",
         ErrorKey.DATASOURCE_NOT_FOUND: "Datasource not found.",
+        ErrorKey.READ_ONLY_SQL_BLOCKED: "This SQL was rejected because it is not read-only.",
         ErrorKey.LLM_PROVIDER_NOT_FOUND: "LLM Provider not found.",
         ErrorKey.LLM_ANALYST_NOT_FOUND: "LLM Analyst not found.",
         ErrorKey.LLM_ANALYST_INACTIVE: "LLM Analyst is inactive.",
@@ -269,6 +312,20 @@ ERROR_MESSAGES = {
         ErrorKey.TRANSCRIPT_ERROR_PARSING: "Couldn't parse transcript, please try again later.",
         ErrorKey.APP_SETTINGS_NOT_FOUND: "App Settings not found.",
         ErrorKey.FEATURE_FLAG_NOT_FOUND: "Feature Flags not found.",
+        ErrorKey.WORKFLOW_NOT_FOUND: "The workflow could not be found.",
+        ErrorKey.WORKFLOW_VERSION_ACTIVE: "This version is active. Activate another version before deleting it.",
+        ErrorKey.WORKFLOW_VERSION_IN_USE_BY_MCP_SERVER: (
+            "This version cannot be deleted while an MCP server exposes it as a tool ({0}). "
+            "Remove those tools first."
+        ),
+        ErrorKey.WORKFLOW_VERSION_IN_USE_BY_ML_MODEL: (
+            "This version cannot be deleted while an ML model's pipeline configuration uses it ({0}). "
+            "Remove those configurations first."
+        ),
+        ErrorKey.AGENT_IN_USE_BY_ML_MODEL: (
+            "This agent cannot be deleted while an ML model's pipeline configuration uses one of its "
+            "workflow versions ({0}). Remove those configurations first."
+        ),
         ErrorKey.OPERATOR_ROLE_MISSING: "Operator role missing.",
         ErrorKey.CREATE_USER_TYPE_IN_MENU: "Operators and ai agents should be created in their specific menus.",
         ErrorKey.LOGIN_ERROR_CONSOLE_USER: "Failed to give access for console type user.",
@@ -295,9 +352,35 @@ ERROR_MESSAGES = {
         ErrorKey.ERROR_CONNECTING_WHISPER_SERVICE: "Error connecting to transcription service.",
         ErrorKey.ERROR_INSIDE_WHISPER_SERVICE: "An error occurred in transcription service.",
         ErrorKey.MESSAGE_NOT_FOUND: "Message not found.",
+        ErrorKey.ISSUE_STATUS_NOT_FOUND: "Issue status not found or no longer active.",
+        ErrorKey.ISSUE_STATUS_KEY_TAKEN: "An issue status with this key already exists.",
+        ErrorKey.ISSUE_STATUS_PROTECTED: "The default issue status cannot be non-active or moved out of To Do.",
+        ErrorKey.ISSUE_STATUS_ORDER_INVALID: "The order must list every active issue status exactly once.",
         ErrorKey.ERROR_EXTRACTING_FROM_FILE: "Failed to extract text from file.",
+        ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID: "Train Data Source configuration is incomplete.",
+        ErrorKey.ML_EXTRACT_QUERY_FAILED: "Could not run the Train Data Source query.",
+        ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE: "The uploaded training file is no longer available.",
+        ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
+            "The uploaded CSV uses an unsupported character encoding."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_UNSUPPORTED: "This training file type is not supported.",
+        ErrorKey.ML_EXTRACT_FILE_INVALID: "The uploaded training file could not be read.",
+        ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: "Training data extraction limit exceeded.",
+        ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: "The training data file is too large to upload.",
+        ErrorKey.ML_TRAINING_SEARCH_TOO_LARGE: "The hyperparameter search is too large to run.",
+        ErrorKey.ML_TRAINING_JOB_NOT_FOUND: "The training job was not found or has expired.",
+        ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING: "You already have a training job running.",
+        ErrorKey.ML_TRAINING_JOB_NEEDS_USER: "Testing a model training needs a signed-in user.",
+        ErrorKey.ML_EXTRACT_FAILED: (
+            "Train Data Source could not complete the test. "
+            "Check its configuration and try again."
+        ),
+        ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED: "Could not reach file storage for the training data.",
         ErrorKey.ML_MODEL_NOT_FOUND: "ML model not found.",
         ErrorKey.ML_MODEL_NAME_EXISTS: "A model with this name already exists.",
+        ErrorKey.ML_INFERENCE_INPUT_INVALID: "ML model inference received invalid input values.",
+        ErrorKey.ML_MODEL_ARTIFACT_INVALID: "The model file does not match the registered features or target.",
+        ErrorKey.ML_PIPELINE_RUN_NOT_PROMOTABLE: "This pipeline run cannot safely replace the model artifact.",
         ErrorKey.INVALID_PKL_FILE: "Only .pkl files are allowed.",
         ErrorKey.PKL_FILE_TOO_LARGE: "PKL file too large. Maximum size is 500MB.",
         ErrorKey.ERROR_UPLOAD_FILE_OPEN_AI: "Failed to upload file to OpenAI.",
@@ -363,14 +446,70 @@ ERROR_MESSAGES = {
         ErrorKey.SUB_AGENT_SESSION_STALE: "The workflow changed while a sub-agent conversation was in progress. Please start a new message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "The sub-agent connections in this workflow are invalid: {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "A sub-agent in this workflow is misconfigured: {0}",
+        ErrorKey.LOOP_INVALID_TOPOLOGY: "A loop in this workflow is not connected correctly: {0}",
+        ErrorKey.PROMPT_CONTEXT_INVALID: "The prompt context is not valid for this workflow.",
+        ErrorKey.PROMPT_FIELD_NOT_SUPPORTED: "This node has no editable prompt field with that name.",
+        ErrorKey.PROMPT_VERSION_CONFLICT: "Another save completed first. Try again.",
+        # No braces in any message: get_error_message calls .format() unconditionally.
+        ErrorKey.PROMPT_EVAL_TECHNIQUE_UNSUPPORTED: "This matching technique is not available for an isolated prompt check.",
+        ErrorKey.PROMPT_CASE_SELECTION_INVALID: "The selected gold dataset cases are not valid for this run.",
+        ErrorKey.PROMPT_OPTIMIZE_UNUSABLE: "The model did not return a usable prompt suggestion.",
+        ErrorKey.PROMPT_EXECUTION_TIMEOUT: "The prompt check did not finish within the time budget.",
+        ErrorKey.PROMPT_MODEL_CALL_FAILED: "The LLM provider call failed.",
+        ErrorKey.PROMPT_GOLD_DATASET_INVALID: "The gold dataset is missing or has no cases.",
         },
     "fr": {
         ErrorKey.INTERNAL_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
+        ErrorKey.READ_ONLY_SQL_BLOCKED: "Ce SQL a été rejeté car il n'est pas en lecture seule.",
+        ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID: (
+            "La configuration de la source de données d'entraînement est incomplète."
+        ),
+        ErrorKey.ML_EXTRACT_QUERY_FAILED: (
+            "Impossible d'exécuter la requête de la source de données d'entraînement."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE: (
+            "Le fichier de données d'entraînement téléversé n'est plus disponible."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_ENCODING_INVALID: (
+            "Le fichier CSV téléversé utilise un encodage de caractères non pris en charge."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_UNSUPPORTED: (
+            "Ce type de fichier de données d'entraînement n'est pas pris en charge."
+        ),
+        ErrorKey.ML_EXTRACT_FILE_INVALID: (
+            "Le fichier de données d'entraînement téléversé n'a pas pu être lu."
+        ),
+        ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED: (
+            "La limite d'extraction des données d'entraînement a été dépassée."
+        ),
+        ErrorKey.ML_TRAINING_UPLOAD_TOO_LARGE: (
+            "Le fichier de données d'entraînement est trop volumineux pour être téléversé."
+        ),
+        ErrorKey.ML_TRAINING_SEARCH_TOO_LARGE: (
+            "La recherche d'hyperparamètres est trop grande pour être exécutée."
+        ),
+        ErrorKey.ML_TRAINING_JOB_NOT_FOUND: (
+            "La tâche d'entraînement est introuvable ou a expiré."
+        ),
+        ErrorKey.ML_TRAINING_JOB_ALREADY_RUNNING: (
+            "Vous avez déjà une tâche d'entraînement en cours."
+        ),
+        ErrorKey.ML_TRAINING_JOB_NEEDS_USER: (
+            "Le test d'un entraînement de modèle nécessite un utilisateur connecté."
+        ),
+        ErrorKey.ML_EXTRACT_FAILED: (
+            "La source de données d'entraînement n'a pas pu terminer le test. "
+            "Vérifiez sa configuration et réessayez."
+        ),
+        ErrorKey.ML_TRAINING_DATA_STORAGE_FAILED: (
+            "Impossible d'accéder au stockage de fichiers pour les données d'entraînement."
+        ),
         ErrorKey.FILE_MANAGER_INITIALIZATION_FAILED: "Échec de l'initialisation du service de gestion des fichiers.",
         ErrorKey.INTERNAL_SERVER_ERROR: "Une erreur interne du serveur est survenue. Veuillez réessayer plus tard.",
         ErrorKey.SUB_AGENT_SESSION_STALE: "Le workflow a changé pendant une conversation avec un sous-agent. Veuillez démarrer un nouveau message.",
         ErrorKey.SUB_AGENT_INVALID_TOPOLOGY: "Les connexions de sous-agents de ce workflow sont invalides : {0}",
         ErrorKey.SUB_AGENT_INVALID_CONFIG: "Un sous-agent de ce workflow est mal configuré : {0}",
+        ErrorKey.LOOP_INVALID_TOPOLOGY: "Une boucle de ce workflow n'est pas connectée correctement : {0}",
     },
 }
 

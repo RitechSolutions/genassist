@@ -17,6 +17,7 @@ from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
 from app.modules.workflow.engine.utils import has_volatile_template_vars
 from app.modules.workflow.llm.provider import LLMProvider
+from app.modules.workflow.llm.streaming import astream_reply
 from app.services.llm_providers import LlmProviderService
 
 logger = logging.getLogger(__name__)
@@ -278,7 +279,9 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
                 diagnostics.record(self.get_state(), self.node_id, applied=False, reason=cache_reason)
 
             # Process the input through the model
-            response = await llm.ainvoke([system_message, HumanMessage(content=message_content)])
+            messages = [system_message, HumanMessage(content=message_content)]
+            sink = self.chat_token_sink()
+            response = await (astream_reply(llm, messages, sink) if sink else llm.ainvoke(messages))
 
             from app.modules.workflow.engine.llm_usage_tracking import record_node_llm_usage
 

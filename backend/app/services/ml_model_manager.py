@@ -6,6 +6,7 @@ avoiding repeated file I/O and deserialization overhead.
 """
 
 import asyncio
+import contextlib
 import glob
 import hashlib
 import logging
@@ -14,7 +15,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from typing import Any, Dict, Optional, Set
+from typing import Any, BinaryIO, Callable, Dict, Optional, Tuple
 from uuid import UUID
 
 from injector import inject
@@ -49,23 +50,41 @@ def _load_pickle_sync(pkl_file: str) -> Any:
     safe_path = resolve_model_path(pkl_file)
     if safe_path is None:
         raise ValueError("Model file is not inside the ML models folder")
+    return _load_pickle_stream(lambda: open(safe_path, "rb"), safe_path)
 
+
+def _load_pickle_open_file_sync(file: BinaryIO, source: str) -> Any:
+    """Load a pickle from a file the caller already opened and scanned.
+
+    The load reads the same open file (rewound for each attempt), not a path,
+    so the file can't be replaced with another one between the scan and the load.
+    The caller keeps ownership of the file and closes it.
+    """
+
+    def rewind() -> Any:
+        file.seek(0)
+        return contextlib.nullcontext(file)
+
+    return _load_pickle_stream(rewind, source)
+
+
+def _load_pickle_stream(open_stream: Callable[[], Any], source: str) -> Any:
     load_errors = []
 
     # Method 1: restricted unpickler with default encoding
     try:
-        with open(safe_path, "rb") as f:
+        with open_stream() as f:
             model = safe_pickle_load(f)
-        logger.info("Loaded model from %s", safe_path)
+        logger.info("Loaded model from %s", source)
         return model
     except Exception as e:
         load_errors.append(f"pickle (default) failed: {type(e).__name__}")
 
     # Method 2: restricted unpickler with latin1 encoding (legacy Python 2 pickles)
     try:
-        with open(safe_path, "rb") as f:
+        with open_stream() as f:
             model = safe_pickle_load(f, encoding="latin1")
-        logger.info("Loaded model (latin1) from %s", safe_path)
+        logger.info("Loaded model (latin1) from %s", source)
         return model
     except Exception as e:
         load_errors.append(f"pickle (latin1) failed: {type(e).__name__}")
@@ -128,7 +147,7 @@ class MLModelManager:
         if not hasattr(self, "_cached_models"):
             self._cached_models: Dict[str, CachedMLModel] = {}
             self._loading_locks: Dict[str, asyncio.Lock] = {}
-            self._validated_files: Set[str] = set()
+            self._validated_files: Dict[str, Tuple[int, int]] = {}
             logger.info("MLModelManager initialized")
 
     async def get_model(
@@ -231,7 +250,9 @@ class MLModelManager:
         """
         from app.core.utils.model_validator import validate_pickle_file_safe
 
-        is_valid, error = validate_pickle_file_safe(pkl_file)
+        # The exact-allowlist scan is pure Python; keep it off the event loop.
+        loop = asyncio.get_running_loop()
+        is_valid, error = await loop.run_in_executor(_MODEL_LOAD_EXECUTOR, validate_pickle_file_safe, pkl_file)
 
         if not is_valid:
             logger.error(f"Model validation failed: {pkl_file} - {error}")
@@ -265,14 +286,15 @@ class MLModelManager:
         if not os.path.exists(pkl_file):
             raise FileNotFoundError(f"Model file not found: {pkl_file}")
 
-        # Only run the expensive subprocess validation once per file path.
-        # Subsequent loads of the same file (e.g. after cache eviction due to
-        # timestamp change) skip it because the file was already proven safe.
-        if pkl_file not in self._validated_files:
-            # Step 1: Validate model in subprocess (prevents segfaults from crashing main app)
+        # Skip the static scan only when this exact file version already passed.
+        # A stale reload or retrain rewrites the same path, so key on (mtime, size).
+        file_stat = os.stat(pkl_file)
+        file_signature = (file_stat.st_mtime_ns, file_stat.st_size)
+        if self._validated_files.get(pkl_file) != file_signature:
+            # Step 1: Validate model without blocking the event loop
             logger.debug(f"Pre-validating model file: {pkl_file}")
             await self._validate_model_safe(pkl_file)
-            self._validated_files.add(pkl_file)
+            self._validated_files[pkl_file] = file_signature
 
         # Step 2: Load model in thread pool with timeout
         loop = asyncio.get_running_loop()
@@ -301,7 +323,7 @@ class MLModelManager:
         model_id_str = str(model_id)
         cached = self._cached_models.pop(model_id_str, None)
         if cached:
-            self._validated_files.discard(cached.pkl_file)
+            self._validated_files.pop(cached.pkl_file, None)
             logger.info(f"Invalidated cached model {model_id_str}")
 
     def clear_cache(self) -> None:
@@ -426,8 +448,6 @@ async def local_model_file(ml_model: Any, ml_service: Any) -> Optional[str]:
     pkl_file_path = await download_model_file(ml_model.id, ml_model.pkl_file_id)
     # Save the new path so the next load finds the file without a download
     if ml_model.pkl_file != pkl_file_path:
-        from app.schemas.ml_model import MLModelBase
-
-        await ml_service.update(ml_model.id, MLModelBase(pkl_file=str(pkl_file_path)))
+        await ml_service.record_local_pkl_file(ml_model.id, str(pkl_file_path))
     ml_model.pkl_file = str(pkl_file_path)
     return pkl_file_path

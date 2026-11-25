@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
-from app.modules.workflow.engine.workflow_state import WorkflowPausedException
+from app.modules.workflow.engine.workflow_state import SAVED_WORKFLOW_ID_KEY, WorkflowPausedException
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class ToolBuilderNode(BaseNode):
         """
         from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
-        template_str = config.get("forwardTemplate", "{}")
+        template_str = config.get("forwardTemplate") or "{}"
         logger.debug(f"Template string: {template_str}")
         try:
             template = json.loads(template_str)
@@ -52,14 +52,14 @@ class ToolBuilderNode(BaseNode):
         next_node = self.get_connected_nodes("starter")
 
         if len(next_node) == 0:
-            no_source_template = config.get("forwardTemplate", "{}").replace(
+            no_source_template = (config.get("forwardTemplate") or "{}").replace(
                 "source.", ""
             )
             return {**json.loads(no_source_template), **source_input}
         start_node_id = next_node[0]
         temp_data: Dict[str, Any] = {"node_outputs": {}}
 
-        no_source_template = config.get("forwardTemplate", "{}").replace("source.", "")
+        no_source_template = (config.get("forwardTemplate") or "{}").replace("source.", "")
         temp_data["node_outputs"][self.node_id] = json.loads(no_source_template)
 
         # Build a workflow engine from the current workflow configuration
@@ -71,6 +71,7 @@ class ToolBuilderNode(BaseNode):
             "id": self.get_state().workflow_id,
             "nodes": current_workflow.get("nodes", []),
             "edges": current_workflow.get("edges", []),
+            SAVED_WORKFLOW_ID_KEY: (current_workflow.get("config") or {}).get(SAVED_WORKFLOW_ID_KEY),
         }
         workflow_engine = WorkflowEngine(workflow_config)
 

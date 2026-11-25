@@ -1,34 +1,79 @@
 """
 Train Data Source node implementation using the BaseNode class.
 
-This node fetches training data from databases or CSV files for ML model training.
+This node fetches training data from databases or uploaded files for ML model training.
 """
 
 import asyncio
 import logging
-from typing import Any, Dict
-from uuid import UUID
+import os
+import re
+import tempfile
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Dict, TypeVar
 
+from starlette_context import context
+
+from app.auth.utils import has_permission
+from app.core.config.settings import settings
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.project_path import DATA_VOLUME
+from app.core.permissions.constants import Permissions as P
+from app.core.utils.sensitive_data_utils import redact_bound_values
+from app.modules.integration.database.bound_parameters import BoundValueError
 from app.modules.integration.database.provider_manager import DBProviderManager
+from app.modules.integration.database.query_validator import AdvancedQueryValidator
+from app.modules.integration.database.read_only_sql import (
+    read_only_sql_blocked_message,
+    validate_read_only_sql,
+)
 from app.modules.workflow.engine.base_node import BaseNode
-from app.modules.workflow.engine.nodes.ml import ml_utils
+from app.modules.workflow.engine.nodes.ml import ml_utils, training_data_storage
+from app.modules.workflow.engine.nodes.ml.training_file_readers import (
+    SUPPORTED_TRAINING_FILE_LABEL,
+    SUPPORTED_TRAINING_FILE_SUFFIXES,
+    TrainingFileReader,
+    stored_file_suffix,
+    training_file_suffix,
+)
+from app.modules.workflow.engine.utils import (
+    PARAM_STYLE_NAMED,
+    PARAM_STYLE_PYFORMAT,
+    BoundParameters,
+    QueryVariableError,
+    bind_config_vars,
+)
 
 logger = logging.getLogger(__name__)
+
+NumericLimit = TypeVar("NumericLimit", int, float)
+
+@dataclass(frozen=True)
+class ExtractionLimits:
+    """Effective limits for one Train Data Source execution."""
+
+    max_rows: int
+    max_bytes: int
+    extraction_timeout_seconds: float
 
 
 class TrainDataSourceNode(BaseNode):
     """
-    Train Data Source node that fetches training data from databases or CSV files.
+    Train Data Source node that fetches training data from databases or uploaded files.
 
     Supports:
-    - Database queries with variable substitution
-    - CSV file parsing with encoding detection
-    - Multiple database types (TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB)
-    - Snowflake-specific query execution via SnowflakeManager
+    - Database queries with bound workflow variables
+    - File parsing for CSV, Excel (.xlsx), JSON, and Parquet uploads
+    - The SQL database providers supported by DatabaseManager
     """
+
+    client_safe_failure_messages = True
+
+    def _unresolved_config_fields(self) -> set[str]:
+        """Keep SQL templates intact until they can be bound for the driver."""
+        return {"query"}
 
     async def process(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -38,59 +83,64 @@ class TrainDataSourceNode(BaseNode):
             config: The resolved configuration for the node containing:
                 - name: Node name
                 - sourceType: "datasource" or "csv"
-                - dataSourceId: UUID of datasource (for database mode)
+                - dataSourceId: Data source identifier (for database mode)
                 - query: SQL query string (for database mode)
-                - csvFileName: Name of CSV file (for CSV mode)
-                - csvFilePath: Server path to CSV file (for CSV mode)
+                - csvFileName: Name of the uploaded file (for file mode)
+                - csvFilePath: Server path to the uploaded file (for file mode)
+                - csvFileId: File Manager ID of the uploaded file (for file mode)
 
         Returns:
             Dictionary with training data and metadata
         """
         try:
-            # Extract configuration
             name = config.get("name", "Training Data")
             source_type = config.get("sourceType")
 
-            if not source_type:
+            if source_type not in ("datasource", "csv"):
                 raise AppException(
-                    error_key=ErrorKey.MISSING_PARAMETER,
-                    error_detail="sourceType is required (must be 'datasource' or 'csv')",
+                    error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                    error_detail="Choose a database or uploaded file for Train Data Source.",
                 )
 
-            if source_type not in ["datasource", "csv"]:
-                raise AppException(
-                    error_key=ErrorKey.MISSING_PARAMETER,
-                    error_detail="sourceType must be 'datasource' or 'csv'",
-                )
+            limits = self._resolve_extraction_limits(config)
+            chunk_rows = settings.ML_EXTRACT_CHUNK_ROWS
 
             logger.info(
-                f"Processing train data source node: {name} (type: {source_type})"
+                "Processing train data source node %s (type=%s, max_rows=%s, "
+                "max_bytes=%s, timeout=%ss)",
+                name,
+                source_type,
+                limits.max_rows,
+                limits.max_bytes,
+                self._format_number(limits.extraction_timeout_seconds),
             )
 
             if source_type == "datasource":
-                return await self._process_database_source(config)
-            elif source_type == "csv":
-                return await self._process_csv_source(config)
+                result = await self._process_database_source(config, limits, chunk_rows)
             else:
-                # This should never happen due to validation above, but for completeness
-                raise AppException(
-                    error_key=ErrorKey.MISSING_PARAMETER,
-                    error_detail=f"Unsupported sourceType: {source_type}",
-                )
+                result = await self._process_csv_source(config, limits, chunk_rows)
+            # data_path is shown relative to DATA_VOLUME/train
+            await training_data_storage.save_training_data(ml_utils.DATA_VOLUME / "train" / result["data_path"])
+            return result
 
         except AppException:
-            # Re-raise AppException as is
             raise
         except Exception as e:
             logger.error(
-                f"Unexpected error in train data source node: {str(e)}", exc_info=True
+                "Unexpected error in train data source node: %s",
+                self._sanitized_diagnostic(e),
             )
             raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR,
+                error_key=ErrorKey.ML_EXTRACT_FAILED,
                 error_detail=f"Train data source processing failed: {str(e)}",
             ) from e
 
-    async def _process_database_source(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_database_source(
+        self,
+        config: Dict[str, Any],
+        limits: ExtractionLimits,
+        chunk_rows: int,
+    ) -> Dict[str, Any]:
         """
         Process database data source.
 
@@ -101,28 +151,23 @@ class TrainDataSourceNode(BaseNode):
             Dictionary with database query results and metadata
         """
         data_source_id = config.get("dataSourceId")
-        query = config.get("query", "")
+        query_template = config.get("query", "")
 
         if not data_source_id:
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
-                error_detail="dataSourceId is required for database source type",
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail="Select a data source.",
             )
 
-        if not query:
+        if not query_template:
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
-                error_detail="query is required for database source type",
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail="Enter a SQL query.",
             )
-
-        # Convert data_source_id to string if it's a UUID
-        if isinstance(data_source_id, UUID):
-            data_source_id = str(data_source_id)
 
         logger.info(f"Executing database query for datasource: {data_source_id}")
 
         try:
-            # Get database manager
             db_manager = await self._get_database_manager(data_source_id)
             if not db_manager:
                 raise AppException(
@@ -130,150 +175,564 @@ class TrainDataSourceNode(BaseNode):
                     error_detail=f"Database connection not available for datasource {data_source_id}",
                 )
 
-            # Log database type for debugging (supports TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB)
-            db_type = getattr(db_manager, "db_type", "unknown")
-            logger.debug(f"Using database manager for {db_type} database")
+            # Datasource DB types are mapped to SQLGlot dialects by
+            # read_only_sql.SQLGLOT_DIALECTS; keep supported types aligned there.
+            db_type = db_manager.get_db_type()
+            logger.debug("Using database manager for %s database", db_type)
 
-            substituted_query = query
-            logger.debug(f"Substituted query: {substituted_query}")
-
-            # Execute query with timeout
-            # Note: For Snowflake, this automatically routes to SnowflakeManager.execute_query()
             try:
-                results, error_msg = await asyncio.wait_for(
-                    db_manager.execute_query(substituted_query),
-                    timeout=30.0,  # 30 second timeout
+                validation_query, statement, parameters = self._bind_database_query(
+                    query_template,
+                    db_type,
                 )
+            except QueryVariableError as exc:
+                raise AppException(
+                    error_key=ErrorKey.READ_ONLY_SQL_BLOCKED,
+                    status_code=400,
+                    error_detail=str(exc),
+                ) from None
+
+            logger.info(
+                "Executing training query with %d bound parameter(s)",
+                len(parameters),
+            )
+
+            # Fail closed before execution. The rejection reason is generated by the
+            # read-only policy and is safe to expose; stream_query adds DB-level
+            # read-only defense in depth for statements that pass this gate.
+            validation = validate_read_only_sql(validation_query, db_type)
+            if not validation.is_valid:
+                error = read_only_sql_blocked_message(validation)
+                logger.warning(error)
+                raise AppException(
+                    error_key=ErrorKey.READ_ONLY_SQL_BLOCKED,
+                    status_code=400,
+                    error_detail=error,
+                )
+
+            self._log_query_advisories(validation_query, db_manager)
+
+            # Stream query rows directly to CSV under one timeout. The writer
+            # closes the database iterator and removes its partial file on any
+            # failure, including cancellation by wait_for.
+            try:
+                chunks = self._stream_bound_query(
+                    db_manager,
+                    statement,
+                    parameters,
+                    chunk_rows,
+                )
+                csv_file_path, columns, row_count, sample_data = await asyncio.wait_for(
+                    ml_utils.stream_rows_to_csv(
+                        chunks,
+                        self.state.thread_id,
+                        max_rows=limits.max_rows,
+                        max_bytes=limits.max_bytes,
+                    ),
+                    timeout=limits.extraction_timeout_seconds,
+                )
+            except BoundValueError as exc:
+                raise AppException(
+                    error_key=ErrorKey.READ_ONLY_SQL_BLOCKED,
+                    status_code=400,
+                    error_detail=str(exc),
+                ) from None
             except asyncio.TimeoutError as exc:
-                raise AppException(
-                    error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail="Database query timed out after 30 seconds",
-                ) from exc
-
-            if error_msg:
-                raise AppException(
-                    error_key=ErrorKey.INTERNAL_ERROR,
-                    error_detail=f"Database query failed: {error_msg}",
+                raise self._extraction_timeout_error(limits) from exc
+            except AppException:
+                raise
+            except OSError as exc:
+                raise self._storage_error(exc) from None
+            except Exception as exc:
+                safe_error = self._sanitized_diagnostic(
+                    redact_bound_values(exc, parameters)
                 )
+                logger.error(
+                    "Training database query failed with %d bound parameter(s): %s",
+                    len(parameters),
+                    safe_error,
+                )
+                raise AppException(
+                    error_key=ErrorKey.ML_EXTRACT_QUERY_FAILED,
+                    error_detail=self._client_safe_database_error(
+                        exc,
+                        has_bound_parameters=bool(parameters),
+                    ),
+                ) from None
 
-            # Extract column names from first row
-            columns = list(results[0].keys()) if results else []
-
-            if not results:
+            if not row_count:
                 logger.warning("Database query returned no results")
             else:
                 logger.info(
-                    f"Database query successful: {len(results)} rows, {len(columns)} columns"
+                    "Database query successful: %s rows, %s columns",
+                    row_count,
+                    len(columns),
                 )
 
-            # Save all results to CSV using thread_id and timestamp
-            csv_file_path = await ml_utils.save_data_to_csv(
-                results, columns, self.state.thread_id
+            return self._build_success_response(
+                csv_file_path,
+                columns,
+                row_count,
+                sample_data,
             )
-
-            # Get first 3 and last 3 records for response
-            sample_data = ml_utils.get_sample_data(results)
-
-            return {
-                "success": True,
-                "data": sample_data,
-                "data_path": csv_file_path,
-                "metadata": {
-                    "rowCount": len(results),
-                    "columns": columns,
-                },
-            }
 
         except AppException:
             raise
         except Exception as e:
-            logger.error(f"Error processing database source: {str(e)}", exc_info=True)
+            logger.error(
+                "Error processing database source: %s",
+                self._sanitized_diagnostic(e),
+            )
             raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR,
+                error_key=ErrorKey.ML_EXTRACT_FAILED,
                 error_detail=f"Database source processing failed: {str(e)}",
             ) from e
 
-    async def _process_csv_source(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def _process_csv_source(
+        self,
+        config: Dict[str, Any],
+        limits: ExtractionLimits,
+        chunk_rows: int,
+    ) -> Dict[str, Any]:
         """
-        Process CSV data source.
+        Process an uploaded training-file source.
 
         Args:
             config: Node configuration
 
         Returns:
-            Dictionary with CSV data and metadata
+            Dictionary with uploaded-file data and metadata
         """
         csv_file_path = config.get("csvFilePath")
         csv_file_id = config.get("csvFileId")
-        csv_file_url = config.get("csvFileUrl")
+        csv_file_name = config.get("csvFileName")
+        sheet_name = config.get("sheetName")
 
         if not csv_file_path and not csv_file_id:
             raise AppException(
-                error_key=ErrorKey.MISSING_PARAMETER,
-                error_detail="csvFilePath is required for CSV source type",
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail="Upload a training file.",
             )
 
-        logger.info(f"Processing CSV file: {csv_file_path or csv_file_id}")
+        logger.info("Processing uploaded training file")
 
+        temporary_source_path: Path | None = None
         try:
-            if not csv_file_path and csv_file_id:
+            # Prefer re-downloading by ID over trusting a stored csvFilePath.
+            # csvFilePath is an absolute path captured wherever the file was
+            # originally uploaded from (e.g. DATA_VOLUME on the API server at
+            # upload time) - it can point somewhere that doesn't exist in
+            # whatever process/container actually executes this node (a
+            # scheduled pipeline run, a different host, etc.), while the file
+            # manager download always resolves correctly relative to this
+            # process's own DATA_VOLUME. Only fall back to the raw
+            # csvFilePath when there's no ID to re-download by.
+            if csv_file_id:
+                self._require_file_manager_read_permission()
                 from app.dependencies.injector import injector
                 from app.services.file_manager import FileManagerService
 
                 file_manager_service = injector.get(FileManagerService)
-                dest_file_path = f"{DATA_VOLUME}/train/{csv_file_id}.csv"
+                try:
+                    stored_file = await file_manager_service.get_file_by_id(csv_file_id)
+                except Exception as exc:
+                    logger.error(
+                        "Could not resolve training file metadata: %s",
+                        self._sanitized_diagnostic(exc),
+                    )
+                    raise self._file_unavailable_error() from None
 
-                logger.info(f"Downloading CSV file to: {dest_file_path}")
+                if stored_file is None:
+                    raise self._file_unavailable_error()
 
-                # download the file to the destination path
-                await file_manager_service.download_file_to_path(
-                    csv_file_id, dest_file_path
+                # The file type comes from the stored record, read the same way
+                # as the preview and profile endpoints. csvFileName comes from
+                # the client, so it only counts when the record has no extension
+                # at all. Those are older uploads that predate extension
+                # tracking; the endpoints reject them, but saved workflows keep
+                # running on them, falling back to the CSV default as before.
+                suffix = (
+                    stored_file_suffix(stored_file)
+                    or training_file_suffix(csv_file_name or "")
+                    or training_file_suffix(csv_file_path or "")
+                    or ".csv"
+                )
+                self._validate_training_file_suffix(suffix)
+
+                stored_size = getattr(stored_file, "size", None)
+                if isinstance(stored_size, int):
+                    self._enforce_training_file_byte_limit(
+                        stored_size,
+                        limits.max_bytes,
+                    )
+
+                source_dir = (
+                    ml_utils.DATA_VOLUME / "train" / self.state.thread_id
+                )
+                source_dir.mkdir(parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(
+                    dir=source_dir,
+                    prefix=".source_",
+                    suffix=suffix,
+                    delete=False,
+                ) as temp_file:
+                    temporary_source_path = Path(temp_file.name)
+
+                logger.info("Downloading uploaded training file for processing")
+
+                try:
+                    await file_manager_service.download_file_to_path(
+                        csv_file_id,
+                        str(temporary_source_path),
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Could not download training file: %s",
+                        self._sanitized_diagnostic(exc),
+                    )
+                    raise self._file_unavailable_error() from None
+
+                csv_file_path = str(temporary_source_path)
+
+            # Only files inside the data volume, or the configured storage folder, can be read
+            extra_directories = await ml_utils.extra_csv_directories()
+            allowed_directories = [ml_utils.DATA_VOLUME, *extra_directories]
+            # A path to an earlier run's output may only be in File Manager storage on this server
+            await training_data_storage.fetch_training_data(csv_file_path, self.state.thread_id, extra_directories)
+            candidates = [csv_file_path]
+            if not os.path.isabs(csv_file_path) and self.state.thread_id:
+                candidates.insert(0, ml_utils.DATA_VOLUME / "train" / self.state.thread_id / csv_file_path)
+            csv_path = next(
+                (path for path in (ml_utils._csv_path_inside(c, allowed_directories) for c in candidates) if path),
+                None,
+            )
+            if csv_path is None:
+                raise self._file_unavailable_error()
+            csv_file_path = str(csv_path)
+
+            if not os.access(csv_file_path, os.R_OK):
+                raise AppException(
+                    error_key=ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE,
+                    error_detail=(
+                        "The uploaded training file cannot be read. Upload it again."
+                    ),
                 )
 
-                # set the csv file path to the destination path
-                csv_file_path = dest_file_path
+            suffix = csv_path.suffix.lower()
+            self._validate_training_file_suffix(suffix)
+            self._enforce_training_file_byte_limit(
+                csv_path.stat().st_size,
+                limits.max_bytes,
+            )
 
-            # Only CSV files inside the data volume, or the configured storage folder, can be read
-            allowed_directories = await ml_utils.extra_csv_directories()
-            csv_file_path = str(ml_utils.resolve_csv_file_path(csv_file_path, self.state.thread_id, allowed_directories))
+            reader = TrainingFileReader(
+                csv_path,
+                chunk_rows,
+                max_rows=limits.max_rows,
+                sheet_name=sheet_name,
+                json_max_bytes=settings.ML_EXTRACT_JSON_MAX_BYTES,
+            )
 
-            # Parse CSV file
-            results = ml_utils.parse_csv_file(csv_file_path)
+            async def stream_training_file():
+                result = await ml_utils.stream_rows_to_csv(
+                    reader.chunks(),
+                    self.state.thread_id,
+                    max_rows=limits.max_rows,
+                    max_bytes=limits.max_bytes,
+                    source_kind="csv" if reader.is_csv else "file",
+                )
+                if not reader.is_csv:
+                    # CSV has no types of its own (they're inferred
+                    # downstream, as before); every other format's column
+                    # types are saved next to the output for the next node.
+                    try:
+                        ml_utils.write_dtypes_mapping_sidecar(result[0], reader.column_dtypes())
+                    except BaseException:
+                        Path(result[0]).unlink(missing_ok=True)
+                        raise
+                return result
 
-            # Extract column names from first row
-            columns = list(results[0].keys()) if results else []
+            try:
+                saved_csv_path, columns, row_count, sample_data = await asyncio.wait_for(
+                    stream_training_file(),
+                    timeout=limits.extraction_timeout_seconds,
+                )
+            except asyncio.TimeoutError as exc:
+                raise self._extraction_timeout_error(limits) from exc
 
             logger.info(
-                f"CSV parsing successful: {len(results)} rows, {len(columns)} columns"
+                "Training file parsing successful: %s rows, %s columns",
+                row_count,
+                len(columns),
             )
-
-            # Save parsed data to CSV using thread_id and timestamp
-            # This ensures consistent naming regardless of source type
-            saved_csv_path = await ml_utils.save_data_to_csv(
-                results, columns, self.state.thread_id
+            return self._build_success_response(
+                saved_csv_path,
+                columns,
+                row_count,
+                sample_data,
             )
-
-            # Get first 3 and last 3 records for response
-            sample_data = ml_utils.get_sample_data(results)
-
-            return {
-                "success": True,
-                "data": sample_data,
-                "data_path": saved_csv_path,
-                "metadata": {
-                    "rowCount": len(results),
-                    "columns": columns,
-                },
-            }
 
         except AppException:
             raise
+        except OSError as exc:
+            raise self._storage_error(exc) from None
         except Exception as e:
-            logger.error(f"Error processing CSV source: {str(e)}", exc_info=True)
+            logger.error(
+                "Error processing uploaded training file: %s",
+                self._sanitized_diagnostic(e),
+            )
             raise AppException(
-                error_key=ErrorKey.INTERNAL_ERROR,
-                error_detail=f"CSV source processing failed: {str(e)}",
+                error_key=ErrorKey.ML_EXTRACT_FAILED,
+                error_detail=f"Training file processing failed: {str(e)}",
             ) from e
+        finally:
+            if temporary_source_path is not None:
+                try:
+                    temporary_source_path.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(
+                        "Failed to delete temporary training source file",
+                        exc_info=True,
+                    )
+
+    @staticmethod
+    def _log_query_advisories(query: str, db_manager: Any) -> None:
+        """Log existing validator warnings without making advice blocking."""
+        try:
+            # This advisory-only path does not perform schema validation, so
+            # avoid a live schema fetch here.
+            advisory = AdvancedQueryValidator(
+                db_manager,
+                schema={"tables": []},
+            ).validate_query(query)
+            for warning in advisory.warnings or []:
+                logger.warning("Training query advisory: %s", warning)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # Advisory validation must never block extraction.
+            logger.debug("Advisory validation skipped: %s", exc)
+
+    def _bind_database_query(
+        self,
+        query_template: str,
+        db_type: str,
+    ) -> tuple[str, str, BoundParameters]:
+        """Create the validation and driver-specific forms of a query."""
+        source_output = self.get_input_from_source()
+        direct_input = self.direct_input if isinstance(self.direct_input, dict) else {}
+        validation_query, parameters = bind_config_vars(
+            query_template,
+            self.state,
+            source_output,
+            direct_input=direct_input,
+            param_style=PARAM_STYLE_NAMED,
+            db_type=db_type,
+        )
+
+        statement = validation_query
+        if str(db_type).strip().lower() == "snowflake":
+            statement, parameters = bind_config_vars(
+                query_template,
+                self.state,
+                source_output,
+                direct_input=direct_input,
+                param_style=PARAM_STYLE_PYFORMAT,
+                db_type=db_type,
+            )
+        return validation_query, statement, parameters
+
+    @staticmethod
+    def _stream_bound_query(
+        db_manager: Any,
+        statement: str,
+        parameters: Mapping[str, Any],
+        chunk_size: int,
+    ):
+        """Create a stream without changing the no-parameter call path."""
+        if parameters:
+            return db_manager.stream_query(
+                statement,
+                parameters,
+                chunk_size=chunk_size,
+            )
+        return db_manager.stream_query(statement, chunk_size=chunk_size)
+
+    @staticmethod
+    def _build_success_response(
+        data_path: str,
+        columns: list[str],
+        row_count: int,
+        sample_data: list[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Build the shared output contract for database and file extracts."""
+        return {
+            "success": True,
+            "data": sample_data,
+            "data_path": ml_utils.data_volume_reference(data_path),
+            "metadata": {
+                "rowCount": row_count,
+                # The UI shortens lists for display, so the count travels on its own.
+                "columnCount": len(columns),
+                "columns": columns,
+            },
+        }
+
+    @classmethod
+    def _extraction_timeout_error(cls, limits: ExtractionLimits) -> AppException:
+        """Build the shared timeout error for database and file extracts."""
+        return AppException(
+            error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
+            error_detail=(
+                "Training data extraction timed out after "
+                f"{cls._format_duration(limits.extraction_timeout_seconds)}"
+            ),
+        )
+
+    @staticmethod
+    def _file_unavailable_error() -> AppException:
+        """Build the shared missing-upload error."""
+        return AppException(
+            error_key=ErrorKey.ML_EXTRACT_FILE_UNAVAILABLE,
+            error_detail=(
+                "The uploaded training file is no longer available. Upload it again."
+            ),
+        )
+
+    @staticmethod
+    def _require_file_manager_read_permission() -> None:
+        """Authorize user-triggered file reads; internal worker runs are trusted."""
+        if not context.exists():
+            return
+        granted_permissions = context.get("user_permissions", [])
+        if has_permission(granted_permissions, P.FileManager.READ):
+            return
+        raise AppException(
+            error_key=ErrorKey.NOT_AUTHORIZED_ACCESS_RESOURCE,
+            status_code=403,
+        )
+
+    @staticmethod
+    def _storage_error(error: OSError) -> AppException:
+        """Log and build the shared training-output storage error."""
+        logger.error("Training data storage failure: %s", error)
+        return AppException(
+            error_key=ErrorKey.INTERNAL_ERROR,
+            error_detail=f"Training data storage failed: {str(error)}",
+        )
+
+    @classmethod
+    def _resolve_extraction_limits(cls, config: Dict[str, Any]) -> ExtractionLimits:
+        """Resolve node overrides without allowing platform ceilings to rise."""
+        return ExtractionLimits(
+            max_rows=cls._resolve_limit(
+                config,
+                "maxRows",
+                settings.ML_EXTRACT_MAX_ROWS,
+                int,
+            ),
+            max_bytes=cls._resolve_limit(
+                config,
+                "maxBytes",
+                settings.ML_EXTRACT_MAX_BYTES,
+                int,
+            ),
+            extraction_timeout_seconds=cls._resolve_limit(
+                config,
+                "timeoutSeconds",
+                float(settings.ML_EXTRACT_TIMEOUT_SECONDS),
+                float,
+            ),
+        )
+
+    @classmethod
+    def _resolve_limit(
+        cls,
+        config: Dict[str, Any],
+        config_key: str,
+        platform_limit: NumericLimit,
+        converter: Callable[[Any], NumericLimit],
+    ) -> NumericLimit:
+        raw_value = config.get(config_key)
+        if raw_value in (None, ""):
+            return platform_limit
+
+        try:
+            requested_limit = converter(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise AppException(
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail=f"{cls._limit_label(config_key)} must be a positive number.",
+            ) from exc
+
+        if isinstance(raw_value, bool) or requested_limit <= 0:
+            raise AppException(
+                error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+                error_detail=f"{cls._limit_label(config_key)} must be a positive number.",
+            )
+
+        return min(requested_limit, platform_limit)
+
+    @staticmethod
+    def _format_number(value: float) -> str:
+        return f"{value:g}"
+
+    @classmethod
+    def _format_duration(cls, seconds: float) -> str:
+        unit = "second" if seconds == 1 else "seconds"
+        return f"{cls._format_number(seconds)} {unit}"
+
+    @staticmethod
+    def _limit_label(config_key: str) -> str:
+        return {
+            "maxRows": "The row limit",
+            "maxBytes": "The file-size limit",
+            "timeoutSeconds": "The extraction timeout",
+        }.get(config_key, "This limit")
+
+    @staticmethod
+    def _sanitized_diagnostic(error: Any) -> str:
+        return ml_utils.sanitized_database_diagnostic(error)
+
+    @staticmethod
+    def _client_safe_database_error(
+        error: Exception,
+        *,
+        has_bound_parameters: bool,
+    ) -> str:
+        return ml_utils.client_safe_database_error(
+            error,
+            has_bound_parameters=has_bound_parameters,
+        )
+
+    @staticmethod
+    def _enforce_training_file_byte_limit(file_size: int, max_bytes: int) -> None:
+        if file_size <= max_bytes:
+            return
+
+        raise AppException(
+            error_key=ErrorKey.ML_EXTRACT_LIMIT_EXCEEDED,
+            error_detail=(
+                f"Training file is {file_size:,} bytes, which exceeds the limit "
+                f"of {max_bytes:,} bytes for training extracts. "
+                "Use a smaller file or ask an administrator to raise the file-size limit."
+            ),
+        )
+
+    @staticmethod
+    def _validate_training_file_suffix(suffix: str) -> None:
+        if suffix in SUPPORTED_TRAINING_FILE_SUFFIXES:
+            return
+
+        # The suffix can come from a file name, so only echo a plain extension.
+        shown = suffix if re.fullmatch(r"\.[a-z0-9]{1,10}", suffix) else "unknown"
+
+        raise AppException(
+            error_key=ErrorKey.ML_EXTRACT_CONFIGURATION_INVALID,
+            status_code=400,
+            error_detail=(
+                f"This training file type ({shown}) is not "
+                f"supported. Use one of: {SUPPORTED_TRAINING_FILE_LABEL}."
+            ),
+        )
 
     async def _get_database_manager(self, data_source_id: str):
         """

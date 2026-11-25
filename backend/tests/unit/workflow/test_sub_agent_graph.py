@@ -69,6 +69,7 @@ def test_sub_agent_main_flow_edge_rejected_without_any_delegation():
     with pytest.raises(SubAgentTopologyError) as exc:
         validate_sub_agent_topology(nodes, [_main_edge("p", "c")])
     assert any("main-flow" in v for v in exc.value.violations)
+    assert any("'Helper'" in v for v in exc.value.violations)
 
 
 def test_sub_agent_main_flow_output_edge_rejected():
@@ -102,6 +103,7 @@ def test_one_parent_per_child():
     with pytest.raises(SubAgentTopologyError) as exc:
         _validate(nodes, [_deleg("c", "p1"), _deleg("c", "p2")])
     assert any("more than one parent" in v for v in exc.value.violations)
+    assert any("'Helper'" in v for v in exc.value.violations)
 
 
 def test_self_link_rejected():
@@ -167,6 +169,7 @@ def test_delegation_tool_name_clamps_to_ascii_snake_case():
     assert delegation_tool_name("Flight  Search!") == "request_task_flight_search"
     assert delegation_tool_name("data—sync") == "request_task_data_sync"
     assert delegation_tool_name("中文名") == "request_task_"
+    assert delegation_tool_name("a" * 60) == "request_task_" + "a" * 51
 
 
 def test_name_empty_after_clamp_rejected():

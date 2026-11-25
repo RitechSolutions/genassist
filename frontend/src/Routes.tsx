@@ -1,7 +1,8 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { Outlet, RouterProvider } from "react-router-dom";
-import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "@/layout/ProtectedRoute";
+import { AppLoader } from "@/components/AppLoader";
 import AppLayout from "@/layout/AppLayout";
 import { Register } from "@/views/Register";
 import { ChangePassword, Login, LoginSsoCallback } from "@/views/Login";
@@ -67,7 +68,9 @@ import DatasetsPage from "@/views/TestSuites/pages/DatasetsPage";
 import EvaluationsPage from "@/views/TestSuites/pages/EvaluationsPage";
 import DatasetDetailPage from "@/views/TestSuites/pages/DatasetDetailPage";
 import EvaluationDetailPage from "@/views/TestSuites/pages/EvaluationDetailPage";
+import EvaluationEditorPage from "@/views/TestSuites/pages/EvaluationEditorPage";
 import WorkflowEvaluationsPage from "@/views/TestSuites/pages/WorkflowEvaluationsPage";
+import MLModelEvaluationsPage from "@/views/TestSuites/pages/MLModelEvaluationsPage";
 import Privacy from "@/views/Privacy";
 import ServerStatusBanner from "@/components/ServerStatusBanner";
 import Onboarding from "@/views/Onboarding/pages/Onboarding";
@@ -215,7 +218,11 @@ export const RoutesProvider = () => {
             },
             {
               path: "notifications",
-              element: <Notifications />,
+              element: (
+                <ProtectedRoute requiredPermissions={["read:dashboard"]}>
+                  <Notifications />
+                </ProtectedRoute>
+              ),
             },
             {
               path: "settings",
@@ -232,7 +239,7 @@ export const RoutesProvider = () => {
             {
               path: "settings/translations",
               element: (
-                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                <ProtectedRoute requiredPermissions={["read:app_settings"]}>
                   <Translations />
                 </ProtectedRoute>
               ),
@@ -240,7 +247,7 @@ export const RoutesProvider = () => {
             {
               path: "settings/languages",
               element: (
-                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                <ProtectedRoute requiredPermissions={["read:app_settings"]}>
                   <Languages />
                 </ProtectedRoute>
               ),
@@ -546,6 +553,22 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "tests/evaluations/new",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <EvaluationEditorPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
+              path: "tests/evaluations/:evaluationId/edit",
+              element: (
+                <ProtectedRoute requiredPermissions={["test:workflow"]}>
+                  <EvaluationEditorPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "tests/evaluations/:evaluationId",
               element: (
                 <ProtectedRoute requiredPermissions={["test:workflow"]}>
@@ -554,9 +577,17 @@ export const RoutesProvider = () => {
               ),
             },
             {
+              path: "tests/ml-model-evaluations",
+              element: (
+                <ProtectedRoute requiredPermissions={["*", "read:ml_model"]}>
+                  <MLModelEvaluationsPage />
+                </ProtectedRoute>
+              ),
+            },
+            {
               path: "app-settings",
               element: (
-                <ProtectedRoute requiredPermissions={["read:app_setting"]}>
+                <ProtectedRoute requiredPermissions={["read:app_settings"]}>
                   <AppSettings />
                 </ProtectedRoute>
               ),
@@ -624,11 +655,7 @@ export const RoutesProvider = () => {
   );
 
   if (registrationStatus === "loading") {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-[#6b7280]">
-        Loading...
-      </div>
-    );
+    return <AppLoader />;
   }
 
   const router = registrationStatus === "new" ? organizationRouter : mainRouter;

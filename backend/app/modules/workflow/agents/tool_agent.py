@@ -360,11 +360,20 @@ class ToolAgent(BaseToolAgent):
 
         if tool_name not in self.tool_map:
             error_msg = f"Tool '{tool_name}' not found. Available tools: {list(self.tool_map.keys())}"
-            return create_error_response(
-                error_msg,
-                self._get_agent_name(),
-                available_tools=list(self.tool_map.keys())
-            )
+            workflow_steps.append({
+                "step": f"{iteration + 1}_tool_result",
+                "tool": tool_name,
+                "args": tool_args,
+                "reasoning": tool_reasoning,
+                "result": error_msg
+            })
+            tools_used.append({
+                "tool_name": tool_name,
+                "args": tool_args,
+                "reasoning": tool_reasoning,
+                "result": error_msg
+            })
+            return None
 
         try:
             tool = self.tool_map[tool_name]
@@ -426,15 +435,6 @@ class ToolAgent(BaseToolAgent):
         chat_history = chat_history or []
         result = await self._execute_tools_workflow(query, chat_history)
         return result
-
-    async def stream(self, query: str, chat_history: Optional[List] = None, **kwargs):
-        """Stream the agent's tool selection and execution process"""
-        try:
-            result = await self.invoke(query, chat_history)
-            yield result
-        except Exception as e:
-            logger.error(f"Error streaming ToolAgent query: {str(e)}")
-            yield create_error_response(str(e), self._get_agent_name())
 
     async def select_tool(self, query: str) -> Dict[str, Any]:
         """Select the most appropriate tool for a given query without executing it"""

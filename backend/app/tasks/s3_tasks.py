@@ -9,8 +9,15 @@ from uuid import UUID
 from celery import shared_task
 from croniter import croniter
 
-from app.core.utils.s3_utils import S3Client
+from app.core.observability.datadog_observability import datadog_observability
+from app.core.utils.s3_utils import S3Client, S3KeysNotUsableError, s3_data_source_keys
 from app.dependencies.injector import injector
+from app.modules.data.load_result import (
+    SUCCESSFUL_SYNC_STATUSES,
+    article_sync_outcome,
+    ensure_has_text,
+    load_document,
+)
 from app.modules.data.manager import AgentRAGServiceManager
 from app.modules.data.utils import FileTextExtractor
 from app.schemas.agent_knowledge import KBCreate
@@ -32,11 +39,13 @@ def import_s3_files_to_kb():
         max_files: Maximum number of files to process
         embeddings_model: Model to use for embeddings
     """
-    return run_async_in_celery(
+    result = run_async_in_celery(
         import_s3_files_to_kb_async_with_scope(),
         timeout=45 * 60,
         task_name="import_s3_files_to_kb",
     )
+    datadog_observability.tag_kb_sync("s3", result)
+    return result
 
 
 async def import_s3_files_to_kb_async_with_scope():
@@ -62,6 +71,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         kbList = [kb for kb in await kb_service.get_all(sync_active=True) if kb.sync_source_id]
 
     processed_ds = 0
+    kbs_failed = 0
     files_added_tot = 0
     files_deleted_tot = 0
     last_file_date = None
@@ -110,11 +120,16 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
             continue
 
         conn_data = ds.connection_data
+        try:
+            access_key, secret_key = s3_data_source_keys(conn_data)
+        except S3KeysNotUsableError as refusal:
+            logger.error(f"Knowledge base {kb.id} not synced: {refusal}")
+            kb_errors.append(f"{kb.name}: {refusal}")
+            kbs_failed += 1
+            continue
 
         prefix = conn_data["prefix"]
         bucket = conn_data["bucket_name"]
-        access_key = conn_data["access_key"]
-        secret_key = conn_data["secret_key"]
         region = conn_data["region"]
 
         # Initialize S3 client
@@ -135,13 +150,13 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                 f"No files found in S3 with prefix: {prefix} in datasource {ds.name}"
             )
             processed_ds += 1
-            kb.last_synced = datetime.now()
+            kb.last_synced = kb.last_successful_sync = datetime.now()
             await kb_service.update(kb.id, KBCreate(**kb.__dict__))  # type: ignore
             continue
 
         files_added = 0
         files_deleted = 0
-        kb_errors = []
+        errors_before = len(kb_errors)
 
         logger.debug("Getting existing files from RAG...")
         # Get existing documents using simplified manager
@@ -194,6 +209,9 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         current_file = 0
         # add new files to RAG
         for file_info in s3_new_files:
+            if file_info.get("size", 0) == 0:
+                logger.debug(f"Skipping empty object {file_info['key']}")
+                continue
             try:
                 current_file += 1
                 logger.debug(f"Processing file {current_file} of {len(s3_new_files)}")
@@ -234,11 +252,10 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
                     "kb_id": str(kb.id),
                 }
 
-                # Add to knowledge base using simplified manager
-                res = await rag_manager.add_document(
-                    kb, doc_id, extracted_text, metadata
-                )
-                logger.debug(f"Document {file_name} processed with result: {res}")
+                ensure_has_text(extracted_text, file_name)
+                warning = await load_document(rag_manager, kb, doc_id, extracted_text, metadata, file_name)
+                if warning:
+                    kb_errors.append(warning)
                 files_added += 1
 
             except Exception as e:
@@ -252,7 +269,17 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         kb_update = json.loads(kb.model_dump_json())
         kb_update["last_synced"] = datetime.now()
         kb_update["last_file_date"] = last_file_date
+        sync_status, _ = article_sync_outcome(
+            sum(1 for file_info in s3_new_files if file_info.get("size", 0) != 0),
+            files_added,
+            kb_errors[errors_before:],
+            had_articles=bool(existing_files),
+        )
+        if sync_status in SUCCESSFUL_SYNC_STATUSES:
+            kb_update["last_successful_sync"] = kb_update["last_synced"]
         await kb_service.update(kb.id, KBCreate(**kb_update))
+        if sync_status not in SUCCESSFUL_SYNC_STATUSES:
+            kbs_failed += 1
 
         files_added_tot += files_added
         files_deleted_tot += files_deleted
@@ -263,6 +290,7 @@ async def import_s3_files_to_kb_async(kb_id: Optional[UUID] = None):
         "files_added": files_added_tot,
         "files_deleted": files_deleted_tot,
         "datasources_processed": processed_ds,
+        "kbs_failed": kbs_failed,
         "errors": kb_errors if kb_errors else None,
     }
 

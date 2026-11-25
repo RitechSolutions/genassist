@@ -11,7 +11,7 @@ unchanged when the feature flag is disabled.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,13 +21,14 @@ class PresignDirectUploadCreate(BaseModel):
 
     original_filename: str = Field(..., min_length=1, max_length=500)
     # Optional file-record fields (used by the settings "Manage Files" UI).
-    # Backward compatible: if omitted, server keeps the old behavior (uuid name under "uploads/").
+    # If omitted, the server generates a UUID name under the tenant-scoped uploads folder.
     path: Optional[str] = Field(
         default=None,
         max_length=1000,
         description=(
             "Optional logical folder. When provided, the server uses it as the S3 key prefix "
-            "(after sanitization). If omitted, defaults to the route's sub_folder."
+            "inside the active tenant namespace (after sanitization). If omitted, defaults "
+            "to the route's sub_folder."
         ),
     )
     name: Optional[str] = Field(
@@ -56,6 +57,13 @@ class PresignDirectUploadCreate(BaseModel):
         ),
     )
     content_type: Optional[str] = Field(default=None, max_length=255)
+    purpose: Optional[Literal["training_data"]] = Field(
+        default=None,
+        description=(
+            "Set to 'training_data' for Train Data Source uploads: they may be up to "
+            "ML_TRAINING_UPLOAD_MAX_BYTES and must be a supported training file type."
+        ),
+    )
 
 
 class PresignDirectUploadResponse(BaseModel):

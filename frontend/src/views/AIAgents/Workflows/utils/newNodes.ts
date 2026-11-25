@@ -5,11 +5,15 @@
  * node's display label, for readability.
  */
 export const NEW_NODE_TYPES = new Set<string>([
+  "loopNode", // Loop
+  "filterNode", // Filter
+  "switchNode", // Switch
   "nlpNode", // Text Analysis
   "webScraperNode", // Web Scraper
   "htmlToImageNode", // HTML to Image
   "salesforceCaseNode", // Salesforce Case Creator
   "subAgentNode", // Sub-Agent
+  "webhookTriggerNode", // Webhook Trigger
 ]);
 
 /** Whether a node type should show the "NEW" badge in the palette. */

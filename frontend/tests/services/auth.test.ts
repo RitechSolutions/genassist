@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/config/api", () => ({
   apiRequest: vi.fn(),
@@ -15,6 +15,9 @@ import {
   isTokenExpired,
   completeMicrosoftSso,
   getAuthMe,
+  userHasPermission,
+  currentTenantIsMaster,
+  persistAuthMe,
 } from "@/services/auth";
 
 const mockApiRequest = vi.mocked(apiRequest);
@@ -32,6 +35,28 @@ function base64UrlPayload(payload: unknown): string {
 function makeJwt(payload: unknown): string {
   return `header.${base64UrlPayload(payload)}.signature`;
 }
+
+describe("userHasPermission", () => {
+  it("allows a user holding the exact permission", () => {
+    expect(userHasPermission(["read:dashboard", "read:operator"], "read:operator")).toBe(true);
+  });
+
+  it("allows a user with full access", () => {
+    expect(userHasPermission(["*"], "read:feature_flag")).toBe(true);
+  });
+
+  it("refuses a user without the permission", () => {
+    expect(userHasPermission(["read:conversation"], "read:dashboard")).toBe(false);
+  });
+
+  it("refuses while no permissions are known", () => {
+    expect(userHasPermission([], "read:dashboard")).toBe(false);
+  });
+
+  it("does not treat a similar permission as a match", () => {
+    expect(userHasPermission(["read:app_setting"], "read:app_settings")).toBe(false);
+  });
+});
 
 describe("isTokenExpired", () => {
   it("returns false for a token whose exp is in the future", () => {
@@ -96,5 +121,39 @@ describe("getAuthMe", () => {
     mockApiRequest.mockRejectedValue(new Error("boom"));
 
     await expect(getAuthMe()).rejects.toThrow("boom");
+  });
+});
+
+describe("currentTenantIsMaster", () => {
+  let stored: Map<string, string>;
+
+  beforeEach(() => {
+    stored = new Map();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+    });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is true once /auth/me reports the master tenant", () => {
+    persistAuthMe({ permissions: [], roles: [], is_master_tenant: true });
+    expect(currentTenantIsMaster()).toBe(true);
+  });
+
+  it("is false once /auth/me reports another tenant", () => {
+    persistAuthMe({ permissions: [], roles: [], is_master_tenant: false });
+    expect(currentTenantIsMaster()).toBe(false);
+  });
+
+  it("is false when a later /auth/me answer does not report it", () => {
+    persistAuthMe({ permissions: [], roles: [], is_master_tenant: true });
+    persistAuthMe({ permissions: [], roles: [] });
+    expect(currentTenantIsMaster()).toBe(false);
+  });
+
+  it("is false before /auth/me has answered", () => {
+    expect(currentTenantIsMaster()).toBe(false);
   });
 });

@@ -76,6 +76,15 @@ describe("bundleSetFilename", () => {
     expect(bundleSetFilename("")).toBe("evaluations-workflow.json");
     expect(bundleSetFilename("***")).toBe("evaluations-workflow.json");
   });
+
+  it("names a file with one category's evaluations after the category", () => {
+    expect(bundleSetFilename("Support Bot", {})).toBe("evaluations-support-bot.json");
+    expect(bundleSetFilename("Support Bot", { category: "Refund flows" })).toBe(
+      "evaluations-support-bot-refund-flows.json",
+    );
+    expect(bundleSetFilename("Support Bot", { uncategorized: true })).toBe("evaluations-support-bot-no-category.json");
+    expect(bundleSetFilename("Support Bot", { category: "日本" })).toBe("evaluations-support-bot-category.json");
+  });
 });
 
 describe("apiErrorDetail", () => {
@@ -172,6 +181,20 @@ describe("buildNodeTypeIndex", () => {
       "tool-1": "toolNode",
       "tool-3": "httpToolNode",
       "node-1": "httpNode",
+    });
+  });
+
+  it("indexes router types when the catalog reports them", () => {
+    const withTypedRouters: EvaluationToolCatalog = {
+      ...catalog,
+      routers: [
+        { id: "router-1", label: "Router", type: "routerNode", workflow_path: [], branches: [] },
+        { id: "switch-1", label: "Switch", type: "switchNode", workflow_path: [], branches: [] },
+      ],
+    };
+    expect(buildNodeTypeIndex(withTypedRouters)).toMatchObject({
+      "router-1": "routerNode",
+      "switch-1": "switchNode",
     });
   });
 });

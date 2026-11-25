@@ -1,8 +1,9 @@
-from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict, field_validator
-from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.workflow import Workflow
 
@@ -101,10 +102,20 @@ class MLModelPipelineRunRead(MLModelPipelineRunBase):
         from_attributes=True,
     )
 
+    @field_validator("execution_output", mode="before")
+    @classmethod
+    def wrap_non_object_output(cls, value: Any) -> Any:
+        # Runs store a dict, but a row may hold a bare JSON value (e.g. edited
+        # by hand). Wrap it like a run's final output so listing still works.
+        if value is None or isinstance(value, dict):
+            return value
+        return {"output": value}
+
 
 class MLModelPipelineRunPromote(BaseModel):
     update_model_file: bool = Field(
-        default=True, description="Whether to update model.pkl_file"
+        default=True,
+        description="Whether to update the model file path and uploaded file ID",
     )
     update_metrics: bool = Field(
         default=True, description="Whether to update model metadata with metrics"
@@ -142,3 +153,4 @@ class PipelineRunPromoteResponse(BaseModel):
     message: str
     model_updated: bool
     default_config_id: UUID
+    warnings: list[str] = Field(default_factory=list)

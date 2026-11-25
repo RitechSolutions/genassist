@@ -1,9 +1,10 @@
 import enum
+import uuid
 from typing import Optional
 
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import Index, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -11,10 +12,20 @@ from app.db.base import Base
 
 class ModelType(str, enum.Enum):
     XGBOOST = "xgboost"
+    LIGHTGBM = "lightgbm"
+    CATBOOST = "catboost"
     RANDOM_FOREST = "random_forest"
+    EXTRA_TREES = "extra_trees"
+    GRADIENT_BOOSTING = "gradient_boosting"
+    DECISION_TREE = "decision_tree"
     LINEAR_REGRESSION = "linear_regression"
+    RIDGE_REGRESSION = "ridge_regression"
+    LASSO_REGRESSION = "lasso_regression"
+    ELASTIC_NET = "elastic_net"
     LOGISTIC_REGRESSION = "logistic_regression"
-    OTHER = "other"
+    SVM = "svm"
+    KNN = "knn"
+    NEURAL_NETWORK = "neural_network"
 
 
 class MLModel(Base):
@@ -31,6 +42,9 @@ class MLModel(Base):
     features: Mapped[list] = mapped_column(ARRAY(String), nullable=False)
     target_variable: Mapped[str] = mapped_column(String(255), nullable=False)
     inference_params: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    training_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    trained_by_workflow_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    trained_by_node_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     pipeline_configs = relationship("MLModelPipelineConfig", back_populates="model", cascade="all, delete-orphan")

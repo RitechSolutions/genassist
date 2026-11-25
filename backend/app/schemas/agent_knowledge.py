@@ -4,12 +4,15 @@ from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
+KnowledgeBaseType = Literal["file", "url", "text", "datasource",
+                            "s3", "database", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket", "zendesk",
+                            "salesforce"]
+
+
 class KBBase(BaseModel):
     name: str
     description: Optional[str] = None
-    type: Literal["file", "url", "text", "datasource",
-                  "s3", "database", "sharepoint", "smb_share_folder", "azure_blob", "google_bucket", "zendesk",
-                  "salesforce"] = "file"
+    type: KnowledgeBaseType = "file"
     source: Optional[str] = None
     content: Optional[str] = None
     file_path: Optional[str] = None
@@ -71,6 +74,7 @@ class KBBase(BaseModel):
     last_synced: Optional[datetime] = None
     last_sync_status: Optional[str] = None
     last_sync_error: Optional[str] = None
+    last_successful_sync: Optional[datetime] = None
     last_file_date: Optional[datetime] = None
     sync_schedule: Optional[str] = None
     sync_active: Optional[bool] = None
@@ -98,5 +102,12 @@ class KBListItem(BaseModel):
     sync_active: Optional[bool] = None
     last_synced: Optional[datetime] = None
     last_sync_status: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class KBMinimal(BaseModel):
+    id: UUID
+    name: str
 
     model_config = ConfigDict(from_attributes=True)

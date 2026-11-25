@@ -5,9 +5,10 @@ import { useChat } from '../hooks/useChat';
 import { useReadReporter, messageIdentityKey } from '../hooks/useReadReporter';
 import { useScrollManagement } from '../hooks/useScrollManagement';
 import { useThinkingAnimation } from '../hooks/useThinkingAnimation';
+import { useSmoothReveal } from '../hooks/useSmoothReveal';
 import { useViewportManager } from '../hooks/useViewportManager';
 import { useFileAttachments } from '../hooks/useFileAttachments';
-import { ChatMessage, GenAgentChatProps, ScheduleItem } from '../types';
+import { ChatMessage, GenAgentChatProps, ScheduleItem, SendMessageOutcome } from '../types';
 import { VoiceInput } from './VoiceInput';
 import { LiveCallControl } from './LiveCallControl';
 import { useLiveVoice as useLiveVoiceSession } from '../hooks/useLiveVoice';
@@ -78,6 +79,17 @@ type LiveTurn = { user: string; agent: string; createTime: number };
 
 /** Current time in epoch seconds (the timestamp format ChatMessage expects). */
 const nowSec = () => Math.floor(Date.now() / 1000);
+
+/** Whether the conversation is visible: floating and input-bar modes open on demand, other modes always show it. */
+const isChatSurfaceOpen = (
+  mode: GenAgentChatProps['mode'],
+  isFloatingOpen: boolean,
+  barPanelOpen: boolean,
+): boolean => {
+  if (mode === 'floating') return isFloatingOpen;
+  if (mode === 'inputbar') return barPanelOpen;
+  return true;
+};
 
 export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   baseUrl,
@@ -227,9 +239,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     possibleQueries,
     isFinalized,
     isAgentTyping,
+    streaming,
     addFeedback,
     readState,
     markRead,
+    isRestoringConversation,
+    verifyConversationOnReturn,
     availableLanguages: agentAvailableLanguages,
     agentId,
     agentLiveVoiceEnabled,
@@ -260,22 +275,50 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     onConfigLoaded,
   });
 
-  const { currentThinkingParts, currentThinkingPartIndex } = useThinkingAnimation({
+  const { currentThinkingParts, currentThinkingPartIndex, activityLabel } = useThinkingAnimation({
     isAgentTyping,
     thinkingPhrases,
     thinkingDelayMs,
     translations,
+    activityKind: streaming?.running[streaming.running.length - 1],
   });
+  const thinkingLabel =
+    activityLabel ?? (currentThinkingParts[currentThinkingPartIndex] || currentThinkingParts[currentThinkingParts.length - 1]);
 
-  const { messagesEndRef, chatContainerRef, showScrollButton, scrollToLatest } = useScrollManagement({
+  const lastMessage = messages[messages.length - 1];
+  const revealedText = useSmoothReveal(
+    streaming ? streaming.text : lastMessage?.speaker === 'agent' ? lastMessage.text : '',
+    Boolean(streaming),
+  );
+  const liveText = streaming ? revealedText : '';
+  const revealingMessage =
+    !streaming && lastMessage?.speaker === 'agent' && revealedText !== lastMessage.text ? lastMessage : null;
+
+  // Index of the visitor's most recent message, so only it shows the receipt.
+  const lastCustomerIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].speaker === 'customer') return i;
+    }
+    return -1;
+  }, [messages]);
+  const latestQuestion: ChatMessage | undefined = messages[lastCustomerIndex];
+
+  const { messagesEndRef, chatContainerRef, spacerRef, showScrollButton, scrollToLatest } = useScrollManagement({
     messages,
+    latestQuestion,
     isAgentTyping,
-    currentThinkingPartIndex,
-    currentThinkingPartsLength: currentThinkingParts.length,
     conversationId,
     isFloatingOpen: mode === 'inputbar' ? barPanelOpen : isFloatingOpen,
     mode,
   });
+
+  // Opening the chat counts as a return visit, so a dead conversation is dropped
+  const isConversationVisible = isChatSurfaceOpen(mode, isFloatingOpen, barPanelOpen);
+  const verifyOnOpenRef = useRef(verifyConversationOnReturn);
+  verifyOnOpenRef.current = verifyConversationOnReturn;
+  useEffect(() => {
+    if (isConversationVisible) void verifyOnOpenRef.current();
+  }, [isConversationVisible]);
 
   // Report the visitor's read state upstream (so a supervisor sees when their reply
   // was read). Emits only while the chat surface is open, its bottom is on screen,
@@ -326,14 +369,6 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     }
     return 'delivered';
   }, [readReceipts, lastCustomerSequence, readState]);
-
-  // Index of the visitor's most recent message, so only it shows the receipt.
-  const lastCustomerIndex = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].speaker === 'customer') return i;
-    }
-    return -1;
-  }, [messages]);
 
   const {
     windowWidth,
@@ -582,6 +617,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     if (barPanelOpen) closeBarPanel();
   }, [mode, isFinalized, barPanelOpen, closeBarPanel]);
 
+  // Puts an unsent message back in the input when its conversation had to be restarted.
+  const restoreDraftIfRestarted = (outcome: SendMessageOutcome, draftText: string) => {
+    if (outcome !== 'conversation_restarted') return;
+    setInputValue((current) => (current.trim() ? `${current}\n${draftText}` : draftText));
+  };
+
   const submitMessage = async () => {
     if (inputValue.trim() === '' && attachments.length === 0) return;
     if (isAgentTyping) return;
@@ -605,7 +646,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         extraMetadata.attachments = attachments.map(a => a.attachment);
       }
 
-      await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
+      const outcome = await sendMessage(textToSend, filesToUpload, extraMetadata, reCaptchaTokenRef.current);
+      restoreDraftIfRestarted(outcome, textToSend);
     } catch (error) {
       // ignore
     } finally {
@@ -942,7 +984,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       if (!conversationId) {
         await startConversation(reCaptchaTokenRef.current);
       }
-      await sendMessage(trimmed, [], undefined, reCaptchaTokenRef.current);
+      const outcome = await sendMessage(trimmed, [], undefined, reCaptchaTokenRef.current);
+      restoreDraftIfRestarted(outcome, trimmed);
     } catch (error) {
       // ignore
     }
@@ -1022,12 +1065,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       if (filesToUpload.length > 0) {
         extraMetadata.attachments = attachments.map(a => a.attachment);
       }
-      await sendMessage(
+      const outcome = await sendMessage(
         textToSend,
         filesToUpload,
         Object.keys(extraMetadata).length > 0 ? extraMetadata : undefined,
         reCaptchaTokenRef.current,
       );
+      restoreDraftIfRestarted(outcome, textToSend);
     } catch (error) {
       // ignore
     } finally {
@@ -1187,7 +1231,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [windowWidth, fontSizeNumber]);
 
   const textAreaMaxHeightCalculated = useMemo(() => {
-    return textAreaLineHeight * 3;
+    return textAreaLineHeight * 5;
   }, [textAreaLineHeight]);
 
   const textAreaStyle = getTextAreaStyle({
@@ -1228,6 +1272,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   }, [messages, submittedForms, localizeForm]);
 
   const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
+  // While a saved conversation is being checked, keep the (disabled) input instead of flashing the start button.
+  const hasNoConversationToContinue = !conversationId && !isRestoringConversation;
+  const shouldShowStartButton = hasNoConversationToContinue || isFinalized;
 
   const autoResizeTextArea = () => {
     const el = textAreaRef.current;
@@ -1420,7 +1467,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           const displayMessage =
             isFirstAgentMessage && welcomeMessage
               ? { ...message, text: welcomeMessage }
-              : message;
+              : message === revealingMessage
+                ? { ...message, text: revealedText }
+                : message;
 
           return (
             <React.Fragment key={index}>
@@ -1450,12 +1499,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 audioHeaders={message.type === 'audio' && useAudio ? audioHeaders : undefined}
                 autoPlayAudioMessageId={autoPlayAudioMessageId}
                 receiptStatus={index === lastCustomerIndex ? lastCustomerReceipt : undefined}
+                isLatestQuestion={message === latestQuestion}
               />
             </React.Fragment>
           );
         });
       })()}
-      {isAgentTyping && currentThinkingParts.length > 0 && (
+      {streaming && liveText && renderLiveBubble('agent', liveText, streaming.createTime, '__streaming_reply__')}
+      {isAgentTyping && !liveText && currentThinkingParts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '80%' }}>
           <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>{agentName || t('labels.agent')}</div>
           <div style={{
@@ -1465,7 +1516,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             maxWidth: '100%',
           }}>
             <div
-              key={`${currentThinkingPartIndex}-${currentThinkingParts.join('|')}`}
+              key={thinkingLabel}
               style={{
                 animation: 'ga-think-change 220ms ease',
                 willChange: 'transform, opacity',
@@ -1473,7 +1524,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 fontSize: '13px',
               }}
             >
-              {currentThinkingParts[currentThinkingPartIndex] || currentThinkingParts[currentThinkingParts.length - 1]}
+              {thinkingLabel}
             </div>
           </div>
         </div>
@@ -1495,6 +1546,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       {liveVoice.isActive && liveCaption.agent.trim() !== '' &&
         renderLiveBubble('agent', liveCaption.agent, liveCaption.createTime, '__live_caption_agent__')}
       <div ref={setBottomSentinelRef} />
+      <div ref={spacerRef} style={{ flexShrink: 0 }} />
     </>
   );
 
@@ -1783,7 +1835,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
           </div>
         )}
 
-        {!conversationId || isFinalized ? (
+        {shouldShowStartButton ? (
           <div style={inputContainerStyle}>
             <button
               type="button"

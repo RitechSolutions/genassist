@@ -44,7 +44,8 @@ LLM_MODEL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         name="memory",
         type="boolean",
         label="Enable Memory",
-        required=True
+        required=False,
+        default=False
     ),
     FieldSchema(
         name="piiMasking",

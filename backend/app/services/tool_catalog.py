@@ -25,6 +25,9 @@ from app.modules.workflow.agents.base_tool import to_snake_case
 MCP_NODE_TYPE = "mcpNode"
 WORKFLOW_EXECUTOR_NODE_TYPE = "workflowExecutorNode"
 ROUTER_NODE_TYPE = "routerNode"
+SWITCH_NODE_TYPE = "switchNode"
+# Node types that record the branch they took as a ``route`` (see route_taken).
+ROUTING_NODE_TYPES = (ROUTER_NODE_TYPE, SWITCH_NODE_TYPE)
 _TOOLS_HANDLE = "tools"
 
 
@@ -107,20 +110,35 @@ def _route_value_from_handle(handle: Any) -> str:
     return value[len(prefix):] if value.startswith(prefix) else value
 
 
-def resolve_routers(workflow: Any, workflow_path: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-    """Router nodes with their selectable branches, each pointing at its destination node.
+def _switch_branch_labels(node: Dict[str, Any]) -> Dict[str, str]:
+    """Route -> display name for a Switch node's branches (case id -> case label)."""
+    labels = {"default": "Default"}
+    cases = _node_data(node).get("cases")
+    if isinstance(cases, list):
+        for index, case in enumerate(cases):
+            if isinstance(case, dict) and case.get("id"):
+                labels[str(case["id"])] = str(case.get("label") or "").strip() or f"Case {index + 1}"
+    return labels
 
-    A branch value is the route the router records (e.g. ``true``/``false``), so it matches
-    the route_taken check.
+
+def resolve_routers(workflow: Any, workflow_path: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Routing nodes (Conditional Router, Switch) with their selectable branches, each
+    pointing at its destination node.
+
+    A branch value is the route the node records (``true``/``false`` for a router, the case
+    id or ``default`` for a switch), so it matches the route_taken check. Switch branches
+    also carry the case ``label``, since a case id alone means nothing to a reader.
     """
     workflow_path = workflow_path or []
     nodes = _nodes(workflow)
     nodes_by_id = {n.get("id"): n for n in nodes}
     routers: List[Dict[str, Any]] = []
     for node in nodes:
-        if node.get("type") != ROUTER_NODE_TYPE:
+        node_type = node.get("type")
+        if node_type not in ROUTING_NODE_TYPES:
             continue
         node_id = node.get("id")
+        branch_labels = _switch_branch_labels(node) if node_type == SWITCH_NODE_TYPE else None
         branches: List[Dict[str, Any]] = []
         seen: set = set()
         for edge in _edges(workflow):
@@ -131,13 +149,18 @@ def resolve_routers(workflow: Any, workflow_path: Optional[List[str]] = None) ->
                 continue
             seen.add(value)
             target = nodes_by_id.get(edge.get("target"))
-            branches.append(
-                {"value": value, "destination": _node_label(target) if target else None}
-            )
+            branch: Dict[str, Any] = {
+                "value": value,
+                "destination": _node_label(target) if target else None,
+            }
+            if branch_labels is not None:
+                branch["label"] = branch_labels.get(value)
+            branches.append(branch)
         routers.append(
             {
                 "id": node_id,
                 "label": _node_label(node),
+                "type": node_type,
                 "workflow_path": list(workflow_path),
                 "branches": branches,
             }
@@ -160,9 +183,46 @@ def resolve_action_nodes(workflow: Any, workflow_path: Optional[List[str]] = Non
     ]
 
 
+def resolve_state_keys(workflow: Any, workflow_path: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Values the workflow remembers between turns: stateful Chat Input fields and Set State keys."""
+    workflow_path = workflow_path or []
+    keys: List[Dict[str, Any]] = []
+    for node in _nodes(workflow):
+        data = _node_data(node)
+        if node.get("type") == "chatInputNode":
+            schema = data.get("inputSchema") or {}
+            names = [
+                name for name, spec in (schema.items() if isinstance(schema, dict) else [])
+                if isinstance(spec, dict) and spec.get("stateful")
+            ]
+            source = "chat_input"
+        elif node.get("type") == "setStateNode":
+            names = [
+                state.get("key") for state in data.get("states") or []
+                if isinstance(state, dict) and state.get("key")
+            ]
+            source = "set_state"
+        else:
+            continue
+        keys.extend(
+            {"key": str(name), "source": source, "node_label": _node_label(node), "workflow_path": list(workflow_path)}
+            for name in names
+        )
+    return keys
+
+
 def resolve_node_labels(workflow: Any) -> Dict[str, str]:
     """Display label for every node id in the workflow graph."""
     return {node.get("id"): _node_label(node) for node in _nodes(workflow) if node.get("id")}
+
+
+def resolve_branch_labels(workflow: Any) -> Dict[str, Dict[str, str]]:
+    """Switch node id -> {route: case label}, so results can name a switch branch."""
+    return {
+        node.get("id"): _switch_branch_labels(node)
+        for node in _nodes(workflow)
+        if node.get("type") == SWITCH_NODE_TYPE and node.get("id")
+    }
 
 
 def nested_workflow_refs(workflow: Any) -> List[Dict[str, Any]]:

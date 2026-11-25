@@ -6,18 +6,27 @@ import os
 from typing import TYPE_CHECKING, Any, Dict, Optional
 from urllib.parse import urlparse
 import copy
+from botocore.config import Config
 import httpx
 from injector import inject
 if TYPE_CHECKING:  # type hints only — langchain_core.language_models pulls torch/transformers
     from langchain_core.language_models import BaseChatModel
 from app.core.config.llm_prompt_cache_capabilities import bedrock_cache_family
 from app.core.utils.encryption_utils import decrypt_key
+from app.modules.workflow.llm.model_params import (
+    SAMPLING_PARAMS,
+    claude_rejects_sampling,
+    claude_uses_adaptive_thinking,
+    openai_accepts_reasoning_none,
+    openai_supports_reasoning_effort,
+)
 from app.core.utils.enums.open_ai_fine_tuning_enum import JobStatus
 from app.core.utils.enums.bedrock_fine_tuning_enum import (
     BedrockDeploymentStatus,
     BedrockJobStatus,
 )
 from app.schemas.dynamic_form_schemas import LLM_FORM_SCHEMAS_DICT
+from app.schemas.llm import LlmProviderRead
 from app.services.llm_providers import LlmProviderService
 from app.services.open_ai_fine_tuning import OpenAIFineTuningService
 from app.services.bedrock_fine_tuning import BedrockFineTuningService
@@ -32,11 +41,33 @@ def _bedrock_supports_prompt_caching(model_name: Optional[str]) -> bool:
     return False
 
 
+def _single_attempt_kwargs(provider: str, seconds: float) -> Dict[str, Any]:
+    if provider == "bedrock_converse":
+        from botocore.config import Config
+
+        return {"config": Config(read_timeout=seconds, retries={"total_max_attempts": 1})}
+    if provider in ("openai", "azure_openai", "anthropic"):
+        return {"timeout": seconds, "max_retries": 0}
+    if provider == "google_genai":
+        return {"timeout": seconds, "max_retries": 1}  # counts the first attempt
+    return {}
+
+
+def _init_openai_chat_model(model_kwargs: Dict[str, Any]) -> BaseChatModel:
+    """The model init_chat_model builds for OpenAI, which also adapts to a refused setting."""
+    # Imported here for the same reason as init_chat_model.
+    from app.modules.workflow.llm.openai_refused_settings import RefusalAdjustingChatOpenAI
+
+    init_kwargs = {key: value for key, value in model_kwargs.items() if key != "model_provider"}
+    return RefusalAdjustingChatOpenAI(**init_kwargs)
+
+
 async def build_chat_model(
     provider_name: Optional[str],
     connection_data: Dict[str, Any],
     model_name: Optional[str],
     prompt_caching_enabled: bool = False,
+    call_timeout_seconds: Optional[float] = None,
 ) -> BaseChatModel:
     cd = dict(connection_data)
     original_provider = (provider_name or "").lower()
@@ -74,25 +105,50 @@ async def build_chat_model(
             cd["additional_model_request_fields"] = extra_fields
         else:
             cd.pop("reasoning_effort", None)
+        # langchain-aws 1.2.0 doesn't list Nova 2 Lite as streaming-capable and would answer streamed turns in one piece.
+        if "nova-2-lite" in (model_name or "").lower():
+            cd["disable_streaming"] = False
+        cd["config"] = Config(read_timeout=300)
         # Use the Converse API instead of the legacy InvokeModel path so inference params
         # (max_tokens, temperature) are normalized into inferenceConfig across model
         # families. Nova rejects a top-level max_tokens on InvokeModel; Converse handles
         # it, and it's AWS's recommended API for Nova/Claude/Llama/custom models alike.
         provider = "bedrock_converse"
     elif provider == "anthropic":
+        budget_tokens = cd.pop("thinking_budget_tokens", 2000)
         if cd.pop("thinking_enabled", False):
-            cd["thinking"] = {"type": "enabled", "budget_tokens": cd.pop("thinking_budget_tokens", 2000)}
+            if claude_uses_adaptive_thinking(model_name):
+                # Claude 4.6+ decides how much to think; budget_tokens is rejected on the newest ones.
+                cd["thinking"] = {"type": "adaptive"}
+            else:
+                cd["thinking"] = {"type": "enabled", "budget_tokens": budget_tokens}
             cd["temperature"] = 1  # Anthropic requires temperature=1 when thinking is enabled
-        else:
-            cd.pop("thinking_budget_tokens", None)
     elif provider == "openai":
-        if not cd.get("reasoning_effort"):
-            cd.pop("reasoning_effort", None)
+        effort = cd.pop("reasoning_effort", None)
+        if effort in (None, "", "none"):
+            # Only GPT-5.1+ take "none". Sending it there also keeps the user's
+            # temperature, which langchain drops for GPT-5 models otherwise.
+            if openai_accepts_reasoning_none(model_name):
+                cd["reasoning_effort"] = "none"
+        elif openai_supports_reasoning_effort(model_name):
+            cd["reasoning_effort"] = effort
+        # Non-reasoning models (gpt-4o, gpt-3.5, ...) reject the parameter, so it is left out.
+
+    # A field the user cleared in the form is stored as null: leave it to the model's default.
+    cd = {k: v for k, v in cd.items() if v is not None}
+
+    # Newer Claude models reject sampling parameters, whichever provider serves them.
+    if claude_rejects_sampling(model_name):
+        for param in SAMPLING_PARAMS:
+            cd.pop(param, None)
 
     if provider == "openai" and original_provider == "openai":
         os.environ["OPENAI_API_KEY"] = cd.get("api_key", "")
         if cd.get("organization"):
             os.environ["OPENAI_ORG_ID"] = cd["organization"]
+
+    if call_timeout_seconds is not None:
+        cd.update(_single_attempt_kwargs(provider, call_timeout_seconds))
 
     model_kwargs = {
         "model_provider": provider,
@@ -109,6 +165,10 @@ async def build_chat_model(
             )
         model_kwargs["provider"] = bedrock_model_provider
 
+    # langchain-openai leaves usage out of streamed replies whenever a base_url is set (vLLM, OpenRouter, Azure).
+    if provider in ("openai", "azure_openai"):
+        model_kwargs["stream_usage"] = True
+
     # Native Opik LLM tracing: attach the OpikTracer callback at construction so every
     # invocation of this model (including nested agent loops) is traced. No-op unless
     # USE_OPIK is enabled.
@@ -118,11 +178,14 @@ async def build_chat_model(
     if callbacks:
         model_kwargs["callbacks"] = callbacks
 
-    # Imported here, not at module top level: langchain.chat_models transitively pulls
-    # torch/transformers, which must not be loaded into a Celery prefork master process.
-    from langchain.chat_models import init_chat_model
+    if original_provider == "openai":
+        llm = _init_openai_chat_model(model_kwargs)
+    else:
+        # Imported here, not at module top level: langchain.chat_models transitively pulls
+        # torch/transformers, which must not be loaded into a Celery prefork master process.
+        from langchain.chat_models import init_chat_model
 
-    llm = init_chat_model(**model_kwargs)
+        llm = init_chat_model(**model_kwargs)
 
     # Wrap outside init_chat_model so the Opik callbacks stay attached to the inner
     # model and every invocation is still traced.
@@ -303,6 +366,17 @@ class LLMProvider:
 
         return await self._build_from_provider(llm_provider, prompt_caching_enabled)
 
+    async def get_model_from_provider(
+        self,
+        llm_provider: LlmProviderRead,
+        prompt_caching_enabled: bool = False,
+        call_timeout_seconds: Optional[float] = None,
+    ) -> BaseChatModel:
+        """Public entry; caller passes provider row to report model provenance"""
+        return await self._build_from_provider(
+            llm_provider, prompt_caching_enabled, call_timeout_seconds=call_timeout_seconds
+        )
+
     async def _build_one(self, model_id: str, prompt_caching_enabled: bool = False) -> BaseChatModel:
         """Build a single chat model from a stored provider id.
 
@@ -315,7 +389,9 @@ class LLMProvider:
         llm_provider = await llm_provider_service.get_by_id(model_id)
         return await self._build_from_provider(llm_provider, prompt_caching_enabled)
 
-    async def _build_from_provider(self, llm_provider, prompt_caching_enabled: bool = False) -> BaseChatModel:
+    async def _build_from_provider(
+        self, llm_provider, prompt_caching_enabled: bool = False, call_timeout_seconds: Optional[float] = None
+    ) -> BaseChatModel:
         from app.dependencies.injector import injector
         from app.core.data_residency import assert_provider_residency, bedrock_regions_from_connection_data
         from app.services.app_settings import AppSettingsService
@@ -351,10 +427,12 @@ class LLMProvider:
 
             validated_data.pop("masked_api_key", None)
 
-            # Decrypt api_key for providers that need it
+            # Decrypt stored secrets for providers that need it
             original_provider = (llm_provider.llm_model_provider or "").lower()
-            if original_provider not in ["vllm", "vllm_fine_tuned", "ollama"] and "api_key" in validated_data:
-                validated_data["api_key"] = decrypt_key(validated_data["api_key"])
+            if original_provider not in ["vllm", "vllm_fine_tuned", "ollama"]:
+                for field in LlmProviderService.encrypted_fields:
+                    if field in validated_data:
+                        validated_data[field] = decrypt_key(validated_data[field])
 
 
             llm = await build_chat_model(
@@ -362,6 +440,7 @@ class LLMProvider:
                 connection_data=validated_data,
                 model_name=llm_provider.llm_model,
                 prompt_caching_enabled=prompt_caching_enabled,
+                call_timeout_seconds=call_timeout_seconds,
             )
             logger.info(f"Created LLM with init_chat_model for llm provider with ID: {llm_provider.id}")
         except Exception as e:

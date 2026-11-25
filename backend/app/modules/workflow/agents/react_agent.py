@@ -194,15 +194,3 @@ class ReActAgent(BaseToolAgent):
         except Exception as e:
             logger.error(f"Error executing ReActAgent query: {str(e)}")
             return create_error_response(str(e), self._get_agent_name(), thread_id=thread_id)
-
-    async def stream(self, query: str, chat_history: Optional[List] = None, **kwargs):
-        """Stream the agent's reasoning and action process"""
-        try:
-            # For now, just yield the final result
-            # In a full implementation, you'd stream each reasoning step
-            result = await self.invoke(query, chat_history, **kwargs)
-            yield result
-        except Exception as e:
-            logger.error(f"Error streaming ReActAgent query: {str(e)}")
-            thread_id = kwargs.get("thread_id", "default")
-            yield create_error_response(str(e), self._get_agent_name(), thread_id=thread_id)

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/label";
 import { RichInput } from "@/components/richInput";
+import { RichTextarea } from "@/components/richTextarea";
 import { Button } from "@/components/button";
 import {
   Select,
@@ -10,22 +11,42 @@ import {
   SelectValue,
 } from "@/components/select";
 import {
+  DatetimePart,
   FeatureEngineeringConfig,
   FeatureEngineeringItem,
   FeatureEngineeringStrategy,
-} from "../preprocessingConfig";
+  MathFunction,
+} from "../../../types/nodes";
 import { CSVAnalysisResult } from "@/services/mlModels";
+import {
+  DATETIME_PART_OPTIONS,
+  MATH_FUNCTION_OPTIONS,
+  STRATEGY_HINTS,
+  datetimePartsOf,
+  defaultsForStrategy,
+  featureOutputColumns,
+  isColumnTransformStrategy,
+  isRetiredFeatureStrategy,
+  outputColumnsHint,
+  strategyOptionsFor,
+} from "../featureEngineeringStrategies";
+import { Switch } from "@/components/switch";
 import { Plus, X } from "lucide-react";
 
 interface FeatureEngineeringHandlerProps {
   config: FeatureEngineeringConfig | undefined;
   onChange: (config: FeatureEngineeringConfig) => void;
   analysisResult: CSVAnalysisResult | null;
+  // The target column: never offered as a feature input (it's what the model
+  // predicts - using it to build a feature would leak the answer).
+  targetColumn?: string;
+  // The chosen feature columns: a Date-Time feature's column must be one of them.
+  featureColumns?: string[];
 }
 
 export const FeatureEngineeringHandler: React.FC<
   FeatureEngineeringHandlerProps
-> = ({ config, onChange, analysisResult }) => {
+> = ({ config, onChange, analysisResult, targetColumn, featureColumns }) => {
   const [features, setFeatures] = useState<FeatureEngineeringItem[]>(
     config?.features || []
   );
@@ -78,7 +99,49 @@ export const FeatureEngineeringHandler: React.FC<
     });
   };
 
-  const availableColumns = analysisResult?.column_names || [];
+  const availableColumns = (analysisResult?.column_names || []).filter(
+    (col) => col !== targetColumn
+  );
+
+  // Column transforms (log/quantile/power/PCA) take numeric columns only: the
+  // analysis' numeric columns, plus the output of earlier features (features
+  // run in order, so a later one can use an earlier one's column).
+  const numericColumnsFor = (featureIndex: number): string[] => {
+    const numeric = (analysisResult?.columns_info || [])
+      .filter((col) => col.type === "numeric" && col.name !== targetColumn)
+      .map((col) => col.name);
+    const earlier = features
+      .slice(0, featureIndex)
+      .flatMap(featureOutputColumns)
+      .filter((name) => !numeric.includes(name));
+    return [...(numeric.length ? numeric : availableColumns), ...earlier];
+  };
+
+  // Date-Time Features read one date/time column, which must be a feature
+  // column: dates are text (or parsed dates) in the analysis, never numeric.
+  const datetimeColumnCandidates = (() => {
+    const nonNumeric = (analysisResult?.columns_info || [])
+      .filter((col) => col.type !== "numeric" && col.name !== targetColumn)
+      .map((col) => col.name);
+    const candidates = nonNumeric.length ? nonNumeric : availableColumns;
+    return featureColumns?.length ? candidates.filter((col) => featureColumns.includes(col)) : candidates;
+  })();
+
+  const toggleDatetimePart = (feature: FeatureEngineeringItem, part: DatetimePart, checked: boolean) => {
+    const current = datetimePartsOf(feature);
+    const updated = checked ? [...current, part] : current.filter((p) => p !== part);
+    // Keep the listed order, whatever order they were ticked in.
+    handleFeatureChange(feature.id, {
+      datetimeParts: DATETIME_PART_OPTIONS.map((option) => option.value).filter((p) => updated.includes(p)),
+    });
+  };
+
+  const toggleSourceColumn = (feature: FeatureEngineeringItem, col: string, checked: boolean) => {
+    const current = feature.sourceColumns || [];
+    handleFeatureChange(feature.id, {
+      sourceColumns: checked ? [...current, col] : current.filter((c) => c !== col),
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -111,7 +174,7 @@ export const FeatureEngineeringHandler: React.FC<
                 </Button>
               </div>
               <div className="space-y-2 max-h-96 overflow-y-auto">
-                {features.map((feature) => (
+                {features.map((feature, index) => (
                   <div
                     key={feature.id}
                     className="p-3 border rounded hover:bg-muted space-y-2"
@@ -151,6 +214,8 @@ export const FeatureEngineeringHandler: React.FC<
                           onValueChange={(value) =>
                             handleFeatureChange(feature.id, {
                               strategy: value as FeatureEngineeringStrategy,
+                              // Start the new strategy from valid settings.
+                              ...defaultsForStrategy(value as FeatureEngineeringStrategy),
                             })
                           }
                         >
@@ -158,31 +223,49 @@ export const FeatureEngineeringHandler: React.FC<
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="custom_expression">
-                              Custom Expression
-                            </SelectItem>
-                            <SelectItem value="bin_numeric">Bin Numeric</SelectItem>
-                            <SelectItem value="normalize">Normalize</SelectItem>
-                            <SelectItem value="standardize">Standardize</SelectItem>
-                            <SelectItem value="polynomial">Polynomial</SelectItem>
+                            {strategyOptionsFor(feature.strategy).map((option) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                                disabled={isRetiredFeatureStrategy(option.value)}
+                              >
+                                {option.label}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
+                      {STRATEGY_HINTS[feature.strategy] && (
+                        <p className="text-xs text-muted-foreground">
+                          {STRATEGY_HINTS[feature.strategy]}
+                        </p>
+                      )}
+                      {isRetiredFeatureStrategy(feature.strategy) && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          {feature.strategy === "normalize" ? "Normalize" : "Standardize"} is
+                          retired: Train Model's Scaling Method already scales every numeric
+                          feature (fit on the training split only), so this would scale the
+                          same values twice. It still works for now - switch this feature to
+                          another strategy or remove it, and use Scaling Method instead.
+                        </p>
+                      )}
                       {feature.strategy === "custom_expression" && (
                         <div>
                           <Label className="text-xs">Expression</Label>
-                          <RichInput
+                          <RichTextarea
+                            size="hint"
                             value={feature.expression || ""}
                             onChange={(e) =>
                               handleFeatureChange(feature.id, {
                                 expression: e.target.value,
                               })
                             }
-                            placeholder='e.g., df["col1"] + df["col2"]'
-                            className="h-8 text-xs font-mono"
+                            placeholder="e.g., price * quantity"
+                            className="text-xs font-mono"
                           />
                           <p className="text-xs text-muted-foreground mt-1">
-                            Use df["column_name"] to reference columns
+                            Reference columns by name, e.g. price * quantity. Use
+                            backticks for a name with spaces, e.g. `unit price` * quantity.
                           </p>
                         </div>
                       )}
@@ -224,6 +307,32 @@ export const FeatureEngineeringHandler: React.FC<
                               }
                               className="h-8 text-xs"
                             />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Binning Method</Label>
+                            <Select
+                              value={feature.binStrategy || "uniform"}
+                              onValueChange={(value) =>
+                                handleFeatureChange(feature.id, {
+                                  binStrategy: value as "uniform" | "quantile",
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="uniform">
+                                  Equal width (fixed step)
+                                </SelectItem>
+                                <SelectItem value="quantile">
+                                  Quantile (equal frequency)
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Quantile is better for skewed columns like revenue or counts
+                            </p>
                           </div>
                         </>
                       )}
@@ -315,6 +424,206 @@ export const FeatureEngineeringHandler: React.FC<
                               ))}
                             </div>
                           </div>
+                        </>
+                      )}
+                      {feature.strategy === "datetime_features" && (
+                        <>
+                          <div>
+                            <Label className="text-xs">Date/Time Column</Label>
+                            <Select
+                              value={feature.datetimeColumn || ""}
+                              onValueChange={(value) =>
+                                handleFeatureChange(feature.id, { datetimeColumn: value })
+                              }
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue placeholder="Select column" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {datetimeColumnCandidates.map((col) => (
+                                  <SelectItem key={col} value={col}>
+                                    {col}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Values like 2024-03-15 or 2024-03-15 14:30, from the selected
+                              Feature Columns. Values with a UTC offset are read in UTC.
+                            </p>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Parts</Label>
+                            <div className="grid grid-cols-2 gap-1 border rounded p-2">
+                              {DATETIME_PART_OPTIONS.map((option) => (
+                                <label key={option.value} className="flex items-center space-x-2 text-xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={datetimePartsOf(feature).includes(option.value)}
+                                    onChange={(e) => toggleDatetimePart(feature, option.value, e.target.checked)}
+                                    className="rounded"
+                                  />
+                                  <span>{option.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{outputColumnsHint(feature)}.</p>
+                        </>
+                      )}
+                      {isColumnTransformStrategy(feature.strategy) && (
+                        <>
+                          {feature.strategy === "math_transform" && (
+                            <div>
+                              <Label className="text-xs">Function</Label>
+                              <Select
+                                value={feature.mathFunction || ""}
+                                onValueChange={(value) =>
+                                  handleFeatureChange(feature.id, { mathFunction: value as MathFunction })
+                                }
+                              >
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue placeholder="Select function" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {MATH_FUNCTION_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+                          <div>
+                            <Label className="text-xs">Columns</Label>
+                            <p className="text-xs text-muted-foreground mb-1">
+                              {feature.strategy === "pca"
+                                ? "Select at least 2 numeric columns to combine"
+                                : "Select numeric columns to transform"}
+                            </p>
+                            <div className="space-y-1 max-h-32 overflow-y-auto border rounded p-2">
+                              {numericColumnsFor(index).map((col) => (
+                                <label key={col} className="flex items-center space-x-2 text-xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={feature.sourceColumns?.includes(col) || false}
+                                    onChange={(e) => toggleSourceColumn(feature, col, e.target.checked)}
+                                    className="rounded"
+                                  />
+                                  <span>{col}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          {feature.strategy === "quantile_transform" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label className="text-xs">Output distribution</Label>
+                                <Select
+                                  value={feature.quantileOutputDistribution || "uniform"}
+                                  onValueChange={(value) =>
+                                    handleFeatureChange(feature.id, {
+                                      quantileOutputDistribution: value as "uniform" | "normal",
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="h-8 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="uniform">Uniform (0 to 1)</SelectItem>
+                                    <SelectItem value="normal">Normal</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label className="text-xs">Number of quantiles</Label>
+                                <RichInput
+                                  type="number"
+                                  min="2"
+                                  value={feature.nQuantiles?.toString() || "1000"}
+                                  onChange={(e) =>
+                                    handleFeatureChange(feature.id, {
+                                      nQuantiles: parseInt(e.target.value, 10) || 1000,
+                                    })
+                                  }
+                                  className="h-8 text-xs"
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Capped at the number of training rows.
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          {feature.strategy === "power_transform" && (
+                            <div>
+                              <Label className="text-xs">Method</Label>
+                              <Select
+                                value={feature.powerMethod || "yeo-johnson"}
+                                onValueChange={(value) =>
+                                  handleFeatureChange(feature.id, {
+                                    powerMethod: value as "yeo-johnson" | "box-cox",
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="yeo-johnson">Yeo-Johnson (any values)</SelectItem>
+                                  <SelectItem value="box-cox">Box-Cox (values above 0 only)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+                          {feature.strategy === "pca" && (
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <Label className="text-xs">Number of components</Label>
+                                <RichInput
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={feature.pcaComponents?.toString() ?? "2"}
+                                  onChange={(e) => {
+                                    const value = parseFloat(e.target.value);
+                                    handleFeatureChange(feature.id, {
+                                      pcaComponents: isNaN(value) ? 2 : value,
+                                    });
+                                  }}
+                                  className="h-8 text-xs"
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  A whole number (e.g. 2), or a share of variance to keep (e.g. 0.95).
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 pt-5">
+                                <Switch
+                                  checked={feature.pcaStandardize ?? true}
+                                  onCheckedChange={(checked) =>
+                                    handleFeatureChange(feature.id, { pcaStandardize: checked })
+                                  }
+                                />
+                                <Label className="text-xs">Standardize columns first</Label>
+                              </div>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={feature.replaceSourceColumns ?? feature.strategy === "pca"}
+                              onCheckedChange={(checked) =>
+                                handleFeatureChange(feature.id, { replaceSourceColumns: checked })
+                              }
+                            />
+                            <Label className="text-xs">
+                              Replace source columns (train on the transformed columns only)
+                            </Label>
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {outputColumnsHint(feature)}.
+                            {feature.strategy !== "math_transform" ? " Fit on the training split only." : ""}
+                          </p>
                         </>
                       )}
                     </div>

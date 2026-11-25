@@ -34,7 +34,8 @@ async def webhook_handler_post(
         hub_verify_token=hub_verify_token,
         hub_challenge=hub_challenge,
         x_slack_signature=x_slack_signature,
-        x_slack_request_timestamp=x_slack_request_timestamp
+        x_slack_request_timestamp=x_slack_request_timestamp,
+        raw_body=body,
     )
 
 @router.get(
@@ -60,5 +61,6 @@ async def webhook_handler_get(
         tenant_id=tenant_id,
         hub_mode=hub_mode,
         hub_verify_token=hub_verify_token,
-        hub_challenge=hub_challenge
+        hub_challenge=hub_challenge,
+        raw_body=body,
     )

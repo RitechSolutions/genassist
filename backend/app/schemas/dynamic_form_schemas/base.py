@@ -10,7 +10,14 @@ from pydantic import BaseModel, Field
 
 
 # Field types supported across all schemas
-FieldType = Literal["text", "number", "password", "select", "boolean", "tags", "files"]
+FieldType = Literal[
+    "text", "textarea", "number", "password", "select", "boolean", "tags", "files"
+]
+
+# Height presets a "textarea" field can ask for; see components/ui/textarea-sizing.ts
+TextareaSize = Literal[
+    "compact", "hint", "description", "body", "code", "prompt", "document"
+]
 
 
 class ConditionalField(BaseModel):
@@ -27,6 +34,13 @@ class FieldSchema(BaseModel):
     type: FieldType = Field(..., description="Field type")
     label: str = Field(..., description="Display label for the field")
     required: bool = Field(default=False, description="Whether field is required")
+    alternative_names: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Alternative field names that may satisfy this required field. "
+            "The field is considered present when it or any alternative has a value."
+        ),
+    )
     description: Optional[str] = Field(default=None, description="Field description")
     placeholder: Optional[str] = Field(default=None, description="Placeholder text")
     default: Optional[Union[str, int, float, bool]] = Field(
@@ -36,6 +50,14 @@ class FieldSchema(BaseModel):
     # For select fields
     options: Optional[List[Dict[str, str]]] = Field(
         default=None, description="Options for select fields"
+    )
+
+    # For textarea fields
+    size: Optional[TextareaSize] = Field(
+        default=None, description="Height preset for textarea fields"
+    )
+    rows: Optional[int] = Field(
+        default=None, description="Explicit row count, overriding the size preset"
     )
 
     # For number fields

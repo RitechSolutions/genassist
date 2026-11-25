@@ -15,7 +15,9 @@ from app.core.config.llm_prompt_cache_capabilities import bedrock_cache_family
 from app.core.tenant_scope import get_tenant_context
 from app.services.llm_pricing_cache import get_db_pricing_nested
 
-_BEDROCK_REGION_PREFIX = re.compile(r"^(?:us|eu|apac|us-gov)\.")
+_BEDROCK_REGION_PREFIX = re.compile(r"^(?:us|eu|apac|ca|jp|au|global|us-gov)\.")
+# A rate key also covers its dated, versioned and alias variants, never a sibling model (-mini, -32k, -4-5, .1, -8b)
+_VARIANT_TAIL = re.compile(r"^(?:-(?:\d{2,}|v\d+(?:[.:]\d+)*|latest|preview))*(?:[@:].*)?$")
 _Rate = TypeVar("_Rate", Decimal, float)
 
 # Static fallback when DB is empty or missing a row (also used before first migration).
@@ -42,15 +44,6 @@ STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
         "gemini-1.5-flash": {"input_per_1k": 0.000075, "output_per_1k": 0.0003},
         "gemini-1.0-pro": {"input_per_1k": 0.0005, "output_per_1k": 0.0015},
     },
-    "openrouter": {
-        "_default": {"input_per_1k": 0.001, "output_per_1k": 0.002},
-    },
-    "vllm": {
-        "_default": {"input_per_1k": 0.0, "output_per_1k": 0.0},
-    },
-    "ollama": {
-        "_default": {"input_per_1k": 0.0, "output_per_1k": 0.0},
-    },
     "bedrock": {
         "eu.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.0001, "output_per_1k": 0.0004},
         "ca.amazon.nova-2-lite-v1:0": {"input_per_1k": 0.0001, "output_per_1k": 0.0004},
@@ -65,7 +58,6 @@ STATIC_LLM_PRICING_FALLBACK: Dict[str, Dict[str, Dict[str, float]]] = {
     },
 }
 
-DEFAULT_PRICING = {"input_per_1k": 0.001, "output_per_1k": 0.002}
 CACHE_EXCLUSIVE_PROVIDERS = frozenset({"bedrock"})
 # Cache ratios off the input rate, shared by Anthropic and the cache-capable Bedrock families
 CACHE_READ_MULTIPLIER = Decimal("0.1")
@@ -100,6 +92,7 @@ class LivePricing:
     display_rates: Dict[str, float]
     cache_read_per_1k: Optional[float] = None
     cache_creation_per_1k: Optional[float] = None
+    configured: bool = False
 
 
 @dataclass(frozen=True)
@@ -200,12 +193,16 @@ def _cache_rate(row: Any, key: str) -> Optional[Decimal]:
     return rate
 
 
+def _covers(key: str, model_key: str) -> bool:
+    return model_key.startswith(key) and _VARIANT_TAIL.fullmatch(model_key[len(key) :]) is not None
+
+
 def _exact_or_longest_prefix(model_key: str, table: Mapping[str, Any]) -> Optional[str]:
     if not model_key:
         return None
     if model_key in table and not model_key.startswith("_"):
         return model_key
-    prefixes = [key for key in table if not key.startswith("_") and model_key.startswith(key)]
+    prefixes = [key for key in table if not key.startswith("_") and _covers(key, model_key)]
     return max(prefixes, key=len) if prefixes else None
 
 
@@ -219,7 +216,7 @@ def _match_bedrock_region_agnostic(model_key: str, table: Mapping[str, Any]) -> 
     exact = [key for stripped, key in candidates if stripped == base]
     if exact:
         return exact[0]
-    prefixed = [(stripped, key) for stripped, key in candidates if stripped and base.startswith(stripped)]
+    prefixed = [(stripped, key) for stripped, key in candidates if stripped and _covers(stripped, base)]
     if prefixed:
         return max(prefixed, key=lambda pair: len(pair[0]))[1]
     return None
@@ -354,33 +351,22 @@ def _float_rates(rates: tuple[Decimal, Decimal], row: Mapping[str, Any]) -> Dict
     return pricing
 
 
-def resolve_live_pricing(provider: str, model: str) -> LivePricing:
+def resolve_live_pricing(provider: str, model: str) -> Optional[LivePricing]:
     tenant = get_tenant_context()
     provider_key = (provider or "").strip().lower()
     model_key = _normalize_model_name(model)
 
-    _, _, layers = _pricing_layers(provider_key, get_db_pricing_nested(tenant))
+    configured_table, _, layers = _pricing_layers(provider_key, get_db_pricing_nested(tenant))
 
     matches = _collect_layer_matches(provider_key, model_key, layers)
-    selected = _select_base_rates(matches)
+    selected = _select_base_rates(matches) or _default_row_match(configured_table, PricingStatus.CONFIGURED)
     if selected is None:
-        for table, status in layers:
-            selected = _default_row_match(table, status)
-            if selected is not None:
-                break
-    if selected is None:
-        default_input = Decimal(str(DEFAULT_PRICING["input_per_1k"]))
-        cache_read = _family_cache_rate(provider_key, model_key, default_input, CACHE_READ_MULTIPLIER)
-        cache_creation = _family_cache_rate(provider_key, model_key, default_input, CACHE_WRITE_5M_MULTIPLIER)
-        return LivePricing(
-            DEFAULT_PRICING.copy(),
-            None if cache_read is None else float(cache_read),
-            None if cache_creation is None else float(cache_creation),
-        )
+        return None
 
     cache_read, cache_creation = _resolve_cache_bucket_rates(provider_key, model_key, selected, _bundled_match(matches))
     return LivePricing(
         _float_rates(selected.rates, selected.row),
         None if cache_read is None else float(cache_read),
         None if cache_creation is None else float(cache_creation),
+        configured=selected.status is PricingStatus.CONFIGURED,
     )

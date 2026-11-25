@@ -1,3 +1,6 @@
+import { isEntryNodeType, WEBHOOK_TRIGGER_NODE_TYPE } from "../utils/entryNodes";
+import { sampleTriggerOutput } from "../nodeTypes/triggers/webhookTriggerMapping";
+import type { LoopNodeData, WebhookTriggerNodeData } from "../types/nodes";
 import React, {
   createContext,
   useContext,
@@ -8,6 +11,15 @@ import React, {
 } from "react";
 import { Node, Edge } from "reactflow";
 import { generateSampleOutput, NodeSchema } from "../types/schemas";
+import {
+  isLoopBackEdge,
+  loopBody,
+  loopItemSample,
+  LOOP_ITERATION_SAMPLE,
+  LOOP_NODE_TYPE,
+  LOOP_RESULT_SAMPLE,
+} from "../utils/loopGraph";
+import { newerOutput } from "../utils/trainingInputFile";
 
 // Types for workflow execution state
 export interface NodeExecutionResult {
@@ -16,6 +28,8 @@ export interface NodeExecutionResult {
   timestamp: number;
   nodeType: string;
   nodeName: string;
+  /** Settings of the Train Data Sources the output came from - see upstreamSourcesKey. */
+  settingsKey?: string;
 }
 
 export interface WorkflowExecutionState {
@@ -48,8 +62,11 @@ export interface WorkflowExecutionContextType {
     nodeId: string,
     output: Record<string, unknown> | string,
     nodeType: string,
-    nodeName: string
+    nodeName: string,
+    settingsKey?: string
   ) => void;
+  /** Record the node outputs of a whole-workflow run, replacing the previous run's. */
+  recordRunOutputs: (outputs: Record<string, NodeExecutionResult>) => void;
   clearNodeOutput: (nodeId: string) => void;
   clearAllOutputs: () => void;
   setWorkflowStructure: (nodes: Node[], edges: Edge[]) => void;
@@ -57,6 +74,8 @@ export interface WorkflowExecutionContextType {
 
   // Getters
   getNodeOutput: (nodeId: string) => NodeExecutionResult | undefined;
+  /** The newest output of a node, from a Test Node or a whole-workflow run. */
+  getLatestNodeOutput: (nodeId: string) => NodeExecutionResult | undefined;
   getAvailableDataForNode: (nodeId: string) => Record<string, unknown>;
   hasNodeBeenExecuted: (nodeId: string) => boolean;
 }
@@ -89,6 +108,11 @@ export const WorkflowExecutionProvider: React.FC<
     statefulState: {},
   });
 
+  // Node outputs from the last whole-workflow run. Kept out of `state`: that is
+  // saved with the workflow (so a run would mark it unsaved and store every
+  // node's output), and its nodeOutputs also mark which nodes ran.
+  const [runOutputs, setRunOutputs] = useState<Record<string, NodeExecutionResult>>({});
+
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
@@ -104,7 +128,8 @@ export const WorkflowExecutionProvider: React.FC<
       nodeId: string,
       output: Record<string, unknown>,
       nodeType: string,
-      nodeName: string
+      nodeName: string,
+      settingsKey?: string
     ) => {
       setState((prevState) => {
         const newState = { ...prevState };
@@ -115,10 +140,11 @@ export const WorkflowExecutionProvider: React.FC<
           timestamp: Date.now(),
           nodeType,
           nodeName,
+          ...(settingsKey !== undefined && { settingsKey }),
         };
 
-        // Update session data for chat input nodes
-        if (nodeType === "chatInputNode") {
+        // Update session data for entry nodes (Chat Input / Webhook Trigger)
+        if (isEntryNodeType(nodeType)) {
           newState.session = output;
           // Merge stateful parameters from persistent state
           if (newState.statefulState) {
@@ -184,7 +210,19 @@ export const WorkflowExecutionProvider: React.FC<
     [nodes]
   );
 
+  const recordRunOutputs = useCallback(
+    (outputs: Record<string, NodeExecutionResult>) => {
+      setRunOutputs(outputs);
+    },
+    []
+  );
+
   const clearNodeOutput = useCallback((nodeId: string) => {
+    setRunOutputs((prev) => {
+      if (!prev[nodeId]) return prev;
+      const { [nodeId]: _removed, ...rest } = prev;
+      return rest;
+    });
     setState((prevState) => {
       const newState = { ...prevState };
       delete newState.nodeOutputs[nodeId];
@@ -199,7 +237,7 @@ export const WorkflowExecutionProvider: React.FC<
         newState.session = { ...newState.statefulState };
       }
       remainingOutputs.forEach((result) => {
-        if (result.nodeType === "chatInputNode") {
+        if (isEntryNodeType(result.nodeType)) {
           newState.session = { ...newState.session, ...result.output };
         }
       });
@@ -215,6 +253,7 @@ export const WorkflowExecutionProvider: React.FC<
   }, []);
 
   const clearAllOutputs = useCallback(() => {
+    setRunOutputs({});
     setState((prevState) => ({
       session: {},
       source: {},
@@ -233,6 +272,8 @@ export const WorkflowExecutionProvider: React.FC<
   );
 
   const loadExecutionState = useCallback(
+    // Run outputs are kept: a Test Node's state change comes back through
+    // here (GraphFlow -> BottomPanel), and must not drop the last run's outputs.
     (executionState: WorkflowExecutionState) => {
       setState(executionState);
     },
@@ -244,6 +285,12 @@ export const WorkflowExecutionProvider: React.FC<
       return state.nodeOutputs[nodeId];
     },
     [state.nodeOutputs]
+  );
+
+  const getLatestNodeOutput = useCallback(
+    (nodeId: string) =>
+      newerOutput(state.nodeOutputs[nodeId], runOutputs[nodeId]),
+    [state.nodeOutputs, runOutputs]
   );
 
   const hasNodeBeenExecuted = useCallback(
@@ -272,6 +319,10 @@ export const WorkflowExecutionProvider: React.FC<
       // For chatInputNode, use its inputSchema
       if (node.type === "chatInputNode" && node.data?.inputSchema) {
         return generateSampleOutput(node.data.inputSchema as NodeSchema);
+      }
+      // For a Webhook Trigger, map its sample payload the way a test run would
+      if (node.type === WEBHOOK_TRIGGER_NODE_TYPE) {
+        return sampleTriggerOutput(node.data as WebhookTriggerNodeData);
       }
 
       // For other nodes, try to use outputSchema if available
@@ -325,6 +376,10 @@ export const WorkflowExecutionProvider: React.FC<
             {}
           );
         }
+        const triggerNode = nodes.find((n) => n.type === WEBHOOK_TRIGGER_NODE_TYPE);
+        if (triggerNode) {
+          return sampleTriggerOutput(triggerNode.data as WebhookTriggerNodeData);
+        }
         return state.session;
       };
 
@@ -340,7 +395,7 @@ export const WorkflowExecutionProvider: React.FC<
       if (
         predecessorIds.length === 0 &&
         node &&
-        node.type === "chatInputNode"
+        isEntryNodeType(node.type)
       ) {
         // Return session data or generate from schema
         if (Object.keys(state.session).length > 0) {
@@ -348,6 +403,9 @@ export const WorkflowExecutionProvider: React.FC<
         }
         if (node.data?.inputSchema) {
           return generateSampleOutput(node.data.inputSchema as NodeSchema);
+        }
+        if (node.type === WEBHOOK_TRIGGER_NODE_TYPE) {
+          return sampleTriggerOutput(node.data as WebhookTriggerNodeData);
         }
         return state.session;
       }
@@ -360,7 +418,8 @@ export const WorkflowExecutionProvider: React.FC<
       // Find only direct predecessors (immediate sources)
       const currentNode = getNodeById(nodeId);
       const directPredecessors = edges
-        .filter((edge) => edge.target === nodeId)
+        // A loop body's back-edge is not the Loop's input: {{source}} is its upstream node.
+        .filter((edge) => edge.target === nodeId && !isLoopBackEdge(edge))
         .map((edge) => edge.source)
         .filter((predecessorId) => {
           if (currentNode?.type === "agentNode") {
@@ -385,10 +444,38 @@ export const WorkflowExecutionProvider: React.FC<
         return filtered;
       };
 
+      // A Loop publishes the current pass to its body and the collected results on Done, so
+      // what a node can read from it depends on which side of the loop the node sits.
+      const outputFor = (predecessorId: string): unknown => {
+        if (getNodeById(predecessorId)?.type !== LOOP_NODE_TYPE) {
+          return getNodeOutputData(predecessorId);
+        }
+        if (loopBody(predecessorId, edges).has(nodeId)) {
+          // Show the real shape of an item when the Loop's list is known at design time.
+          const loopData = getNodeById(predecessorId)?.data as LoopNodeData | undefined;
+          const upstream = edges
+            .filter((edge) => edge.target === predecessorId && !isLoopBackEdge(edge))
+            .map((edge) => edge.source);
+          const item = loopItemSample(
+            loopData?.items,
+            {
+              session: resolveSessionData(),
+              source: upstream.length === 1 ? getNodeOutputData(upstream[0]) : undefined,
+              node_outputs: Object.fromEntries(
+                nodes.map((n) => [n.id, getNodeOutputData(n.id)])
+              ),
+            },
+            loopData?.batchSize
+          );
+          return item === undefined ? LOOP_ITERATION_SAMPLE : { ...LOOP_ITERATION_SAMPLE, item };
+        }
+        return getNodeOutputData(predecessorId) ?? LOOP_RESULT_SAMPLE;
+      };
+
       // Build node outputs object with all predecessor outputs
       const nodeOutputs = {};
       predecessorIds.forEach((predecessorId) => {
-        const output = getNodeOutputData(predecessorId);
+        const output = outputFor(predecessorId);
         if (output) {
           nodeOutputs[predecessorId] = filterOutput(output);
         }
@@ -397,13 +484,13 @@ export const WorkflowExecutionProvider: React.FC<
       // Build source object with only direct predecessors
       let source = {};
       if (directPredecessors.length === 1) {
-        const output = getNodeOutputData(directPredecessors[0]);
+        const output = outputFor(directPredecessors[0]);
         if (output) {
           source = filterOutput(output);
         }
       } else {
         directPredecessors.forEach((predecessorId) => {
-          const output = getNodeOutputData(predecessorId);
+          const output = outputFor(predecessorId);
           if (output) {
             source[predecessorId] = filterOutput(output);
           }
@@ -431,11 +518,13 @@ export const WorkflowExecutionProvider: React.FC<
       nodes,
       edges,
       updateNodeOutput,
+      recordRunOutputs,
       clearNodeOutput,
       clearAllOutputs,
       setWorkflowStructure,
       loadExecutionState,
       getNodeOutput,
+      getLatestNodeOutput,
       hasNodeBeenExecuted,
       getAvailableDataForNode,
     }),
@@ -444,11 +533,13 @@ export const WorkflowExecutionProvider: React.FC<
       nodes,
       edges,
       updateNodeOutput,
+      recordRunOutputs,
       clearNodeOutput,
       clearAllOutputs,
       setWorkflowStructure,
       loadExecutionState,
       getNodeOutput,
+      getLatestNodeOutput,
       hasNodeBeenExecuted,
       getAvailableDataForNode,
     ]

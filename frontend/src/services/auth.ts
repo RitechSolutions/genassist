@@ -25,6 +25,7 @@ export interface AuthMeResponse {
   email?: string;
   permissions: string[];
   roles: Role[]
+  is_master_tenant?: boolean;
 }
 
 interface LoginCredentials extends Record<string, unknown> {
@@ -83,6 +84,10 @@ export const persistAuthMe = (
     JSON.stringify(response.permissions ?? [])
   );
   localStorage.setItem("user_roles", JSON.stringify(response.roles ?? []));
+  localStorage.setItem(
+    "is_master_tenant",
+    String(response.is_master_tenant === true)
+  );
 
   if (hasSentry()) {
     applySentryUserFromMeResponse(response ?? undefined);
@@ -102,6 +107,9 @@ export const getUserRoleNames = (): string[] => {
 
 export const currentUserIsAdmin = (): boolean =>
   getUserRoleNames().includes("admin");
+
+export const currentTenantIsMaster = (): boolean =>
+  localStorage.getItem("is_master_tenant") === "true";
 
 export const fetchUserPermissions = async (): Promise<void> => {
   const permissionsResponse = await apiRequest<AuthMeResponse>(
@@ -136,17 +144,12 @@ export const getPermissions = (): string[] => {
   }
 };
 
-export const hasPermission = (permission: string): boolean => {
-  const permissions = getPermissions() || [];
-  return permissions.includes('*') || permissions.includes(permission);
-};
+/** Same rule as the backend: full access or the exact permission */
+export const userHasPermission = (permissions: string[], permission: string): boolean =>
+  permissions.includes('*') || permissions.includes(permission);
 
-export const hasAllPermissions = (requiredPermissions: string[]): boolean => {
-  if (!requiredPermissions || requiredPermissions.length === 0) return true;
-
-  const userPermissions = getPermissions();
-  return requiredPermissions.every((perm) => userPermissions.includes(perm));
-};
+export const hasPermission = (permission: string): boolean =>
+  userHasPermission(getPermissions() || [], permission);
 
 export const hasAnyPermission = (requiredPermissions: string[]): boolean => {
   if (!requiredPermissions || requiredPermissions.length === 0) return true;
@@ -165,6 +168,7 @@ export const logout = (): void => {
   localStorage.removeItem("isAuthenticated");
   localStorage.removeItem("permissions");
   localStorage.removeItem("user_roles");
+  localStorage.removeItem("is_master_tenant");
   localStorage.removeItem("force_upd_pass_date");
   localStorage.removeItem("tenant_id");
   localStorage.removeItem("auth_username");
@@ -283,10 +287,6 @@ export const isPasswordUpdateRequired = (): boolean => {
   } catch (error) {
     return false;
   }
-};
-
-export const getForceUpdatePassDate = (): string | null => {
-  return localStorage.getItem("force_upd_pass_date");
 };
 
 export async function getAuthMe(): Promise<User> {

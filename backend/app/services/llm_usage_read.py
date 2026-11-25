@@ -30,18 +30,33 @@ _DIMENSION_COLUMNS = {
         func.coalesce(LlmUsageEventModel.model_key, "unknown"),
     ),
     "evaluation_method": LlmUsageEventModel.purpose,
+    "analyst_purpose": LlmUsageEventModel.purpose,
     "node": LlmUsageEventModel.node_id,
 }
 
 _EXTRA_BREAKDOWN_CONDITIONS = {
     "llm": (LlmUsageEventModel.source_type == "workflow",),
     "evaluation_method": (LlmUsageEventModel.source_type == "evaluation",),
+    "analyst_purpose": (LlmUsageEventModel.source_type == "llm_analyst",),
     "node": (LlmUsageEventModel.source_type == "workflow",),
 }
 
 _SOURCE_LABELS = {"workflow": "Workflow", "llm_analyst": "Conversation Analyst", "evaluation": "Evaluations"}
 
-_EVALUATION_METHOD_LABELS = {"llm_judge": "LLM Judge", "provenance_judge": "Provenance"}
+_EVALUATION_METHOD_LABELS = {
+    "llm_judge": "LLM Judge",
+    "provenance_judge": "Provenance",
+    "prompt_check": "Prompt check",
+    "prompt_optimize": "Prompt rewrite",
+}
+
+_ANALYST_PURPOSE_LABELS = {"hostility_analysis": "Hostility Check", "conversation_analysis": "KPI Scoring"}
+
+_KEY_LABELS = {
+    "source": _SOURCE_LABELS,
+    "evaluation_method": _EVALUATION_METHOD_LABELS,
+    "analyst_purpose": _ANALYST_PURPOSE_LABELS,
+}
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -156,15 +171,21 @@ class LlmUsageReadService:
         total_calls = int(row["total_calls"])
         total_tokens = int(row["total_tokens"])
         unpriced_calls = int(row["unpriced_calls"])
+        fallback_calls = int(row["fallback_calls"])
         distinct_conversations = row["distinct_conversations"]
+        sum_cost = row["sum_cost"]
+        conversation_cost = row["conversation_cost"]
         return LlmUsageSummaryResponse(
             from_date=params.from_date,
             to_date=params.to_date,
-            total_cost_usd=float(row["sum_cost"]),
+            total_cost_usd=float(sum_cost),
             cost_is_partial=unpriced_calls > 0,
             cost_per_conversation_usd=(
-                float(row["conversation_cost"]) / distinct_conversations if distinct_conversations else None
+                float(conversation_cost) / distinct_conversations if distinct_conversations else None
             ),
+            distinct_conversations=int(distinct_conversations),
+            conversation_cost_usd=float(conversation_cost),
+            non_conversation_cost_usd=float(sum_cost - conversation_cost),
             agent_studio_test_cost_usd=float(row["agent_studio_test_cost"]),
             total_input_tokens=int(row["input_tokens"]),
             total_output_tokens=int(row["output_tokens"]),
@@ -173,13 +194,14 @@ class LlmUsageReadService:
             total_cache_creation_tokens=int(row["cache_creation_tokens"]),
             total_calls=total_calls,
             configured_calls=int(row["configured_calls"]),
-            fallback_calls=int(row["fallback_calls"]),
+            fallback_calls=fallback_calls,
             legacy_estimate_calls=int(row["legacy_estimate_calls"]),
             unpriced_calls=unpriced_calls,
             priced_token_coverage_pct=_coverage_pct(
                 total_calls, total_tokens, int(row["priced_tokens"]), unpriced_calls
             ),
             last_unpriced_at=(await self.repo.last_unpriced_at() if unpriced_calls else None),
+            last_fallback_at=(await self.repo.last_fallback_at() if fallback_calls else None),
         )
 
     async def _breakdown(self, params, scope, dimension: str) -> LlmUsageBreakdownResponse:
@@ -206,8 +228,8 @@ class LlmUsageReadService:
         ids = [a for a in agent_ids if a is not None]
         if not ids:
             return {}
-        rows = await self.agent_repo.get_by_ids(ids)
-        return {a.id: a.name for a in rows}
+        rows = await self.agent_repo.get_by_ids(ids, include_deleted=True)
+        return {a.id: f"{a.name} (deleted)" if a.is_deleted else a.name for a in rows}
 
     async def _node_labels(self, params, scope) -> tuple[dict, set]:
         """Node id -> display name, plus the ids still present in the agents' current workflows"""
@@ -248,15 +270,9 @@ class LlmUsageReadService:
             key_str = key or "unattributed"
             label = "Unattributed" if not key else node_names.get(key) or "Unknown"
             removed = _node_removed(key, node_names, current_nodes)
-        elif dimension == "source":
-            key_str = key or "unknown"
-            label = _SOURCE_LABELS.get(key, key or "Unknown")
-        elif dimension == "evaluation_method":
-            key_str = key or "unknown"
-            label = _EVALUATION_METHOD_LABELS.get(key, key or "Unknown")
         else:
             key_str = key or "unknown"
-            label = key or "Unknown"
+            label = _KEY_LABELS.get(dimension, {}).get(key, key or "Unknown")
         return LlmUsageBreakdownItem(
             key=key_str,
             label=label,

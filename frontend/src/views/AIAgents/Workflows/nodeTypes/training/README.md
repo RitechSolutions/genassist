@@ -5,19 +5,19 @@ This directory contains nodes related to machine learning training workflows.
 ## Available Training Nodes
 
 ### 1. TrainDataSource Node
-Fetches training data from databases or CSV files.
+Fetches training data from databases or uploaded files.
 
 **Features:**
 - **Data Source Method**: Query TimeDB, Snowflake, PostgreSQL, MySQL, TimescaleDB
-- **CSV Upload Method**: Upload CSV files directly to server
-- **Variable Substitution**: Use `{{variable}}` syntax in SQL queries
+- **File Upload Method**: Upload CSV (.csv), Excel (.xlsx, .xlsm), JSON (.json), JSON Lines (.jsonl, .ndjson), or Parquet (.parquet) files directly to the server
+- **Bound Query Variables**: Use `{{variable}}` for SQL values; values are sent to the database separately from the query text
 - **File Management**: Server-side file storage and validation
 
 **Configuration:**
 - `sourceType`: "datasource" or "csv"
 - `dataSourceId`: Database connection ID
-- `query`: SQL query with variable support
-- `csvFilePath`: Server path to uploaded CSV file
+- `query`: SQL query with bound variables in value positions; table and column names must be fixed
+- `csvFilePath`: Server path to the uploaded file
 
 ### 2. PreprocessingNode
 Transforms and cleans training data using Python.
@@ -64,7 +64,7 @@ Trains machine learning models on preprocessed data.
 TrainDataSource → PreprocessingNode → TrainModelNode
 ```
 
-1. **TrainDataSource**: Fetch data from database or CSV
+1. **TrainDataSource**: Fetch data from a database or uploaded training file
 2. **PreprocessingNode**: Clean and transform the data
 3. **TrainModelNode**: Train ML model on processed data
 
@@ -89,4 +89,3 @@ TrainDataSource → PreprocessingNode → TrainModelNode
 - **AutoML**: Automated model selection and training
 - **Model Versioning**: Track and manage model versions
 - **Deployment**: Direct model deployment to inference endpoints
-

@@ -10,7 +10,7 @@ from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow.agents.memory import ConversationMemory, InMemoryConversationMemory
 from app.modules.workflow.agents.sub_agents import graph as sub_graph
 from app.modules.workflow.agents.sub_agents import session as sub_session
-from app.modules.workflow.agents.sub_agents.models import SubAgentFrame, SubAgentStack
+from app.modules.workflow.agents.sub_agents.models import ParentResume, SubAgentFrame, SubAgentStack
 from app.modules.workflow.agents.sub_agents.turn_router import SubAgentTurnRouter
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
 
@@ -34,10 +34,11 @@ def _fake_state(response, last_output=None):
     return SimpleNamespace(
         format_state_as_response=lambda: response,
         get_last_node_output=lambda: last_output,
+        node_execution_status={},
     )
 
 
-def _seed_stack(fingerprint=None):
+def _seed_stack(fingerprint=None, session=None):
     mem = InMemoryConversationMemory("t1")
     frame = SubAgentFrame(
         child_node_id="child",
@@ -47,6 +48,7 @@ def _seed_stack(fingerprint=None):
         mode="task",
         task="do x",
         workflow_fingerprint=fingerprint if fingerprint is not None else sub_graph.fingerprint(_NODES, _EDGES),
+        parent_resume=ParentResume(request_context={"session": session} if session else {}),
     )
     mem.metadata[sub_session.STACK_KEY] = SubAgentStack(agent_id="agentA", frames=[frame]).model_dump()
     return mem
@@ -92,7 +94,8 @@ async def test_corrupt_stack_returns_controlled_message():
     mem.metadata[sub_session.STACK_KEY] = {"version": 1, "agent_id": "agentA", "frames": "junk"}
     with patch.object(ConversationMemory, "get_instance", return_value=mem):
         result = await router.route_turn("msg", "t1", {"message": "msg"}, persist=True)
-    assert result["status"] == "success"
+    # The turn did nothing, so it is not reported as a success
+    assert result["status"] == "failed"
     assert "could not be resumed" in result["output"]["message"]
 
 
@@ -111,6 +114,23 @@ async def test_active_child_question_returns_success_message():
         result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
     assert result["status"] == "success"
     assert result["output"]["message"] == "Is a layover okay?"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("persist", [True, False])
+async def test_mid_delegation_turn_reaches_root_memory_only_when_persisted(persist):
+    router = _make_router()
+    mem = _seed_stack()
+    child_state = _fake_state(
+        {"status": "success", "output": {"message": "Which date?"}}, last_output={"message": "Which date?"}
+    )
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child_state)),
+    ):
+        await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=persist)
+    expected = [("user", "a reply"), ("assistant", "Which date?")] if persist else []
+    assert [(m.role, m.content) for m in mem.messages] == expected
 
 
 @pytest.mark.asyncio
@@ -170,7 +190,52 @@ async def test_child_timeout_keeps_frame_intact():
     ):
         result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
     assert "did not respond in time" in result["output"]["message"]
+    # A sub-agent that timed out is a failed turn, not a success.
+    assert result["status"] == "failed"
     assert mem.metadata[sub_session.STACK_KEY]["frames"][0]["invocation_id"] == "inv1"
+
+
+@pytest.mark.asyncio
+async def test_child_that_raises_is_a_failed_turn():
+    router = _make_router()
+    mem = _seed_stack()
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(side_effect=RuntimeError("provider gone"))),
+    ):
+        result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+    assert result["status"] == "failed"
+    assert result["output"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_failed_child_on_a_resumed_turn_hands_back_to_the_parent():
+    router = _make_router()
+    mem = _seed_stack()
+    child_state = SimpleNamespace(
+        sub_agent_control=None,
+        format_state_as_response=lambda: {"status": "success", "output": {"message": "sorry"}},
+        get_last_node_output=lambda: {"message": "sorry", "error": "provider gone"},
+        node_outputs={"child": {"message": "sorry", "error": "provider gone"}},
+        node_execution_status={"child": {"status": "failed", "error": "provider gone"}},
+    )
+    router.workflow_engine.execute_from_node = AsyncMock(
+        return_value=_fake_state({"status": "success", "output": {"message": "parent takes over"}})
+    )
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=child_state)),
+        patch(f"{_ORCH}.discard_child_memory") as discard,
+    ):
+        result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+
+    assert result["output"]["message"] == "parent takes over"
+    resume = router.workflow_engine.execute_from_node.await_args.kwargs["input_data"]["__sub_agent_resume"]
+    assert resume["child_result"] == (
+        "The sub-agent could not complete the task. The user's latest message to it was: a reply"
+    )
+    assert mem.metadata[sub_session.STACK_KEY] is None
+    discard.assert_called_once_with("t1", "child", "inv1")
 
 
 @pytest.mark.asyncio
@@ -181,6 +246,15 @@ async def test_completed_child_resumes_parent_registry_managed():
         sub_agent_control={"result": "child done"},
         get_last_node_output=lambda: {"message": "child done"},
         node_outputs={"child": {"message": "child done", "steps": [{"i": 1}], "tools_used": ["search"]}},
+        node_execution_status={
+            "child": {
+                "status": "success",
+                "input": {"tools_reference": [object()]},
+                "startTime": 1000,
+                "endTime": 9000,
+                "time_taken": 8.0,
+            }
+        },
     )
     router.workflow_engine.execute_from_node = AsyncMock(
         return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})
@@ -199,6 +273,13 @@ async def test_completed_child_resumes_parent_registry_managed():
     assert resume["child_result"] == "child done"
     assert resume["child_steps"] == [{"i": 1}]
     assert resume["child_tools_used"] == ["search"]
+    assert resume["node_outputs"]["child"]["message"] == "child done"
+    assert resume["node_execution_status"]["child"] == {
+        "status": "success",
+        "input": {},
+        "startTime": 1000,
+        "time_taken": 8.0,
+    }
     assert mem.metadata[sub_session.STACK_KEY] is None
 
 
@@ -219,6 +300,20 @@ async def test_resume_turn_forwards_session_to_child():
 
 
 @pytest.mark.asyncio
+async def test_resume_turn_falls_back_to_the_pause_turn_session():
+    router = _make_router()
+    mem = _seed_stack(session={"customer_name": "Ada"})
+    child_state = _fake_state({"status": "success", "output": {"message": "ok"}}, last_output={"message": "ok"})
+    run_child = AsyncMock(return_value=child_state)
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=mem),
+        patch(f"{_ORCH}.run_child_turn", run_child),
+    ):
+        await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+    assert run_child.await_args.kwargs["session"] == {"customer_name": "Ada"}
+
+
+@pytest.mark.asyncio
 async def test_completed_child_discards_child_memory():
     router = _make_router()
     mem = _seed_stack()
@@ -226,6 +321,7 @@ async def test_completed_child_discards_child_memory():
         sub_agent_control={"result": "child done"},
         get_last_node_output=lambda: {"message": "child done"},
         node_outputs={"child": {"message": "child done"}},
+        node_execution_status={},
     )
     router.workflow_engine.execute_from_node = AsyncMock(
         return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})
@@ -248,6 +344,7 @@ async def test_resume_passes_one_usage_context_to_child_and_parent():
         sub_agent_control={"result": "child done"},
         get_last_node_output=lambda: {"message": "child done"},
         node_outputs={"child": {"message": "child done"}},
+        node_execution_status={},
     )
     router.workflow_engine.execute_from_node = AsyncMock(
         return_value=_fake_state({"status": "success", "output": {"message": "parent final"}})
@@ -343,6 +440,7 @@ async def test_a_mid_conversation_turn_returns_the_childs_own_response():
     child = SimpleNamespace(
         sub_agent_control=None,
         get_last_node_output=lambda: {"message": "still working"},
+        node_execution_status={},
         format_state_as_response=lambda: {
             "status": "success",
             "output": {"message": "still working"},

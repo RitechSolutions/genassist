@@ -5,7 +5,9 @@ This module defines field schemas for data source connection types.
 All schemas use the unified TypeSchema structure from base.py.
 """
 
-from typing import Dict
+from typing import Dict, List
+
+from app.core.config.settings import settings
 
 from .base import (
     ConditionalField,
@@ -14,25 +16,27 @@ from .base import (
     convert_typed_schemas_to_dict,
 )
 
+
+def s3_key_fields(use_server_role: bool) -> List[FieldSchema]:
+    """The S3 key fields: required, or optional when the server's own AWS access may be used."""
+    fields = []
+    for name, label in (("access_key", "Access key"), ("secret_key", "Secret key")):
+        if use_server_role:
+            description = "Leave empty to use the server's own AWS access (its role, or AWS keys set on the server)"
+        else:
+            description = f"Enter {label.lower()}"
+        fields.append(
+            FieldSchema(name=name, type="password", label=label, required=not use_server_role, description=description)
+        )
+    return fields
+
+
 # Define field schemas for each data source type
 DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
     "S3": TypeSchema(
         name="S3",
         fields=[
-            FieldSchema(
-                name="access_key",
-                type="password",
-                label="Access key",
-                required=True,
-                description="Enter access key",
-            ),
-            FieldSchema(
-                name="secret_key",
-                type="password",
-                label="Secret key",
-                required=True,
-                description="Enter secret key",
-            ),
+            *s3_key_fields(settings.S3_DATA_SOURCES_USE_SERVER_ROLE),
             FieldSchema(
                 name="region",
                 type="text",
@@ -107,7 +111,7 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
             ),
             FieldSchema(
                 name="allowed_tables",
-                type="text",
+                type="tags",
                 label="Allowed tables",
                 required=False,
                 description="Enter allowed tables",
@@ -240,10 +244,10 @@ DATA_SOURCE_SCHEMAS: Dict[str, TypeSchema] = {
             ),
             FieldSchema(
                 name="allowed_tables",
-                type="text",
+                type="tags",
                 label="Allowed tables",
                 required=False,
-                description="Comma-separated allowlist",
+                description="Tables this connection may read",
                 placeholder="ORDERS, CUSTOMERS",
                 advanced=True,
             ),

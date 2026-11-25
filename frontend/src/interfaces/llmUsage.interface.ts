@@ -6,6 +6,9 @@ export interface LlmUsageSummaryResponse {
   total_cost_usd: number;
   cost_is_partial: boolean;
   cost_per_conversation_usd: number | null;
+  distinct_conversations?: number;
+  conversation_cost_usd?: number;
+  non_conversation_cost_usd?: number;
   agent_studio_test_cost_usd: number;
   /** Prompt tokens sent, normalized across providers */
   total_input_tokens: number;
@@ -20,6 +23,7 @@ export interface LlmUsageSummaryResponse {
   unpriced_calls: number;
   priced_token_coverage_pct: number;
   last_unpriced_at?: string | null;
+  last_fallback_at?: string | null;
 }
 
 export interface LlmUsageBreakdownItem {
@@ -65,13 +69,23 @@ export interface LlmUsageFilterOptionsResponse {
   agents: LlmUsageAgentOption[];
 }
 
-export type LlmUsageDimension = "provider" | "model" | "agent" | "source" | "llm" | "evaluation_method" | "node";
+export type LlmUsageDimension =
+  | "provider"
+  | "model"
+  | "agent"
+  | "source"
+  | "llm"
+  | "evaluation_method"
+  | "analyst_purpose"
+  | "node";
 
 export interface LlmUsageQueryFilters {
   agent_id?: string;
   group_id?: string;
   from_date?: string;
   to_date?: string;
+  activity_from_datetime?: string;
+  activity_to_datetime?: string;
   provider?: string;
   model?: string;
 }

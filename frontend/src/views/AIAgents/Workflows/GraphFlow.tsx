@@ -13,6 +13,8 @@ import ReactFlow, {
   MarkerType,
   reconnectEdge,
   useStore,
+  useReactFlow,
+  useStoreApi,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { isEqual } from "lodash";
@@ -32,13 +34,16 @@ import { useSchemaValidation } from "./hooks/useSchemaValidation";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { AgentConfig, getAgentConfig, updateAgentConfig } from "@/services/api";
 import { useParams, useSearchParams } from "react-router-dom";
+import { WorkflowLoadingOverlay } from "./components/WorkflowLoadingOverlay";
 import { getWorkflowById, updateWorkflow } from "@/services/workflows";
+import { extractErrorMessage } from "@/helpers/apiError";
 import AgentTopPanel from "./components/panels/AgentTopPanel";
 import { v4 as uuidv4 } from "uuid";
 import { WorkflowProvider } from "./context/WorkflowContext";
 import { NodeActionsContext } from "./context/NodeActionsContext";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import { useHiddenNodeTypes } from "./hooks/useHiddenNodeTypes";
 import { usePermissions } from "@/context/PermissionContext";
 import {
   WorkflowExecutionProvider,
@@ -50,13 +55,41 @@ import {
   handleNodeDoubleClick,
 } from "./utils/helpers";
 import { Button } from "@/components/button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useSidebar } from "@/components/sidebar";
 import { Tabs, TabsList, TabsTrigger } from "@/components/tabs";
-import { History, ChevronLeft, X, Plus, Workflow as WorkflowIcon, Play, ClipboardCheck } from "lucide-react";
+import { History, X, Plus, Workflow as WorkflowIcon, Play, ClipboardCheck } from "lucide-react";
 import CanvasContextMenu from "./components/CanvasContextMenu";
 import CustomControls from "./components/CustomControls";
 import { computeAutoArrangeLayout } from "./utils/autoArrangeLayout";
 import { validateSubAgentConnection } from "./utils/subAgentGraph";
+import { validateLoopConnection } from "./utils/loopGraph";
+import { buildDeleteConfirmation } from "./utils/nodeDeletion";
+import {
+  applyDragReparenting,
+  applyGroupDeletion,
+  applyLayoutWithGroups,
+  DEFAULT_GROUP_NAME,
+  findGroupAtNode,
+  fitGroupToChildren,
+  flattenGroups,
+  getAbsolutePosition,
+  getParentId,
+  getSelectedWithGroupChildren,
+  groupNodes,
+  GroupDeletionPlan,
+  isGroupNode,
+  orderGroupsFirst,
+  planGroupDeletion,
+  prepareNodesForPaste,
+  reparentNode,
+  sanitizeGroupedNodes,
+  toRenderableNodes,
+  ungroupNodes,
+} from "./utils/nodeGroups";
+import { withCopyNames } from "./utils/nodeNaming";
+import DeleteGroupDialog from "./components/DeleteGroupDialog";
+import RenameNodeDialog from "./components/RenameNodeDialog";
 import toast from "react-hot-toast";
 import WorkflowCommandPalette from "./components/WorkflowCommandPalette";
 import { SetupWizardPanel, SetupWizardReopenButton } from "./components/panels/SetupWizardPanel";
@@ -127,6 +160,7 @@ const GraphFlowContent: React.FC = () => {
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
 
   const showChatInput = useFeatureFlagVisible(FeatureFlags.WORKFLOW.CHAT_INPUT);
+  const hiddenNodeTypes = useHiddenNodeTypes();
 
   // Sidebar state — when collapsed, a floating toggle button sits at the
   // top-left of the viewport; shift the tab switcher right to clear it.
@@ -193,11 +227,14 @@ const GraphFlowContent: React.FC = () => {
   const isSetupFlow = searchParams.get("setup") === "true";
   const [showSetupWizard, setShowSetupWizard] = useState(isSetupFlow);
   const [wizardWasShown] = useState(isSetupFlow);
+  // A saved version to open instead of the live one, such as the one an evaluation run played; read once.
+  const askedVersion = useRef(searchParams.get("version"));
 
-  // Clean up the ?setup=true param from URL without navigation
+  // Clean up the ?setup=true and ?version= params from URL without navigation
   useEffect(() => {
-    if (searchParams.get("setup") === "true") {
+    if (searchParams.get("setup") === "true" || searchParams.has("version")) {
       searchParams.delete("setup");
+      searchParams.delete("version");
       setSearchParams(searchParams, { replace: true });
     }
   }, []);
@@ -208,10 +245,11 @@ const GraphFlowContent: React.FC = () => {
       const node = nodes.find((n) => n.id === nodeId);
       if (!node || !reactFlowInstance) return;
 
-      // Center the viewport on the node
+      // Center the viewport on the node (grouped nodes store a group-relative position)
+      const absolute = getAbsolutePosition(node, new Map(nodes.map((n) => [n.id, n])));
       reactFlowInstance.setCenter(
-        node.position.x + (node.width ?? 200) / 2,
-        node.position.y + (node.height ?? 100) / 2,
+        absolute.x + (node.width ?? 200) / 2,
+        absolute.y + (node.height ?? 100) / 2,
         { zoom: 1.2, duration: 400 }
       );
 
@@ -233,11 +271,11 @@ const GraphFlowContent: React.FC = () => {
   );
 
   /** Arrange every node into a clean left-to-right layout (see utils/autoArrangeLayout). */
+  // Layout runs on the flat executable graph (groups are visual only); each group is then
+  // re-framed around wherever its nodes landed.
   const handleAutoArrange = useCallback(() => {
-    const positions = computeAutoArrangeLayout({ nodes, edges });
-    setNodes((nds) =>
-      nds.map((n) => (positions[n.id] ? { ...n, position: positions[n.id] } : n))
-    );
+    const positions = computeAutoArrangeLayout({ nodes: flattenGroups(nodes), edges });
+    setNodes((nds) => applyLayoutWithGroups(nds, positions));
     // Fit the view after react-flow commits the new positions.
     requestAnimationFrame(() => reactFlowInstance?.fitView({ padding: 0.2, duration: 400 }));
   }, [nodes, edges, setNodes, reactFlowInstance]);
@@ -338,6 +376,11 @@ const GraphFlowContent: React.FC = () => {
   const { validateConnection } = useSchemaValidation();
 
   const { agentId } = useParams<{ agentId: string }>();
+  // True from the moment an agent's workflow is requested until its nodes have
+  // been mounted and framed — drives the canvas loading overlay.
+  const [isLoadingWorkflow, setIsLoadingWorkflow] = useState(!!agentId);
+  // Bumped by every agent load, so a slower earlier load can tell it was replaced.
+  const agentLoadRef = useRef(0);
   const edgeReconnectSuccessful = useRef(true);
 
   // Double-clicking a node focuses the view on it
@@ -383,6 +426,9 @@ const GraphFlowContent: React.FC = () => {
         // a freshly opened workflow (whose nodes can sit at large coordinates) renders off-screen.
         // Frame it now that its nodes have loaded.
         if (nodes.length > 0) reactFlowInstance?.fitView({ padding: 0.2 });
+        // `workflow` is only set by the current load's fetch (loadAgent clears it and drops
+        // stale results), so the settle pass that runs before any data leaves the overlay up.
+        if (workflow) setIsLoadingWorkflow(false);
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -406,6 +452,10 @@ const GraphFlowContent: React.FC = () => {
   // Clipboard for node copy/paste (supports multi-node + edges)
   const clipboardRef = useRef<{ nodes: Node[]; edges: typeof edges } | null>(null);
   const [selectedNodes, setSelectedNodes] = useState<Node[]>([]);
+  const [pendingDeletion, setPendingDeletion] = useState<{
+    nodes: Node[];
+    edges: Edge[];
+  } | null>(null);
 
   // Always-current snapshot of nodes, so the per-node action callbacks below can
   // read the latest node without listing `nodes` in their deps (which would
@@ -486,7 +536,9 @@ const GraphFlowContent: React.FC = () => {
     (loadedWorkflow: Workflow, isUploaded = false) => {
       const loadedNodes = loadedWorkflow.nodes || [];
       const loadedEdges = loadedWorkflow.edges || [];
-      const nodesWithFunctions = restoreNodeFunctions(loadedNodes);
+      // Repair any stale group references (e.g. a group removed outside the editor) so React
+      // Flow never sees a missing parent.
+      const nodesWithFunctions = sanitizeGroupedNodes(restoreNodeFunctions(loadedNodes));
 
       // Add arrow markers to existing edges
       const edgesWithMarkers = loadedEdges.map((edge) => ({
@@ -519,22 +571,42 @@ const GraphFlowContent: React.FC = () => {
     [resetHistory, restoreNodeFunctions, setNodes, setEdges, setWorkflow]
   );
 
-  const loadWorkflow = useCallback(
-    async (workflowId: string) => {
-      const workflow = await getWorkflowById(workflowId);
-      setWorkflow(workflow);
-      handleWorkflowLoaded(workflow);
-    },
-    [handleWorkflowLoaded, setWorkflow]
-  );
-
   const loadAgent = useCallback(
     async (agentId: string) => {
-      const agent = await getAgentConfig(agentId);
-      setAgent(agent);
-      loadWorkflow(agent.workflow_id);
+      const load = ++agentLoadRef.current;
+      const replaced = () => load !== agentLoadRef.current;
+      setIsLoadingWorkflow(true);
+      // Start from a blank editor. Only this load's fetch sets `workflow` again, and the
+      // previous agent's graph can't show, be saved or count as unsaved meanwhile, or if this fails.
+      setWorkflow(undefined);
+      lastSavedWorkflowRef.current = null;
+      setNodes([]);
+      setEdges([]);
+      resetHistory({ nodes: [], edges: [] });
+      try {
+        const agent = await getAgentConfig(agentId);
+        if (replaced()) return;
+        // apiRequest answers a 403 with null instead of throwing.
+        if (!agent) throw new Error(`Agent ${agentId} could not be loaded`);
+        setAgent(agent);
+        const asked = askedVersion.current;
+        askedVersion.current = null;
+        // Only a version of this agent; anything else opens the live one.
+        const version = asked && asked !== agent.workflow_id ? await getWorkflowById(asked).catch(() => null) : null;
+        if (replaced()) return;
+        const workflow = version?.agent_id === agentId ? version : await getWorkflowById(agent.workflow_id);
+        if (replaced()) return;
+        if (!workflow) throw new Error(`Workflow ${agent.workflow_id} could not be loaded`);
+        handleWorkflowLoaded(workflow);
+      } catch (error) {
+        // A newer load owns the overlay now; only the current one may clear it.
+        if (replaced()) return;
+        // Nothing to mount — don't leave the overlay up forever.
+        setIsLoadingWorkflow(false);
+        throw error;
+      }
     },
-    [loadWorkflow]
+    [handleWorkflowLoaded, resetHistory, setNodes, setEdges]
   );
 
   const handleAgentUpdated = useCallback(async () => {
@@ -562,7 +634,9 @@ const GraphFlowContent: React.FC = () => {
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
-      handleDrop(event, reactFlowInstance, restoreNodeFunctions, setNodes);
+      const dropped = handleDrop(event, reactFlowInstance, restoreNodeFunctions, setNodes);
+      // A node dropped from the sidebar onto a group joins that group.
+      if (dropped) setNodes((nds) => applyDragReparenting(nds, [dropped.id]));
     },
     [reactFlowInstance, restoreNodeFunctions, setNodes]
   );
@@ -580,7 +654,9 @@ const GraphFlowContent: React.FC = () => {
         return { ok: false };
       }
       const scopedEdges = ignoreEdgeId ? edges.filter((e) => e.id !== ignoreEdgeId) : edges;
-      return validateSubAgentConnection(params, nodes, scopedEdges);
+      const subAgentCheck = validateSubAgentConnection(params, nodes, scopedEdges);
+      if (!subAgentCheck.ok) return subAgentCheck;
+      return validateLoopConnection(params, nodes, scopedEdges);
     },
     [validateConnection, nodes, edges]
   );
@@ -708,9 +784,10 @@ const GraphFlowContent: React.FC = () => {
   };
 
   useEffect(() => {
-    if (executionState) {
-      setWorkflow({ ...workflow, executionState });
-    }
+    if (!executionState) return;
+    // BottomPanel reports its run state on mount, before the workflow has loaded.
+    // Spreading the missing workflow would make a stand-in object that looks loaded.
+    setWorkflow((current) => (current ? { ...current, executionState } : current));
   }, [executionState]);
 
   const handleSaveWorkflow = async () => {
@@ -729,11 +806,12 @@ const GraphFlowContent: React.FC = () => {
       setHasUnsavedChanges(false);
       setRefreshKey((prevKey) => prevKey + 1);
     } catch (error) {
-      // ignore
+      toast.error(extractErrorMessage(error, "Could not save the workflow."));
+      throw error;
     }
   };
   const handleUpdateWorkflowTestInputs = (inputs: Record<string, string>) => {
-    setWorkflow({ ...workflow, testInput: inputs });
+    setWorkflow((current) => (current ? { ...current, testInput: inputs } : current));
   };
 
   // Cap the in-memory history so a long session doesn't grow unbounded.
@@ -827,18 +905,23 @@ const GraphFlowContent: React.FC = () => {
   // Clipboard handlers for copy/paste
   // Copy selected nodes and their internal edges to clipboard
   const copySelectedNodes = useCallback(() => {
-    if (selectedNodes.length === 0) return;
+    const copied = getSelectedWithGroupChildren(nodesRef.current);
+    if (copied.length === 0) return;
 
-    const selectedIds = new Set(selectedNodes.map((n) => n.id));
-    const connectedEdges = edges.filter(
-      (edge) => selectedIds.has(edge.source) && selectedIds.has(edge.target)
+    const copiedIds = new Set(copied.map((n) => n.id));
+    const connectedEdges = edgesRef.current.filter(
+      (edge) => copiedIds.has(edge.source) && copiedIds.has(edge.target)
     );
 
+    const byId = new Map(nodesRef.current.map((n) => [n.id, n]));
     clipboardRef.current = {
-      nodes: selectedNodes.map((n) => ({ ...n })),
+      nodes: copied.map((n) => ({
+        ...n,
+        positionAbsolute: getAbsolutePosition(n, byId),
+      })),
       edges: connectedEdges.map((e) => ({ ...e })),
     };
-  }, [selectedNodes, edges]);
+  }, []);
 
   // Paste nodes and edges from clipboard with new IDs
   const pasteFromClipboard = useCallback(() => {
@@ -850,22 +933,14 @@ const GraphFlowContent: React.FC = () => {
     const idMap = new Map<string, string>();
     copiedNodes.forEach((node) => idMap.set(node.id, uuidv4()));
 
-    const newNodes: Node[] = copiedNodes.map((node) => {
-      const { id, selected, position, ...rest } = node;
-      return {
-        ...rest,
-        id: idMap.get(id)!,
-        position: {
-          x: (position?.x || 0) + offset,
-          y: (position?.y || 0) + offset,
-        },
-        data: {
-          ...node.data,
-          updateNodeData: node.data?.updateNodeData,
-        },
-        selected: false,
-      };
-    });
+    // Remaps ids and group membership, and offsets root-level nodes (see prepareNodesForPaste).
+    // Pasted copies get "(n)" names so they stay distinguishable from their originals.
+    const newNodes: Node[] = withCopyNames(
+      prepareNodesForPaste(copiedNodes, nodesRef.current, idMap, offset).map(
+        (node) => ({ ...node, data: { ...node.data } })
+      ),
+      nodesRef.current
+    );
 
     const newEdges = copiedEdges.map((edge) => ({
       ...edge,
@@ -876,7 +951,7 @@ const GraphFlowContent: React.FC = () => {
       className: '',
     }));
 
-    setNodes((nds) => [...nds, ...newNodes]);
+    setNodes((nds) => orderGroupsFirst([...nds, ...newNodes]));
     setEdges((eds) => [...eds, ...newEdges]);
     clipboardRef.current = null;
   }, [setNodes, setEdges]);
@@ -898,16 +973,21 @@ const GraphFlowContent: React.FC = () => {
         if (!original) return nds;
         const offset = 40;
         const { position } = original;
-        const clone: Node = {
-          ...original,
-          id: uuidv4(),
-          position: {
-            x: (position?.x || 0) + offset,
-            y: (position?.y || 0) + offset,
-          },
-          data: { ...original.data, updateNodeData },
-          selected: true,
-        };
+        const [clone] = withCopyNames(
+          [
+            {
+              ...original,
+              id: uuidv4(),
+              position: {
+                x: (position?.x || 0) + offset,
+                y: (position?.y || 0) + offset,
+              },
+              data: { ...original.data, updateNodeData },
+              selected: true,
+            },
+          ],
+          nds
+        );
         return [
           ...nds.map((n) => (n.selected ? { ...n, selected: false } : n)),
           clone,
@@ -932,7 +1012,10 @@ const GraphFlowContent: React.FC = () => {
       const newSourceHandle = pickReplacementHandle(restored, "source");
       const newTargetHandle = pickReplacementHandle(restored, "target");
 
-      setNodes((nds) => nds.map((n) => (n.id === targetId ? restored : n)));
+      // Keep the replacement in the same group (its position is already group-relative).
+      const parentId = getParentId(target);
+      const replacement = parentId ? { ...restored, parentId } : restored;
+      setNodes((nds) => nds.map((n) => (n.id === targetId ? replacement : n)));
       setEdges((eds) =>
         eds.map((edge) => {
           if (edge.source === targetId) {
@@ -984,15 +1067,210 @@ const GraphFlowContent: React.FC = () => {
     setActiveTab("executions");
   }, []);
 
+  const { deleteElements } = useReactFlow();
+  const storeApi = useStoreApi();
+
+  // --- Visual node groups (editor-only; see utils/nodeGroups) -----------------
+  // The group whose name dialog is open; `isNew` right after "Group nodes".
+  const [groupRenameTarget, setGroupRenameTarget] = useState<{
+    id: string;
+    isNew: boolean;
+  } | null>(null);
+  const [pendingGroupDeletion, setPendingGroupDeletion] =
+    useState<GroupDeletionPlan | null>(null);
+  // Group highlighted as the drop target while a node is dragged over it.
+  const [dropTargetGroupId, setDropTargetGroupId] = useState<string | null>(null);
+
+  const groupSelection = useCallback(() => {
+    const memberIds = storeApi
+      .getState()
+      .getNodes()
+      .filter((n) => n.selected && !isGroupNode(n))
+      .map((n) => n.id);
+    if (memberIds.length === 0) return;
+    const groupId = uuidv4();
+    setNodes((nds) =>
+      groupNodes(nds, memberIds, groupId).map((n) =>
+        n.id === groupId
+          ? { ...n, selected: true }
+          : n.selected
+            ? { ...n, selected: false }
+            : n
+      )
+    );
+    setEdges((eds) =>
+      eds.some((e) => e.selected)
+        ? eds.map((e) => (e.selected ? { ...e, selected: false } : e))
+        : eds
+    );
+    storeApi.setState({ nodesSelectionActive: false });
+    setGroupRenameTarget({ id: groupId, isNew: true });
+  }, [setNodes, setEdges, storeApi]);
+
+  const ungroupGroup = useCallback(
+    (groupId: string) => setNodes((nds) => ungroupNodes(nds, groupId)),
+    [setNodes]
+  );
+
+  // Selected groups are dissolved; selected nodes inside an unselected group leave it.
+  const ungroupSelection = useCallback(() => {
+    const selected = storeApi.getState().getNodes().filter((n) => n.selected);
+    const groupIds = new Set(selected.filter(isGroupNode).map((n) => n.id));
+    const looseChildIds = selected
+      .filter((n) => !isGroupNode(n) && getParentId(n) && !groupIds.has(getParentId(n)!))
+      .map((n) => n.id);
+    if (groupIds.size === 0 && looseChildIds.length === 0) return;
+    setNodes((nds) => {
+      let next = nds;
+      for (const id of groupIds) next = ungroupNodes(next, id);
+      for (const id of looseChildIds) next = reparentNode(next, id, null);
+      return next;
+    });
+    storeApi.setState({ nodesSelectionActive: false });
+  }, [setNodes, storeApi]);
+
+  const fitGroup = useCallback(
+    (groupId: string) => setNodes((nds) => fitGroupToChildren(nds, groupId, "fit")),
+    [setNodes]
+  );
+
+  const renameGroup = useCallback(
+    (groupId: string) => setGroupRenameTarget({ id: groupId, isNew: false }),
+    []
+  );
+
+  const applyGroupName = useCallback(
+    (groupId: string, name: string) =>
+      setNodes((nds) =>
+        nds.map((n) => (n.id === groupId ? { ...n, data: { ...n.data, name } } : n))
+      ),
+    [setNodes]
+  );
+
+  const setGroupColor = useCallback(
+    (groupId: string, color: string) =>
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === groupId ? { ...n, data: { ...n.data, color } } : n
+        )
+      ),
+    [setNodes]
+  );
+
+  const requestDeleteGroup = useCallback((groupId: string) => {
+    setPendingGroupDeletion(planGroupDeletion(nodesRef.current, [groupId]));
+  }, []);
+
+  const confirmGroupDeletion = useCallback(
+    (mode: "group-only" | "with-contents") => {
+      if (!pendingGroupDeletion) return;
+      const next = applyGroupDeletion(
+        nodesRef.current,
+        edgesRef.current,
+        pendingGroupDeletion,
+        mode
+      );
+      setNodes(next.nodes);
+      setEdges(next.edges);
+      storeApi.setState({ nodesSelectionActive: false });
+      setPendingGroupDeletion(null);
+    },
+    [pendingGroupDeletion, setNodes, setEdges, storeApi]
+  );
+
+  // Highlight the group a dragged node would join if dropped now.
+  const handleNodeDrag = useCallback(
+    (_event: React.MouseEvent, node: Node, dragged: Node[]) => {
+      revealMinimap();
+      if (isGroupNode(node)) return;
+      const draggedIds = new Set((dragged?.length ? dragged : [node]).map((n) => n.id));
+      const target = findGroupAtNode(nodesRef.current, node, draggedIds);
+      const next = target && target !== getParentId(node) ? target : null;
+      setDropTargetGroupId((prev) => (prev === next ? prev : next));
+    },
+    [revealMinimap]
+  );
+
+  // On drop, dragged nodes join/leave groups based on where they landed.
+  const reparentDraggedNodes = useCallback(
+    (dragged: Node[]) => {
+      setDropTargetGroupId(null);
+      const ids = dragged.map((n) => n.id);
+      if (ids.length) setNodes((nds) => applyDragReparenting(nds, ids));
+    },
+    [setNodes]
+  );
+  const handleNodeDragStop = useCallback(
+    (_event: React.MouseEvent, node: Node, dragged: Node[]) =>
+      reparentDraggedNodes(dragged?.length ? dragged : [node]),
+    [reparentDraggedNodes]
+  );
+  const handleSelectionDragStop = useCallback(
+    (_event: React.MouseEvent, dragged: Node[]) => reparentDraggedNodes(dragged),
+    [reparentDraggedNodes]
+  );
+
   const nodeActionsValue = useMemo(
     () => ({
       duplicateNode,
       copyNode,
       requestReplaceNode,
       testWorkflow: testWorkflowFromCanvas,
+      renameGroup,
+      ungroup: ungroupGroup,
+      setGroupColor,
+      fitGroup,
+      requestDeleteGroup,
     }),
-    [duplicateNode, copyNode, requestReplaceNode, testWorkflowFromCanvas]
+    [
+      duplicateNode,
+      copyNode,
+      requestReplaceNode,
+      testWorkflowFromCanvas,
+      renameGroup,
+      ungroupGroup,
+      setGroupColor,
+      fitGroup,
+      requestDeleteGroup,
+    ]
   );
+
+  const requestDeleteSelection = useCallback(() => {
+    if (activeTab !== "workflow") return false;
+    if (pendingDeletion || pendingGroupDeletion) return false;
+    const { getNodes, edges: storeEdges } = storeApi.getState();
+    const selNodes = getNodes().filter((n) => n.selected);
+    const selEdges = storeEdges.filter((e) => e.selected);
+    if (selNodes.length === 0 && selEdges.length === 0) return false;
+    // A selection containing a group asks whether to keep the group's nodes
+    // (React Flow would otherwise delete a parent's children along with it).
+    const selectedGroupIds = selNodes.filter(isGroupNode).map((n) => n.id);
+    if (selectedGroupIds.length > 0) {
+      setPendingGroupDeletion(
+        planGroupDeletion(
+          getNodes(),
+          selectedGroupIds,
+          selNodes.map((n) => n.id),
+          selEdges
+        )
+      );
+      return true;
+    }
+    if (selNodes.length === 0) {
+      deleteElements({ nodes: [], edges: selEdges });
+      storeApi.setState({ nodesSelectionActive: false });
+      return true;
+    }
+    setPendingDeletion({ nodes: selNodes, edges: selEdges });
+    return true;
+  }, [activeTab, deleteElements, pendingDeletion, pendingGroupDeletion, storeApi]);
+
+  const confirmPendingDeletion = useCallback(async () => {
+    if (!pendingDeletion) return;
+    deleteElements(pendingDeletion);
+    storeApi.setState({ nodesSelectionActive: false });
+    setPendingDeletion(null);
+  }, [deleteElements, pendingDeletion, storeApi]);
 
   // Keyboard shortcuts for canvas interactions
   useEffect(() => {
@@ -1014,9 +1292,24 @@ const GraphFlowContent: React.FC = () => {
         return;
       }
 
-      // Never hijack copy/paste while typing in a field or inside a dialog.
+      // Never hijack delete/copy/paste while typing in a field or inside a dialog.
       if (isEditableEventTarget(target) || target.closest('[role="dialog"]'))
         return;
+
+      if (e.key === "Backspace") {
+        if (target.closest('[role="alertdialog"]')) return;
+        if (requestDeleteSelection()) e.preventDefault();
+        return;
+      }
+
+      // ⌘G groups the selected nodes, ⇧⌘G ungroups.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "g") {
+        if (activeTab !== "workflow") return;
+        e.preventDefault();
+        if (e.shiftKey) ungroupSelection();
+        else groupSelection();
+        return;
+      }
 
       const isReactFlowCanvas =
         target.closest(".react-flow__viewport") ||
@@ -1041,7 +1334,16 @@ const GraphFlowContent: React.FC = () => {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [copySelectedNodes, pasteFromClipboard, undo, redo]);
+  }, [
+    copySelectedNodes,
+    pasteFromClipboard,
+    requestDeleteSelection,
+    undo,
+    redo,
+    activeTab,
+    groupSelection,
+    ungroupSelection,
+  ]);
 
   // ---- Node search / command palette --------------------------------------
   const closeNodeSearch = useCallback(() => {
@@ -1074,7 +1376,10 @@ const GraphFlowContent: React.FC = () => {
     const terms = query.split(/\s+/).filter(Boolean);
     const ids = new Set<string>();
     for (const node of nodes) {
-      const label = nodeRegistry.getNodeType(node.type ?? "")?.label ?? "";
+      // Visual groups are searchable by their name (and by the word "group").
+      const label = isGroupNode(node)
+        ? "group"
+        : nodeRegistry.getNodeType(node.type ?? "")?.label ?? "";
       const name = typeof node.data?.name === "string" ? node.data.name : "";
       const haystack = `${name} ${label} ${node.type ?? ""}`.toLowerCase();
       if (terms.every((term) => haystack.includes(term))) {
@@ -1084,34 +1389,57 @@ const GraphFlowContent: React.FC = () => {
     return ids;
   }, [nodes, nodeSearchOpen, nodeSearchModeType, nodeSearchQuery]);
 
-  // Nodes/edges with presentational search classNames layered on top of state.
-  // Kept separate from `nodes`/`edges` so search never dirties or persists onto the workflow.
-  const displayNodes = useMemo(() => {
-    if (!nodeSearchMatchIds) return nodes;
-    return nodes.map((node) => ({
-      ...node,
-      className: [
-        node.className,
-        nodeSearchMatchIds.has(node.id) ? "node-search-match" : "node-search-dim",
-      ]
-        .filter(Boolean)
-        .join(" "),
-    }));
+  // Everything kept lit by the search: the matches plus the nodes inside a matched group
+  // (so a found section is shown with its contents rather than as an empty frame).
+  const nodeSearchLitIds = useMemo(() => {
+    if (!nodeSearchMatchIds) return null;
+    const lit = new Set(nodeSearchMatchIds);
+    for (const node of nodes) {
+      const parentId = getParentId(node);
+      if (parentId && nodeSearchMatchIds.has(parentId)) lit.add(node.id);
+    }
+    return lit;
   }, [nodes, nodeSearchMatchIds]);
 
+  // Nodes/edges with presentational search classNames layered on top of state.
+  // Kept separate from `nodes`/`edges` so search never dirties or persists onto the workflow.
+  // A matched group gets its own highlight class: "node-search-match" raises z-index, which
+  // would lift the group above its nodes.
+  const displayNodes = useMemo(() => {
+    const renderable = toRenderableNodes(nodes);
+    if (!nodeSearchMatchIds && !dropTargetGroupId) return renderable;
+    const withClass = (node: Node, className: string) => ({
+      ...node,
+      className: [node.className, className].filter(Boolean).join(" "),
+    });
+    return renderable.map((node) => {
+      if (isGroupNode(node)) {
+        if (node.id === dropTargetGroupId) return withClass(node, "group-drop-target");
+        if (!nodeSearchMatchIds) return node;
+        return withClass(
+          node,
+          nodeSearchMatchIds.has(node.id) ? "group-search-match" : "node-search-dim"
+        );
+      }
+      if (!nodeSearchMatchIds) return node;
+      if (nodeSearchMatchIds.has(node.id)) return withClass(node, "node-search-match");
+      return nodeSearchLitIds?.has(node.id) ? node : withClass(node, "node-search-dim");
+    });
+  }, [nodes, nodeSearchMatchIds, nodeSearchLitIds, dropTargetGroupId]);
+
   const displayEdges = useMemo(() => {
-    if (!nodeSearchMatchIds) return edges;
+    if (!nodeSearchLitIds) return edges;
     return edges.map((edge) => {
-      // Keep an edge lit only when both endpoints matched; otherwise dim it.
+      // Keep an edge lit only when both endpoints are lit; otherwise dim it.
       const connectsMatches =
-        nodeSearchMatchIds.has(edge.source) && nodeSearchMatchIds.has(edge.target);
+        nodeSearchLitIds.has(edge.source) && nodeSearchLitIds.has(edge.target);
       if (connectsMatches) return edge;
       return {
         ...edge,
         className: [edge.className, "edge-search-dim"].filter(Boolean).join(" "),
       };
     });
-  }, [edges, nodeSearchMatchIds]);
+  }, [edges, nodeSearchLitIds]);
 
   const nodeSearchMatchCount = nodeSearchMatchIds?.size ?? 0;
 
@@ -1135,6 +1463,16 @@ const GraphFlowContent: React.FC = () => {
     return nodes
       .filter((n) => nodeSearchMatchIds.has(n.id))
       .map((n) => {
+        if (isGroupNode(n)) {
+          const count = nodes.filter((c) => getParentId(c) === n.id).length;
+          return {
+            id: n.id,
+            name: (typeof n.data?.name === "string" && n.data.name.trim()) || DEFAULT_GROUP_NAME,
+            typeLabel: `Group · ${count} ${count === 1 ? "node" : "nodes"}`,
+            icon: "Group",
+            category: "group",
+          };
+        }
         const def = nodeRegistry.getNodeType(n.type ?? "");
         const name =
           typeof n.data?.name === "string" && n.data.name.trim()
@@ -1172,6 +1510,7 @@ const GraphFlowContent: React.FC = () => {
     }
 
     const matches = nodeRegistry.getAllNodeTypes().filter((def) => {
+      if (hiddenNodeTypes.has(def.type)) return false;
       const haystack = `${def.label} ${def.description} ${def.type}`.toLowerCase();
       return terms.every((term) => haystack.includes(term));
     });
@@ -1183,7 +1522,7 @@ const GraphFlowContent: React.FC = () => {
       icon: def.icon,
       category: def.category,
     }));
-  }, [nodeSearchOpen, nodeSearchModeType, nodeSearchQuery, nodeSearchCommandFilter]);
+  }, [nodeSearchOpen, nodeSearchModeType, nodeSearchQuery, nodeSearchCommandFilter, hiddenNodeTypes]);
 
   // Whether the /agent command is offered (respects the chat-input feature flag)
   const showAgentCommand =
@@ -1329,6 +1668,8 @@ const GraphFlowContent: React.FC = () => {
       ? "Save the workflow to add evaluations"
       : null;
 
+  const deletionCopy = buildDeleteConfirmation(pendingDeletion?.nodes ?? []);
+
   return (
     <WorkflowProvider workflow={workflow} setWorkflow={setWorkflow}>
       <WorkflowExecutionProvider>
@@ -1342,6 +1683,12 @@ const GraphFlowContent: React.FC = () => {
               canUndo={canUndo}
               canRedo={canRedo}
               clickPosition={contextMenuPosition}
+              onGroupSelection={groupSelection}
+              canGroupSelection={selectedNodes.some((n) => !isGroupNode(n))}
+              onUngroupSelection={ungroupSelection}
+              canUngroupSelection={selectedNodes.some(
+                (n) => isGroupNode(n) || !!getParentId(n)
+              )}
             >
               <div
                 onContextMenu={handleCanvasContextMenu}
@@ -1353,6 +1700,7 @@ const GraphFlowContent: React.FC = () => {
                   edges={displayEdges}
                   onNodesChange={onNodesChange}
                   onEdgesChange={onEdgesChange}
+                  deleteKeyCode={null}
                   onConnect={onConnect}
                   minZoom={0.1}
                   nodeTypes={nodeTypes}
@@ -1369,8 +1717,10 @@ const GraphFlowContent: React.FC = () => {
                   onReconnectStart={onReconnectStart}
                   onReconnectEnd={onReconnectEnd}
                   onMove={handleCanvasMove}
-                  onNodeDrag={revealMinimap}
+                  onNodeDrag={handleNodeDrag}
+                  onNodeDragStop={handleNodeDragStop}
                   onSelectionDrag={revealMinimap}
+                  onSelectionDragStop={handleSelectionDragStop}
                   nodesDraggable={nodesDraggable}
                   nodesConnectable={nodesConnectable}
                   elementsSelectable={elementsSelectable}
@@ -1395,6 +1745,8 @@ const GraphFlowContent: React.FC = () => {
                 </ReactFlow>
               </div>
             </CanvasContextMenu>
+
+            <WorkflowLoadingOverlay visible={isLoadingWorkflow} />
 
             {/* Top-left view switcher: graph editor vs. executions/test page.
                 The sidebar's floating toggle button sits at the top-left corner
@@ -1580,7 +1932,11 @@ const GraphFlowContent: React.FC = () => {
                 The tab handles its own list/detail navigation in-place. */}
             {activeTab === "evaluations" && (
               <div className="absolute inset-0 z-20 bg-background">
-                <WorkflowEvaluationsTab workflowId={agent?.workflow_id} />
+                <WorkflowEvaluationsTab
+                  workflowId={agent?.workflow_id}
+                  // Only a saved version of this agent can be run, not an uploaded file.
+                  openWorkflowId={workflow?.id && workflow.agent_id === agent?.id ? workflow.id : undefined}
+                />
               </div>
             )}
 
@@ -1614,6 +1970,46 @@ const GraphFlowContent: React.FC = () => {
                 onSendAgentMessage={sendAgentMessageFromSearch}
               />
             )}
+
+            <RenameNodeDialog
+              isOpen={groupRenameTarget !== null}
+              onClose={() => setGroupRenameTarget(null)}
+              currentName={
+                (nodes.find((n) => n.id === groupRenameTarget?.id)?.data?.name as
+                  | string
+                  | undefined) ?? DEFAULT_GROUP_NAME
+              }
+              onRename={(name) => {
+                if (groupRenameTarget) applyGroupName(groupRenameTarget.id, name);
+              }}
+              title={groupRenameTarget?.isNew ? "Name group" : "Rename group"}
+              label="Group Name"
+              placeholder="e.g. Payment Processing"
+            />
+
+            <DeleteGroupDialog
+              isOpen={pendingGroupDeletion !== null}
+              onOpenChange={(open) => {
+                if (!open) setPendingGroupDeletion(null);
+              }}
+              groupCount={pendingGroupDeletion?.groupIds.length ?? 0}
+              memberCount={pendingGroupDeletion?.memberIds.length ?? 0}
+              otherCount={pendingGroupDeletion?.otherNodeIds.length ?? 0}
+              edgeCount={pendingGroupDeletion?.edgeIds.length ?? 0}
+              onDeleteGroupOnly={() => confirmGroupDeletion("group-only")}
+              onDeleteWithContents={() => confirmGroupDeletion("with-contents")}
+            />
+
+            <ConfirmDialog
+              isOpen={pendingDeletion !== null}
+              onOpenChange={(open) => {
+                if (!open) setPendingDeletion(null);
+              }}
+              onConfirm={confirmPendingDeletion}
+              isInProgress={false}
+              itemName={deletionCopy.itemName}
+              description={deletionCopy.description}
+            />
           </div>
         </div>
         </NodeActionsContext.Provider>

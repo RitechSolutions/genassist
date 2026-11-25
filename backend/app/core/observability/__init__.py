@@ -7,6 +7,7 @@ from app.core.observability.otel import (
     record_workflow_node_duration,
     shutdown_opentelemetry,
 )
+from app.core.observability.datadog_observability import datadog_observability
 
 __all__ = [
     "init_opentelemetry",
@@ -14,4 +15,5 @@ __all__ = [
     "record_workflow_node_duration",
     "record_web_search_event",
     "is_otel_runtime_enabled",
+    "datadog_observability",
 ]

@@ -11,11 +11,15 @@ import { transformTranscript } from "@/views/Transcripts/helpers/transformers";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ActiveConversationsModule } from "../components/ActiveConversationsModule";
-import { HOSTILITY_NEUTRAL_MAX, HOSTILITY_POSITIVE_MAX } from "@/views/Transcripts/helpers/formatting";
-import { ActiveConversationDialog } from "../components/ActiveConversationDialog";
+import { isLiveConversationStatus } from "@/views/Transcripts/helpers/formatting";
+import { LiveConversationsDialog } from "../components/LiveConversationsDialog";
 import { useWebSocketDashboard } from "../hooks/useWebSocketDashboard";
 import { YourAgentsCard } from "../components/YourAgentsCard";
 import { IntegrationsCard } from "../components/IntegrationsCard";
+import { ReportedFeedbackCard } from "../components/ReportedFeedbackCard";
+import { usePermissions } from "@/context/PermissionContext";
+import { cn } from "@/helpers/utils";
+import { DASHBOARD_REFRESH_INTERVAL_MS, isDashboardDataStale } from "../helpers/refresh";
 
 // Transform dashboard API response to ActiveConversation format
 const transformDashboardConversation = (item: ActiveConversationItem): ActiveConversation => ({
@@ -119,6 +123,9 @@ export const enrichConversationItem = (item: ActiveConversation): Transcript => 
 
 export const ActiveConversations = () => {
   const { toast } = useToast();
+  const permissions = usePermissions();
+  const canSeeFeedback =
+    permissions.includes("*") || permissions.includes("read:conversation");
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTranscript, setSelectedTranscript] = useState<Transcript | null>(
     null
@@ -211,7 +218,10 @@ export const ActiveConversations = () => {
     error: wsError,
     refetch: wsRefetch,
     resyncHint,
+    lastConversationUpdate,
   } = useWebSocketDashboard();
+  // The dashboard's sentiment counts can shift with any message, so it still resyncs per update.
+  const conversationUpdateSeq = lastConversationUpdate?.seq ?? 0;
 
   // Load conversations from dashboard API
   useEffect(() => {
@@ -277,14 +287,18 @@ export const ActiveConversations = () => {
         // ignore
       }
     };
-    if (resyncHint > 0) sync();
-  }, [resyncHint, sentimentFilter, categoryFilter]);
+    if (resyncHint > 0 || conversationUpdateSeq > 0) sync();
+  }, [resyncHint, conversationUpdateSeq, sentimentFilter, categoryFilter]);
 
   // Poll dashboard API for updates
   useEffect(() => {
     let isCancelled = false;
+    let lastRequestedAtMs = 0;
 
     const fetchData = async () => {
+      // Hidden tabs skip the refresh so they do not keep the login alive in the background
+      if (document.visibilityState === "hidden") return;
+      lastRequestedAtMs = Date.now();
       try {
         const response = await fetchDashboardConversations(30, 1, DASHBOARD_LIMIT);
         if (!isCancelled && response) {
@@ -302,10 +316,17 @@ export const ActiveConversations = () => {
       }
     };
 
-    const interval = setInterval(fetchData, 25000);
+    const refreshWhenVisible = () => {
+      const isBackWithStaleData =
+        document.visibilityState === "visible" && isDashboardDataStale(lastRequestedAtMs);
+      if (isBackWithStaleData) void fetchData();
+    };
+    const interval = setInterval(fetchData, DASHBOARD_REFRESH_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       isCancelled = true;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, []);
 
@@ -467,6 +488,37 @@ export const ActiveConversations = () => {
 
   const filteredConversations = allConversations ?? [];
 
+  // The dialog's left column lists only conversations that are still running.
+  const liveConversations = useMemo(
+    () =>
+      (allConversations ?? [])
+        .filter((item) => isLiveConversationStatus(item.status as unknown as string))
+        .map(enrichConversationItem),
+    [allConversations]
+  );
+
+  const handleSelectFromDialog = (transcript: Transcript) => {
+    const item = allConversationsRef.current.find((c) => c.id === transcript.id);
+    if (item) void handleItemClick(item);
+  };
+
+  // The dialog only lists running conversations, so a finalized one leaves it entirely.
+  const handleConversationFinalized = () => {
+    handleDialogClose(false);
+  };
+
+  const handleClearDialogSelection = () => {
+    setSelectedTranscript(null);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("conversation");
+        return next;
+      },
+      { replace: true }
+    );
+  };
+
   return (
     <>
       <ActiveConversationsModule
@@ -479,18 +531,32 @@ export const ActiveConversations = () => {
         sentimentCounts={sentimentCounts}
       />
 
-      {/* Your Agents and Integrations Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-5">
+      {/* Your Agents, Integrations and Reported Feedback Cards */}
+      <div
+        className={cn(
+          "grid grid-cols-1 md:grid-cols-2 gap-5 mb-5",
+          canSeeFeedback && "xl:grid-cols-3",
+        )}
+      >
         <YourAgentsCard />
         <IntegrationsCard />
+        {canSeeFeedback && (
+          <ReportedFeedbackCard className="md:col-span-2 xl:col-span-1" />
+        )}
       </div>
 
-      <ActiveConversationDialog
-        transcript={selectedTranscript}
+      <LiveConversationsDialog
+        conversations={liveConversations}
+        selectedTranscript={selectedTranscript}
+        isLoading={isLoading && liveConversations.length === 0}
+        error={error as Error}
         isOpen={isDialogOpen}
         onOpenChange={handleDialogClose}
+        onSelect={handleSelectFromDialog}
+        onClearSelection={handleClearDialogSelection}
         onTakeOver={handleTakeOver}
         refetchConversations={wsRefetch}
+        onConversationFinalized={handleConversationFinalized}
       />
     </>
   );

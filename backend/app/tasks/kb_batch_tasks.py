@@ -7,8 +7,17 @@ from aiohttp import ClientError
 from celery import shared_task
 from fastapi import HTTPException, UploadFile
 
+from app.db.transaction_manager import TransactionManager
 from app.dependencies.injector import injector
-from app.modules.data.manager import AgentRAGServiceManager
+from app.modules.data.load_result import DocumentNotLoadedError, has_text, load_document
+from app.modules.data.manager import AgentRAGServiceManager, save_load_action
+from app.modules.data.s3_loaded_files import (
+    LOADED_FILES_KEY,
+    LoadedFiles,
+    document_id,
+    only_vector_store_enabled,
+    replaced_document_id,
+)
 from app.modules.data.utils.file_extractor import FileTextExtractor
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.AzureStorageService import AzureStorageService
@@ -16,7 +25,7 @@ from app.services.datasources import DataSourceService
 from app.services.llm_analysts import LlmAnalystService
 from app.services.transcription import transcribe_audio_whisper
 from app.tasks.base import run_async_in_celery
-from app.tasks.salesforce_article_sync_tasks import import_salesforce_articles_to_kb_async
+from app.tasks.salesforce_article_sync_tasks import _current_kb_row, import_salesforce_articles_to_kb_async
 from app.tasks.zendesk_article_sync_tasks import import_zendesk_articles_to_kb_async
 
 logger = logging.getLogger(__name__)
@@ -38,25 +47,14 @@ def batch_process_files_kb(kb_id: Optional[str] = None):
 
 async def batch_process_files_kb_async_with_scope(
     kb_id: Optional[str] = None,
-    tenant_id: Optional[str] = None
 ):
     """
     Wrapper to run KB batch processing.
 
     Args:
         kb_id: Specific KB ID to process.
-        tenant_id: Tenant context for manual sync. If provided with kb_id,
-            processing runs only for that tenant.
     """
-    from app.core.tenant_scope import clear_tenant_context, set_tenant_context
     from app.tasks.base import run_task_with_tenant_support
-
-    if kb_id and tenant_id:
-        try:
-            set_tenant_context(tenant_id)
-            return await batch_process_files_kb_async(kb_id=kb_id)
-        finally:
-            clear_tenant_context()
 
     return await run_task_with_tenant_support(
         batch_process_files_kb_async,
@@ -82,6 +80,8 @@ async def batch_process_files_kb_async(
     # run_task_with_tenant_support in the worker (master + all tenants) for one KB.
     zendesk_sync_results: list = []
     salesforce_sync_results: list = []
+    # KBs that could not be synced at all; the manual sync reports them as a failure.
+    kbs_not_synced: list = []
     kb_items = []
     for kid in ids_to_process:
         try:
@@ -109,6 +109,7 @@ async def batch_process_files_kb_async(
                 kb_items.append(kb_item)
         except Exception as e:
             logger.warning(f"Could not fetch KB {kid}: {e}")
+            kbs_not_synced.append(str(kid))
             continue
 
     # Inline processing for non-zendesk types (s3, azure_blob, etc.)
@@ -116,6 +117,9 @@ async def batch_process_files_kb_async(
     count_success = 0
     count_skipped = 0
     count_fail = 0
+    count_unchanged = 0
+    files_not_loaded = 0
+    keys_refusal: Optional[str] = None
     files_processed = []
     count_zendesk_syncs = len(zendesk_sync_results)
 
@@ -163,6 +167,7 @@ async def batch_process_files_kb_async(
         if not ds_item:
             logger.error(f"KB {kb_item.id} has no valid datasource with id {kb_item.sync_source_id}. Failling.")
             count_fail += 1
+            kbs_not_synced.append(str(kb_item.id))
             continue
 
 
@@ -181,8 +186,13 @@ async def batch_process_files_kb_async(
         ##############################################
         # Process S3 Datasource/KB
         if ds_item.source_type.lower() == "s3":
-            keyid_username = conn.get("access_key")
-            secret_password = conn.get("secret_key")
+            try:
+                keyid_username, secret_password = s3_data_source_keys(conn)
+            except S3KeysNotUsableError as refusal:
+                logger.error(f"KB {kb_item.id} not synced: {refusal}")
+                count_fail += 1
+                keys_refusal = str(refusal)
+                continue
             bucket_server = conn.get("bucket_name")
             prefix_input_folder = (conn.get("prefix") or "").lstrip("/").strip()
             filter_pattern = processing_filter # filter defined in KB not DS
@@ -197,61 +207,67 @@ async def batch_process_files_kb_async(
                 filter = filter_pattern
             )
 
-            for s3_file in s3_files.get("files", []):
-                if s3_file.get("size", 0) == 0:
-                    logger.debug(f"Skipping empty file: {s3_file['key']}")
-                    count_skipped += 1
-                    continue
-                file_content = await s3_download_file(
-                    api_key = keyid_username,
-                    api_secret = secret_password,
-                    region = region,
-                    bucket_name = bucket_server,
-                    item = s3_file["key"]
-                )
-                count_success += 1
+            s3_access = {
+                "api_key": keyid_username,
+                "api_secret": secret_password,
+                "region": region,
+                "bucket_name": bucket_server,
+            }
+            listed_files = s3_files.get("files", [])
+            listed_document_ids = {document_id(kb_item.id, s3_file["key"]) for s3_file in listed_files}
+            files_stay_in_folder = not save_output_path
+            skips_unchanged_files = files_stay_in_folder and only_vector_store_enabled(kb_item.rag_config)
+            stored_document_ids = await agentRAGServiceManager.get_document_ids(kb_item) if skips_unchanged_files else []
+            loaded_files = LoadedFiles(
+                kb_item.id, stored_document_ids, kb_item.extra_metadata.get(LOADED_FILES_KEY), processing_mode
+            )
+            datasource_name = ds_item.name
+            try:
+                for s3_file in listed_files:
+                    if s3_file.get("size", 0) == 0:
+                        logger.debug(f"Skipping empty file: {s3_file['key']}")
+                        count_skipped += 1
+                        continue
+                    if skips_unchanged_files and loaded_files.is_current(s3_file):
+                        logger.debug(f"Skipping unchanged file: {s3_file['key']}")
+                        count_unchanged += 1
+                        continue
+                    file_content = await s3_download_file(**s3_access, item=s3_file["key"])
+                    logger.debug(f"Downloaded file {s3_file['key']} with size {s3_file['size']} bytes")
 
-                logger.debug(f"Downloaded file {s3_file['key']} with size {s3_file['size']} bytes")
+                    extracted_content = await get_content_from_file(mode=processing_mode, file=file_content)
+                    has_readable_text = has_text(extracted_content.get("content"))
 
-                extracted_content = await get_content_from_file(mode=processing_mode, file=file_content)
+                    if vector_enabled and has_readable_text:
+                        loaded_files.forget(s3_file)
+                        await _remove_file_name_document(
+                            agentRAGServiceManager, kb_item, s3_file["key"], listed_document_ids
+                        )
+                        try:
+                            await _add_s3_document(
+                                agentRAGServiceManager, kb_item, ds_item, s3_file["key"], extracted_content
+                            )
+                        except DocumentNotLoadedError as e:
+                            logger.error(f"{e}; {s3_file['key']} stays in the input folder")
+                            count_fail += 1
+                            files_not_loaded += 1
+                            continue
+                        loaded_files.remember(s3_file)
 
-                # # if RAG enabled, chunk and vectorize content, and save to vector database
-                if vector_enabled and extracted_content.get("content", None):
+                    if save_output_path:
+                        await _move_to_output_folder(s3_access, s3_file["key"], save_output_path)
 
-                    # Vectorize chunks and save to vector database
-                    rag_service = await agentRAGServiceManager.get_service(kb_item)
-                    rag_doc_id = "KB:" + str(kb_item.id) + "#" + extracted_content.get("file_name", "unknown_file")
-                    rag_doc_metadata = extracted_content.get("metadata", {})
-                    logger.debug(f"Adding document {rag_doc_id} to RAG service for KB {kb_item.id}\nMetadata: {rag_doc_metadata}")
+                    had_nothing_to_load = vector_enabled and not has_readable_text
+                    if had_nothing_to_load:
+                        logger.warning(f"{s3_file['key']} has no readable text; it was not loaded into the knowledge base")
+                        count_skipped += 1
+                    else:
+                        count_success += 1
+            finally:
+                if skips_unchanged_files:
+                    await _save_loaded_files(kbService, kb_item, loaded_files.versions_of(listed_files))
 
-                    rag_doc_metadata["name"]= extracted_content.get("file_name", "unknown_file")
-                    rag_doc_metadata["description"]= f"File in {kb_item.name} from S3 source {ds_item.name}"
-                    rag_doc_metadata["kb_id"] = str(kb_item.id),
-
-                    # Add to knowledge base using simplified manager
-                    res = await rag_service.add_document(
-                        # kb_item,
-                        rag_doc_id,
-                        extracted_content["content"],
-                        rag_doc_metadata,
-                    )
-                    logger.debug(f"Document {extracted_content.get('file_name', 'unknown_file')} processed with result: {res}")
-                # Move file to processed folder or delete file after processing based on KB configuration
-                if save_output_path:
-
-                    timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
-                    destination_key = save_output_path.rstrip("/") + "/" + timestamp_str + "_" + s3_file["key"].split("/")[-1]
-
-                    await s3_move_file(
-                        api_key = keyid_username,
-                        api_secret = secret_password,
-                        region = region,
-                        bucket_name = bucket_server,
-                        item = s3_file["key"],
-                        destination = destination_key
-                    )
-
-            logger.info(f"Finished processing S3 datasource {ds_item.name} for KB {kb_item.name}\n - {count_success} files processed, \n - {count_skipped} files skipped, and \n - {count_fail} failures.")
+            logger.info(f"Finished processing S3 datasource {datasource_name} for KB {kb_item.name}\n - {count_success} files processed, \n - {count_unchanged} files unchanged, \n - {count_skipped} files skipped, and \n - {count_fail} failures.")
 
 
 
@@ -313,7 +329,16 @@ async def batch_process_files_kb_async(
         "zendesk_kbs_synced": count_zendesk_syncs,
         "salesforce_sync_results": salesforce_sync_results,
         "salesforce_kbs_synced": len(salesforce_sync_results),
+        "kbs_not_synced": kbs_not_synced,
     }
+    if files_not_loaded:
+        result["status"] = "error"
+        result["message"] = (
+            f"{files_not_loaded} file(s) could not be loaded into the knowledge base and were left in the input folder."
+        )
+    if keys_refusal:
+        result["status"] = "error"
+        result["message"] = keys_refusal
 
     return result
 
@@ -325,7 +350,85 @@ async def batch_process_files_kb_async(
 ############################################
 import fnmatch
 
-import boto3
+from app.core.utils.s3_utils import S3KeysNotUsableError, build_s3_client, s3_data_source_keys
+
+
+async def _add_s3_document(
+    rag_manager: AgentRAGServiceManager, kb_item, ds_item, file_key: str, extracted_content: dict
+) -> None:
+    """Add the extracted text to the knowledge base; raises when no store took it."""
+    file_name = extracted_content.get("file_name", "unknown_file")
+    rag_doc_id = document_id(kb_item.id, file_key)
+    rag_doc_metadata = extracted_content.get("metadata", {})
+    rag_doc_metadata["name"] = file_name
+    rag_doc_metadata["description"] = f"File in {kb_item.name} from S3 source {ds_item.name}"
+    rag_doc_metadata["kb_id"] = str(kb_item.id)
+    logger.debug(f"Adding document {rag_doc_id} to RAG service for KB {kb_item.id}\nMetadata: {rag_doc_metadata}")
+
+    warning = await load_document(
+        rag_manager, kb_item, rag_doc_id, extracted_content["content"], rag_doc_metadata, file_name, legra_finalize=True
+    )
+    if warning:
+        logger.warning(warning)
+
+
+async def _remove_file_name_document(
+    rag_manager: AgentRAGServiceManager, kb_item, file_key: str, listed_document_ids: set
+) -> None:
+    """Remove the document an earlier sync stored for this file under its name alone."""
+    old_document_id = replaced_document_id(kb_item.id, file_key, listed_document_ids)
+    if old_document_id:
+        logger.debug(f"Removing {old_document_id}, replaced by {document_id(kb_item.id, file_key)}")
+        await rag_manager.delete_document(kb_item, old_document_id)
+
+
+async def _save_loaded_files(kb_service: KnowledgeBaseService, started_kb, versions: dict) -> None:
+    """Write only the loaded-file versions onto the current KB row; when that fails the files are loaded again next time."""
+    transactions = injector.get(TransactionManager)
+    try:
+        row = await _current_kb_row(kb_service, started_kb.id)
+        if row is not None:
+            await _write_loaded_files(kb_service, row, started_kb, versions)
+        await transactions.commit()
+    except Exception as e:
+        logger.warning(f"Could not save the loaded files of KB {started_kb.id}: {e}")
+        await transactions.rollback()
+
+
+async def _write_loaded_files(kb_service: KnowledgeBaseService, row, started_kb, versions: dict) -> None:
+    """Keep no versions when a save during the sync made the documents outdated, so the next sync loads every file."""
+    documents_outdated = save_load_action(started_kb, row) == "clear"
+    versions_to_keep = {} if documents_outdated else versions
+    stored_versions = (row.extra_metadata or {}).get(LOADED_FILES_KEY) or {}
+    if versions_to_keep == stored_versions:
+        return
+    row.extra_metadata = {**(row.extra_metadata or {}), LOADED_FILES_KEY: versions_to_keep}
+    await kb_service.repository.update(row)
+
+
+async def keep_loaded_files_on_save(kb_service: KnowledgeBaseService, kb_id, incoming) -> None:
+    """On save, keep the loaded-file versions the KB row holds, or none when the save clears the documents."""
+    if incoming.type != "s3":
+        return
+    current_row = await _current_kb_row(kb_service, kb_id)
+    if current_row is None:
+        return
+    incoming_metadata = dict(incoming.extra_metadata or {})
+    stored_versions = (current_row.extra_metadata or {}).get(LOADED_FILES_KEY)
+    if save_load_action(current_row, incoming) == "clear":
+        incoming_metadata[LOADED_FILES_KEY] = {}
+    elif stored_versions is None:
+        incoming_metadata.pop(LOADED_FILES_KEY, None)
+    else:
+        incoming_metadata[LOADED_FILES_KEY] = stored_versions
+    incoming.extra_metadata = incoming_metadata
+
+
+async def _move_to_output_folder(s3_access: dict, file_key: str, output_path: str) -> None:
+    """Move a processed input file to the output folder under a timestamped name."""
+    timestamp_str = datetime.now().strftime("%Y%m%d%H%M%S")
+    destination_key = output_path.rstrip("/") + "/" + timestamp_str + "_" + file_key.split("/")[-1]
+    await s3_move_file(**s3_access, item=file_key, destination=destination_key)
 
 
 async def s3_list_source(
@@ -338,13 +441,7 @@ async def s3_list_source(
 ):
 
     try:
-        # Create S3 client directly
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=api_key,
-            aws_secret_access_key=api_secret,
-            region_name=region
-        )
+        s3_client = build_s3_client(aws_access_key_id=api_key, aws_secret_access_key=api_secret, region_name=region)
 
         # Prepare parameters
         list_params = {
@@ -374,7 +471,8 @@ async def s3_list_source(
             files.append({
                 "key": key,
                 "size": obj["Size"],
-                "last_modified": obj["LastModified"]
+                "last_modified": obj["LastModified"],
+                "etag": obj.get("ETag"),
             })
 
         return {"files": files}
@@ -393,13 +491,7 @@ async def s3_download_file(
 ):
 
     try:
-        # Create S3 client directly
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=api_key,
-            aws_secret_access_key=api_secret,
-            region_name=region
-        )
+        s3_client = build_s3_client(aws_access_key_id=api_key, aws_secret_access_key=api_secret, region_name=region)
 
         # Get object metadata
         metadata = s3_client.head_object(
@@ -441,12 +533,7 @@ async def s3_move_file(
     destination: str
 ):
     try:
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=api_key,
-            aws_secret_access_key=api_secret,
-            region_name=region
-        )
+        s3_client = build_s3_client(aws_access_key_id=api_key, aws_secret_access_key=api_secret, region_name=region)
         s3_client.copy_object(
             Bucket=bucket_name,
             CopySource={'Bucket': bucket_name, 'Key': item},

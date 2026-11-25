@@ -16,7 +16,13 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.project_path import DATA_VOLUME
 from app.core.tenant_scope import get_tenant_context
 from app.core.utils.bi_utils import set_url_content_if_no_rag
-from app.modules.data.manager import AgentRAGServiceManager
+from app.dependencies.dependency_injection import RedisString
+from app.dependencies.injector import injector
+from app.modules.data.load_result import SYNC_RESULT_FIELDS
+from app.modules.data.manager import AgentRAGServiceManager, save_load_action
+from app.modules.data.manual_sync_runs import ManualSyncRunStore
+from app.modules.data.providers import KnowledgeSearchError
+from app.modules.data.service import capped_failure_text, error_type_names
 from app.modules.data.providers.legra import (
     FaissFlatIndexer,
     HuggingFaceGenerator,
@@ -25,13 +31,13 @@ from app.modules.data.providers.legra import (
     SemanticChunker,
     SentenceTransformerEmbedder,
 )
-from app.modules.data.utils import FileExtractor, FileTextExtractor
+from app.modules.data.utils import FileExtractor, FileTextExtractor, format_search_results
 from app.modules.workflow.agents.rag import ThreadScopedRAG
-from app.schemas.agent_knowledge import KBBase, KBCreate, KBListItem, KBRead
+from app.schemas.agent_knowledge import KBBase, KBCreate, KBListItem, KBMinimal, KBRead
 from app.schemas.common import PaginatedResponse
 from app.schemas.dynamic_form_schemas import AGENT_RAG_FORM_SCHEMAS_DICT
 from app.schemas.file import FileBase, FileUploadResponse
-from app.schemas.filter import BaseFilterModel
+from app.schemas.filter import KnowledgeBaseListFilter
 from app.schemas.knowledge_upload import (
     KbUploadSessionCreate,
     KbUploadSessionCreateResponse,
@@ -39,6 +45,7 @@ from app.schemas.knowledge_upload import (
 )
 from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.agent_knowledge_utils import (
+    mark_indexing_started,
     populate_remote_file_metadata,
     schedule_rag_load,
 )
@@ -47,7 +54,9 @@ from app.services.app_settings import AppSettingsService
 # File manager service
 from app.services.file_manager import FileManagerService
 from app.services.file_upload_session import FileUploadSessionService
-from app.tasks.kb_batch_tasks import batch_process_files_kb_async_with_scope
+from app.tasks.kb_batch_tasks import keep_loaded_files_on_save
+from app.tasks.kb_manual_sync import start_manual_sync
+from app.tasks.salesforce_article_sync_tasks import apply_stored_copy_dates_on_save
 from app.tasks.s3_tasks import import_s3_files_to_kb_async
 
 router = APIRouter()
@@ -79,11 +88,23 @@ async def get_all_knowledge_items(
     dependencies=[Depends(auth)],
 )
 async def get_knowledge_items_list(
-    filter_obj: BaseFilterModel = Depends(),
+    filter_obj: KnowledgeBaseListFilter = Depends(),
     knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
 ):
     """Paginated KB list — optimized for performance (minimal fields only)."""
     return await knowledge_service.get_list_paginated(filter_obj)
+
+
+@router.get(
+    "/minimal",
+    response_model=List[KBMinimal],
+    dependencies=[Depends(auth)],
+)
+async def get_knowledge_items_minimal(
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
+):
+    """Ids and names of all knowledge bases, without their content."""
+    return await knowledge_service.get_all_minimal()
 
 
 @router.get(
@@ -125,6 +146,7 @@ async def create_knowledge_item(
     if item.type == "url":
         await set_url_content_if_no_rag(item)
 
+    mark_indexing_started(item)
     result = await knowledge_service.create(item)
 
     # Enrich files with storage metadata when using remote providers (S3, etc.)
@@ -152,7 +174,7 @@ async def update_knowledge_item(
     logger.info(f"update_knowledge_item route : item_id = {item_id}")
     """Update an existing knowledge base item"""
     # Check if item exists
-    await knowledge_service.get_by_id(item_id)
+    current_item = await knowledge_service.get_by_id(item_id)
 
     # Ensure the ID in the path matches the ID in the body
     if "id" in item and item.id != item_id:
@@ -165,10 +187,18 @@ async def update_knowledge_item(
     if item.type == "url":
         await set_url_content_if_no_rag(item)
 
+    await apply_stored_copy_dates_on_save(knowledge_service, item_id, item)
+    await keep_loaded_files_on_save(knowledge_service, item_id, item)
+    load_action = save_load_action(current_item, item)
+    mark_indexing_started(item)
     result = await knowledge_service.update(item_id, item)
 
     # Enrich files with storage metadata when using remote providers (S3, etc.)
     await populate_remote_file_metadata(result, file_manager_service)
+
+    # Clear with the previous settings, which point to the store holding the old documents.
+    if load_action == "clear":
+        await rag_manager.clear_documents(current_item)
 
     # Drop any cached RAG service for this KB so the next get_service rebuild
     # picks up the updated rag_config (e.g. an embedding-model swap that
@@ -569,7 +599,15 @@ async def search(
     logger.debug(f"search route : query = {query}")
 
     # Search using simplified manager
-    results = await rag_manager.search(items, query, limit=5, format_results=True)
+    try:
+        results = await rag_manager.search(items, query, limit=5, format_results=True)
+    except KnowledgeSearchError as e:
+        failure = capped_failure_text(str(e))
+        if not e.results:
+            logger.error(f"Knowledge search failed: {failure} [{error_type_names(e)}]")
+            raise HTTPException(status_code=500, detail=f"Knowledge search failed: {failure}")
+        logger.warning(f"Knowledge search incomplete: {failure} [{error_type_names(e)}]")
+        results = format_search_results(e.results, include_metadata=False)
 
     if not results:
         logger.debug(f"No results found for query: {query}")
@@ -593,9 +631,10 @@ async def finalize_legra_knowledgebase(
     if success:
         # Update knowledge base to mark LEGRA as finalized
         knowledge_base.legra_finalize = True
+        # The sync and indexing results are left as the row has them now.
         await knowledge_service.update(
             knowledge_base.id, KBCreate(
-                **knowledge_base.model_dump(exclude={"id"}))
+                **knowledge_base.model_dump(exclude={"id", *SYNC_RESULT_FIELDS}))
         )
         return {
             "status": "success",
@@ -658,25 +697,39 @@ async def get_form_schemas():
 
 
 
+def _manual_sync_run_store() -> ManualSyncRunStore:
+    return ManualSyncRunStore(injector.get(RedisString))
+
+
 # Endpoint to trigger KB batch processing (S3, Azure Blob, SharePoint, Zendesk, etc.)
 @router.get(
     "/kb-batch-tasks-execution",
     dependencies=[Depends(auth)],
-    summary="Runs the job that syncs the KB with files or Zendesk articles for this tenant",
+    summary="Starts the job that syncs the KB with files or Zendesk articles for this tenant",
 )
 async def summarize_files_from_azure(
     kb_id: Optional[UUID] = None,
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
 ):
     if not kb_id:
         logger.warning("Attempting to run KB batch processing without specifying a KB ID.")
         return {"status": "error", "message": "kb_id is required"}
 
-    tenant_id = get_tenant_context()
-    # Await inline so the response includes batch results (Zendesk counts, file lists, etc.).
-    # Previously this used BackgroundTasks + Celery for Zendesk only, so the client saw
-    # {"status": "started"} while real metrics appeared only in worker logs.
-    batch_result = await batch_process_files_kb_async_with_scope(
-        kb_id=str(kb_id),
-        tenant_id=tenant_id,
-    )
-    return {"status": "completed", **batch_result}
+    # Answers 404 for an unknown knowledge base.
+    await knowledge_service.get_by_id(kb_id)
+    # The sync runs in the background; the client polls /kb-batch-tasks-status for its result.
+    return await start_manual_sync(_manual_sync_run_store(), get_tenant_context(), str(kb_id))
+
+
+@router.get(
+    "/kb-batch-tasks-status",
+    dependencies=[Depends(auth)],
+    summary="Status of the KB's manual sync: the run in progress, else the last run's result",
+)
+async def get_manual_sync_status(
+    kb_id: UUID,
+    knowledge_service: KnowledgeBaseService = Injected(KnowledgeBaseService),
+):
+    # Answers 404 for an unknown or deleted knowledge base.
+    await knowledge_service.get_by_id(kb_id)
+    return await _manual_sync_run_store().status(get_tenant_context(), str(kb_id))

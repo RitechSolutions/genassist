@@ -21,6 +21,7 @@ import { CreateNewSelectItem } from "@/components/CreateNewSelectItem";
 import { DraggableInput } from "../components/custom/DraggableInput";
 import { DraggableTextArea } from "../components/custom/DraggableTextArea";
 import { useNodeDialogState } from "./useNodeDialogState";
+import { SalesforceContactFields } from "../components/SalesforceContactFields";
 
 type SalesforceCaseDialogProps = BaseNodeDialogProps<
   SalesforceCaseNodeData,
@@ -39,6 +40,9 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
         name: data.name || "",
         subject: data.subject || "",
         description: data.description || "",
+        web_email: data.web_email || "",
+        web_name: data.web_name || "",
+        web_phone: data.web_phone || "",
         labelsCsv: (data.labels || []).join(", "),
         custom_fields: (data.custom_fields || []) as Array<{
           key: string;
@@ -55,6 +59,9 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
           name: v.name,
           subject: v.subject,
           description: v.description,
+          web_email: v.web_email || undefined,
+          web_name: v.web_name || undefined,
+          web_phone: v.web_phone || undefined,
           labels: labelsArr.length > 0 ? labelsArr : undefined,
           custom_fields:
             v.custom_fields.length > 0 ? v.custom_fields : undefined,
@@ -233,15 +240,17 @@ export const SalesforceCaseDialog: React.FC<SalesforceCaseDialogProps> = (
               <Label htmlFor="description">Description</Label>
               <DraggableTextArea
                 id="description"
-                rows={4}
+                size="body"
                 value={values.description}
                 onChange={(e) => setField("description", e.target.value)}
                 placeholder="Enter the issue or request description"
-                className="w-full resize-none"
+                className="w-full"
               />
             </div>
           </div>
         </div>
+
+        <SalesforceContactFields values={values} onChange={setField} />
 
         <div className="space-y-2">
           <Label htmlFor="labels" className="font-bold">

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 
 class TestCaseBase(BaseModel):
@@ -62,14 +62,143 @@ class TestCase(TestCaseInDB):
     pass
 
 
+# Upper bound on one multi-import, so a runaway selection cannot fan out into an
+# unbounded number of transcript reads inside a single request.
+MAX_IMPORT_CONVERSATIONS = 100
+
+
 class ImportCasesFromConversationRequest(BaseModel):
     conversation_id: UUID
     replace: bool = False
 
 
+class ImportCasesFromConversationsRequest(BaseModel):
+    conversation_ids: List[UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_IMPORT_CONVERSATIONS,
+        description="Conversations to import. Repeats are collapsed.",
+    )
+    replace: bool = False
+
+
+class ImportedConversationResult(BaseModel):
+    conversation_id: UUID
+    # imported (new to the dataset), replaced (its turns were refreshed), failed.
+    status: str
+    turns: int = 0
+    # Why the conversation failed, in one client-safe sentence.
+    detail: Optional[str] = None
+
+
+class ImportCasesFromConversationsResult(BaseModel):
+    # Every turn created by this import, across all conversations.
+    cases: List[TestCase] = Field(default_factory=list)
+    # One entry per requested conversation, in the order they were requested.
+    results: List[ImportedConversationResult] = Field(default_factory=list)
+    imported: int = 0
+    replaced: int = 0
+    failed: int = 0
+
+
+class DatasetFileResult(BaseModel):
+    filename: str
+    # ok (readable), failed, or evaluation_bundle (belongs to the evaluation import).
+    status: str
+    # What the file adds, after skipping conversations seen before.
+    conversations: int = 0
+    turns: int = 0
+    # Skipped because the dataset already holds them.
+    duplicates: int = 0
+    # Skipped because a file earlier in this import, or this one, already has them.
+    repeated: int = 0
+    # Positions in `files` of the files holding the first copies.
+    repeated_from: List[int] = Field(default_factory=list)
+    # Why the file cannot be imported, in client-safe sentences.
+    errors: List[str] = Field(default_factory=list)
+
+
+class ImportCasesFromFilesResult(BaseModel):
+    # One entry per uploaded file, in upload order.
+    files: List[DatasetFileResult] = Field(default_factory=list)
+    conversations: int = 0
+    turns: int = 0
+    duplicates: int = 0
+    repeated: int = 0
+    failed_files: int = 0
+    # Set when the import cannot go ahead as a whole, e.g. it adds too many turns.
+    error: Optional[str] = None
+
+
+# Upper bound on how many datasets one conversation can be added to at once.
+MAX_CONVERSATION_SUITES = 50
+
+
+class ConversationSuiteMembership(BaseModel):
+    """One dataset, and what it already holds of a given conversation."""
+
+    suite_id: UUID
+    name: str
+    description: Optional[str] = None
+    # Turns of this conversation already in the dataset. 0 means not in it yet.
+    turns: int = 0
+    # When the conversation first joined this dataset, or null if it has not.
+    added_at: Optional[datetime] = None
+
+
+class AddConversationToSuitesRequest(BaseModel):
+    suite_ids: List[UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_CONVERSATION_SUITES,
+        description="Datasets to add the conversation to. Repeats are collapsed.",
+    )
+
+
+class ConversationSuiteImportResult(BaseModel):
+    suite_id: UUID
+    # imported (new to the dataset), replaced (its turns were refreshed), failed.
+    status: str
+    turns: int = 0
+    # Why it failed, in one client-safe sentence.
+    detail: Optional[str] = None
+
+
+class AddConversationToSuitesResult(BaseModel):
+    # One entry per requested dataset, in the order they were requested.
+    results: List[ConversationSuiteImportResult] = Field(default_factory=list)
+    imported: int = 0
+    replaced: int = 0
+    failed: int = 0
+
+
+CATEGORY_MAX_LENGTH = 50
+
+
+def tidy_category(value: Any, *, clearing: bool = False) -> Optional[str]:
+    """A category with its spaces tidied; empty means none, or on an update, clear it."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("A category is text.")
+    tidy = " ".join(value.split())
+    if len(tidy) > CATEGORY_MAX_LENGTH:
+        raise ValueError(f"A category is at most {CATEGORY_MAX_LENGTH} characters.")
+    if not tidy:
+        return "" if clearing else None
+    return tidy
+
+
+# A category wherever one comes in: spaces tidied and its length checked.
+Category = Annotated[Optional[str], BeforeValidator(tidy_category)]
+# On an update "" stays, which clears it.
+ClearableCategory = Annotated[Optional[str], BeforeValidator(lambda value: tidy_category(value, clearing=True))]
+
+
 class TestSuiteBase(BaseModel):
     name: str
     description: Optional[str] = None
+    category: Category = Field(default=None, description="Its category, shared with evaluations.")
     workflow_id: Optional[UUID] = Field(
         default=None,
         description=(
@@ -92,6 +221,7 @@ class TestSuiteCreate(TestSuiteBase):
 class TestSuiteUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    category: ClearableCategory = Field(default=None, description='"" clears it.')
     workflow_id: Optional[UUID] = None
     default_input_metadata: Optional[Dict[str, Any]] = None
 
@@ -191,6 +321,13 @@ class TestRunBase(BaseModel):
         description="Identifiers of selected evaluation techniques.",
     )
     summary_metrics: Optional[Dict[str, Any]] = None
+    progress: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "conversations_done, conversations_total, turns_done and turns_total, "
+            "updated after each turn. Null until the run starts."
+        ),
+    )
 
 
 class TestRunCreate(BaseModel):
@@ -231,6 +368,56 @@ class TestRun(TestRunInDB):
     workflow_version: Optional[str] = None
 
 
+class ConversationCounts(BaseModel):
+    total: int = 0
+    passed: int = 0
+    failed: int = 0
+    not_evaluated: int = 0
+
+
+class RunTurnResult(BaseModel):
+    """One turn of a run: what the customer said, what was expected, what the agent replied, and how it was graded."""
+
+    case_id: UUID
+    number: int = Field(description="Position in its conversation, from 1.")
+    message: str = ""
+    expected: Optional[str] = None
+    reply: Optional[str] = None
+    verdict: str = Field(description="passed | failed | not_evaluated")
+    reason: Optional[str] = Field(default=None, description="Why the turn crashed or was not evaluated.")
+    status: Optional[str] = Field(default=None, description="The stored result's status; None when there is none.")
+    metrics: Dict[str, TestResultMetrics] = Field(default_factory=dict)
+    rules: List[TestToolRuleResult] = Field(default_factory=list)
+    has_trace: bool = False
+    in_dataset: bool = Field(default=True, description="False when the turn was removed from the dataset after the run.")
+
+
+class RunConversationResult(BaseModel):
+    key: str
+    verdict: str = Field(description="passed | failed | not_evaluated")
+    turns: List[RunTurnResult]
+    rules: List[TestToolRuleResult] = Field(default_factory=list, description="Checks on the whole conversation.")
+
+
+class RunConversations(BaseModel):
+    """A run's results by conversation, in the order the run played them."""
+
+    run_id: UUID
+    counts: ConversationCounts
+    conversations: List[RunConversationResult]
+    other_rules: List[TestToolRuleResult] = Field(
+        default_factory=list, description="Checks whose conversation is not in this run."
+    )
+    rules_pending: bool = Field(
+        default=False,
+        description="The run has checks or rules that are graded when it ends, and it has not ended well yet.",
+    )
+
+
+class RunTurnTrace(BaseModel):
+    execution_trace: Optional[Dict[str, Any]] = None
+
+
 # ---------------------------------------------------------------------------
 # TestEvaluation
 # ---------------------------------------------------------------------------
@@ -264,6 +451,25 @@ class RunWorkflowEvaluationsRequest(BaseModel):
             "own. Must be a version of the same workflow (same agent)."
         ),
     )
+    category: Optional[str] = Field(
+        default=None, description="Only the evaluations in this category, whatever its case."
+    )
+    uncategorized: bool = Field(default=False, description="Only the evaluations without a category.")
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _tidy_category(cls, value: Any) -> Optional[str]:
+        tidy = tidy_category(value)
+        # Blank text would widen Run all to every evaluation, which leaving it out already asks for.
+        if value is not None and tidy is None:
+            raise ValueError("A category can't be blank. Leave it out to run every evaluation.")
+        return tidy
+
+    @model_validator(mode="after")
+    def _one_filter(self) -> "RunWorkflowEvaluationsRequest":
+        if self.category and self.uncategorized:
+            raise ValueError("Ask for a category or for no category, not both.")
+        return self
 
 
 class StartedEvaluationRun(BaseModel):
@@ -283,6 +489,7 @@ class StartedEvaluationRun(BaseModel):
 class TestEvaluationBase(BaseModel):
     name: str
     description: Optional[str] = None
+    category: Category = Field(default=None, description="Its category, shared with datasets.")
     suite_id: UUID
     workflow_id: Optional[UUID] = None
     techniques: List[str] = Field(default_factory=list)
@@ -297,6 +504,7 @@ class TestEvaluationCreate(TestEvaluationBase):
 class TestEvaluationUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    category: ClearableCategory = Field(default=None, description='"" clears it.')
     suite_id: Optional[UUID] = None
     workflow_id: Optional[UUID] = None
     techniques: Optional[List[str]] = None
@@ -315,6 +523,18 @@ class TestEvaluationInDB(TestEvaluationBase):
 
 class TestEvaluation(TestEvaluationInDB):
     pass
+
+
+class ChecksPreviewRequest(BaseModel):
+    """Evaluations whose older methods to read as checks."""
+
+    evaluation_ids: List[UUID] = Field(default_factory=list, max_length=200)
+
+
+class ChecksPreviewResult(BaseModel):
+    """Those with older methods, as checks; nothing is saved."""
+
+    evaluations: List[TestEvaluation] = Field(default_factory=list)
 
 
 class EvaluationToolInfo(BaseModel):
@@ -339,11 +559,14 @@ class EvaluationRouterBranch(BaseModel):
 
     value: str
     destination: Optional[str] = None
+    # Display name of the branch when the value is opaque (a Switch case id).
+    label: Optional[str] = None
 
 
 class EvaluationRouterInfo(BaseModel):
     id: str
     label: str
+    type: Optional[str] = None
     workflow_path: List[str] = Field(default_factory=list)
     branches: List[EvaluationRouterBranch] = Field(default_factory=list)
 
@@ -355,6 +578,15 @@ class EvaluationActionNodeInfo(BaseModel):
     workflow_path: List[str] = Field(default_factory=list)
 
 
+class EvaluationStateKeyInfo(BaseModel):
+    """A value the workflow remembers: a stateful Chat Input field or a key Set State writes."""
+
+    key: str
+    source: str
+    node_label: str
+    workflow_path: List[str] = Field(default_factory=list)
+
+
 class EvaluationToolCatalog(BaseModel):
     """Agents/tools, routers and executable nodes for a workflow (incl. nested), for the UI."""
 
@@ -362,6 +594,7 @@ class EvaluationToolCatalog(BaseModel):
     agents: List[EvaluationAgentInfo] = Field(default_factory=list)
     routers: List[EvaluationRouterInfo] = Field(default_factory=list)
     action_nodes: List[EvaluationActionNodeInfo] = Field(default_factory=list)
+    state_keys: List[EvaluationStateKeyInfo] = Field(default_factory=list)
 
 
 class WorkflowEvaluationSummary(BaseModel):

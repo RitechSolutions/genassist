@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-hot-toast";
+import { isCancel } from "axios";
 import { v4 as uuidv4 } from "uuid";
 import { Brain, ChevronLeft, FileCode, Pencil, Trash2 } from "lucide-react";
 
@@ -12,7 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FormField } from "@/components/ui/form-field";
 import { Label } from "@/components/label";
-import { TagsFieldInput } from "@/components/TagsFieldInput";
+import { Switch } from "@/components/switch";
+import { Progress } from "@/components/progress";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ListEmptyState } from "@/components/ListEmptyState";
 import { ListErrorState } from "@/components/ListErrorState";
@@ -29,23 +31,39 @@ import { MLModel } from "@/interfaces/ml-model.interface";
 import {
   createMLModel,
   deleteMLModel,
+  discardModelUpload,
   getAllMLModels,
+  getMLModel,
   updateMLModel,
   uploadModelFile,
 } from "@/services/mlModels";
-import { extractErrorMessage } from "@/helpers/apiError";
 import { MLModelType, MODEL_TYPE_OPTIONS, modelTypeLabel } from "../helpers/modelTypes";
 import { ModelFilePicker } from "./ModelFilePicker";
+import {
+  buildInferenceParams,
+  inferenceParamsUpdate,
+  usesTrainingFills,
+  isRejectedRequest,
+  latestInferenceParams,
+  mlModelSaveErrorMessage,
+  featureListError,
+  featuresText,
+  formFeatures,
+} from "./mlModelForm";
 
 const ALL_TYPES = "all";
 const MODELS_QUERY_KEY = ["ml-models"];
+type FeatureDefault = string | number | boolean;
 
 interface FormValues {
   name: string;
   description: string;
   model_type: MLModelType;
   target_variable: string;
-  features: string[];
+  /** Raw text of the Features box; formFeatures turns it into the ordered list. */
+  features: string;
+  featureDefaultsJson: string;
+  useTrainingFills: boolean;
   pkl_file: string | null;
   pkl_file_id: string | null;
   pendingFile: File | null;
@@ -53,12 +71,48 @@ interface FormValues {
 
 type FormErrors = Partial<Record<keyof FormValues, string>>;
 
+const parseFeatureDefaults = (
+  rawValue: string,
+  features: string[]
+): Record<string, FeatureDefault> => {
+  if (!rawValue.trim()) return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawValue);
+  } catch {
+    throw new Error("Enter a valid JSON object.");
+  }
+
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Feature defaults must be a JSON object.");
+  }
+
+  const featureSet = new Set(features);
+  const defaults: Record<string, FeatureDefault> = {};
+  for (const [name, value] of Object.entries(parsed)) {
+    if (!featureSet.has(name)) {
+      throw new Error(`Default '${name}' is not one of the model features.`);
+    }
+    if (
+      value === null ||
+      !["string", "number", "boolean"].includes(typeof value)
+    ) {
+      throw new Error(`Default '${name}' must be a non-null JSON scalar.`);
+    }
+    defaults[name] = value as FeatureDefault;
+  }
+  return defaults;
+};
+
 const emptyForm = (): FormValues => ({
   name: "",
   description: "",
   model_type: "xgboost",
   target_variable: "",
-  features: [],
+  features: "",
+  featureDefaultsJson: "",
+  useTrainingFills: false,
   pkl_file: null,
   pkl_file_id: null,
   pendingFile: null,
@@ -69,7 +123,12 @@ const formFromModel = (model: MLModel): FormValues => ({
   description: model.description ?? "",
   model_type: model.model_type,
   target_variable: model.target_variable ?? "",
-  features: model.features ?? [],
+  features: featuresText(model.features),
+  featureDefaultsJson:
+    Object.keys(model.inference_params?.featureDefaults ?? {}).length > 0
+      ? JSON.stringify(model.inference_params?.featureDefaults, null, 2)
+      : "",
+  useTrainingFills: usesTrainingFills(model.inference_params),
   pkl_file: model.pkl_file ?? null,
   pkl_file_id: model.pkl_file_id ?? null,
   pendingFile: null,
@@ -97,11 +156,19 @@ const MLModelsManager: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingItem, setEditingItem] = useState<MLModel | null>(null);
   const [values, setValues] = useState<FormValues>(emptyForm);
+  const features = useMemo(
+    () => formFeatures(values.features, editingItem?.features),
+    [values.features, editingItem]
+  );
   // Set when the form was opened from a model's detail page, so leaving the form
   // (via the back arrow or after saving) returns there instead of to the list.
   const [returnTo, setReturnTo] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSaving, setIsSaving] = useState(false);
+  // Percent of the model file sent while Save uploads it; null when no upload is running.
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  // Why the last Save failed; stays in the form until the user changes something.
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [modelToDelete, setModelToDelete] = useState<MLModel | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -132,6 +199,7 @@ const MLModelsManager: React.FC = () => {
   const setField = <K extends keyof FormValues>(key: K, value: FormValues[K]) => {
     setValues((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+    setSaveError(null);
   };
 
   const openCreateForm = () => {
@@ -139,6 +207,8 @@ const MLModelsManager: React.FC = () => {
     setEditingItem(null);
     setValues(emptyForm());
     setErrors({});
+    setSaveError(null);
+    setUploadProgress(null);
     setShowForm(true);
   };
 
@@ -147,6 +217,8 @@ const MLModelsManager: React.FC = () => {
     setEditingItem(model);
     setValues(formFromModel(model));
     setErrors({});
+    setSaveError(null);
+    setUploadProgress(null);
     setShowForm(true);
   };
 
@@ -167,6 +239,8 @@ const MLModelsManager: React.FC = () => {
     setEditingItem(null);
     setValues(emptyForm());
     setErrors({});
+    setSaveError(null);
+    setUploadProgress(null);
     setReturnTo(null);
     if (origin) navigate(origin);
   };
@@ -178,7 +252,15 @@ const MLModelsManager: React.FC = () => {
     if (!values.model_type) next.model_type = "Model type is required.";
     if (!values.target_variable.trim())
       next.target_variable = "Target variable is required.";
-    if (values.features.length === 0) next.features = "Add at least one feature.";
+    const featuresError = featureListError(values.features);
+    if (featuresError) next.features = featuresError;
+    else if (features.length === 0) next.features = "Add at least one feature.";
+    try {
+      parseFeatureDefaults(values.featureDefaultsJson, features);
+    } catch (error) {
+      next.featureDefaultsJson =
+        error instanceof Error ? error.message : "Enter a valid JSON object.";
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -187,52 +269,105 @@ const MLModelsManager: React.FC = () => {
     e.preventDefault();
     if (!validate()) return;
 
+    // The file is uploaded before the model is saved; if the save is then rejected,
+    // this upload is removed again so it doesn't stay behind in File Manager.
+    let uploadedFileId: string | null = null;
+    let saveSent = false;
+    let saved = false;
+    setSaveError(null);
     try {
       setIsSaving(true);
 
       let pklFile = values.pkl_file;
       let pklFileId = values.pkl_file_id;
       if (values.pendingFile) {
-        const uploaded = await uploadModelFile(values.pendingFile);
+        setUploadProgress(0);
+        const uploaded = await uploadModelFile(values.pendingFile, setUploadProgress);
+        setUploadProgress(null);
         if (!uploaded?.file_id && !uploaded?.file_path) throw new Error("File upload failed.");
+        uploadedFileId = uploaded.file_id ?? null;
         pklFile = uploaded.file_path ?? null;
         pklFileId = uploaded.file_id ?? null;
       }
 
+      const featureDefaults = parseFeatureDefaults(
+        values.featureDefaultsJson,
+        features
+      );
       const payload = {
         name: values.name.trim(),
         description: values.description.trim(),
         model_type: values.model_type,
         target_variable: values.target_variable.trim(),
-        features: values.features,
+        features,
         pkl_file: pklFile,
         pkl_file_id: pklFileId,
       };
+      let payloadWithInferenceParams: typeof payload & {
+        inference_params?: MLModel["inference_params"];
+      } = payload;
+      if (!editingItem) {
+        payloadWithInferenceParams = {
+          ...payload,
+          inference_params: buildInferenceParams(
+            null,
+            featureDefaults,
+            values.useTrainingFills
+          ),
+        };
+      } else {
+        const changed = inferenceParamsUpdate(editingItem.inference_params, {
+          featureDefaults,
+          useTrainingFills: values.useTrainingFills,
+        });
+        if (changed) {
+          // Apply only the changed settings on top of the latest stored ones.
+          const latestModel = await getMLModel(editingItem.id);
+          payloadWithInferenceParams = {
+            ...payload,
+            inference_params: buildInferenceParams(
+              latestInferenceParams(latestModel, editingItem.inference_params),
+              changed.featureDefaults,
+              changed.useTrainingFills
+            ),
+          };
+        }
+      }
 
+      saveSent = true;
+      let savedModel: MLModel;
       if (editingItem) {
-        await updateMLModel(editingItem.id, payload);
+        savedModel = await updateMLModel(editingItem.id, payloadWithInferenceParams);
+        saved = true;
         void queryClient.invalidateQueries({ queryKey: ["ml-model", editingItem.id] });
         toast.success(`ML model "${payload.name}" updated.`);
       } else {
-        await createMLModel({ ...payload, id: uuidv4() });
+        savedModel = await createMLModel({ ...payloadWithInferenceParams, id: uuidv4() });
+        saved = true;
         toast.success(`ML model "${payload.name}" created.`);
+      }
+      // What the model-file check changed or could not check, such as the feature
+      // order or a target the file does not record.
+      for (const notice of savedModel?.registration_notices ?? []) {
+        toast(notice, { icon: "ℹ️", duration: 8000 });
       }
 
       closeForm();
       void refetch();
     } catch (err) {
-      const status =
-        (err as { status?: number })?.status ??
-        (err as { response?: { status?: number } })?.response?.status;
-      toast.error(
-        status === 400
-          ? "An ML model with this name already exists."
-          : extractErrorMessage(
-              err,
-              `Failed to ${editingItem ? "update" : "create"} ML model.`
-            )
-      );
+      // After a timeout or a network/5xx error the server may still save the model,
+      // so the upload is kept unless the save never left or the server refused it.
+      if (uploadedFileId && !saved && (!saveSent || isRejectedRequest(err))) {
+        void discardModelUpload(uploadedFileId);
+      }
+      // A cancelled request (the session ended and the app is leaving for the login
+      // page) needs no message.
+      if (isCancel(err)) return;
+      const message = mlModelSaveErrorMessage(err, editingItem ? "update" : "create");
+      setSaveError(message);
+      toast.error(message);
     } finally {
+      setUploadProgress(null);
       setIsSaving(false);
     }
   };
@@ -309,7 +444,7 @@ const MLModelsManager: React.FC = () => {
                     value={values.description}
                     onChange={(e) => setField("description", e.target.value)}
                     placeholder="Brief description of this ML model"
-                    rows={3}
+                    size="hint"
                   />
                 </FormField>
 
@@ -335,10 +470,33 @@ const MLModelsManager: React.FC = () => {
                       existingFileId={values.pkl_file_id}
                       modelName={values.name}
                       onSelect={(file) => setField("pendingFile", file)}
-                      onRemoveExisting={() =>
-                        setValues((prev) => ({ ...prev, pkl_file: null, pkl_file_id: null }))
-                      }
+                      onRemoveExisting={() => {
+                        setValues((prev) => ({ ...prev, pkl_file: null, pkl_file_id: null }));
+                        setSaveError(null);
+                      }}
                     />
+                    {uploadProgress !== null && (
+                      <div className="mt-2 space-y-1">
+                        <Progress
+                          value={uploadProgress}
+                          className="h-2"
+                          aria-label="Model file upload"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {uploadProgress < 100
+                            ? `Uploading model file… ${uploadProgress}%`
+                            : "Upload sent. Storing the model file…"}
+                        </p>
+                      </div>
+                    )}
+                    {/* Always mounted, so screen readers hear each change; once per state, not per percent */}
+                    <span className="sr-only" aria-live="polite">
+                      {uploadProgress === null
+                        ? ""
+                        : uploadProgress < 100
+                          ? "Uploading model file"
+                          : "Upload sent. Storing the model file"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -352,23 +510,80 @@ const MLModelsManager: React.FC = () => {
 
               <div className="md:col-span-2">
                 <FormField id="features" label="Features" error={errors.features}>
-                  <TagsFieldInput
+                  <Input
                     id="features"
                     value={values.features}
-                    placeholder="Type a feature and press Enter"
-                    onChange={(next) => setField("features", next)}
+                    onChange={(event) => setField("features", event.target.value)}
+                    // The tag input this replaced added a feature on Enter; don't let a
+                    // habitual Enter submit the form with a half-typed list.
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.preventDefault();
+                    }}
+                    aria-describedby="features-help"
                   />
-                  <p className="mt-1.5 text-xs text-muted-foreground">
-                    {values.features.length > 0
-                      ? `${values.features.length} feature${
-                          values.features.length !== 1 ? "s" : ""
-                        } defined`
-                      : "Press Enter or comma to add each feature. Paste a comma-separated list to add several at once."}
+                  <p id="features-help" className="mt-1.5 text-xs text-muted-foreground">
+                    Enter feature names separated by commas, in training order. For names
+                    that contain a comma or quote, use a JSON list: ["a,b", "c"].
+                    {features.length > 0 &&
+                      ` ${features.length} feature${features.length !== 1 ? "s" : ""} defined.`}
                   </p>
                 </FormField>
+
+                <FormField
+                  id="feature_defaults"
+                  label="Feature Defaults (JSON)"
+                  error={errors.featureDefaultsJson}
+                  className="mt-6"
+                >
+                  <Textarea
+                    id="feature_defaults"
+                    value={values.featureDefaultsJson}
+                    onChange={(event) =>
+                      setField("featureDefaultsJson", event.target.value)
+                    }
+                    placeholder={'{"is_weekend": 0, "region": "unknown"}'}
+                    rows={5}
+                  />
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Optional deliberate fallback values for missing inference inputs.
+                    Keys must match the model features and values must be JSON scalars.
+                    Enter numeric defaults as numbers without quotes.
+                  </p>
+                </FormField>
+
+                <div className="mt-6 flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="use_training_fills">
+                      Fill missing inputs with training values
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      When on, an empty input uses the value saved at training time
+                      (for example the median), for features that had missing values
+                      in training. Feature Defaults above always apply and take
+                      priority. Any other missing input, and a value a failed upstream
+                      node did not produce, stops the run with an error.
+                    </p>
+                  </div>
+                  <Switch
+                    id="use_training_fills"
+                    checked={values.useTrainingFills}
+                    onCheckedChange={(checked) =>
+                      setField("useTrainingFills", Boolean(checked))
+                    }
+                  />
+                </div>
               </div>
             </div>
           </div>
+
+          {saveError && (
+            <p
+              role="alert"
+              className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            >
+              {saveError}
+            </p>
+          )}
 
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={closeForm}>

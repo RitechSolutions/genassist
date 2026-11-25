@@ -6,9 +6,9 @@ from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
 from app.db.models.knowledge_base import KnowledgeBaseModel
 from app.repositories.knowledge_base import KnowledgeBaseRepository
-from app.schemas.agent_knowledge import KBCreate, KBListItem, KBRead
+from app.schemas.agent_knowledge import KBCreate, KBListItem, KBMinimal, KBRead
 from app.schemas.common import PaginatedResponse
-from app.schemas.filter import BaseFilterModel
+from app.schemas.filter import KnowledgeBaseListFilter
 
 import logging
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class KnowledgeBaseService:
         self.repository = repository
 
     # ─────────────── READ ───────────────
-    async def get_list_paginated(self, filter_obj: BaseFilterModel) -> PaginatedResponse[KBListItem]:
+    async def get_list_paginated(self, filter_obj: KnowledgeBaseListFilter) -> PaginatedResponse[KBListItem]:
         rows, total = await self.repository.get_list_paginated(filter_obj)
         items = [
             KBListItem(
@@ -43,6 +43,10 @@ class KnowledgeBaseService:
             for row in rows
         ]
         return PaginatedResponse.from_filter(items, total, filter_obj)
+
+    async def get_all_minimal(self) -> List[KBMinimal]:
+        rows = await self.repository.get_all_minimal()
+        return [KBMinimal.model_validate(r, from_attributes=True) for r in rows]
 
     async def get_all(self, **filters) -> List[KBRead]:
         objs = await self.repository.get_all(filters=filters or None)

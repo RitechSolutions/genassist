@@ -1,7 +1,8 @@
 import base64
 import os
+import logging
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
@@ -17,6 +18,13 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.permissions.constants import Permissions as P
 from app.core.project_path import DATA_VOLUME
 from app.core.utils.redirect_utils import validate_s3_download_redirect_url
+from app.core.utils.training_upload import (
+    check_training_upload_name,
+    check_training_upload_size,
+    is_training_upload,
+    training_upload_max_bytes,
+    training_upload_metadata,
+)
 from app.schemas.app_settings import AppSettingsCreate
 from app.schemas.file import FileBase, FileResponse
 from app.schemas.files_upload import (
@@ -35,6 +43,7 @@ from app.services.file_manager import FileManagerService
 from app.services.file_upload_session import FileUploadSessionService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ==================== Settings Endpoints ====================
@@ -288,6 +297,13 @@ async def delete_file(
 async def upload_files(
     request: Request,
     files: List[UploadFile] = File(...),
+    purpose: Optional[Literal["training_data"]] = Query(
+        None,
+        description=(
+            "'training_data' for Train Data Source uploads: they may be up to "
+            "ML_TRAINING_UPLOAD_MAX_BYTES and must be a supported training file type."
+        ),
+    ),
     file_manager_service: FileManagerService = Injected(FileManagerService),
     app_settings_svc: AppSettingsService = Injected(AppSettingsService),
 ):
@@ -297,6 +313,13 @@ async def upload_files(
     This endpoint mirrors the legacy `genagent/knowledge/upload` response shape,
     but is owned by file-manager.
     """
+    training_upload = is_training_upload(purpose)
+    if training_upload:
+        # Checked before anything is stored, so a too-large or wrong-type
+        # training file is rejected up front with a clear message.
+        for f in files:
+            check_training_upload_name(f.filename)
+            check_training_upload_size(f.size)
     try:
         app_settings_config = await app_settings_svc.get_by_type_and_name(
             "FileManagerSettings", "File Manager Settings"
@@ -310,7 +333,7 @@ async def upload_files(
         storage_provider = None
 
     results: list[dict] = []
-    max_file_size = settings.MAX_CONTENT_LENGTH
+    max_file_size = training_upload_max_bytes() if training_upload else settings.MAX_CONTENT_LENGTH
 
     for f in files:
         if max_file_size is not None and f.size is not None and f.size > max_file_size:
@@ -328,13 +351,25 @@ async def upload_files(
             path=sub_folder,
             storage_provider=(storage_provider.name if storage_provider else "local"),
             file_extension=ext,
+            file_metadata=training_upload_metadata(purpose),
         )
         created = await file_manager_service.create_file(
             file=f,
             file_base=file_base,
             max_file_size=max_file_size,
         )
-        file_url = await file_manager_service.get_file_source_url(created.id)
+        # The file itself is already saved at this point - a failure to build
+        # its source URL (e.g. storage provider misconfigured/uninitialized)
+        # shouldn't throw away an otherwise-successful upload, especially
+        # since local storage callers prefer `file_path` over `file_url` anyway.
+        try:
+            file_url = await file_manager_service.get_file_source_url(created.id)
+        except Exception as e:
+            logger.error(
+                f"Could not build source URL for uploaded file {created.id}; "
+                f"file was saved but file_url will be empty in the response: {e}"
+            )
+            file_url = ""
         result = {
             "filename": os.path.basename(created.path),
             "original_filename": f.filename or unique_name,
@@ -363,6 +398,7 @@ async def create_files_upload_session(
             payload.original_filename,
             payload.expected_size,
             payload.content_type,
+            purpose=payload.purpose,
         )
     except ValueError as e:
         raise AppException(ErrorKey.MISSING_PARAMETER, 400, str(e))

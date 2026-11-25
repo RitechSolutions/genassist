@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import List, Optional
 from uuid import UUID
 
@@ -8,11 +9,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
-from app.core.utils.enums.conversation_topic_enum import ConversationTopic
 from app.core.utils.enums.negative_conversation_reason import NegativeConversationReason
 from app.core.utils.gpt_utils import clean_markdown, check_and_raise_if_non_retryable
+from app.core.utils.topic_settings import normalize_topic_verdict, parse_topic_settings, topics_csv
 from app.modules.workflow.llm.provider import LLMProvider
-from app.schemas.conversation_analysis import AnalysisResult
+from app.schemas.conversation_analysis import KPI_METRIC_KEYS, AnalysisResult
 from app.schemas.conversation_transcript import TranscriptSegment
 from app.schemas.llm import LlmAnalyst
 from app.core.utils.bi_utils import clean_gpt_json_response
@@ -20,6 +21,98 @@ from app.services.agent_response_log import AgentResponseLogService
 
 
 logger = logging.getLogger(__name__)
+
+_TITLE_RE = re.compile(r"^[ \t>#*-]*A\)\s*Title\s*\*{0,2}\s*:?\s*\*{0,2}", re.I | re.M)
+_SUMMARY_RE = re.compile(r"^[ \t>#*-]*B\)\s*Summary\s*\*{0,2}\s*:?\s*\*{0,2}", re.I | re.M)
+_KPI_RE = re.compile(r"^[ \t>#*-]*C\)\s*KPI\s*Metrics", re.I | re.M)
+
+_HOSTILITY_INSTRUCTIONS = """You are an impartial conversation analyst.
+
+Task:
+Analyse the following partial conversation transcript.
+The transcript is one message per line, oldest first, as `speaker: text`; speaker is usually `customer` or `agent`.
+
+YOU MUST ALWAYS RETURN ONE JSON OBJECT WITH EXACTLY THREE KEYS:
+
+ 1. "hostile_score" between 0 and 100.
+ 2. "topic" string from this specific list: {topics_csv} based on the conversation
+ transcript. Return "Other" if none of the other topics match the conversation or if there isn't enough
+ context to decide.
+ 3. "negative_reason" string from this specific list: {reasons_csv} based on the
+ conversation, if it is not negative, or if there isn't enough context to decide return "Other" for this field.
+
+### Definition of hostility
+Hostility includes threats, insults, profanity, aggressive or intimidating tone, harassment, or hateful/discriminatory language.
+Polite disagreement or calm criticism is **not** hostile.
+
+### Hostile-score rubric
+| Range | Description & examples |
+|-------|------------------------|
+| 0-10  | Friendly, cooperative (“Thanks so much!”) |
+| 11-25 | Mild irritation, impatience (“Could you hurry?”) |
+| 26-50 | Frustrated or angry complaints, raised voice, light profanity (“This is ridiculous, fix it!”) |
+| 51-75 | Aggressive, repeated profanity, personal attacks (“You idiots never get it right.”) |
+| 76-90 | Threatening tone, explicit hostility (“If you don’t fix this I’ll report you.”) |
+| 91-100| Violent threats, hate speech (“I’ll ruin your business”, slurs) |
+
+Scoring instructions
+• Score the conversation as a whole (don’t average per-speaker).
+• If hostility is mixed, choose the highest sustained level reached.
+• Use whole numbers only (no decimals).
+
+### Output rules
+• Think step-by-step internally but do not reveal your reasoning.
+• Respond with JSON only, no prose, no comments, no trailing commas.
+• Example:
+{{
+    "topic": "Billing Questions",
+    "hostile_score": 85,
+    "negative_reason": "Bad Communication"
+}}"""
+
+
+def _has_kpi_keys(value) -> bool:
+    return isinstance(value, dict) and any(key in value for key in KPI_METRIC_KEYS)
+
+
+def _json_reply(text: str) -> Optional[dict]:
+    """Extracts the JSON object from the reply, even if wrapped in prose"""
+    start = text.find("{")
+    if start == -1:
+        return None
+    try:
+        data, _ = json.JSONDecoder().raw_decode(text[start:])
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, dict) and any(key.startswith(("A)", "B)", "C)")) for key in data):
+        return data
+    return None
+
+
+def _kpi_json_after(text: str, start: int) -> dict:
+    """Finds the first fenced block containing KPI keys after start, falls back to the first brace span"""
+    candidates = []
+    fence_start = text.find("```", start)
+    fence_end = text.find("```", fence_start + 3) if fence_start != -1 else -1
+    if fence_end != -1:
+        candidates.append(clean_gpt_json_response(text[fence_start:fence_end + 3]))
+    brace_start = text.find("{", start)
+    if brace_start != -1:
+        candidates.append(text[brace_start:])
+    for candidate in candidates:
+        try:
+            value, _ = json.JSONDecoder().raw_decode(candidate)
+        except json.JSONDecodeError:
+            continue
+        if _has_kpi_keys(value):
+            return value
+    return {}
+
+
+def _parse_failure_reason(title, summary, metrics) -> str:
+    sections = (("A) Title", title), ("B) Summary", summary), ("C) KPI Metrics", metrics))
+    missing = [name for name, value in sections if not value]
+    return f"Missing or unreadable sections: {', '.join(missing)}."
 
 
 class GptKpiAnalyzer:
@@ -52,6 +145,7 @@ class GptKpiAnalyzer:
 
         system_prompt = self._build_system_prompt(llm_analyst.prompt, llm_analyst)
         system_msg = SystemMessage(content=system_prompt)
+        topic_specs = parse_topic_settings(llm_analyst.settings)
 
         enrichment_context = await agent_logs_service.build_enrichment_context(conversation_id,
                 llm_analyst.context_enrichments or [])
@@ -84,7 +178,7 @@ class GptKpiAnalyzer:
                     purpose="conversation_analysis",
                 )
 
-                response_text = response.content.strip()
+                response_text = response.text.strip()
                 last_response = response_text
 
                 summary_data = self._extract_summary_and_title(response_text)
@@ -93,9 +187,12 @@ class GptKpiAnalyzer:
                 metrics = self._extract_metrics(response_text)
 
                 if (summary and title and isinstance(metrics, dict) and metrics):
+                    title, metrics["Subtopic"] = normalize_topic_verdict(
+                        title, str(metrics.get("Subtopic") or ""), topic_specs)
                     return AnalysisResult(summary=summary, title=title, kpi_metrics=metrics, )
 
-                raise AppException(ErrorKey.TRANSCRIPT_PARSE_ERROR)
+                raise AppException(ErrorKey.TRANSCRIPT_PARSE_ERROR,
+                                   error_detail=_parse_failure_reason(title, summary, metrics))
 
             except Exception as e:
                 # Check if this is a non-retryable error (e.g., context length exceeded, rate limit)
@@ -103,7 +200,7 @@ class GptKpiAnalyzer:
                 check_and_raise_if_non_retryable(e)
 
                 # If we reach here, it's a retryable error (e.g., parsing failure)
-                last_error_msg = str(e)
+                last_error_msg = getattr(e, "error_detail", "") or str(e)
                 logger.error(
                         "Attempt %d: Failed to parse GPT response as JSON. Error: %s", attempt, last_error_msg)
 
@@ -163,23 +260,27 @@ class GptKpiAnalyzer:
 
 
     def _get_topics_csv(self, llm_analyst: LlmAnalyst) -> str:
-        """Return topics CSV from llm_analyst settings, falling back to the default enum."""
-        topics = (llm_analyst.settings or {}).get("topics")
-        if topics and isinstance(topics, list):
-            return ", ".join(str(t) for t in topics)
-        return ConversationTopic.as_csv()
+        """Return the top-level topic names as CSV, falling back to the default enum."""
+        return topics_csv(parse_topic_settings(llm_analyst.settings))
 
 
     def _build_system_prompt(self, base_prompt: str, llm_analyst: LlmAnalyst) -> str:
         """Combine the tenant-configured base prompt with the fixed analysis format instructions."""
-        topics_csv = self._get_topics_csv(llm_analyst)
+        specs = parse_topic_settings(llm_analyst.settings)
+        topic_names = topics_csv(specs)
+        subtopic_list, subtopic_key = "", ""
+        if any(spec.subtopics for spec in specs):
+            subtopic_list = f"Titles and their sub-topics: {topics_csv(specs, include_subtopics=True)}\n\n"
+            subtopic_key = (
+                '    "Subtopic": "(one of the sub-topics listed for the chosen title, or \\"\\" if none apply)",\n'
+            )
         return f"""{base_prompt}
 
 You are a customer experience expert specializing in call center analysis.
 
-Always respond in exactly this format:
+{subtopic_list}Always respond in exactly this format:
 
-**A) Title:** <one from: {topics_csv}>
+**A) Title:** <one from: {topic_names}>
 
 **B) Summary:**
 - Operator performance assessment
@@ -197,7 +298,7 @@ Provide the following KPI metrics, overall tone, and sentiment percentages as a 
     "Efficiency": (integer 0-10),
     "Resolution Rate": (integer 0-10),
     "Operator Knowledge": (integer 0-10),
-    "Tone": "(choose one from: Hostile, Frustrated, Friendly, Polite, Neutral, Professional)",
+{subtopic_key}    "Tone": "(choose one from: Hostile, Frustrated, Friendly, Polite, Neutral, Professional)",
     "Sentiment": {{
         "positive": (float between 0-100),
         "neutral": (float between 0-100),
@@ -230,83 +331,31 @@ Please make sure your response strictly follows the requested format and especia
 
 
     async def partial_hostility_analysis(self, transcript_segments: str, llm_analyst: LlmAnalyst,
-            conversation_id: Optional[UUID] = None, agent_id: Optional[UUID] = None, ) -> dict:
+            conversation_id: Optional[UUID] = None, agent_id: Optional[UUID] = None, ) -> Optional[dict]:
 
         import uuid
 
         from app.dependencies.injector import injector
         from app.services.llm_usage_recorder import LlmUsageRecorder
 
-        llm_provider = injector.get(LLMProvider)
-        llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
-        agent_logs_service = injector.get(AgentResponseLogService)
-
-        recorder = LlmUsageRecorder()
-        analysis_execution_id = f"analyst:{uuid.uuid4()}"
-        analyst_provider, analyst_model = await self._resolve_analyst_provider_model(llm_analyst)
-
-        system_msg = SystemMessage(content=llm_analyst.prompt)
-
-        enrichment_context = await agent_logs_service.build_enrichment_context(conversation_id,
-                llm_analyst.context_enrichments or [])
-        context_block = f"Additional Context:\n{enrichment_context}\n\n" if enrichment_context else ""
-
-        user_prompt = f"""{context_block}
-        You are an impartial conversation analyst.
-
-        Task:
-        Analyse the following partial conversation transcript (a JSON list of messages).  
-        Each message has:
-        "text": "The content of the partial conversation transcript"
-        "speaker": "The speaker, either customer or agent"
-        "start_time": The moment the message started
-        "end_time": The moment the message ended
-
-        YOU MUST ALWAYS RETURN ONE JSON OBJECT WITH EXACTLY THREE KEYS:
-
-         1. "hostile_score" between 0 and 100.
-         2. "topic" string from this specific list: {self._get_topics_csv(llm_analyst)} based on the conversation
-         transcript. Return "Other" if none of the other topics match the conversation or if there isn't enough 
-         context to decide.
-         3. "negative_reason" string from this specific list: {NegativeConversationReason.as_csv()} based on the 
-         conversation, if it is not negative, or if there isn't enough context to decide return "Other" for this field.
-
-        ### Definition of hostility
-        Hostility includes threats, insults, profanity, aggressive or intimidating tone, harassment, or hateful/discriminatory language.  
-        Polite disagreement or calm criticism is **not** hostile.
-
-        ### Hostile-score rubric
-        | Range | Description & examples |
-        |-------|------------------------|
-        | 0-10  | Friendly, cooperative (“Thanks so much!”) |
-        | 11-25 | Mild irritation, impatience (“Could you hurry?”) |
-        | 26-50 | Frustrated or angry complaints, raised voice, light profanity (“This is ridiculous, fix it!”) |
-        | 51-75 | Aggressive, repeated profanity, personal attacks (“You idiots never get it right.”) |
-        | 76-90 | Threatening tone, explicit hostility (“If you don’t fix this I’ll report you.”) |
-        | 91-100| Violent threats, hate speech (“I’ll ruin your business”, slurs) |
-
-        Scoring instructions
-        • Score the conversation as a whole (don’t average per-speaker).  
-        • If hostility is mixed, choose the highest sustained level reached.  
-        • Use whole numbers only (no decimals).
-
-        ### Output rules
-        • Think step-by-step internally but do not reveal your reasoning.  
-        • Respond with JSON only, no prose, no comments, no trailing commas.  
-        • Example:
-        {{
-            "topic": "Billing Questions",
-            "hostile_score": 85,
-            "negative_reason": "Bad Communication"
-        }}
-
-        Transcript:
-        {transcript_segments}
-        """
-        user_msg = HumanMessage(content=user_prompt)
-
         try:
-            # Call the LLM synchronously in a background thread
+            llm_provider = injector.get(LLMProvider)
+            llm = await llm_provider.get_model(llm_analyst.llm_provider_id)
+            agent_logs_service = injector.get(AgentResponseLogService)
+
+            recorder = LlmUsageRecorder()
+            analysis_execution_id = f"analyst:{uuid.uuid4()}"
+            analyst_provider, analyst_model = await self._resolve_analyst_provider_model(llm_analyst)
+
+            system_msg = SystemMessage(content=llm_analyst.prompt)
+
+            enrichment_context = await agent_logs_service.build_enrichment_context(conversation_id,
+                    llm_analyst.context_enrichments or [])
+            context_block = f"Additional Context:\n{enrichment_context}\n\n" if enrichment_context else ""
+            instructions = _HOSTILITY_INSTRUCTIONS.format(topics_csv=self._get_topics_csv(llm_analyst),
+                    reasons_csv=NegativeConversationReason.as_csv())
+            user_msg = HumanMessage(content=f"{context_block}{instructions}\n\nTranscript:\n{transcript_segments}")
+
             response = await llm.ainvoke([system_msg, user_msg])
 
             # Record usage for this hostility call before parsing
@@ -323,7 +372,7 @@ Please make sure your response strictly follows the requested format and especia
                 purpose="hostility_analysis",
             )
 
-            response_text = response.content.strip()
+            response_text = response.text.strip()
 
             # Remove json ticks
             response_text = clean_gpt_json_response(response_text)
@@ -336,24 +385,25 @@ Please make sure your response strictly follows the requested format and especia
             if (
                     "topic" in analysis_data and "hostile_score" in analysis_data and "negative_reason" in analysis_data and isinstance(
                     analysis_data["hostile_score"], int)):
+                if isinstance(analysis_data["topic"], str):
+                    analysis_data["topic"], _ = normalize_topic_verdict(
+                        analysis_data["topic"], "", parse_topic_settings(llm_analyst.settings))
                 return analysis_data
 
             # If the JSON doesn't match the expected structure
             raise ValueError("partial_hostility_analysis: Missing or invalid fields in JSON output.")
 
         except Exception as e:
-            logger.warning(f"Hostility analysis failed: {e}")
-            # Fallback to a safe default or re-raise
-            return {"topic": "Other", "hostile_score": 0, "negative_reason": "Other"}
+            logger.warning("Hostility analysis failed, keeping the stored score: %s", e)
+            return None
 
 
     def _extract_summary_and_title(self, text: str) -> dict:
         # Try JSON format first (Nova)
-        try:
-            cleaned = clean_gpt_json_response(text)
-            data = json.loads(cleaned)
-
-            title = clean_markdown(data.get("A) Title", ""))
+        data = _json_reply(text)
+        if data is not None:
+            title_raw = data.get("A) Title", "")
+            title = clean_markdown(title_raw) if isinstance(title_raw, str) else ""
 
             summary_raw = data.get("B) Summary", "")
             if isinstance(summary_raw, dict):
@@ -367,42 +417,37 @@ Please make sure your response strictly follows the requested format and especia
             else:
                 summary = clean_markdown(str(summary_raw))
 
-            if title and summary:
-                return {"title": title, "summary": summary}
-        except (json.JSONDecodeError, AttributeError):
-            pass
+            return {"title": title, "summary": summary}
 
         # Fall back to markdown format (OpenAI)
-        title_start = text.find("**A) Title:**")
-        summary_start = text.find("**B) Summary:**")
-        kpi_start = text.find("**C) KPI Metrics")
+        title_match = _TITLE_RE.search(text)
+        summary_match = title_match and _SUMMARY_RE.search(text, title_match.end())
+        kpi_match = summary_match and _KPI_RE.search(text, summary_match.end())
+        if not kpi_match:
+            return {"title": "", "summary": ""}
 
-        raw_title = text[title_start + 13: summary_start].strip()
+        raw_title = text[title_match.end(): summary_match.start()].strip()
         title = clean_markdown(raw_title.lstrip("- "))
-        summary = clean_markdown(text[summary_start + 15: kpi_start])
+        summary = clean_markdown(text[summary_match.end(): kpi_match.start()])
 
         return {"title": title, "summary": summary}
 
 
     def _extract_metrics(self, text: str) -> dict:
         """Extract KPI metrics — supports both markdown (OpenAI) and JSON (Nova) responses."""
-        # Try full JSON format first (Nova)
-        try:
-            cleaned = clean_gpt_json_response(text)
-            data = json.loads(cleaned)
-            for key in data:
-                if key.startswith("C)") and isinstance(data[key], dict):
-                    return data[key]
-        except (json.JSONDecodeError, AttributeError):
-            pass
+        # Try JSON format first (Nova)
+        data = _json_reply(text)
+        if data is not None:
+            for key, value in data.items():
+                if key.startswith("C)") and _has_kpi_keys(value):
+                    return value
+            return data if _has_kpi_keys(data) else {}
 
-        # Fall back to extracting embedded JSON block (OpenAI)
-        json_start = text.find("{")
-        json_end = text.rfind("}") + 1
-        if json_start != -1 and json_end > json_start:
-            try:
-                return json.loads(text[json_start:json_end])
-            except json.JSONDecodeError:
-                logger.warning("_extract_metrics: Failed to parse embedded JSON block.")
-
-        return {}
+        # Fall back to JSON block (OpenAI)
+        kpi_match = _KPI_RE.search(text)
+        if kpi_match is None:
+            return {}
+        metrics = _kpi_json_after(text, kpi_match.end())
+        if not metrics:
+            logger.warning("_extract_metrics: Failed to parse embedded JSON block.")
+        return metrics

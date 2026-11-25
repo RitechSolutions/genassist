@@ -19,6 +19,8 @@ import { ExecutionViewModel } from '@/interfaces/workflow-execution.interface';
 import { Workflow } from '@/interfaces/workflow.interface';
 import { formatDuration } from '../../utils/executionView';
 import { computeLayeredLayout } from '../../utils/executionLayout';
+import { withoutLoopBackEdges } from '../../utils/loopGraph';
+import { flattenGroups } from '../../utils/nodeGroups';
 import { STATUS_STYLES } from './statusStyles';
 import ExecutionStatusNode, { ExecutionStatusNodeData } from './ExecutionStatusNode';
 
@@ -159,7 +161,8 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
 
   // Which nodes/edges to render: the executed subgraph, or the full workflow.
   const { sourceNodes, sourceEdges } = useMemo(() => {
-    const allNodes = workflow?.nodes ?? [];
+    // Visual groups aren't executed; show their nodes at canvas-level positions.
+    const allNodes = flattenGroups(workflow?.nodes ?? []);
     const allEdges = workflow?.edges ?? [];
     if (graphView === 'full') return { sourceNodes: allNodes, sourceEdges: allEdges };
     return {
@@ -174,7 +177,8 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
     if (graphView === 'full') return {};
     return computeLayeredLayout(
       sourceNodes.map((n) => n.id),
-      sourceEdges.map((e) => ({ source: e.source, target: e.target }))
+      // Loop back-edges close a cycle; leaving them out keeps the layering left-to-right.
+      withoutLoopBackEdges(sourceEdges).map((e) => ({ source: e.source, target: e.target }))
     );
   }, [graphView, sourceNodes, sourceEdges]);
 
@@ -193,6 +197,7 @@ const ExecutionGraph: React.FC<ExecutionGraphProps> = ({
             status: exec?.status ?? 'pending',
             durationMs: exec?.durationMs,
             order: exec?.order,
+            runCount: exec?.runCount,
             isSlowest: !!model.slowestNodeId && model.slowestNodeId === node.id,
             isSelected: selectedNodeId === node.id,
           },

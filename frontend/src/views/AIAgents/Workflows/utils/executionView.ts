@@ -7,6 +7,7 @@ import {
   RawNodeExecutionEntry,
 } from '@/interfaces/workflow-execution.interface';
 import { Workflow } from '@/interfaces/workflow.interface';
+import { upstreamSourcesKey } from './trainingInputFile';
 
 /**
  * Pure adapters that turn the loosely-typed workflow-test response into the normalized model
@@ -37,6 +38,9 @@ const asNumber = (value: unknown): number | undefined =>
   typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 
 const asString = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+
+const asStringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 /** Map the backend status to the normalized, display-ready status. */
 const normalizeStatus = (raw: unknown): ExecutionNodeStatus => {
@@ -142,7 +146,9 @@ export const buildExecutionViewModel = (response: unknown, workflow?: Workflow |
     input: entry.input,
     output: entry.output,
     error: asString(entry.error) ?? null,
+    ...((asNumber(entry.run) ?? 1) > 1 ? { runCount: asNumber(entry.run) } : {}),
     promptCaching: normalizePromptCaching(rawDiagnostics[nodeId]),
+    warnings: asStringList(entry.warnings),
   }));
 
   // Execution order by startTime (nodes without a startTime sort last, stable by id).
@@ -226,4 +232,62 @@ export const formatDuration = (ms?: number): string => {
   const minutes = Math.floor(seconds / 60);
   const rem = Math.round(seconds % 60);
   return `${minutes} m ${String(rem).padStart(2, '0')} s`;
+};
+
+/** A node's output from a whole-workflow run, ready for the execution context. */
+export interface RunNodeOutput {
+  output: Record<string, unknown>;
+  nodeType: string;
+  nodeName: string;
+  /** Settings of the Train Data Sources the output came from - see upstreamSourcesKey. */
+  settingsKey?: string;
+}
+
+/**
+ * The outputs of the nodes that completed in a whole-workflow run, keyed by node id. `workflow`
+ * must be the workflow that was run, so each output is tagged with the Train Data Source settings
+ * it was made from. Never throws.
+ */
+export const collectRunOutputs = (
+  response: unknown,
+  workflow?: Workflow | null
+): Record<string, RunNodeOutput> => {
+  const { nodes } = buildExecutionViewModel(response, workflow);
+  const workflowNodes = new Map((workflow?.nodes ?? []).map((node) => [node.id, node]));
+  const workflowEdges = workflow?.edges ?? [];
+  const outputs: Record<string, RunNodeOutput> = {};
+  for (const node of nodes) {
+    if (node.status !== 'completed' || !isRecord(node.output)) continue;
+    const workflowNode = workflowNodes.get(node.nodeId);
+    const nodeType = node.type ?? workflowNode?.type ?? '';
+    const settingsKey = upstreamSourcesKey(node.nodeId, workflow?.nodes ?? [], workflowEdges);
+    outputs[node.nodeId] = {
+      output: node.output,
+      nodeType,
+      nodeName: node.name,
+      ...(settingsKey !== undefined && { settingsKey }),
+    };
+  }
+  return outputs;
+};
+
+/**
+ * The workflow a resumed run's outputs are tagged with (see collectRunOutputs): `current`, the
+ * workflow sent with the resume, except that nodes in `ranBeforePause` keep the settings they had in
+ * `started`, the workflow the run started with. A Train Data Source that ran before the pause
+ * produced its data from those, whatever was edited while the run waited.
+ */
+export const resumedRunWorkflow = (
+  started: Workflow,
+  current: Workflow,
+  ranBeforePause: string[]
+): Workflow => {
+  const ran = new Set(ranBeforePause);
+  const startedNodes = new Map((started.nodes ?? []).map((node) => [node.id, node]));
+  return {
+    ...current,
+    nodes: (current.nodes ?? []).map((node) =>
+      ran.has(node.id) ? startedNodes.get(node.id) ?? node : node
+    ),
+  };
 };

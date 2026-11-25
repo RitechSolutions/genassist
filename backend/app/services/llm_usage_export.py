@@ -2,11 +2,11 @@
 
 import csv
 import io
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from app.schemas.llm_usage import BREAKDOWN_DIMENSIONS, LlmUsageBreakdownResponse, LlmUsageSummaryResponse
-from app.services.analytics_export import EXTENSIONS, MEDIA_TYPES, VALID_FORMATS  # noqa: F401
+from app.services.analytics_export import EXTENSIONS, MEDIA_TYPES, VALID_FORMATS, _pdf_safe  # noqa: F401
 
 _DIMENSION_HEADER = {d: d.capitalize() for d in BREAKDOWN_DIMENSIONS} | {"source": "Usage type"}
 
@@ -15,7 +15,15 @@ METHODOLOGY_NOTE = (
 )
 
 
-def _period(from_date: Optional[date], to_date: Optional[date]) -> str:
+def _period(
+    from_date: Optional[date],
+    to_date: Optional[date],
+    activity_from: Optional[datetime] = None,
+    activity_to: Optional[datetime] = None,
+) -> str:
+    if activity_from and activity_to:
+        start, end = (d.astimezone(timezone.utc) for d in (activity_from, activity_to))
+        return f"{start:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC"
     if from_date and to_date:
         return f"{from_date.isoformat()} to {to_date.isoformat()}"
     if from_date:
@@ -23,6 +31,10 @@ def _period(from_date: Optional[date], to_date: Optional[date]) -> str:
     if to_date:
         return f"through {to_date.isoformat()}"
     return "all time"
+
+
+def _pdf_text(text: str) -> str:
+    return _pdf_safe(text).encode("latin-1", "replace").decode("latin-1")
 
 
 def _usd(value: Optional[float]) -> str:
@@ -34,6 +46,9 @@ def _summary_rows(summary: LlmUsageSummaryResponse) -> list[tuple[str, str]]:
         ("Total LLM cost (USD)", _usd(summary.total_cost_usd)),
         ("Cost is partial (unpriced calls present)", "yes" if summary.cost_is_partial else "no"),
         ("Cost per conversation (USD)", _usd(summary.cost_per_conversation_usd)),
+        ("Conversations with LLM cost", str(summary.distinct_conversations)),
+        ("Conversation cost (USD)", _usd(summary.conversation_cost_usd)),
+        ("Non-conversation cost (USD)", _usd(summary.non_conversation_cost_usd)),
         ("Agent Studio test cost (USD)", _usd(summary.agent_studio_test_cost_usd)),
         ("Total tokens", str(summary.total_tokens)),
         ("Cache read tokens", str(summary.total_cache_read_tokens)),
@@ -53,13 +68,16 @@ def export_llm_usage(
     breakdown: LlmUsageBreakdownResponse,
     from_date: Optional[date],
     to_date: Optional[date],
+    activity_from: Optional[datetime] = None,
+    activity_to: Optional[datetime] = None,
 ) -> tuple[bytes, str]:
+    period = _period(from_date, to_date, activity_from, activity_to)
     if fmt == "csv":
-        content = _csv(summary, breakdown, from_date, to_date)
+        content = _csv(summary, breakdown, period)
     elif fmt == "xlsx":
-        content = _xlsx(summary, breakdown, from_date, to_date)
+        content = _xlsx(summary, breakdown, period)
     elif fmt == "pdf":
-        content = _pdf(summary, breakdown, from_date, to_date)
+        content = _pdf(summary, breakdown, period)
     else:
         raise ValueError(f"Unsupported format: {fmt}")
     return content, MEDIA_TYPES[fmt]
@@ -76,11 +94,11 @@ def _breakdown_rows(breakdown: LlmUsageBreakdownResponse) -> list[list[str]]:
     ]
 
 
-def _csv(summary, breakdown, from_date, to_date) -> bytes:
+def _csv(summary, breakdown, period: str) -> bytes:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["LLM Usage Report"])
-    w.writerow([f"Period: {_period(from_date, to_date)}"])
+    w.writerow([f"Period: {period}"])
     w.writerow([METHODOLOGY_NOTE])
     w.writerow([])
     w.writerow(["Metric", "Value"])
@@ -91,7 +109,7 @@ def _csv(summary, breakdown, from_date, to_date) -> bytes:
     return buf.getvalue().encode("utf-8-sig")
 
 
-def _xlsx(summary, breakdown, from_date, to_date) -> bytes:
+def _xlsx(summary, breakdown, period: str) -> bytes:
     import xlsxwriter
 
     buf = io.BytesIO()
@@ -100,7 +118,7 @@ def _xlsx(summary, breakdown, from_date, to_date) -> bytes:
 
     ws = wb.add_worksheet("Summary")
     ws.write(0, 0, "LLM Usage Report", bold)
-    ws.write(1, 0, f"Period: {_period(from_date, to_date)}")
+    ws.write(1, 0, f"Period: {period}")
     ws.write(2, 0, METHODOLOGY_NOTE)
     ws.write(4, 0, "Metric", bold)
     ws.write(4, 1, "Value", bold)
@@ -123,7 +141,7 @@ def _xlsx(summary, breakdown, from_date, to_date) -> bytes:
     return buf.getvalue()
 
 
-def _pdf(summary, breakdown, from_date, to_date) -> bytes:
+def _pdf(summary, breakdown, period: str) -> bytes:
     from fpdf import FPDF
 
     pdf = FPDF(orientation="L", unit="mm", format="A4")
@@ -131,7 +149,7 @@ def _pdf(summary, breakdown, from_date, to_date) -> bytes:
     pdf.set_font("Helvetica", "B", 14)
     pdf.cell(0, 10, "LLM Usage Report", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", size=10)
-    pdf.cell(0, 6, f"Period: {_period(from_date, to_date)}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, f"Period: {period}", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 6, METHODOLOGY_NOTE, new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
 
@@ -153,6 +171,6 @@ def _pdf(summary, breakdown, from_date, to_date) -> bytes:
     pdf.set_font("Helvetica", size=9)
     for row in _breakdown_rows(breakdown):
         for w, value in zip(widths, row):
-            pdf.cell(w, 6, str(value)[:48], border=1)
+            pdf.cell(w, 6, _pdf_text(str(value))[:48], border=1)
         pdf.ln()
     return bytes(pdf.output())

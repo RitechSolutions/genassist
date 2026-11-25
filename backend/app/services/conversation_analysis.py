@@ -49,8 +49,10 @@ class ConversationAnalysisService:
         topic = _truncate(getattr(gpt_analysis, "title", None))
         summary = getattr(gpt_analysis, "summary", None)
         tone = _truncate(gpt_analysis.kpi_metrics.get("Tone", ""))
+        subtopic = _truncate(gpt_analysis.kpi_metrics.get("Subtopic", "")) or None
 
         conversation_analysis_create = ConversationAnalysisCreate(conversation_id=conversation_id, topic=topic,
+                subtopic=subtopic,
                 summary=summary, customer_satisfaction=gpt_analysis.kpi_metrics.get("Customer Satisfaction", 0),
                 operator_knowledge=gpt_analysis.kpi_metrics.get("Operator Knowledge", 0),
                 resolution_rate=gpt_analysis.kpi_metrics.get("Resolution Rate", 0),
