@@ -314,7 +314,7 @@ class ZendeskConnector:
                 headers={"Authorization": f"Bearer {token}"}, timeout=timeout,
             )
 
-    async def create_ticket(
+    async def submit_ticket(
         self,
         subject: str,
         description: str,
@@ -322,12 +322,8 @@ class ZendeskConnector:
         requester_email: Optional[str] = None,
         tags: Optional[List[str]] = None,
         custom_fields: Optional[List[Dict[str, Any]]] = None,
-        conversation_id: Optional[str] = None,
-    ) -> Optional[int]:
-        """
-        Create a Zendesk ticket via the REST API.
-        Returns the ticket ID on success, None on failure.
-        """
+    ) -> Dict[str, Any]:
+        """Create a Zendesk ticket. Raises when Zendesk refuses it or cannot be reached."""
         self._require_credentials()
 
         url = f"{self.base_url}/tickets.json"
@@ -361,11 +357,32 @@ class ZendeskConnector:
                 return {"status": 200, "data": result}
             except ZendeskAPIError as e:
                 _mark_span_failed(span, e.error, e.field, e.status_code)
-                return None
+                raise
             except HTTPException:
                 # Network error: Zendesk was never reached, so there is no status code.
                 _mark_span_failed(span, "network_error", "unknown")
-                return None
+                raise
+
+    async def create_ticket(
+        self,
+        subject: str,
+        description: str,
+        requester_name: Optional[str] = None,
+        requester_email: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        custom_fields: Optional[List[Dict[str, Any]]] = None,
+        conversation_id: Optional[str] = None,
+    ) -> Optional[int]:
+        """
+        Create a Zendesk ticket via the REST API.
+        Returns the ticket ID on success, None on failure.
+        """
+        try:
+            return await self.submit_ticket(
+                subject, description, requester_name, requester_email, tags, custom_fields
+            )
+        except HTTPException:
+            return None
 
     async def update_ticket(
         self,
