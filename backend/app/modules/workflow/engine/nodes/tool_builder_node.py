@@ -4,17 +4,68 @@ Tool builder node implementation using the BaseNode class.
 
 import logging
 import json
-from typing import Dict, Any
+import re
+from typing import Any, Dict, List
 
 from app.modules.workflow.engine.base_node import BaseNode
-from app.modules.workflow.engine.node_result import node_failure
-from app.modules.workflow.engine.workflow_state import SAVED_WORKFLOW_ID_KEY, WorkflowPausedException
+from app.modules.workflow.engine.node_result import INPUT_REJECTED, input_rejection, node_failure
+from app.modules.workflow.engine.utils import _is_in_string_context
+from app.modules.workflow.engine.workflow_state import (
+    SAVED_WORKFLOW_ID_KEY,
+    WorkflowPausedException,
+    failed_nodes_summary,
+)
 
 logger = logging.getLogger(__name__)
 
 
+def _subflow_failure(blocking_failures: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Failure of a tool whose subflow stopped at a failed node."""
+    reason = failed_nodes_summary({"failed_nodes": blocking_failures})
+    only_refused_input = all(failure.get("code") == INPUT_REJECTED for failure in blocking_failures)
+    if only_refused_input:
+        return input_rejection(reason)
+    return node_failure(reason)
+
+
+def _is_optional_text(parameter: Any) -> bool:
+    """Whether a tool parameter is text the agent may leave out."""
+    if not isinstance(parameter, dict):
+        return False
+    is_text = parameter.get("type", "string") == "string"
+    return is_text and not parameter.get("required", False)
+
+
+def _is_used_without_quotes(template: str, name: str) -> bool:
+    """Whether the forward template uses the parameter outside a quoted text value."""
+    placeholder = re.escape(f"{{{{direct_input.parameters.{name}}}}}")
+    positions = [match.start() for match in re.finditer(placeholder, template)]
+    return any(not _is_in_string_context(template, position) for position in positions)
+
+
 class ToolBuilderNode(BaseNode):
     """Tool builder node that executes subflows and returns tool references using the BaseNode approach"""
+
+    async def execute(self, direct_input: Any = None) -> Any:
+        """Run the tool. Optional text the agent left out reaches the subflow empty, not as the word null."""
+        return await super().execute(self._with_left_out_text_filled(direct_input))
+
+    def _with_left_out_text_filled(self, direct_input: Any) -> Any:
+        """The tool call with each left-out optional text parameter set to its default, or empty."""
+        given = direct_input.get("parameters") if isinstance(direct_input, dict) else None
+        if not isinstance(given, dict):
+            return direct_input
+        left_out = {
+            name: parameter.get("defaultValue") or ""
+            for name, parameter in (self.get_input_schema() or {}).items()
+            if given.get(name) is None and self._takes_empty_text(name, parameter)
+        }
+        return {**direct_input, "parameters": {**given, **left_out}}
+
+    def _takes_empty_text(self, name: str, parameter: Any) -> bool:
+        """Whether the parameter is optional text that the forward template keeps inside quotes."""
+        template = self.get_node_data().get("forwardTemplate") or ""
+        return _is_optional_text(parameter) and not _is_used_without_quotes(template, name)
 
     async def process(
         self, config: Dict[str, Any]
@@ -88,5 +139,9 @@ class ToolBuilderNode(BaseNode):
         # up through the agent so the top-level engine can return the form to the user
         if isinstance(state.output, dict) and state.output.get("status") == "awaiting_input":
             raise WorkflowPausedException(state.output)
+
+        blocking_failures = state.blocking_failures()
+        if blocking_failures:
+            return _subflow_failure(blocking_failures)
 
         return state.get_last_node_output()

@@ -524,6 +524,7 @@ class BaseNode(ABC):
                         flow_output = failure.get("output")
                         if flow_output is not None:
                             self.set_node_output(flow_output)
+                        self.state.annotate_node_execution(self.node_id, failure_code=failure.get("code"))
                         self.complete_execution(error=failure.get("error"))
                         # Return the RAW result (not the unwrapped output) so a caller
                         # using this node as a tool can itself detect the failure.
