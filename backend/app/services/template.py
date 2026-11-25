@@ -23,11 +23,7 @@ from app.schemas.template import (
 from app.schemas.workflow import WorkflowCreate
 from app.services.agent_config import AgentConfigService
 from app.services.template_catalog import get_official_template, get_official_templates
-from app.services.template_sanitizer import (
-    sanitize_graph,
-    sanitize_test_input,
-    validate_node_types,
-)
+from app.services.template_sanitizer import sanitize_template_graph, validate_node_types
 from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
@@ -137,13 +133,17 @@ class TemplateService:
             if grow and not grow.is_deleted and grow.status == TemplateStatus.APPROVED:
                 read = TemplateRead.model_validate(grow)
                 read.is_global = True
+                # Rows stored under older cleaning rules are cleaned again on the way out.
+                read.graph = sanitize_template_graph(read.graph)
                 return read
 
         # the user's own private template (tenant DB)
         row = await self.repository.get_by_id(template_id)
         if not row or row.is_deleted or row.created_by != user_id:
             raise AppException(error_key=ErrorKey.TEMPLATE_NOT_FOUND, status_code=404)
-        return TemplateRead.model_validate(row)
+        read = TemplateRead.model_validate(row)
+        read.graph = sanitize_template_graph(read.graph)
+        return read
 
     async def list_pending(self) -> List[TemplateListItem]:
         """Master review queue — pending publish submissions."""
@@ -172,9 +172,11 @@ class TemplateService:
             )
 
         workflow = await self.workflow_service.get_by_id(agent.workflow_id)
-        nodes, edges = sanitize_graph(workflow.nodes, workflow.edges)
+        graph = sanitize_template_graph(
+            {"nodes": workflow.nodes, "edges": workflow.edges, "testInput": workflow.testInput}
+        )
         node_types = sorted(
-            {n.get("type") for n in nodes if isinstance(n, dict) and n.get("type")}
+            {n.get("type") for n in graph["nodes"] if isinstance(n, dict) and n.get("type")}
         )
 
         possible_queries = (
@@ -189,10 +191,6 @@ class TemplateService:
             "greet_on_start": bool(agent.greet_on_start),
             "greeting_prompt": agent.greeting_prompt,
         }
-        graph = {"nodes": nodes, "edges": edges}
-        safe_test_input = sanitize_test_input(nodes, workflow.testInput)
-        if safe_test_input is not None:
-            graph["testInput"] = safe_test_input
 
         template = TemplateModel(
             title=data.title,
@@ -216,12 +214,7 @@ class TemplateService:
         if not row or row.is_deleted or row.created_by != user_id:
             raise AppException(error_key=ErrorKey.TEMPLATE_NOT_FOUND, status_code=404)
 
-        source_graph = row.graph or {}
-        nodes, edges = sanitize_graph(source_graph.get("nodes"), source_graph.get("edges"))
-        graph = {"nodes": nodes, "edges": edges}
-        safe_test_input = sanitize_test_input(nodes, source_graph.get("testInput"))
-        if safe_test_input is not None:
-            graph["testInput"] = safe_test_input
+        graph = sanitize_template_graph(row.graph)
 
         current_tenant = get_tenant_context()
         async with self._master_repo() as mrepo:
@@ -291,10 +284,9 @@ class TemplateService:
     ) -> TemplateInstallResponse:
         template = await self.get_template(template_id, user_id)
 
-        graph = template.graph or {}
-        validate_node_types(graph.get("nodes"))
+        validate_node_types((template.graph or {}).get("nodes"))
         # Re-sanitize defensively (official/community/user graphs should already be clean).
-        nodes, edges = sanitize_graph(graph.get("nodes"), graph.get("edges"))
+        graph = sanitize_template_graph(template.graph)
 
         cfg = template.agent_config or {}
         agent_name = (name or cfg.get("name") or template.title)[:100]
@@ -304,8 +296,8 @@ class TemplateService:
             WorkflowCreate(
                 name=f"{agent_name} Workflow",
                 description=description,
-                nodes=nodes,
-                edges=edges,
+                nodes=graph["nodes"],
+                edges=graph["edges"],
                 testInput=graph.get("testInput"),
                 version="1.0",
             )
