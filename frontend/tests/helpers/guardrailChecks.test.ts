@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultGuardrailPolicy,
-  extractGuardrailChecks,
   guardrailChipsByMessage,
   usesJudge,
 } from "@/helpers/guardrailChecks";
@@ -59,43 +58,6 @@ const verdict = (check_type: string, action: string, stage = "input") => ({
   mode: "block",
   action,
   source: null,
-});
-
-describe("extractGuardrailChecks", () => {
-  it("reads the checks from row_agent_response", () => {
-    const checks = extractGuardrailChecks({
-      row_agent_response: {
-        guardrail_events: [verdict("prompt_attack", "blocked")],
-      },
-      guardrail_events: [verdict("blocked_words", "flagged")],
-    });
-    expect(checks.map((c) => [c.check_type, c.action])).toEqual([
-      ["prompt_attack", "blocked"],
-    ]);
-  });
-
-  it("falls back to the top-level checks", () => {
-    const checks = extractGuardrailChecks({
-      row_agent_response: { output: "Hi" },
-      guardrail_events: [verdict("too_long", "skipped", "tool")],
-    });
-    expect(checks.map((c) => [c.check_type, c.action])).toEqual([
-      ["too_long", "skipped"],
-    ]);
-  });
-
-  it("drops entries without a check type and action", () => {
-    const checks = extractGuardrailChecks({
-      guardrail_events: [
-        verdict("denied_topic", "flagged"),
-        { ...verdict("prompt_attack", "blocked"), action: undefined },
-        { ...verdict("prompt_attack", "blocked"), check_type: 3 },
-        "blocked",
-        null,
-      ],
-    });
-    expect(checks.map((c) => c.check_type)).toEqual(["denied_topic"]);
-  });
 });
 
 describe("guardrailChipsByMessage", () => {

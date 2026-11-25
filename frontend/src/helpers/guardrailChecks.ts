@@ -87,25 +87,6 @@ const STAGE_LABELS: Record<GuardrailStage, string> = {
 export const guardrailStageLabel = (stage: string): string =>
   STAGE_LABELS[stage as GuardrailStage] ?? stage;
 
-type UnknownRecord = Record<string, unknown>;
-
-const isRecord = (value: unknown): value is UnknownRecord =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const isVerdict = (value: unknown): value is GuardrailVerdict =>
-  isRecord(value) &&
-  typeof value.check_type === "string" &&
-  typeof value.action === "string";
-
-export const extractGuardrailChecks = (parsed: unknown): GuardrailVerdict[] => {
-  if (!isRecord(parsed)) return [];
-  const row = isRecord(parsed.row_agent_response)
-    ? parsed.row_agent_response.guardrail_events
-    : undefined;
-  const events = Array.isArray(row) ? row : parsed.guardrail_events;
-  return Array.isArray(events) ? events.filter(isVerdict) : [];
-};
-
 export type GuardrailChip = "blocked" | "flagged";
 
 export const guardrailChipsByMessage = (

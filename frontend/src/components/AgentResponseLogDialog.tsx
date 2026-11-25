@@ -3,8 +3,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/d
 import { fetchAgentResponseLog, AgentResponseLog } from "@/services/transcripts";
 import JsonViewer from "@/components/JsonViewer";
 import { extractReferencedArticles } from "@/helpers/referencedArticles";
-import { extractGuardrailChecks } from "@/helpers/guardrailChecks";
-import { GuardrailChecksList } from "@/components/GuardrailChecksList";
 import { TruncatedText } from "@/components/TruncatedText";
 import { formatDateTime } from "@/helpers/utils";
 
@@ -40,7 +38,6 @@ export function AgentResponseLogDialog({
 
   const parsedResponse = useMemo(() => parseRawResponse(data?.raw_response), [data?.raw_response]);
   const references = useMemo(() => extractReferencedArticles(parsedResponse), [parsedResponse]);
-  const checks = useMemo(() => extractGuardrailChecks(parsedResponse), [parsedResponse]);
 
   useEffect(() => {
     if (!isOpen || !messageId) {
@@ -151,12 +148,6 @@ export function AgentResponseLogDialog({
                   </ul>
                 )}
               </div>
-              {checks.length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold text-muted-foreground mb-1">Guardrail checks</div>
-                  <GuardrailChecksList verdicts={checks} />
-                </div>
-              )}
               <div>
                 <div className="text-xs font-semibold text-muted-foreground mb-1">Response (JSON)</div>
                 {parsedResponse != null && typeof parsedResponse === "object" ? (
