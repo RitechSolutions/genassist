@@ -5,7 +5,15 @@ type MatchRecord = {
   end: number;
   type: "json" | "options" | "file";
   content: string;
+  /** The matched source text (the whole fenced block for JSON). */
+  raw: string;
 };
+
+export interface ParseContentOptions {
+  /** Keep a ```json block that is not interactive data (schedule / item list) as ordinary
+   *  text, so it renders as a code block. By default such blocks are dropped. */
+  keepUnknownJson?: boolean;
+}
 
 const jsonBlockRegex = /```json\s*([\s\S]*?)\s*```/g;
 const optionsRegex = /\*\*\*(.*?)\*\*\*/g;
@@ -56,7 +64,8 @@ const parseJsonBlock = (jsonString: string): ChatContentBlock | null => {
 
 export const parseInteractiveContentBlocks = (
   text: string,
-  messageType?: 'message' | 'file'
+  messageType?: 'message' | 'file',
+  options: ParseContentOptions = {}
 ): ChatContentBlock[] => {
   const matches: MatchRecord[] = [];
 
@@ -77,6 +86,7 @@ export const parseInteractiveContentBlocks = (
       end: jsonMatch.index + fullMatch.length,
       type: "json",
       content,
+      raw: fullMatch,
     });
   }
 
@@ -91,6 +101,7 @@ export const parseInteractiveContentBlocks = (
       end: optionsMatch.index + fullMatch.length,
       type: "options",
       content,
+      raw: fullMatch,
     });
   }
 
@@ -116,6 +127,8 @@ export const parseInteractiveContentBlocks = (
       const block = parseJsonBlock(match.content);
       if (block) {
         blocks.push(block);
+      } else if (options.keepUnknownJson) {
+        blocks.push({ kind: "text", text: match.raw });
       }
     } else {
       const options = match.content

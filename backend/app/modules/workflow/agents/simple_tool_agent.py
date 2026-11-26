@@ -34,8 +34,7 @@ class SimpleToolAgent(BaseToolAgent):
         prompt = self._create_prompt(query, chat_history)
         llm_usage_entries = []
         try:
-            response = await self.llm_model.ainvoke(
-                [{"role": "user", "content": prompt}])
+            response = await self.llm_model.ainvoke([self._user_turn(prompt)])
             response_content = self._extract_response_content(response)
             usage = extract_usage_from_aimessage(response)
             if usage:
@@ -64,8 +63,7 @@ class SimpleToolAgent(BaseToolAgent):
                 # If tool not found, ask LLM to answer directly (no tools)
                 no_tools_prompt = self._create_no_tools_prompt(
                     query, chat_history)
-                direct_response = await self.llm_model.ainvoke(
-                    [{"role": "user", "content": no_tools_prompt}])
+                direct_response = await self.llm_model.ainvoke([self._user_turn(no_tools_prompt)])
                 direct_content = self._extract_response_content(direct_response)
                 usage2 = extract_usage_from_aimessage(direct_response)
                 if usage2:

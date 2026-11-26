@@ -1,3 +1,4 @@
+import type { Components } from 'react-markdown';
 import React from 'react';
 import { ChatContentBlock, DynamicChatItem, FileItem, ScheduleItem } from '../types';
 import { getFileIcon } from './FileTypeIcon';
@@ -50,6 +51,8 @@ interface InteractiveContentProps {
   isActionable: boolean;
   onQuickAction?: (text: string) => void;
   onScheduleConfirm?: (schedule: ScheduleItem) => void;
+  /** Optional markdown element overrides for text blocks (see MarkdownMessage). */
+  markdownComponents?: Components;
 }
 
 export const InteractiveContent: React.FC<InteractiveContentProps> = ({
@@ -62,6 +65,7 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
   isActionable,
   onQuickAction,
   onScheduleConfirm,
+  markdownComponents,
 }) => {
   if (!blocks.length) return null;
 
@@ -78,7 +82,7 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
               return <FileBlock key={index} fileData={fileData} />;
             }
           case 'text':
-            return <TextBlock key={index} text={block.text} />;
+            return <TextBlock key={index} text={block.text} components={markdownComponents} />;
           case 'options':
             return (
               <QuickOptions
@@ -126,8 +130,8 @@ export const InteractiveContent: React.FC<InteractiveContentProps> = ({
   );
 };
 
-const TextBlock: React.FC<{ text: string }> = ({ text }) => {
-  return <MarkdownMessage text={text} />;
+const TextBlock: React.FC<{ text: string; components?: Components }> = ({ text, components }) => {
+  return <MarkdownMessage text={text} components={components} />;
 };
 
 interface QuickOptionsProps {

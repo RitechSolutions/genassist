@@ -5,6 +5,7 @@ import logging
 
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.memory import ConversationMemory
+from app.modules.workflow.agents.image_attachments import with_images
 from app.modules.workflow.agents.agent_utils import (
     validate_tool_parameters,
     create_error_response,
@@ -50,9 +51,17 @@ class BaseToolAgent(ABC):
         self.verbose = verbose
         self.max_iterations = max_iterations
         self.tool_map = {tool.name: tool for tool in self.tools}
+        # Image content blocks the visitor sent with this turn; set by the runtime
+        self.images: List[Dict[str, Any]] = []
 
         agent_name = self.__class__.__name__
         logger.info(f"{agent_name} initialized with {len(self.tools)} tools")
+
+    def _user_turn(self, text: str) -> Dict[str, Any]:
+        """The user message for one model call, carrying this turn's images.
+
+        Each call is self-contained, so the images ride on every one of them."""
+        return {"role": "user", "content": with_images(text, self.images)}
 
     # ==================== ABSTRACT METHODS ====================
 

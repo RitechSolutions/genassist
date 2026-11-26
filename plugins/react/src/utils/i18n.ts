@@ -63,6 +63,12 @@ export interface Translations {
   };
   fileUpload?: {
     fileTypeNotSupported: string;
+    uploadFailed?: string;
+  };
+  sendFailure?: {
+    notDelivered: string;
+    retry: string;
+    replyFailed: string;
   };
   receipts?: {
     sent: string;

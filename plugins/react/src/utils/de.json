@@ -33,6 +33,15 @@
     "thumbsUp": "Daumen hoch",
     "thumbsDown": "Daumen runter"
   },
+  "fileUpload": {
+    "fileTypeNotSupported": "Dieser Dateityp wird nicht unterstützt.",
+    "uploadFailed": "{name} konnte nicht hochgeladen werden. Bitte versuche es erneut."
+  },
+  "sendFailure": {
+    "notDelivered": "Nicht zugestellt",
+    "retry": "Erneut senden",
+    "replyFailed": "Beim Beantworten deiner Nachricht ist etwas schiefgelaufen. Bitte versuche es erneut."
+  },
   "receipts": {
     "sent": "Gesendet",
     "delivered": "Zugestellt",
@@ -97,6 +106,34 @@
     "boolean": "Boolesch",
     "edit": "Bearbeiten",
     "remove": "Entfernen"
+  },
+  "spotlight": {
+    "close": "Chat schließen",
+    "exitFullscreen": "Vollbild beenden",
+    "jumpToLatest": "Zur neuesten Nachricht",
+    "send": "Nachricht senden",
+    "attach": "Anhängen",
+    "emoji": "Emoji hinzufügen",
+    "sendFile": "Datei senden",
+    "addScreenshot": "Screenshot hinzufügen",
+    "screenshotFailed": "Der Screenshot konnte nicht erstellt werden. Bitte versuche es erneut.",
+    "uploadedCount": "{done} von {total} hochgeladen",
+    "removeFile": "Datei entfernen",
+    "addFile": "Datei hinzufügen",
+    "scrollLeft": "Nach links scrollen",
+    "scrollRight": "Nach rechts scrollen",
+    "sendFiles": "Dateien senden",
+    "poweredBy": "Bereitgestellt von",
+    "open": "Chat öffnen",
+    "openFile": "Öffnen",
+    "dismiss": "Schließen",
+    "teaserTitle": "Hallo!",
+    "teaserBody": "Wie können wir Ihnen heute helfen?",
+    "writeMessage": "Nachricht schreiben…",
+    "formFallback": "Bitte füllen Sie das folgende Formular aus.",
+    "emptyTitle": "Unterhaltung starten",
+    "emptyBody": "Fragen Sie uns alles, wir helfen Ihnen gerne.",
+    "typing": "Schreibt"
   }
 }
 

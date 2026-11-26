@@ -20,7 +20,8 @@
     "placeholder": "Ask a question"
   },
   "fileUpload": {
-    "fileTypeNotSupported": "This file type is not supported."
+    "fileTypeNotSupported": "This file type is not supported.",
+    "uploadFailed": "Couldn't upload {name}. Please try again."
   },
   "labels": {
     "agent": "Agent",
@@ -35,6 +36,11 @@
   "feedback": {
     "thumbsUp": "Thumbs up",
     "thumbsDown": "Thumbs down"
+  },
+  "sendFailure": {
+    "notDelivered": "Not delivered",
+    "retry": "Retry",
+    "replyFailed": "Something went wrong while answering your message. Please try again."
   },
   "receipts": {
     "sent": "Sent",
@@ -100,6 +106,34 @@
     "boolean": "Boolean",
     "edit": "Edit",
     "remove": "Remove"
+  },
+  "spotlight": {
+    "close": "Close chat",
+    "exitFullscreen": "Exit fullscreen",
+    "jumpToLatest": "Jump to latest",
+    "send": "Send message",
+    "attach": "Attach",
+    "emoji": "Add emoji",
+    "sendFile": "Send a file",
+    "addScreenshot": "Add screenshot",
+    "screenshotFailed": "Couldn't take the screenshot. Please try again.",
+    "uploadedCount": "{done} of {total} uploaded",
+    "removeFile": "Remove file",
+    "addFile": "Add a file",
+    "scrollLeft": "Scroll left",
+    "scrollRight": "Scroll right",
+    "sendFiles": "Send files",
+    "poweredBy": "Powered by",
+    "open": "Open chat",
+    "openFile": "Open",
+    "dismiss": "Dismiss",
+    "teaserTitle": "Hi there!",
+    "teaserBody": "How can we help you today?",
+    "writeMessage": "Write a message…",
+    "formFallback": "Please fill the form below.",
+    "emptyTitle": "Start a conversation",
+    "emptyBody": "Ask us anything, we are here to help.",
+    "typing": "Typing"
   }
 }
 

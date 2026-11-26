@@ -604,6 +604,21 @@ async def get_or_create_conversation(
     return open_conversation
 
 
+SERVER_ATTACHMENT_KEYS = ("file_local_path", "file_url", "file_mime_type", "file_storage_provider")
+
+
+def is_chat_upload_of(file: Any, conversation_id: UUID) -> bool:
+    """True when `file` was uploaded to this conversation through the chat upload route.
+
+    The browser names attachments by file id; only files stored under this conversation's
+    upload folder (agents_config/upload-chat-files/<conversation id>/, possibly behind a
+    tenant prefix on S3) are resolved, so a visitor cannot make the agent read another
+    conversation's upload or any other File Manager file by sending its id.
+    """
+    path = str(getattr(file, "path", "") or "").replace("\\", "/")
+    return f"upload-chat-files/{conversation_id}/" in path
+
+
 async def process_attachments_from_metadata(
     base_url: str,
     conversation_id: UUID,
@@ -613,15 +628,19 @@ async def process_attachments_from_metadata(
     file_manager_service: FileManagerService,
 ) -> None:
     """
-    Process attachments from conversation metadata.
-    Handles file retrieval, OpenAI upload, and file processing.
+    Resolve the files attached to this chat turn: where each one is stored and its link,
+    and record it on the conversation. Only files uploaded to this conversation resolve.
     """
     # Check for attachments on metadata
     if model.metadata and model.metadata.get("attachments"):
-        supported_file_extensions = ["pdf"]
-
         # process attachments
         for attachment in model.metadata.get("attachments"):
+            # These keys are the server's own record of a file (where it is on disk and
+            # which storage holds it). Drop any the browser sent so only the lookups
+            # below can set them; the workflow reads files from disk based on them.
+            for key in SERVER_ATTACHMENT_KEYS:
+                attachment.pop(key, None)
+
             if not attachment.get("type"):
                 attachment["file_local_path"] = attachment.get("url")
                 attachment["file_mime_type"] = attachment.get("mime_type")
@@ -630,44 +649,27 @@ async def process_attachments_from_metadata(
 
                 # get file by file_id
                 file = await file_manager_service.get_file_by_id(attachment.get("file_id"))
+                if file and not is_chat_upload_of(file, conversation_id):
+                    logger.warning(
+                        "Ignoring attachment %s on conversation %s: not uploaded to this conversation",
+                        attachment.get("file_id"),
+                        conversation_id,
+                    )
+                    file = None
                 if not file:
                     pass
                 else:
-                    # get the file url for local storage provider missing the base url
-                    file_url = await file_manager_service.get_file_url(file)
-                    chat_file_url = file_url
+                    # The turn runs on its own FileManagerService, which has no base URL
+                    # of its own; local files get their link on this request's address.
+                    chat_file_url = await file_manager_service.get_file_url(file, base_url=base_url)
 
                     # add to attachments local path when the storage provider is local
                     if file.storage_provider == "local":
-                        chat_file_url = f"{base_url}{file_url.rstrip('/')}"
                         attachment["file_local_path"] = f"{file.storage_path}/{file.path}"
 
                     attachment["file_url"] = chat_file_url
                     attachment["file_mime_type"] = file.mime_type
                     attachment["file_storage_provider"] = file.storage_provider
-
-                    # Check if file has OpenAI file_id stored or upload if needed
-                    if not attachment.get("openai_file_id"):
-                        # Get file extension from filename or file_extension attribute
-                        file_extension = ""
-                        if hasattr(file, "file_extension") and file.file_extension:
-                            file_extension = file.file_extension.lower()
-                        elif file.name and "." in file.name:
-                            file_extension = file.name.split(".")[-1].lower()
-
-                        # Optionally upload to OpenAI if it's a PDF, DOCX, or TXT and not already uploaded
-                        if file_extension in supported_file_extensions:
-                            try:
-                                from app.services.open_ai_fine_tuning import OpenAIFineTuningService
-
-                                openai_service = injector.get(OpenAIFineTuningService)
-                                openai_file_id = await openai_service.upload_file_for_chat(
-                                    file_url=chat_file_url, filename=file.name, purpose="user_data"
-                                )
-                                attachment["openai_file_id"] = openai_file_id
-                                logger.info(f"Uploaded file to OpenAI: {openai_file_id}")
-                            except Exception as e:
-                                logger.warning(f"Failed to upload file to OpenAI: {str(e)}")
 
                     # process the file upload from chat
                     await process_file_upload_from_chat(

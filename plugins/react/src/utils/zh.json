@@ -33,6 +33,15 @@
     "thumbsUp": "赞",
     "thumbsDown": "踩"
   },
+  "fileUpload": {
+    "fileTypeNotSupported": "不支持此文件类型。",
+    "uploadFailed": "无法上传 {name}，请重试。"
+  },
+  "sendFailure": {
+    "notDelivered": "未送达",
+    "retry": "重试",
+    "replyFailed": "回复您的消息时出现问题，请重试。"
+  },
   "receipts": {
     "sent": "已发送",
     "delivered": "已送达",
@@ -97,5 +106,33 @@
     "boolean": "布尔",
     "edit": "编辑",
     "remove": "移除"
+  },
+  "spotlight": {
+    "close": "关闭聊天",
+    "exitFullscreen": "退出全屏",
+    "jumpToLatest": "跳到最新消息",
+    "send": "发送消息",
+    "attach": "附件",
+    "emoji": "添加表情",
+    "sendFile": "发送文件",
+    "addScreenshot": "添加截图",
+    "screenshotFailed": "无法截图，请重试。",
+    "uploadedCount": "已上传 {done}/{total}",
+    "removeFile": "移除文件",
+    "addFile": "添加文件",
+    "scrollLeft": "向左滚动",
+    "scrollRight": "向右滚动",
+    "sendFiles": "发送文件",
+    "poweredBy": "技术支持",
+    "open": "打开聊天",
+    "openFile": "打开",
+    "dismiss": "关闭",
+    "teaserTitle": "你好！",
+    "teaserBody": "今天我们能为您做些什么？",
+    "writeMessage": "输入消息…",
+    "formFallback": "请填写以下表单。",
+    "emptyTitle": "开始对话",
+    "emptyBody": "有任何问题都可以问我们，我们随时为您提供帮助。",
+    "typing": "正在输入"
   }
 }

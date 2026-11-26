@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from langchain_core.messages import SystemMessage
 
+from app.modules.workflow.agents.document_attachments import turn_documents_block, with_documents
+from app.modules.workflow.agents.image_attachments import IMAGE_ONLY_PROMPT, image_content_blocks
 from app.modules.workflow.agents.react_agent import ReActAgent
 from app.modules.workflow.agents.react_agent_lc import ReActAgentLC
 from app.modules.workflow.agents.simple_tool_agent import SimpleToolAgent
@@ -46,6 +48,21 @@ def _react_system_prompt(
 
     stable, volatile = stable_volatile_parts
     return build_cacheable_system_message(stable, volatile), (True, None)
+
+
+def _turn_images(state: "WorkflowState", node_id: str) -> List[Dict[str, Any]]:
+    """Image content blocks for the images the visitor sent with this turn.
+
+    An image that cannot be read is left out rather than failing the agent's reply.
+    """
+    get_value = getattr(state, "get_value", None)
+    if get_value is None:
+        return []
+    try:
+        return image_content_blocks(get_value("attachments", []))
+    except OSError as e:
+        logger.warning("Agent node %s: an attached image could not be read, answering without images: %s", node_id, e)
+        return []
 
 
 async def run_agent_once(
@@ -124,6 +141,16 @@ async def run_agent_once(
 
         reason = diagnostics.REASON_UNSUPPORTED_MODE if mode_never_splits else split_reason
         diagnostics.record(state, node_id, applied=False, reason=reason)
+
+    images = _turn_images(state, node_id)
+    agent.images = images
+    # Documents attached this turn go into the message as text (with a stand-in when the
+    # user sent only a document); a message with only images gets the image stand-in.
+    documents = await turn_documents_block(state)
+    if documents:
+        user_prompt = with_documents(user_prompt, documents)
+    elif images and not (user_prompt or "").strip():
+        user_prompt = IMAGE_ONLY_PROMPT
 
     result = await agent.invoke(user_prompt, chat_history=chat_history or [])
     logger.debug("Agent result: %s", result)

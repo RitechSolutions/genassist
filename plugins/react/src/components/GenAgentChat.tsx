@@ -7,6 +7,7 @@ import { useScrollManagement } from '../hooks/useScrollManagement';
 import { useThinkingAnimation } from '../hooks/useThinkingAnimation';
 import { useSmoothReveal } from '../hooks/useSmoothReveal';
 import { useViewportManager } from '../hooks/useViewportManager';
+import { useKeyboardViewport } from '../hooks/useKeyboardViewport';
 import { useFileAttachments } from '../hooks/useFileAttachments';
 import { ChatMessage, GenAgentChatProps, ScheduleItem, SendMessageOutcome } from '../types';
 import { VoiceInput } from './VoiceInput';
@@ -18,6 +19,9 @@ import { BubbleDock } from './BubbleDock';
 import DynamicFormMessage from './DynamicFormMessage';
 import { LanguageSelector } from './LanguageSelector';
 import chatLogo from '../assets/chat-logo.png';
+import { isLauncherMode } from '../utils/chatMode';
+import { SpotlightChat } from './spotlight/SpotlightChat';
+import type { SpotlightController } from './spotlight/types';
 
 import {
   resolveLanguage,
@@ -86,7 +90,7 @@ const isChatSurfaceOpen = (
   isFloatingOpen: boolean,
   barPanelOpen: boolean,
 ): boolean => {
-  if (mode === 'floating') return isFloatingOpen;
+  if (isLauncherMode(mode)) return isFloatingOpen;
   if (mode === 'inputbar') return barPanelOpen;
   return true;
 };
@@ -128,6 +132,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   formDisplay = 'footer',
   onConfigLoaded,
   readReceipts = false,
+  showPoweredBy = true,
+  showEmojiPicker = true,
+  allowScreenshot = true,
 }): React.ReactElement => {
   // Language selection state (with localStorage persistence)
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -229,7 +236,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     isLoading,
     sendMessage,
     sendAudioMessage,
-    uploadFile,
+    retryMessage,
+    canRetryMessage,
+    uploadAttachment,
     resetConversation,
     startConversation,
     triggerStartForm,
@@ -325,7 +334,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   // and the tab is focused.
   const { unreadCount, dividerBeforeKey, registerBottom } = useReadReporter({
     enabled: readReceipts,
-    active: mode === 'floating' ? isFloatingOpen : mode === 'inputbar' ? barPanelOpen : true,
+    active: isLauncherMode(mode) ? isFloatingOpen : mode === 'inputbar' ? barPanelOpen : true,
     messages,
     conversationId,
     isFinalized,
@@ -389,6 +398,9 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     setShowLanguageDropdown,
     setShowMenu,
   });
+  // The on-screen keyboard, while the visitor types in one of the chat's fields: every
+  // mode fits itself above it instead of letting the browser pan the page.
+  const keyboard = useKeyboardViewport();
 
   const {
     attachments,
@@ -397,9 +409,11 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     fileErrorToast,
     fileInputRef,
     handleFileChange,
+    addFiles,
+    showFileError,
     handleRemoveAttachment,
     clearAttachments,
-  } = useFileAttachments({ uploadFile, t });
+  } = useFileAttachments({ uploadAttachment, t });
 
   useEffect(() => {
     if (language) return;
@@ -471,7 +485,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
   // Mount the floating panel as soon as it opens; unmount happens on close-animation end.
   useEffect(() => {
-    if (mode === 'floating' && isFloatingOpen) {
+    if (isLauncherMode(mode) && isFloatingOpen) {
       setIsPanelMounted(true);
     }
   }, [mode, isFloatingOpen]);
@@ -626,6 +640,8 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const submitMessage = async () => {
     if (inputValue.trim() === '' && attachments.length === 0) return;
     if (isAgentTyping) return;
+    // Enter while files are still uploading: wait for them (the send button is disabled too).
+    if (attachments.some((a) => !a.attachment || uploadingFiles.has(a.file.name))) return;
     const textToSend = inputValue;
     const filesToUpload = attachments.map(a => a.file);
 
@@ -653,6 +669,14 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     } finally {
       setTimeout(() => textAreaRef.current?.focus(), 0);
     }
+  };
+
+  // Resends a message that failed to send. If its conversation had to be restarted
+  // first, the text goes back in the input like any other unsent draft.
+  const handleRetry = async (failed: ChatMessage) => {
+    if (!failed.client_id) return;
+    const outcome = await retryMessage(failed.client_id, reCaptchaTokenRef.current);
+    if (failed.retry_payload?.text) restoreDraftIfRestarted(outcome, failed.retry_payload.text);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1175,7 +1199,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
   const isFloatingDocked = mode === 'floating' && !isFullscreen;
 
   // Computed styles
-  const containerStyle = getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth, t: themeParams });
+  const containerStyle = getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth, t: themeParams, keyboard });
   const headerStyle = getHeaderStyle(themeParams);
   const headerPillTitleStyle = getHeaderPillTitleStyle(fontFamily, textColor);
   const headerDescriptionTextStyle = getHeaderDescriptionTextStyle(fontFamily, mutedTextColor);
@@ -1271,7 +1295,10 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, submittedForms, localizeForm]);
 
-  const isSendDisabled = (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm;
+  // A file still uploading has no server link yet; sending now would send it without one.
+  const isUploadingFiles = attachments.some((a) => !a.attachment || uploadingFiles.has(a.file.name));
+  const isSendDisabled =
+    (inputValue.trim() === '' && attachments.length === 0) || isAgentTyping || hasPendingForm || isUploadingFiles;
   // While a saved conversation is being checked, keep the (disabled) input instead of flashing the start button.
   const hasNoConversationToContinue = !conversationId && !isRestoringConversation;
   const shouldShowStartButton = hasNoConversationToContinue || isFinalized;
@@ -1303,6 +1330,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     offsetX,
     offsetY,
     isExpanded,
+    keyboard,
   });
 
   const renderLanguageSelector = () => {
@@ -1500,6 +1528,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
                 autoPlayAudioMessageId={autoPlayAudioMessageId}
                 receiptStatus={index === lastCustomerIndex ? lastCustomerReceipt : undefined}
                 isLatestQuestion={message === latestQuestion}
+                onRetry={canRetryMessage(message) ? () => void handleRetry(message) : undefined}
               />
             </React.Fragment>
           );
@@ -1508,7 +1537,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
       {streaming && liveText && renderLiveBubble('agent', liveText, streaming.createTime, '__streaming_reply__')}
       {isAgentTyping && !liveText && currentThinkingParts.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '80%' }}>
-          <div style={{ fontSize: '14px', color: '#000000', fontWeight: 600, marginBottom: 4 }}>{agentName || t('labels.agent')}</div>
+          <div style={{ fontSize: '14px', color: textColor, fontWeight: 600, lineHeight: 1, marginBottom: 4 }}>{agentName || t('labels.agent')}</div>
           <div style={{
             backgroundColor: 'transparent',
             padding: 0,
@@ -1658,10 +1687,13 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
 
       {showMenu && (
         <div ref={menuRef} style={menuPopupStyle}>
-          <div className="ga-menu-item" style={menuItemStyle} onClick={handleResetClick}>
-            <RefreshCw size={16} />
-            {t('menu.resetConversation')}
-          </div>
+          {/* Nothing to reset while the Start Conversation button shows. */}
+          {!shouldShowStartButton && (
+            <div className="ga-menu-item" style={menuItemStyle} onClick={handleResetClick}>
+              <RefreshCw size={16} />
+              {t('menu.resetConversation')}
+            </div>
+          )}
           {mode !== 'fullscreen' && (
             <div className="ga-menu-item" style={menuItemStyle} onClick={handleFullscreenToggle}>
               <Fullscreen size={16} />
@@ -2035,7 +2067,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
         style={{
           // Dock the bar to the bottom-center of the viewport so it stays visible on
           // scroll. Always centered — the input bar ignores floatingConfig corners.
-          ...getInputBarRootStyle(fontFamily, offsetY),
+          ...getInputBarRootStyle(fontFamily, offsetY, keyboard),
           ['--ga-hover' as string]: menuHoverBg,
         }}
       >
@@ -2049,7 +2081,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               if (e.target !== e.currentTarget) return;
               if (barPanelClosing) setBarPanelMounted(false);
             }}
-            style={getInputBarPanelStyle(backgroundColor, borderColor)}
+            style={getInputBarPanelStyle(
+              backgroundColor,
+              borderColor,
+              // Room left above the bar (≈64px with its 12px gap) and below the top edge.
+              keyboard.open ? keyboard.height - Math.min(offsetY, 12) - 64 - 12 - 12 : undefined,
+            )}
             data-genassist-container="inputbar-panel"
           >
             <div style={getInputBarPanelHeaderStyle(backgroundColor)} ref={headerRef}>
@@ -2091,10 +2128,12 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
               {/* Same 3-dots menu as the standard chat, minus fullscreen/maximize. */}
               {showMenu && (
                 <div ref={menuRef} style={menuPopupStyle}>
-                  <div className="ga-menu-item" style={menuItemStyle} onClick={handleResetClick}>
-                    <RefreshCw size={16} />
-                    {t('menu.resetConversation')}
-                  </div>
+                  {!shouldShowStartButton && (
+                    <div className="ga-menu-item" style={menuItemStyle} onClick={handleResetClick}>
+                      <RefreshCw size={16} />
+                      {t('menu.resetConversation')}
+                    </div>
+                  )}
                   {hasLanguageOptions && (
                     <div
                       className="ga-menu-item"
@@ -2508,6 +2547,159 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
     return renderWithReCaptcha(renderInputBarComponent());
   }
 
+  // ===== Spotlight variant (mode="spotlight") =====
+  // The redesigned floating panel. It is presentation only: everything below is the
+  // same state and handlers the other modes use, handed over as one controller.
+  if (mode === 'spotlight') {
+    const spotlight: SpotlightController = {
+      theme,
+      themeParams,
+      headerTitle,
+      headerDescription,
+      logoSrc: logoUrl?.trim() || chatLogo,
+      brandLogo,
+      agentName,
+      inputPlaceholder,
+      translations,
+      t,
+      language: resolvedLanguage,
+      useFile,
+      useAudio,
+      allowedExtensions,
+      formDisplay,
+      showWelcomeBeforeStart,
+      chatBubbleIcon: theme?.chatBubbleIcon,
+      showPoweredBy,
+
+      position,
+      offsetX,
+      offsetY,
+      windowWidth,
+      windowHeight,
+      isFullscreen,
+      isExpanded,
+      keyboard,
+      onExpandToggle: handleExpandToggle,
+      onFullscreenToggle: handleFullscreenToggle,
+      isOpen: isFloatingOpen,
+      setOpen: setIsFloatingOpen,
+      isPanelMounted,
+      onPanelClosed: () => setIsPanelMounted(false),
+
+      showQuickInput: quickInput && !quickInputDismissed && Boolean(conversationId) && !isFinalized,
+      unreadCount,
+      onQuickInputSend: handleQuickInputSend,
+      onDismissQuickInput: handleDismissQuickInput,
+
+      messages,
+      isLoading,
+      conversationId,
+      isFinalized,
+      isAgentTyping,
+      isRestoringConversation,
+      possibleQueries,
+      welcomeTitle,
+      welcomeImageUrl,
+      welcomeMessage,
+      hasUserMessages,
+      shouldTriggerStartForm,
+      disclaimerHtml: inputDisclaimerHtml,
+      liveText,
+      streamingCreateTime: streaming?.createTime,
+      revealingMessage,
+      revealedText,
+      customThinkingLabel:
+        thinkingPhrases && thinkingPhrases.length > 0
+          ? currentThinkingParts[currentThinkingPartIndex] || currentThinkingParts[currentThinkingParts.length - 1]
+          : undefined,
+      dividerBeforeKey,
+      lastCustomerReceipt,
+      latestQuestion,
+      lastCustomerIndex,
+      showEmojiPicker,
+      canRetry: canRetryMessage,
+      onRetry: (message) => void handleRetry(message),
+
+      isFormAnswered,
+      parseForm: (message) => {
+        try { return localizeForm(JSON.parse(message.text)); } catch { return null; }
+      },
+      pendingForm,
+      hasPendingForm,
+      submittingFormIndex,
+      onFormSubmit: handleFormSubmit,
+      onFormCancel: handleFormCancel,
+
+      inputValue,
+      setInputValue,
+      textAreaRef,
+      onSubmit: () => { void submitMessage(); },
+      isSendDisabled,
+      shouldShowStartButton,
+      onStartConversation: handleStartConversation,
+
+      onQueryClick: handleQueryClick,
+      onQuickAction: handleQuickAction,
+      onScheduleConfirm: handleScheduleConfirm,
+      onFeedback: (messageId, value) => addFeedback(messageId, value),
+
+      onSendAudio: async (blob, format) => {
+        try {
+          setIsPlayingAudio(true);
+          await sendAudioMessage(blob, format);
+        } catch {
+          // error handled inside sendAudioMessage
+        } finally {
+          setIsPlayingAudio(false);
+        }
+      },
+      onVoiceError: handleVoiceError,
+      audioUrlBuilder,
+      audioHeaders,
+      autoPlayAudioMessageId,
+
+      attachments,
+      uploadingFiles,
+      fileErrorToast,
+      fileInputRef,
+      onFileChange: handleFileChange,
+      onAddFiles: (files) => void addFiles(files),
+      onFileError: showFileError,
+      allowScreenshot,
+      onRemoveAttachment: handleRemoveAttachment,
+
+      liveVoiceEnabled,
+      liveVoiceReady,
+      liveVoiceStatus: liveVoice.status,
+      liveVoiceActive: liveVoice.isActive,
+      onStartLiveCall: startLiveCall,
+      onEndLiveCall: endLiveCall,
+      liveTurns,
+      liveCaption,
+      liveVoiceNotice,
+      agentId,
+
+      showMenu,
+      setShowMenu,
+      showLanguageDropdown,
+      setShowLanguageDropdown,
+      languages: availableLanguages,
+      onLanguageChange: handleLanguageChange,
+      languageSelector: renderLanguageSelector(),
+      showResetConfirm,
+      onResetClick: handleResetClick,
+      onConfirmReset: handleConfirmReset,
+      onCancelReset: handleCancelReset,
+
+      chatContainerRef,
+      spacerRef,
+      setBottomSentinelRef,
+      showScrollButton,
+      scrollToLatest: () => scrollToLatest(),
+    };
+    return renderWithReCaptcha(<SpotlightChat ctl={spotlight} />);
+  }
+
   if (mode === 'floating') {
     const isPanelClosing = isPanelMounted && !isFloatingOpen;
     return (
@@ -2533,6 +2725,7 @@ export const GenAgentChat: React.FC<GenAgentChatProps> = ({
             onOpen={() => setIsFloatingOpen(true)}
             onSend={handleQuickInputSend}
             onDismissQuickInput={handleDismissQuickInput}
+            keyboardInset={keyboard.inset}
           />
         )}
 

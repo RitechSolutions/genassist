@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { Attachment, AttachmentWithFile } from '../types';
+import { uploadFailureToast } from '../utils/sendFailure';
 
 interface UseFileAttachmentsOptions {
-  uploadFile: (file: File) => Promise<Attachment | null>;
+  /** Uploads a file; `rejected` means the server refused its type (vs. the upload failing). */
+  uploadAttachment: (file: File) => Promise<{ attachment: Attachment | null; rejected: boolean }>;
   t: (key: string, fallback?: string) => string;
 }
 
-export function useFileAttachments({ uploadFile, t }: UseFileAttachmentsOptions) {
+export function useFileAttachments({ uploadAttachment, t }: UseFileAttachmentsOptions) {
   const [attachments, setAttachments] = useState<AttachmentWithFile[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState<Set<string>>(new Set());
   const [fileErrorToast, setFileErrorToast] = useState<string | null>(null);
@@ -21,9 +23,27 @@ export function useFileAttachments({ uploadFile, t }: UseFileAttachmentsOptions)
     };
   }, []);
 
+  /** Shows a short-lived error under the composer (failed uploads, failed screenshots). */
+  const showFileError = (message: string) => {
+    if (fileErrorToastTimeoutRef.current) {
+      clearTimeout(fileErrorToastTimeoutRef.current);
+    }
+    setFileErrorToast(message);
+    fileErrorToastTimeoutRef.current = setTimeout(() => {
+      setFileErrorToast(null);
+      fileErrorToastTimeoutRef.current = null;
+    }, 4000);
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
+      await addFiles(Array.from(e.target.files));
+    }
+  };
+
+  /** Attaches and uploads files picked by any means (file picker, screenshot). */
+  const addFiles = async (newFiles: File[]) => {
+    if (newFiles.length > 0) {
 
       const newAttachments: AttachmentWithFile[] = newFiles.map(file => ({ file, attachment: null }));
       setAttachments(prev => [...prev, ...newAttachments]);
@@ -34,11 +54,12 @@ export function useFileAttachments({ uploadFile, t }: UseFileAttachmentsOptions)
 
       try {
         const settled = await Promise.allSettled(
-          newFiles.map(async (file) => ({ file, attachment: await uploadFile(file) }))
+          newFiles.map(async (file) => ({ file, ...(await uploadAttachment(file)) }))
         );
 
         const fileToAttachmentMap = new Map<string, Attachment | null>();
         const failedFileKeys = new Set<string>();
+        const failures: Array<{ name: string; rejected: boolean }> = [];
         settled.forEach((result, index) => {
           const file = newFiles[index];
           if (!file) return;
@@ -46,16 +67,17 @@ export function useFileAttachments({ uploadFile, t }: UseFileAttachmentsOptions)
           if (result.status === 'rejected') {
             fileToAttachmentMap.set(fileKey, null);
             failedFileKeys.add(fileKey);
+            failures.push({ name: file.name, rejected: false });
             return;
           }
-          const { attachment } = result.value;
+          const { attachment, rejected } = result.value;
           fileToAttachmentMap.set(fileKey, attachment);
           if (attachment === null) {
             failedFileKeys.add(fileKey);
+            failures.push({ name: file.name, rejected });
           }
         });
 
-        const hasFailedUploads = failedFileKeys.size > 0;
 
         setAttachments(prev => {
           return prev
@@ -73,16 +95,8 @@ export function useFileAttachments({ uploadFile, t }: UseFileAttachmentsOptions)
             });
         });
 
-        if (hasFailedUploads) {
-          if (fileErrorToastTimeoutRef.current) {
-            clearTimeout(fileErrorToastTimeoutRef.current);
-          }
-          setFileErrorToast(t('fileUpload.fileTypeNotSupported', 'This file type is not supported.'));
-          fileErrorToastTimeoutRef.current = setTimeout(() => {
-            setFileErrorToast(null);
-            fileErrorToastTimeoutRef.current = null;
-          }, 4000);
-        }
+        const failureToast = uploadFailureToast(failures, t);
+        if (failureToast) showFileError(failureToast);
       } catch (error) {
         console.error('Error uploading file', error);
       } finally {
@@ -114,6 +128,8 @@ export function useFileAttachments({ uploadFile, t }: UseFileAttachmentsOptions)
     fileErrorToast,
     fileInputRef,
     handleFileChange,
+    addFiles,
+    showFileError,
     handleRemoveAttachment,
     clearAttachments,
   };

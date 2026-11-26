@@ -1,13 +1,33 @@
 import { useRef, useLayoutEffect, useEffect, useState, useCallback } from 'react';
 import { ChatMessage } from '../types';
+import { isLauncherMode } from '../utils/chatMode';
 
 const PIN_PEEK = 24;
 
 export const LATEST_QUESTION_ATTR = 'data-ga-latest-question';
 
-/** Scroll offset that pins the visitor's question near the top, or its bottom at mid-screen when it is tall. */
-export function pinTop(questionTop: number, questionBottom: number, viewportHeight: number): number {
-  return Math.max(0, questionTop - PIN_PEEK, questionBottom - viewportHeight / 2);
+/** Scroll offset that pins the visitor's question near the top, or its bottom at mid-screen when it is tall.
+ *  `peek` is the gap kept above the question (more when a header floats over the list). */
+export function pinTop(questionTop: number, questionBottom: number, viewportHeight: number, peek: number = PIN_PEEK): number {
+  return Math.max(0, questionTop - peek, questionBottom - viewportHeight / 2);
+}
+
+/** Gap above a pinned question: the container's CSS scroll-padding-top when it sets one
+ *  (a header overlaying the list), otherwise PIN_PEEK. */
+export function pinPeek(container: HTMLElement): number {
+  if (typeof window === 'undefined' || !window.getComputedStyle) return PIN_PEEK;
+  const padding = parseFloat(window.getComputedStyle(container).scrollPaddingTop);
+  return Number.isFinite(padding) && padding > PIN_PEEK ? padding : PIN_PEEK;
+}
+
+/**
+ * The pin offset the spacer makes room for. While a reply is awaited it is the full pin, so
+ * the question can be scrolled up to it; once the reply is in, it is capped at where the
+ * reader actually is, so the spacer only holds the current view and never leaves empty
+ * room to scroll into below a short conversation.
+ */
+export function heldTop(pin: number, scrollTop: number, awaitingReply: boolean): number {
+  return awaitingReply ? pin : Math.min(pin, Math.max(0, scrollTop));
 }
 
 export function spacerHeight(top: number, viewportHeight: number, contentHeight: number): number {
@@ -114,7 +134,8 @@ export function useScrollManagement({
     }
     const offset = container.scrollTop - container.getBoundingClientRect().top;
     const rect = question.getBoundingClientRect();
-    const top = pinTop(rect.top + offset, rect.bottom + offset, container.clientHeight);
+    const pin = pinTop(rect.top + offset, rect.bottom + offset, container.clientHeight, pinPeek(container));
+    const top = heldTop(pin, container.scrollTop, awaitingReplyRef.current);
     spacer.style.height = `${spacerHeight(top, container.clientHeight, container.scrollHeight - spacer.offsetHeight)}px`;
     return top;
   };
@@ -130,6 +151,8 @@ export function useScrollManagement({
     }
     if (isNewQuestion) {
       holdingRef.current = true;
+      // Size the spacer for the full pin: the reply is now awaited.
+      awaitingReplyRef.current = true;
       const top = fitSpacer();
       awaitingReplyRef.current = top !== null;
       if (top !== null) chatContainerRef.current?.scrollTo({ top, behavior: 'smooth' });
@@ -162,7 +185,7 @@ export function useScrollManagement({
   }, [conversationId]);
 
   useEffect(() => {
-    if ((mode === 'floating' || mode === 'fullscreen' || mode === 'inputbar') && isFloatingOpen && !prevIsFloatingOpenRef.current && messages.length > 0) {
+    if ((isLauncherMode(mode) || mode === 'fullscreen' || mode === 'inputbar') && isFloatingOpen && !prevIsFloatingOpenRef.current && messages.length > 0) {
       hasAnchoredHistory.current = false;
       isUserAtBottomRef.current = true;
 
@@ -195,7 +218,13 @@ export function useScrollManagement({
     const el = chatContainerRef.current;
     if (!el) return;
 
+    let lastHeight = el.clientHeight;
     const resizeObserver = new ResizeObserver(() => {
+      // The list got shorter (the on-screen keyboard opened, the composer grew): keep its
+      // bottom where it was, so the newest messages stay in view rather than the oldest.
+      const shrunkBy = lastHeight - el.clientHeight;
+      lastHeight = el.clientHeight;
+      if (shrunkBy > 0) el.scrollTop = shrunkBy + el.scrollTop;
       fitSpacer();
       if (isUserAtBottomRef.current) {
         anchorHistory();

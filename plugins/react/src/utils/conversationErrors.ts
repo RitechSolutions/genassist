@@ -55,3 +55,32 @@ export function isConversationUnavailableError(error: unknown): boolean {
 
   return isCredentialRejected || isAccessRefused || isConversationGone || isConversationFinalizedError(error);
 }
+
+/**
+ * Why a visitor's message could not be sent, which decides what the chat tells them:
+ * - `unreachable`: the server could not be reached at all (no connection, timeout, or a
+ *   gateway in front of it answering 502/503/504) — the host's "service unavailable" notice.
+ * - `agent_inactive`: the server answered that the agent is switched off.
+ * - `reply_failed`: the server was reached but producing the reply failed — "something
+ *   went wrong, try again", never "the service is down".
+ */
+export type SendFailureKind = "unreachable" | "agent_inactive" | "reply_failed";
+
+const GATEWAY_STATUSES = new Set([502, 503, 504]);
+
+/** Marks an error thrown because the request itself could not be made (fetch never got a response). */
+export function markUnreachable<T>(error: T): T {
+  if (error && typeof error === "object") (error as any).isUnreachable = true;
+  return error;
+}
+
+export function classifySendFailure(error: unknown): SendFailureKind {
+  const e = error as any;
+  if (readErrorKey(e) === "AGENT_INACTIVE") return "agent_inactive";
+  if (e?.isUnreachable) return "unreachable";
+  const status = readStatus(e);
+  if (status !== undefined) return GATEWAY_STATUSES.has(status) ? "unreachable" : "reply_failed";
+  // axios (voice messages, uploads): a request that went out but got no response
+  if (e?.isAxiosError && e?.request) return "unreachable";
+  return "reply_failed";
+}

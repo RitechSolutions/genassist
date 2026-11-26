@@ -16,9 +16,11 @@ import {
 } from "../types";
 import {
   ConversationGoneError,
+  classifySendFailure,
   isConversationFinalizedError,
   isConversationUnavailableError,
 } from "../utils/conversationErrors";
+import { canRetrySend, markSendFailed, withoutFailedSend } from "../utils/sendFailure";
 import { createSingleFlight } from "../utils/singleFlight";
 import {
   buildMessagesStorageKey,
@@ -174,6 +176,11 @@ export interface UseChatProps {
 const DEFAULT_SERVER_UNAVAILABLE_MESSAGE =
   "The service is temporarily unavailable. Please try again later.";
 const DEFAULT_SERVER_UNAVAILABLE_CONTACT_LABEL = "Contact support";
+const DEFAULT_AGENT_INACTIVE_MESSAGE =
+  "The agent is currently offline, please check back later. Thank you!";
+/** English fallback; the chat shows the translated `sendFailure.replyFailed` text. */
+const DEFAULT_REPLY_FAILED_MESSAGE =
+  "Something went wrong while answering your message. Please try again.";
 
 function isNetworkOrServerError(error: any): boolean {
   // No response = network error
@@ -210,6 +217,11 @@ export const useChat = ({
   onConfigLoaded,
 }: UseChatProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const messagesRef = useRef<ChatMessage[]>(messages);
+  messagesRef.current = messages;
+  // Recordings of voice messages that failed to send, so Retry can resend them. In
+  // memory only: after a reload a failed voice message has nothing to resend.
+  const failedRecordingsRef = useRef(new Map<string, { blob: Blob; format: string }>());
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [preloadedAttachments, setPreloadedAttachments] = useState<
     Attachment[]
@@ -1247,11 +1259,15 @@ export const useChat = ({
     void verifyConversationOnReturn();
   });
 
-  const uploadFile = useCallback(
-    async (file: File): Promise<Attachment | null> => {
+  /**
+   * Uploads one file. `rejected` is true when the server refused the file itself (an
+   * unsupported type), as opposed to the upload failing on the way (network, server).
+   */
+  const uploadAttachment = useCallback(
+    async (file: File): Promise<{ attachment: Attachment | null; rejected: boolean }> => {
       const conversationId = chatServiceRef.current?.getConversationId();
       if (!conversationId) {
-        return null;
+        return { attachment: null, rejected: false };
       }
 
       try {
@@ -1272,20 +1288,64 @@ export const useChat = ({
         };
 
         setPreloadedAttachments((prev) => [...prev, attachment]);
-        return attachment;
+        return { attachment, rejected: false };
       } catch (error: any) {
         reportUnlessConversationGone(error, onErrorRef.current);
-        return null;
+        // The upload route answers 400 for a file type it does not accept.
+        const status = error?.response?.status;
+        return { attachment: null, rejected: status === 400 || status === 415 };
       }
     },
     [baseUrl],
   );
 
-  // Send message
-  const sendMessage = useCallback(
+  const uploadFile = useCallback(
+    async (file: File): Promise<Attachment | null> => (await uploadAttachment(file)).attachment,
+    [uploadAttachment],
+  );
+
+  /**
+   * A visitor's message did not get through: mark its bubble "Not delivered" (Retry
+   * resends it) and add a notice saying why. Only an unreachable server or a
+   * switched-off agent shows the host's "service unavailable" notice; a reply that
+   * failed on a reachable server says "something went wrong, try again".
+   */
+  const reportSendFailure = useCallback(
+    (error: any, retryPayload?: ChatMessage["retry_payload"]) => {
+      const clientId: string | undefined = typeof error?.clientId === "string" ? error.clientId : undefined;
+      const kind = classifySendFailure(error);
+      const now = Date.now() / 1000;
+      const createTime = chatServiceRef.current?.getConversationCreateTime();
+      const startTime = createTime != null ? now - createTime : 0;
+      const timing = { create_time: now, start_time: startTime, end_time: startTime + 0.01 };
+
+      const notice: ChatMessage =
+        kind === "reply_failed"
+          ? { ...timing, speaker: "special", text: DEFAULT_REPLY_FAILED_MESSAGE, notice: "reply_failed", notice_for: clientId }
+          : {
+              ...timing,
+              speaker: "special",
+              text:
+                serverUnavailableMessage ??
+                (kind === "agent_inactive" ? DEFAULT_AGENT_INACTIVE_MESSAGE : DEFAULT_SERVER_UNAVAILABLE_MESSAGE),
+              notice: "unavailable",
+              notice_for: clientId,
+              ...(serverUnavailableContactUrl && {
+                linkUrl: serverUnavailableContactUrl,
+                linkLabel: serverUnavailableContactLabel ?? DEFAULT_SERVER_UNAVAILABLE_CONTACT_LABEL,
+              }),
+            };
+
+      setMessages((prev) => [...markSendFailed(prev, clientId, retryPayload), notice]);
+    },
+    [serverUnavailableMessage, serverUnavailableContactUrl, serverUnavailableContactLabel],
+  );
+
+  /** Sends a text message with already-uploaded attachments (a new send or a retry). */
+  const deliverMessage = useCallback(
     async (
       text: string,
-      files: File[] = [],
+      attachments: Attachment[],
       extraMetadata?: Record<string, any>,
       reCaptchaToken?: string,
     ): Promise<SendMessageOutcome> => {
@@ -1301,19 +1361,6 @@ export const useChat = ({
         const isConversationOpen = await ensureConversationIsOpen(reCaptchaToken);
         if (!isConversationOpen) return "conversation_restarted";
 
-        const newAttachments: Attachment[] = [];
-
-        if (files.length > 0) {
-          const uploadedFiles = files
-            .map((f) =>
-              preloadedAttachments.find(
-                (pa) => pa.name === f.name && pa.size === f.size,
-              ),
-            )
-            .filter(Boolean) as Attachment[];
-          newAttachments.push(...uploadedFiles);
-        }
-
         // Start typing immediately when user sends, unless conversation is taken over by a human
         if (!isTakenOver) {
           setIsAgentTyping(true);
@@ -1321,13 +1368,12 @@ export const useChat = ({
 
         await chatServiceRef.current.sendMessage(
           text,
-          newAttachments,
+          attachments,
           extraMetadata,
           reCaptchaToken,
         );
 
         lastConfirmedOpenAtRef.current = Date.now();
-        setPreloadedAttachments([]);
         return "sent";
       } catch (error: any) {
         setIsAgentTyping(false);
@@ -1336,31 +1382,14 @@ export const useChat = ({
           await restartConversation(staleConversationId, reCaptchaToken);
           return "conversation_restarted";
         }
-        if (isNetworkOrServerError(error)) {
-          // Show custom server-unavailable message
-          const now = Date.now() / 1000;
-          const createTime =
-            chatServiceRef.current?.getConversationCreateTime();
-          const startTime = createTime != null ? now - createTime : 0;
-          const endTime = startTime + 0.01;
-          const specialMessage: ChatMessage = {
-            create_time: now,
-            start_time: startTime,
-            end_time: endTime,
-            speaker: "special",
-            text:
-              serverUnavailableMessage ?? DEFAULT_SERVER_UNAVAILABLE_MESSAGE,
-            ...(serverUnavailableContactUrl && {
-              linkUrl: serverUnavailableContactUrl,
-              linkLabel:
-                serverUnavailableContactLabel ??
-                DEFAULT_SERVER_UNAVAILABLE_CONTACT_LABEL,
-            }),
-          };
-
-          setMessages((prev) => [...prev, specialMessage]);
-          // Don't call onError so the user only sees our custom message
-        } else if (onErrorRef.current && error instanceof Error) {
+        reportSendFailure(error, {
+          text,
+          ...(attachments.length > 0 && { attachments }),
+          ...(extraMetadata && { metadata: extraMetadata }),
+        });
+        // An outage or a widget-side error is already explained by the notice; other
+        // refusals still reach the host's onError, as before.
+        if (!isNetworkOrServerError(error) && onErrorRef.current && error instanceof Error) {
           onErrorRef.current(error);
         }
         return "failed";
@@ -1369,16 +1398,26 @@ export const useChat = ({
         setStreaming(null);
       }
     },
-    [
-      preloadedAttachments,
-      isTakenOver,
-      ensureConversationIsOpen,
-      restartConversation,
-      notifyHostIfFinalized,
-      serverUnavailableMessage,
-      serverUnavailableContactUrl,
-      serverUnavailableContactLabel,
-    ],
+    [isTakenOver, ensureConversationIsOpen, restartConversation, notifyHostIfFinalized, reportSendFailure],
+  );
+
+  // Send message
+  const sendMessage = useCallback(
+    async (
+      text: string,
+      files: File[] = [],
+      extraMetadata?: Record<string, any>,
+      reCaptchaToken?: string,
+    ): Promise<SendMessageOutcome> => {
+      const attachments = files
+        .map((f) => preloadedAttachments.find((pa) => pa.name === f.name && pa.size === f.size))
+        .filter(Boolean) as Attachment[];
+      const outcome = await deliverMessage(text, attachments, extraMetadata, reCaptchaToken);
+      // A failed send keeps its attachments on the failed message for Retry.
+      if (outcome !== "conversation_restarted") setPreloadedAttachments([]);
+      return outcome;
+    },
+    [preloadedAttachments, deliverMessage],
   );
 
   const sendAudioMessage = useCallback(
@@ -1406,6 +1445,10 @@ export const useChat = ({
           await restartConversation(staleConversationId);
           return "conversation_restarted";
         }
+        if (typeof error?.clientId === "string") {
+          failedRecordingsRef.current.set(error.clientId, { blob: audioBlob, format: audioFormat });
+        }
+        reportSendFailure(error);
         if (onErrorRef.current && error instanceof Error) {
           onErrorRef.current(error);
         }
@@ -1414,7 +1457,32 @@ export const useChat = ({
         setIsLoading(false);
       }
     },
-    [isTakenOver, ensureConversationIsOpen, restartConversation, notifyHostIfFinalized],
+    [isTakenOver, ensureConversationIsOpen, restartConversation, notifyHostIfFinalized, reportSendFailure],
+  );
+
+  /** Whether Retry can resend this failed message. */
+  const canRetryMessage = useCallback(
+    (message: ChatMessage) => canRetrySend(message, (id) => failedRecordingsRef.current.has(id)),
+    [],
+  );
+
+  /** Resends a failed message: its bubble and notice go, and it is sent again as new. */
+  const retryMessage = useCallback(
+    async (clientId: string, reCaptchaToken?: string): Promise<SendMessageOutcome> => {
+      const failed = messagesRef.current.find((m) => m.client_id === clientId && m.send_failed);
+      if (!failed) return "failed";
+      const recording = failedRecordingsRef.current.get(clientId);
+      const payload = failed.retry_payload;
+      if (!recording && !payload) return "failed";
+
+      failedRecordingsRef.current.delete(clientId);
+      if (failed.audioObjectUrl) URL.revokeObjectURL(failed.audioObjectUrl);
+      setMessages((prev) => withoutFailedSend(prev, clientId));
+
+      if (recording) return sendAudioMessage(recording.blob, recording.format);
+      return deliverMessage(payload!.text, payload!.attachments ?? [], payload!.metadata, reCaptchaToken);
+    },
+    [deliverMessage, sendAudioMessage],
   );
 
   // Invisible trigger that runs the workflow as the conversation opens so a Human In The
@@ -1496,7 +1564,10 @@ export const useChat = ({
     isLoading,
     sendMessage,
     sendAudioMessage,
+    retryMessage,
+    canRetryMessage,
     uploadFile,
+    uploadAttachment,
     resetConversation,
     startConversation,
     triggerStartForm,

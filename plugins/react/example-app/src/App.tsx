@@ -88,7 +88,7 @@ function App() {
   };
 
   const [chatSettings, setChatSettings] = useState({
-    name: "Genassist Support",
+    name: "Genassist",
     description: "Support",
     agentName: "Agent",
     logoUrl: "",
@@ -110,7 +110,7 @@ function App() {
   });
 
   // Which presentation of the chat to render (see GenAgentChat `mode`).
-  const [chatMode, setChatMode] = useState<"floating" | "inputbar" | "embedded">("floating");
+  const [chatMode, setChatMode] = useState<"floating" | "inputbar" | "embedded" | "spotlight">("floating");
 
   const [customLogo, setCustomLogo] = useState<FileState>({
     useCustom: false,
@@ -1219,9 +1219,10 @@ function App() {
                   <select
                     style={selectStyle}
                     value={chatMode}
-                    onChange={(e) => setChatMode(e.target.value as "floating" | "inputbar" | "embedded")}
+                    onChange={(e) => setChatMode(e.target.value as "floating" | "inputbar" | "embedded" | "spotlight")}
                   >
                     <option value="floating">Floating</option>
+                    <option value="spotlight">Spotlight</option>
                     <option value="inputbar">Input Bar</option>
                     <option value="embedded">Embedded</option>
                   </select>
@@ -1312,7 +1313,7 @@ function App() {
             description={chatSettings.description}
             agentName={chatSettings.agentName}
             logoUrl={chatSettings.logoUrl}
-            brandLogoUrl={chatSettings.brandLogoUrl}
+            // brandLogoUrl={chatSettings.brandLogoUrl}
             useWs={featureFlags.useWs}
             usePoll={featureFlags.usePoll}
             quickInput={featureFlags.quickInput}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ChatMessage } from "../types";
-import { isAtBottom, pinTop, questionKey, spacerHeight } from "./useScrollManagement";
+import { isAtBottom, pinTop, questionKey, spacerHeight, heldTop } from "./useScrollManagement";
 
 const VIEWPORT = 700;
 
@@ -16,6 +16,10 @@ describe("pinTop", () => {
 
   it("never scrolls above the start of the chat", () => {
     expect(pinTop(10, 70, VIEWPORT)).toBe(0);
+  });
+
+  it("keeps a larger gap when a header floats over the list", () => {
+    expect(pinTop(2000, 2060, VIEWPORT, 96)).toBe(1904);
   });
 });
 
@@ -44,5 +48,20 @@ describe("questionKey", () => {
   it("keeps the same key when the server adds an id to the sent message", () => {
     const sent: ChatMessage = { create_time: 1, start_time: 0, end_time: 0.01, speaker: "customer", text: "hi", client_id: "c_1" };
     expect(questionKey({ ...sent, message_id: "m_9" })).toBe("c_1");
+  });
+});
+
+describe('heldTop', () => {
+  it('makes room for the full pin while the reply is awaited', () => {
+    expect(heldTop(82, 0, true)).toBe(82);
+  });
+
+  it('caps the pin at the current scroll once the reply is in, so a short chat cannot scroll into empty space', () => {
+    // "Hi" → short reply: the view never moved, so the spacer must not add 82px to scroll into.
+    expect(heldTop(82, 0, false)).toBe(0);
+    // Pinned and read in place: keep exactly the current view.
+    expect(heldTop(82, 82, false)).toBe(82);
+    // Scrolled past the pin (a long reply): the pin itself is the most room ever needed.
+    expect(heldTop(82, 400, false)).toBe(82);
   });
 });

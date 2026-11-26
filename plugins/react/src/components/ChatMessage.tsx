@@ -1,7 +1,7 @@
 import React from 'react';
 import { WelcomeCard } from './WelcomeCard';
 import { ChatMessage, MessageReceiptStatus, ScheduleItem, Translations } from '../types';
-import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown, Mic, Check, CheckCheck } from 'lucide-react';
+import { User, UserX, AlertCircle, ThumbsUp, ThumbsDown, Mic, Check, CheckCheck, RotateCcw } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { formatTimestamp } from '../utils/time';
 import { InteractiveContent } from './InteractiveContent';
@@ -49,6 +49,8 @@ interface ChatMessageProps {
    *  visitor message receives one; undefined hides the indicator entirely. */
   receiptStatus?: MessageReceiptStatus;
   isLatestQuestion?: boolean;
+  /** Resends this message after it failed to send; shown with "Not delivered" when set. */
+  onRetry?: () => void;
 }
 
 export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
@@ -74,6 +76,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
   audioHeaders,
   autoPlayAudioMessageId,
   receiptStatus,
+  onRetry,
 }) => {
   const translations = React.useMemo(
     () => mergeTranslations(customTranslations, defaultTranslations),
@@ -267,6 +270,7 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
     // Determine icon and style based on message content
     // Agent off & server down
     const isAgentOffOrServerDown =
+      Boolean(message.notice) ||
       message.text.toLowerCase().includes('offline') ||
       message.text.toLowerCase().includes('inactive') ||
       message.text.toLowerCase().includes('unavailable') ||
@@ -312,7 +316,9 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
         <div style={{ ...specialBubbleStyle, flexDirection: 'row', alignItems: 'center' }}>
           {icon}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span>{message.text}</span>
+            <span>
+              {message.notice === 'reply_failed' ? t('sendFailure.replyFailed', message.text) : message.text}
+            </span>
             {message.linkUrl && message.linkLabel && (
               <a
                 href={message.linkUrl}
@@ -490,8 +496,51 @@ export const ChatMessageComponent: React.FC<ChatMessageProps> = ({
         </div>
       )}
 
+      {/* A message that never got through: "Not delivered", with Retry when it can be resent. */}
+      {isUser && message.send_failed && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            marginTop: '4px',
+            alignSelf: 'flex-end',
+            fontSize: '11px',
+            lineHeight: 1,
+            color: '#D32F2F',
+          }}
+        >
+          <AlertCircle size={13} />
+          <span>{t('sendFailure.notDelivered', 'Not delivered')}</span>
+          {onRetry && (
+            <>
+              <span aria-hidden="true">·</span>
+              <button
+                type="button"
+                onClick={onRetry}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  padding: 0,
+                  border: 'none',
+                  background: 'none',
+                  color: 'inherit',
+                  font: 'inherit',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <RotateCcw size={12} />
+                {t('sendFailure.retry', 'Retry')}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Read receipt under the visitor's latest message (Sent / Delivered / Seen). */}
-      {isUser && receiptStatus && (
+      {isUser && receiptStatus && !message.send_failed && (
         <div
           style={{
             display: 'flex',
