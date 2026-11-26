@@ -585,6 +585,20 @@ const CountFields: React.FC<{ check: ScenarioCheck; update: Update; label: strin
   </div>
 );
 
+/** How high among the search results the turn's expected article has to be. */
+const SearchFindsFields: React.FC<{ check: ScenarioCheck; update: Update }> = ({ check, update }) => (
+  <Field label="Among the first results (optional)" hint="Counted in each search, best result first.">
+    <Input
+      type="number"
+      min={1}
+      step={1}
+      value={check.within_first ?? ""}
+      placeholder="Any position"
+      onChange={(event) => update({ within_first: numberOrNull(event.target.value) })}
+    />
+  </Field>
+);
+
 const EXPECTS = [
   {
     value: "should",
@@ -928,6 +942,21 @@ export const CheckForm: React.FC<CheckFormProps> = ({
     whenBeforeNever.current = null;
   };
 
+  // The knowledge search check only says what should be found; Should or Should not is given back after it.
+  const expectBeforeSearch = React.useRef<ScenarioCheck["expect"] | null>(null);
+  const expectFor = (kind: CheckKind): ScenarioCheck["expect"] => {
+    if (kind === "search_finds" && check.kind !== "search_finds") {
+      expectBeforeSearch.current = check.expect;
+      return "should";
+    }
+    if (kind !== "search_finds" && check.kind === "search_finds") {
+      const before = expectBeforeSearch.current ?? check.expect;
+      expectBeforeSearch.current = null;
+      return before;
+    }
+    return check.expect;
+  };
+
   // How often it held before a kind graded on every turn was picked, given back after.
   const whenBeforeEveryTurn = React.useRef<ScenarioCheck["when"] | null>(null);
   const setKind = (kind: CheckKind) => {
@@ -947,7 +976,7 @@ export const CheckForm: React.FC<CheckFormProps> = ({
       when = whenBeforeEveryTurn.current ?? "anywhere";
       whenBeforeEveryTurn.current = null;
     }
-    update({ kind, ...source, when });
+    update({ kind, ...source, when, expect: expectFor(kind) });
   };
 
   // An opened form takes focus and comes into view, also each time "Show me" points at it.
@@ -972,7 +1001,7 @@ export const CheckForm: React.FC<CheckFormProps> = ({
     >
       <CheckKindPicker value={check.kind} onChange={setKind} />
 
-      <ExpectField value={check.expect} onChange={setExpect} />
+      {check.kind !== "search_finds" && <ExpectField value={check.expect} onChange={setExpect} />}
 
       <Field label="Applies to">
         <Select value={check.level} onValueChange={(level) => setLevel(level as CheckLevel)}>
@@ -1187,6 +1216,8 @@ export const CheckForm: React.FC<CheckFormProps> = ({
           </Field>
         </>
       )}
+
+      {check.kind === "search_finds" && <SearchFindsFields check={check} update={update} />}
 
       {/* What the check says, once it is complete; until then, what it still needs. */}
       <div className="flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">

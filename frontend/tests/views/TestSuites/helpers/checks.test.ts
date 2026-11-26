@@ -10,6 +10,7 @@ import {
   chosenConversations,
   goneNote,
   isAiGraded,
+  isPerTurn,
   leftOutNote,
   stepTypeLabel,
   needsConversion,
@@ -20,6 +21,7 @@ import {
   serializeChecks,
   targetFields,
   targetOf,
+  EVERY_TURN_KINDS,
 } from "@/views/TestSuites/helpers/checks";
 import type { TestCase } from "@/interfaces/testSuite.interface";
 import type { EvaluationToolCatalog, ScenarioCheck } from "@/interfaces/testEvaluation.interface";
@@ -657,5 +659,60 @@ describe("as the older methods graded", () => {
       llm_provider_id: "p2",
     });
     expect(serializeCheck(check({ kind: "reply_mentions", text: "x", llm_provider_id: "p2" }))).not.toHaveProperty("llm_provider_id");
+  });
+});
+
+describe("the knowledge search finding the turn's expected article", () => {
+  const search = (fields: Record<string, unknown> = {}): ScenarioCheck =>
+    check({ kind: "search_finds", text: null, ...fields } as Partial<ScenarioCheck>);
+
+  it("reads as the backend writes it", () => {
+    expect(checkSentence(search())).toBe("On every turn, the knowledge search should find the turn's expected article.");
+    expect(checkSentence(search({ within_first: 3 }))).toBe(
+      "On every turn, the knowledge search should find the turn's expected article in the first 3 results.",
+    );
+    expect(checkSentence(search({ within_first: 1, ...targetFields({ level: "turn", turn: conversations[0].turns[0] }) }))).toBe(
+      "The knowledge search should find the turn's expected article as the first result.",
+    );
+  });
+
+  it("reads on its conversation's page without naming the conversation", () => {
+    expect(conversationSentence(search())).toBe(
+      "On every turn, the knowledge search should find the turn's expected article.",
+    );
+  });
+
+  it("is checked on each turn", () => {
+    expect(EVERY_TURN_KINDS.has("search_finds")).toBe(true);
+    expect(isPerTurn(search())).toBe(true);
+  });
+
+  it("only says what should be found, with first results from 1", () => {
+    expect(checkMissing(search())).toBeNull();
+    expect(checkMissing(search({ expect: "should_not" }))).toBe("The knowledge search check only says what should be found.");
+    expect(checkMissing(search({ within_first: 0 }))).toBe("The first results are a whole number from 1.");
+    expect(checkMissing(search({ within_first: 1.5 }))).toBe("The first results are a whole number from 1.");
+  });
+
+  it("saves only its own settings, on every turn, and drops an article typed into an older check", () => {
+    expect(serializeCheck(search({ article: "Old prices", within_first: 3, text: "left over" }))).toEqual({
+      id: "c1",
+      expect: "should",
+      kind: "search_finds",
+      level: "every_conversation",
+      when: "every_turn",
+      within_first: 3,
+    });
+  });
+
+  it("loads back as it was saved", () => {
+    const first = serializeCheck(search({ within_first: 2 }));
+    const any = serializeCheck(search());
+
+    const loaded = parseChecks({ checks: [first, any] }).checks;
+
+    expect(loaded.map((item) => item.when)).toEqual(["every_turn", "every_turn"]);
+    expect(loaded[0]).toMatchObject({ kind: "search_finds", within_first: 2 });
+    expect(loaded.map(serializeCheck)).toEqual([first, any]);
   });
 });

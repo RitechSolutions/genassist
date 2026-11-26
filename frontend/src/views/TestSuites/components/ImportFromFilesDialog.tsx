@@ -57,7 +57,8 @@ const FORMAT_EXAMPLE = `{
           },
           "expected_output": {
             "value": "Let me check. What's your order number?"
-          }
+          },
+          "expected_articles": ["Track an order"]
         }
       ]
     }
@@ -338,6 +339,11 @@ export const ImportFromFilesDialog: React.FC<ImportFromFilesDialogProps> = ({
                   <li>
                     <code>expected_output</code> is optional, for example{" "}
                     <code>{'{"value": "..."}'}</code>.
+                  </li>
+                  <li>
+                    <code>expected_articles</code> is optional: the titles or
+                    ids of the articles the knowledge search should find on
+                    the turn.
                   </li>
                   <li>
                     <code>tags</code> and <code>weight</code> are optional.

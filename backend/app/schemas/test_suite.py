@@ -7,6 +7,27 @@ from uuid import UUID
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 
 
+MAX_EXPECTED_ARTICLES = 20
+MAX_ARTICLE_NAME_LENGTH = 500
+
+
+def clean_expected_articles(value: Any) -> Optional[List[str]]:
+    """Expected articles trimmed, without blanks or repeats; none left becomes null."""
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(isinstance(name, str) for name in value):
+        raise ValueError('"expected_articles" must be a list of article titles or ids')
+    names = list(dict.fromkeys(name.strip() for name in value if name.strip()))
+    if len(names) > MAX_EXPECTED_ARTICLES:
+        raise ValueError(f'"expected_articles" can hold at most {MAX_EXPECTED_ARTICLES} articles')
+    if any(len(name) > MAX_ARTICLE_NAME_LENGTH for name in names):
+        raise ValueError(f'an expected article can be at most {MAX_ARTICLE_NAME_LENGTH} characters long')
+    return names or None
+
+
+ExpectedArticles = Annotated[Optional[List[str]], BeforeValidator(clean_expected_articles)]
+
+
 class TestCaseBase(BaseModel):
     input_data: Dict[str, Any] = Field(
         ...,
@@ -17,6 +38,13 @@ class TestCaseBase(BaseModel):
     expected_output: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Expected output (string/JSON) for evaluators.",
+    )
+    expected_articles: ExpectedArticles = Field(
+        default=None,
+        description=(
+            "Articles the knowledge search should find on this turn, each by title or id; "
+            "finding any of them counts."
+        ),
     )
     tags: Optional[List[str]] = Field(
         default=None, description="Optional labels, e.g. ['refund', 'es-ES']."
@@ -45,6 +73,7 @@ class TestCaseCreate(TestCaseBase):
 class TestCaseUpdate(BaseModel):
     input_data: Optional[Dict[str, Any]] = None
     expected_output: Optional[Dict[str, Any]] = None
+    expected_articles: ExpectedArticles = None
     tags: Optional[List[str]] = None
     weight: Optional[float] = None
 

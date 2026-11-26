@@ -658,6 +658,16 @@ class TestExport:
         assert bundle.dataset.cases[0].local_id == 1
 
     @pytest.mark.asyncio
+    async def test_bundle_keeps_each_turns_expected_articles(self):
+        service, _, _, _ = _export_fixture()
+        (case,) = service.suites.list_cases_for_suite.return_value
+        case.expected_articles = ["Lock the bike", "article_7"]
+
+        bundle = await service.export_evaluation(uuid4())
+
+        assert bundle.dataset.cases[0].expected_articles == ["Lock the bike", "article_7"]
+
+    @pytest.mark.asyncio
     async def test_bundle_never_contains_secrets_or_run_history(self):
         service, _, _, _ = _export_fixture()
 
@@ -793,6 +803,17 @@ class TestImport:
         assert configs["action_taken"]["rules"][0]["node"] == "tgt-escalation"
         assert rule["target_case_id"] not in (old_case_id, None)
         assert result.case_count == 2
+
+    @pytest.mark.asyncio
+    async def test_import_creates_turns_with_their_expected_articles(self):
+        service = _import_service(uuid4())
+        bundle = _bundle(str(uuid4()), str(uuid4()))
+        bundle.dataset.cases[0].expected_articles = ["Lock the bike"]
+
+        await service.import_bundle(EvaluationImportRequest(bundle=bundle, target_workflow_id=uuid4()))
+
+        created = service.case_repo.create_many.await_args.args[0]
+        assert [case.expected_articles for case in created] == [["Lock the bike"], None]
 
     @pytest.mark.asyncio
     async def test_judge_provider_is_matched_by_model(self):

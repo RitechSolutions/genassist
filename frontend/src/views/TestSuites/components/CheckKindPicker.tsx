@@ -6,6 +6,7 @@ import {
   CircleCheckBig,
   CircleX,
   Database,
+  FileSearch,
   ListChecks,
   MessageSquareQuote,
   Scale,
@@ -30,6 +31,7 @@ const ICONS: Record<CheckKind, LucideIcon> = {
   route_taken: Split,
   state_equals: Database,
   value_equals: Braces,
+  search_finds: FileSearch,
 };
 
 /** Every kind of check as a tile, all in view, with what the picked one does below. */

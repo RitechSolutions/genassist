@@ -60,6 +60,7 @@ from app.services.scenario_checks import (
     skip_reason,
     tool_calls_from_events,
 )
+from app.services.search_checks import knowledge_searches
 from app.services.dataset_file import (
     FILE_STATUS_FAILED,
     FILE_STATUS_OK,
@@ -293,7 +294,9 @@ def turn_record(
         output=output,
         expected=_normalize_text(case.expected_output),
         expected_value=case.expected_output,
+        expected_articles=list(case.expected_articles or []),
         passages=_serialize_judge_source(context.get("retrievals")),
+        searches=list(context.get("searches") or []),
         step_errors=_step_errors_text(errors, context.get("nodes") or {}) if errors else "",
         tool_text=_serialize_judge_source(context.get("tool_events")),
         session_text=_serialize_judge_source(context.get("session")),
@@ -1025,6 +1028,7 @@ def _build_grading_context(execution_trace: Any) -> Dict[str, Any]:
         "session": session,
         "tools": tools,
         "retrievals": retrievals,
+        "searches": knowledge_searches(node_status),
         "errors": errors,
         "tokens": trace.get("token_usage") or {},
         "cost": trace.get("cost_usd"),
@@ -2241,6 +2245,7 @@ class TestSuiteService:
             suite_id=data.suite_id,
             input_data=data.input_data,
             expected_output=data.expected_output,
+            expected_articles=data.expected_articles,
             tags=data.tags,
             weight=data.weight,
             source_conversation_id=data.source_conversation_id,
@@ -2497,6 +2502,7 @@ class TestSuiteService:
                         turn_index=turn_index,
                         input_data=turn.input_data,
                         expected_output=turn.expected_output,
+                        expected_articles=turn.expected_articles,
                         tags=turn.tags,
                         weight=turn.weight,
                     )

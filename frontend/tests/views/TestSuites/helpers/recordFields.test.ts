@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   answerOf,
   answerToExpected,
+  articlesToSave,
   hasExpected,
   isPlainRecord,
   parseRecordObject,
   questionOf,
   questionToInput,
+  withoutArticle,
 } from "@/views/TestSuites/helpers/recordFields";
 
 describe("questionOf", () => {
@@ -135,5 +137,18 @@ describe("parseRecordObject", () => {
     const result = parseRecordObject('{"message": "Hi"');
     expect(result.ok).toBe(false);
     expect(result.error).toBeTruthy();
+  });
+});
+
+describe("expected articles", () => {
+  it("lose only the one removed", () => {
+    expect(withoutArticle(["Lock the bike", "article_7", "Lock the bike"], 2)).toEqual(["Lock the bike", "article_7"]);
+    expect(withoutArticle(["Lock the bike"], 0)).toEqual([]);
+    expect(withoutArticle(["Lock the bike"], 5)).toEqual(["Lock the bike"]);
+  });
+
+  it("are saved as null when none is left, which clears the stored ones", () => {
+    expect(articlesToSave([])).toBeNull();
+    expect(articlesToSave(["article_7"])).toEqual(["article_7"]);
   });
 });

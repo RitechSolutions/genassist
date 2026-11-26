@@ -110,7 +110,7 @@ export interface GradedItem {
   everywhere?: boolean;
   /** The turns it read; older runs did not keep them. */
   checked?: number[];
-  /** It reads the expected reply, so a turn without one is not read. */
+  /** It reads the turn's expected reply or expected articles, so a turn without them is not read. */
   readsExpected?: boolean;
   /** It reads turn by turn, unlike a count or a grade of the whole conversation. */
   byTurn?: boolean;
@@ -171,7 +171,7 @@ const checkItem = (rule: TestToolRuleResult): GradedItem => {
     checkedFacts,
     graded,
     check: snapshot,
-    readsExpected: readsExpectedReply(rule),
+    readsExpected: readsExpectedValue(rule),
     byTurn:
       Boolean(details.when) &&
       !(stored.min_calls != null || stored.max_calls != null) &&
@@ -205,7 +205,7 @@ const turnSpans = (numbers: number[]): string => {
 
 /** Which turns a check could not read, so a check of every turn does not seem to be about one. */
 const unreadNote = (item: GradedItem, turnCount?: number): string | null => {
-  // A turn with no expected reply is not one a check against it is about, so it goes unmentioned.
+  // A turn with no expected reply or article is not one a check against it is about, so it goes unmentioned.
   if (!item.checked || turnCount === undefined || item.readsExpected) return null;
   const read = new Set(item.checked);
   const unread = Array.from({ length: turnCount }, (_, index) => index + 1).filter((number) => !read.has(number));
@@ -410,15 +410,13 @@ export const turnQuestions = (turn: RunTurnResult): QuestionResult[] => {
 export const turnChecks = (turn: RunTurnResult): GradedItem[] =>
   turn.rules.filter((rule) => rule.technique === "checks").map(checkItem);
 
-const readsExpectedReply = (rule: TestToolRuleResult): boolean => {
+const readsExpectedValue = (rule: TestToolRuleResult): boolean => {
   const details = detailsOf(rule);
   const snapshot = (details.rule ?? {}) as { context?: unknown; value?: unknown };
   // A value in the run with no value of its own is compared with the expected reply.
   const valueAgainstReply = details.kind === "value_equals" && (snapshot.value == null || snapshot.value === "");
-  return (
-    rule.technique === "checks" &&
-    (details.kind === "reply_matches" || snapshot.context === "expected_reply" || valueAgainstReply)
-  );
+  const againstTurn = details.kind === "reply_matches" || details.kind === "search_finds";
+  return rule.technique === "checks" && (againstTurn || snapshot.context === "expected_reply" || valueAgainstReply);
 };
 
 /** What failed in a conversation, one short line each, in turn order. */

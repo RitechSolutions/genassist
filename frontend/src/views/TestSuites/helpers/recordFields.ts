@@ -71,6 +71,13 @@ export const answerToExpected = (
 ): Record<string, unknown> | undefined =>
   text.trim() ? { [ANSWER_KEY]: text } : undefined;
 
+/** A turn's expected articles without the one at this position. */
+export const withoutArticle = (articles: string[], position: number): string[] =>
+  articles.filter((_, index) => index !== position);
+
+/** Null for none, so the turn is saved without expected articles. */
+export const articlesToSave = (articles: string[]): string[] | null => (articles.length ? articles : null);
+
 export interface ParsedObject {
   ok: boolean;
   value?: Record<string, unknown>;

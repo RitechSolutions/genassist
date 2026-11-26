@@ -553,6 +553,28 @@ describe("a turn's results", () => {
     );
     expect(checkDetail(exact, 3)).toMatchObject({ text: "Holds on every turn.", turns: [] });
   });
+
+  it("leave out turns with no expected article, for a check against the turn's own", () => {
+    const searchRow = (stored: Record<string, unknown> = {}) =>
+      rowItem(
+        rule({
+          scope: "every_conversation",
+          status: "passed",
+          details: {
+            expected: "x",
+            kind: "search_finds",
+            when: "every_turn",
+            expect: "should",
+            checked: [1],
+            rule: { id: "c1", kind: "search_finds", when: "every_turn", level: "every_conversation", ...stored },
+          },
+        }),
+      );
+
+    expect(checkDetail(searchRow(), 3)).toMatchObject({ text: "Holds on every turn.", turns: [] });
+    expect(checkDetail(searchRow({ within_first: 1 }), 3)).toMatchObject({ text: "Holds on every turn.", turns: [] });
+    expect(checkDetail(searchRow({ article: "Old prices" }), 3)).toMatchObject({ text: "Holds on every turn.", turns: [] });
+  });
 });
 
 describe("a conversation's findings", () => {

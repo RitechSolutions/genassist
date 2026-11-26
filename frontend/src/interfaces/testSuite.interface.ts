@@ -18,6 +18,8 @@ export interface TestCase {
   suite_id: string;
   input_data: Record<string, unknown>;
   expected_output?: Record<string, unknown>;
+  /** Articles the knowledge search should find on this turn, each by title or id. */
+  expected_articles?: string[] | null;
   tags?: string[];
   weight?: number;
   /** Cases sharing a source conversation replay as one memory thread. */
@@ -228,6 +230,8 @@ export interface CreateTestCasePayload {
   input_data: Record<string, unknown>;
   /** Explicit null clears the stored value; undefined leaves it untouched. */
   expected_output?: Record<string, unknown> | null;
+  /** Explicit null clears the stored articles; undefined leaves them untouched. */
+  expected_articles?: string[] | null;
   tags?: string[];
   weight?: number;
   /** Cases sharing this replay as one memory thread. */

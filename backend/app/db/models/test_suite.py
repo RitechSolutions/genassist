@@ -102,6 +102,9 @@ class TestCaseModel(Base):
         nullable=True,
     )
 
+    # Articles the knowledge search should find on this turn, each by title or id
+    expected_articles: Mapped[Optional[List[str]]] = mapped_column(JSONB, nullable=True)
+
     weight: Mapped[Optional[float]] = mapped_column(nullable=True)
 
     suite = relationship("TestSuiteModel", back_populates="cases")
