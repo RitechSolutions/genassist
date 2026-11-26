@@ -18,6 +18,10 @@ import {
   AgentConfigUpdate,
   AgentListItem,
 } from "@/interfaces/ai-agent.interface";
+import {
+  GuardrailCheckResponse,
+  GuardrailPolicy,
+} from "@/interfaces/guardrails.interface";
 import { PaginatedResponse } from "@/interfaces/common.interface";
 import { KBListItem } from "@/views/KnowledgeBase/types/knowledgeBase";
 import { KnowledgeItemMinimal } from "@/interfaces/knowledge.interface";
@@ -156,6 +160,18 @@ export async function updateAgentConfig(
     "PUT",
     `genagent/agents/configs/${id}`,
     payload
+  );
+}
+
+export async function checkAgentGuardrails(
+  agentId: string,
+  policy: GuardrailPolicy,
+  text: string
+): Promise<GuardrailCheckResponse> {
+  return apiRequest<GuardrailCheckResponse>(
+    "POST",
+    `genagent/agents/configs/${agentId}/guardrails/check`,
+    { policy, text }
   );
 }
 

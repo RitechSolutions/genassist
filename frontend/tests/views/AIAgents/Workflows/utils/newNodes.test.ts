@@ -14,6 +14,7 @@ describe("NEW_NODE_TYPES", () => {
         "salesforceCaseNode",
         "subAgentNode",
         "webhookTriggerNode",
+        "guardrailNode",
       ])
     );
   });

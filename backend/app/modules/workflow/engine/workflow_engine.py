@@ -37,6 +37,7 @@ from app.modules.workflow.engine.nodes import (
     FinalizeConversationNode,
     GmailToolNode,
     GuardrailNliNode,
+    GuardrailNode,
     GuardrailProvenanceNode,
     HtmlToImageNode,
     HumanInTheLoopNode,
@@ -75,6 +76,7 @@ from app.modules.workflow.engine.nodes import (
 )
 from app.modules.workflow.engine.utils import describe_exception
 from app.modules.workflow.engine.workflow_state import WorkflowPausedException, WorkflowState
+from app.modules.workflow.guardrails.turn import guard_state_reply
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import process_path_based_input_data
 
@@ -185,6 +187,7 @@ class WorkflowEngine:
         cls._node_registry["setStateNode"] = SetStateNode
         cls._node_registry["guardrailProvenanceNode"] = GuardrailProvenanceNode
         cls._node_registry["guardrailNliNode"] = GuardrailNliNode
+        cls._node_registry["guardrailNode"] = GuardrailNode
         cls._node_registry["fileReaderNode"] = FileReaderNode
         cls._node_registry["ttsNode"] = TTSNode
         cls._node_registry["sttNode"] = STTNode
@@ -417,6 +420,9 @@ class WorkflowEngine:
                 except Exception as e:
                     state.fail_execution(str(e))
                     raise
+
+                if registry_managed and state.status == "completed":
+                    await guard_state_reply(state)
 
                 try:
                     if should_persist_to_memory(initial_values, bool(persist), state.status):

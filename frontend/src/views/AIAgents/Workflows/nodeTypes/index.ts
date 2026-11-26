@@ -58,12 +58,14 @@ import NlpNode from "./llm/nlpNode";
 import {
   DATA_MAPPER_NODE_DEFINITION,
   TEMPLATE_NODE_DEFINITION,
+  GUARDRAIL_NODE_DEFINITION,
   GUARDRAIL_PROVENANCE_NODE_DEFINITION,
   GUARDRAIL_NLI_NODE_DEFINITION,
   FILE_READER_NODE_DEFINITION,
 } from './utils/definitions';
 import TemplateNode from "./utils/templateNode";
 import DataMapperNode from "./utils/dataMapperNode";
+import GuardrailNode from "./utils/guardrailNode";
 import GuardrailProvenanceNode from "./utils/guardrailProvenanceNode";
 import GuardrailNliNode from "./utils/guardrailNliNode";
 import FileReaderNode from './utils/fileReaderNode';
@@ -157,6 +159,7 @@ export const registerAllNodeTypes = () => {
   nodeRegistry.registerNodeType(TOOL_BUILDER_NODE_DEFINITION);
 
   nodeRegistry.registerNodeType(DATA_MAPPER_NODE_DEFINITION);
+  nodeRegistry.registerNodeType(GUARDRAIL_NODE_DEFINITION);
   nodeRegistry.registerNodeType(GUARDRAIL_PROVENANCE_NODE_DEFINITION);
   nodeRegistry.registerNodeType(GUARDRAIL_NLI_NODE_DEFINITION);
 
@@ -230,6 +233,7 @@ export const getNodeTypes = () => {
     aggregatorNode: AggregatorNode,
     nlpNode: NlpNode,
     dataMapperNode: DataMapperNode,
+    guardrailNode: GuardrailNode,
     guardrailProvenanceNode: GuardrailProvenanceNode,
     guardrailNliNode: GuardrailNliNode,
     setStateNode: SetStateNode,

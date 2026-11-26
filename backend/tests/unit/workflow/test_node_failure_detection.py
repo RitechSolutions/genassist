@@ -25,7 +25,11 @@ from app.modules.workflow.engine.node_result import (
     is_node_failure,
     node_failure,
 )
+from app.modules.workflow.engine.nodes.agent_node import AgentNode
+from app.modules.workflow.engine.nodes.llm_model_node import LLMModelNode
 from app.modules.workflow.engine.workflow_state import WorkflowState
+from app.modules.workflow.guardrails import turn as guardrail_turn
+from app.schemas.guardrails import GuardrailPolicy
 
 # --------------------------------------------------------------------------- #
 # node_result contract
@@ -108,6 +112,7 @@ def _bare_state(node_id="n1"):
     st.llm_usage = []
     st.target_edges = {}
     st.source_edges = {}
+    st.guardrail_events = []
     return st
 
 
@@ -267,6 +272,82 @@ async def test_execute_normal_output_is_success():
     assert st.node_execution_status["n1"]["error"] is None
     assert st.get_node_output("n1") == {"message": "all good"}
     assert returned == {"message": "all good"}
+
+
+class _RefusalAwareFakeNode(_FakeNode):
+    handles_provider_refusals = True
+
+
+AZURE_REFUSAL = "Error code: 400 - {'error': {'code': 'content_filter', 'status': 400}}"
+
+
+async def _execute_in_turn(node, mode):
+    turn = guardrail_turn.GuardrailTurn(GuardrailPolicy(mode=mode), "Blocked here.")
+    token = guardrail_turn.current_guardrails.set(turn)
+    try:
+        return await node.execute()
+    finally:
+        guardrail_turn.current_guardrails.reset(token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("output", "reply"),
+    [
+        ({"message": "Sorry, I couldn't complete your request.", "error": AZURE_REFUSAL},
+         {"message": "Blocked here.", "error": AZURE_REFUSAL}),
+        (f"Error: {AZURE_REFUSAL}", "Blocked here."),
+        (None, "Blocked here."),
+    ],
+)
+async def test_an_azure_refusal_replies_with_the_blocked_message(output, reply):
+    st = _bare_state()
+    node = _RefusalAwareFakeNode("n1", st, lambda: node_failure(AZURE_REFUSAL, output=output))
+
+    returned = await _execute_in_turn(node, "detect")
+
+    assert st.get_node_output("n1") == reply
+    assert st.node_execution_status["n1"]["status"] == "failed"
+    assert st.guardrail_events == [
+        {
+            "stage": "output", "check_type": "provider_refusal", "category": None, "detector": "provider",
+            "score": None, "mode": "detect", "action": "blocked", "source": "n1",
+        }
+    ]
+    assert is_node_failure(returned)["output"] == output
+
+
+@pytest.mark.asyncio
+async def test_an_azure_refusal_without_a_policy_uses_the_default_blocked_message():
+    st = _bare_state()
+    node = _RefusalAwareFakeNode("n1", st, lambda: node_failure(AZURE_REFUSAL, output="Error: refused"))
+
+    await node.execute()
+
+    assert st.get_node_output("n1") == "Sorry, I can't help with that."
+    assert [(v["check_type"], v["mode"], v["action"]) for v in st.guardrail_events] == [
+        ("provider_refusal", "off", "blocked")
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("node_class", "error"),
+    [(_RefusalAwareFakeNode, "Error code: 429 - rate limited"), (_FakeNode, AZURE_REFUSAL)],
+)
+async def test_other_failures_and_other_nodes_keep_their_output(node_class, error):
+    st = _bare_state()
+    node = node_class("n1", st, lambda: node_failure(error, output="Error: something"))
+
+    await node.execute()
+
+    assert st.get_node_output("n1") == "Error: something"
+    assert st.guardrail_events == []
+
+
+@pytest.mark.parametrize("node_class", [AgentNode, LLMModelNode])
+def test_agent_and_llm_nodes_answer_provider_refusals(node_class):
+    assert node_class.handles_provider_refusals is True
 
 
 # --------------------------------------------------------------------------- #

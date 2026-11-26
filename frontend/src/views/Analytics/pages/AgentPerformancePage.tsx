@@ -17,6 +17,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { SummaryStatsCards } from "../components/reports/SummaryStatsCards";
 import { AgentExecutionChart } from "../components/reports/AgentExecutionChart";
 import { AgentNodeBreakdownDialog } from "../components/reports/AgentNodeBreakdownDialog";
+import { GuardrailTotals } from "../components/reports/GuardrailTotals";
 import { AnalyticsFilters } from "../components/AnalyticsFilters";
 import { AnalyticsFilterMenu } from "../components/AnalyticsFilterMenu";
 import { AnalyticsPageHeader } from "../components/AnalyticsPageHeader";
@@ -38,11 +39,13 @@ import {
   fetchAgentStatsSummary,
   fetchAgentDailyStats,
   fetchAgentNodeBreakdown,
+  fetchGuardrailTotals,
 } from "@/services/analyticsReports";
 import type {
   AgentStatsSummaryResponse,
   AgentDailyStatsItem,
   NodeTypeBreakdownItem,
+  GuardrailTotalsItem,
 } from "@/interfaces/analyticsReports.interface";
 import { nodeTypeLabel } from "@/helpers/nodeTypeLabel";
 import { ExportButton } from "@/components/ui/ExportButton";
@@ -80,6 +83,7 @@ const AgentPerformancePage = () => {
   const [summary, setSummary] = useState<AgentStatsSummaryResponse | null>(null);
   const [previousSummary, setPreviousSummary] = useState<AgentStatsSummaryResponse | null>(null);
   const [items, setItems] = useState<AgentDailyStatsItem[]>([]);
+  const [guardrailTotals, setGuardrailTotals] = useState<GuardrailTotalsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<AgentDailyStatsItem | null>(null);
@@ -114,15 +118,17 @@ const AgentPerformancePage = () => {
           }
         : undefined;
 
-      const [currentData, previousData, dailyData] = await Promise.all([
+      const [currentData, previousData, dailyData, guardrailData] = await Promise.all([
         fetchAgentStatsSummary(params),
         compareParams ? fetchAgentStatsSummary(compareParams) : Promise.resolve(null),
         fetchAgentDailyStats(params),
+        fetchGuardrailTotals({ ...toExactActivityParams(range), ...filters }),
       ]);
       if (request !== dataRequestId.current) return;
       setSummary(currentData);
       setPreviousSummary(previousData);
       setItems(dailyData?.items ?? []);
+      setGuardrailTotals(guardrailData?.items ?? []);
     } catch {
       if (request !== dataRequestId.current) return;
       setError("Failed to load analytics data.");
@@ -365,6 +371,8 @@ const AgentPerformancePage = () => {
                 error={error}
                 containmentRate={containmentRate}
               />
+
+              {guardrailTotals.length > 0 && <GuardrailTotals items={guardrailTotals} />}
 
               {/* Escalation tracking — only when a specific agent is selected */}
               {summary && agentFilter !== "all" && (

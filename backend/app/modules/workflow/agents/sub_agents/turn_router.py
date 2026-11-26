@@ -69,6 +69,7 @@ class SubAgentTurnRouter:
         from app.modules.workflow.agents.sub_agents import session as sub_session
         from app.modules.workflow.agents.sub_agents.models import SUB_AGENT_RESUME_KEY, SubAgentStack
         from app.modules.workflow.engine.nodes.agent_node import _without_tool_references
+        from app.modules.workflow.guardrails.turn import guard_routed_reply
 
         frame = stack.top()
         timeout_seconds = self._child_timeout(frame.child_node_id)
@@ -95,12 +96,20 @@ class SubAgentTurnRouter:
             completion = self._failed_completion(child_state, frame.child_node_id, session_message)
         if completion is None:
             response = child_state.format_state_as_response()
-            if self._is_awaiting_sub_agent(response.get("output")):
-                return self.finalize(response)
-            reply = orchestrator.child_message(child_state)
-            if persist:
+            output = response.get("output")
+            awaiting = self._is_awaiting_sub_agent(output)
+            reply = (
+                (output.get("sub_agent") or {}).get("message", "")
+                if awaiting
+                else orchestrator.child_message(child_state)
+            )
+            reply, events = await guard_routed_reply(reply, usage_context, thread_id)
+            if persist and not awaiting:
                 await self._remember_turn(memory, session_message, reply)
-            return self._message_only(response, reply)
+            response = self._message_only(response, reply)
+            if events:
+                response["guardrail_events"] = [*response.get("guardrail_events", []), *events]
+            return response
 
         remaining = stack.frames[:-1]
         if remaining:
@@ -136,6 +145,7 @@ class SubAgentTurnRouter:
             usage_context=usage_context,
         )
         orchestrator.propagate_prompt_cache_diagnostics(child_state, state)
+        state.guardrail_events.extend(getattr(child_state, "guardrail_events", []))
         return self.finalize(state.format_state_as_response())
 
     def _child_timeout(self, child_node_id: str) -> float:

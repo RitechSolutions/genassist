@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import Tuple, Optional
 import logging
+import threading
 
 from app.constants import NLI_MODELS, DEFAULT_NLI_MODEL
 
@@ -31,6 +32,8 @@ class LocalNLIModel:
         self._model = None
         self._tokenizer = None
         self._loaded_model_name: Optional[str] = None
+        # A timed-out to_thread call keeps running, so the next call waits for it
+        self._lock = threading.Lock()
 
     def _lazy_init(self, model_name: str) -> None:
         """Lazily load a small NLI model if transformers is available."""
@@ -83,63 +86,64 @@ class LocalNLIModel:
             )
             selected_model = DEFAULT_NLI_MODEL
 
-        # Try to use a real model first
-        self._lazy_init(selected_model)
+        with self._lock:
+            # Try to use a real model first
+            self._lazy_init(selected_model)
 
-        if self._model is not None and self._tokenizer is not None:
-            try:
-                from torch.nn.functional import softmax  # type: ignore
-                import torch  # type: ignore
+            if self._model is not None and self._tokenizer is not None:
+                try:
+                    from torch.nn.functional import softmax  # type: ignore
+                    import torch  # type: ignore
 
-                inputs = self._tokenizer(
-                    evidence,
-                    answer,
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=256,
-                )
-                with torch.no_grad():
-                    logits = self._model(**inputs).logits[0]
-                probs = softmax(logits, dim=-1).tolist()
+                    inputs = self._tokenizer(
+                        evidence,
+                        answer,
+                        return_tensors="pt",
+                        truncation=True,
+                        max_length=256,
+                    )
+                    with torch.no_grad():
+                        logits = self._model(**inputs).logits[0]
+                    probs = softmax(logits, dim=-1).tolist()
 
-                # Map logits to labels using the model's id2label mapping
-                id2label = getattr(self._model.config, "id2label", {})
-                label_map = {
-                    idx: str(label).lower() for idx, label in id2label.items()
-                }
+                    # Map logits to labels using the model's id2label mapping
+                    id2label = getattr(self._model.config, "id2label", {})
+                    label_map = {
+                        idx: str(label).lower() for idx, label in id2label.items()
+                    }
 
-                entail_idx = None
-                contradict_idx = None
-                for idx, label in label_map.items():
-                    if entail_idx is None and "entail" in label:
-                        entail_idx = idx
-                    if contradict_idx is None and "contradict" in label:
-                        contradict_idx = idx
+                    entail_idx = None
+                    contradict_idx = None
+                    for idx, label in label_map.items():
+                        if entail_idx is None and "entail" in label:
+                            entail_idx = idx
+                        if contradict_idx is None and "contradict" in label:
+                            contradict_idx = idx
 
-                # Fallback to a common order if labels are missing
-                if entail_idx is None:
-                    entail_idx = 2 if len(probs) > 2 else 0
-                if contradict_idx is None:
-                    contradict_idx = 0
+                    # Fallback to a common order if labels are missing
+                    if entail_idx is None:
+                        entail_idx = 2 if len(probs) > 2 else 0
+                    if contradict_idx is None:
+                        contradict_idx = 0
 
-                entail_score = float(probs[entail_idx])
-                contradiction_score = float(probs[contradict_idx])
+                    entail_score = float(probs[entail_idx])
+                    contradiction_score = float(probs[contradict_idx])
 
-                if entail_score >= 0.5:
-                    verdict = "entails"
-                elif contradiction_score >= 0.5:
-                    verdict = "contradicts"
-                else:
-                    verdict = "unknown"
+                    if entail_score >= 0.5:
+                        verdict = "entails"
+                    elif contradiction_score >= 0.5:
+                        verdict = "contradicts"
+                    else:
+                        verdict = "unknown"
 
-                return entail_score, contradiction_score, verdict
+                    return entail_score, contradiction_score, verdict
 
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.warning(
-                    "LocalNLIModel: model inference failed, "
-                    "falling back to heuristic NLI. Error: %s",
-                    exc,
-                )
+                except Exception as exc:  # pylint: disable=broad-except
+                    logger.warning(
+                        "LocalNLIModel: model inference failed, "
+                        "falling back to heuristic NLI. Error: %s",
+                        exc,
+                    )
 
         # Fallback: heuristic overlap-based NLI
         return self._heuristic_nli(answer, evidence)

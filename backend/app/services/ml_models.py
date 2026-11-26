@@ -244,6 +244,7 @@ class MLModelsService:
         ml_model: MLModelCreate,
         artifact_contract: Optional[ModelArtifactContract] = None,
         training_metrics: Optional[dict] = None,
+        trained_by: Optional[tuple[UUID, str]] = None,
         notices: Optional[list[str]] = None,
     ) -> MLModel:
         """Create a new ML model.
@@ -276,7 +277,9 @@ class MLModelsService:
             changes["features"] = list(check.features)
         model_to_create = ml_model.model_copy(update=changes) if changes else ml_model
         db_ml_model = await self.repository.create(
-            model_to_create, training_metrics=normalize_training_metrics(training_metrics)
+            model_to_create,
+            training_metrics=normalize_training_metrics(training_metrics),
+            trained_by=trained_by,
         )
         _collect_notices(notices, check)
         return db_ml_model
@@ -301,6 +304,7 @@ class MLModelsService:
         ml_model_update: MLModelUpdate,
         artifact_contract: Optional[ModelArtifactContract] = None,
         training_metrics: Optional[dict] = None,
+        trained_by: Optional[tuple[UUID, str]] = None,
         notices: Optional[list[str]] = None,
     ) -> MLModel:
         """Update an existing ML model.
@@ -314,6 +318,8 @@ class MLModelsService:
         update_data = ml_model_update.model_dump(exclude_unset=True)
         if training_metrics is not None:
             update_data["training_metrics"] = normalize_training_metrics(training_metrics)
+        if trained_by is not None:
+            update_data["trained_by_workflow_id"], update_data["trained_by_node_id"] = trained_by
         if update_data.get("pkl_file_id") is not None:
             update_data["pkl_file_id"] = str(update_data["pkl_file_id"])
 
