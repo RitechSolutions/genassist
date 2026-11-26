@@ -35,6 +35,7 @@ def _fake_state(response, last_output=None):
         format_state_as_response=lambda: response,
         get_last_node_output=lambda: last_output,
         node_execution_status={},
+        guardrail_events=[],
     )
 
 
@@ -424,6 +425,27 @@ async def test_completion_turn_carries_the_child_diagnostic_to_the_fresh_parent(
 
     assert parent.prompt_caching_diagnostics == {"child": _CHILD_DIAG}
     assert parent.node_execution_status == {"parent": {"status": "success"}}
+
+
+@pytest.mark.asyncio
+async def test_a_completion_turn_keeps_the_childs_guardrail_verdicts_once():
+    screen = {
+        "stage": "tool", "check_type": "untrusted_content", "category": None, "detector": "judge",
+        "score": 3, "mode": "detect", "action": "flagged", "source": "lookup",
+    }
+    parent = _fresh_parent_state()
+    parent.format_state_as_response = lambda: {
+        "status": "success", "output": {"message": "parent final"}, "guardrail_events": parent.guardrail_events,
+    }
+    router = _make_router()
+    router.workflow_engine.execute_from_node = AsyncMock(return_value=parent)
+    with (
+        patch.object(ConversationMemory, "get_instance", return_value=_seed_stack()),
+        patch(f"{_ORCH}.run_child_turn", AsyncMock(return_value=_completed_child_state(guardrail_events=[screen]))),
+    ):
+        result = await router.route_turn("a reply", "t1", {"message": "a reply"}, persist=True)
+
+    assert result["guardrail_events"] == [screen]
 
 
 @pytest.mark.asyncio

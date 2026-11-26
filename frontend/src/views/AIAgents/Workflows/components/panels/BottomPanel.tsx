@@ -5,6 +5,7 @@ import { useBlocker } from "react-router-dom";
 import { Workflow } from "@/interfaces/workflow.interface";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
+  createEmptyExecutionState,
   useWorkflowExecution,
   WorkflowExecutionState,
 } from "../../context/WorkflowExecutionContext";
@@ -19,10 +20,11 @@ import { FeatureFlags } from "@/config/featureFlags";
 import { useAudioProvidersEnabled } from "../../hooks/useAudioProviderConfig";
 import { ReferenceCheck, checkReferences } from "../../utils/referenceTargets";
 import { ReferenceKind, replaceReferences } from "../../utils/workflowReferences";
+import { graphFromWorkflowFile, toWorkflowFile } from "../../utils/workflowFile";
 import { MissingReferencesDialog } from "../MissingReferencesDialog";
 
 // What an upload takes from the file
-type UploadedGraph = Pick<Workflow, "nodes" | "edges" | "executionState" | "testInput">;
+type UploadedGraph = Pick<Workflow, "nodes" | "edges">;
 
 const INVALID_FILE = "Failed to load graph configuration. Invalid file format.";
 
@@ -64,6 +66,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
   const {
     state: executionState,
     loadExecutionState,
+    recordRunOutputs,
     setWorkflowStructure,
   } = useWorkflowExecution();
 
@@ -139,7 +142,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
 
   // Save graph to local file
   const handleSaveToFile = () => {
-    const jsonData = JSON.stringify(workflow, null, 2);
+    const jsonData = JSON.stringify(toWorkflowFile(workflow), null, 2);
 
     const blob = new Blob([jsonData], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -157,9 +160,15 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Save skips an empty run state, so an upload resets to the full empty shape
   const loadUploaded = (uploaded: UploadedGraph) => {
     try {
-      onWorkflowLoaded({ ...workflowRef.current, ...uploaded });
+      onWorkflowLoaded({
+        ...workflowRef.current,
+        ...uploaded,
+        executionState: createEmptyExecutionState(),
+      });
+      recordRunOutputs({});
     } catch {
       alert(INVALID_FILE);
     }
@@ -184,12 +193,7 @@ const BottomPanel: React.FC<BottomPanelProps> = ({
         const content = e.target?.result as string;
         const importedWorkflow = JSON.parse(content) as Workflow;
 
-        const uploaded: UploadedGraph = {
-          nodes: importedWorkflow.nodes,
-          edges: importedWorkflow.edges,
-          executionState: importedWorkflow.executionState,
-          testInput: importedWorkflow.testInput,
-        };
+        const uploaded: UploadedGraph = graphFromWorkflowFile(importedWorkflow);
         // Ids from another environment don't resolve here, so offer replacements first.
         const skipKinds: ReferenceKind[] = [];
         if (!fallbackChainsEnabled) skipKinds.push("fallbackChain");

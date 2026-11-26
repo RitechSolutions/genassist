@@ -27,6 +27,7 @@ import { TOOLS_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/t
 import { TRAINING_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/training/helperDefinition";
 import {
   FORMATTING_NODES_HELP_CONTENT,
+  GUARDRAILS_NODES_HELP_CONTENT,
   UTILS_NODES_HELP_CONTENT,
 } from "@/views/AIAgents/Workflows/nodeTypes/utils/helperDefinition";
 import { INTEGRATION_NODES_HELP_CONTENT } from "@/views/AIAgents/Workflows/nodeTypes/integrations/helperDefinition";
@@ -139,6 +140,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     training: "Training",
     audio: "Audio",
     utils: "Utils",
+    guardrails: "Guardrails",
   };
 
   const categoryHelpContent: Record<string, NodeHelpContent | undefined> = {
@@ -147,6 +149,7 @@ const NodePanel: React.FC<NodePanelProps> = ({
     routing: ROUTING_NODES_HELP_CONTENT,
     formatting: FORMATTING_NODES_HELP_CONTENT,
     utils: UTILS_NODES_HELP_CONTENT,
+    guardrails: GUARDRAILS_NODES_HELP_CONTENT,
     tools: TOOLS_NODES_HELP_CONTENT,
     training: TRAINING_NODES_HELP_CONTENT,
     integrations: INTEGRATION_NODES_HELP_CONTENT,

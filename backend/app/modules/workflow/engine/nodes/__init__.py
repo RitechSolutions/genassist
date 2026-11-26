@@ -15,6 +15,7 @@ from .finalize_conversation_node import FinalizeConversationNode
 from .gmail_tool_node import GmailToolNode
 from .html_to_image_node import HtmlToImageNode
 from .guardrail_nli_node import GuardrailNliNode
+from .guardrail_node import GuardrailNode
 from .guardrail_provenance_node import GuardrailProvenanceNode
 from .create_workflow_schedule_node import CreateWorkflowScheduleNode
 from .human_in_the_loop_node import HumanInTheLoopNode
@@ -93,6 +94,7 @@ __all__ = [
     "WorkflowExecutorNode",
     "HumanInTheLoopNode",
     "SetStateNode",
+    "GuardrailNode",
     "GuardrailProvenanceNode",
     "GuardrailNliNode",
     "FileReaderNode",

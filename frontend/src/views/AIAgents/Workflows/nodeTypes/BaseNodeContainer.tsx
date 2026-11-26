@@ -279,6 +279,7 @@ const BaseNodeContainer = <T extends NodeData>({
     tools: "Tools",
     training: "Training",
     utils: "Utils",
+    guardrails: "Guardrails",
   };
   const helpContent: NodeHelpContent = nodeDefinition?.helpContent ?? {
     intro: nodeDefinition?.description ?? subtitle,

@@ -78,6 +78,7 @@ class BaseNode(ABC):
     # details in workflow-test results. Most nodes retain their existing error
     # behavior until they are migrated deliberately.
     client_safe_failure_messages = False
+    handles_provider_refusals = False
 
     def __init__(self, node_id: str, node_config: Dict[str, Any], state: WorkflowState):
         """
@@ -531,6 +532,10 @@ class BaseNode(ABC):
                     # keeps getting a response. See node_result.is_node_failure.
                     failure = is_node_failure(result)
                     if failure is not None:
+                        if self.handles_provider_refusals:
+                            from app.modules.workflow.guardrails.turn import refusal_output
+
+                            failure["output"] = refusal_output(self, failure)
                         if span is not None and span.is_recording():
                             reason = truncate_for_log(redact_sensitive_substrings(str(failure.get("error"))), 500)
                             span.set_status(Status(StatusCode.ERROR, reason))

@@ -13,6 +13,7 @@ from app.repositories.agent import AgentRepository
 from app.schemas.analytics import (
     AgentDailyStatsListResponse,
     AgentStatsSummaryResponse,
+    GuardrailTotalsResponse,
     NodeDailyStatsListResponse,
     NodeTypeBreakdownResponse,
 )
@@ -422,6 +423,30 @@ async def get_custom_attribute_breakdown(
         group_id=group_id,
         from_date=from_date,
         to_date=to_date,
+    )
+
+
+@router.get(
+    "/guardrails",
+    response_model=GuardrailTotalsResponse,
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Dashboard.READ)),
+    ],
+    summary="Get guardrail event totals by check",
+)
+async def get_guardrail_totals(
+    agent_id: UUID | None = Query(default=None),
+    group_id: UUID | None = Query(default=None),
+    activity_from_datetime: datetime | None = Query(default=None),
+    activity_to_datetime: datetime | None = Query(default=None),
+    service: AnalyticsReadService = Injected(AnalyticsReadService),
+) -> GuardrailTotalsResponse:
+    return await service.get_guardrail_totals(
+        agent_id=agent_id,
+        group_id=group_id,
+        activity_from_datetime=activity_from_datetime,
+        activity_to_datetime=activity_to_datetime,
     )
 
 

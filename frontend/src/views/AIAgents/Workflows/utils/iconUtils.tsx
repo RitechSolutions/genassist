@@ -35,6 +35,7 @@ import {
   UserCheck,
   ShieldQuestion as ShieldQuestionMark,
   ShieldAlert,
+  ShieldCheck,
   TextSearch,
   ScanText,
   Image,
@@ -113,6 +114,7 @@ export const ICON_MAPPING: Record<string, IconConfig> = {
   // ShieldQuestionMark maps to lucide's ShieldQuestion (renamed in later versions)
   ShieldQuestionMark: { type: "lucide", source: ShieldQuestionMark },
   ShieldAlert: { type: "lucide", source: ShieldAlert },
+  ShieldCheck: { type: "lucide", source: ShieldCheck },
   TextSearch: { type: "lucide", source: TextSearch },
   ScanText: { type: "lucide", source: ScanText },
   Image: { type: "lucide", source: Image },

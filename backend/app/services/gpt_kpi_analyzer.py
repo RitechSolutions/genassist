@@ -115,6 +115,14 @@ def _parse_failure_reason(title, summary, metrics) -> str:
     return f"Missing or unreadable sections: {', '.join(missing)}."
 
 
+def _title_line(raw: str) -> str:
+    line = next((line for line in clean_markdown(raw).splitlines() if any(char.isalnum() for char in line)), "")
+    line = line.strip().lstrip("- ").strip()
+    if line.startswith("<") and line.endswith(">"):
+        line = line[1:-1].strip()
+    return line
+
+
 class GptKpiAnalyzer:
 
     async def analyze_transcript(self, transcript: str, llm_analyst: LlmAnalyst, max_attempts=3,
@@ -403,7 +411,7 @@ Please make sure your response strictly follows the requested format and especia
         data = _json_reply(text)
         if data is not None:
             title_raw = data.get("A) Title", "")
-            title = clean_markdown(title_raw) if isinstance(title_raw, str) else ""
+            title = _title_line(title_raw) if isinstance(title_raw, str) else ""
 
             summary_raw = data.get("B) Summary", "")
             if isinstance(summary_raw, dict):
@@ -426,8 +434,7 @@ Please make sure your response strictly follows the requested format and especia
         if not kpi_match:
             return {"title": "", "summary": ""}
 
-        raw_title = text[title_match.end(): summary_match.start()].strip()
-        title = clean_markdown(raw_title.lstrip("- "))
+        title = _title_line(text[title_match.end(): summary_match.start()])
         summary = clean_markdown(text[summary_match.end(): kpi_match.start()])
 
         return {"title": title, "summary": summary}

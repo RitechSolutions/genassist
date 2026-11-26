@@ -72,6 +72,8 @@ def _is_sub_agent_entry(entry: Any) -> bool:
 class AgentNode(PIIAnonymizerMixin, BaseNode):
     """Agent node that can select and execute tools using the BaseNode approach"""
 
+    handles_provider_refusals = True
+
     async def _get_chat_history_for_agent(
         self, memory, config: Dict[str, Any], provider_id: str, system_prompt: str, user_prompt: str
     ) -> list:
@@ -358,6 +360,7 @@ class AgentNode(PIIAnonymizerMixin, BaseNode):
             if child_status is not None:
                 state.node_execution_status[child_id] = {k: v for k, v in child_status.items() if k != "endTime"}
             orchestrator.propagate_prompt_cache_diagnostics(child_state, state)
+            state.guardrail_events.extend(getattr(child_state, "guardrail_events", []))
 
             completion = orchestrator.child_completion(child_state)
             child_error = self._child_failure(child_state, child_id)

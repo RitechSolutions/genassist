@@ -308,3 +308,26 @@ async def test_denied_caller_keeps_hard_zero_totals_without_conversation_counts(
     assert summary["total_finalized_conversations"] == 0
     assert summary["total_in_progress_conversations"] == 0
     assert db.statements == []
+
+
+@pytest.mark.asyncio
+async def test_guardrail_totals_denied_scope_returns_nothing_without_querying(monkeypatch):
+    repo, db = _repo_with_scope(monkeypatch, [])
+    assert await repo.get_guardrail_totals(group_id=uuid4()) == []
+    assert db.statements == []
+
+
+@pytest.mark.asyncio
+async def test_guardrail_totals_count_every_row_of_the_authorized_agents_in_the_window(monkeypatch):
+    first, second = uuid4(), uuid4()
+    repo, db = _repo_with_scope(monkeypatch, [first, second])
+    await repo.get_guardrail_totals(
+        activity_from_datetime=datetime(2026, 8, 1, 15, tzinfo=timezone.utc),
+        activity_to_datetime=datetime(2026, 8, 8, tzinfo=timezone.utc),
+    )
+    sql = _sql(db.statements[0])
+    assert f"guardrail_events.agent_id IN ('{first}', '{second}')" in sql
+    assert "guardrail_events.created_at >= '2026-08-01 15:00:00+00:00'" in sql
+    assert "guardrail_events.created_at < '2026-08-08 00:00:00+00:00'" in sql
+    assert "guardrail_events.is_deleted = 0" in sql
+    assert "conversation" not in sql

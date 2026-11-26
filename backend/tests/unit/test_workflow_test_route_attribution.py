@@ -79,6 +79,26 @@ async def test_saved_graph_attributes_usage_without_changing_execution():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "submitted_id, saved_workflow_id",
+    [
+        ("5b0e8f3c-2d1a-4c7b-8e9f-0a1b2c3d4e5f", "5b0e8f3c-2d1a-4c7b-8e9f-0a1b2c3d4e5f"),
+        ("not-a-uuid", None),
+    ],
+)
+async def test_submitted_graph_names_its_saved_workflow_for_the_nodes(submitted_id, saved_workflow_id):
+    await workflows_route.test_workflow(
+        Request({"type": "http", "headers": []}),
+        {"input_data": {"message": "hi"}, "workflow": _graph(id=submitted_id)},
+        workflow_service=FakeWorkflowService(),
+    )
+
+    config = FakeEngine.last.workflow_config
+    assert config["saved_workflow_id"] == saved_workflow_id
+    assert config["id"] == "test-workflow"
+
+
+@pytest.mark.asyncio
 async def test_unsaved_graph_stays_unattributed():
     await workflows_route.test_workflow(
         Request({"type": "http", "headers": []}),

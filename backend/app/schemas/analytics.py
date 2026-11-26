@@ -122,3 +122,16 @@ class NodeTypeBreakdownResponse(BaseModel):
     items: list[NodeTypeBreakdownItem]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── Guardrail totals ──────────────────────────────────────────────────────────
+
+class GuardrailTotalsItem(BaseModel):
+    check_type: str
+    blocked: int
+    flagged: int
+    errors: int
+
+
+class GuardrailTotalsResponse(BaseModel):
+    items: list[GuardrailTotalsItem]

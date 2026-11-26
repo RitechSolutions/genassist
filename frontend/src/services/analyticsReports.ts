@@ -7,6 +7,7 @@ import type {
   NodeTypeBreakdownResponse,
   AnalyticsFilterParams,
   GroupAgentItem,
+  GuardrailTotalsResponse,
 } from "@/interfaces/analyticsReports.interface";
 
 function buildQueryString(params: Record<string, string | undefined>): string {
@@ -57,6 +58,26 @@ export const fetchAgentStatsSummary = async (
     return await apiRequest<AgentStatsSummaryResponse>("get", `/analytics/agents/summary${qs}`);
   } catch (error) {
     console.error("Error fetching agent stats summary:", error);
+    return null;
+  }
+};
+
+export const fetchGuardrailTotals = async (
+  params?: Pick<
+    AnalyticsFilterParams,
+    "agent_id" | "group_id" | "activity_from_datetime" | "activity_to_datetime"
+  >
+): Promise<GuardrailTotalsResponse | null> => {
+  try {
+    const qs = buildQueryString({
+      agent_id: params?.agent_id,
+      group_id: params?.group_id,
+      activity_from_datetime: params?.activity_from_datetime,
+      activity_to_datetime: params?.activity_to_datetime,
+    });
+    return await apiRequest<GuardrailTotalsResponse>("get", `/analytics/guardrails${qs}`);
+  } catch (error) {
+    console.error("Error fetching guardrail totals:", error);
     return null;
   }
 };

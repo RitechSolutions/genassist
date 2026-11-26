@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useContext, useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +19,7 @@ import {
 import { extractDynamicVariables, getValueFromPath, parseInputValue, truncateNodeOutput } from "../utils/helpers";
 import { testNodeSettingsKey, upstreamSourcesKey } from "../utils/trainingInputFile";
 import { useWorkflowExecution } from "../context/WorkflowExecutionContext";
+import { WorkflowContext } from "../context/WorkflowContext";
 import { SchemaField, SchemaType } from "../types/schemas";
 import { useAudioTest } from "../hooks/useAudioTest";
 import { TestInputFields, STTAudioInput } from "./TestInputFields";
@@ -91,6 +92,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
 
   const { updateNodeOutput, getAvailableDataForNode, getNodeOutput, nodes, edges } =
     useWorkflowExecution();
+  const workflowId = useContext(WorkflowContext)?.workflow?.id;
 
   // The Train Data Source settings this test's output comes from - see
   // upstreamSourcesKey. A Train Data Source is tagged with its own (possibly
@@ -300,6 +302,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           node_type: nodeType,
           node_config: nodeData,
           node_id: nodeId,
+          workflow_id: workflowId,
         },
         { onTrainingProgress: setTrainingJob, signal }
       );
@@ -427,6 +430,7 @@ export const GenericTestDialog: React.FC<GenericTestDialogProps> = ({
           node_type: nodeType,
           node_config: nodeData,
           node_id: nodeId,
+          workflow_id: workflowId,
         },
         { onTrainingProgress: setTrainingJob, signal }
       );

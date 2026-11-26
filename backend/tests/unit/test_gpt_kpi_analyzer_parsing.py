@@ -67,6 +67,30 @@ def test_nova_json_replies_parse(reply):
     assert {key: analyzer._extract_metrics(reply)[key] for key in METRICS} == METRICS
 
 
+TITLE_SECTIONS = [
+    pytest.param("Product Inquiry\n\n---", "Product Inquiry", id="rule"),
+    pytest.param("Technical Support  \n\n---", "Technical Support", id="trailing-spaces"),
+    pytest.param("Billing Questions  \nSub-topic: Card Issues\n\n---", "Billing Questions", id="sub-topic-line"),
+    pytest.param("<Billing Questions>", "Billing Questions", id="angle-brackets"),
+    pytest.param("Other\n\nThe customer only said hello, so no topic fits.", "Other", id="reasoning"),
+    pytest.param("\n---\n- Product Inquiry", "Product Inquiry", id="leading-rule"),
+    pytest.param("<Billing Questions", "<Billing Questions", id="lone-bracket"),
+    pytest.param("---", "", id="only-a-rule"),
+]
+
+
+@pytest.mark.parametrize("section, title", TITLE_SECTIONS)
+def test_markdown_title_keeps_only_the_topic_line(section, title):
+    parsed = analyzer._extract_summary_and_title(_reply(title=f"**A) Title:** {section}"))
+    assert parsed == {"title": title, "summary": "- Operator was helpful"}
+
+
+@pytest.mark.parametrize("section, title", TITLE_SECTIONS)
+def test_json_title_keeps_only_the_topic_line(section, title):
+    reply = json.dumps({**NOVA, "A) Title": section, "C) KPI Metrics": METRICS})
+    assert analyzer._extract_summary_and_title(reply) == {"title": title, "summary": "Operator performance:\n- helpful"}
+
+
 def test_a_json_reply_is_never_read_as_markdown():
     reply = json.dumps({"A) Title": {"topic": "Billing"}, "B) Summary": "fine", "C) KPI Metrics": {"score": 5}})
     assert analyzer._extract_summary_and_title(reply)["title"] == ""

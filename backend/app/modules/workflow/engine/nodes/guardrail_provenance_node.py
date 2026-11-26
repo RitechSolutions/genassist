@@ -9,14 +9,17 @@ from typing import Any, Dict
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.dependencies.injector import injector
+from app.modules.workflow.guardrails import detectors
 from app.modules.workflow.llm.provider import LLMProvider
+from app.schemas.guardrails import DEFAULT_BLOCKED_MESSAGE
 
 from ..base_node import BaseNode
+from ..guardrail_exits import GuardrailExitMixin
 
 logger = logging.getLogger(__name__)
 
 
-class GuardrailProvenanceNode(BaseNode):
+class GuardrailProvenanceNode(GuardrailExitMixin, BaseNode):
     """
     Guardrail node that scores how well an answer is supported by a context.
 
@@ -61,6 +64,7 @@ class GuardrailProvenanceNode(BaseNode):
         # Start with heuristic score as a baseline
         heuristic_score = self._naive_provenance_score(answer, context_text)
         score = heuristic_score
+        judged = False
         judge_details: Dict[str, Any] | None = None
 
         # Optionally call an LLM-as-judge to refine provenance score
@@ -76,6 +80,7 @@ class GuardrailProvenanceNode(BaseNode):
                 # Prefer the LLM score when available
                 if llm_score is not None:
                     score = llm_score
+                    judged = True
             except Exception as exc:  # pylint: disable=broad-except
                 logger.error(
                     "GuardrailProvenanceNode %s: LLM judge failed: %s",
@@ -114,16 +119,26 @@ class GuardrailProvenanceNode(BaseNode):
             )
 
         output: Dict[str, Any] = {
+            "message": effective_answer,
             "answer": effective_answer,
             "context": context_text,
             "_guardrail_provenance": guardrail_result,
         }
 
-        if not passed and fail_on_violation and not (fallback_answer_enabled and fallback_answer):
-            output["blocked"] = True
-            output["verdict"] = "provenance_fail"
+        blocked = not passed and fail_on_violation and not (fallback_answer_enabled and fallback_answer)
+        if not blocked:
+            return self.exit_to(True, output)
 
-        return output
+        flags = {"blocked": True, "verdict": "provenance_fail"}
+        self.get_state().guardrail_events.append(
+            detectors.verdict(
+                "node", "grounding", "block", "blocked",
+                category="provenance", detector="judge" if judged else "overlap", score=score, source=self.node_id,
+            )
+        )
+        stop_result = {key: value for key, value in guardrail_result.items() if key != "llm_judge"}
+        stop_output = {"message": DEFAULT_BLOCKED_MESSAGE, "_guardrail_provenance": stop_result, **flags}
+        return self.exit_to(False, {**output, "message": DEFAULT_BLOCKED_MESSAGE, **flags}, stop_output)
 
     def _naive_provenance_score(self, answer: str, context: str) -> float:
         """

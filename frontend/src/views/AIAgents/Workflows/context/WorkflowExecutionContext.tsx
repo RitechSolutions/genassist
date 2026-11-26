@@ -50,6 +50,13 @@ export interface WorkflowExecutionState {
   lastExecutionTime?: number;
 }
 
+export const createEmptyExecutionState = (): WorkflowExecutionState => ({
+  session: {},
+  source: {},
+  nodeOutputs: {},
+  statefulState: {},
+});
+
 export interface WorkflowExecutionContextType {
   state: WorkflowExecutionState;
 
@@ -101,12 +108,7 @@ interface WorkflowExecutionProviderProps {
 export const WorkflowExecutionProvider: React.FC<
   WorkflowExecutionProviderProps
 > = ({ children }) => {
-  const [state, setState] = useState<WorkflowExecutionState>({
-    session: {},
-    source: {},
-    nodeOutputs: {},
-    statefulState: {},
-  });
+  const [state, setState] = useState<WorkflowExecutionState>(createEmptyExecutionState);
 
   // Node outputs from the last whole-workflow run. Kept out of `state`: that is
   // saved with the workflow (so a run would mark it unsaved and store every

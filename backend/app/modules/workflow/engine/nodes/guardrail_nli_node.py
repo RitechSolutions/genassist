@@ -2,16 +2,23 @@
 Guardrail NLI fact-checking node implementation using the BaseNode class.
 """
 
+import asyncio
 from typing import Any, Dict
 import logging
 
+from app.modules.workflow.guardrails import detectors
+from app.schemas.guardrails import DEFAULT_BLOCKED_MESSAGE
+
 from ..base_node import BaseNode
+from ..guardrail_exits import GuardrailExitMixin
 from .local_nli_model import local_nli_model
 
 logger = logging.getLogger(__name__)
 
+NLI_NODE_TIMEOUT_SECONDS = 30
 
-class GuardrailNliNode(BaseNode):
+
+class GuardrailNliNode(GuardrailExitMixin, BaseNode):
     """
     Guardrail node that estimates whether an answer is supported by evidence.
 
@@ -44,11 +51,25 @@ class GuardrailNliNode(BaseNode):
         # Track node input in state for debugging/inspection
         self.set_node_input({"answer": answer, "evidence": evidence})
 
-        entail_score, contradiction_score, verdict = local_nli_model.score(
-            answer=answer,
-            evidence=evidence,
-            model_name=config.get("nli_model_name"),
-        )
+        try:
+            entail_score, contradiction_score, verdict = await asyncio.wait_for(
+                asyncio.to_thread(
+                    local_nli_model.score,
+                    answer=answer,
+                    evidence=evidence,
+                    model_name=config.get("nli_model_name"),
+                ),
+                timeout=NLI_NODE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("GuardrailNliNode %s: NLI model timed out, passing the answer", self.node_id)
+            self.get_state().guardrail_events.append(
+                detectors.verdict(
+                    "node", "detector_error", "block", "error",
+                    category="timeout", detector="nli", source=self.node_id,
+                )
+            )
+            entail_score, contradiction_score, verdict = 0.0, 0.0, "unknown"
 
         # Apply local thresholding on entailment score
         if verdict == "entails" and entail_score < min_entail_score:
@@ -84,14 +105,23 @@ class GuardrailNliNode(BaseNode):
             )
 
         output: Dict[str, Any] = {
+            "message": effective_answer,
             "answer": effective_answer,
             "evidence": evidence,
             "_guardrail_nli": guardrail_result,
         }
 
-        if is_contradiction and fail_on_contradiction and not (fallback_answer_enabled and fallback_answer):
-            output["blocked"] = True
-            output["verdict"] = "nli_contradiction"
+        blocked = is_contradiction and fail_on_contradiction and not (fallback_answer_enabled and fallback_answer)
+        if not blocked:
+            return self.exit_to(True, output)
 
-        return output
+        flags = {"blocked": True, "verdict": "nli_contradiction"}
+        self.get_state().guardrail_events.append(
+            detectors.verdict(
+                "node", "grounding", "block", "blocked",
+                category="nli", detector="nli", score=contradiction_score, source=self.node_id,
+            )
+        )
+        stop_output = {"message": DEFAULT_BLOCKED_MESSAGE, "_guardrail_nli": guardrail_result, **flags}
+        return self.exit_to(False, {**output, "message": DEFAULT_BLOCKED_MESSAGE, **flags}, stop_output)
 

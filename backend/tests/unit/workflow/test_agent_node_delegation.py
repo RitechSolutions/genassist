@@ -1025,6 +1025,21 @@ async def _delegate_once(node, child_state):
 
 
 @pytest.mark.asyncio
+async def test_in_turn_delegation_keeps_the_childs_guardrail_verdicts_once():
+    node = _parent_node(thread_id="t-guardrail")
+    screen = {
+        "stage": "tool", "check_type": "untrusted_content", "category": None, "detector": "judge",
+        "score": 3, "mode": "detect", "action": "flagged", "source": "lookup",
+    }
+    child = _child_state_with_diagnostic()
+    child.guardrail_events = [screen]
+
+    await _delegate_once(node, child)
+
+    assert node.get_state().format_state_as_response()["guardrail_events"] == [screen]
+
+
+@pytest.mark.asyncio
 async def test_in_turn_delegation_lands_the_child_diagnostic_in_the_parent_collection():
     node = _parent_node(thread_id="t-diag")
     await _delegate_once(node, _child_state_with_diagnostic())

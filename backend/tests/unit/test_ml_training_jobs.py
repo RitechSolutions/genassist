@@ -13,6 +13,7 @@ import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from uuid import UUID
 
 import numpy as np
 import pandas as pd
@@ -25,6 +26,8 @@ from app.core.exceptions.exception_classes import AppException
 from app.modules.workflow import training_jobs
 from app.modules.workflow.engine.nodes.ml import hyperparameter_optimization as hpo_module
 from app.modules.workflow.engine.nodes.ml import model_registry, training_progress
+from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+from app.modules.workflow.engine.workflow_state import WorkflowState
 from app.tasks import ml_training_job_tasks
 
 # The test routes take the request first; no X-Keepalive header runs them inline.
@@ -319,6 +322,76 @@ async def test_test_node_runs_train_model_under_the_canvas_node_id(route_env):
     assert payload["workflow_config"]["id"].startswith("test-trainModelNode-")
 
 
+@pytest.mark.asyncio
+async def test_test_node_names_the_saved_workflow_of_the_canvas_node(route_env):
+    await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
+        {
+            "node_type": "trainModelNode",
+            "node_config": TRAIN_NODE_CONFIG,
+            "input_data": {},
+            "node_id": "node-abc",
+            "workflow_id": "3f2b6c1e-8a4d-4f1b-9c2e-7d5a6b4c3e21",
+        },
+    )
+
+    config = route_env.delay.call_args.args[2]["workflow_config"]
+    assert config["saved_workflow_id"] == "3f2b6c1e-8a4d-4f1b-9c2e-7d5a6b4c3e21"
+    assert config["id"].startswith("test-trainModelNode-")
+
+
+@pytest.mark.asyncio
+async def test_the_node_queued_by_test_node_knows_its_saved_workflow(route_env):
+    await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
+        {
+            "node_type": "trainModelNode",
+            "node_config": TRAIN_NODE_CONFIG,
+            "input_data": {},
+            "node_id": "node-abc",
+            "workflow_id": "3f2b6c1e-8a4d-4f1b-9c2e-7d5a6b4c3e21",
+        },
+    )
+    config = json.loads(json.dumps(route_env.delay.call_args.args[2]["workflow_config"]))
+
+    engine = WorkflowEngine(config)
+    node = engine.executable_node("node-abc", WorkflowState(workflow=engine.workflow))
+
+    assert node._trained_by() == (UUID("3f2b6c1e-8a4d-4f1b-9c2e-7d5a6b4c3e21"), "node-abc")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("workflow_id", [None, "not-a-uuid", 123, {"a": 1}])
+async def test_test_node_drops_a_workflow_id_that_is_not_a_uuid(route_env, workflow_id):
+    await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
+        {
+            "node_type": "trainModelNode",
+            "node_config": TRAIN_NODE_CONFIG,
+            "input_data": {},
+            "node_id": "node-abc",
+            "workflow_id": workflow_id,
+        },
+    )
+
+    assert route_env.delay.call_args.args[2]["workflow_config"]["saved_workflow_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_test_node_under_a_throwaway_id_names_no_workflow(route_env):
+    await workflow_routes.test_individual_node(
+        NO_KEEPALIVE,
+        {
+            "node_type": "trainModelNode",
+            "node_config": TRAIN_NODE_CONFIG,
+            "input_data": {},
+            "workflow_id": "3f2b6c1e-8a4d-4f1b-9c2e-7d5a6b4c3e21",
+        },
+    )
+
+    assert "saved_workflow_id" not in route_env.delay.call_args.args[2]["workflow_config"]
+
+
 @pytest.mark.parametrize("node_id", [None, "", "   ", 123, "x" * 201, "a\nb", "<b>x</b>"])
 def test_unusable_test_node_ids_fall_back_to_the_test_id(node_id):
     assert workflow_routes._test_node_id("trainModelNode", node_id, "test-id") == "test-id"
@@ -336,7 +409,7 @@ def test_other_node_types_keep_a_throwaway_test_id():
 @pytest.mark.asyncio
 async def test_test_workflow_with_a_train_model_node_is_queued(route_env):
     workflow = {
-        "id": "wf-1",
+        "id": "8c1d7e2a-4b3f-4a6e-9d0c-1e2f3a4b5c6d",
         "name": "training",
         "nodes": [
             {"id": "source", "type": "trainDataSourceNode", "data": {}},
@@ -353,7 +426,9 @@ async def test_test_workflow_with_a_train_model_node_is_queued(route_env):
     assert response.status_code == 202
     payload = route_env.delay.call_args.args[2]
     assert payload["input_data"] == {"message": "go"}
-    assert payload["workflow_id"] == "wf-1"
+    assert payload["workflow_id"] == "8c1d7e2a-4b3f-4a6e-9d0c-1e2f3a4b5c6d"
+    assert payload["workflow_config"]["saved_workflow_id"] == "8c1d7e2a-4b3f-4a6e-9d0c-1e2f3a4b5c6d"
+    assert payload["workflow_config"]["id"] == "test-workflow"
     # The job runs the turn with sub-agent routing, as the endpoint would.
     assert payload["kind"] == "workflow"
 

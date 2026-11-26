@@ -147,6 +147,7 @@ async def ws_live_voice(
             current_user_id=UUID(str(principal.user_id)),
             audio_bytes=None,
             audio_format=None,
+            live_voice=True,
         )
 
     # The agent executes the node's (PII-wrapped) tools itself; `_set_transcript`
