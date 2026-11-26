@@ -6,7 +6,7 @@ import {
   useStore,
   type ReactFlowState,
 } from "reactflow";
-import { Check, Group, Maximize, MoreHorizontal, Pencil, Trash2, Ungroup } from "lucide-react";
+import { Check, Group, Maximize, MoreHorizontal, Pencil, Trash2, Ungroup, Sparkles } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -127,6 +127,14 @@ const GroupNode: React.FC<NodeProps<GroupNodeData>> = ({ id, data, selected }) =
               <DropdownMenuItem onSelect={run(actions.fitGroup)} disabled={childCount === 0}>
                 <Maximize className="mr-2 h-4 w-4" />
                 Fit to contents
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={run((groupId) => actions.assistGroup(groupId, "explain_group"))}>
+                <Sparkles className="mr-2 h-4 w-4 text-[hsl(var(--brand-600))]" />
+                Explain with AI
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={run((groupId) => actions.assistGroup(groupId, "optimize"))}>
+                <Sparkles className="mr-2 h-4 w-4 text-[hsl(var(--brand-600))]" />
+                Optimize with AI
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={run(actions.ungroup)}>
                 <Ungroup className="mr-2 h-4 w-4" />

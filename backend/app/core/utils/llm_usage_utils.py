@@ -10,6 +10,9 @@ import logging
 import math
 from typing import Any, Dict, Optional
 
+# ``purpose`` of the LLM calls a workflow made while the Workflow Builder test-ran it.
+BUILDER_TEST_RUN_PURPOSE = "workflow_builder_test"
+
 logger = logging.getLogger(__name__)
 
 # Marks a call the provider reported no usage for. Pricing must leave it unpriced

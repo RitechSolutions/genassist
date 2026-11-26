@@ -544,3 +544,111 @@ input[type="checkbox"]:hover {
     animation: none;
   }
 }
+
+/* ── Assistant chat motion (components/panels/AssistantMotion.tsx) ── */
+@keyframes ai-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.ai-shimmer-text {
+  color: transparent;
+  background: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground)) 0%,
+    hsl(var(--foreground)) 50%,
+    hsl(var(--muted-foreground)) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: ai-shimmer 1.8s linear infinite;
+}
+@keyframes ai-dot {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+  40% { transform: translateY(-3px); opacity: 1; }
+}
+.ai-typing-dots { display: inline-flex; gap: 3px; align-items: center; }
+.ai-typing-dots span {
+  width: 4px; height: 4px; border-radius: 9999px;
+  background: hsl(var(--brand-600));
+  animation: ai-dot 1.2s ease-in-out infinite;
+}
+.ai-typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.ai-typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes ai-ring {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.ai-thinking-ring {
+  border: 1.5px solid hsl(var(--brand-600));
+  animation: ai-ring 1.6s ease-out infinite;
+}
+@keyframes ai-spark {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(20deg) scale(1.15); }
+}
+.ai-thinking-spark { animation: ai-spark 1.6s ease-in-out infinite; }
+@keyframes ai-caret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.ai-caret {
+  display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -0.15em;
+  background: hsl(var(--brand-600)); animation: ai-caret 0.9s steps(2) infinite;
+}
+@keyframes ai-step-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.ai-step-in { animation: ai-step-in 0.25s ease-out both; }
+/* Scrollable without a visible bar (the live reasoning trail in AssistantMotion.tsx). */
+.ai-no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.ai-no-scrollbar::-webkit-scrollbar { display: none; }
+@keyframes ai-rise-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.ai-rise-in { animation: ai-rise-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* Decorative hover grid (components/HoverGrid.tsx): tiles light up under the pointer. */
+.hover-grid-tile {
+  display: block;
+  width: var(--hover-grid-tile, 28px);
+  height: var(--hover-grid-tile, 28px);
+  border-radius: 5px;
+  background: hsl(var(--foreground) / 0.035);
+  transition: background-color 1.1s ease-out, transform 0.9s ease-out;
+}
+.hover-grid-tile[data-lit] { transition: background-color 0.08s ease-out, transform 0.15s ease-out; }
+.hover-grid-tile[data-lit="hot"] { background: #204bff; }
+.hover-grid-tile[data-lit="warm"] { background: rgb(32 75 255 / 0.55); }
+.hover-grid-tile[data-lit="faint"] { background: rgb(32 75 255 / 0.18); transition-duration: 1.4s; }
+/* Thinking mark (AssistantMotion.tsx ThinkingCubes): a 3×3 of tiny tiles lighting up in turn. */
+.ai-cubes {
+  display: inline-grid;
+  grid-template-columns: repeat(3, 4px);
+  gap: 1.5px;
+  vertical-align: -1px;
+}
+.ai-cubes span {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+  background: hsl(var(--foreground) / 0.12);
+  animation: ai-cube 1.8s ease-in-out infinite;
+  animation-delay: calc(var(--i, 0) * 0.11s);
+}
+/* The centre tile (order 8) breathes on its own beat. */
+.ai-cubes span:nth-child(5) { animation: ai-cube-core 1.8s ease-in-out infinite; }
+@keyframes ai-cube {
+  0%, 60%, 100% { background: hsl(var(--foreground) / 0.12); transform: scale(1); }
+  8% { background: #204bff; transform: scale(1.25); }
+  30% { background: rgb(32 75 255 / 0.45); transform: scale(1); }
+}
+@keyframes ai-cube-core {
+  0%, 100% { background: rgb(32 75 255 / 0.35); }
+  50% { background: #204bff; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-shimmer-text, .ai-typing-dots span, .ai-thinking-ring, .ai-thinking-spark, .ai-caret, .ai-step-in, .ai-rise-in, .ai-cubes span { animation: none; }
+  .ai-cubes span:nth-child(5) { background: #204bff; }
+  .hover-grid-tile { transition: none; }
+  .ai-shimmer-text { color: hsl(var(--muted-foreground)); background: none; }
+}

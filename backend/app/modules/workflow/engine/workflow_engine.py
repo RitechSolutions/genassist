@@ -46,6 +46,7 @@ from app.modules.workflow.engine.nodes import (
     LLMModelNode,
     LoopNode,
     MCPNode,
+    WorkflowBuilderToolsNode,
     MLModelInferenceNode,
     NLPNode,
     OpenAPINode,
@@ -107,8 +108,9 @@ def should_persist_to_memory(
 
 
 def _sanitize_output_for_memory(output: Any) -> Any:
-    """Strip nested audio payloads (base64 blobs) from an output before it is
-    persisted to conversation memory. A bare audio dict (e.g. a TTS node's
+    """What of a turn's output goes into conversation memory: an agent's reply
+    without its steps, a sub-agent pause's question, and outputs without their
+    nested audio payloads (base64 blobs). A bare audio dict (e.g. a TTS node's
     output, where the dict itself IS the audio) is kept as-is."""
     # A sub-agent pause stores a control envelope as the output; persist only the
     # child's plain question to the root history, not the control JSON
@@ -118,6 +120,15 @@ def _sanitize_output_for_memory(output: Any) -> Any:
         and isinstance(output.get("sub_agent"), dict)
     ):
         return output["sub_agent"].get("message", "")
+    # An agent's output carries its working (steps, tool calls) next to the reply.
+    # Only the reply is the assistant's turn; the working would otherwise be re-sent
+    # in every later model call of the conversation.
+    if (
+        isinstance(output, dict)
+        and isinstance(output.get("message"), str)
+        and ("steps" in output or "tools_used" in output)
+    ):
+        return output["message"]
     if (
         isinstance(output, dict)
         and isinstance(output.get("audio"), dict)
@@ -182,6 +193,7 @@ class WorkflowEngine:
         cls._node_registry["trainModelNode"] = TrainModelNode
         cls._node_registry["threadRAGNode"] = ThreadRAGNode
         cls._node_registry["mcpNode"] = MCPNode
+        cls._node_registry["workflowBuilderToolsNode"] = WorkflowBuilderToolsNode
         cls._node_registry["workflowExecutorNode"] = WorkflowExecutorNode
         cls._node_registry["humanInTheLoopNode"] = HumanInTheLoopNode
         cls._node_registry["setStateNode"] = SetStateNode
@@ -236,6 +248,7 @@ class WorkflowEngine:
             "nlpNode",
             "webSearchNode",
             "webhookTriggerNode",
+            "workflowBuilderToolsNode",
         }
 
         # Return True if node is NOT in the no-DB list (i.e., it needs DB)

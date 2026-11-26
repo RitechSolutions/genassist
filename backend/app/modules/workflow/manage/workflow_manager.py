@@ -27,10 +27,11 @@ class WorkflowManager:
             "nodes": [],
             "edges": []
         }
+        # Per instance: as class attributes these accumulated nodes across requests.
+        self.json_nodes = []
+        self.json_edges = []
+        self.node_id_mapping = {}
 
-    json_nodes = []
-    json_edges = []
-    node_id_mapping = {}
     # ------------------------
     # Core helpers
     # ------------------------

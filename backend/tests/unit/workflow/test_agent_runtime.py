@@ -536,3 +536,27 @@ class TestDiagnosticIsRequestGated:
                 )
 
         assert state.prompt_caching_diagnostics == {"node-1": {"requested": True, "applied": False}}
+
+
+@pytest.mark.asyncio
+async def test_each_run_logs_its_model_calls_and_tokens(caplog):
+    import logging
+
+    result = {
+        "response": "ok",
+        "llm_usage": [
+            {"input_tokens": 6000, "output_tokens": 300, "token_details": {"input_token_details": {"cache_read": 4000}}},
+            {"input_tokens": 6500, "output_tokens": 120},
+            "not-a-dict",
+        ],
+    }
+    stack, *_ = _patch_runtime(result)
+    with stack, caplog.at_level(logging.INFO, logger="app.modules.workflow.agents.agent_runtime"):
+        await run_agent_once(**_base_kwargs(agent_type="ReActAgentLC", node_id="builder"))
+
+    line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("Agent run "))
+    assert line == (
+        "Agent run ReActAgentLC node=builder: 2 model calls, 12500 input tokens (4000 read from cache), "
+        "420 output tokens"
+    )
+

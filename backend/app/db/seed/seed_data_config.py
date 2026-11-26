@@ -28,6 +28,12 @@ class SeedTestData:
     local_llm_provider_llama_id: str = "00000196-19d2-9c28-a2dd-563fff608fa0"
     local_llm_provider_gpt_oss_id: str = "00000196-19d2-9c28-a2dd-564fff608fa0"
     local_llm_provider_vllm_llama: str = "00000196-19d2-9c28-a2dd-565fff608fa0"
+    # The Workflow Builder's own provider: the OpenAI key of `llm_provider_id` with a newer
+    # model. Not the tenant default: workflows the builder creates keep using `llm_provider_id`.
+    # Migration 00130 adds the same row to tenants seeded before it existed.
+    workflow_builder_llm_provider_id: str = "00000196-19d2-9c28-a2dd-566fff608fa0"
+    workflow_builder_llm_provider_name: str = "openai dev gpt-6.1-terra"
+    workflow_builder_llm_model: str = "gpt-6.1-terra"
     default_agent_id: str = "00000196-a688-fd6f-af6d-8dc6c281d697"
 
     transcribe_operator_id: str= "90f1e6dd-fde0-4970-a83a-31ca7f84ab45"

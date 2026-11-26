@@ -117,6 +117,8 @@ interface WorkflowTestPanelProps {
   onAddTestRun?: (record: TestRunRecord) => void;
   onClearHistory?: () => void;
   onUpdateWorkflowTestInputs?: (inputs: Record<string, string>) => void;
+  /** Ask the assistant to fix what a run showed. */
+  onFixRun?: (run: TestRunRecord) => void;
 }
 
 const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
@@ -126,6 +128,7 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
   onAddTestRun,
   onClearHistory,
   onUpdateWorkflowTestInputs,
+  onFixRun,
 }) => {
   const [testInput, setTestInputs] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState(false);
@@ -736,7 +739,26 @@ const WorkflowTestPanel: React.FC<WorkflowTestPanelProps> = ({
                               <span className="truncate text-[11px] text-muted-foreground">
                                 {STATUS_LABEL[run.status]}
                               </span>
-                              <span className="shrink-0 text-[11px] text-muted-foreground">
+                              <span className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                                {run.status !== "success" && onFixRun && (
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
+                                    className="text-[hsl(var(--brand-600))] underline-offset-2 hover:underline"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      onFixRun(run);
+                                    }}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.stopPropagation();
+                                        onFixRun(run);
+                                      }
+                                    }}
+                                  >
+                                    Fix with AI
+                                  </span>
+                                )}
                                 {formatRunTime(run.createdAt)}
                               </span>
                             </div>

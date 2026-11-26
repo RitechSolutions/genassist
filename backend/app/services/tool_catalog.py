@@ -10,6 +10,7 @@ never disagree with what actually runs.
 Tool ids match the ids recorded on tool events:
   * single tool node  -> the tool node's id
   * MCP tool          -> "{mcpNodeId}:{toolName}"
+  * builder tool      -> "{builderToolsNodeId}:{toolName}"
 
 Pure and synchronous over a single workflow. Nested-workflow expansion needs to load
 other workflows (async, DB), so this module only reports the nested references; the
@@ -23,6 +24,7 @@ from typing import Any, Dict, List, Optional
 from app.modules.workflow.agents.base_tool import to_snake_case
 
 MCP_NODE_TYPE = "mcpNode"
+WORKFLOW_BUILDER_TOOLS_NODE_TYPE = "workflowBuilderToolsNode"
 WORKFLOW_EXECUTOR_NODE_TYPE = "workflowExecutorNode"
 ROUTER_NODE_TYPE = "routerNode"
 SWITCH_NODE_TYPE = "switchNode"
@@ -58,6 +60,17 @@ def _tools_for_node(node: Dict[str, Any]) -> List[Dict[str, Any]]:
         return [
             {"id": f"{node_id}:{name}", "name": name, "label": name, "type": MCP_NODE_TYPE}
             for name in whitelisted
+        ]
+    if node_type == WORKFLOW_BUILDER_TOOLS_NODE_TYPE:
+        # Imported here: the builder package pulls in the node catalog, which this
+        # resolver does not otherwise need.
+        from app.modules.workflow.builder.tools import TOOL_NAMES
+
+        enabled = _node_data(node).get("enabledTools") or TOOL_NAMES
+        return [
+            {"id": f"{node_id}:{name}", "name": name, "label": name, "type": node_type}
+            for name in TOOL_NAMES
+            if name in enabled
         ]
     label = _node_label(node)
     return [{"id": node_id, "name": to_snake_case(label), "label": label, "type": node_type}]

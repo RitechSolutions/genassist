@@ -45,6 +45,24 @@ class Message:
         }
 
 
+def history_text(content: Any) -> Any:
+    """
+    A stored message's content as a model should see it.
+
+    An agent turn used to be stored as the agent's whole output ({"message",
+    "steps", "tools_used"}). Only the reply is the assistant's turn; the steps are
+    that turn's working and would ride along in every later model call. Anything
+    else is returned unchanged.
+    """
+    if (
+        isinstance(content, dict)
+        and isinstance(content.get("message"), str)
+        and ("steps" in content or "tools_used" in content)
+    ):
+        return content["message"]
+    return content
+
+
 class BaseConversationMemory:
     """Base class for conversation memory implementations"""
 
@@ -288,7 +306,7 @@ class InMemoryConversationMemory(BaseConversationMemory):
             history_parts = []
             for message in self.messages[-max_messages:]:
                 prefix = f"{message.role.capitalize()}: "
-                content = message.content
+                content = history_text(message.content)
                 history_parts.append(f"{prefix}{content}")
             return "\n".join(history_parts)
 
@@ -316,7 +334,7 @@ class InMemoryConversationMemory(BaseConversationMemory):
             # Count tokens for this message
             message_dict = message.to_dict()
             message_tokens = counter.count_tokens(
-                f"{message_dict['role']}: {message_dict['content']}"
+                f"{message_dict['role']}: {history_text(message_dict['content'])}"
             )
 
             # Check if adding this message would exceed budget
@@ -336,7 +354,7 @@ class InMemoryConversationMemory(BaseConversationMemory):
             history_parts = []
             for msg in selected_messages:
                 prefix = f"{msg['role'].capitalize()}: "
-                content = msg['content']
+                content = history_text(msg['content'])
                 history_parts.append(f"{prefix}{content}")
             return "\n".join(history_parts)
 
@@ -462,7 +480,7 @@ class InMemoryConversationMemory(BaseConversationMemory):
             history_parts = []
             for msg in result:
                 prefix = f"{msg['role'].capitalize()}: "
-                history_parts.append(f"{prefix}{msg['content']}")
+                history_parts.append(f"{prefix}{history_text(msg['content'])}")
             return "\n".join(history_parts)
 
         return result
@@ -754,7 +772,7 @@ class RedisConversationMemory(BaseConversationMemory):
                 history_parts = []
                 for message in messages:
                     prefix = f"{message['role'].capitalize()}: "
-                    content = message["content"]
+                    content = history_text(message["content"])
                     history_parts.append(f"{prefix}{content}")
                 return "\n".join(history_parts)
 
@@ -803,7 +821,7 @@ class RedisConversationMemory(BaseConversationMemory):
 
             # Count tokens for this message
             message_tokens = counter.count_tokens(
-                f"{message_data['role']}: {message_data['content']}"
+                f"{message_data['role']}: {history_text(message_data['content'])}"
             )
 
             # Check if adding this message would exceed budget
@@ -823,7 +841,7 @@ class RedisConversationMemory(BaseConversationMemory):
             history_parts = []
             for msg in selected_messages:
                 prefix = f"{msg['role'].capitalize()}: "
-                content = msg['content']
+                content = history_text(msg['content'])
                 history_parts.append(f"{prefix}{content}")
             return "\n".join(history_parts)
 
@@ -999,7 +1017,7 @@ class RedisConversationMemory(BaseConversationMemory):
                 history_parts = []
                 for msg in result:
                     prefix = f"{msg['role'].capitalize()}: "
-                    history_parts.append(f"{prefix}{msg['content']}")
+                    history_parts.append(f"{prefix}{history_text(msg['content'])}")
                 return "\n".join(history_parts)
 
             return result

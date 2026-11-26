@@ -2,10 +2,12 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from injector import inject
-from sqlalchemy import Date, cast, distinct, func, select
+from sqlalchemy import Date, cast, distinct, func, select, text
 
 from app.core.config.llm_pricing import PricingStatus
 from app.core.utils.analytics_agent_scope import resolve_authorized_agent_ids
+from app.core.utils.llm_usage_utils import BUILDER_TEST_RUN_PURPOSE
+from app.db.models import AgentModel, WorkflowModel
 from app.db.models.llm_usage import LlmUsageEventModel
 from app.db.session_types import ReadOnlySession
 
@@ -20,6 +22,21 @@ _PROMPT_TOKENS = LlmUsageEventModel.prompt_tokens
 _TOKENS = func.greatest(LlmUsageEventModel.total_tokens, _PROMPT_TOKENS + LlmUsageEventModel.output_tokens)
 
 AGENT_STUDIO_TEST_SOURCES = ("workflow_test", "node_test")
+
+# What makes an agent "the Workflow Builder" is the tools node on its canvas, not its
+# name (which anyone can edit): every live agent whose workflow carries one.
+BUILDER_TOOLS_NODE_TYPE = "workflowBuilderToolsNode"
+
+
+def builder_agent_ids():
+    has_tools_node = text(
+        "EXISTS (SELECT 1 FROM jsonb_array_elements(workflows.nodes) AS n WHERE n->>'type' = :node_type)"
+    ).bindparams(node_type=BUILDER_TOOLS_NODE_TYPE)
+    return (
+        select(AgentModel.id)
+        .join(WorkflowModel, WorkflowModel.id == AgentModel.workflow_id)
+        .where(AgentModel.is_deleted == 0, WorkflowModel.is_deleted == 0, has_tools_node)
+    )
 
 
 def _day_start(d: date) -> datetime:
@@ -44,6 +61,10 @@ class LlmUsageReadRepository:
 
     async def resolve_scope(self, params) -> list[UUID] | None:
         return await resolve_authorized_agent_ids(self.db, params.agent_id, params.group_id)
+
+    async def authorized_agent_ids(self) -> list[UUID] | None:
+        """Every agent the caller may read; None when unrestricted (an admin)"""
+        return await resolve_authorized_agent_ids(self.db)
 
     @staticmethod
     def _conditions(params, scope: list[UUID] | None, *, use_provider: bool = True, use_model: bool = True) -> list:
@@ -87,6 +108,42 @@ class LlmUsageReadRepository:
             func.coalesce(func.sum(_CACHE_READ), 0).label("cache_read_tokens"),
             func.coalesce(func.sum(_CACHE_WRITE), 0).label("cache_creation_tokens"),
         ).where(*self._conditions(params, scope))
+        return (await self.db.execute(stmt)).mappings().one()
+
+    async def totals(
+        self,
+        scope: list[UUID] | None,
+        *,
+        conversation_id: UUID | None = None,
+        builder_agents: bool = False,
+    ):
+        """
+        Spend totals for one conversation, or for every Workflow Builder agent
+        (``builder_agents``): calls, tokens, cost, how many calls had no price, and
+        the share spent by workflow-builder test runs. At least one of the two is
+        required. ``scope`` is the caller's authorized agents (``resolve_scope``),
+        applied as on every other usage read; None means unrestricted.
+        """
+        if conversation_id is None and not builder_agents:
+            raise ValueError("totals() needs a conversation_id or builder_agents=True")
+        conds = [LlmUsageEventModel.is_deleted == 0]
+        if scope is not None:
+            conds.append(LlmUsageEventModel.agent_id.in_(scope))
+        if conversation_id is not None:
+            conds.append(_CONV == conversation_id)
+        if builder_agents:
+            conds.append(LlmUsageEventModel.agent_id.in_(builder_agent_ids()))
+        is_test_run = LlmUsageEventModel.purpose == BUILDER_TEST_RUN_PURPOSE
+        stmt = select(
+            func.count().label("calls"),
+            func.coalesce(func.sum(_PROMPT_TOKENS), 0).label("input_tokens"),
+            func.coalesce(func.sum(LlmUsageEventModel.output_tokens), 0).label("output_tokens"),
+            func.coalesce(func.sum(_TOKENS), 0).label("total_tokens"),
+            func.coalesce(func.sum(_COST), 0).label("cost_usd"),
+            func.count().filter(_COST.is_(None)).label("unpriced_calls"),
+            func.count().filter(is_test_run).label("test_run_calls"),
+            func.coalesce(func.sum(_COST).filter(is_test_run), 0).label("test_run_cost_usd"),
+        ).where(*conds)
         return (await self.db.execute(stmt)).mappings().one()
 
     async def last_unpriced_at(self) -> datetime | None:

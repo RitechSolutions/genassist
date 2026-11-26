@@ -8,6 +8,7 @@ import {
   LLMModelNodeData,
   ToolBuilderNodeData,
   MCPNodeData,
+  WorkflowBuilderToolsNodeData,
   VoiceAgentNodeData,
   NlpNodeData,
 } from "../../types/nodes";
@@ -18,6 +19,7 @@ import ExternalAgentNode from "./externalAgentNode";
 import LLMModelNode from "./modelNode";
 import ToolBuilderNode from "./toolBuilderNode";
 import MCPNode from "./mcpNode";
+import WorkflowBuilderToolsNode from "./workflowBuilderToolsNode";
 import NlpNode from "./nlpNode";
 import {
   AI_AGENT_HELP_CONTENT,
@@ -433,3 +435,37 @@ export const EXTERNAL_AGENT_NODE_DEFINITION: NodeTypeDefinition<ExternalAgentNod
     },
   }),
 };
+
+export const WORKFLOW_BUILDER_TOOLS_NODE_DEFINITION: NodeTypeDefinition<WorkflowBuilderToolsNodeData> =
+  {
+    type: "workflowBuilderToolsNode",
+    label: "Workflow Builder Tools",
+    description:
+      "Gives an AI agent the tools to build and edit workflows: search node types, read the workflow draft, add, configure, connect and remove nodes, and validate the result.",
+    shortDescription: "Tools for building workflows",
+    category: "ai",
+    icon: "BrainCircuit",
+    defaultData: {
+      name: "Workflow Builder Tools",
+      enabledTools: [],
+      handlers: [
+        {
+          id: "output_tool",
+          type: "source",
+          compatibility: "tools",
+          position: "top",
+        },
+      ],
+    } as WorkflowBuilderToolsNodeData,
+    component: WorkflowBuilderToolsNode as React.ComponentType<
+      NodeProps<NodeData>
+    >,
+    createNode: (id, position, data) => ({
+      id,
+      type: "workflowBuilderToolsNode",
+      position,
+      data: {
+        ...data,
+      },
+    }),
+  };

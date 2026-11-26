@@ -5,6 +5,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   llmModelNode: "Language Model",
   toolBuilderNode: "Tool Builder",
   mcpNode: "MCP Server",
+  workflowBuilderToolsNode: "Workflow Builder Tools",
   // Chat / IO
   chatInputNode: "Start",
   webhookTriggerNode: "Webhook Trigger",
