@@ -20,11 +20,13 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/label";
 import { cn } from "@/helpers/utils";
+import { extractErrorMessage } from "@/helpers/apiError";
 import { usePermissions } from "@/context/PermissionContext";
 import { currentTenantIsMaster, userHasPermission } from "@/services/auth";
 import { TemplateCard } from "../components/TemplateCard";
 import { FeaturedTemplate } from "../components/FeaturedTemplate";
 import { categoryColor } from "../templateMeta";
+import { templateActionAccess } from "../templateAccess";
 import {
   approveTemplate,
   deleteTemplate,
@@ -46,6 +48,7 @@ export default function TemplatesPage() {
   const canApprove =
     currentTenantIsMaster() &&
     userHasPermission(permissions, "approve:template");
+  const access = useMemo(() => templateActionAccess(permissions), [permissions]);
 
   const [templates, setTemplates] = useState<TemplateListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,8 +72,8 @@ export default function TemplatesPage() {
     setLoading(true);
     try {
       setTemplates(await getTemplates());
-    } catch {
-      toast.error("Failed to load templates");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to load templates"));
     } finally {
       setLoading(false);
     }
@@ -80,8 +83,8 @@ export default function TemplatesPage() {
     setReviewLoading(true);
     try {
       setReviewItems(await getReviewQueue());
-    } catch {
-      toast.error("Failed to load the review queue");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to load the review queue"));
     } finally {
       setReviewLoading(false);
     }
@@ -134,6 +137,7 @@ export default function TemplatesPage() {
     ? filtered.filter((t) => t.id !== featured.id)
     : filtered;
   const showSaveTile =
+    access.save &&
     (tab === "all" || tab === "mine") && selectedCats.size === 0 && !search.trim();
   const isSearchingOrFiltering = search.trim() !== "" || selectedCats.size > 0;
 
@@ -154,8 +158,8 @@ export default function TemplatesPage() {
         `"${template.title}" added as an inactive draft — review it, then activate or delete it.`
       );
       navigate(`/ai-agents/workflow/${res.agent_id}?setup=true`);
-    } catch {
-      toast.error("Failed to create from template");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to create from template"));
     } finally {
       setInstallingId(null);
     }
@@ -166,8 +170,8 @@ export default function TemplatesPage() {
       await deleteTemplate(template.id);
       toast.success("Template deleted");
       setTemplates((prev) => prev.filter((t) => t.id !== template.id));
-    } catch {
-      toast.error("Failed to delete template");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to delete template"));
     }
   };
 
@@ -176,8 +180,8 @@ export default function TemplatesPage() {
       await unpublishTemplate(template.id);
       toast.success("Removed from the global library");
       loadTemplates();
-    } catch {
-      toast.error("Failed to remove from the library");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to remove from the library"));
     }
   };
 
@@ -190,8 +194,8 @@ export default function TemplatesPage() {
       setRemoveTarget(null);
       loadTemplates();
       if (tab === "review") loadReview();
-    } catch {
-      toast.error("Failed to remove");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to remove"));
     } finally {
       setRemoving(false);
     }
@@ -205,8 +209,8 @@ export default function TemplatesPage() {
       toast.success("Submitted for review — a master admin will approve it.");
       setPublishTarget(null);
       loadTemplates();
-    } catch {
-      toast.error("Failed to submit for review");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to submit for review"));
     } finally {
       setPublishing(false);
     }
@@ -219,8 +223,8 @@ export default function TemplatesPage() {
       toast.success(`"${template.title}" published to all tenants`);
       loadReview();
       loadTemplates();
-    } catch {
-      toast.error("Failed to approve");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to approve"));
     } finally {
       setBusyReviewId(null);
     }
@@ -235,8 +239,8 @@ export default function TemplatesPage() {
       setRejectTarget(null);
       setRejectReason("");
       loadReview();
-    } catch {
-      toast.error("Failed to reject");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to reject"));
     } finally {
       setBusyReviewId(null);
     }
@@ -360,7 +364,7 @@ export default function TemplatesPage() {
             <FeaturedTemplate
               template={featured}
               installs={featured.install_count}
-              onUse={handleUse}
+              onUse={access.use ? handleUse : undefined}
               installing={installingId === featured.id}
             />
           ) : null}
@@ -410,10 +414,10 @@ export default function TemplatesPage() {
                 <TemplateCard
                   key={t.id}
                   template={t}
-                  onUse={handleUse}
-                  onDelete={handleDelete}
-                  onPublish={setPublishTarget}
-                  onUnpublish={handleUnpublish}
+                  onUse={access.use ? handleUse : undefined}
+                  onDelete={access.delete ? handleDelete : undefined}
+                  onPublish={access.publish ? setPublishTarget : undefined}
+                  onUnpublish={access.publish ? handleUnpublish : undefined}
                   onRemove={canApprove ? setRemoveTarget : undefined}
                   installing={installingId === t.id}
                 />

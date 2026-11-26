@@ -55,7 +55,7 @@ class AgentConfigService:
         return await self.repository.get_all_full()
 
     async def get_list_paginated(
-        self, filter_obj: BaseFilterModel, is_system: bool | None = None
+        self, filter_obj: BaseFilterModel, is_system: bool | None = None, user_id: UUID | None = None
     ) -> PaginatedResponse[AgentListItem]:
         """Get paginated list of agents with minimal data for list view"""
         rows, total = await self.repository.get_list_paginated(filter_obj, is_system=is_system)
@@ -68,6 +68,7 @@ class AgentConfigService:
                 possible_queries=row.possible_queries,
                 is_active=row.is_active,
                 is_system=row.is_system,
+                is_mine=user_id is not None and row.created_by == user_id,
             )
             for row in rows
         ]

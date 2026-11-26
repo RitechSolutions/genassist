@@ -17,9 +17,20 @@ from app.schemas.template import (
     TemplateRead,
     TemplateRejectRequest,
 )
+from app.services.feature_flag import TEMPLATE_MARKETPLACE_FLAG, FeatureFlagService
 from app.services.template import TemplateService
 
-router = APIRouter()
+
+async def require_template_marketplace(
+    flags: FeatureFlagService = Injected(FeatureFlagService),
+) -> None:
+    """Every template route answers only while the tenant has the marketplace turned on."""
+    if not await flags.is_enabled(TEMPLATE_MARKETPLACE_FLAG):
+        raise AppException(status_code=403, error_key=ErrorKey.TEMPLATE_MARKETPLACE_DISABLED)
+
+
+# Sign-in is checked first, so a caller without a session never learns whether the flag is on.
+router = APIRouter(dependencies=[Depends(auth), Depends(require_template_marketplace)])
 
 
 async def require_master_scope() -> None:

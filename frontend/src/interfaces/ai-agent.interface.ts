@@ -56,6 +56,8 @@ export interface AgentListItem {
   possible_queries: string[];
   is_active: boolean;
   is_system: boolean;
+  // The signed-in user created it (computed by the server).
+  is_mine?: boolean;
 }
 
 export type AgentConfigCreate = Omit<AgentConfig, "id" | "user_id" | "workflow_id">;

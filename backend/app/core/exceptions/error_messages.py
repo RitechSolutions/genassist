@@ -23,6 +23,7 @@ class ErrorKey(Enum):
     AGENT_NOT_FOUND = "AGENT_NOT_FOUND"
     TEMPLATE_NOT_FOUND = "TEMPLATE_NOT_FOUND"
     TEMPLATE_INVALID = "TEMPLATE_INVALID"
+    TEMPLATE_MARKETPLACE_DISABLED = "TEMPLATE_MARKETPLACE_DISABLED"
     OPERATOR_NOT_FOUND = "OPERATOR_NOT_FOUND"
     INVALID_FILE_FORMAT = "invalid_file_format"
     NO_SELECTED_FILE = "no_selected_file"
@@ -238,6 +239,7 @@ ERROR_MESSAGES = {
         ErrorKey.AGENT_NOT_FOUND: "Agent not found.",
         ErrorKey.TEMPLATE_NOT_FOUND: "Template not found.",
         ErrorKey.TEMPLATE_INVALID: "The template is invalid or cannot be used.",
+        ErrorKey.TEMPLATE_MARKETPLACE_DISABLED: "The Template Marketplace is turned off for this tenant.",
         ErrorKey.INVALID_FILE_FORMAT: "Invalid file format.",
         ErrorKey.NO_SELECTED_FILE: "No selected file",
         ErrorKey.INVALID_RECORDED_AT: "Invalid recorded_at format. Use ISO 8601: YYYY-MM-DDTHH:MM:SSZ",

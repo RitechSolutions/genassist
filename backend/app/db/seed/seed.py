@@ -24,6 +24,7 @@ from app.db.models.api_key import ApiKeyModel
 from app.db.models.api_key_role import ApiKeyRoleModel
 from app.db.models.customer import CustomerModel
 from app.db.models.datasource import DataSourceModel
+from app.db.models.feature_flag import FeatureFlagModel
 from app.db.models.issue_status import IssueStatusModel
 from app.db.models.llm import LlmAnalystModel, LlmProvidersModel
 from app.db.models.llm_usage import CONTROL_SINGLETON_KEY, LlmUsageControlModel
@@ -47,6 +48,7 @@ from app.services.agent_knowledge import KnowledgeBaseService
 from app.services.agent_tool import ToolService
 from app.services.app_settings import AppSettingsService
 from app.services.datasources import DataSourceService
+from app.services.feature_flag import TEMPLATE_MARKETPLACE_FLAG
 from app.services.workflow import WorkflowService
 
 logger = logging.getLogger(__name__)
@@ -471,6 +473,7 @@ async def seed_data(session: AsyncSession, injector: Injector):
 
     await seed_llm_usage_control(session)
     await seed_issue_statuses(session)
+    await seed_feature_flags(session)
 
     # Seed tools
     # currency_tool = await seed_tools(session, admin.id, injector)
@@ -529,6 +532,21 @@ async def seed_issue_statuses(session: AsyncSession):
             .values(key=key, label=label, category=category, position=position, color=color, is_active=1)
             .on_conflict_do_nothing(constraint="uq_issue_statuses_key")
         )
+    await session.commit()
+
+
+async def seed_feature_flags(session: AsyncSession):
+    # New tenants are stamped at head without running migrations, so 00099's flag row is added here, off.
+    await session.execute(
+        pg_insert(FeatureFlagModel)
+        .values(
+            key=TEMPLATE_MARKETPLACE_FLAG,
+            val="false",
+            description="Template Marketplace (browse, publish, and install agent templates)",
+            is_active=1,
+        )
+        .on_conflict_do_nothing(index_elements=["key"])
+    )
     await session.commit()
 
 

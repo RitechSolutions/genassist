@@ -36,6 +36,8 @@ import { toast } from "react-hot-toast";
 import { PageListSkeleton } from "@/components/skeletons";
 import { useFeatureFlagVisible } from "@/components/featureFlag";
 import { FeatureFlags } from "@/config/featureFlags";
+import { usePermissions } from "@/context/PermissionContext";
+import { canSaveAgentAsTemplate } from "@/views/Templates/templateAccess";
 
 interface AgentListProps {
   agents: AgentListItem[];
@@ -75,6 +77,7 @@ const AgentList: React.FC<AgentListProps> = ({
   );
   const sentinelRef = useRef<HTMLDivElement>(null);
   const isAdmin = useMemo(() => currentUserIsAdmin(), []);
+  const permissions = usePermissions();
 
   // Per-agent schedule status: "active" if the agent has at least one active
   // schedule, "inactive" if it has schedules but none active, absent if none.
@@ -317,7 +320,8 @@ const AgentList: React.FC<AgentListProps> = ({
                       <span>Scheduling</span>
                     </Link>
                   </DropdownMenuItem>
-                  {showTemplates && (
+                  {showTemplates &&
+                    canSaveAgentAsTemplate(agent, permissions) && (
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
