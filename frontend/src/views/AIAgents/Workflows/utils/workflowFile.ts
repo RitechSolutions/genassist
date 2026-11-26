@@ -22,6 +22,7 @@ export const FILE_OMITTED_DATA: Record<string, readonly string[]> = {
   finalizeConversationNode: [],
   gmailNode: [],
   guardrailNliNode: [],
+  guardrailNode: [],
   guardrailProvenanceNode: [],
   htmlToImageNode: [],
   humanInTheLoopNode: [],
