@@ -37,6 +37,7 @@ from app.modules.workflow.engine.nodes import (
     FinalizeConversationNode,
     GmailToolNode,
     GuardrailNliNode,
+    GuardrailNode,
     GuardrailProvenanceNode,
     HtmlToImageNode,
     HumanInTheLoopNode,
@@ -186,6 +187,7 @@ class WorkflowEngine:
         cls._node_registry["setStateNode"] = SetStateNode
         cls._node_registry["guardrailProvenanceNode"] = GuardrailProvenanceNode
         cls._node_registry["guardrailNliNode"] = GuardrailNliNode
+        cls._node_registry["guardrailNode"] = GuardrailNode
         cls._node_registry["fileReaderNode"] = FileReaderNode
         cls._node_registry["ttsNode"] = TTSNode
         cls._node_registry["sttNode"] = STTNode

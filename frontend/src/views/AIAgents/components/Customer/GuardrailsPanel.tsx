@@ -17,7 +17,11 @@ import {
 import { Switch } from "@/components/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group";
 import { extractErrorMessage } from "@/helpers/apiError";
-import { defaultGuardrailPolicy, usesJudge } from "@/helpers/guardrailChecks";
+import {
+  defaultGuardrailPolicy,
+  guardrailLimitError,
+  usesJudge,
+} from "@/helpers/guardrailChecks";
 import {
   GuardrailCheckResponse,
   GuardrailMode,
@@ -92,6 +96,7 @@ export const GuardrailsPanel = ({ agentId }: GuardrailsPanelProps) => {
   const canSave =
     !saving &&
     topicsComplete &&
+    !guardrailLimitError(policy) &&
     !judgeMissing &&
     policy.blocked_message.trim() !== "";
 

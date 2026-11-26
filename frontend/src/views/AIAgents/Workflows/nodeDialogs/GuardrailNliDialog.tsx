@@ -115,22 +115,20 @@ export const GuardrailNliDialog: React.FC<Props> = (props) => {
             }
           />
         </div>
-        {false && (
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label>Fail on contradiction</Label>
-              <p className="text-xs text-muted-foreground">
-                When enabled, blocks the workflow branch if the answer contradicts the evidence.
-              </p>
-            </div>
-            <Switch
-              checked={values.fail_on_contradiction ?? false}
-              onCheckedChange={(checked) =>
-                setField("fail_on_contradiction", checked)
-              }
-            />
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <Label>Fail on contradiction</Label>
+            <p className="text-xs text-muted-foreground">
+              Sends a contradicting answer to the Blocked exit. With nothing connected there, the reply is a default message.
+            </p>
           </div>
-        )}
+          <Switch
+            checked={values.fail_on_contradiction ?? false}
+            onCheckedChange={(checked) =>
+              setField("fail_on_contradiction", checked)
+            }
+          />
+        </div>
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <Label>Fallback answer on contradiction</Label>

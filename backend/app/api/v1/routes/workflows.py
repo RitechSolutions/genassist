@@ -80,6 +80,7 @@ SUPPORTED_NODE_TYPES = [
     "setStateNode",
     "guardrailProvenanceNode",
     "guardrailNliNode",
+    "guardrailNode",
     "fileReaderNode",
     "externalAgentNode",
     "ttsNode",
