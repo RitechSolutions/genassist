@@ -95,6 +95,14 @@ async def test_the_stored_output_has_no_routing_key():
     assert node.state.node_outputs["g"]["message"] == "Not here."
 
 
+@pytest.mark.asyncio
+async def test_a_pass_with_nothing_wired_stores_the_whole_result():
+    node = _guardrail()
+    node.set_node_output(await node.process({**WORDS, "text": "What are your opening hours?"}))
+    assert node.state.node_outputs["g"]["message"] == "What are your opening hours?"
+    assert node.state.node_outputs["g"]["guardrail"]["passed"] is True
+
+
 def test_a_deactivated_node_follows_passed_only():
     assert _guardrail(passed=["reply"], blocked=["apology"]).get_bypass_next_nodes() == ["reply"]
 
@@ -150,7 +158,7 @@ async def test_an_unwired_block_before_chat_output_is_the_reply():
         ],
     }
     state = await WorkflowEngine(workflow).execute_from_node(input_data={"message": "Try competitorX"}, persist=False)
-    assert state.output["message"] == "Not here."
+    assert state.output == "Not here."
     assert "tpl" not in state.execution_path and "out" not in state.execution_path
 
 
@@ -174,6 +182,8 @@ async def test_nli_contradiction_with_nothing_wired_stops_without_answer_or_evid
     assert out["message"] == BLOCKED
     assert "answer" not in out and "evidence" not in out
     assert (out["blocked"], out["verdict"]) == (True, "nli_contradiction")
+    node.set_node_output(out)
+    assert node.state.node_outputs["g"] == BLOCKED
 
 
 @pytest.mark.asyncio
