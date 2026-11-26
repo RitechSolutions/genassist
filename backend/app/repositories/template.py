@@ -76,3 +76,31 @@ class TemplateRepository(DbRepository[TemplateModel]):
         )
         result = await self.db.execute(stmt)
         return result.scalars().first()
+
+    async def get_locked(self, template_id: UUID) -> Optional[TemplateModel]:
+        # Locks the row until the request's transaction ends, so publish and delete of one template take turns.
+        stmt = (
+            select(TemplateModel)
+            .where(TemplateModel.id == template_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().first()
+
+    async def soft_delete_published(
+        self, source_template_id: UUID, statuses: Iterable[TemplateStatus], source_tenant: str
+    ) -> None:
+        """Mark every master copy of a template, published from ``source_tenant``, deleted."""
+        await self.db.execute(
+            update(TemplateModel)
+            .where(
+                TemplateModel.source_template_id == source_template_id,
+                TemplateModel.source_tenant == source_tenant,
+                TemplateModel.status.in_(list(statuses)),
+                TemplateModel.is_deleted == 0,
+            )
+            .values(is_deleted=1)
+            .execution_options(synchronize_session="fetch")
+        )
+        await self.db.flush()

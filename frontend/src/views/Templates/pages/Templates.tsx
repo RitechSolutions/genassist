@@ -27,6 +27,7 @@ import { TemplateCard } from "../components/TemplateCard";
 import { FeaturedTemplate } from "../components/FeaturedTemplate";
 import { categoryColor } from "../templateMeta";
 import { templateActionAccess } from "../templateAccess";
+import { deleteConfirmation, withdrawConfirmation } from "../templateCopy";
 import {
   approveTemplate,
   deleteTemplate,
@@ -67,6 +68,13 @@ export default function TemplatesPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [removeTarget, setRemoveTarget] = useState<TemplateListItem | null>(null);
   const [removing, setRemoving] = useState(false);
+  // The target stays set while its dialog closes, so the dialog's text doesn't change mid-animation.
+  const [deleteTarget, setDeleteTarget] = useState<TemplateListItem | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [withdrawTarget, setWithdrawTarget] = useState<TemplateListItem | null>(null);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
 
   const loadTemplates = useCallback(async () => {
     setLoading(true);
@@ -165,23 +173,44 @@ export default function TemplatesPage() {
     }
   };
 
-  const handleDelete = async (template: TemplateListItem) => {
+  const openDelete = (template: TemplateListItem) => {
+    setDeleteTarget(template);
+    setDeleteOpen(true);
+  };
+
+  const openWithdraw = (template: TemplateListItem) => {
+    setWithdrawTarget(template);
+    setWithdrawOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const template = deleteTarget;
+    setDeleting(true);
     try {
       await deleteTemplate(template.id);
       toast.success("Template deleted");
+      setDeleteOpen(false);
       setTemplates((prev) => prev.filter((t) => t.id !== template.id));
     } catch (err) {
       toast.error(extractErrorMessage(err, "Failed to delete template"));
+    } finally {
+      setDeleting(false);
     }
   };
 
-  const handleUnpublish = async (template: TemplateListItem) => {
+  const confirmWithdraw = async () => {
+    if (!withdrawTarget) return;
+    setWithdrawing(true);
     try {
-      await unpublishTemplate(template.id);
-      toast.success("Removed from the global library");
+      await unpublishTemplate(withdrawTarget.id);
+      toast.success("Template withdrawn");
+      setWithdrawOpen(false);
       loadTemplates();
     } catch (err) {
-      toast.error(extractErrorMessage(err, "Failed to remove from the library"));
+      toast.error(extractErrorMessage(err, "Failed to withdraw the template"));
+    } finally {
+      setWithdrawing(false);
     }
   };
 
@@ -245,6 +274,9 @@ export default function TemplatesPage() {
       setBusyReviewId(null);
     }
   };
+
+  const deleteCopy = deleteConfirmation(deleteTarget ?? {});
+  const withdrawCopy = withdrawConfirmation(withdrawTarget ?? {});
 
   const hasOfficial = templates.some((t) => t.is_official);
   const tabs: { key: Tab; label: string }[] = [
@@ -415,9 +447,9 @@ export default function TemplatesPage() {
                   key={t.id}
                   template={t}
                   onUse={access.use ? handleUse : undefined}
-                  onDelete={access.delete ? handleDelete : undefined}
+                  onDelete={access.delete ? openDelete : undefined}
                   onPublish={access.publish ? setPublishTarget : undefined}
-                  onUnpublish={access.publish ? handleUnpublish : undefined}
+                  onUnpublish={access.publish ? openWithdraw : undefined}
                   onRemove={canApprove ? setRemoveTarget : undefined}
                   installing={installingId === t.id}
                 />
@@ -457,6 +489,28 @@ export default function TemplatesPage() {
         title="Publish to the global library?"
         description="A master admin reviews it before other tenants can see it. Provider, knowledge base, and secret values are not shared."
         itemName={publishTarget?.title}
+      />
+
+      <ConfirmDialog
+        isOpen={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        onConfirm={confirmDelete}
+        isInProgress={deleting}
+        primaryButtonText="Delete"
+        title={deleteCopy.title}
+        description={deleteCopy.description}
+        itemName={deleteTarget?.title}
+      />
+
+      <ConfirmDialog
+        isOpen={withdrawOpen}
+        onOpenChange={setWithdrawOpen}
+        onConfirm={confirmWithdraw}
+        isInProgress={withdrawing}
+        primaryButtonText="Withdraw"
+        title={withdrawCopy.title}
+        description={withdrawCopy.description}
+        itemName={withdrawTarget?.title}
       />
 
       <ConfirmDialog
