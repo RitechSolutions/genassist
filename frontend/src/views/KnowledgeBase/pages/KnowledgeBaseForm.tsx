@@ -297,6 +297,9 @@ const KnowledgeBaseForm: React.FC = () => {
     };
   }, []);
 
+  // The settings the knowledge base was saved with; a new one has none.
+  const savedRagConfig = editingItem ? ((editingItem.rag_config ?? {}) as RagConfigValues) : undefined;
+
   const hasSettingsChanged = useCallback(() => {
     if (!editingItem) return true;
     const original = getComparableOriginal(editingItem);
@@ -1317,6 +1320,7 @@ const KnowledgeBaseForm: React.FC = () => {
 
                     <DynamicRagConfigSection
                       ragConfig={dynamicRagConfig}
+                      savedRagConfig={savedRagConfig}
                       onChange={handleRagConfigChange}
                       showOnlyRequired={true}
                       knowledgeId={editingItem?.id}

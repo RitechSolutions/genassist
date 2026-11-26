@@ -1,6 +1,9 @@
 from typing import Dict, Any, List, Optional, Literal
 from pydantic import BaseModel, Field
 
+# Metadata key a source sets when it knows the document's own title.
+DOCUMENT_TITLE_KEY = "document_title"
+
 
 class SearchResult(BaseModel):
     """Standard search result format"""

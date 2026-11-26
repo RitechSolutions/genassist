@@ -325,3 +325,114 @@ async def test_failed_sync_keeps_the_last_successful_sync():
     assert saved.last_synced is not None  # still moves: it schedules the next run
     assert saved.last_successful_sync is None
     assert result["kbs_failed"] == 1
+
+
+COPY_DATES = {"zendesk_article_updated_at": {str(PUBLIC["id"]): "2026-01-01T00:00:00Z"}}
+BY_SIZE = {"vector": {"chunk_strategy": "recursive"}}
+BY_SECTIONS = {"vector": {"chunk_strategy": "sections"}}
+
+
+def _stored_kb(kb_id, extra_metadata, rag_config=None):
+    return _make_kb(kb_id, extra_metadata=extra_metadata).model_copy(update={"rag_config": rag_config})
+
+
+def _saved_page(extra_metadata, rag_config=None):
+    from app.schemas.agent_knowledge import KBBase
+
+    return KBBase(name="ZD KB", type="zendesk", extra_metadata=extra_metadata, rag_config=rag_config)
+
+
+def test_chunking_change_on_save_clears_the_copy_dates():
+    from app.tasks.salesforce_article_sync_tasks import clear_copy_dates_on_content_change
+
+    page = _saved_page({**COPY_DATES}, rag_config=BY_SECTIONS)
+    clear_copy_dates_on_content_change(_stored_kb(uuid.uuid4(), {**COPY_DATES}, rag_config=BY_SIZE), page)
+
+    assert page.extra_metadata["zendesk_article_updated_at"] == {}
+
+
+def test_content_format_change_on_save_clears_the_copy_dates():
+    from app.tasks.salesforce_article_sync_tasks import clear_copy_dates_on_content_change
+
+    page = _saved_page({**COPY_DATES, "content_format": "markdown"})
+    clear_copy_dates_on_content_change(_stored_kb(uuid.uuid4(), {**COPY_DATES, "content_format": "text"}), page)
+
+    assert page.extra_metadata["zendesk_article_updated_at"] == {}
+
+
+def test_save_without_content_changes_keeps_the_stored_copy_dates():
+    from app.tasks.salesforce_article_sync_tasks import clear_copy_dates_on_content_change
+
+    older_page = _saved_page({"zendesk_article_updated_at": {"1": "2025-06-01T00:00:00Z"}}, rag_config=BY_SIZE)
+    clear_copy_dates_on_content_change(_stored_kb(uuid.uuid4(), {**COPY_DATES}, rag_config=BY_SIZE), older_page)
+
+    assert older_page.extra_metadata["zendesk_article_updated_at"] == COPY_DATES["zendesk_article_updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_save_reads_the_copy_dates_under_a_row_lock():
+    from sqlalchemy.dialects import postgresql
+
+    from app.tasks.salesforce_article_sync_tasks import apply_stored_copy_dates_on_save
+
+    kb_id = uuid.uuid4()
+    stored_row = SimpleNamespace(extra_metadata={**COPY_DATES}, rag_config=BY_SIZE)
+    lookup = MagicMock()
+    lookup.scalars.return_value.first.return_value = stored_row
+    kb_service = MagicMock()
+    kb_service.repository.db.execute = AsyncMock(return_value=lookup)
+    page = _saved_page({"zendesk_article_updated_at": {}}, rag_config=BY_SIZE)
+
+    await apply_stored_copy_dates_on_save(kb_service, kb_id, page)
+
+    statement = kb_service.repository.db.execute.await_args.args[0]
+    assert "FOR NO KEY UPDATE" in str(statement.compile(dialect=postgresql.dialect()))
+    assert page.extra_metadata["zendesk_article_updated_at"] == COPY_DATES["zendesk_article_updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_after_a_chunking_change_the_next_sync_copies_every_article_again():
+    from app.tasks.salesforce_article_sync_tasks import clear_copy_dates_on_content_change
+
+    kb_id = uuid.uuid4()
+    _, kb_service = await _run_sync(_stored_kb(kb_id, {}, rag_config=BY_SIZE), _FakeRagManager(), [PUBLIC])
+    after_first_sync = kb_service.update.await_args.args[1].extra_metadata
+    page = _saved_page(dict(after_first_sync), rag_config=BY_SECTIONS)
+    clear_copy_dates_on_content_change(_stored_kb(kb_id, after_first_sync, rag_config=BY_SIZE), page)
+    rag = _FakeRagManager(existing_ids=[_doc(kb_id, PUBLIC)])
+
+    result, _ = await _run_sync(_stored_kb(kb_id, page.extra_metadata, rag_config=BY_SECTIONS), rag, [PUBLIC])
+
+    assert rag.added == [_doc(kb_id, PUBLIC)]
+    assert result["articles_updated"] == 1
+
+
+class _MetadataRecordingRagManager(_FakeRagManager):
+    def __init__(self, existing_ids=None):
+        super().__init__(existing_ids)
+        self.metadata = {}
+
+    async def add_document(self, kb, doc_id, content, metadata, **_):
+        self.metadata[doc_id] = metadata
+        return await super().add_document(kb, doc_id, content, metadata)
+
+
+@pytest.mark.asyncio
+async def test_new_article_is_stored_with_its_title_as_the_document_title():
+    kb_id = uuid.uuid4()
+    rag = _MetadataRecordingRagManager()
+
+    await _run_sync(_make_kb(kb_id), rag, [PUBLIC])
+
+    assert rag.metadata[_doc(kb_id, PUBLIC)]["document_title"] == PUBLIC["title"]
+
+
+@pytest.mark.asyncio
+async def test_updated_article_is_stored_with_its_title_as_the_document_title():
+    kb_id = uuid.uuid4()
+    kb = _make_kb(kb_id, extra_metadata={"zendesk_article_updated_at": {str(PUBLIC["id"]): "2025-12-01T00:00:00Z"}})
+    rag = _MetadataRecordingRagManager(existing_ids=[_doc(kb_id, PUBLIC)])
+
+    await _run_sync(kb, rag, [PUBLIC])
+
+    assert rag.metadata[_doc(kb_id, PUBLIC)]["document_title"] == PUBLIC["title"]

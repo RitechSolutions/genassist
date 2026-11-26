@@ -11,13 +11,14 @@ from .base import BaseChunker, ChunkConfig
 
 if TYPE_CHECKING:  # static analyzers don't see PEP 562 __getattr__ — declare names here
     from .recursive import RecursiveChunker
+    from .sections import SectionChunker
     from .semantic import SemanticChunker
 
 # RecursiveChunker (langchain_text_splitters) and SemanticChunker (sentence_transformers)
 # pull torch/transformers at import. Resolve lazily (PEP 562) so importing this package
 # — and thus the lightweight ChunkConfig used by vector/config.py — stays ML-free; the
 # chunker materializes on first use (runtime, in a prefork child).
-_LAZY = {"RecursiveChunker": ".recursive", "SemanticChunker": ".semantic"}
+_LAZY = {"RecursiveChunker": ".recursive", "SectionChunker": ".sections", "SemanticChunker": ".semantic"}
 
 
 def __getattr__(name):
@@ -26,4 +27,4 @@ def __getattr__(name):
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["BaseChunker", "RecursiveChunker", "SemanticChunker", "ChunkConfig"]
+__all__ = ["BaseChunker", "RecursiveChunker", "SectionChunker", "SemanticChunker", "ChunkConfig"]
