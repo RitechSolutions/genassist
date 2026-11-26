@@ -6,7 +6,8 @@ the seeded 'openai dev 1.0' provider (failing that, of the tenant's oldest activ
 OpenAI provider) with the gpt-6.1-terra model. It is NOT the tenant default: the
 workflows the builder creates keep taking the existing default
 (LlmProviderService.get_default, i.e. 'openai dev 1.0'). Only the Workflow Builder
-agent's own agent node is re-pointed at it. A tenant without any OpenAI key is left
+agent's own agent node is re-pointed at it: the seeded system agent, never a user's own
+agent that happens to be called "Workflow Builder". A tenant without any OpenAI key is left
 untouched. Re-running after a downgrade revives the soft-deleted row and refreshes
 its name and model.
 
@@ -33,6 +34,8 @@ PROVIDER_NAME = "openai dev gpt-6.1-terra"
 PROVIDER_MODEL = "gpt-6.1-terra"
 SOURCE_PROVIDER_ID = "00000196-19d2-9c28-a2dd-561fff608fa0"  # 'openai dev 1.0'
 SOURCE_PROVIDER_NAME = "openai dev 1.0"
+# The seeded builder is a system agent with this name (seed.py and migration 00073 set
+# is_system; users cannot), so the pair matches it and not a user agent of the same name.
 AGENT_NAME = "Workflow Builder"
 
 _KEY_OF = (
@@ -57,7 +60,7 @@ def _source_api_key(conn) -> Optional[str]:
 
 
 def _point_builder_at(conn, provider_id: str) -> None:
-    """Set providerId on the agent node(s) of the Workflow Builder agent's workflow"""
+    """Set providerId on the agent node(s) of the seeded Workflow Builder system agent's workflow"""
     conn.execute(
         sa.text(
             """
@@ -77,7 +80,8 @@ def _point_builder_at(conn, provider_id: str) -> None:
               AND jsonb_typeof(w.nodes) = 'array'
               AND w.id IN (
                     SELECT a.workflow_id FROM agents a
-                    WHERE a.name = :agent_name AND a.is_deleted = 0 AND a.workflow_id IS NOT NULL
+                    WHERE a.name = :agent_name AND a.is_system = true
+                      AND a.is_deleted = 0 AND a.workflow_id IS NOT NULL
               )
             """
         ),

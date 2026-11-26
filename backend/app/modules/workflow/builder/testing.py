@@ -340,8 +340,9 @@ async def run_draft_test(
     report = format_test_result(draft, message, response)
     if simulated:
         report += (
-            f"\nSimulated (nothing was really sent or created): {', '.join(simulated)}. The agent's tool "
-            f"calls above show what would have been sent. The person can turn simulation off on the canvas."
+            f"\nSimulated (nothing was really sent or created): {', '.join(simulated)}. These steps were "
+            f"skipped and passed their input through; the agent's tool calls above show what would have "
+            f"been sent. The person can turn simulation off on the canvas."
         )
     return report
 

@@ -91,6 +91,29 @@ def _current_user_id(request: Request) -> Optional[UUID]:
     return user.id if user else None
 
 
+def _caller_id(request: Request) -> Optional[str]:
+    """The signed-in user making the request, as stored on a draft; None for an API key"""
+    user_id = _current_user_id(request)
+    return str(user_id) if user_id else None
+
+
+def _may_use(draft: WorkflowDraft, request: Request) -> bool:
+    """
+    A draft opened from a canvas belongs to the user who opened it. One without an
+    owner was started by the pre-login onboarding chat, before any user existed.
+    """
+    return draft.owner_id is None or draft.owner_id == _caller_id(request)
+
+
+async def _load_own_draft(conversation_id: UUID, request: Request) -> Optional[WorkflowDraft]:
+    """The conversation's draft, or None when there is none or it is someone else's"""
+    draft = await load_draft(str(conversation_id))
+    if draft is not None and not _may_use(draft, request):
+        logger.warning("Refused access to the workflow draft of conversation %s: not its owner", conversation_id)
+        return None
+    return draft
+
+
 def _invalid(issues: List[Dict[str, Any]], message: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -108,13 +131,21 @@ def _invalid(issues: List[Dict[str, Any]], message: str) -> HTTPException:
 async def put_draft(
     conversation_id: UUID,
     snapshot: CanvasSnapshot,
+    request: Request,
     llm_provider_service: LlmProviderService = Injected(LlmProviderService),
 ):
     """
     Start a builder turn from the canvas as the user currently has it
-    (including unsaved changes). Replaces the conversation's draft.
+    (including unsaved changes). Replaces the conversation's draft, which from
+    then on belongs to the caller.
     """
     previous = await load_draft(str(conversation_id))
+    if previous is not None and not _may_use(previous, request):
+        logger.warning("Refused to replace the workflow draft of conversation %s: not its owner", conversation_id)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This conversation's workflow draft belongs to another user",
+        )
     draft = WorkflowDraft.from_canvas(
         snapshot.nodes,
         snapshot.edges,
@@ -124,6 +155,7 @@ async def put_draft(
         last_test_run=snapshot.last_test_run,
     )
     draft.simulate_actions = snapshot.simulate_actions
+    draft.owner_id = _caller_id(request)
     await save_draft(str(conversation_id), draft)
     return {"revision": draft.revision, "node_count": len(draft.aliases)}
 
@@ -157,9 +189,9 @@ async def list_builder_tools() -> List[Dict[str, str]]:
     "/drafts/{conversation_id}",
     dependencies=[Depends(auth), Depends(permissions(P.Workflow.READ))],
 )
-async def get_draft(conversation_id: UUID):
+async def get_draft(conversation_id: UUID, request: Request):
     """The conversation's draft: canvas-ready nodes and edges, what changed this turn, and open issues."""
-    draft = await load_draft(str(conversation_id))
+    draft = await _load_own_draft(conversation_id, request)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No workflow draft for this conversation")
     return draft.client_payload()
@@ -169,15 +201,17 @@ async def get_draft(conversation_id: UUID):
     "/drafts/{conversation_id}/status",
     dependencies=[Depends(auth)],
 )
-async def get_draft_status(conversation_id: UUID):
+async def get_draft_status(conversation_id: UUID, request: Request):
     """
     Whether the builder agent has finalized a workflow in this conversation.
 
     Readable with the chat API key, so the pre-login onboarding chat can tell
     when the workflow is ready without parsing the agent's replies. ``spec`` is
-    the draft in the simplified specification format, for previewing.
+    the draft in the simplified specification format, for previewing, with every
+    credential removed. A draft a signed-in user opened from a canvas is theirs
+    alone: to anyone else, the chat API key included, it reads as empty.
     """
-    draft = await load_draft(str(conversation_id))
+    draft = await _load_own_draft(conversation_id, request)
     if draft is None:
         return {"status": "empty", "ready": False, "node_count": 0, "summary": "", "spec": None, "question": None}
     if not draft.nodes:
@@ -187,7 +221,7 @@ async def get_draft_status(conversation_id: UUID):
         "ready": draft.status == STATUS_READY and not blocking(draft.issues()),
         "node_count": len(draft.aliases),
         "summary": draft.summary,
-        "spec": draft.to_spec(),
+        "spec": draft.to_spec(redact_secrets=True),
         # A question the builder asked (ask_user), so the pre-login chat can show its options too.
         "question": draft.question,
     }
@@ -342,7 +376,7 @@ async def create_workflow_from_builder(
     defaults = await _tenant_defaults(llm_provider_service)
 
     if conversation_id is not None:
-        draft = await load_draft(str(conversation_id))
+        draft = await _load_own_draft(conversation_id, request)
         if draft is None or not draft.nodes:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

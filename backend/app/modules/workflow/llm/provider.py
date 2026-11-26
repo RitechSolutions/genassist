@@ -41,13 +41,26 @@ def _bedrock_supports_prompt_caching(model_name: Optional[str]) -> bool:
     return False
 
 
-def apply_max_tokens_floor(connection_data: Dict[str, Any], floor: Optional[int]) -> Dict[str, Any]:
+def _form_has_max_tokens(provider_name: Optional[str]) -> bool:
+    """Whether the provider type's form offers a Max Tokens setting"""
+    from app.schemas.dynamic_form_schemas.llm_form_schemas import LLM_FORM_SCHEMAS
+
+    schema = LLM_FORM_SCHEMAS.get((provider_name or "").lower())
+    return bool(schema) and any(field.name == "max_tokens" for field in (schema.fields or []))
+
+
+def apply_max_tokens_floor(
+    connection_data: Dict[str, Any], floor: Optional[int], provider_name: Optional[str] = None
+) -> Dict[str, Any]:
     """
-    `connection_data` with its max_tokens raised to at least `floor`. Only a form that
-    has the setting is touched, so a provider class without a max_tokens option never
-    receives one it does not know.
+    `connection_data` with its max_tokens raised to at least `floor`. A provider saved
+    without a Max Tokens value gets the floor too, when its type's form has the setting
+    (``provider_name``); a provider type without that option never receives one it does
+    not know.
     """
-    if not floor or "max_tokens" not in connection_data:
+    if not floor:
+        return connection_data
+    if "max_tokens" not in connection_data and not _form_has_max_tokens(provider_name):
         return connection_data
     try:
         current = int(connection_data.get("max_tokens") or 0)
@@ -461,7 +474,9 @@ class LLMProvider:
             )  # clone the data
 
             validated_data.pop("masked_api_key", None)
-            validated_data = apply_max_tokens_floor(validated_data, min_max_tokens)
+            validated_data = apply_max_tokens_floor(
+                validated_data, min_max_tokens, provider_name=llm_provider.llm_model_provider
+            )
 
             # Decrypt stored secrets for providers that need it
             original_provider = (llm_provider.llm_model_provider or "").lower()

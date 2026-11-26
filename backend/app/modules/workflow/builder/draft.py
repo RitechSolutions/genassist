@@ -185,6 +185,9 @@ class WorkflowDraft:
         # to click: {"question", "options", "recommended"}. Cleared when the next
         # turn starts from the canvas.
         self.question: Optional[Dict[str, Any]] = None
+        # The signed-in user who opened this draft from a canvas. Only they can read or
+        # replace it; None for a draft the pre-login onboarding chat started.
+        self.owner_id: Optional[str] = None
         self._assign_aliases()
 
     # ── Construction / persistence ────────────────────────────────────────
@@ -324,6 +327,7 @@ class WorkflowDraft:
             "last_failure": self.last_failure,
             "simulate_actions": self.simulate_actions,
             "question": self.question,
+            "owner_id": self.owner_id,
         }
 
     @classmethod
@@ -352,6 +356,8 @@ class WorkflowDraft:
         draft.simulate_actions = bool(payload.get("simulate_actions", True))
         question = payload.get("question")
         draft.question = question if isinstance(question, dict) else None
+        owner_id = payload.get("owner_id")
+        draft.owner_id = str(owner_id) if owner_id else None
         draft._assign_aliases()
         return draft
 
@@ -1294,10 +1300,13 @@ class WorkflowDraft:
             nodes = place_new_nodes(nodes, edges, set(self.new_node_ids))
         return {"nodes": nodes, "edges": edges}
 
-    def to_spec(self) -> Dict[str, Any]:
+    def to_spec(self, redact_secrets: bool = False) -> Dict[str, Any]:
         """
         The draft in the simplified specification format ``build_workflow_from_spec``
         accepts: enough to rebuild it elsewhere, and small enough to preview.
+
+        ``redact_secrets`` removes every credential (tokens, passwords, API keys,
+        auth headers, at any depth) for callers that only preview the draft.
         """
         workflow = []
         for node in self.nodes:
@@ -1311,6 +1320,8 @@ class WorkflowDraft:
                 key: value for key, value in data.items()
                 if key not in catalog.NON_CONFIG_KEYS and key != "name" and defaults.get(key) != value
             }
+            if redact_secrets:
+                config = catalog.redact_secrets(config)
             workflow.append({
                 "uniqueId": self.alias(node["id"]),
                 "node_name": node.get("type", ""),

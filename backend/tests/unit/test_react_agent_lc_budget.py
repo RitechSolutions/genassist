@@ -131,7 +131,8 @@ def test_agent_installs_the_budget_sized_by_max_iterations():
         TruncatedToolCallMiddleware,
         ModelCallBudgetMiddleware,
     ]
-    assert middleware[3].max_calls == 16
+    # maxIterations tool rounds plus the reply, as the recursion limit (2N + 1) allows.
+    assert middleware[3].max_calls == 17
 
 
 def test_history_sends_only_the_reply_of_a_stored_agent_turn():

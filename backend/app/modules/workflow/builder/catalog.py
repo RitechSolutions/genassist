@@ -238,6 +238,42 @@ def is_secret_key(key: str) -> bool:
     return bool(SECRET_KEY_PATTERN.search(key))
 
 
+# Keys whose value is a credential wherever they appear in node data, nested ones
+# included: header names (Authorization, Cookie, X-Api-Key) as well as field names.
+CREDENTIAL_KEY_PATTERN = re.compile(
+    r"(token|secret|password|passwd|api[_-]?key|authorization|cookie|credential|private[_-]?key)",
+    re.IGNORECASE,
+)
+# Counts that happen to say "token" are settings, not credentials.
+TOKEN_COUNT_PATTERN = re.compile(r"(max|min)[_-]?tokens?|tokens?[_-]?(limit|count)", re.IGNORECASE)
+
+
+def is_credential_key(key: Any) -> bool:
+    if not isinstance(key, str):
+        return False
+    return bool(CREDENTIAL_KEY_PATTERN.search(key)) and not TOKEN_COUNT_PATTERN.search(key)
+
+
+def redact_secrets(value: Any) -> Any:
+    """
+    ``value`` with every credential removed, at any depth: dict entries whose key
+    names a credential, and ``{"key"/"name": <credential header>, "value": ...}``
+    pairs in header lists. Removed rather than masked, so a spec rebuilt from the
+    result leaves those fields empty for the person to fill in.
+    """
+    if isinstance(value, dict):
+        named = value.get("key", value.get("name"))
+        if "value" in value and is_credential_key(named):
+            return {k: v for k, v in value.items() if k != "value"}
+        return {
+            k: redact_secrets(v) for k, v in value.items()
+            if not (is_credential_key(k) and v not in (None, "", [], {}))
+        }
+    if isinstance(value, list):
+        return [redact_secrets(item) for item in value]
+    return value
+
+
 def config_fields(node_type: str) -> List[Dict[str, Any]]:
     """Config fields of a node: canvas defaults merged with dialog metadata."""
     found = entry(node_type)

@@ -247,7 +247,7 @@ export const AssistantPanel: React.FC<AssistantPanelProps> = ({
         onClick={() => onSimulateActionsChange(!simulateActions)}
         title={
           simulateActions
-            ? "AI test runs simulate steps that send or create things (tickets, emails, messages). Click to let them really run."
+            ? "AI test runs simulate steps that send or create things (tickets, emails, messages, SQL, API and MCP calls, schedules). Click to let them really run."
             : "AI test runs really send and create things. Click to simulate those steps instead."
         }
         className={cn(

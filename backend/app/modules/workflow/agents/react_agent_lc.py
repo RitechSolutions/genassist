@@ -214,10 +214,12 @@ class ModelCallBudgetMiddleware(AgentMiddleware):
     """
     Cap the model calls of one run and end it with a reply, not a recursion error.
 
-    ``max_calls`` is the agent's maxIterations. The last allowed call carries a notice
-    to answer without tools; if the model calls tools anyway, they are dropped and its
-    text (or a fixed reply) ends the run. The graph's recursion limit stays the
-    backstop behind this.
+    ``max_calls`` is the agent's maxIterations plus one: maxIterations rounds of tool
+    calls, then one call for the reply. That last call carries a notice to answer
+    without tools; if the model calls tools anyway, they are dropped and its text (or a
+    fixed reply) ends the run. An agent set to one iteration still gets its tool round.
+    The graph's recursion limit (``_recursion_limit``) leaves room for exactly this run
+    and stays the backstop behind it.
     """
 
     def __init__(self, max_calls: int) -> None:
@@ -399,6 +401,15 @@ class ReActAgentLC(BaseToolAgent):
         # Return None if no parameters (LangChain will handle this)
         return None
 
+    def _recursion_limit(self) -> int:
+        """
+        Graph steps for maxIterations tool rounds and the reply: a model and a tools step
+        per round plus the reply's model step, and LangGraph needs one step of headroom
+        above the steps it runs. The old ``2 * maxIterations + 1`` ran the tools of the
+        last round and then raised a recursion error instead of letting the agent reply.
+        """
+        return 2 * (self.max_iterations + 1) + 1
+
     def _create_langgraph_agent(self):
         """Create the LangGraph React agent executor"""
         # Create the agent with system prompt
@@ -410,7 +421,8 @@ class ReActAgentLC(BaseToolAgent):
                 RetryOnToolErrorMiddleware(),
                 HistorySystemContentMiddleware(),
                 TruncatedToolCallMiddleware(),
-                ModelCallBudgetMiddleware(self.max_iterations),
+                # maxIterations tool rounds, then one call for the reply (see the class).
+                ModelCallBudgetMiddleware(self.max_iterations + 1),
             ],
         )
 
@@ -504,7 +516,7 @@ class ReActAgentLC(BaseToolAgent):
 
             # Configure the execution
             config = {
-                "recursion_limit": self.max_iterations * 2 + 1,
+                "recursion_limit": self._recursion_limit(),
                 "configurable": {
                     "thread_id": thread_id,
                 },

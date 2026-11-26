@@ -47,7 +47,7 @@ async def test_conversation_totals_filter_on_that_conversation_only():
     db = CapturingDb(ROW)
     conversation_id = uuid4()
 
-    await LlmUsageReadRepository(db).totals(conversation_id=conversation_id)
+    await LlmUsageReadRepository(db).totals(None, conversation_id=conversation_id)
 
     sql = _sql(db.statements[0])
     assert f"conversation_id = '{conversation_id}'" in sql and "is_deleted = 0" in sql
@@ -56,10 +56,23 @@ async def test_conversation_totals_filter_on_that_conversation_only():
 
 
 @pytest.mark.asyncio
+async def test_totals_keep_to_the_agents_the_caller_may_read():
+    """Review finding: the builder totals skipped the agent-visibility check every other usage read applies"""
+    db = CapturingDb(ROW)
+    allowed = uuid4()
+
+    await LlmUsageReadRepository(db).totals([allowed], conversation_id=uuid4())
+    await LlmUsageReadRepository(db).totals([allowed], builder_agents=True)
+
+    for stmt in db.statements:
+        assert f"llm_usage_events.agent_id IN ('{allowed}')" in _sql(stmt)
+
+
+@pytest.mark.asyncio
 async def test_builder_totals_find_the_agents_by_their_tools_node_not_their_name():
     db = CapturingDb(ROW)
 
-    await LlmUsageReadRepository(db).totals(builder_agents=True)
+    await LlmUsageReadRepository(db).totals(None, builder_agents=True)
 
     sql = _sql(db.statements[0])
     assert "agent_id IN (SELECT agents.id" in sql
@@ -72,15 +85,19 @@ async def test_builder_totals_find_the_agents_by_their_tools_node_not_their_name
 @pytest.mark.asyncio
 async def test_totals_need_a_scope():
     with pytest.raises(ValueError):
-        await LlmUsageReadRepository(CapturingDb(ROW)).totals()
+        await LlmUsageReadRepository(CapturingDb(ROW)).totals(None)
 
 
 class FakeRepo:
-    def __init__(self):
+    def __init__(self, authorized=None):
         self.calls = []
+        self.authorized = authorized
 
-    async def totals(self, **scope):
-        self.calls.append(scope)
+    async def authorized_agent_ids(self):
+        return self.authorized
+
+    async def totals(self, scope, **where):
+        self.calls.append({"scope": scope, **where})
         return ROW
 
 
@@ -92,7 +109,10 @@ async def test_builder_usage_reports_this_conversation_and_all_time_as_plain_num
 
     usage = await service.builder_usage(conversation_id)
 
-    assert repo.calls == [{"conversation_id": conversation_id}, {"builder_agents": True}]
+    assert repo.calls == [
+        {"scope": None, "conversation_id": conversation_id},
+        {"scope": None, "builder_agents": True},
+    ]
     assert usage["conversation"] == usage["all_time"] == {
         "calls": 7, "input_tokens": 1200, "output_tokens": 300, "total_tokens": 1500,
         "cost_usd": 0.0123, "unpriced_calls": 1, "test_run_calls": 2, "test_run_cost_usd": 0.004,
@@ -104,4 +124,23 @@ async def test_builder_usage_without_a_conversation_reads_all_time_only():
     repo = FakeRepo()
     usage = await LlmUsageReadService(repo, agent_repo=None, workflow_repo=None).builder_usage(None)
 
-    assert usage["conversation"] is None and repo.calls == [{"builder_agents": True}]
+    assert usage["conversation"] is None and repo.calls == [{"scope": None, "builder_agents": True}]
+
+
+@pytest.mark.asyncio
+async def test_builder_usage_is_read_within_the_callers_agents():
+    allowed = [uuid4()]
+    repo = FakeRepo(authorized=allowed)
+    await LlmUsageReadService(repo, agent_repo=None, workflow_repo=None).builder_usage(uuid4())
+
+    assert [call["scope"] for call in repo.calls] == [allowed, allowed]
+
+
+@pytest.mark.asyncio
+async def test_a_caller_who_may_read_no_agent_sees_zero_and_queries_nothing():
+    repo = FakeRepo(authorized=[])
+    usage = await LlmUsageReadService(repo, agent_repo=None, workflow_repo=None).builder_usage(uuid4())
+
+    assert repo.calls == []
+    assert usage["conversation"] == usage["all_time"]
+    assert usage["all_time"]["calls"] == 0 and usage["all_time"]["cost_usd"] == 0.0

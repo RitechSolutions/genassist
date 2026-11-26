@@ -62,6 +62,10 @@ class LlmUsageReadRepository:
     async def resolve_scope(self, params) -> list[UUID] | None:
         return await resolve_authorized_agent_ids(self.db, params.agent_id, params.group_id)
 
+    async def authorized_agent_ids(self) -> list[UUID] | None:
+        """Every agent the caller may read; None when unrestricted (an admin)"""
+        return await resolve_authorized_agent_ids(self.db)
+
     @staticmethod
     def _conditions(params, scope: list[UUID] | None, *, use_provider: bool = True, use_model: bool = True) -> list:
         """Shared filter conditions for usage queries"""
@@ -106,15 +110,25 @@ class LlmUsageReadRepository:
         ).where(*self._conditions(params, scope))
         return (await self.db.execute(stmt)).mappings().one()
 
-    async def totals(self, *, conversation_id: UUID | None = None, builder_agents: bool = False):
+    async def totals(
+        self,
+        scope: list[UUID] | None,
+        *,
+        conversation_id: UUID | None = None,
+        builder_agents: bool = False,
+    ):
         """
         Spend totals for one conversation, or for every Workflow Builder agent
         (``builder_agents``): calls, tokens, cost, how many calls had no price, and
-        the share spent by workflow-builder test runs. At least one scope is required.
+        the share spent by workflow-builder test runs. At least one of the two is
+        required. ``scope`` is the caller's authorized agents (``resolve_scope``),
+        applied as on every other usage read; None means unrestricted.
         """
         if conversation_id is None and not builder_agents:
             raise ValueError("totals() needs a conversation_id or builder_agents=True")
         conds = [LlmUsageEventModel.is_deleted == 0]
+        if scope is not None:
+            conds.append(LlmUsageEventModel.agent_id.in_(scope))
         if conversation_id is not None:
             conds.append(_CONV == conversation_id)
         if builder_agents:

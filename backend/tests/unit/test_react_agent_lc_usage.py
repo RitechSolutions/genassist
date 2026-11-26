@@ -219,13 +219,65 @@ async def test_a_real_graph_run_that_exhausts_its_budget_ends_with_a_reply_and_r
 
     result = await agent.invoke("hi")
 
-    # Two model calls, not a recursion error: the second was told to answer, called a tool
-    # anyway, and that call was dropped in favour of a reply the person can read.
+    # Two tool rounds, then a third call for the reply, not a recursion error: that call
+    # was told to answer, called a tool anyway, and the call was dropped in favour of a
+    # reply the person can read.
     assert result["status"] == "success"
     assert result["response"] == OUT_OF_CALLS_REPLY
-    assert result["llm_usage"] == [{"input_tokens": 10, "output_tokens": 1, "total_tokens": 11}] * 2
+    assert result["llm_usage"] == [{"input_tokens": 10, "output_tokens": 1, "total_tokens": 11}] * 3
+    assert len(model.seen) == 3
+    assert model.seen[2][-1].content == LAST_CALL_NOTICE
+    assert all(m.content != LAST_CALL_NOTICE for seen in model.seen[:2] for m in seen)
+
+
+class _ToolThenAnswerModel(BaseChatModel):
+    """Calls the tool once, then answers"""
+
+    seen: list = []
+
+    @property
+    def _llm_type(self) -> str:
+        return "tool-then-answer"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        self.seen.append(list(messages))
+        if any(isinstance(m, ToolMessage) for m in messages):
+            message = AIMessage(content="found it")
+        else:
+            message = AIMessage(
+                content="", tool_calls=[{"name": "search", "args": {}, "id": "call_1", "type": "tool_call"}]
+            )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        return self._generate(messages, stop, run_manager, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_an_agent_with_one_iteration_still_calls_its_tool_and_then_answers():
+    """Review finding: the budget took the tools away on the last iteration, so one step meant no tool at all"""
+    from app.modules.workflow.agents.react_agent_lc import LAST_CALL_NOTICE
+
+    ran = []
+
+    async def search(_inp):
+        ran.append(True)
+        return "the result"
+
+    tool = BaseTool(node_id="tool-1", name="search", description="d", parameters={}, function=search)
+    model = _ToolThenAnswerModel(seen=[])
+    agent = ReActAgentLC(llm_model=model, system_prompt="sys", tools=[tool], max_iterations=1)
+
+    result = await agent.invoke("hi")
+
+    assert result["status"] == "success"
+    assert ran == [True], "the tool call of the one allowed iteration must run"
+    assert result["response"] == "found it"
     assert len(model.seen) == 2
-    assert model.seen[1][-1].content == LAST_CALL_NOTICE
+    # Only the reply call is told to stop calling tools.
     assert all(m.content != LAST_CALL_NOTICE for m in model.seen[0])
 
 

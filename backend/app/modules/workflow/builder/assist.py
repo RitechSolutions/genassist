@@ -27,9 +27,16 @@ logger = logging.getLogger(__name__)
 
 PROMPT_NODE_TYPES = {"agentNode", "subAgentNode", "llmModelNode", "voiceAgentNode"}
 CODE_FIELDS = {"pythonCodeNode": "code", "dataMapperNode": "pythonScript", "templateNode": "template"}
+# Steps that can send, create or change something outside the run. A builder test run
+# with "simulate actions" on bypasses every one of them, so this list has to cover each
+# node that reaches an external system or a database, not just the messaging ones.
 ACTION_NODE_TYPES = {
+    # Messages, tickets, events
     "zendeskTicketNode", "slackMessageNode", "gmailNode", "whatsappToolNode",
     "salesforceCaseNode", "jiraNode", "calendarEventNode",
+    # Arbitrary writes: SQL statements, HTTP requests, MCP tools, schedules, other workflows
+    "sqlNode", "apiToolNode", "openApiNode", "mcpNode",
+    "createWorkflowScheduleNode", "workflowExecutorNode",
 }
 
 # Words in a customer-facing prompt that end up in replies ("it's not in my knowledge base").

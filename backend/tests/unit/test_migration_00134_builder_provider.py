@@ -1,4 +1,4 @@
-"""Migration 00132: the Workflow Builder's own LLM provider, on tenants seeded before it existed"""
+"""Migration 00134: the Workflow Builder's own LLM provider, on tenants seeded before it existed"""
 
 import importlib.util
 from pathlib import Path
@@ -7,12 +7,12 @@ from types import SimpleNamespace
 import pytest
 
 _MIGRATION_PATH = (
-    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "00132_add_workflow_builder_llm_provider.py"
+    Path(__file__).resolve().parents[2] / "alembic" / "versions" / "00134_add_workflow_builder_llm_provider.py"
 )
 
 
 def _load_migration():
-    spec = importlib.util.spec_from_file_location("migration_00132", _MIGRATION_PATH)
+    spec = importlib.util.spec_from_file_location("migration_00134", _MIGRATION_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -80,6 +80,8 @@ class TestUpgrade:
         (repoint_sql, repoint_params), = _builder_repoints(bind)
         assert repoint_params == {"provider_id": module.PROVIDER_ID, "agent_name": "Workflow Builder"}
         assert "n->>'type' = 'agentNode'" in repoint_sql and "'{data,providerId}'" in repoint_sql
+        # Review finding: matching the name alone also switched a user's own "Workflow Builder" agent.
+        assert "a.name = :agent_name AND a.is_system = true" in repoint_sql
         assert bind.calls.index(_inserts(bind)[0]) < bind.calls.index(_builder_repoints(bind)[0])
 
     def test_falls_back_to_the_tenants_oldest_active_openai_provider(self, migration):
@@ -157,4 +159,5 @@ def test_the_literals_match_the_seed_config():
     assert module.PROVIDER_NAME == seed_test_data.workflow_builder_llm_provider_name
     assert module.PROVIDER_MODEL == seed_test_data.workflow_builder_llm_model
     assert module.SOURCE_PROVIDER_ID == seed_test_data.llm_provider_id
-    assert module.down_revision == "242b618b4766"
+    # Straight after the guardrail migration, so the chain keeps a single head.
+    assert module.down_revision == "f1376a542c32"

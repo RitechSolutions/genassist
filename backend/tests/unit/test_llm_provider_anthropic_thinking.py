@@ -54,6 +54,18 @@ class TestMaxTokensFloor:
     def test_a_form_without_the_setting_is_left_alone(self):
         data = {"api_key": "k"}
         assert apply_max_tokens_floor(data, 16000) is data
+        # A provider type whose form has no Max Tokens field never receives one.
+        for provider in ("ollama", "vllm", "azure_openai", "groq", "no-such-provider"):
+            assert apply_max_tokens_floor(data, 16000, provider_name=provider) is data
+
+    def test_a_provider_saved_without_max_tokens_still_gets_the_floor(self):
+        """Review finding: the floor did nothing when the provider was saved with Max Tokens left empty"""
+        for provider in ("anthropic", "openai", "bedrock", "Anthropic"):
+            raised = apply_max_tokens_floor({"api_key": "k"}, 16000, provider_name=provider)
+            assert raised == {"api_key": "k", "max_tokens": 16000}
+
+    def test_a_cleared_max_tokens_gets_the_floor(self):
+        assert apply_max_tokens_floor({"max_tokens": None}, 16000, provider_name="anthropic")["max_tokens"] == 16000
 
     def test_an_unreadable_stored_value_is_replaced(self):
         assert apply_max_tokens_floor({"max_tokens": "lots"}, 16000)["max_tokens"] == 16000
