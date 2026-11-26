@@ -4,9 +4,11 @@ import {
   submitConversationFeedback,
   submitMessageFeedback,
   fetchAgentResponseLogsByConversation,
+  fetchGuardrailEventsByConversation,
   type AgentResponseLogSummary,
 } from '@/services/transcripts';
 import { Transcript, ConversationFeedbackEntry } from '@/interfaces/transcript.interface';
+import { guardrailChipsByMessage, type GuardrailChip } from '@/helpers/guardrailChecks';
 import { askAIQuestion } from '@/services/aiChat';
 import { useToast } from '@/hooks/useToast';
 import { useAgentsList } from '@/views/Analytics/hooks/useAgentsList';
@@ -121,6 +123,7 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
     output_tokens: 0,
   });
   const [costIncomplete, setCostIncomplete] = useState(false);
+  const [guardrailByMessageId, setGuardrailByMessageId] = useState<Record<string, GuardrailChip>>({});
 
   useEffect(() => {
     setLocalTranscript(transcript);
@@ -251,6 +254,10 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
       setTotalCost(totals);
       setCostIncomplete(logs.some((log) => log.cost_usd == null));
     });
+
+    fetchGuardrailEventsByConversation(localTranscript.id).then((events) =>
+      setGuardrailByMessageId(guardrailChipsByMessage(events))
+    );
   }, [isActive, localTranscript?.id]);
 
   /** `question` lets a one-click suggestion ask without going through the input. */
@@ -439,6 +446,7 @@ export function useTranscriptDetail({ transcript, isActive, agentName }: UseTran
     costsByMessageId,
     totalCost,
     costIncomplete,
+    guardrailByMessageId,
     userFeedback,
     isEditing,
     feedbackType,

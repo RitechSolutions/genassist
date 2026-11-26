@@ -1,5 +1,6 @@
 import { apiRequest, getApiUrl } from "@/config/api";
 import { BackendTranscript } from "@/interfaces/transcript.interface";
+import { GuardrailEvent } from "@/interfaces/guardrails.interface";
 import { UserProfile } from "@/interfaces/user.interface";
 import { getAccessToken } from "@/services/auth";
 
@@ -338,6 +339,21 @@ export const fetchAgentResponseLogsByConversation = async (
     const data = await apiRequest<AgentResponseLogSummary[]>(
       "GET",
       `/conversations/${conversationId}/agent-response-logs`,
+      undefined
+    );
+    return data ?? [];
+  } catch (error) {
+    return [];
+  }
+};
+
+export const fetchGuardrailEventsByConversation = async (
+  conversationId: string
+): Promise<GuardrailEvent[]> => {
+  try {
+    const data = await apiRequest<GuardrailEvent[]>(
+      "GET",
+      `/conversations/${conversationId}/guardrail-events`,
       undefined
     );
     return data ?? [];
