@@ -27,6 +27,14 @@ OUTPUT_LIMIT = 500
 RESPONSE_LIMIT = 2000
 CODE_ERROR_MARKER = "CODE ERROR"
 
+# The test report for a draft that is not run: one the pre-login onboarding chat started.
+NOT_RUN_BEFORE_SIGN_IN = (
+    "Checked, not run: the workflow has no errors, but test runs only happen once the person is "
+    "signed in and working on the canvas, and this conversation is before sign-in. Do not call "
+    "test_workflow again this turn. You can finalize the workflow now; tell the person they can "
+    "test it on the canvas after signing in."
+)
+
 
 # Outputs this long are quoted once; a repeat points at the first quote instead.
 DEDUPE_MIN_CHARS = 120
@@ -281,6 +289,11 @@ async def run_draft_test(
     if errors:
         listing = "\n".join(f"- {draft.describe_issue(i)}" for i in errors)
         return f"ERROR: the workflow cannot run until these errors are fixed:\n{listing}"
+    if not draft.authenticated:
+        # A draft the pre-login onboarding chat started is never executed. That chat is
+        # reached with the public chat key, so running it would let any visitor have the
+        # server run the code steps they dictate. It counts as checked, so it can finalize.
+        return NOT_RUN_BEFORE_SIGN_IN
 
     # Run a copy: filling in the default provider for the test must not change the draft.
     nodes, edges = deepcopy(draft.nodes), deepcopy(draft.edges)

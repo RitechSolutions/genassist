@@ -1,5 +1,5 @@
 """Workflow Builder review findings: simulated test runs, secrets in the draft status, draft
-ownership, and the legacy wizard endpoint"""
+ownership, the legacy wizard endpoint, pre-login test runs and the Guardrail nodes in the catalog"""
 
 import asyncio
 import json
@@ -87,6 +87,7 @@ def test_a_simulated_builder_test_run_never_executes_a_side_effect_step(monkeypa
     monkeypatch.setattr(testing, "blocking", lambda issues: [])  # setup fields are not the point here
 
     draft = WorkflowDraft()
+    draft.authenticated = True  # opened from a canvas: the pre-login chat's drafts never run
     draft.add_node("chatInputNode", "Start")
     # Unconnected: some of these are tool nodes (MCP) without an input; the engine is a stub anyway.
     draft.add_node(node_type, "Side effect")
@@ -294,3 +295,130 @@ def test_input_that_is_not_wizard_json_keeps_its_400(monkeypatch, bad):
         ))
     assert refused.value.status_code == 400
     assert not hasattr(agents, "created"), "nothing was created"
+
+
+# ── Pre-login drafts are never executed ───────────────────────────────────
+
+
+def _engine_that_must_not_run(monkeypatch):
+    class NoEngine:
+        def __init__(self, workflow):
+            raise AssertionError("a pre-login draft reached the workflow engine")
+
+    import app.modules.workflow.engine.workflow_engine as engine_module
+
+    monkeypatch.setattr(engine_module, "WorkflowEngine", NoEngine)
+
+
+def _code_draft():
+    draft = WorkflowDraft()
+    draft.add_node("chatInputNode", "Start")
+    draft.add_node(
+        "pythonCodeNode", "Visitor code", connect_from="n1",
+        config={"code": "def executable_function(params):\n    import os\n    return os.getcwd()"},
+    )
+    draft.add_node("chatOutputNode", "Reply", connect_from="n2")
+    return draft
+
+
+def test_a_pre_login_draft_is_checked_but_never_run(monkeypatch):
+    """Review finding: the public chat key let any visitor have the server run the code they dictate"""
+    _engine_that_must_not_run(monkeypatch)
+    draft = _code_draft()
+    assert draft.authenticated is False
+
+    report = asyncio.run(testing.run_draft_test(draft, "hello"))
+
+    assert report == testing.NOT_RUN_BEFORE_SIGN_IN
+    # Counts as the required test, so the onboarding chat can still finalize its draft.
+    assert testing.test_was_attempted(report) and testing.test_passed(report)
+
+
+def test_a_pre_login_draft_with_errors_still_reports_them(monkeypatch):
+    _engine_that_must_not_run(monkeypatch)
+    draft = WorkflowDraft()
+    draft.add_node("chatInputNode", "Start")  # no output
+
+    report = asyncio.run(testing.run_draft_test(draft, "hello"))
+
+    assert report.startswith("ERROR: the workflow cannot run until these errors are fixed")
+
+
+def test_the_test_workflow_tool_lets_a_pre_login_draft_finalize_without_running_it(monkeypatch):
+    from app.modules.workflow.builder import tools
+
+    _engine_that_must_not_run(monkeypatch)
+    s = _Store()
+    monkeypatch.setattr(tools, "load_draft", s.load)
+    monkeypatch.setattr(tools, "save_draft", s.save)
+    thread_id = str(uuid4())
+    draft = _code_draft()
+    assert draft.needs_test
+    asyncio.run(s.save(thread_id, draft))
+
+    result = asyncio.run(tools.run_tool(thread_id, "test_workflow", {"message": "hi", "finalize_if_ok": "true"}))
+
+    assert result.startswith(testing.NOT_RUN_BEFORE_SIGN_IN)
+    assert "Workflow finalized" in result
+    saved = asyncio.run(s.load(thread_id))
+    assert not saved.needs_test and saved.status == "ready"
+
+
+def test_a_draft_put_with_an_api_key_is_not_treated_as_signed_in(store):
+    """The canvas route marks a draft signed in only for a user; the chat key is not one."""
+    snapshot = routes.CanvasSnapshot(**_canvas())
+    by_key, by_user = uuid4(), uuid4()
+
+    asyncio.run(routes.put_draft(by_key, snapshot, _request(), llm_provider_service=_NoDefaultProvider()))
+    asyncio.run(routes.put_draft(by_user, snapshot, _request(uuid4()), llm_provider_service=_NoDefaultProvider()))
+
+    assert asyncio.run(store.load(by_key)).authenticated is False
+    assert asyncio.run(store.load(by_user)).authenticated is True
+
+
+# ── The catalog knows the Guardrail nodes and their Blocked exit ──────────
+
+GUARDRAIL_NODES = ("guardrailNode", "guardrailNliNode", "guardrailProvenanceNode")
+
+
+@pytest.mark.parametrize("node_type", GUARDRAIL_NODES)
+def test_every_guardrail_node_is_in_the_catalog_with_passed_and_blocked_exits(node_type):
+    assert catalog.is_known(node_type)
+    assert catalog.handle_ids(node_type, None, "source") == ["output", "output_blocked"]
+    assert catalog.handle_ids(node_type, None, "target") == ["input"]
+    assert "output_blocked" in catalog.NODE_NOTES[node_type]
+
+
+def test_the_engine_and_the_catalog_agree_on_the_guardrail_exits():
+    from app.modules.workflow.engine.guardrail_exits import BLOCKED_HANDLE, PASSED_HANDLE
+
+    for node_type in GUARDRAIL_NODES:
+        assert catalog.handle_ids(node_type, None, "source") == [PASSED_HANDLE, BLOCKED_HANDLE]
+
+
+def test_a_canvas_with_a_guardrail_and_its_blocked_branch_is_valid_and_testable(monkeypatch):
+    """Review finding: the stale catalog made the builder refuse to test any canvas using a Guardrail"""
+    draft = WorkflowDraft()
+    draft.authenticated = True
+    draft.add_node("chatInputNode", "Start")
+    draft.add_node("guardrailNode", "Safety", connect_from="n1", config={"blocked_words": ["secret"]})
+    draft.add_node("agentNode", "Assistant", connect_from="n2", system_prompt="Help the user.")
+    draft.add_node("chatOutputNode", "Reply", connect_from="n3")
+    draft.add_node("templateNode", "Refusal", config={"template": "Not here."})
+    draft.connect("n2", "n5", "output_blocked")
+    draft.add_node("chatOutputNode", "Refusal reply", connect_from="n5")
+
+    canvas = draft.to_canvas()
+    blocked_edge = next(e for e in canvas["edges"] if e["source"] == draft.find("n2")["id"]
+                        and e["target"] == draft.find("n5")["id"])
+    assert blocked_edge["sourceHandle"] == "output_blocked"
+    reopened = WorkflowDraft.from_canvas(canvas["nodes"], canvas["edges"])
+    assert not testing.blocking(reopened.issues()), [reopened.describe_issue(i) for i in reopened.issues()]
+    assert "guardrailNode" in catalog.compact_index(names_only=True)
+
+
+def test_a_new_guardrail_gets_the_default_provider_for_its_judge():
+    draft = WorkflowDraft()
+    draft.defaults = {"providerId": "provider-1"}
+    draft.add_node("guardrailNode", "Safety")
+    assert draft.find("n1")["data"]["providerId"] == "provider-1"

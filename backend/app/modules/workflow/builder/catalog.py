@@ -131,7 +131,10 @@ NODE_NOTES: Dict[str, str] = {
     "humanInTheLoopNode": "Pauses the run and shows the user a form (form_fields), then continues with the submitted values.",
     "apiToolNode": "Calls an HTTP endpoint (method, endpoint, headers, parameters as query string, requestBody). Variables work in every field, e.g. endpoint \"https://api.example.com/users/{{source.result.user_id}}/orders\". Its output is {status, data, headers}: read the body as {{source.data}} (in Python: params.get(\"source.data\")). Use it only when no dedicated integration node exists.",
     "mcpNode": "Exposes the tools of an MCP server to an agent. Connect it to the agent directly (handles are inferred); the user configures the server in the canvas.",
-    "finalizeConversationNode": "Ends the conversation (marks it finalized). Place it before the Chat Output of a closing branch.",
+    "guardrailNode": "Checks one text for prompt attacks, harmful content, denied topics and blocked words; use it when the person asks for safety, jailbreak, abuse or banned-topic checks (not a classifier plus a filter). `text` is what is checked: {{session.message}} for the user's message, {{source.message}} for an agent's reply. prompt_attack and each harmful_content category (hate, insults, sexual, violence, self_harm, misconduct) is \"off\", \"low\", \"medium\" or \"high\"; denied_topics is a list of {name, definition, examples}; blocked_words is a list of words. Two exits: output (Passed) continues with {\"message\": <the text>}; output_blocked (Blocked) receives {\"message\": blocked_message}. With nothing connected to output_blocked a blocked run ends and blocked_message is the reply, so connect it only to handle a block differently. The judged checks use providerId (filled in automatically); blocked_words needs none.",
+    "guardrailNliNode": "Fact-checks an answer (answer_field) against evidence (evidence_field) and blocks a contradiction. Two exits: output (Passed) continues with {\"message\": <the answer>}; output_blocked (Blocked) receives the blocked message. With nothing connected to output_blocked a blocked run ends with a fixed refusal as the reply. Keep it: it is a guardrail, not a step to replace with another node.",
+    "guardrailProvenanceNode": "Checks that an answer (answer_field) is grounded in the given context (context_field) and blocks an ungrounded one. Two exits: output (Passed) continues with {\"message\": <the answer>}; output_blocked (Blocked) receives the blocked message. With nothing connected to output_blocked a blocked run ends with a fixed refusal as the reply. Keep it: it is a guardrail, not a step to replace with another node.",
+    "finalizeConversationNode":"Ends the conversation (marks it finalized). Place it before the Chat Output of a closing branch.",
     "workflowExecutorNode": "Runs another existing workflow as a step.",
     "webSearchNode": "Searches the web and returns results with content. Good as an agent tool.",
     "webScraperNode": "Fetches one web page as clean text/markdown. Good as an agent tool.",
@@ -328,7 +331,7 @@ def node_schema_text(node_type: str) -> str:
     if note:
         lines.append(f"Usage: {note}")
     lines.append(f"Handles ({describe_handles(node_type)})")
-    if found.get("dynamicHandles"):
+    if node_type in _DYNAMIC_HANDLERS:
         lines.append("Handles depend on config; they are recomputed when the node is updated.")
     lines.append("Config:")
     for field in config_fields(node_type):

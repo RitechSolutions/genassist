@@ -50,7 +50,8 @@ BUILDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
 }
 
 # Node types whose providerId is filled with the tenant's default LLM provider.
-PROVIDER_NODE_TYPES = {"agentNode", "subAgentNode", "llmModelNode", "nlpNode"}
+# Nodes given the tenant's default LLM provider when they have none (the Guardrail's judge).
+PROVIDER_NODE_TYPES = {"agentNode", "subAgentNode", "llmModelNode", "nlpNode", "guardrailNode"}
 
 # Steps that parse or compare the reply they receive instead of showing it to a person.
 PARSING_NODE_TYPES = {"pythonCodeNode", "dataMapperNode", "switchNode", "routerNode", "filterNode"}
@@ -165,7 +166,8 @@ class WorkflowDraft:
         self.defaults: Dict[str, Any] = {}
         self.selected_node_id: Optional[str] = None
         # True once a signed-in user has opened this draft from a canvas. Tenant
-        # resources are only listed for such drafts, never for the pre-login chat.
+        # resources are only listed for, and test runs only execute, such drafts; never
+        # one the pre-login chat started, which anyone with the public chat key can drive.
         self.authenticated = False
         # Set by any change that can alter behaviour, cleared by a test run. Finalizing
         # is refused while it is set, so a workflow is never declared done unrun.

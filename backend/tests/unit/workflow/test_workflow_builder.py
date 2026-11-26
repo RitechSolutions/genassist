@@ -19,6 +19,12 @@ from app.modules.workflow.builder.layout import auto_layout, place_new_nodes
 from app.modules.workflow.builder.validation import validate_workflow
 
 
+def signed_in(draft: WorkflowDraft) -> WorkflowDraft:
+    """A draft a signed-in user opened from a canvas: the only kind a builder test run executes."""
+    draft.authenticated = True
+    return draft
+
+
 def codes(issues, severity=None):
     return {i.code for i in issues if severity is None or i.severity == severity}
 
@@ -680,7 +686,7 @@ def test_test_run_executes_the_draft_on_the_real_engine():
     """No LLM involved: Start -> template -> reply runs end to end and leaves the draft untouched."""
     from app.modules.workflow.builder.testing import run_draft_test
 
-    draft = WorkflowDraft()
+    draft = signed_in(WorkflowDraft())
     draft.add_node("chatInputNode", "Start")
     draft.add_node("templateNode", "Echo", {"template": "You said: {{session.message}}"}, connect_from="n1")
     draft.add_node("chatOutputNode", "Reply", connect_from="n2")
@@ -848,7 +854,7 @@ def test_exact_logic_shape_runs_on_the_real_engine():
     """
     from app.modules.workflow.builder.testing import run_draft_test
 
-    draft = WorkflowDraft()
+    draft = signed_in(WorkflowDraft())
     draft.add_node("chatInputNode", "Start")
     draft.add_node("pythonCodeNode", "Read User Id", {"code": (
         "def executable_function(params):\n"
@@ -907,7 +913,7 @@ def test_finalize_requires_a_test_run_after_behavioural_changes():
 def test_a_test_run_through_the_tools_unlocks_finalize(monkeypatch):
     from app.modules.workflow.builder import tools
 
-    store = {}
+    store = {"t": json.dumps(signed_in(WorkflowDraft()).to_dict())}
 
     async def fake_load(thread_id):
         return WorkflowDraft.from_dict(json.loads(store[thread_id])) if thread_id in store else None
@@ -1030,7 +1036,7 @@ BRITTLE_PARSER = (
 
 
 def brittle_draft() -> WorkflowDraft:
-    draft = WorkflowDraft()
+    draft = signed_in(WorkflowDraft())
     draft.add_node("chatInputNode", "Start")
     draft.add_node("pythonCodeNode", "Extract", {"code": BRITTLE_PARSER}, connect_from="n1")
     draft.add_node("chatOutputNode", "Result", connect_from="n2")
@@ -1224,7 +1230,7 @@ def test_get_workflow_includes_workspace_resources_when_signed_in(monkeypatch):
 def test_test_workflow_finalizes_in_the_same_call_when_it_passes(monkeypatch):
     from app.modules.workflow.builder import tools
 
-    draft = WorkflowDraft()
+    draft = signed_in(WorkflowDraft())
     draft.add_node("chatInputNode", "Start")
     draft.add_node("templateNode", "Echo", {"template": "You said: {{session.message}}"}, connect_from="n1")
     draft.add_node("chatOutputNode", "Reply", connect_from="n2")
@@ -1430,7 +1436,7 @@ def test_proposals_apply_through_apply_plan_on_a_canvas_snapshot():
 def test_builder_tests_simulate_action_nodes_unless_turned_off():
     from app.modules.workflow.builder.testing import run_draft_test
 
-    draft = WorkflowDraft()
+    draft = signed_in(WorkflowDraft())
     draft.add_node("chatInputNode", "Start")
     draft.add_node("slackMessageNode", "Notify", {"message": "New: {{session.message}}", "channel": "#x"}, connect_from="n1")
     draft.add_node("templateNode", "Done", {"template": "Sent."}, connect_from="n2")
@@ -1843,7 +1849,7 @@ def test_a_change_and_a_test_sent_in_the_same_step_test_the_changed_workflow(mon
     before a change sent with it has landed (two identical tests disagreed in the triage run)."""
     from app.modules.workflow.builder import tools
 
-    draft = WorkflowDraft()
+    draft = signed_in(WorkflowDraft())
     draft.add_node("chatInputNode", "Start")
     draft.add_node("templateNode", "Echo", {"template": "You said: {{session.message}}"}, connect_from="n1")
     draft.add_node("chatOutputNode", "Reply", connect_from="n2")
@@ -1943,7 +1949,7 @@ def test_test_run_usage_is_tagged_so_the_builders_own_cost_stays_apart(monkeypat
         })
 
     monkeypatch.setattr(WorkflowEngine, "execute_from_node", fake_execute)
-    draft = WorkflowDraft()  # no AI step, so no provider is needed to start the run
+    draft = signed_in(WorkflowDraft())  # no AI step, so no provider is needed to start the run
     draft.add_node("chatInputNode", "Start")
     draft.add_node("templateNode", "Echo", {"template": "{{session.message}}"}, connect_from="n1")
     draft.add_node("chatOutputNode", "Reply", connect_from="n2")

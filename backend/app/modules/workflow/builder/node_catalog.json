@@ -382,8 +382,8 @@
     "type": "guardrailNliNode",
     "label": "Guardrail: NLI Fact-check",
     "description": "Runs a simple NLI-style fact-check between the answer and evidence.",
-    "category": "utils",
-    "dynamicHandles": false,
+    "category": "guardrails",
+    "dynamicHandles": true,
     "defaultData": {
       "name": "Guardrail NLI",
       "answer_field": "",
@@ -401,7 +401,61 @@
           "id": "output",
           "type": "source",
           "compatibility": "any",
-          "position": "right"
+          "position": "right",
+          "label": "Passed"
+        },
+        {
+          "id": "output_blocked",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Blocked"
+        }
+      ]
+    }
+  },
+  {
+    "type": "guardrailNode",
+    "label": "Guardrail",
+    "description": "Checks text for prompt attacks, harmful content, denied topics and blocked words.",
+    "category": "guardrails",
+    "dynamicHandles": true,
+    "defaultData": {
+      "name": "Guardrail",
+      "text": "{{session.message}}",
+      "providerId": "",
+      "prompt_attack": "off",
+      "harmful_content": {
+        "hate": "off",
+        "insults": "off",
+        "sexual": "off",
+        "violence": "off",
+        "self_harm": "off",
+        "misconduct": "off"
+      },
+      "denied_topics": [],
+      "blocked_words": [],
+      "blocked_message": "",
+      "handlers": [
+        {
+          "id": "input",
+          "type": "target",
+          "compatibility": "any",
+          "position": "left"
+        },
+        {
+          "id": "output",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Passed"
+        },
+        {
+          "id": "output_blocked",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Blocked"
         }
       ]
     }
@@ -410,8 +464,8 @@
     "type": "guardrailProvenanceNode",
     "label": "Guardrail: Provenance",
     "description": "Checks whether the model answer is grounded in the provided context.",
-    "category": "utils",
-    "dynamicHandles": false,
+    "category": "guardrails",
+    "dynamicHandles": true,
     "defaultData": {
       "name": "Guardrail Provenance",
       "answer_field": "",
@@ -434,7 +488,15 @@
           "id": "output",
           "type": "source",
           "compatibility": "any",
-          "position": "right"
+          "position": "right",
+          "label": "Passed"
+        },
+        {
+          "id": "output_blocked",
+          "type": "source",
+          "compatibility": "any",
+          "position": "right",
+          "label": "Blocked"
         }
       ]
     }

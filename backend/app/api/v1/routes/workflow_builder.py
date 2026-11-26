@@ -156,6 +156,9 @@ async def put_draft(
     )
     draft.simulate_actions = snapshot.simulate_actions
     draft.owner_id = _caller_id(request)
+    # Only a signed-in user's draft may list tenant resources or be test-run; an API key
+    # caller (the public chat key) gets the same treatment as the pre-login chat.
+    draft.authenticated = draft.owner_id is not None
     await save_draft(str(conversation_id), draft)
     return {"revision": draft.revision, "node_count": len(draft.aliases)}
 
