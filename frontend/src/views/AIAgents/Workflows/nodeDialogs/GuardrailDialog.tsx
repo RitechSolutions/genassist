@@ -43,6 +43,7 @@ export const GuardrailDialog: React.FC<Props> = (props) => {
       text: data.text ?? "",
       providerId: data.providerId ?? "",
       blocked_message: data.blocked_message ?? "",
+      previous_reply_context: data.previous_reply_context,
       ...checksOf(data),
     }));
 
@@ -103,6 +104,8 @@ export const GuardrailDialog: React.FC<Props> = (props) => {
         />
         <p className="text-sm text-muted-foreground">
           The text to check, usually a variable such as {"{{session.message}}"}.
+          For text that is not the customer's message, turn Previous reply as
+          context off.
         </p>
       </div>
 

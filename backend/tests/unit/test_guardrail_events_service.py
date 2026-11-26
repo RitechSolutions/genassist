@@ -2,6 +2,7 @@ from uuid import UUID
 
 import pytest
 
+from app.schemas.guardrails import GuardrailCheckRequest
 from app.services import guardrails as guardrail_service
 from app.services.guardrails import GuardrailService, record_events_without_conversation
 
@@ -103,3 +104,24 @@ def test_no_task_is_scheduled_when_no_check_fired(monkeypatch):
     record_events_without_conversation(AGENT_ID, {})
 
     assert scheduled == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("switch", "context"), [(True, "Which size would you like?"), (False, None)])
+async def test_the_tester_sends_the_previous_reply_only_with_the_switch_on(monkeypatch, switch, context):
+    sent = []
+
+    async def fake_check_text(text, checks, stage, mode, usage, **kwargs):
+        sent.append((text, kwargs.get("context")))
+        return [], False
+
+    monkeypatch.setattr(guardrail_service, "check_text", fake_check_text)
+    request = GuardrailCheckRequest.model_validate(
+        {
+            "policy": {"mode": "block", "blocked_words": ["rival"], "previous_reply_context": switch},
+            "text": "Large",
+            "previous_reply": "Which size would you like?",
+        }
+    )
+    await GuardrailService(FakeRepository()).try_policy(AGENT_ID, request)
+    assert sent == [("Large", context)]

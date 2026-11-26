@@ -166,12 +166,13 @@ export async function updateAgentConfig(
 export async function checkAgentGuardrails(
   agentId: string,
   policy: GuardrailPolicy,
-  text: string
+  text: string,
+  previousReply?: string
 ): Promise<GuardrailCheckResponse> {
   return apiRequest<GuardrailCheckResponse>(
     "POST",
     `genagent/agents/configs/${agentId}/guardrails/check`,
-    { policy, text }
+    { policy, text, previous_reply: previousReply || undefined }
   );
 }
 

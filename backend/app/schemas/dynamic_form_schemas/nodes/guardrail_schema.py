@@ -37,6 +37,14 @@ GUARDRAIL_NODE_DIALOG_SCHEMA: List[FieldSchema] = [
         ],
     ),
     FieldSchema(
+        name="previous_reply_context",
+        type="boolean",
+        label="Previous reply as context",
+        required=False,
+        default=True,
+        description="Lets the judge read the end of the agent's last reply. Use it when the text is the customer's message.",
+    ),
+    FieldSchema(
         name="blocked_words",
         type="tags",
         label="Blocked words",

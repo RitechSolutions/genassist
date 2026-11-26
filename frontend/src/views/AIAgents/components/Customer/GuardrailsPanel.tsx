@@ -37,6 +37,8 @@ import { GuardrailChecksEditor } from "@/views/AIAgents/components/GuardrailChec
 import { TranslationTrigger } from "@/views/AIAgents/components/TranslationTrigger";
 
 const WAIT_HELP = "Each check adds a short wait before the reply.";
+const SKIP_HELP =
+  "A tool set to skip this check in its Tool Builder is not checked.";
 
 const MODES: { value: GuardrailMode; label: string; help: string }[] = [
   { value: "off", label: "Off", help: "Nothing is checked." },
@@ -52,10 +54,22 @@ const MODES: { value: GuardrailMode; label: string; help: string }[] = [
   },
 ];
 
-const TOOL_RESULT_OPTIONS: { value: UntrustedContentMode; label: string }[] = [
-  { value: "off", label: "Off" },
-  { value: "flag", label: "Flag" },
-  { value: "block", label: "Block" },
+const TOOL_RESULT_OPTIONS: {
+  value: UntrustedContentMode;
+  label: string;
+  help: string;
+}[] = [
+  { value: "off", label: "Off", help: "Tool results are not checked." },
+  {
+    value: "flag",
+    label: "Flag",
+    help: `Records hidden instructions found in tool results. The agent reads the results unchanged. Adds one check per tool call. ${SKIP_HELP}`,
+  },
+  {
+    value: "block",
+    label: "Block",
+    help: `In Block mode, withholds a tool result that has hidden instructions and marks the others as untrusted data. Adds one check per tool call. ${SKIP_HELP}`,
+  },
 ];
 
 interface GuardrailsPanelProps {
@@ -67,6 +81,7 @@ export const GuardrailsPanel = ({ agentId }: GuardrailsPanelProps) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testText, setTestText] = useState("");
+  const [testReply, setTestReply] = useState("");
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<GuardrailCheckResponse | null>(null);
 
@@ -126,7 +141,14 @@ export const GuardrailsPanel = ({ agentId }: GuardrailsPanelProps) => {
     if (!agentId) return;
     setChecking(true);
     try {
-      setResult(await checkAgentGuardrails(agentId, policy, testText));
+      setResult(
+        await checkAgentGuardrails(
+          agentId,
+          policy,
+          testText,
+          policy.previous_reply_context ? testReply : undefined
+        )
+      );
     } catch (error) {
       toast.error(extractErrorMessage(error, "Failed to check the message"));
     } finally {
@@ -205,19 +227,7 @@ export const GuardrailsPanel = ({ agentId }: GuardrailsPanelProps) => {
         <div className="border-b border-border pb-6">
           <GuardrailChecksEditor
             value={policy}
-            onChange={({
-              prompt_attack,
-              harmful_content,
-              denied_topics,
-              blocked_words,
-            }) =>
-              update({
-                prompt_attack,
-                harmful_content,
-                denied_topics,
-                blocked_words,
-              })
-            }
+            onChange={update}
             judgeProviderId={policy.judge_provider_id}
             onJudgeProviderChange={(judge_provider_id) =>
               update({ judge_provider_id })
@@ -263,8 +273,11 @@ export const GuardrailsPanel = ({ agentId }: GuardrailsPanelProps) => {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Checks each tool result for hidden instructions. Adds one check
-              per tool call.
+              {
+                TOOL_RESULT_OPTIONS.find(
+                  (option) => option.value === policy.untrusted_content
+                )?.help
+              }
             </p>
           </div>
 
@@ -301,6 +314,15 @@ export const GuardrailsPanel = ({ agentId }: GuardrailsPanelProps) => {
               Runs the checks above, saved or not.
             </p>
           </div>
+          {policy.previous_reply_context && (
+            <RichInput
+              aria-label="Agent's previous reply"
+              value={testReply}
+              maxLength={20000}
+              onChange={(e) => setTestReply(e.target.value)}
+              placeholder="Agent's previous reply (optional)"
+            />
+          )}
           <RichTextarea
             aria-label="Message to check"
             value={testText}

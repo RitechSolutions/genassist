@@ -8,6 +8,7 @@ from typing import Any, Dict
 from pydantic import ValidationError
 
 from app.modules.workflow.guardrails.detectors import check_text, verdict
+from app.modules.workflow.guardrails.turn import previous_reply
 from app.schemas.guardrails import GuardrailChecks
 
 from ..base_node import BaseNode
@@ -37,8 +38,9 @@ class GuardrailNode(GuardrailExitMixin, BaseNode):
             blocked = False
         else:
             usage: list[dict] = []
+            context = await previous_reply(self.get_memory()) if checks.previous_reply_context else None
             verdicts, blocked = await check_text(
-                text, checks, "node", "block", usage, source=self.node_id, node_id=self.node_id
+                text, checks, "node", "block", usage, source=self.node_id, node_id=self.node_id, context=context
             )
             for entry in usage:
                 state.add_llm_usage(**entry)

@@ -420,6 +420,8 @@ class BaseNode(ABC):
                             agent_id=self.node_id,
                             state=self.get_state(),
                         )
+                        if node.get_node_data().get("skipToolResultCheck"):
+                            tool.screen_results = False
 
                         connected_nodes.append(tool)
                         logger.debug("Added tool: %s from node %s", tool.name, source_node_id)

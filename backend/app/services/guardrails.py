@@ -32,7 +32,8 @@ class GuardrailService:
     async def try_policy(self, agent_id: UUID, request: GuardrailCheckRequest) -> GuardrailCheckResponse:
         mode = "block" if request.policy.mode == "block" else "detect"
         usage: list[dict] = []
-        verdicts, blocked = await check_text(request.text, request.policy, "input", mode, usage)
+        context = request.previous_reply if request.policy.previous_reply_context else None
+        verdicts, blocked = await check_text(request.text, request.policy, "input", mode, usage, context=context)
         record_usage(usage, WorkflowUsageContext(source="guardrail_test", agent_id=agent_id), None)
         return GuardrailCheckResponse(blocked=blocked, verdicts=verdicts)
 

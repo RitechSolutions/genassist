@@ -158,6 +158,7 @@ export const GUARDRAIL_NODE_DEFINITION: NodeTypeDefinition<GuardrailNodeData> = 
     harmful_content: defaultGuardrailPolicy().harmful_content,
     denied_topics: [],
     blocked_words: [],
+    previous_reply_context: true,
     blocked_message: "",
     handlers: GUARDRAIL_HANDLERS,
   },

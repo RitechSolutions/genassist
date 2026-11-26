@@ -865,6 +865,7 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 | text | text | Yes | The text to check, usually `{{session.message}}` or `{{source.message}}` |
 | providerId | select | When a judge-backed check is on | Judge model (LLM provider id) |
 | prompt_attack | select | No | `off` (default), `low`, `medium`, `high` |
+| previous_reply_context | boolean | No | The judge also reads the last 500 characters of the agent's previous reply as context; only `text` is scored. On for new nodes; leave it off when `text` is not the customer's message |
 | harmful_content | object | No | Levels `off`/`low`/`medium`/`high` for `hate`, `insults`, `sexual`, `violence`, `self_harm`, `misconduct` |
 | denied_topics | array | No | Up to 20 of `{name, definition, examples}` (up to 3 examples) |
 | blocked_words | tags | No | Whole-word matches, case and width insensitive |

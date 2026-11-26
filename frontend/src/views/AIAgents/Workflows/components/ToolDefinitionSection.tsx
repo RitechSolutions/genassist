@@ -23,12 +23,16 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
     toolDefinition.inputSchema
   );
   const [returnDirect, setReturnDirect] = useState(toolDefinition.returnDirect);
+  const [skipToolResultCheck, setSkipToolResultCheck] = useState(
+    toolDefinition.skipToolResultCheck
+  );
   // Update local state when props change
   useEffect(() => {
     setName(toolDefinition.name);
     setDescription(toolDefinition.description);
     setInputSchema(toolDefinition.inputSchema);
     setReturnDirect(toolDefinition.returnDirect);
+    setSkipToolResultCheck(toolDefinition.skipToolResultCheck);
   }, [toolDefinition]);
 
   // Notify parent of changes
@@ -38,9 +42,17 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
       description,
       inputSchema,
       returnDirect,
+      skipToolResultCheck,
       forwardTemplate: generateTemplateFromInputSchema(inputSchema),
     });
-  }, [name, description, inputSchema, returnDirect, onToolDefinitionChange]);
+  }, [
+    name,
+    description,
+    inputSchema,
+    returnDirect,
+    skipToolResultCheck,
+    onToolDefinitionChange,
+  ]);
 
   const addItem = (
     setter: React.Dispatch<React.SetStateAction<NodeSchema>>,
@@ -99,6 +111,23 @@ export const ToolDefinitionSection: React.FC<ToolDefinitionSectionProps> = ({
           id="returnDirect"
           checked={returnDirect}
           onCheckedChange={setReturnDirect}
+        />
+      </div>
+      <div className="flex w-full items-center gap-4">
+        <div className="w-full space-y-0.5">
+          <Label htmlFor="skipToolResultCheck">
+            Skip the Guardrails tool result check
+          </Label>
+          <p className="text-xs text-muted-foreground">
+            For a tool that returns your own data, such as a lookup you wrote.
+            Leave it off for knowledge bases, web pages and other outside
+            content.
+          </p>
+        </div>
+        <Switch
+          id="skipToolResultCheck"
+          checked={!!skipToolResultCheck}
+          onCheckedChange={setSkipToolResultCheck}
         />
       </div>
       <ParameterSection

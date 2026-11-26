@@ -33,6 +33,7 @@ class GuardrailChecks(BaseModel):
     blocked_words: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]] = Field(
         default_factory=list, max_length=200
     )
+    previous_reply_context: bool = False
     blocked_message: str = Field(DEFAULT_BLOCKED_MESSAGE, max_length=500)
 
     @field_validator("judge_provider_id", mode="before")
@@ -86,6 +87,7 @@ class GuardrailVerdict(BaseModel):
 class GuardrailCheckRequest(BaseModel):
     policy: GuardrailPolicy
     text: str = Field(..., min_length=1, max_length=20000)
+    previous_reply: Optional[str] = Field(None, max_length=20000)
 
 
 class GuardrailCheckResponse(BaseModel):

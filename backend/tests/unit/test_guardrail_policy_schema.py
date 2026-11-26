@@ -22,7 +22,7 @@ def _saved_security_settings(payload: dict) -> dict:
     [
         {"mode": "block", "prompt_attack": "medium"},
         {"mode": "detect", "harmful_content": {"hate": "low"}},
-        {"mode": "block", "denied_topics": [{"name": "Legal advice", "definition": "Court fines"}]},
+        {"mode": "block", "denied_topics": [{"name": "Legal advice", "definition": "Lawsuits and contracts"}]},
         {"mode": "detect", "untrusted_content": "flag"},
     ],
 )
@@ -70,3 +70,10 @@ def test_read_accepts_a_stored_policy_without_a_judge():
     assert read.guardrails.mode == "block"
     assert read.guardrails.judge_provider_id is None
     assert AgentSecuritySettingsRead.model_validate({"id": uuid4(), "agent_id": uuid4()}).guardrails is None
+
+
+def test_a_saved_policy_without_the_previous_reply_switch_reads_it_as_off():
+    read = AgentSecuritySettingsRead.model_validate(
+        {"id": uuid4(), "agent_id": uuid4(), "guardrails": {"mode": "block", "blocked_words": ["rival"]}}
+    )
+    assert read.guardrails.previous_reply_context is False
