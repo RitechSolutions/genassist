@@ -65,9 +65,11 @@ async def run_agent_once(
     stable_tool_names: Optional[frozenset[str]] = None,
     prompt_caching_enabled: bool = False,
     on_token: Optional["TokenSink"] = None,
+    first_tool: Optional[str] = None,
 ) -> AgentRunResult:
     """Pick the LLM if needed, create the agent for ``agent_type``, run it once,
-    add its token usage to ``state``, and return a normalized result"""
+    add its token usage to ``state``, and return a normalized result.
+    ``first_tool`` is called before each answer; only ReActAgentLC supports it"""
     if llm_model is None:
         from app.dependencies.injector import injector
 
@@ -96,6 +98,7 @@ async def run_agent_once(
             tools=tools,
             max_iterations=max_iterations,
             on_token=on_token,
+            first_tool=first_tool,
         )
     elif agent_type == "SimpleToolExecutor":
         agent = SimpleToolAgent(

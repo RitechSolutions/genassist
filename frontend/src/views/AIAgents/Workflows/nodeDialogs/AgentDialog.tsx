@@ -38,6 +38,7 @@ export const AgentDialog: React.FC<AgentDialogProps> = (props) => {
         config={values}
         onConfigChange={setValues}
         typeSelect="agent"
+        showFirstTool
       />
     </NodeConfigPanel>
   );

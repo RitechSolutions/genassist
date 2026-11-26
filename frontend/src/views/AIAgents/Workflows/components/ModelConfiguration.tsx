@@ -30,6 +30,7 @@ import { Badge } from "@/components/badge";
 import RagVectorConfigSection from "@/views/KnowledgeBase/components/RagVectorConfigSection";
 import { useWorkflow } from "../context/WorkflowContext";
 import { PromptEditorButton } from "./PromptEditor/PromptEditorButton";
+import { FirstToolField } from "./FirstToolField";
 import { PromptCachingHint, fallbackChainProviders, promptCachingHint } from "../utils/promptCachingHint";
 
 const PROMPT_CACHING_TONE_CLASS: Record<PromptCachingHint["tone"], string> = {
@@ -57,6 +58,8 @@ export interface ModelConfigurationProps {
   showUserPrompt?: boolean;
   /** Restrict the agent-type select; defaults to every supported type */
   allowedAgentTypes?: BaseLLMNodeData["type"][];
+  /** Offer "Always call this tool first" for the ReActAgentLC agent type */
+  showFirstTool?: boolean;
 }
 
 export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
@@ -69,6 +72,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   fieldsAfterName,
   showUserPrompt = true,
   allowedAgentTypes,
+  showFirstTool = false,
 }) => {
   const [systemPrompt, setSystemPrompt] = useState(config.systemPrompt);
   const [userPrompt, setUserPrompt] = useState(config.userPrompt);
@@ -306,6 +310,7 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
   };
 
   const providerId = config.providerId;
+  const firstToolVisible = showFirstTool && config.type === "ReActAgentLC";
   return (
     <TooltipProvider>
     <div className="space-y-4">
@@ -489,6 +494,13 @@ export const ModelConfiguration: React.FC<ModelConfigurationProps> = ({
             </div>
           )}
         </div>
+      )}
+      {firstToolVisible && (
+        <FirstToolField
+          id={id}
+          value={config.firstTool ?? ""}
+          onChange={(firstTool) => onConfigChange({ ...config, firstTool })}
+        />
       )}
       <div className="space-y-2 flex items-center gap-2 w-full">
         <Label htmlFor={`memory-switch-${id}`}>Enable Memory</Label>
