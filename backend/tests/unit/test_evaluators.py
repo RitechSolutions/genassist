@@ -2754,6 +2754,7 @@ class TestGuardrailNliNode:
 
         node = GuardrailNliNode.__new__(GuardrailNliNode)
         node.node_id = "n1"
+        node.state = SimpleNamespace(source_edges={}, guardrail_events=[])
         node.set_node_input = lambda *a, **k: None
         return node
 

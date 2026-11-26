@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 class LLMModelNode(PIIAnonymizerMixin, BaseNode):
     """LLM model node using the BaseNode approach"""
 
+    handles_provider_refusals = True
+
     async def _get_chat_history_for_context(
         self, memory, config: Dict[str, Any], provider_id: str, system_prompt: str, user_prompt: str
     ) -> str:

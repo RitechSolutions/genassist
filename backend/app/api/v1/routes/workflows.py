@@ -25,6 +25,7 @@ from app.modules.workflow import training_jobs
 from app.modules.workflow.test_runs import run_workflow_test
 from app.modules.workflow.engine.pii_anonymizer import PIIAnonymizer
 from app.modules.workflow.engine.workflow_engine import WorkflowEngine
+from app.modules.workflow.engine.workflow_state import SAVED_WORKFLOW_ID_KEY
 from app.modules.workflow.llm.provider import LLMProvider
 from app.modules.workflow.usage_context import WorkflowUsageContext
 from app.modules.workflow.utils import generate_python_function_template
@@ -79,6 +80,7 @@ SUPPORTED_NODE_TYPES = [
     "setStateNode",
     "guardrailProvenanceNode",
     "guardrailNliNode",
+    "guardrailNode",
     "fileReaderNode",
     "externalAgentNode",
     "ttsNode",
@@ -400,6 +402,11 @@ def _test_node_id(node_type: str, requested_id: Any, fallback_id: str) -> str:
     return requested_id
 
 
+def _saved_workflow_id(value: Any) -> Optional[str]:
+    workflow_id = coerce_uuid(value)
+    return str(workflow_id) if workflow_id else None
+
+
 def _training_job_not_found() -> AppException:
     return AppException(
         error_key=ErrorKey.ML_TRAINING_JOB_NOT_FOUND,
@@ -511,6 +518,7 @@ async def test_workflow(
                 "id": "test-workflow",
                 "nodes": workflow.nodes,
                 "edges": workflow.edges,
+                SAVED_WORKFLOW_ID_KEY: _saved_workflow_id(saved_workflow_id),
             }
 
         queued = False
@@ -638,6 +646,8 @@ async def test_individual_node(request: Request, test_data: Dict[str, Any]):
             }
 
             if node_type == training_jobs.TRAIN_MODEL_NODE_TYPE:
+                if node_id != test_id:
+                    workflow_config[SAVED_WORKFLOW_ID_KEY] = _saved_workflow_id(test_data.get("workflow_id"))
                 job = await _queue_training_job(
                     "node",
                     [node_config],

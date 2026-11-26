@@ -757,8 +757,8 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 ---
 
 ### guardrailProvenanceNode — Guardrail: Provenance
-**Category:** Utils
-**Purpose:** Scores how well an answer is grounded in (supported by) provided context. Uses either embedding-based token overlap or an LLM judge to compute a provenance score. If the score falls below the threshold the node can block the workflow or substitute a fallback answer.
+**Category:** Guardrails
+**Purpose:** Scores how well an answer is grounded in (supported by) provided context. Uses either embedding-based token overlap or an LLM judge to compute a provenance score. If the score falls below the threshold the node can take its Blocked exit or substitute a fallback answer.
 **Use cases:** Verifying RAG answers are grounded in retrieved documents, preventing hallucinated responses, enforcing factual accuracy before sending output to users.
 
 **Handlers:**
@@ -766,6 +766,9 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 |---|---|---|---|
 | input | target | left | any |
 | output | source | right | any |
+| output_blocked | source | right | any |
+
+`output` is Passed and `output_blocked` is Blocked. The node takes Blocked only when `fail_on_violation` is true, the score is below `min_score` and no fallback answer is used. With nothing wired to Blocked the branch stops and `message` (the default blocked message) is the reply. Give each exit its own Chat Output.
 
 **Required config:**
 | Field | Type | Default | Description |
@@ -778,8 +781,8 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 | Field | Type | Default | Condition | Description |
 |---|---|---|---|---|
 | name | text | "Guardrail Provenance" | Always | Node name |
-| fail_on_violation | boolean | false | Always | Add `verdict="fail"` and `blocked=true` when score is below threshold |
-| fallback_answer_enabled | boolean | false | Always | Use a fallback answer instead of blocking |
+| fail_on_violation | boolean | false | Always | Take the Blocked exit when the score is below the threshold |
+| fallback_answer_enabled | boolean | false | Always | Use a fallback answer and stay on Passed instead of blocking |
 | fallback_answer | text | "" | fallback_answer_enabled=true | Text to substitute when a violation is detected |
 | provenance_mode | select | "embeddings" | Always | Scoring method: "embeddings" (token overlap / embedding similarity) or "llm" (LLM judge) |
 | embedding_type | select | "huggingface" | provenance_mode=embeddings | Embedding provider: "huggingface", "openai", or "bedrock" |
@@ -791,17 +794,18 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 **Output fields:**
 | Field | Description |
 |---|---|
-| answer | Original answer or the fallback answer if substituted |
-| context | The context text that was checked against |
+| message | Passed: the answer (or fallback). Blocked: the default blocked message |
+| answer | Original answer or the fallback answer if substituted (not kept when Blocked is unwired) |
+| context | The context text that was checked against (not kept when Blocked is unwired) |
 | _guardrail_provenance | Object with: `type` ("provenance"), `score` (0–1), `threshold`, `verdict` ("pass" or "fail"), `heuristic_score`, optional `llm_judge` details, optional `fallback_used` |
-| blocked | (optional) `true` if `fail_on_violation` triggered |
-| verdict | (optional) `"provenance_fail"` if blocked |
+| blocked | (Blocked only) `true` |
+| verdict | (Blocked only) `"provenance_fail"` |
 
 ---
 
 ### guardrailNliNode — Guardrail: NLI Fact-check
-**Category:** Utils
-**Purpose:** Runs Natural Language Inference (NLI) between an answer and evidence to determine if the answer is entailed by, contradicts, or is unknown relative to the evidence. Uses a local cross-encoder NLI model (falls back to heuristic if unavailable). Can block the workflow or substitute a fallback on contradiction.
+**Category:** Guardrails
+**Purpose:** Runs Natural Language Inference (NLI) between an answer and evidence to determine if the answer is entailed by, contradicts, or is unknown relative to the evidence. Uses a local cross-encoder NLI model (falls back to heuristic if unavailable). Can take its Blocked exit or substitute a fallback on contradiction. If the model takes longer than 30 seconds the answer passes.
 **Use cases:** Fact-checking agent answers against source documents, detecting contradictions before responding, ensuring consistency between generated text and evidence.
 
 **Handlers:**
@@ -809,6 +813,9 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 |---|---|---|---|
 | input | target | left | any |
 | output | source | right | any |
+| output_blocked | source | right | any |
+
+`output` is Passed and `output_blocked` is Blocked. The node takes Blocked only when `fail_on_contradiction` is true, the verdict is a contradiction and no fallback answer is used. With nothing wired to Blocked the branch stops and `message` (the default blocked message) is the reply. Give each exit its own Chat Output.
 
 **Required config:**
 | Field | Type | Default | Description |
@@ -822,18 +829,54 @@ There is one `output_<case id>` handler per entry in `cases` (case `case_1` → 
 |---|---|---|---|
 | name | text | "Guardrail NLI" | Node name |
 | nli_model_name | select | "cross-encoder/nli-deberta-v3-base" | NLI model. Options: "cross-encoder/nli-deberta-v3-base" (DeBERTa v3), "cross-encoder/nli-roberta-base" (RoBERTa) |
-| fail_on_contradiction | boolean | false | Add `verdict="fail"` and `blocked=true` when contradiction detected |
-| fallback_answer_enabled | boolean | false | Use a fallback answer instead of blocking |
+| fail_on_contradiction | boolean | false | Take the Blocked exit when a contradiction is detected |
+| fallback_answer_enabled | boolean | false | Use a fallback answer and stay on Passed instead of blocking |
 | fallback_answer | text | "" | Text to substitute on contradiction (requires fallback_answer_enabled=true) |
 
 **Output fields:**
 | Field | Description |
 |---|---|
-| answer | Original answer or the fallback answer if substituted |
-| evidence | The evidence text that was checked against |
+| message | Passed: the answer (or fallback). Blocked: the default blocked message |
+| answer | Original answer or the fallback answer if substituted (not kept when Blocked is unwired) |
+| evidence | The evidence text that was checked against (not kept when Blocked is unwired) |
 | _guardrail_nli | Object with: `type` ("nli"), `entail_score` (0–1), `contradiction_score` (0–1), `threshold`, `verdict` ("entails", "contradicts", or "unknown"), optional `fallback_used` |
-| blocked | (optional) `true` if `fail_on_contradiction` triggered |
-| verdict | (optional) `"nli_contradiction"` if blocked |
+| blocked | (Blocked only) `true` |
+| verdict | (Blocked only) `"nli_contradiction"` |
+
+---
+
+### guardrailNode — Guardrail
+**Category:** Guardrails
+**Purpose:** Checks one text for blocked words, prompt attacks, harmful content and denied topics, with the same detector as the agent's Guardrails policy. Passed carries the text on; Blocked carries the blocked message. A judge reply that is not a clean verdict twice takes Blocked; a judge that is down or times out lets the text pass.
+**Use cases:** Checking text from a File Reader or a Knowledge Base wired straight into an LLM Model, screening text before Text to Speech, a topic gate in the middle of a flow.
+
+**Handlers:**
+| ID | Type | Position | Compatibility |
+|---|---|---|---|
+| input | target | left | any |
+| output | source | right | any |
+| output_blocked | source | right | any |
+
+`output` is Passed and `output_blocked` is Blocked. With nothing wired to Blocked the branch stops and the blocked message is the reply. Give each exit its own Chat Output.
+
+**Config:**
+| Field | Type | Required | Description |
+|---|---|---|---|
+| text | text | Yes | The text to check, usually `{{session.message}}` or `{{source.message}}` |
+| providerId | select | When a judge-backed check is on | Judge model (LLM provider id) |
+| prompt_attack | select | No | `off` (default), `low`, `medium`, `high` |
+| previous_reply_context | boolean | No | The judge also reads the last 500 characters of the agent's previous reply as context; only `text` is scored. On for new nodes; leave it off when `text` is not the customer's message |
+| harmful_content | object | No | Levels `off`/`low`/`medium`/`high` for `hate`, `insults`, `sexual`, `violence`, `self_harm`, `misconduct` |
+| denied_topics | array | No | Up to 20 of `{name, definition, examples}` (up to 3 examples) |
+| blocked_words | tags | No | Whole-word matches, case and width insensitive |
+| blocked_message | text | No | Default "Sorry, I can't help with that." |
+| name | text | No | Node name |
+
+**Output fields:**
+| Field | Description |
+|---|---|
+| message | Passed: the checked text. Blocked: the blocked message |
+| guardrail | `{passed, checks}`; `checks` lists each check's verdict (`check_type`, `category`, `score`, `action`) |
 
 ---
 

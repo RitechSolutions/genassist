@@ -4,6 +4,7 @@ import { NodeSchema } from "./schemas";
 import { CSVAnalysisResult } from "@/services/mlModels";
 import { MLModelTypeValue } from "@/constants/mlModelTypes";
 import type { PreprocessingConfig } from "../nodeDialogs/training/preprocessingConfig";
+import type { GuardrailCheckSettings } from "@/interfaces/guardrails.interface";
 
 // Define compatibility types
 export type NodeCompatibility =
@@ -46,6 +47,7 @@ export interface ToolBaseNodeData extends BaseNodeData {
   inputSchema: NodeSchema;
   outputSchema?: NodeSchema;
   returnDirect?: boolean;
+  skipToolResultCheck?: boolean;
   forwardTemplate?: string;
 }
 
@@ -850,6 +852,15 @@ export interface GuardrailProvenanceNodeData extends BaseNodeData {
   llm_judge_system_prompt_suffix?: string;
 }
 
+// Guardrail Node Data
+export interface GuardrailNodeData
+  extends BaseNodeData,
+    Partial<GuardrailCheckSettings> {
+  text?: string;
+  providerId?: string;
+  blocked_message?: string;
+}
+
 // Guardrail NLI Node Data
 export interface GuardrailNliNodeData extends BaseNodeData {
   answer_field?: string;
@@ -927,6 +938,7 @@ export type NodeData =
   | WorkflowExecutorNodeData
   | HumanInTheLoopNodeData
   | SetStateNodeData
+  | GuardrailNodeData
   | GuardrailProvenanceNodeData
   | GuardrailNliNodeData
   | FileReaderNodeData
@@ -954,6 +966,7 @@ export interface NodeTypeDefinition<T extends NodeData> {
     | "formatting"
     | "tools"
     | "training" | "utils"
+    | "guardrails"
   icon: string;
   defaultData: T;
   /**

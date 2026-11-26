@@ -41,6 +41,9 @@ from .web_search_schema import WEB_SEARCH_NODE_DIALOG_SCHEMA
 from .html_to_image_schema import HTML_TO_IMAGE_NODE_DIALOG_SCHEMA
 from .nlp_schema import NLP_NODE_DIALOG_SCHEMA
 from .webhook_trigger_schema import WEBHOOK_TRIGGER_NODE_DIALOG_SCHEMA
+from .guardrail_schema import GUARDRAIL_NODE_DIALOG_SCHEMA
+from .guardrail_nli_schema import GUARDRAIL_NLI_NODE_DIALOG_SCHEMA
+from .guardrail_provenance_schema import GUARDRAIL_PROVENANCE_NODE_DIALOG_SCHEMA
 
 NODE_TYPE_LABELS: Dict[str, str] = {
     "chatInputNode": "Chat Input",
@@ -84,6 +87,9 @@ NODE_TYPE_LABELS: Dict[str, str] = {
     "htmlToImageNode": "HTML to Image",
     "nlpNode": "Text Analysis",
     "webhookTriggerNode": "Webhook Trigger",
+    "guardrailNode": "Guardrail",
+    "guardrailNliNode": "Guardrail: NLI Fact-check",
+    "guardrailProvenanceNode": "Guardrail: Provenance",
 }
 
 NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
@@ -128,6 +134,9 @@ NODE_DIALOG_SCHEMAS: Dict[str, List[FieldSchema]] = {
     "htmlToImageNode": HTML_TO_IMAGE_NODE_DIALOG_SCHEMA,
     "nlpNode": NLP_NODE_DIALOG_SCHEMA,
     "webhookTriggerNode": WEBHOOK_TRIGGER_NODE_DIALOG_SCHEMA,
+    "guardrailNode": GUARDRAIL_NODE_DIALOG_SCHEMA,
+    "guardrailNliNode": GUARDRAIL_NLI_NODE_DIALOG_SCHEMA,
+    "guardrailProvenanceNode": GUARDRAIL_PROVENANCE_NODE_DIALOG_SCHEMA,
 }
 
 
@@ -335,5 +344,23 @@ NODE_HANDLERS_SCHEMAS: Dict[str, List[FieldSchema]] = {
   "nlpNode": [
     { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
     { "id": "output", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "guardrailNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" },
+    { "id": "output_blocked", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "guardrailNliNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" },
+    { "id": "output_blocked", "type": "source", "position": "right", "compatibility": "any" }
+  ],
+
+  "guardrailProvenanceNode": [
+    { "id": "input", "type": "target", "position": "left", "compatibility": "any" },
+    { "id": "output", "type": "source", "position": "right", "compatibility": "any" },
+    { "id": "output_blocked", "type": "source", "position": "right", "compatibility": "any" }
   ]
 }

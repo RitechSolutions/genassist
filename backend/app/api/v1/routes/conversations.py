@@ -68,6 +68,7 @@ from app.schemas.conversation_transcript import (
 )
 from app.schemas.common import PaginatedResponse
 from app.schemas.filter import ConversationFilter, MessageIssueFilter, MessageIssueSummaryFilter
+from app.schemas.guardrails import GuardrailEventRead
 from app.schemas.message_issue import (
     IssueHistoryEvent,
     IssueNoteCreate,
@@ -90,6 +91,7 @@ from app.services.auth import AuthService
 from app.services.conversations import ConversationService
 from app.services.dashboard import DashboardService
 from app.services.file_manager import FileManagerService
+from app.services.guardrails import GuardrailService
 from app.services.llm_analysts import LlmAnalystService
 from app.services.realtime_notifications import (
     emit_notification,
@@ -1300,6 +1302,21 @@ async def get_agent_response_logs_by_conversation(
         }
         for log in logs
     ]
+
+
+@router.get(
+    "/{conversation_id}/guardrail-events",
+    response_model=list[GuardrailEventRead],
+    dependencies=[
+        Depends(auth),
+        Depends(permissions(P.Conversation.READ)),
+    ],
+)
+async def get_guardrail_events_by_conversation(
+    conversation_id: UUID,
+    guardrail_service: GuardrailService = Injected(GuardrailService),
+):
+    return await guardrail_service.list_for_conversation(conversation_id)
 
 
 @router.get(

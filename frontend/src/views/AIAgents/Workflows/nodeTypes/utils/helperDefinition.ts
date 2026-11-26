@@ -2,21 +2,72 @@ import type { NodeHelpContent } from "../../types/nodes";
 
 export const UTILS_NODES_HELP_CONTENT: NodeHelpContent = {
   intro:
-    "Utils nodes help you validate, safeguard, and inspect workflow data before it moves to the next step. They are useful when you want to add quality checks, confidence thresholds, or protective logic around model outputs.",
+    "Utils nodes help you bring outside content into a workflow, such as the text of an uploaded file.",
   sections: [
     {
       title: "When To Use Utils Nodes",
       body: "Use utils nodes when you need to:",
       bullets: [
+        "Extract text from a file attached to the chat or uploaded to the node",
+      ],
+    },
+  ],
+};
+
+export const GUARDRAILS_NODES_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "Guardrails nodes check text before it moves on. Each one has a Passed exit and a Blocked exit, so the workflow decides what happens to text that fails a check.",
+  sections: [
+    {
+      title: "When To Use Guardrails Nodes",
+      body: "Use guardrails nodes when you need to:",
+      bullets: [
+        "Stop prompt attacks, harmful content, denied topics or blocked words",
         "Verify whether an answer is supported by evidence",
         "Check whether generated output is grounded in the provided context",
         "Apply confidence thresholds before allowing an answer through",
-        "Add safety and reliability checks to LLM workflows",
       ],
     },
     {
       title: "Summary",
-      body: "Utils nodes are especially helpful near the end of AI flows where you want to reduce hallucinations or block unsupported answers.",
+      body: "Leave Blocked unconnected to stop the branch and reply with a default message, or connect it to send blocked text down its own path.",
+    },
+  ],
+};
+
+export const GUARDRAIL_HELP_CONTENT: NodeHelpContent = {
+  intro:
+    "The Guardrail node checks one text with the same checks as an agent's Guardrails policy: prompt attacks, harmful content, denied topics and blocked words. Text that passes leaves through Passed; text that fails leaves through Blocked.",
+  sections: [
+    {
+      title: "Overview & Use Cases",
+      body: "Use the Guardrail node when you need to:",
+      bullets: [
+        "Check the customer's message before an agent or model reads it",
+        "Check a reply before it is sent",
+        "Check uploaded document text or knowledge base results",
+      ],
+    },
+    {
+      title: "How it behaves",
+      body: "Give each exit its own Chat Output. Leave Blocked unconnected to reply with the blocked message. Every check except blocked words needs a judge model.",
+    },
+    {
+      title: "Where to put it",
+      bullets: [
+        "To check spoken replies, put this node before Text to Speech.",
+        "To check File Reader or knowledge base text on its way to an LLM Model block, put this node between them.",
+      ],
+    },
+    {
+      title: "Configuring the node",
+      steps: [
+        "Click the settings icon in the node header.",
+        "Set the Text to check, usually a variable such as {{session.message}}.",
+        "Pick a Judge model and turn on the checks you need.",
+        "Optionally change the Blocked message.",
+        "Click Save Changes.",
+      ],
     },
   ],
 };
@@ -110,6 +161,7 @@ export const GUARDRAIL_PROVENANCE_HELP_CONTENT: NodeHelpContent = {
         "Set the Answer field key.",
         "Set the Context field key.",
         "Define the Minimum provenance score (0-1).",
+        "Turn on Fail on violation to send an unsupported answer to the Blocked exit.",
         "Toggle Fallback answer on violation if the node should substitute a fallback response instead of blocking.",
         "Choose the Provenance mode.",
         "Select the Embedding provider.",
@@ -143,6 +195,7 @@ export const GUARDRAIL_NLI_HELP_CONTENT: NodeHelpContent = {
         "Set the Evidence field key.",
         "Choose the NLI model.",
         "Define the Minimum entailment score (0-1).",
+        "Turn on Fail on contradiction to send a contradicting answer to the Blocked exit.",
         "Toggle Fallback answer on contradiction if the node should substitute a fallback response instead of blocking.",
         "Click Save Changes.",
       ],

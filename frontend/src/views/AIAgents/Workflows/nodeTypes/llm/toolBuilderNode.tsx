@@ -35,6 +35,9 @@ const ToolBuilderNode: React.FC<NodeProps<ToolBuilderNodeData>> = ({
       label: "Return data as agent output",
       value: data.returnDirect ? "Yes" : "No",
     },
+    ...(data.skipToolResultCheck
+      ? [{ label: "Guardrails", value: "Tool result check skipped" }]
+      : []),
     {
       label: "Variables",
       value: extractDynamicVariablesAsRecord(JSON.stringify(data)),

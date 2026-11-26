@@ -127,6 +127,7 @@ export const REFERENCE_FIELDS: Record<string, ReferenceField[]> = {
     },
     llmProvider,
   ],
+  guardrailNode: [llmProvider],
   guardrailProvenanceNode: [{ ...llmProvider, key: "llm_provider_id" }],
   slackMessageNode: [appSetting("slack")],
   whatsappToolNode: [appSetting("whatsapp")],

@@ -13,12 +13,15 @@ import { getRagFromSchema } from "@/services/api";
 import { finalizeKnowledgeItem } from "@/services/api";
 import { toast } from "react-hot-toast";
 import { DynamicRagField } from "./DynamicRagField";
+import ChunkingChangeNote from "./ChunkingChangeNote";
 import { DynamicFormSchema } from "@/interfaces/dynamicFormSchemas.interface";
 import { RagConfigValues } from "../types/ragSchema";
+import { isChunkStrategyChanged } from "../utils/chunkingChange";
 
 
 interface DynamicRagConfigSectionProps {
   ragConfig?: RagConfigValues;
+  savedRagConfig?: RagConfigValues | null;
   onChange: (updatedRagConfig: RagConfigValues) => void;
   showOnlyRequired?: boolean;
   knowledgeId?: string;
@@ -27,6 +30,7 @@ interface DynamicRagConfigSectionProps {
 
 const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
   ragConfig = {},
+  savedRagConfig,
   onChange,
   showOnlyRequired = false,
   knowledgeId,
@@ -39,6 +43,7 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
   );
   const [legraFinalize, setLegraFinalize] = useState<boolean>(Boolean(initialLegraFinalize));
   const [isFinalizing, setIsFinalizing] = useState<boolean>(false);
+  const showChunkingChangeNote = isChunkStrategyChanged(savedRagConfig, ragConfig);
 
   const {
     data: schema,
@@ -330,6 +335,7 @@ const DynamicRagConfigSection: React.FC<DynamicRagConfigSectionProps> = ({
                                 ));
                             })()}
                         </div>
+                        {section.name === 'chunking' && showChunkingChangeNote && <ChunkingChangeNote />}
                       </CollapsibleContent>
                     </Collapsible>
                   );

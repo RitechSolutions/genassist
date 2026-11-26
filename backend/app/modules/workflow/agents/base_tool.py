@@ -49,6 +49,8 @@ class Tool(Protocol):
 
 class BaseTool(Tool):
     """Base class for tools"""
+    screen_results = True
+
     def __init__(self, node_id: str, name: str, description: str, parameters: dict, function: Callable, return_direct: bool = False, agent_id: str = None, state: Any = None):
         self.node_id = node_id
         self.name = to_snake_case(name)
@@ -126,7 +128,11 @@ class BaseTool(Tool):
                 f"succeeded — report that it could not be completed."
             )
         self._record_event(kwargs, result, status="succeeded", error=None)
-        return result
+        if self.return_direct or not self.screen_results:
+            return result
+        from app.modules.workflow.guardrails.turn import screen_tool_result
+
+        return await screen_tool_result(self, result)
 
     def _missing_required_parameters(self, arguments: dict) -> list:
         """Names of required parameters that were not given a usable value.

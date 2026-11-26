@@ -247,3 +247,10 @@ def is_retryable(exc: BaseException) -> bool:
 
     # No status code and not a known transient type → fail fast.
     return False
+
+
+def is_provider_refusal(error) -> bool:
+    if getattr(error, "code", None) == "content_filter":
+        return True
+    text = str(error or "")
+    return "'code': 'content_filter'" in text or "due to a content filter" in text
