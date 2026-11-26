@@ -390,6 +390,8 @@ export interface BaseLLMNodeData extends BaseNodeData {
     | "Chain-of-Thought"
     | "ReActAgentLC";
   maxIterations?: number;
+  /** Agent nodes, ReActAgentLC only: tool called before each answer */
+  firstTool?: string;
   memoryTrimmingMode?: "message_count" | "token_budget" | "message_compacting" | "rag_retrieval";
   maxMessages?: number;
   tokenBudget?: number;
