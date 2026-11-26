@@ -34,7 +34,13 @@ describe("templates service", () => {
       const rows = [{ id: "tpl1" }];
       mockApiRequest.mockResolvedValue(rows as never);
       const result = await getTemplates();
-      expect(mockApiRequest).toHaveBeenCalledWith("GET", "genagent/templates");
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "GET",
+        "genagent/templates",
+        undefined,
+        {},
+        { rethrowForbidden: true }
+      );
       expect(result).toEqual(rows);
     });
 
@@ -56,17 +62,25 @@ describe("templates service", () => {
     it("POSTs the provided name", async () => {
       mockApiRequest.mockResolvedValue({ id: "x" } as never);
       await installTemplate("tpl3", "Copy");
-      expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/templates/tpl3/install", {
-        name: "Copy",
-      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "genagent/templates/tpl3/install",
+        { name: "Copy" },
+        {},
+        { rethrowForbidden: true }
+      );
     });
 
     it("defaults the name to null when omitted", async () => {
       mockApiRequest.mockResolvedValue({ id: "x" } as never);
       await installTemplate("tpl3");
-      expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/templates/tpl3/install", {
-        name: null,
-      });
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "genagent/templates/tpl3/install",
+        { name: null },
+        {},
+        { rethrowForbidden: true }
+      );
     });
 
     it("throws when the API returns a falsy response", async () => {
@@ -81,7 +95,13 @@ describe("templates service", () => {
       const created = { id: "tpl4" };
       mockApiRequest.mockResolvedValue(created as never);
       const result = await createTemplateFromAgent(payload as never);
-      expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/templates/from-agent", payload);
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "genagent/templates/from-agent",
+        payload,
+        {},
+        { rethrowForbidden: true }
+      );
       expect(result).toEqual(created);
     });
 
@@ -107,7 +127,13 @@ describe("templates service", () => {
       const published = { id: "tpl6" };
       mockApiRequest.mockResolvedValue(published as never);
       const result = await publishTemplate("tpl6");
-      expect(mockApiRequest).toHaveBeenCalledWith("POST", "genagent/templates/tpl6/publish");
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "genagent/templates/tpl6/publish",
+        undefined,
+        {},
+        { rethrowForbidden: true }
+      );
       expect(result).toEqual(published);
     });
 

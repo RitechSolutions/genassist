@@ -11,10 +11,18 @@ from app.schemas.feature_flag import (
 from app.core.exceptions.exception_classes import AppException
 from app.core.exceptions.error_messages import ErrorKey
 
+TEMPLATE_MARKETPLACE_FLAG = "feature.templateMarketplace"
+
+
 @inject
 class FeatureFlagService:
     def __init__(self, repo: FeatureFlagRepository):
         self.repo = repo
+
+    async def is_enabled(self, key: str) -> bool:
+        # Same rule as the screens: the row is active and its value is exactly "true".
+        row = await self.repo.get_by_key(key)
+        return row is not None and bool(row.is_active) and row.val == "true"
 
     async def get_all(self) -> List[FeatureFlagRead]:
         rows = await self.repo.get_all()

@@ -8,7 +8,7 @@ from injector import inject
 
 from app.core.exceptions.error_messages import ErrorKey
 from app.core.exceptions.exception_classes import AppException
-from app.core.tenant_scope import get_tenant_context
+from app.core.tenant_scope import get_tenant_context, require_tenant_context
 from app.core.utils.enums.template_status_enum import TemplateStatus
 from app.db.models.template import TemplateModel
 from app.db.multi_tenant_session import multi_tenant_manager
@@ -78,11 +78,14 @@ class TemplateService:
         *,
         is_global: bool = False,
         publish_status: Optional[str] = None,
+        rejection_reason: Optional[str] = None,
     ) -> TemplateListItem:
         item = TemplateListItem.model_validate(row)
         item.node_count = len((row.graph or {}).get("nodes", []) or [])
         item.is_global = is_global
         item.publish_status = publish_status
+        # Set explicitly, so a reason stored on a shared row never reaches other users.
+        item.rejection_reason = rejection_reason
         return item
 
     # ---------- READ ----------
@@ -97,16 +100,27 @@ class TemplateService:
             approved_rows = await mrepo.list_by_status(TemplateStatus.APPROVED)
             my_published = await mrepo.published_by_user(user_id)
 
-        # map originating template id -> publish status, to annotate the owner's
+        # map originating template id -> latest published row, to annotate the owner's
         # cards. my_published is newest-first, so keep the first (latest) row per
         # source and ignore any older duplicates (e.g. a superseded rejection).
-        pub_status: dict = {}
+        latest: dict = {}
         for r in my_published:
-            if r.source_template_id is not None:
-                pub_status.setdefault(r.source_template_id, r.status)
+            if r.source_template_id is not None and r.source_tenant == current_tenant:
+                latest.setdefault(r.source_template_id, r)
+
+        def _owned_item(row: TemplateModel) -> TemplateListItem:
+            shared = latest.get(row.id)
+            if shared is None:
+                return self._to_item(row)
+            rejected = shared.status == TemplateStatus.REJECTED
+            return self._to_item(
+                row,
+                publish_status=shared.status,
+                rejection_reason=shared.rejection_reason if rejected else None,
+            )
 
         owned = [
-            self._to_item(row, publish_status=pub_status.get(row.id))
+            _owned_item(row)
             for row in owned_rows
         ]
 
@@ -212,9 +226,7 @@ class TemplateService:
 
     async def publish(self, template_id: UUID, user_id: UUID) -> TemplateRead:
         """Submit one of the user's own templates to the global review queue."""
-        row = await self.repository.get_by_id(template_id)
-        if not row or row.is_deleted or row.created_by != user_id:
-            raise AppException(error_key=ErrorKey.TEMPLATE_NOT_FOUND, status_code=404)
+        row = await self._own_private_template(template_id, user_id, lock=True)
 
         source_graph = row.graph or {}
         nodes, edges = sanitize_graph(source_graph.get("nodes"), source_graph.get("edges"))
@@ -346,9 +358,11 @@ class TemplateService:
                 status_code=400,
                 error_detail="Official templates cannot be deleted.",
             )
-        row = await self.repository.get_by_id(template_id)
-        if not row or row.is_deleted or row.created_by != user_id:
-            raise AppException(error_key=ErrorKey.TEMPLATE_NOT_FOUND, status_code=404)
+        row = await self._own_private_template(template_id, user_id, lock=True)
+        # Shared copies go first: if this fails, the template is still there to delete again.
+        await self._withdraw_shared_copies(
+            template_id, (TemplateStatus.PENDING, TemplateStatus.APPROVED, TemplateStatus.REJECTED)
+        )
         await self.repository.soft_delete(row)
 
     async def unpublish(self, template_id: UUID, user_id: UUID) -> None:
@@ -356,14 +370,21 @@ class TemplateService:
 
         ``template_id`` is the caller's own (private) template id.
         """
-        row = await self.repository.get_by_id(template_id)
-        if not row or row.is_deleted or row.created_by != user_id:
+        await self._own_private_template(template_id, user_id, lock=True)
+        await self._withdraw_shared_copies(template_id, (TemplateStatus.PENDING, TemplateStatus.APPROVED))
+
+    async def _own_private_template(self, template_id: UUID, user_id: UUID, *, lock: bool = False) -> TemplateModel:
+        # Only the caller's private template: a shared copy in the master database never matches.
+        row = await (self.repository.get_locked if lock else self.repository.get_by_id)(template_id)
+        if not row or row.is_deleted or row.created_by != user_id or row.status != TemplateStatus.PRIVATE:
             raise AppException(error_key=ErrorKey.TEMPLATE_NOT_FOUND, status_code=404)
+        return row
+
+    async def _withdraw_shared_copies(self, template_id: UUID, statuses: tuple[TemplateStatus, ...]) -> None:
+        # Copies published from this tenant only; duplicates go too. Fails closed without a tenant.
+        tenant = require_tenant_context()
         async with self._master_repo() as mrepo:
-            published = await mrepo.find_published(template_id, (TemplateStatus.PENDING, TemplateStatus.APPROVED))
-            if published is None:
-                return
-            await mrepo.soft_delete(published)
+            await mrepo.soft_delete_published(template_id, statuses, tenant)
 
     async def remove_global(self, template_id: UUID, user_id: UUID) -> None:
         """Master-admin removal of a published/community template (by master id)."""

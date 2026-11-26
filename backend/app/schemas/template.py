@@ -22,6 +22,8 @@ class TemplateListItem(BaseModel):
     is_global: bool = False
     # For the owner's own templates that have been published: pending/approved/rejected.
     publish_status: Optional[str] = None
+    # The reviewer's reason, only on the owner's own rejected template.
+    rejection_reason: Optional[str] = None
     # Slug of the tenant a published/community template came from.
     source_tenant: Optional[str] = None
 
@@ -34,6 +36,8 @@ class TemplateRead(TemplateListItem):
     graph: Dict[str, Any]
     agent_config: Optional[Dict[str, Any]] = None
     created_at: Optional[datetime] = None
+    # Shown on the author's list card only, never in a full template response.
+    rejection_reason: Optional[str] = Field(default=None, exclude=True)
 
     model_config = ConfigDict(from_attributes=True)
 

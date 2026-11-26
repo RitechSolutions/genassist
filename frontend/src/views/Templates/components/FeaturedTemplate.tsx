@@ -6,7 +6,8 @@ import { capabilities, categoryColor, iconFor } from "../templateMeta";
 interface FeaturedTemplateProps {
   template: TemplateListItem;
   installs?: number;
-  onUse: (template: TemplateListItem) => void;
+  // Leave out when the user can't install templates; the Use button is hidden then.
+  onUse?: (template: TemplateListItem) => void;
   installing?: boolean;
 }
 
@@ -57,21 +58,23 @@ export function FeaturedTemplate({
           {template.description || "No description provided."}
         </p>
         <div className="flex flex-wrap items-center gap-3">
-          <Button
-            className="gap-2 rounded-lg text-white hover:opacity-90"
-            style={{ background: "var(--cat)" }}
-            onClick={() => onUse(template)}
-            disabled={installing}
-          >
-            {installing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                Use
-                <ArrowRight className="h-4 w-4" />
-              </>
-            )}
-          </Button>
+          {onUse ? (
+            <Button
+              className="gap-2 rounded-lg text-white hover:opacity-90"
+              style={{ background: "var(--cat)" }}
+              onClick={() => onUse(template)}
+              disabled={installing}
+            >
+              {installing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  Use
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
+            </Button>
+          ) : null}
           {typeof installs === "number" ? (
             <span className="text-[13px] font-medium text-muted-foreground">
               {installs > 0

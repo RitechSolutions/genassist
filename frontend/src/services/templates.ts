@@ -9,7 +9,14 @@ import {
 const BASE = "genagent/templates";
 
 export const getTemplates = async (): Promise<TemplateListItem[]> => {
-  const data = await apiRequest<TemplateListItem[]>("GET", BASE);
+  // A 403 carries the reason (marketplace off, missing permission), so it reaches the caller.
+  const data = await apiRequest<TemplateListItem[]>(
+    "GET",
+    BASE,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
   return Array.isArray(data) ? data : [];
 };
 
@@ -24,7 +31,9 @@ export const installTemplate = async (
   const res = await apiRequest<InstallTemplateResponse>(
     "POST",
     `${BASE}/${id}/install`,
-    { name: name ?? null }
+    { name: name ?? null },
+    {},
+    { rethrowForbidden: true }
   );
   if (!res) throw new Error("Failed to install template");
   return res;
@@ -36,7 +45,9 @@ export const createTemplateFromAgent = async (
   const res = await apiRequest<Template>(
     "POST",
     `${BASE}/from-agent`,
-    payload as unknown as Record<string, unknown>
+    payload as unknown as Record<string, unknown>,
+    {},
+    { rethrowForbidden: true }
   );
   if (!res) throw new Error("Failed to save template");
   return res;
@@ -53,7 +64,13 @@ export const deleteTemplate = async (id: string): Promise<void> => {
 };
 
 export const publishTemplate = async (id: string): Promise<Template> => {
-  const res = await apiRequest<Template>("POST", `${BASE}/${id}/publish`);
+  const res = await apiRequest<Template>(
+    "POST",
+    `${BASE}/${id}/publish`,
+    undefined,
+    {},
+    { rethrowForbidden: true }
+  );
   if (!res) throw new Error("Failed to publish template");
   return res;
 };

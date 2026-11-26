@@ -13,6 +13,7 @@ import { cn } from "@/helpers/utils";
 import { Button } from "@/components/button";
 import { TemplateListItem } from "@/interfaces/template.interface";
 import { capabilities, categoryColor, iconFor } from "../templateMeta";
+import { rejectionNote } from "../templateCopy";
 
 interface TemplateCardProps {
   template: TemplateListItem;
@@ -61,6 +62,7 @@ export function TemplateCard({
     template.publish_status && !template.is_global
       ? STATUS_PILL[template.publish_status]
       : null;
+  const reason = rejectionNote(template);
 
   return (
     <div
@@ -131,6 +133,15 @@ export function TemplateCard({
         {template.description || "No description yet."}
       </p>
 
+      {reason ? (
+        <p
+          className="mb-4 line-clamp-3 rounded-md bg-red-50 px-2 py-1.5 text-[12px] text-red-700"
+          title={reason}
+        >
+          Reason: {reason}
+        </p>
+      ) : null}
+
       {caps.length ? (
         <div className="mb-4 flex flex-wrap gap-1.5">
           {caps.map((cap) => (
@@ -189,8 +200,8 @@ export function TemplateCard({
               <button
                 type="button"
                 onClick={() => onUnpublish?.(template)}
-                aria-label="Remove from the global library"
-                title="Remove from the global library"
+                aria-label="Withdraw from the library"
+                title="Withdraw from the library"
                 className="grid h-9 w-9 place-items-center rounded-lg border bg-card text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
               >
                 <Undo2 className="h-4 w-4" />

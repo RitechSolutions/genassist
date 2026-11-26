@@ -11,6 +11,8 @@ export interface TemplateListItem {
   is_official: boolean;
   is_global: boolean;
   publish_status?: string | null;
+  // Only on the author's own rejected template.
+  rejection_reason?: string | null;
   source_tenant?: string | null;
 }
 

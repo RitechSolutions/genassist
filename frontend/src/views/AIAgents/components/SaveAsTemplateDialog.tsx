@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/label";
 import { createTemplateFromAgent } from "@/services/templates";
+import { extractErrorMessage } from "@/helpers/apiError";
 
 interface SaveAsTemplateDialogProps {
   agent: { id: string; name: string } | null;
@@ -52,8 +53,8 @@ export function SaveAsTemplateDialog({
       toast.success("Saved as template");
       onSaved?.();
       onClose();
-    } catch {
-      toast.error("Failed to save template");
+    } catch (err) {
+      toast.error(extractErrorMessage(err, "Failed to save template"));
     } finally {
       setSaving(false);
     }
