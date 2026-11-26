@@ -1,6 +1,8 @@
+from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import ForeignKey, Integer, String, Boolean, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -30,6 +32,8 @@ class AgentSecuritySettingsModel(Base):
     recaptcha_site_key: Mapped[str] = mapped_column(String(200), nullable=True)
     recaptcha_min_score: Mapped[str] = mapped_column(String(10), nullable=True)
     gcp_svc_account: Mapped[str] = mapped_column(Text, nullable=True)
+
+    guardrails: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Relationship
     agent = relationship("AgentModel", back_populates="security_settings", uselist=False)

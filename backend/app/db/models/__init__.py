@@ -48,6 +48,7 @@ from .fine_tuning import (
     FineTuningJobModel,
     OpenAIFileModel,
 )
+from .guardrail_event import GuardrailEventModel
 from .issue_status import IssueStatusModel
 from .knowledge_base import KnowledgeBaseModel
 from .mcp_server import MCPServerModel, MCPServerWorkflowModel
@@ -132,6 +133,7 @@ __all__ = [
     "KnowledgeBaseModel",
     "AgentModel",
     "AgentSecuritySettingsModel",
+    "GuardrailEventModel",
     "WorkflowModel",
     "TemplateModel",
     "MLModel",
@@ -211,6 +213,7 @@ models = [
     KnowledgeBaseModel,
     AgentModel,
     AgentSecuritySettingsModel,
+    GuardrailEventModel,
     WorkflowModel,
     TemplateModel,
     MLModel,

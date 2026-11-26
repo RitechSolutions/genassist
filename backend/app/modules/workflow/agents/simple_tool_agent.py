@@ -15,6 +15,9 @@ class SimpleToolAgent(BaseToolAgent):
 
     def __init__(self, llm_model: BaseChatModel, system_prompt: str, tools: List[BaseTool]):
         super().__init__(llm_model, system_prompt, tools)
+        # No model reads the tool result here: it is the reply
+        for tool in tools or []:
+            tool.screen_results = False
 
     def _create_prompt(self, query: str, chat_history: Optional[List[Dict[str, str]]] = None) -> str:
         tool_descriptions = create_tool_descriptions(self.tools)
