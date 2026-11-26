@@ -11,7 +11,7 @@ untouched. Re-running after a downgrade revives the soft-deleted row and refresh
 its name and model.
 
 Revision ID: 3f8a1c6d9e24
-Revises: 242b618b4766
+Revises: f1376a542c32
 Create Date: 2026-11-10 14:00:00.000000
 """
 
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "3f8a1c6d9e24"
-down_revision: Union[str, None] = "242b618b4766"
+down_revision: Union[str, None] = "f1376a542c32"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
