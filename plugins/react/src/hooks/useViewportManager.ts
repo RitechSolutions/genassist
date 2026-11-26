@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { isLauncherMode } from '../utils/chatMode';
 
 interface UseViewportManagerOptions {
   mode: string;
@@ -50,7 +51,7 @@ export function useViewportManager({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (mode === 'floating' && !isFloatingOpen) return;
+    if (isLauncherMode(mode) && !isFloatingOpen) return;
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;

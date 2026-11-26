@@ -81,54 +81,14 @@ class FileReaderNode(BaseNode):
             return node_failure(error_msg)
 
     async def _read_chat_documents(self) -> str:
-        """Read every document attached in the chat, skipping images."""
-        from app.dependencies.injector import injector
-        from app.services.file_manager import FileManagerService
-
-        file_service = injector.get(FileManagerService)
+        """Read every document attached in the chat, skipping images (full text, no cap)."""
+        from app.modules.workflow.agents.document_attachments import document_sections
 
         attachments = self.get_state().get_value("attachments", []) or []
-        documents = [att for att in attachments if not self._is_image(att)]
-
-        if not documents:
+        sections = await document_sections(attachments, resolved_only=False, limit=None)
+        if not sections:
             return "No document was attached in the chat."
-
-        sections = []
-        for attachment in documents:
-            sections.append(await self._read_attachment(file_service, attachment))
-
         return "\n\n".join(sections)
-
-    async def _read_attachment(self, file_service, attachment: Dict[str, Any]) -> str:
-        """Extract one attached document into a labelled, fail-soft text section."""
-        file_id = attachment.get("file_id")
-        file_url = attachment.get("file_url") or attachment.get("url")
-        file_name = attachment.get("name") or attachment.get("file_name") or ""
-
-        try:
-            if file_id:
-                file_model, content = await file_service.download_file(UUID(file_id))
-                file_name = file_name or file_model.original_filename or file_model.name
-            else:
-                content = await file_service.get_file_content_from_url(file_url)
-
-            text = ""
-            if content:
-                extractor = FileTextExtractor()
-                text = extractor.extract_from_bytes(file_name or "file.bin", content)
-
-        except Exception as e:
-            logger.error(
-                f"FileReaderNode: failed to read attachment '{file_name}': {str(e)}",
-                exc_info=True,
-            )
-            text = ""
-
-        label = file_name or "document"
-        if not text.strip():
-            return f"=== {label} ===\n[Could not extract text from {label}]"
-
-        return f"=== {label} ===\n{text}"
 
     def _is_image(self, attachment: Dict[str, Any]) -> bool:
         """True when the attachment's mime type is an image."""

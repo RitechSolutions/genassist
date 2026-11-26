@@ -104,7 +104,10 @@ export default App;
 | quickInput | boolean | No | false | Opt-in. In floating mode, shows a quick-message input beside the launcher bubble during an ongoing conversation while the chat panel is closed |
 | readReceipts | boolean | No | false | Opt-in. Shows read/seen receipts under the visitor's own messages (Sent → Delivered → Seen, where "Seen" means a human supervisor has viewed the message; the AI bot only yields "Delivered"), and reports the visitor's read state upstream so a supervisor's console can see when their reply was read. Also surfaces unread indicators while the chat is closed: an unread count badge on the floating launcher bubble, and a "New messages" divider in the thread |
 | reCaptchaKey | string | false | undefined | 'Use google reCaptchaV3 site-key...' |
-| mode | string | true | flotaing | Chat presentation: `embedded`, `floating`, `fullscreen`, or `inputbar` (a docked "Chat Input" bar that reveals FAQs on focus and expands a conversation panel above itself) |
+| mode | string | true | flotaing | Chat presentation: `embedded`, `floating`, `fullscreen`, `inputbar` (a docked "Chat Input" bar that reveals FAQs on focus and expands a conversation panel above itself), or `spotlight` (a floating launcher + panel with the redesigned, animated look: floating header pill, bubble-less agent replies, upload sheet; with `quickInput` the closed state shows a greeting teaser card) |
+| showPoweredBy | boolean | No | true | `spotlight` mode only. Shows the small "Powered by GenAssist" line under the composer |
+| showEmojiPicker | boolean | No | true | `spotlight` mode only. Shows an emoji button in the message input that opens a small emoji picker |
+| allowScreenshot | boolean | No | true | `spotlight` mode only. Adds "Add screenshot" to the + menu: the browser's own screen-share picker (tab / window / screen), one frame is attached as a PNG. Needs `useFile`; hidden where unsupported (mobile, non-https); in an iframe the iframe needs `allow="display-capture"` |
 | allowedExtensions | string[] | false | undefined | 'Look for type AllowedExtension and see the supported list of extensions' |
 
 

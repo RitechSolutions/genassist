@@ -1,4 +1,5 @@
 import React from 'react';
+import type { KeyboardViewport } from '../hooks/useKeyboardViewport';
 
 export interface ThemeParams {
   primaryColor: string;
@@ -39,14 +40,25 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/**
+ * A full-screen (fixed, edge to edge) chat while the on-screen keyboard is up: exactly the
+ * visible area above it, so the message field sits right on the keyboard and the browser
+ * has no reason to pan the page. Nothing when the keyboard is down.
+ */
+export function keyboardFitStyle(keyboard?: KeyboardViewport): React.CSSProperties {
+  if (!keyboard?.open) return {};
+  return { top: keyboard.top, bottom: 'auto', height: keyboard.height, maxHeight: keyboard.height };
+}
+
 interface ContainerStyleParams {
   isFullscreen: boolean;
   isFloatingDocked: boolean;
   windowWidth: number;
   t: ThemeParams;
+  keyboard?: KeyboardViewport;
 }
 
-export function getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth, t }: ContainerStyleParams): React.CSSProperties {
+export function getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth, t, keyboard }: ContainerStyleParams): React.CSSProperties {
   return {
     display: 'flex',
     flexDirection: 'column',
@@ -74,6 +86,7 @@ export function getContainerStyle({ isFullscreen, isFloatingDocked, windowWidth,
     right: isFullscreen ? 0 : undefined,
     bottom: isFullscreen ? 'env(safe-area-inset-bottom, 0px)' : undefined,
     zIndex: isFullscreen ? 9999 : undefined,
+    ...(isFullscreen ? keyboardFitStyle(keyboard) : {}),
   };
 }
 
@@ -566,17 +579,23 @@ interface FloatingShellParams {
   offsetY: number;
   position: string;
   isExpanded?: boolean;
+  keyboard?: KeyboardViewport;
 }
 
-export function getFloatingShellStyle({ windowHeight, offsetY, position, isExpanded = false }: FloatingShellParams): React.CSSProperties {
+export function getFloatingShellStyle({ windowHeight, offsetY, position, isExpanded = false, keyboard }: FloatingShellParams): React.CSSProperties {
   const screenWidth = typeof window !== 'undefined' ? window.innerWidth : 1024;
   const screenHeight = typeof window !== 'undefined' ? window.innerHeight : 1080;
   const margin = 10;
+  // With the keyboard up (a tablet), the shell sits on the keyboard and fits the space above it.
+  const kb = keyboard?.open ? keyboard : null;
+  const availableHeight = kb ? kb.height : windowHeight;
   // Expansion is width-focused; expanded uses most of the available height.
-  const usableHeight = Math.max(280, windowHeight - offsetY - margin * (isExpanded ? 2 : 10));
+  const usableHeight = kb
+    ? Math.max(160, availableHeight - offsetY - margin * 2)
+    : Math.max(280, availableHeight - offsetY - margin * (isExpanded ? 2 : 10));
   let maxHeight: number | string = usableHeight;
 
-  if (screenWidth >= 765 && screenHeight >= 1070) {
+  if (!kb && screenWidth >= 765 && screenHeight >= 1070) {
     maxHeight = isExpanded ? '86vh' : '60vh';
   }
 
@@ -586,8 +605,8 @@ export function getFloatingShellStyle({ windowHeight, offsetY, position, isExpan
     maxHeight: maxHeight,
     height: usableHeight,
     ...(position === 'top-right' || position === 'top-left'
-      ? { top: offsetY, bottom: 'auto' }
-      : { top: 'auto', bottom: offsetY }),
+      ? { top: offsetY + (kb?.top ?? 0), bottom: 'auto' }
+      : { top: 'auto', bottom: offsetY + (kb?.inset ?? 0) }),
   };
 }
 
@@ -600,6 +619,7 @@ interface FloatingContainerParams {
   offsetX: number;
   offsetY: number;
   isExpanded?: boolean;
+  keyboard?: KeyboardViewport;
 }
 
 // Anchor the open/close scale animation to the corner nearest the launcher bubble.
@@ -625,11 +645,12 @@ export function getFloatingContainerStyle(p: FloatingContainerParams): React.CSS
           bottom: 'env(safe-area-inset-bottom, 0px)',
           borderRadius: '0',
           zIndex: 9999,
+          ...keyboardFitStyle(p.keyboard),
         }
       : {
           ...getChatPositionStyles({ position: p.position, offsetX: p.offsetX, offsetY: p.offsetY }),
           ...getResponsiveDimensions({ isFullscreen: p.isFullscreen, mode: p.mode, isExpanded: p.isExpanded }),
-          ...(p.mode === 'floating' && !p.isFullscreen ? getFloatingShellStyle({ windowHeight: p.windowHeight, offsetY: p.offsetY, position: p.position, isExpanded: p.isExpanded }) : {}),
+          ...(p.mode === 'floating' && !p.isFullscreen ? getFloatingShellStyle({ windowHeight: p.windowHeight, offsetY: p.offsetY, position: p.position, isExpanded: p.isExpanded, keyboard: p.keyboard }) : {}),
           // Smooth, simple ease for the maximize/minimize (expand/collapse) resize.
           transition: 'width 280ms cubic-bezier(0.16, 1, 0.3, 1), height 280ms cubic-bezier(0.16, 1, 0.3, 1), max-height 280ms cubic-bezier(0.16, 1, 0.3, 1)',
         }
@@ -645,11 +666,12 @@ export function getFloatingContainerStyle(p: FloatingContainerParams): React.CSS
 // above the bar. Always docked bottom-center — the input bar ignores floatingConfig corners.
 // Margin-auto centering (rather than a transform) keeps the element from becoming a
 // containing block for any fixed-position descendants.
-export function getInputBarRootStyle(fontFamily: string, offsetY: number = 24): React.CSSProperties {
+// With the on-screen keyboard up it rides on the keyboard instead of hiding behind it.
+export function getInputBarRootStyle(fontFamily: string, offsetY: number = 24, keyboard?: KeyboardViewport): React.CSSProperties {
   return {
     position: 'fixed',
     zIndex: 1000,
-    bottom: offsetY,
+    bottom: keyboard?.open ? Math.min(offsetY, 12) + keyboard.inset : offsetY,
     left: 0,
     right: 0,
     marginLeft: 'auto',
@@ -740,14 +762,16 @@ export function getInputBarReplyCardStyle(backgroundColor: string, borderColor: 
   };
 }
 
-export function getInputBarPanelStyle(backgroundColor: string, borderColor: string = '#ececec'): React.CSSProperties {
+// `maxHeight` caps it to the room left above the bar (the keyboard is up).
+export function getInputBarPanelStyle(backgroundColor: string, borderColor: string = '#ececec', maxHeight?: number): React.CSSProperties {
+  const height = maxHeight !== undefined ? `min(70vh, 520px, ${Math.max(140, maxHeight)}px)` : 'min(70vh, 520px)';
   return {
     ...inputBarFloatingBase,
     transformOrigin: 'bottom center',
     display: 'flex',
     flexDirection: 'column',
-    height: 'min(70vh, 520px)',
-    maxHeight: 'min(70vh, 520px)',
+    height,
+    maxHeight: height,
     background: backgroundColor,
     border: `1px solid ${borderColor}`,
     borderRadius: '20px',
@@ -797,6 +821,14 @@ export function getScrollToBottomButtonStyle(backgroundColor: string): React.CSS
 }
 
 export const CSS_KEYFRAMES = `
+  /* Touch screens: iOS zooms the whole page into any field under 16px when it gets focus. */
+  @media (pointer: coarse) {
+    [data-genassist-root] textarea,
+    [data-genassist-root] select,
+    [data-genassist-root] input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),
+    [data-genassist-field] input,
+    [data-genassist-field] textarea { font-size: max(16px, 1em) !important; }
+  }
   @keyframes blink { 0% { opacity: 0.2; } 20% { opacity: 1; } 100% { opacity: 0.2; } }
   @keyframes ga-scroll-btn-in { from { opacity: 0; transform: translateX(-50%) translateY(6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
   .ga-scroll-bottom-btn { animation: ga-scroll-btn-in 180ms ease; transition: transform 160ms ease, box-shadow 160ms ease; }
@@ -811,6 +843,8 @@ export const CSS_KEYFRAMES = `
   /* Custom scrollbar for the message list (all modes). Thin, rounded, subtle; the thumb
      shows on hover/scroll and darkens on hover. Firefox uses scrollbar-width/color. */
   .ga-scroll {
+    /* Reaching the end of the list doesn't scroll the page behind the chat. */
+    overscroll-behavior: contain;
     scrollbar-width: thin;
     scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
   }

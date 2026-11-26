@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 
@@ -18,6 +18,9 @@ const sanitizeSchema = {
 export interface MarkdownMessageProps {
   text: string;
   style?: React.CSSProperties;
+  /** Optional element overrides merged over the defaults (e.g. a styled code block).
+   *  Omitted everywhere except presentations that opt in, so default output is unchanged. */
+  components?: Components;
 }
 
 /**
@@ -25,7 +28,7 @@ export interface MarkdownMessageProps {
  * - All external links open in a new tab with target="_blank" and rel="noopener noreferrer".
  * - No dangerouslySetInnerHTML without sanitization; uses rehype-sanitize.
  */
-export const MarkdownMessage = React.memo<MarkdownMessageProps>(({ text, style }) => {
+export const MarkdownMessage = React.memo<MarkdownMessageProps>(({ text, style, components }) => {
   const baseStyle: React.CSSProperties = {
     whiteSpace: 'pre-wrap',
     lineHeight: 1.5,
@@ -81,6 +84,7 @@ export const MarkdownMessage = React.memo<MarkdownMessageProps>(({ text, style }
               {children}
             </li>
           ),
+          ...components,
         }}
       >
         {text}

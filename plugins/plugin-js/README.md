@@ -122,7 +122,10 @@ The widget reads its configuration from `window.GENASSIST_CONFIG`:
 | `description` | string | No | Agent description text (default: "Your Virtual Assistant") |
 | `logoUrl` | string | No | URL for the agent logo |
 | `placeholder` | string | No | Placeholder text for the input field (default: "Ask a question") |
-| `mode` | string | No | Display mode: `"floating"` or `"embedded"` (default: "floating") |
+| `mode` | string | No | Display mode: `"floating"`, `"embedded"` or `"spotlight"` (redesigned floating panel) (default: "floating") |
+| `showPoweredBy` | boolean | No | `spotlight` mode only: show the "Powered by GenAssist" line (default: true) |
+| `showEmojiPicker` | boolean | No | `spotlight` mode only: show the emoji button in the message input (default: true) |
+| `allowScreenshot` | boolean | No | `spotlight` mode only: "Add screenshot" in the + menu, using the browser's screen-share picker (default: true; needs `useFile`; desktop browsers on https; inside an iframe add `allow="display-capture"`) |
 | `floatingConfig` | object | No | Configuration for floating mode (e.g., `{ position: 'bottom-right' }`) |
 | `serverUnavailableMessage` | string | No | Message shown when server is unavailable |
 | `noColorAnimation` | boolean | No | Disable color animation (default: true) |

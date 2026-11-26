@@ -29,6 +29,7 @@ import {
   isConversationFinalizedError,
   isConversationUnavailableError,
   isExpiredPassError,
+  markUnreachable,
 } from "../utils/conversationErrors";
 import { removeStoredConversationData } from "../utils/conversationStorage";
 import { createSseParser } from "../utils/sse";
@@ -903,11 +904,17 @@ export class ChatService {
   private async updateConversation(requestBody: unknown): Promise<any> {
     // Browsers that can't read a body as it arrives ask for the plain JSON reply instead.
     const canReadStream = "body" in Response.prototype;
-    const res = await fetch(`${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`, {
-      method: "PATCH",
-      headers: canReadStream ? { ...this.getHeaders(), Accept: "text/event-stream" } : this.getHeaders(),
-      body: JSON.stringify(requestBody),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}/api/conversations/in-progress/update/${this.conversationId}`, {
+        method: "PATCH",
+        headers: canReadStream ? { ...this.getHeaders(), Accept: "text/event-stream" } : this.getHeaders(),
+        body: JSON.stringify(requestBody),
+      });
+    } catch (error) {
+      // No response at all: offline, DNS, CORS or the server is down.
+      throw markUnreachable(error);
+    }
     if (!res.ok) throw httpError(res.status, await readBody(res));
     if (!res.body || !(res.headers.get("content-type") || "").includes("text/event-stream")) return readBody(res);
 
@@ -1065,6 +1072,13 @@ export class ChatService {
         throw error;
       }
 
+      // A visitor's own message: the caller marks its bubble as not delivered (with a
+      // retry) and shows the right notice, so tag the error with the bubble's id.
+      if (!opts?.silent) {
+        if (error && typeof error === "object") error.clientId = chatMessage.client_id;
+        throw error;
+      }
+
       // Check if this is the agent inactive error
       if (
         error.response &&
@@ -1197,6 +1211,7 @@ export class ChatService {
       }
     } catch (error: any) {
       this.resetIfRefusedForCurrent(error, requestConversationId);
+      if (error && typeof error === "object") error.clientId = chatMessage.client_id;
       throw error;
     }
   }

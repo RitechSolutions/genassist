@@ -10,6 +10,7 @@ from langchain.agents.middleware.types import AgentMiddleware
 from langgraph.types import Command
 from app.modules.workflow.agents.base_tool import BaseTool
 from app.modules.workflow.agents.base_tool_agent import BaseToolAgent
+from app.modules.workflow.agents.image_attachments import with_images
 from app.core.utils.llm_usage_utils import extract_usage_from_aimessage
 from app.modules.workflow.agents.agent_utils import (
     create_error_response,
@@ -308,8 +309,8 @@ class ReActAgentLC(BaseToolAgent):
                 history_messages = self._convert_chat_history_to_messages(chat_history)
                 messages.extend(history_messages)
 
-            # Add the current query
-            messages.append(HumanMessage(content=query))
+            # Add the current query, with any images the visitor sent
+            messages.append(HumanMessage(content=with_images(query, self.images)))
 
             input_data = {"messages": messages}
             input_message_count = len(messages)

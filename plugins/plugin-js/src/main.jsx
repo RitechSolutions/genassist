@@ -39,6 +39,9 @@ function bootstrap() {
       useFiles={cfg.useFiles ?? false}
       usePoll={cfg.usePoll ?? false}
       quickInput={cfg.quickInput ?? false}
+      showPoweredBy={cfg.showPoweredBy ?? true}
+      showEmojiPicker={cfg.showEmojiPicker ?? true}
+      allowScreenshot={cfg.allowScreenshot ?? true}
     />,
   );
 }

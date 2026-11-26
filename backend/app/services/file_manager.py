@@ -594,8 +594,12 @@ class FileManagerService:
         await self.repository.delete_file(file_id)
 
     # ==================== File URL Methods ====================
-    async def get_file_url(self, file: FileModel) -> str:
-        """Get the URL of a file."""
+    async def get_file_url(self, file: FileModel, base_url: Optional[str] = None) -> str:
+        """Get the URL of a file.
+
+        ``base_url`` is this server's address, used for local files when the storage
+        provider was set up without one (it is only set by ``initialize``).
+        """
         # initialize the storage provider
         await self._initialize_storage_provider(file.storage_provider)
 
@@ -605,16 +609,16 @@ class FileManagerService:
 
         # when used the local file storage provider, use the source url
         if file.storage_provider == "local":
-            return await self.get_file_source_url(file.id)
+            return await self.get_file_source_url(file.id, base_url=base_url)
 
         # get the file url from the storage provider
         return await self.storage_provider.get_file_url(file.storage_path, file.path)
 
 
     # ==================== File Source URL Methods ====================
-    async def get_file_source_url(self, file_id: UUID) -> str:
-        """Get the source URL of a file."""
-        config_base_url = self.storage_provider.config.get("base_url")
+    async def get_file_source_url(self, file_id: UUID, base_url: Optional[str] = None) -> str:
+        """Get the source URL of a file, on the provider's base URL or else ``base_url``."""
+        config_base_url = (self.storage_provider.config.get("base_url") or base_url or "").rstrip("/")
 
         if not config_base_url:
             raise ValueError("Storage provider base URL not set")

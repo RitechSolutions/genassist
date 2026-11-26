@@ -29,6 +29,18 @@ export interface ChatMessage {
   /** Client-only correlation id for an optimistic message, so its server
    *  sequence_number/message_id can be attached once the send round-trips. */
   client_id?: string;
+  /** Client-only: this visitor message never reached the agent (shown as "Not delivered"). */
+  send_failed?: boolean;
+  /** Client-only: what a failed text message resends on Retry. Kept on the message so a
+   *  retry still works after a reload; a failed voice message keeps its recording in memory
+   *  only, so it has no payload here. */
+  retry_payload?: { text: string; attachments?: Attachment[]; metadata?: Record<string, any> };
+  /** Client-only: a special notice reporting a failed send. `reply_failed` is shown
+   *  translated; `unavailable` shows its own text (the host's configured message). */
+  notice?: "reply_failed" | "unavailable";
+  /** Client-only: the `client_id` of the failed message a notice reports, so a retry
+   *  removes the notice along with the failed bubble. */
+  notice_for?: string;
 }
 
 /** What the assistant is working on during a streamed turn */
@@ -221,7 +233,9 @@ export interface GenAgentChatProps {
   agentName?: string; // Custom agent name to display instead of "Agent"
   logoUrl?: string; // Custom logo URL to display in header instead of default logo
   brandLogoUrl?: string; // Full brand logo/wordmark. When set, the header shows only this image instead of the small logo + title + description.
-  mode?: "embedded" | "floating" | "fullscreen" | "inputbar";
+  /** Presentation. `spotlight` is a floating launcher + panel with the redesigned
+   *  (bubble-less, animated) look; the others are unchanged. */
+  mode?: "embedded" | "floating" | "fullscreen" | "inputbar" | "spotlight";
   /** Called when the user presses Escape in `mode="fullscreen"`. Use this to switch the parent back to floating/embedded. */
   onExitFullscreen?: () => void;
   floatingConfig?: {
@@ -250,6 +264,11 @@ export interface GenAgentChatProps {
    *  "Seen" means a human supervisor has viewed the message; the AI bot only ever
    *  yields "Delivered". Opt-in — defaults to false. */
   readReceipts?: boolean;
+  /** `mode="spotlight"` only: show the small "Powered by GenAssist" line under the
+   *  composer. Defaults to true. */
+  showPoweredBy?: boolean;
+  showEmojiPicker?: boolean; // spotlight only: the composer's emoji button (default true)
+  allowScreenshot?: boolean; // spotlight only: "Add screenshot" in the + menu, via the browser's screen-share picker (default true; needs useFile)
 }
 
 // NOTE: These are the only file extensions that are supported by the chat.

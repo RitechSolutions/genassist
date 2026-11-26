@@ -25,6 +25,8 @@ interface BubbleDockProps {
   onOpen: () => void;
   onSend: (text: string) => void;
   onDismissQuickInput: () => void;
+  /** Height the on-screen keyboard covers at the bottom of the screen (0 when it is down). */
+  keyboardInset?: number;
 }
 
 const BUBBLE = 60;
@@ -50,6 +52,7 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
   onOpen,
   onSend,
   onDismissQuickInput,
+  keyboardInset = 0,
 }) => {
   const [value, setValue] = useState('');
   const [focused, setFocused] = useState(false);
@@ -67,11 +70,13 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
   const collapsedW = Math.min(DEFAULT_W, maxDockW - BUBBLE - GAP);
   const coverW = Math.min(collapsedW + BUBBLE + GAP, maxDockW);
   const hasText = value.trim().length > 0;
+  // Bottom-docked, the quick input rides on the keyboard while the visitor types in it.
+  const bottomY = isTop ? offsetY : offsetY + keyboardInset;
 
   const positionStyle = (): React.CSSProperties => ({
     position: 'fixed',
     top: isTop ? offsetY : 'auto',
-    bottom: isTop ? 'auto' : offsetY,
+    bottom: isTop ? 'auto' : bottomY,
     left: isLeft ? offsetX : 'auto',
     right: isLeft ? 'auto' : offsetX,
   });
@@ -98,7 +103,7 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
   // Pill anchors to the bubble's corner; the outer edge stays fixed while it grows over the bubble on focus.
   const pillStyle: React.CSSProperties = {
     position: 'fixed',
-    [vSide]: offsetY + (BUBBLE - INPUT_H) / 2,
+    [vSide]: bottomY + (BUBBLE - INPUT_H) / 2,
     [hSide]: focused ? offsetX : offsetX + BUBBLE + GAP,
     width: focused ? coverW : collapsedW,
     height: INPUT_H,
@@ -161,7 +166,7 @@ export const BubbleDock: React.FC<BubbleDockProps> = ({
       />
 
       {showQuickInput && (
-        <div className="ga-quick" style={pillStyle}>
+        <div className="ga-quick" style={pillStyle} data-genassist-field="quick-input">
           <button
             type="button"
             className="ga-quick-x"

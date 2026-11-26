@@ -106,10 +106,10 @@ class ToolAgent(BaseToolAgent):
     def _build_messages(self, query_prompt: str, system_message: Optional[SystemMessage] = None) -> List[Any]:
         """One fused user turn, or a cacheable system turn plus the query portion"""
         if not self._cache_split:
-            return [{"role": "user", "content": query_prompt}]
+            return [self._user_turn(query_prompt)]
         if system_message is None:
             system_message = self._cacheable_system_message()
-        return [system_message, {"role": "user", "content": query_prompt}]
+        return [system_message, self._user_turn(query_prompt)]
 
     # ==================== RESPONSE PARSING ====================
 

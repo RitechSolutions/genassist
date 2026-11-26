@@ -83,8 +83,7 @@ class ReActAgent(BaseToolAgent):
 
         for iteration in range(self.max_iterations):
             try:
-                response = await self.llm_model.ainvoke(
-                    [{"role": "user", "content": current_prompt}])
+                response = await self.llm_model.ainvoke([self._user_turn(current_prompt)])
                 response_content = self._extract_response_content(response)
 
                 usage = extract_usage_from_aimessage(response)

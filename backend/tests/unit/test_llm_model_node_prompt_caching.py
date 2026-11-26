@@ -454,7 +454,7 @@ class TestNodeDiagnostic:
         class _StateWithAttachments(_FakeState):
             def get_value(self, key, default=None):
                 if key == "attachments":
-                    return [{"type": "image/png", "file_mime_type": "image/png", "file_local_path": "/nonexistent.png"}]
+                    return [{"type": "image/png", "file_mime_type": "image/png", "file_storage_provider": "local", "file_local_path": "/nonexistent.png"}]
                 return default
 
         state = _StateWithAttachments()

@@ -2,7 +2,6 @@
 LLM model node implementation using the BaseNode class.
 """
 
-import base64
 import logging
 from typing import Any, Dict, Optional
 
@@ -13,6 +12,8 @@ from app.core.exceptions.exception_classes import AppException
 from app.core.utils.token_utils import calculate_history_tokens
 from app.modules.workflow.agents.cot_agent import ChainOfThoughtAgent
 from app.modules.workflow.engine import BaseNode
+from app.modules.workflow.agents.document_attachments import turn_documents_block, with_documents
+from app.modules.workflow.agents.image_attachments import image_content_blocks, with_images
 from app.modules.workflow.engine.node_result import node_failure
 from app.modules.workflow.engine.pii_anonymizer_mixin import PIIAnonymizerMixin
 from app.modules.workflow.engine.utils import has_volatile_template_vars
@@ -265,15 +266,11 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             else:
                 system_message = SystemMessage(content=system_prompt)
 
-            # default message content
-            message_content = [{"type": "text", "text": prompt}]
-
-            # build message content with attachments
-            attachments = self.get_state().get_value("attachments", [])
-
-            if attachments:
-                attachments_message_content = self._build_attachments_message_content(attachments)
-                message_content.extend(attachments_message_content)
+            # The prompt (plus the text of any documents attached this turn) as a text block,
+            # followed by any images the visitor sent
+            prompt = with_documents(prompt, await turn_documents_block(self.get_state()))
+            images = self._build_attachments_message_content(self.get_state().get_value("attachments", []))
+            message_content = with_images(prompt, images) if images else [{"type": "text", "text": prompt}]
 
             if prompt_caching_enabled and not cacheable_prefix:
                 from app.modules.workflow.engine import prompt_cache_diagnostics as diagnostics
@@ -305,50 +302,6 @@ class LLMModelNode(PIIAnonymizerMixin, BaseNode):
             # text consumers still receive a string, but record the failure.
             return node_failure(str(e), output=error_message)
 
-    def _convert_attachment_to_base64(self, attachment_local_path: str) -> str:
-        """Convert attachment local path to base64"""
-        import os
-
-        attachment_os_path = os.path.join(attachment_local_path)
-        with open(attachment_os_path, "rb") as read_file:
-            attachment_base64 = base64.standard_b64encode(read_file.read()).decode("utf-8")
-            return attachment_base64
-
     def _build_attachments_message_content(self, attachments: list) -> list:
-        """
-        Build message content for image attachments.
-
-        Only images are sent to the vision model here; documents are read by the
-        File Reader node.
-
-        Args:
-            attachments: List of attachment dictionaries
-
-        Returns:
-            List of image message content items
-        """
-        # create message content with attachments
-        message_content = []
-
-        if attachments:
-            for attachment in attachments:
-                mime_type = attachment.get("type") or attachment.get("file_mime_type") or ""
-                is_image = mime_type.startswith("image")
-
-                # Documents are read by the File Reader node, not the vision model.
-                if not is_image:
-                    continue
-
-                attachment_file_local_path = attachment.get("file_local_path")
-                attachment_mime_type = attachment.get("file_mime_type")
-                attachment_url = attachment.get("url")
-
-                # if attachment_file_local_path is provided, convert to base64
-                if attachment_file_local_path:
-                    # get file base64
-                    base64_content = self._convert_attachment_to_base64(attachment_file_local_path)
-                    attachment_url = f"data:{attachment_mime_type};base64,{base64_content}"
-
-                message_content.append({"type": "image_url", "image_url": {"url": attachment_url}})
-
-        return message_content
+        """Image content blocks for the attachments (documents go to the File Reader node)."""
+        return image_content_blocks(attachments)

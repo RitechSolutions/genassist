@@ -33,6 +33,15 @@
     "thumbsUp": "Pulgar arriba",
     "thumbsDown": "Pulgar abajo"
   },
+  "fileUpload": {
+    "fileTypeNotSupported": "Este tipo de archivo no es compatible.",
+    "uploadFailed": "No se pudo subir {name}. Inténtalo de nuevo."
+  },
+  "sendFailure": {
+    "notDelivered": "No entregado",
+    "retry": "Reintentar",
+    "replyFailed": "Algo salió mal al responder tu mensaje. Inténtalo de nuevo."
+  },
   "receipts": {
     "sent": "Enviado",
     "delivered": "Entregado",
@@ -97,6 +106,34 @@
     "boolean": "Booleano",
     "edit": "Editar",
     "remove": "Eliminar"
+  },
+  "spotlight": {
+    "close": "Cerrar chat",
+    "exitFullscreen": "Salir de pantalla completa",
+    "jumpToLatest": "Ir al último mensaje",
+    "send": "Enviar mensaje",
+    "attach": "Adjuntar",
+    "emoji": "Añadir emoji",
+    "sendFile": "Enviar un archivo",
+    "addScreenshot": "Añadir captura de pantalla",
+    "screenshotFailed": "No se pudo hacer la captura. Inténtalo de nuevo.",
+    "uploadedCount": "{done} de {total} subidos",
+    "removeFile": "Quitar archivo",
+    "addFile": "Añadir un archivo",
+    "scrollLeft": "Desplazar a la izquierda",
+    "scrollRight": "Desplazar a la derecha",
+    "sendFiles": "Enviar archivos",
+    "poweredBy": "Con la tecnología de",
+    "open": "Abrir chat",
+    "openFile": "Abrir",
+    "dismiss": "Descartar",
+    "teaserTitle": "¡Hola!",
+    "teaserBody": "¿Cómo podemos ayudarte hoy?",
+    "writeMessage": "Escribe un mensaje…",
+    "formFallback": "Completa el formulario a continuación.",
+    "emptyTitle": "Inicia una conversación",
+    "emptyBody": "Pregúntanos lo que quieras, estamos aquí para ayudarte.",
+    "typing": "Escribiendo"
   }
 }
 
