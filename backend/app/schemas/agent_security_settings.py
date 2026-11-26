@@ -1,6 +1,8 @@
 from typing import Optional
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+
+from app.schemas.guardrails import GuardrailPolicy, require_judge
 
 
 class AgentSecuritySettingsBase(BaseModel):
@@ -86,11 +88,14 @@ class AgentSecuritySettingsBase(BaseModel):
             "GCP service account JSON in base64. " "If null, uses global default."
         ),
     )
+    guardrails: Optional[GuardrailPolicy] = Field(
+        None, description="Guardrails policy. If null, Guardrails are off."
+    )
     model_config = ConfigDict(from_attributes=True)
 
 
 class AgentSecuritySettingsCreate(AgentSecuritySettingsBase):
-    pass
+    _judge_picked = field_validator("guardrails")(require_judge)
 
 
 class AgentSecuritySettingsUpdate(BaseModel):
@@ -106,7 +111,10 @@ class AgentSecuritySettingsUpdate(BaseModel):
     recaptcha_site_key: Optional[str] = None
     recaptcha_min_score: Optional[str] = None
     gcp_svc_account: Optional[str] = None
+    guardrails: Optional[GuardrailPolicy] = None
     model_config = ConfigDict(from_attributes=True)
+
+    _judge_picked = field_validator("guardrails")(require_judge)
 
 
 class AgentSecuritySettingsRead(AgentSecuritySettingsBase):

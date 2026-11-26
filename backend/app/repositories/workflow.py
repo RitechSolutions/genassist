@@ -5,6 +5,7 @@ from injector import inject
 from sqlalchemy import and_, case, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.events.group_scope import GROUP_SCOPE_BYPASS_FLAG, get_group_scope_clause
+from app.db.events.soft_delete import SOFT_DELETE_FLAG
 from app.db.models.agent import AgentModel
 from app.db.models.mcp_server import MCPServerModel, MCPServerWorkflowModel
 from app.db.models.ml_model import MLModel
@@ -92,6 +93,26 @@ class WorkflowRepository(DbRepository[WorkflowModel]):
         stmt = self._minimal_select().where(WorkflowModel.id.in_(ids))
         result = await self.db.execute(stmt)
         return result.all()
+
+    async def get_agent_ids(self, workflow_ids: List[UUID]) -> dict:
+        stmt = (
+            select(WorkflowModel.id, WorkflowModel.agent_id)
+            .where(WorkflowModel.id.in_(workflow_ids))
+            .execution_options(**{SOFT_DELETE_FLAG: True})
+        )
+        return {row.id: row.agent_id for row in (await self.db.execute(stmt)).all()}
+
+    async def node_exists_outside(
+        self, workflow_id: UUID, agent_id: Optional[UUID], node_id: str, node_name: str
+    ) -> bool:
+        stmt = select(WorkflowModel.id).where(
+            WorkflowModel.is_deleted == 0,
+            WorkflowModel.id != workflow_id,
+            WorkflowModel.nodes.contains([{"id": node_id, "data": {"name": node_name}}]),
+        )
+        if agent_id is not None:
+            stmt = stmt.where(WorkflowModel.agent_id.is_distinct_from(agent_id))
+        return (await self.db.execute(stmt.limit(1))).first() is not None
 
     async def soft_delete_by_agent(self, agent_id: UUID, commit: bool = True) -> List[UUID]:
         """Retire every live version of an agent's workflow and return their ids.

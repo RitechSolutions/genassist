@@ -7,12 +7,13 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react';
-import { ThumbsUp, ThumbsDown, User, Coins, Flag } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, User, Coins, Flag, ShieldAlert } from 'lucide-react';
 
 import { Transcript, ConversationFeedbackEntry } from '@/interfaces/transcript.interface';
 import { submitMessageFeedback, type AgentResponseLogSummary } from '@/services/transcripts';
 import { useToast } from '@/hooks/useToast';
 import { cn } from '@/helpers/utils';
+import type { GuardrailChip } from '@/helpers/guardrailChecks';
 import { ConversationEntryWrapper } from '@/views/ActiveConversations/common/ConversationEntryWrapper';
 import { MessageFeedbackPopover } from './MessageFeedbackPopover';
 import { formatMessageTime, formatCallTimestamp, formatDateTime } from '../helpers/formatting';
@@ -132,6 +133,7 @@ type TranscriptThreadProps = {
   showTakeoverMarkers?: boolean;
   showCosts?: boolean;
   costsByMessageId?: Record<string, AgentResponseLogSummary>;
+  guardrailByMessageId?: Record<string, GuardrailChip>;
   onMessageFeedback?: (messageId: string, feedback: 'good' | 'bad') => void;
   /** Lets the comment popover write its result back into the owner's transcript state. */
   onTranscriptChange?: Dispatch<SetStateAction<Transcript | null>>;
@@ -155,6 +157,7 @@ export function TranscriptThread({
   showTakeoverMarkers = true,
   showCosts = false,
   costsByMessageId,
+  guardrailByMessageId,
   onMessageFeedback,
   onTranscriptChange,
   onDebugMessage,
@@ -236,6 +239,7 @@ export function TranscriptThread({
           const hasFeedback = hasGood || hasBad || hasComment;
           const speakerName = isAgent ? 'Operator' : 'Customer';
           const isHighlighted = Boolean(messageId && messageId === highlightMessageId);
+          const guardrailChip = messageId ? guardrailByMessageId?.[messageId] : undefined;
 
           return (
             <div
@@ -253,6 +257,19 @@ export function TranscriptThread({
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-500/20 dark:text-amber-400">
                     <Flag className="h-2.5 w-2.5" />
                     Reported
+                  </span>
+                )}
+                {guardrailChip && (
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                      guardrailChip === 'blocked'
+                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-400'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
+                    )}
+                  >
+                    <ShieldAlert className="h-2.5 w-2.5" />
+                    {guardrailChip === 'blocked' ? 'Blocked' : 'Flagged'}
                   </span>
                 )}
               </span>

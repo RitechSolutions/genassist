@@ -27,10 +27,14 @@ class MLModelsRepository(DbRepository[MLModel]):
         super().__init__(MLModel, db)
 
     async def create(
-        self, ml_model_data: MLModelCreate, training_metrics: Optional[dict] = None
+        self,
+        ml_model_data: MLModelCreate,
+        training_metrics: Optional[dict] = None,
+        trained_by: Optional[tuple[UUID, str]] = None,
     ) -> MLModel:
         """Create a new ML model."""
         try:
+            trained_by_workflow_id, trained_by_node_id = trained_by or (None, None)
             new_ml_model = MLModel(
                 name=ml_model_data.name,
                 description=ml_model_data.description,
@@ -41,6 +45,8 @@ class MLModelsRepository(DbRepository[MLModel]):
                 target_variable=ml_model_data.target_variable,
                 inference_params=ml_model_data.inference_params,
                 training_metrics=training_metrics,
+                trained_by_workflow_id=trained_by_workflow_id,
+                trained_by_node_id=trained_by_node_id,
             )
             async with self.db.begin_nested():
                 self.db.add(new_ml_model)

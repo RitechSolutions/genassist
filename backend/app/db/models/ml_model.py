@@ -1,9 +1,10 @@
 import enum
+import uuid
 from typing import Optional
 
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import Index, String, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -42,6 +43,8 @@ class MLModel(Base):
     target_variable: Mapped[str] = mapped_column(String(255), nullable=False)
     inference_params: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     training_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    trained_by_workflow_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    trained_by_node_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
     pipeline_configs = relationship("MLModelPipelineConfig", back_populates="model", cascade="all, delete-orphan")

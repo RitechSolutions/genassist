@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 from app.modules.workflow.engine.base_node import BaseNode
 from app.modules.workflow.engine.node_result import node_failure
-from app.modules.workflow.engine.workflow_state import WorkflowPausedException
+from app.modules.workflow.engine.workflow_state import SAVED_WORKFLOW_ID_KEY, WorkflowPausedException
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,7 @@ class ToolBuilderNode(BaseNode):
             "id": self.get_state().workflow_id,
             "nodes": current_workflow.get("nodes", []),
             "edges": current_workflow.get("edges", []),
+            SAVED_WORKFLOW_ID_KEY: (current_workflow.get("config") or {}).get(SAVED_WORKFLOW_ID_KEY),
         }
         workflow_engine = WorkflowEngine(workflow_config)
 

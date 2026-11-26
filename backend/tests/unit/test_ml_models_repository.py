@@ -100,6 +100,62 @@ async def test_create_persists_training_metrics():
     assert created.training_metrics == metrics
 
 
+def _nested_db():
+    db = MagicMock()
+    transaction = MagicMock()
+    transaction.__aenter__ = AsyncMock()
+    transaction.__aexit__ = AsyncMock()
+    db.begin_nested.return_value = transaction
+    db.flush = AsyncMock()
+    db.refresh = AsyncMock()
+    return db
+
+
+def _forecast_create():
+    return MLModelCreate(
+        name="forecast",
+        description="Forecast model",
+        model_type="linear_regression",
+        features=["hour"],
+        target_variable="revenue",
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_stores_the_trainer_only_when_given():
+    workflow_id = uuid4()
+    repository = MLModelsRepository(_nested_db())
+
+    owned = await repository.create(_forecast_create(), trained_by=(workflow_id, "n1"))
+    plain = await repository.create(_forecast_create())
+
+    assert (owned.trained_by_workflow_id, owned.trained_by_node_id) == (workflow_id, "n1")
+    assert (plain.trained_by_workflow_id, plain.trained_by_node_id) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_update_writes_the_trainer_only_when_given():
+    workflow_id = uuid4()
+    repository = MagicMock()
+    repository.update = AsyncMock(return_value=SimpleNamespace())
+    service = MLModelsService(repository)
+
+    await service.update(uuid4(), MLModelUpdate(description="d"), trained_by=(workflow_id, "n1"))
+    await service.update(uuid4(), MLModelUpdate(description="d"))
+
+    owned, plain = (call.args[1] for call in repository.update.await_args_list)
+    assert owned == {"description": "d", "trained_by_workflow_id": workflow_id, "trained_by_node_id": "n1"}
+    assert plain == {"description": "d"}
+
+
+def test_client_schemas_do_not_carry_the_trainer():
+    update = MLModelUpdate(trained_by_workflow_id=str(uuid4()), trained_by_node_id="n")
+
+    assert update.model_dump(exclude_unset=True) == {}
+    assert "trained_by_workflow_id" not in MLModelRead.model_fields
+    assert "trained_by_node_id" not in MLModelRead.model_fields
+
+
 @pytest.mark.parametrize(
     "inference_params",
     [

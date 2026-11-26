@@ -21,6 +21,7 @@ from app.api.v1.routes.voice import get_openai_session_key
 from app.auth.dependencies import auth
 from app.modules.workflow.registry import RegistryItem
 from app.services.agent_config import AgentConfigService
+from app.services.guardrails import record_events_without_conversation
 
 
 router = APIRouter()
@@ -72,6 +73,7 @@ async def process_with_agent(
         agent_response = await agent.execute(
             session_message=transcribed_text, metadata={"thread_id": thread_id}, source="voice"
         )
+        record_events_without_conversation(UUID(agent_id), agent_response)
         agent_response_text = agent_response.get("output")
 
         if not agent_response_text:

@@ -1,3 +1,5 @@
+import { GuardrailPolicy } from "@/interfaces/guardrails.interface";
+
 /**
  * Security settings for an agent
  */
@@ -16,6 +18,7 @@ export interface AgentSecuritySettings {
   recaptcha_site_key?: string | null;
   recaptcha_min_score?: string | null;
   gcp_svc_account?: string | null;
+  guardrails?: GuardrailPolicy | null;
 }
 
 /**

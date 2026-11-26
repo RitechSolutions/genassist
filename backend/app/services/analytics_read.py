@@ -10,6 +10,8 @@ from app.schemas.analytics import (
     AgentDailyStatsItem,
     AgentDailyStatsListResponse,
     AgentStatsSummaryResponse,
+    GuardrailTotalsItem,
+    GuardrailTotalsResponse,
     NodeDailyStatsItem,
     NodeDailyStatsListResponse,
     NodeTypeBreakdownItem,
@@ -234,3 +236,18 @@ class AnalyticsReadService:
             from_date=from_date,
             to_date=to_date,
         )
+
+    async def get_guardrail_totals(
+        self,
+        agent_id: UUID | None = None,
+        group_id: UUID | None = None,
+        activity_from_datetime: datetime | None = None,
+        activity_to_datetime: datetime | None = None,
+    ) -> GuardrailTotalsResponse:
+        rows = await self.repo.get_guardrail_totals(
+            agent_id=agent_id,
+            group_id=group_id,
+            activity_from_datetime=activity_from_datetime,
+            activity_to_datetime=activity_to_datetime,
+        )
+        return GuardrailTotalsResponse(items=[GuardrailTotalsItem.model_validate(r) for r in rows])

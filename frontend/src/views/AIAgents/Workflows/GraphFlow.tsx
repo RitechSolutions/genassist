@@ -1830,7 +1830,10 @@ const GraphFlowContent: React.FC = () => {
               <BottomPanel
                 workflow={currentWorkflow}
                 hasUnsavedChanges={hasUnsavedChanges}
-                onWorkflowLoaded={(workflow) => handleWorkflowLoaded(workflow, true)}
+                onWorkflowLoaded={(workflow) => {
+                  handleWorkflowLoaded(workflow, true);
+                  handleClearTestHistory();
+                }}
                 onTestWorkflow={handleTestGraph}
                 onSaveWorkflow={handleSaveWorkflow}
                 onExecutionStateChange={setExecutionState}

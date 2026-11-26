@@ -17,6 +17,7 @@ from app.db.models.agent import AgentModel
 from app.db.models.agent_execution_daily_stats import AgentExecutionDailyStatsModel
 from app.db.models.agent_response_log import AgentResponseLogModel
 from app.db.models.conversation import ConversationAnalysisModel, ConversationModel
+from app.db.models.guardrail_event import GuardrailEventModel
 from app.db.models.node_execution_daily_stats import NodeExecutionDailyStatsModel
 from app.db.models.operator import OperatorModel
 from app.db.session_types import ReadOnlySession
@@ -456,3 +457,31 @@ class AnalyticsReadRepository:
         result = await self.db.execute(stmt)
         rows = result.mappings().all()
         return [dict(r) for r in rows]
+
+    async def get_guardrail_totals(
+        self,
+        agent_id: UUID | None = None,
+        group_id: UUID | None = None,
+        activity_from_datetime: datetime | None = None,
+        activity_to_datetime: datetime | None = None,
+    ) -> list[dict]:
+        agent_ids = await resolve_authorized_agent_ids(self.db, agent_id, group_id)
+        if agent_ids is not None and not agent_ids:
+            return []
+
+        action = GuardrailEventModel.action
+        stmt = select(
+            GuardrailEventModel.check_type,
+            func.count().filter(action == "blocked").label("blocked"),
+            func.count().filter(action == "flagged").label("flagged"),
+            func.count().filter(action == "error").label("errors"),
+        ).where(GuardrailEventModel.is_deleted == 0)
+        stmt = _apply_agent_ids(stmt, GuardrailEventModel.agent_id, agent_ids)
+        if activity_from_datetime is not None:
+            stmt = stmt.where(GuardrailEventModel.created_at >= activity_from_datetime)
+        if activity_to_datetime is not None:
+            stmt = stmt.where(GuardrailEventModel.created_at < activity_to_datetime)
+        stmt = stmt.group_by(GuardrailEventModel.check_type).order_by(GuardrailEventModel.check_type)
+
+        result = await self.db.execute(stmt)
+        return [dict(r) for r in result.mappings().all()]

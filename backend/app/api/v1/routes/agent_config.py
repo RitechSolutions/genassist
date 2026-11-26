@@ -10,7 +10,9 @@ from app.auth.utils import current_user_is_admin
 from app.schemas.agent import AgentCreate, AgentListItem, AgentRead, AgentUpdate
 from app.schemas.common import PaginatedResponse
 from app.schemas.filter import BaseFilterModel
+from app.schemas.guardrails import GuardrailCheckRequest, GuardrailCheckResponse
 from app.services.agent_config import AgentConfigService
+from app.services.guardrails import GuardrailService
 
 
 router = APIRouter()
@@ -125,6 +127,24 @@ async def update_config(
         raise HTTPException(status_code=403, detail="Only admins can modify system agents")
 
     return await agent_config_service.update(agent_id, agent_update)
+
+
+@router.post(
+    "/configs/{agent_id}/guardrails/check",
+    response_model=GuardrailCheckResponse,
+    dependencies=[
+        Depends(auth),
+    ],
+)
+async def check_guardrails(
+    agent_id: UUID,
+    request: GuardrailCheckRequest = Body(...),
+    agent_config_service: AgentConfigService = Injected(AgentConfigService),
+    guardrail_service: GuardrailService = Injected(GuardrailService),
+):
+    """Try a message against a Guardrails policy without saving it"""
+    await agent_config_service.get_by_id(agent_id)
+    return await guardrail_service.try_policy(agent_id, request)
 
 
 @router.delete(
