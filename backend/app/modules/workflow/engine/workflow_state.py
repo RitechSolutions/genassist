@@ -165,6 +165,8 @@ class WorkflowState:
             initial_values = {}
         self.initial_values = initial_values
         self.session = initial_values if initial_values else {}
+        # Session keys a node saved during this run
+        self.saved_session_keys: set[str] = set()
         self.timestamp = datetime.now().isoformat()
         self.execution_id = str(uuid.uuid4())
         self.workflow = workflow
@@ -694,6 +696,7 @@ class WorkflowState:
         session = self.get_session()
         session[key] = value
         self.set_value("session", session)
+        self.saved_session_keys.add(key)
         logger.debug(f"Session value updated: {key} = {value}")
 
     def get_session_flat(self) -> dict:
@@ -843,21 +846,15 @@ class WorkflowState:
         # Usage is not merged here: nested engines append into the parent usage_sink,
         # so merging again would double-count.
         self.absorb_tool_events(state)
+        self._take_saved_session_values(state)
 
-        # Merge stateful values from sub-workflow session into parent session
-        # This ensures stateful values updated in sub-workflows propagate to parent
-        # Note: We don't merge conversation_history as it's managed separately
+    def _take_saved_session_values(self, state: "WorkflowState") -> None:
+        """Copy the session values a node saved in the other run; the rest of its session stays there."""
         sub_session = state.get_session()
-        parent_session = self.get_session()
-        for key, value in sub_session.items():
-            # Skip conversation_history as it's managed separately
-            if key == "conversation_history":
-                continue
-            # Merge stateful values: if key doesn't exist in parent or values differ,
-            # update parent with sub-workflow's value (sub-workflow may have updated via SetStateNode)
-            if key not in parent_session or parent_session.get(key) != value:
-                parent_session[key] = value
-                self.update_session_value(key, value)
+        # conversation_history is managed separately
+        saved_keys = sorted(state.saved_session_keys - {"conversation_history"})
+        for key in saved_keys:
+            self.update_session_value(key, sub_session.get(key))
 
     def get_full_state(self) -> Dict[str, Any]:
         """Get the complete state including all execution details"""
