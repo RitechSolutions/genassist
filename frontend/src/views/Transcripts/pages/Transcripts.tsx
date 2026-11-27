@@ -44,6 +44,7 @@ import { ActiveConversationDialog } from "@/views/ActiveConversations/components
 import { enrichConversationItem } from "@/views/ActiveConversations/pages/ActiveConversations";
 import { useWebSocketDashboardContext } from "@/context/WebSocketDashboardContext";
 import { useTranscriptData } from "../hooks/useTranscriptData";
+import { createSearchRefetchGate } from "../helpers/searchRefetchGate";
 import { formatDuration, getEffectiveSentiment, isLiveTranscript, HOSTILITY_POSITIVE_MAX, HOSTILITY_NEUTRAL_MAX } from "../helpers/formatting";
 import { Badge } from "@/components/badge";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -306,8 +307,17 @@ const Transcripts = () => {
   refetchRef.current = refetch;
   const statusFilterRef = useRef(statusFilter);
   statusFilterRef.current = statusFilter;
+  const committedSearchRef = useRef(committedSearch);
+  committedSearchRef.current = committedSearch;
   // Conversations not on the page that already cost one background refetch.
   const lookedUpConversationIdsRef = useRef(new Set<string>());
+  // A search query is costly, so live updates rerun it at most every 30 s and one at a time.
+  const searchRefetchGateRef = useRef(createSearchRefetchGate());
+
+  // The page fetches each newly committed search itself; live reruns wait from that point.
+  useEffect(() => {
+    if (committedSearch.trim() !== "") searchRefetchGateRef.current.markStarted();
+  }, [committedSearch]);
 
   useEffect(() => {
     const payload = lastConversationUpdate?.payload;
@@ -326,8 +336,17 @@ const Transcripts = () => {
     // the filters exclude would otherwise refetch the list on each of its messages.
     if (statusFilterRef.current === "finalized") return;
     if (lookedUpConversationIdsRef.current.has(conversationId)) return;
+
+    const refetchSilently = () => refetchRef.current({ silent: true });
+    const isSearchActive = committedSearchRef.current.trim() !== "";
+    if (isSearchActive) {
+      // Not marked when skipped, so a later message from this conversation tries again.
+      const started = searchRefetchGateRef.current.tryStart(refetchSilently);
+      if (!started) return;
+    } else {
+      void refetchSilently();
+    }
     lookedUpConversationIdsRef.current.add(conversationId);
-    void refetchRef.current({ silent: true });
   }, [lastConversationUpdate]);
 
   const totalCount = isLiveFeed ? wsConversations.length : apiTotal;
